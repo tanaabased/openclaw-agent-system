@@ -17,6 +17,7 @@ export default async function retireOpenClawNative(input: {
   authority: DispatchAuthority;
   native: string;
   digest?: string;
+  apply?: boolean;
 }) {
   const { dependencies: deps, manifest, authority, caller } = input;
   if (!input.operator) throw new Error('dispatch-operator-required');
@@ -48,6 +49,7 @@ export default async function retireOpenClawNative(input: {
       },
       target: input.native,
       digest: input.digest,
+      apply: input.apply,
       turnId: caller.runId,
       inputId: turn.inputEventId,
       now: (deps.now ?? Date.now)(),

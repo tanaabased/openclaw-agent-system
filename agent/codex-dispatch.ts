@@ -185,7 +185,11 @@ export async function runCodexDispatch(
   if (action === 'retire' && typeof input.native === 'string')
     return retireCodexNative(
       pluginData,
-      { native: input.native, digest: input.digest as string | undefined },
+      {
+        native: input.native,
+        digest: input.digest as string | undefined,
+        apply: input.apply as boolean | undefined,
+      },
       deps,
     );
   deps = {
@@ -590,7 +594,11 @@ async function executeCodexDispatch(
       throw new Error('dispatch-action-invalid');
     }, waitForLock)
     .then(async (result) => {
-      if (operatorRetire && input.digest !== undefined && result?.status === 'retirement-pending')
+      if (
+        operatorRetire &&
+        (input.apply || input.digest !== undefined) &&
+        result?.status === 'retirement-pending'
+      )
         return (
           (await reconcileCodexLifecycle(pluginData, deps, input.threads, {
             id: String(input.id),

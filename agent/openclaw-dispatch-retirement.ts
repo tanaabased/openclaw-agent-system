@@ -16,7 +16,7 @@ export default async function retireOpenClawTask(options: {
   manifest: AgentManifest;
   workspace: string;
   caller: DispatchCaller;
-  input: { id?: string; digest?: string };
+  input: { id?: string; digest?: string; apply?: boolean };
   operator: boolean;
   authority: DispatchAuthority;
 }) {
@@ -78,7 +78,7 @@ export default async function retireOpenClawTask(options: {
       caller: { sessionKey: caller.sessionKey, sessionId: caller.sessionId, runId: caller.runId },
     });
     await authority.assertCurrent?.();
-    if (!input.digest)
+    if (!input.apply && !input.digest)
       return {
         status: 'retire-available',
         id,
@@ -89,7 +89,7 @@ export default async function retireOpenClawTask(options: {
         instruction:
           'Retire this exact task now without changing its issue or branch. Cleanup uses existing preservation and native ownership checks. Running work and unfinished cleanup remain pending.',
       };
-    if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
+    if (!input.apply && input.digest !== digest) throw new Error('dispatch-recovery-stale');
     const now = (service.dependencies.now ?? Date.now)();
     record.retirement = assignmentRetirement({
       previous: record.retirement,

@@ -1,4 +1,5 @@
 import { selectWorkflowStage } from './workflow-stage.ts';
+import nativeOperatorSelection from './native-operator-selection.ts';
 import {
   isNativeDispatchSelection,
   nativeDispatchDigest,
@@ -140,6 +141,22 @@ export default class OpenClawDispatch {
     if (!Value.Check(dispatchModelParameters, input as unknown))
       throw new Error('dispatch-model-request-invalid');
     let request = input;
+    if (input.action === 'retire') {
+      const authored = { ...input };
+      delete authored.target;
+      delete authored.preview;
+      request = { ...authored, apply: !input.preview };
+      if (!input.native) {
+        const current = await this.scope(manifest, workspace);
+        const record = nativeOperatorSelection(
+          input,
+          (await current.journal.read()).records,
+          current.admitted.records,
+          caller.sessionKey,
+        );
+        request.id = record.id;
+      }
+    }
     if (isNativeDispatchSelection(input.action)) {
       const current = await this.scope(manifest, workspace);
       const record = nativeDispatchSelection(
@@ -486,6 +503,7 @@ export default class OpenClawDispatch {
         caller,
         native: input.native,
         digest: input.digest,
+        apply: input.apply,
         operator,
         authority,
       });

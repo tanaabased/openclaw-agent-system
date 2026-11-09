@@ -48,6 +48,7 @@ export default async function nativeRetirement(input: {
   binding: AssessmentEntryBinding;
   target: string;
   digest?: string;
+  apply?: boolean;
   turnId: string;
   inputId: string;
   now: number;
@@ -126,9 +127,9 @@ export default async function nativeRetirement(input: {
         };
       return result('pending', target, 'native-retirement-archive-unverified');
     }
-    if (!input.digest)
+    if (!input.apply && !input.digest)
       return { ...result('retire-available', target), digest, instruction: input.effects };
-    if (input.digest !== digest) throw new Error('native-retirement-preview-stale');
+    if (!input.apply && input.digest !== digest) throw new Error('native-retirement-preview-stale');
     await input.assertCurrent();
     if (await input.managed()) throw new Error('native-retirement-managed-owner-required');
     const fresh = await input.observe();

@@ -32,7 +32,9 @@ export default async function codexContextRequest(
 ) {
   if (
     route === 'dispatch' &&
-    (isNativeDispatchSelection(input.action) || input.action === 'report')
+    (isNativeDispatchSelection(input.action) ||
+      input.action === 'report' ||
+      input.action === 'retire')
   ) {
     assertNativeContextInput(input);
     if (!threadId) throw new Error('turn-context-native-caller-required');

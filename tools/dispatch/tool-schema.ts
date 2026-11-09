@@ -3,7 +3,7 @@ import { implementationDecisionSchema } from '../../agent/issue-progression.ts';
 import { dispatchInspectionProperties } from '../../agent/dispatch-inspection.ts';
 import { issueChatTitleGuidance } from '../../agent/issue-chat-title.ts';
 import { launchRequestSchema } from './launch-schema.ts';
-import { retirementRequestSchema } from './retirement-schema.ts';
+import { retirementRequestSchema, retirementModelSchema } from './retirement-schema.ts';
 import { directImplementationRequestSchema } from './implementation-schema.ts';
 import { directAssessmentRequestSchema } from './assessment-schema.ts';
 import { feedbackDecisionSchema } from '../../agent/feedback-work.ts';
@@ -174,11 +174,13 @@ type ModelDispatchInput<T = Static<typeof dispatchParameters>> = T extends {
   ? Omit<T, 'id' | 'previousResultDigest'>
   : T extends { action: 'feedback' }
     ? Omit<T, 'id' | 'eventId' | 'digest'> & { source?: string }
-    : T extends { action: 'prepare' | 'reconcile' | 'start' | 'assess' }
-      ? Omit<T, 'id' | 'digest'> & { target?: string }
-      : T extends { action: 'reply' }
-        ? ReplyModelRequest
-        : T;
+    : T extends { action: 'retire' }
+      ? Static<typeof retirementModelSchema>
+      : T extends { action: 'prepare' | 'reconcile' | 'start' | 'assess' }
+        ? Omit<T, 'id' | 'digest'> & { target?: string }
+        : T extends { action: 'reply' }
+          ? ReplyModelRequest
+          : T;
 export const dispatchModelParameters = Type.Unsafe<ModelDispatchInput>(
   discriminatedSchema(
     'action',
@@ -199,19 +201,21 @@ export const dispatchModelParameters = Type.Unsafe<ModelDispatchInput>(
                 ...Type.Omit(variant, ['id', 'eventId', 'digest']).properties,
                 source: Type.Optional(Type.String({ minLength: 1, maxLength: 2048 })),
               })
-            : ['prepare', 'reconcile', 'start', 'assess'].includes(
-                  String(variant.properties.action.const),
-                )
-              ? object({
-                  ...Type.Omit(variant, ['id', 'digest']).properties,
-                  target:
-                    variant.properties.action.const === 'prepare'
-                      ? Type.String({ minLength: 1, maxLength: 4096 })
-                      : Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
-                })
-              : variant.properties.action.const === 'reply'
-                ? replyModelSchema
-                : variant,
+            : variant.properties.action.const === 'retire'
+              ? retirementModelSchema
+              : ['prepare', 'reconcile', 'start', 'assess'].includes(
+                    String(variant.properties.action.const),
+                  )
+                ? object({
+                    ...Type.Omit(variant, ['id', 'digest']).properties,
+                    target:
+                      variant.properties.action.const === 'prepare'
+                        ? Type.String({ minLength: 1, maxLength: 4096 })
+                        : Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+                  })
+                : variant.properties.action.const === 'reply'
+                  ? replyModelSchema
+                  : variant,
       ),
     ),
   ),

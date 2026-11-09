@@ -182,7 +182,7 @@ export default async function recoverDispatch(
       nativeCaller,
     });
     await fresh();
-    if (input.digest === undefined)
+    if (!input.apply && input.digest === undefined)
       return {
         status: 'retire-available',
         id: record.id,
@@ -192,7 +192,7 @@ export default async function recoverDispatch(
         instruction:
           'Retire this exact managed task now, leaving its issue and branch unchanged. Reuse safe native cleanup immediately without grace; running work, preservation blockers and asynchronous reclamation remain pending.',
       };
-    if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
+    if (!input.apply && input.digest !== digest) throw new Error('dispatch-recovery-stale');
     const verifiedConfiguration = await context.readConfiguration();
     if (automationHash(verifiedConfiguration) !== automationHash(configuration))
       throw new Error('retirement-configuration-changed');

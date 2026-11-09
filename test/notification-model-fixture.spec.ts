@@ -425,7 +425,10 @@ for (const scenario of [
         );
         const next = await response(input);
         assert.ok('toolCalls' in next && next.toolCalls?.[0]);
-        assert.deepEqual(JSON.parse(next.toolCalls[0].arguments), { action: 'retire', id });
+        assert.deepEqual(JSON.parse(next.toolCalls[0].arguments), {
+          action: 'retire',
+          preview: true,
+        });
       });
 
     if (scenario.id === 'openclaw-issue-journey')

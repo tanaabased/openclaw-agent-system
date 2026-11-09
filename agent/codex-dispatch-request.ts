@@ -20,7 +20,11 @@ const schemas = {
   handoff: object(recovery),
   reset: object(recovery),
   retire: Type.Union([
-    object({ ...recovery, threads: Type.Optional(Type.Unknown()) }),
+    object({
+      ...recovery,
+      apply: Type.Optional(Type.Boolean()),
+      threads: Type.Optional(Type.Unknown()),
+    }),
     object(nativeRetirementProperties),
   ]),
   recover: object({ ...recovery, pullRequest: Type.String({ minLength: 1, maxLength: 4096 }) }),

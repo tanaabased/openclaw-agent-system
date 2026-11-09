@@ -31,7 +31,6 @@ function retirement(request: ChatCompletionRequest): FixtureResponse | undefined
     .join('\n');
   const id = /Retire this managed task now ([a-f0-9]{64})/u.exec(prompt)?.[1];
   if (!id) return;
-  let digest: string | undefined;
   for (const stage of stages) {
     for (let attempt = 0; attempt < 4; attempt++) {
       const callId = prefix + stage + '_' + attempt;
@@ -42,7 +41,10 @@ function retirement(request: ChatCompletionRequest): FixtureResponse | undefined
             {
               id: callId,
               name: 'agent_system_dispatch',
-              arguments: JSON.stringify({ action: 'retire', id, ...(digest ? { digest } : {}) }),
+              arguments: JSON.stringify({
+                action: 'retire',
+                ...(stage === 'preview' ? { preview: true } : {}),
+              }),
             },
           ],
         };
@@ -56,10 +58,8 @@ function retirement(request: ChatCompletionRequest): FixtureResponse | undefined
       }
       assert.equal(result.status, stage === 'preview' ? 'retire-available' : 'retirement-pending');
       assert.equal(result.id, id);
-      if (stage === 'preview') {
-        assert.equal(typeof result.digest, 'string');
-        digest = result.digest;
-      } else assert.equal(result.retirement.code, 'retirement-native-work-unresolved');
+      if (stage !== 'preview')
+        assert.equal(result.retirement.code, 'retirement-native-work-unresolved');
       break;
     }
   }

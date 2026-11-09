@@ -11,6 +11,7 @@ import {
 import { assertNativeContextInput } from './native-context-request.ts';
 import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 import { Value } from 'typebox/value';
+import nativeOperatorSelection from './native-operator-selection.ts';
 
 /** Read existing custody; the dispatch owner still verifies activation and the live occurrence. */
 export default async function codexDispatchBinding(
@@ -21,6 +22,8 @@ export default async function codexDispatchBinding(
   assertNativeContextInput(input);
   if (!Value.Check(dispatchModelParameters, input))
     throw new Error('dispatch-model-request-invalid');
+  if (input.action === 'retire' && input.native)
+    return { action: 'retire', native: input.native, apply: !input.preview };
   const current = await selectCodexIntake(
     pluginData,
     {},
@@ -44,12 +47,17 @@ export default async function codexDispatchBinding(
   const journal = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
   const state = await journal.read();
   const admitted = managedIssueState(await current.store.read(), state.records);
-  const record = nativeDispatchSelection(input, state.records, admitted?.records ?? [], threadId);
+  const record =
+    input.action === 'retire'
+      ? nativeOperatorSelection(input, state.records, admitted?.records ?? [], threadId)
+      : nativeDispatchSelection(input, state.records, admitted?.records ?? [], threadId);
   const authored: Record<string, unknown> = { ...input };
   delete authored.target;
+  delete authored.preview;
   return {
     ...authored,
     id: record.id,
+    ...(input.action === 'retire' ? { apply: !input.preview } : {}),
     ...(input.action === 'prepare' ? { digest: nativeDispatchDigest(record, 'codex') } : {}),
   };
 }
