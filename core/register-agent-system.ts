@@ -1,3 +1,4 @@
+import { retainOpenClawTurnInput } from '../agent/openclaw-turn-binding.ts';
 import OpenClawAssignmentClaims from '../agent/openclaw-assignment-claims.ts';
 import GitHubAssignmentClaimClient from '../channels/github/provider/assignment-claim-client.ts';
 import { commandTerminationGraceMs } from '../api/cli-budget.ts';
@@ -828,6 +829,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         readConsistency: 'latest',
       });
       if (!entry || entry.archivedAt || entry.sessionId !== binding.sessionId) return;
+      retainOpenClawTurnInput(api.runContext, binding);
       const context = await dispatchV2.service.promptContext(manifest, workspace, binding);
       const fresh = api.runtime.agent.session.getSessionEntry({
         sessionKey: binding.sessionKey,

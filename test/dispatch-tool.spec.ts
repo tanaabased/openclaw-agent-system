@@ -1,3 +1,4 @@
+import { retainOpenClawTurnInput } from '../agent/openclaw-turn-binding.ts';
 import assert from 'node:assert/strict';
 import { ContextMaterialError } from '../agent/implementation-material.ts';
 
@@ -69,7 +70,29 @@ describe('tools/dispatch/tool', () => {
       agent: { id: caller.agentId },
       github: { notifications: { schemaVersion: 3 as number | undefined } },
     };
+    const runData = new Map<string, unknown>();
+    const runContext = {
+      setRunContext({
+        runId,
+        namespace,
+        value,
+      }: {
+        runId: string;
+        namespace: string;
+        value?: unknown;
+      }) {
+        runData.set(`${runId}:${namespace}`, value);
+        return true;
+      },
+      getRunContext({ runId, namespace }: { runId: string; namespace: string }) {
+        return runData.get(`${runId}:${namespace}`);
+      },
+      clearRunContext() {
+        runData.clear();
+      },
+    } as OpenClawPluginApi['runContext'];
     const api = {
+      runContext,
       source: '/plugin/index.ts',
       runtimeSource: '/plugin/dist/index.js',
       registrationMode: 'full',
@@ -120,6 +143,7 @@ describe('tools/dispatch/tool', () => {
     };
     return {
       registrationOptions,
+      runContext,
       hooks,
       hook: hooks.get('before_tool_call')!,
       build,
@@ -170,6 +194,20 @@ describe('tools/dispatch/tool', () => {
     ])
       await assert.rejects(context.execute('invalid', input), /turn-context-request-invalid/);
     assert.equal(requests.length, 1);
+  });
+
+  it('should carry the native prompt input into tools and expire it with the host run', async () => {
+    const f = fixture();
+    retainOpenClawTurnInput(f.runContext, { ...coordinator, inputId: 'queued-input' });
+    await f.hook(event, coordinator);
+    await f.build().execute(event.toolCallId, event.params);
+    assert.equal(f.calls[0]?.inputId, 'queued-input');
+    const rejected = await f.hook(event, { ...coordinator, sessionId: 'replacement' });
+    assert.ok(rejected);
+    f.runContext.clearRunContext({ runId: coordinator.runId });
+    await f.hook(event, coordinator);
+    await f.build().execute(event.toolCallId, event.params);
+    assert.equal(f.calls[1]?.inputId, undefined);
   });
 
   it('should explain malformed authored arguments at both public entry points', async () => {

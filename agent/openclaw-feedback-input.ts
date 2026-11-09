@@ -13,10 +13,10 @@ import { completeOpenClawMessage, openClawHistoryPages } from './openclaw-histor
 /** recover queued source identity from the native input, without asking the model to select it. */
 export async function resolveOpenClawTurnFeedback(
   record: OpenClawDispatchRecord,
-  caller: Pick<DispatchCaller, 'sessionKey' | 'sessionId' | 'runId'>,
+  caller: Pick<DispatchCaller, 'sessionKey' | 'sessionId' | 'runId' | 'inputId'>,
   request: DispatchRequest,
   config: OpenClawConfig,
-  inputId?: string,
+  inputId = caller.inputId,
 ) {
   const selected = selectedOpenClawFeedback(record, caller.runId);
   if (selected) {

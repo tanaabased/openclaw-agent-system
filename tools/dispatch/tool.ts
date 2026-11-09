@@ -1,3 +1,4 @@
+import { readOpenClawTurnInput } from '../../agent/openclaw-turn-binding.ts';
 import WorkflowRequestError from '../../agent/workflow-request-error.ts';
 import nativeTaskInstructions from '../../agent/native-task-instructions.ts';
 import workflowNoticeInstructions from '../../agent/workflow-notice-instructions.ts';
@@ -134,8 +135,10 @@ export default function createDispatchTool(input: {
       return;
     try {
       const who = caller(context, event, nativeCaller);
+      const inputId = readOpenClawTurnInput(api.runContext, { ...who, agentId: context.agentId });
       invocations.set(who.toolCallId, {
         ...who,
+        ...(inputId ? { inputId } : {}),
         agentId: context.agentId,
         operator: context.requester?.senderIsOwner === true,
       });

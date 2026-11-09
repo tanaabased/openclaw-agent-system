@@ -40,7 +40,8 @@ describe('agent/openclaw-turn-feedback', () => {
     delete (input.__openclaw as { runId?: string }).runId;
     const read = async () => ({ sessionId: 'session', messages: [input] });
     assert.equal(
-      (await resolveOpenClawTurnFeedback(record, caller, read, {}, 'input'))?.event.id,
+      (await resolveOpenClawTurnFeedback(record, { ...caller, inputId: 'input' }, read, {}))?.event
+        .id,
       'first',
     );
     assert.equal(await resolveOpenClawTurnFeedback(record, caller, read, {}), undefined);
