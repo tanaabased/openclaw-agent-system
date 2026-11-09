@@ -10,10 +10,9 @@ export default function codexCommit(
   ownerId?: string,
   operation?: 'delivery' | 'continuation',
 ) {
-  const delivery = operation === 'delivery';
-  // Delivery owns publication receipts, not intake counters or native activity observations.
+  // Task-local effects do not own intake counters or native activity observations.
   const effectState = (record: DispatchState['records'][number] | undefined) => {
-    if (!delivery || !record) return record;
+    if (operation === undefined || !record) return record;
     const effect = { ...record };
     delete effect.capacityObservation;
     delete effect.nativeInactive;
