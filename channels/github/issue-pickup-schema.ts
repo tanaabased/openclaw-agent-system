@@ -35,6 +35,12 @@ export const issuePickupSchema = Type.Object(
             pattern: '^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/[A-Za-z0-9_.-]+$',
           }),
           limit: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
+          selection: Type.Optional(
+            Type.Object(
+              { guidance: assessmentConfigurationSchema.properties.guidance },
+              { additionalProperties: false },
+            ),
+          ),
           filters: Type.Optional(
             Type.Object(
               {

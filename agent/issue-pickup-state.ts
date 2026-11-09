@@ -94,6 +94,19 @@ export const pickupOperationSchema = Type.Object(
     guidance: Type.Optional(Type.String({ maxLength: maximumAssessmentGuidanceBytes })),
     guidanceSource: Type.Optional(Type.Union([Type.Literal('inline'), Type.Literal('file')])),
     guidancePath: Type.Optional(text),
+    repositoryGuidance: Type.Optional(
+      Type.Record(
+        text,
+        Type.Object(
+          {
+            source: Type.Union([Type.Literal('inline'), Type.Literal('file')]),
+            path: Type.Optional(text),
+            content: Type.String({ maxLength: maximumAssessmentGuidanceBytes }),
+          },
+          { additionalProperties: false },
+        ),
+      ),
+    ),
     selectionDigest: Type.Optional(text),
     selected: Type.Optional(
       Type.Object(

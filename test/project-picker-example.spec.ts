@@ -45,6 +45,9 @@ describe('examples/openclaw-project-picker model fixture', () => {
           id: 'native-scan',
           digest: 'native-digest',
           guidance: 'Prefer the bounded cleanup clarification.',
+          repositoryGuidance: {
+            'tanaabased/big-test-bucket': { content: 'prefer fixture cleanup questions' },
+          },
           candidates,
         },
       ],
@@ -81,11 +84,26 @@ describe('examples/openclaw-project-picker model fixture', () => {
 
   it('should preserve terminal cards and refuse to conceal failed or uncertain assignments', () => {
     for (const status of ['empty', 'assigned', 'allowance-reached']) {
-      const response = `📥 ${status} native card`;
+      const response =
+        status === 'assigned'
+          ? '📥 assigned an issue · 2 eligible\nGuidance source: inline\n' +
+            'bounded cleanup clarification\n' +
+            'long diagnostic context '.repeat(120) +
+            'prefer fixture cleanup'
+          : `📥 ${status} native card`;
       assert.deepEqual(pickupResponse(request(prompt, [['scan-0', { status, response }]])), {
         content: response,
       });
     }
+    assert.throws(
+      () =>
+        pickupResponse(
+          request(prompt, [
+            ['scan-0', { status: 'assigned', response: '📥 assigned an issue · 2 eligible' }],
+          ]),
+        ),
+      /Guidance source/u,
+    );
     for (const status of ['failed', 'attempted', 'blocked']) {
       assert.throws(() =>
         pickupResponse(request(prompt, [['scan-0', { status, code: 'native-failure' }]])),

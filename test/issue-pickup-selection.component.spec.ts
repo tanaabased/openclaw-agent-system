@@ -240,6 +240,133 @@ describe('issue pickup selection through native journals', () => {
   }
 
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should page captured repository guidance and retain scope through ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      const guidance = 'repository-specific priorities '.repeat(700);
+      await f.configure((source) => {
+        source.github['issue-pickup'].projects[0]!.selection = { guidance };
+      });
+      const options = await f.pickup();
+      assert.ok('digest' in options);
+      const restored = await hydrateImplementation(options, ({ action, ...input }) => {
+        assert.equal(action, 'pickup');
+        return f.pickup(input as PickupInput);
+      });
+      assert.deepEqual(restored.repositoryGuidance, {
+        'owner/repo': { source: 'inline', content: guidance },
+      });
+      const result = await f.pickup({
+        selection: {
+          issueNodeId: f.item.nodeId,
+          rationale: 'ready within repository guidance',
+        },
+      });
+      assert.equal(result.status, 'assigned');
+      assert.doesNotMatch(result.response, /repository-specific priorities/);
+      assert.equal(
+        (await f.journal.read()).projectPickup!.operations[0]!.repositoryGuidance,
+        undefined,
+      );
+    });
+    it(`should capture per-repository file guidance and isolate unreadable repositories through ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      const workspace = join(root, 'workspace');
+      const other = f.addRepository('other', 2);
+      await writeFile(join(workspace, 'other.md'), 'prioritize other releases');
+      await f.configure((source) => {
+        source.debug = true;
+        source.github['issue-pickup'].projects[0]!.selection = {
+          guidance: 'prioritize repo fixes',
+        };
+        source.github['issue-pickup'].projects.push({
+          repository: 'owner/other',
+          milestone: { number: 10, policy: 'only' },
+          limit: 1,
+          selection: { guidance: { file: 'other.md' } },
+        });
+      });
+      const options = await f.pickup();
+      assert.ok('repositoryGuidance' in options && options.repositoryGuidance);
+      assert.equal(options.repositoryGuidance['owner/repo']!.content, 'prioritize repo fixes');
+      assert.equal(options.repositoryGuidance['owner/other']!.content, 'prioritize other releases');
+      await rm(join(workspace, 'other.md'));
+      const result = await f.pickup({
+        selection: {
+          issueNodeId: other.items.get(f.item.number)!.nodeId,
+          rationale: 'other release ready',
+          shortlist: [f.item.nodeId, other.items.get(f.item.number)!.nodeId],
+        },
+      });
+      assert.equal(result.status, 'assigned');
+      assert.match(result.response, /owner\/repo.*0 of 1 assigned.*1 eligible/);
+      assert.match(result.response, /owner\/other.*1 of 1 assigned.*2 eligible/);
+      assert.match(result.response, /owner\/repo\/issues\/3/);
+      assert.match(result.response, /owner\/other\/issues\/3/);
+      assert.match(result.response, /prioritize other releases/);
+      const saved = await f.journal.read();
+      assert.equal(saved.projectPickup!.operations[0]!.repositoryGuidance, undefined);
+      assert.equal(saved.projectPickup!.charges![0]!.repositoryNodeId, other.repository.nodeId);
+
+      await f.configure((source) => {
+        source.debug = false;
+        source.github['issue-pickup'].projects[1]!.limit = 2;
+      });
+      f.tick.id = 'missing-repository-guidance';
+      const readable = await f.select();
+      const partial = await f.pickup({ selection: { ...readable, issueNodeId: null } });
+      assert.equal(partial.status, 'empty');
+      assert.match(partial.response, /owner\/repo.*1 eligible/);
+      assert.match(partial.response, /owner\/other.*dispatch-assessment-guidance-unreadable/);
+      assert.doesNotMatch(partial.response, /prioritize other releases|prioritize repo fixes/);
+
+      await writeFile(join(workspace, 'other.md'), 'updated repository priorities');
+      f.tick.id = 'restored-repository-guidance';
+      const refreshed = await f.pickup();
+      assert.ok('repositoryGuidance' in refreshed && refreshed.repositoryGuidance);
+      assert.equal(
+        refreshed.repositoryGuidance['owner/other']!.content,
+        'updated repository priorities',
+      );
+      assert.equal(f.effects.writes, 1);
+    });
+
+    it(`should preserve repository provider errors on the consolidated card through ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      f.addRepository('other');
+      await f.configure((source) =>
+        source.github['issue-pickup'].projects.push({
+          repository: 'owner/other',
+          milestone: { number: 10, policy: 'only' },
+          limit: 1,
+        }),
+      );
+      const read = f.client.getRepository;
+      const diagnostic = providerDiagnostic('github', 'api-request', 'permission', {
+        httpStatus: 403,
+        providerMessage: 'Repository access denied',
+      });
+      f.client.getRepository = async (owner, name) => {
+        if (name === 'other')
+          throw new GitHubWorkEventClientError(
+            'github-notification-request-failed',
+            'denied',
+            {},
+            undefined,
+            diagnostic,
+          );
+        return read(owner, name);
+      };
+      const selection = await f.select();
+      const result = await f.pickup({ selection });
+      assert.equal(result.status, 'assigned');
+      assert.match(
+        result.response,
+        /owner\/other.*eligible count unavailable.*github-notification-request-failed.*Repository access denied/,
+      );
+      assert.match(result.response, /owner\/repo.*1 of 1 assigned.*1 eligible/);
+      assert.deepEqual(result.allowances?.[1]?.providerDiagnostic, diagnostic);
+      assert.equal(f.effects.writes, 1);
+    });
     it(`should retain label filters for preferred fallback through ${runtime}`, async () => {
       const f = await fixture(runtime, false, 'prefer');
       await f.configure((source) => {

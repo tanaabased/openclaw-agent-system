@@ -15,6 +15,135 @@ import fixture from './issue-pickup-selection-fixture.ts';
 
 describe('agent/issue-pickup', () => {
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should stop on shared authentication failure before comparing repositories in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      f.addRepository('other');
+      f.policy.issuePickup!.projects.push({
+        repository: 'owner/other',
+        milestone: { number: 10, policy: 'only' },
+        limit: 1,
+      });
+      const diagnostic = providerDiagnostic('github', 'api-request', 'authentication', {
+        httpStatus: 401,
+        providerMessage: 'Bad credentials',
+      });
+      f.client.getRepository = async () => {
+        throw new GitHubWorkEventClientError(
+          'github-authentication-failed',
+          'denied',
+          {},
+          undefined,
+          diagnostic,
+        );
+      };
+      const result = await f.run();
+      assert.equal(result.status, 'failed');
+      assert.ok('providerDiagnostic' in result);
+      assert.deepEqual(result.providerDiagnostic, diagnostic);
+      assert.equal(f.effects.writes, 0);
+    });
+    it(`should scope repository guidance and reload inline edits next scan in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      f.addRepository('other');
+      const pickup = f.policy.issuePickup!;
+      pickup.projects[0]!.selection = { guidance: 'prefer repo fixes' };
+      pickup.projects.push({
+        repository: 'owner/other',
+        milestone: { number: 10, policy: 'only' },
+        limit: 1,
+        selection: { guidance: 'prefer other releases' },
+      });
+      const options = await f.run();
+      assert.ok('repositoryGuidance' in options && options.repositoryGuidance);
+      assert.equal(options.guidance, 'choose useful, ready work');
+      assert.deepEqual(options.repositoryGuidance, {
+        'owner/repo': { source: 'inline', content: 'prefer repo fixes' },
+        'owner/other': { source: 'inline', content: 'prefer other releases' },
+      });
+      assert.deepEqual(
+        new Set(options.candidates?.map((entry) => entry.repository)),
+        new Set(['owner/repo', 'owner/other']),
+      );
+      const oldDigest = options.digest;
+      pickup.projects[1]!.selection = { guidance: 'prefer other bugs' };
+      f.tx.runId = 'edited-scan';
+      const edited = await f.run();
+      assert.ok('repositoryGuidance' in edited && edited.repositoryGuidance);
+      assert.notEqual(edited.digest, oldDigest);
+      assert.equal(edited.repositoryGuidance['owner/other']!.content, 'prefer other bugs');
+      const result = await f.run({
+        selection: {
+          issueNodeId: null,
+          rationale: 'none ready',
+        },
+      });
+      assert.ok('selectionGuidance' in result && result.selectionGuidance);
+      const effective = result.selectionGuidance.content;
+      assert.ok(
+        effective.indexOf(pickupSelectionInstructions) < effective.indexOf('choose useful'),
+      );
+      assert.ok(effective.indexOf('choose useful') < effective.indexOf('prefer repo fixes'));
+      assert.match(effective, /owner\/other only.*\nprefer other bugs/);
+      assert.deepEqual(f.state.projectPickup!.operations, []);
+      assert.equal(f.effects.writes, 0);
+    });
+
+    for (const boundary of ['getRepository', 'getMilestone', 'discoverProject'] as const) {
+      it(`should preserve a ${boundary} failure and select from a readable repository in ${runtime}`, async () => {
+        const f = fixture(runtime);
+        const other = f.addRepository('other', 2);
+        f.policy.issuePickup!.projects.push({
+          repository: 'owner/other',
+          milestone: { number: 10, policy: 'only' },
+          limit: 1,
+        });
+        const diagnostic = providerDiagnostic('github', 'api-request', 'transport', {
+          httpStatus: 502,
+          providerMessage: 'Upstream repository read failed',
+        });
+        const failure = new GitHubWorkEventClientError(
+          'github-notification-request-failed',
+          'read failed',
+          {},
+          undefined,
+          diagnostic,
+        );
+        const read = f.client[boundary];
+        Object.assign(f.client, {
+          [boundary]: async (owner: string, name: string, ...args: unknown[]) => {
+            if (name === 'repo') throw failure;
+            return Reflect.apply(read!, f.client, [owner, name, ...args]);
+          },
+        });
+        const options = await f.run();
+        assert.ok('candidates' in options && options.candidates);
+        assert.deepEqual(
+          options.candidates.map((entry) => entry.repository),
+          ['owner/other', 'owner/other'],
+        );
+        const result = await f.run({
+          selection: {
+            issueNodeId: options.candidates[0]!.nodeId,
+            rationale: 'readable and ready',
+            shortlist: [options.candidates[0]!.nodeId],
+          },
+        });
+        assert.equal(result.status, 'assigned');
+        assert.equal(result.repository, 'owner/other');
+        assert.equal(result.allowances?.[0]?.code, failure.code);
+        assert.deepEqual(result.allowances?.[0]?.providerDiagnostic, diagnostic);
+        assert.equal(result.allowances?.[0]?.eligible, undefined);
+        assert.equal(result.allowances?.[1]?.eligible, 2);
+        assert.deepEqual(
+          result.allowances?.map((entry) => entry.used),
+          [0, 1],
+        );
+        assert.equal(f.state.projectPickup!.charges![0]!.repositoryNodeId, other.repository.nodeId);
+        assert.equal(f.effects.writes, 1);
+        assert.equal(f.state.projectPickup!.operations[0]!.repositoryGuidance, undefined);
+        assert.ok(Value.Check(pickupOperationSchema, f.state.projectPickup!.operations[0]));
+      });
+    }
     for (const guidance of [undefined, 'prefer urgent work']) {
       it(`should report the effective comparison guidance without retaining it in ${runtime} with custom guidance ${guidance !== undefined}`, async () => {
         const f = fixture(runtime);
@@ -796,7 +925,7 @@ describe('agent/issue-pickup', () => {
       },
     });
     assert.equal(result.status, 'assigned');
-    assert.equal(result.allowances?.[0]?.code, 'issue-pickup-repository-unavailable');
+    assert.equal(result.allowances?.[0]?.code, 'github-notification-resource-missing');
   });
 
   it('should recheck a lowered repository limit before writing a prepared selection', async () => {
