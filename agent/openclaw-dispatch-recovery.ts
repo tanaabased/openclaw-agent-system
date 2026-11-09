@@ -15,7 +15,7 @@ export default async function recoverOpenClawTask(options: {
   manifest: AgentManifest;
   workspace: string;
   caller: DispatchCaller;
-  input: { id: string; pullRequest: string; digest?: string };
+  input: { id: string; pullRequest: string; digest?: string; apply?: boolean };
   operator: boolean;
   authority: DispatchAuthority;
 }) {
@@ -70,6 +70,7 @@ export default async function recoverOpenClawTask(options: {
           now: entry.now,
           issueUrl: `https://github.com/${intake.repository.owner.login}/${intake.repository.name}/issues/${intake.issue.number}`,
           digest: input.digest,
+          apply: input.apply,
           save,
           fresh: entry.assertCurrent,
           ...(!('initiation' in intake) && service.dependencies.claims

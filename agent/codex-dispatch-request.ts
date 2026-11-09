@@ -18,7 +18,7 @@ const schemas = {
   next: object({ projects: Type.Optional(Type.Unknown()), threads: Type.Optional(Type.Unknown()) }),
   report: object({ automationId: Type.String(), currentTimeIso: Type.String() }),
   handoff: object({ ...recovery, apply: Type.Optional(Type.Boolean()) }),
-  reset: object(recovery),
+  reset: object({ ...recovery, apply: Type.Optional(Type.Boolean()) }),
   retire: Type.Union([
     object({
       ...recovery,
@@ -27,9 +27,15 @@ const schemas = {
     }),
     object(nativeRetirementProperties),
   ]),
-  recover: object({ ...recovery, pullRequest: Type.String({ minLength: 1, maxLength: 4096 }) }),
+  recover: object({
+    ...recovery,
+    apply: Type.Optional(Type.Boolean()),
+    pullRequest: Type.String({ minLength: 1, maxLength: 4096 }),
+  }),
   'retry-denied': object({
     ...recovery,
+    apply: Type.Optional(Type.Boolean()),
+    renewAuthorization: Type.Optional(Type.Boolean()),
     approvedCallId: Type.Optional(Type.String({ pattern: '\\S' })),
   }),
   prepare: object({

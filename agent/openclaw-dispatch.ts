@@ -142,6 +142,43 @@ export default class OpenClawDispatch {
     if (!Value.Check(dispatchModelParameters, input as unknown))
       throw new Error('dispatch-model-request-invalid');
     let request = input;
+    if (input.action === 'retry') {
+      const current = await this.scope(manifest, workspace);
+      const record = nativeOperatorSelection(
+        input,
+        (await current.journal.read()).records,
+        current.admitted.records,
+        caller.sessionKey,
+      );
+      request = { action: 'retry', id: record.id };
+    }
+    if (input.action === 'recover') {
+      const current = await this.scope(manifest, workspace);
+      const record = await openClawEntryContext(
+        {
+          manifest,
+          workspace,
+          caller,
+          action: input,
+          operator,
+          authority,
+          dependencies: this.dependencies,
+        },
+        async (entry) =>
+          nativeOperatorSelection(
+            input,
+            (await current.journal.read()).records,
+            current.admitted.records,
+            caller.sessionKey,
+            entry,
+          ),
+      );
+      const authored = { ...input };
+      delete authored.target;
+      delete authored.chat;
+      delete authored.preview;
+      request = { ...authored, id: record.id, apply: !input.preview };
+    }
     if (input.action === 'retire') {
       const authored = { ...input };
       delete authored.target;

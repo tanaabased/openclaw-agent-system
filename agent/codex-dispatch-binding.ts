@@ -13,6 +13,7 @@ import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 import { Value } from 'typebox/value';
 import nativeOperatorSelection from './native-operator-selection.ts';
 import nativeFeedbackReconciliation from './native-feedback-reconciliation.ts';
+import { codexRecoveryModelSchema } from '../tools/dispatch/recovery-schema.ts';
 
 /** Read existing custody; the dispatch owner still verifies activation and the live occurrence. */
 export default async function codexDispatchBinding(
@@ -21,7 +22,14 @@ export default async function codexDispatchBinding(
   threadId: string,
 ) {
   assertNativeContextInput(input);
-  if (!Value.Check(dispatchModelParameters, input))
+  if (
+    !Value.Check(
+      ['reset', 'retry-denied'].includes(String(input.action))
+        ? codexRecoveryModelSchema
+        : dispatchModelParameters,
+      input as unknown,
+    )
+  )
     throw new Error('dispatch-model-request-invalid');
   if (input.action === 'retire' && input.native)
     return { action: 'retire', native: input.native, apply: !input.preview };
@@ -48,17 +56,28 @@ export default async function codexDispatchBinding(
   const journal = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
   const state = await journal.read();
   const admitted = managedIssueState(await current.store.read(), state.records);
-  const record =
-    input.action === 'retire'
-      ? nativeOperatorSelection(input, state.records, admitted?.records ?? [], threadId)
-      : nativeDispatchSelection(input, state.records, admitted?.records ?? [], threadId);
+  let invocation;
+  if (['recover', 'reset', 'retry-denied'].includes(String(input.action))) {
+    const connection = await connectCodexThreads(current.workspace, current.codexHome);
+    try {
+      invocation = await codexDispatchNative(connection.request).operatorInput(threadId);
+    } finally {
+      await connection.close();
+    }
+  }
+  const record = ['retire', 'recover', 'reset', 'retry-denied'].includes(String(input.action))
+    ? nativeOperatorSelection(input, state.records, admitted?.records ?? [], threadId, invocation)
+    : nativeDispatchSelection(input, state.records, admitted?.records ?? [], threadId);
   const authored: Record<string, unknown> = { ...input };
   delete authored.target;
   delete authored.preview;
+  delete authored.chat;
   return {
     ...authored,
     id: record.id,
-    ...(input.action === 'retire' ? { apply: !input.preview } : {}),
+    ...(['retire', 'recover', 'reset', 'retry-denied'].includes(String(input.action))
+      ? { apply: !('preview' in input && input.preview) }
+      : {}),
     ...(input.action === 'prepare' ? { digest: nativeDispatchDigest(record, 'codex') } : {}),
   };
 }

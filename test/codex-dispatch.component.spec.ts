@@ -587,11 +587,7 @@ describe('agent/codex-dispatch', () => {
       request('recover', input, { threadId: native!.id }),
       /operator-caller-required/,
     );
-    const applied = await request(
-      'recover',
-      { ...input, digest: preview.digest },
-      { threadId: 'operator' },
-    );
+    const applied = await request('recover', { ...input, apply: true }, { threadId: 'operator' });
     assert.equal(applied.status, 'recovery-ready');
     const after = await store.read();
     assert.equal(after.records.length, 2);
@@ -3132,10 +3128,17 @@ describe('agent/codex-dispatch', () => {
       await save();
     });
     await reassign();
-    deps.native!.deniedCreation = async (_source, expected, prepared, approvedCallId) => {
+    deps.native!.deniedCreation = async (
+      _source,
+      expected,
+      prepared,
+      approvedCallId,
+      renewAuthorization,
+    ) => {
       assert.deepEqual(expected, first.request);
       assert.ok(prepared.turnId);
-      if (approvedCallId !== 'denied-call') throw new Error('dispatch-denial-approval-required');
+      if (!renewAuthorization && approvedCallId !== 'denied-call')
+        throw new Error('dispatch-denial-approval-required');
       return { turnId: 'denied-turn', callId: 'denied-call' };
     };
     const operator = { threadId: 'operator' };
@@ -3152,7 +3155,13 @@ describe('agent/codex-dispatch', () => {
     );
     fixture.item.state = 'open';
     assert.equal(
-      (await request('retry-denied', { ...input, digest: preview.digest }, operator)).status,
+      (
+        await request(
+          'retry-denied',
+          { id: first.id, apply: true, renewAuthorization: true },
+          operator,
+        )
+      ).status,
       'retry-ready',
     );
     const retained = (await store.read()).records[0]!;

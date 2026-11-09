@@ -78,7 +78,7 @@ describe('native current-task context inputs', () => {
         );
       }
     }
-    for (const action of ['result', 'cancel'])
+    for (const action of ['result', 'cancel', 'retry', 'retry-denied'])
       assert.deepEqual(
         await codexContextRequest('private', 'continuation', { action }, 'thread', async () => ({
           receipt: 'verified-owner',

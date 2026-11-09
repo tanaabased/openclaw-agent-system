@@ -165,6 +165,13 @@ describe('agent/codex-dispatch-native', () => {
       automatic.deniedCreation('intake', expected, prepared, 'another-call'),
       /dispatch-denial-approval-required/,
     );
+    assert.deepEqual(
+      await automatic.deniedCreation('intake', expected, prepared, undefined, true),
+      {
+        turnId: 'turn',
+        callId: 'call',
+      },
+    );
     assert.deepEqual(await automatic.deniedCreation('intake', expected, prepared, 'call'), {
       turnId: 'turn',
       callId: 'call',

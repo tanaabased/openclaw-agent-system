@@ -20,7 +20,9 @@ export function isNativeContextRequest(route: string, input: Record<string, unkn
         'delivery',
       ].includes(String(input.action))) ||
     (route === 'continuation' &&
-      ['context', 'result', 'cancel', 'delivery'].includes(String(input.action))) ||
+      ['context', 'result', 'cancel', 'delivery', 'retry', 'retry-denied'].includes(
+        String(input.action),
+      )) ||
     route === 'delivery' ||
     isNativeFeedbackRequest(route, input)
   );
@@ -38,6 +40,7 @@ export function assertNativeContextInput(input: Record<string, unknown>) {
     'digest',
     'previousResultDigest',
     'apply',
+    'approvedCallId',
   ])
     if (Object.hasOwn(input, field)) throw new Error('native-context-binding-override');
 }

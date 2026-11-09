@@ -45,6 +45,7 @@ export default async function recoverIssueTask<R extends SharedDispatchRecord>(i
   issueUrl: string;
   now: number;
   digest?: unknown;
+  apply?: boolean;
   mode?: 'plan' | 'work' | 'auto';
   effects: Record<string, boolean | undefined>;
   revalidate(): Promise<unknown>;
@@ -119,7 +120,7 @@ export default async function recoverIssueTask<R extends SharedDispatchRecord>(i
   const claim = await input.claim?.('preview');
   const digest = automationHash({ record, operator, native, adopted, manifestDigest, id, claim });
   await fresh();
-  if (input.digest === undefined)
+  if (!input.apply && input.digest === undefined)
     return {
       status: 'recovery-available',
       id: record.id,
@@ -129,9 +130,9 @@ export default async function recoverIssueTask<R extends SharedDispatchRecord>(i
       pullRequest: adopted,
       preserved: { threadId: record.threadId, worktree: record.worktree },
       instruction:
-        'Approve this exact replacement with its digest. Preserve old work and history; supersede only this installation’s managed task. No remote computer is disabled and no PR is published.',
+        'Use the same issue target and pullRequest without preview to request replacement. Preserve old work and history; supersede only this installation’s managed task. No remote computer is disabled and no PR is published.',
     };
-  if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
+  if (!input.apply && input.digest !== digest) throw new Error('dispatch-recovery-stale');
   const latest = await observe();
   const latestOperator = await operatorInput();
   if (

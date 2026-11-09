@@ -38,8 +38,6 @@ export const requestSchema = Type.Object(
     id: Type.Optional(Type.String()),
     material: Type.Optional(implementationMaterialSchema),
     decision: Type.Optional(implementationDecisionSchema),
-    digest: Type.Optional(Type.String()),
-    approvedCallId: Type.Optional(Type.String()),
     result: Type.Optional(implementationResultSchema),
     delivery: Type.Optional(Type.Unknown()),
   },

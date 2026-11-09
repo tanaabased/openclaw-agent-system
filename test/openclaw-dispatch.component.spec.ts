@@ -9357,17 +9357,33 @@ describe('agent/openclaw issue dispatch', () => {
         /chat-active-or-unverified/,
       );
       histories.get(predecessor.threadId!)!.active = false;
-      const applied = await service.run(
+      const applied = await service.runModel(
         manifest,
         root,
         operator,
-        { ...action, digest: preview.digest },
+        {
+          action: 'recover',
+          target: 'https://github.com/owner/repo/issues/3',
+          pullRequest: action.pullRequest,
+        },
         true,
       );
       assert.equal(applied.status, 'recovery-ready', JSON.stringify(applied));
       assert.ok('successorId' in applied && typeof applied.successorId === 'string');
       assert.equal(
-        (await service.run(manifest, root, operator, action, true)).status,
+        (
+          await service.runModel(
+            manifest,
+            root,
+            operator,
+            {
+              action: 'recover',
+              target: 'https://github.com/owner/repo/issues/3',
+              pullRequest: action.pullRequest,
+            },
+            true,
+          )
+        ).status,
         'recovery-ready',
       );
       const old = await record();

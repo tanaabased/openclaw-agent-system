@@ -30,11 +30,17 @@ export default async function codexContextRequest(
     | undefined
   > = readCodexTaskOwner,
 ) {
+  if (route === 'continuation' && input.action === 'reconcile') {
+    assertNativeContextInput(input);
+    if (!threadId) throw new Error('turn-context-native-caller-required');
+    return codexDispatchBinding(pluginData, input, threadId);
+  }
   if (
     route === 'dispatch' &&
     (isNativeDispatchSelection(input.action) ||
       input.action === 'report' ||
-      input.action === 'retire')
+      input.action === 'retire' ||
+      ['recover', 'reset', 'retry-denied'].includes(String(input.action)))
   ) {
     assertNativeContextInput(input);
     if (!threadId) throw new Error('turn-context-native-caller-required');
