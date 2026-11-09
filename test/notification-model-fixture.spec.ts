@@ -296,8 +296,11 @@ for (const scenario of [
     });
   }
 
-  async function appendPagedContext(input: ChatCompletionRequest, value: Record<string, unknown>) {
-    const request = { action: 'implementation-context' };
+  async function appendPagedContext(
+    input: ChatCompletionRequest,
+    value: Record<string, unknown>,
+    request: Record<string, unknown> = { action: 'implementation-context' },
+  ) {
     const receipts: unknown[] = [];
     const output = (response: unknown, args: Record<string, unknown>) => {
       const projected = nativeMaterialResponse(response, 'agent_system_dispatch', args);
@@ -1124,15 +1127,21 @@ for (const scenario of [
           const answer = request(
             `Answer for managed issue ${id}: Yes, after evidence is captured. Do not push or publish a PR.`,
           );
-          assert.equal((await action(answer, 'implementation-context')).scope, 'local');
-          await appendPagedContext(answer, {
-            id,
-            plan: retainedPlan,
-            status: 'verified',
-            runtime: 'openclaw',
-            publicationAuthorized: false,
-            project: { path: '/tmp/owned' },
-          });
+          const answerContext = await action(answer, 'implementation');
+          assert.equal(answerContext.operation, 'context');
+          assert.equal(answerContext.scope, 'local');
+          await appendPagedContext(
+            answer,
+            {
+              id,
+              plan: retainedPlan,
+              status: 'verified',
+              runtime: 'openclaw',
+              publicationAuthorized: false,
+              project: { path: '/tmp/owned' },
+            },
+            { action: 'implementation', operation: 'context' },
+          );
           for (const stage of ['apply', 'add', 'commit']) {
             const resumed = await response(answer);
             assert.ok('toolCalls' in resumed);
