@@ -347,6 +347,7 @@ describe('agent/codex-runtime', () => {
           input: JSON.stringify({ action: 'summary', operation: 'compose' }),
           encoding: 'utf8',
           timeout: 10000,
+          env: { ...process.env, CODEX_THREAD_ID: 'native-caller' },
         },
       );
       assert.ifError(result.error);
