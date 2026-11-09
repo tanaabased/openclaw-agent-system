@@ -3110,6 +3110,43 @@ describe('agent/codex-dispatch', () => {
     assert.equal(retained[0]!.deniedCreations.length, 10);
   });
 
+  it('should allow verified operator recovery from an unrelated managed task chat', async () => {
+    const first = await prepare();
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      state.records.push({
+        ...structuredClone(state.records[0]!),
+        id: 'b'.repeat(64),
+        issueKey: 'c'.repeat(64),
+        sourceThreadId: 'operator',
+        threadId: 'operator',
+      });
+      await save();
+    });
+    const unrelated = structuredClone((await store.read()).records[1]);
+    const input = { id: first.id, apply: true, renewAuthorization: true };
+    await assert.rejects(
+      request('retry-denied', input, {
+        threadId: 'operator',
+        native: {
+          ...deps.native!,
+          operatorInput: async () => {
+            throw new Error('reply-native-user-input-required');
+          },
+        },
+      }),
+      /reply-native-user-input-required/,
+    );
+    assert.equal(
+      (await request('retry-denied', input, { threadId: 'operator' })).status,
+      'retry-ready',
+    );
+    const state = await store.read();
+    assert.equal(state.records[0]!.deniedCreations?.at(-1)?.approvedBy, 'operator');
+    assert.deepEqual(state.records[1], unrelated);
+  });
+
   it('should recover an explicitly approved denied request after reassignment without retaining its waiting continuation', async () => {
     const first = await prepare();
     const current = await selectCodexIntake(pluginData, deps);

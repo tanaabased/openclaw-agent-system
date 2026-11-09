@@ -275,14 +275,12 @@ export default async function recoverDispatch(
     if (input.apply || input.renewAuthorization)
       await withNative((host) => host.operatorInput(caller));
     if (
-      state.records.some((entry) =>
-        [
-          entry.sourceThreadId,
-          entry.preparationObservation?.sourceThreadId,
-          entry.threadId,
-          entry.receiptThreadId,
-        ].includes(caller),
-      )
+      [
+        record.sourceThreadId,
+        record.preparationObservation?.sourceThreadId,
+        record.threadId,
+        record.receiptThreadId,
+      ].includes(caller)
     )
       throw new Error('dispatch-operator-caller-required');
     if (record.denial?.operation === 'prepare') {
