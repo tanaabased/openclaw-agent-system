@@ -1,3 +1,4 @@
+import { intakeFixture } from './github-intake-fixture.ts';
 import assessmentMaterial from '../agent/assessment-material.ts';
 import assert from 'node:assert/strict';
 
@@ -85,6 +86,97 @@ describe('agent/task-turn-context', () => {
       assert.equal(context.issueStage, 'implementation');
     });
   }
+
+  for (const runtime of ['codex', 'openclaw'] as const)
+    for (const stage of ['assessment', 'implementation'] as const)
+      for (const failure of ['skill', 'guidance'] as const)
+        it(`should preserve ${runtime} task facts when ${stage} ${failure} is unavailable`, async () => {
+          const record = {
+            id: 'owner',
+            worktree: '/task',
+            ...(stage === 'implementation'
+              ? { progression: { stage: 'implementation', via: 'work' } }
+              : {}),
+          } as SharedDispatchRecord;
+          const before = structuredClone(record);
+          const context = await taskTurnContext({
+            runtime,
+            workspace: '/fixture',
+            target: 'https://github.com/org/repo/issues/1',
+            record,
+            stage,
+            manifest: {
+              schemaVersion: 1,
+              agent: { id: 'agent' },
+              github: {
+                notifications: {
+                  ...intakeFixture().policy,
+                  issueAssignment: {
+                    ...intakeFixture().policy.issueAssignment,
+                    mode: 'plan',
+                    [stage]: {
+                      skill: 'custom:required',
+                      ...(failure === 'guidance' ? { guidance: '' } : {}),
+                    },
+                  },
+                },
+              },
+            } as AgentManifest,
+            resolveSkill: async (name) => {
+              if (failure === 'skill') throw new Error('dispatch-assessment-skill-unavailable');
+              return {
+                name,
+                path: '/skills/required/SKILL.md',
+                scope: 'user',
+                digest: 'a'.repeat(64),
+              };
+            },
+          });
+          assert.equal(context.status, 'verified');
+          assert.equal(context.evidence.source, 'https://github.com/org/repo/issues/1');
+          assert.equal(context.project.path, '/task');
+          assert.equal(context.mode, stage === 'implementation' ? 'work' : 'plan');
+          assert.equal(context[stage], undefined);
+          assert.deepEqual(context.contextLimitations, [
+            {
+              scope: stage,
+              code:
+                failure === 'skill'
+                  ? 'dispatch-assessment-skill-unavailable'
+                  : 'dispatch-assessment-guidance-content-invalid',
+            },
+          ]);
+          assert.match(context.instructions, /Do not substitute a default skill/);
+          assert.deepEqual(record, before);
+        });
+
+  for (const failed of ['assessment', 'reply'] as const)
+    it(`should retain verified feedback and the other selection when ${failed} guidance fails`, async () => {
+      const feedback = {
+        replyTarget: 'https://github.com/org/repo/issues/1#issuecomment-2',
+      } as NonNullable<Parameters<typeof taskTurnContext>[0]['feedback']>;
+      const context = await taskTurnContext({
+        runtime: 'codex',
+        manifest: { agent: { id: 'agent' } } as AgentManifest,
+        workspace: '/workspace',
+        target: 'https://github.com/org/repo/issues/1',
+        record: { id: 'owner' } as SharedDispatchRecord,
+        stage: 'feedback',
+        feedback,
+        resolveSkill: async (name) => {
+          if ((name.includes('github-reply') ? 'reply' : 'assessment') === failed)
+            throw new Error('secret prose must never be returned');
+          return { name, path: '/skills/SKILL.md', scope: 'user', digest: 'a'.repeat(64) };
+        },
+      });
+      assert.deepEqual(context.feedback, feedback);
+      assert.ok(context[failed === 'assessment' ? 'reply' : 'assessment']);
+      assert.equal(context[failed], undefined);
+      assert.deepEqual(context.contextLimitations, [
+        { scope: failed, code: 'workflow-guidance-unavailable' },
+      ]);
+      assert.doesNotMatch(JSON.stringify(context), /secret prose/);
+    });
 
   it('should reject inactive owners before reading configured skills', async () => {
     for (const inactive of [{ retired: {} }, { reset: {} }, { supersededBy: 'other' }]) {

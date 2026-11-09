@@ -183,7 +183,9 @@ export default async function readCodexTurnTask(
     if (next?.receipt !== owner.receipt || next.currentTurn.turnId !== owner.currentTurn.turnId)
       throw new Error('turn-context-native-caller-changed');
   };
-  const connection = await (deps.connect ?? connectCodexThreads)(workspace, owner.codexHome);
+  let connection: ReturnType<typeof connectCodexThreads> | undefined;
+  const connect = () =>
+    (connection ??= (deps.connect ?? connectCodexThreads)(workspace, owner.codexHome));
   try {
     const selected =
       owner.feedbackContextRequest &&
@@ -232,12 +234,20 @@ export default async function readCodexTurnTask(
       stage: owner.stage,
       feedback,
       feedbackLimitation,
-      resolveSkill: (id) =>
-        (deps.skill ?? codexAssessmentSkill)(connection.request, facts.worktree ?? workspace, id),
+      resolveSkill: async (id) =>
+        (deps.skill ?? codexAssessmentSkill)(
+          (await connect()).request,
+          facts.worktree ?? workspace,
+          id,
+        ),
     });
     await assertCurrent();
     return { ...facts, ...context };
   } finally {
-    await connection.close();
+    if (connection)
+      await connection.then(
+        (value) => value.close(),
+        () => {},
+      );
   }
 }

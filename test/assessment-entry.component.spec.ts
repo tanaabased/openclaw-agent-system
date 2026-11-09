@@ -407,6 +407,44 @@ describe('agent/assessment-entry', () => {
         JSON.stringify(revision.evidence) === JSON.stringify({ source: target }),
     );
   });
+  for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should preserve delivered ${runtime} planning facts when skill lookup fails`, async () => {
+      deps.binding.runtime = runtime;
+      const nativeContext = nativeIssueContext({
+        id: 'delivered',
+        phase: 'complete',
+        worktree: root,
+      });
+      const before = structuredClone(nativeContext);
+      deps.managed = async () => ({
+        digest: 'c'.repeat(64),
+        path: root,
+        nativeContext,
+        entries: async () => {
+          throw new Error('must not read historical assessments');
+        },
+      });
+      deps.resolveSkill = async () => {
+        throw new Error('PRIVATE skill failure');
+      };
+      const complete = await hydrateImplementation(await call('context'), (read) =>
+        assessmentEntry(read, deps),
+      );
+      assert.equal(complete.status, 'native');
+      assert.deepEqual(complete.project, { path: root });
+      assert.deepEqual(complete.evidence, { source: target });
+      assert.equal(complete.assessment, undefined);
+      assert.deepEqual(complete.contextLimitations, [
+        { scope: 'assessment', code: 'workflow-guidance-unavailable' },
+      ]);
+      assert.doesNotMatch(JSON.stringify(complete), /PRIVATE/);
+      assert.deepEqual(nativeContext, before);
+      deps.assertCurrent = async () => {
+        throw new Error('native-owner-changed');
+      };
+      await assert.rejects(call('context'), /native-owner-changed/);
+    });
+  }
   for (const runtime of ['codex', 'openclaw'] as const)
     it(`should keep post-delivery ${runtime} planning native without creating or revising an assessment`, async () => {
       deps.binding.runtime = runtime;

@@ -62,6 +62,27 @@ describe('agent/codex-task-context', () => {
     assert.deepEqual(owner, before);
   });
 
+  it('should preserve bound task facts when the supplementary native connection fails', async () => {
+    const before = structuredClone(owner);
+    const context = await readCodexTurnTask(
+      '/data',
+      { threadId: 'native-chat' },
+      {
+        owner: async () => owner,
+        connect: async () => {
+          throw new Error('codex-host-access-required');
+        },
+      },
+    );
+    assert.equal(context?.status, 'verified');
+    assert.equal(context?.evidence.source, 'https://github.com/org/repo/issues/1');
+    assert.equal(context?.assessment, undefined);
+    assert.deepEqual(context?.contextLimitations, [
+      { scope: 'assessment', code: 'codex-host-access-required' },
+    ]);
+    assert.deepEqual(owner, before);
+  });
+
   it('should retain usable task context when exact feedback evidence is unavailable', async () => {
     const selected = { ...owner, stage: 'feedback', feedbackContextRequest: undefined };
     const context = await readCodexTurnTask(

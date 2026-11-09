@@ -361,86 +361,90 @@ export default class OpenClawDispatchContext {
     if (!record || !openclawTurnContext(record, binding)) return;
     if (!admission) throw new Error('turn-context-admission-unavailable');
     const assertCurrent = async () => {
+      authority.signal?.throwIfAborted();
       await authority.assertCurrent?.();
       const next = (await journal.read()).records.find((entry) => entry.id === record.id);
       if (!next || !openclawTurnContext(next, binding))
         throw new Error('turn-context-native-caller-changed');
     };
-    return this.dependencies.credential.use({ ...authority, assertCurrent }, async (request) => {
-      let feedback;
-      let feedbackLimitation;
-      let feedbackTurn = Boolean(selectedOpenClawFeedback(record, binding.runId!));
-      const caller = {
-        sessionKey: binding.sessionKey!,
-        sessionId: binding.sessionId!,
-        runId: binding.runId!,
-      };
-      try {
-        const selected = await resolveOpenClawTurnFeedback(
-          record,
-          caller,
-          request,
-          this.dependencies.config(),
-          binding.inputId,
+    const nativeAuthority = { ...authority, assertCurrent };
+    let feedback;
+    let feedbackLimitation;
+    let feedbackTurn = Boolean(selectedOpenClawFeedback(record, binding.runId!));
+    const caller = {
+      sessionKey: binding.sessionKey!,
+      sessionId: binding.sessionId!,
+      runId: binding.runId!,
+    };
+    try {
+      const selected = record.feedback?.events.length
+        ? await this.dependencies.credential.use(nativeAuthority, (request) =>
+            resolveOpenClawTurnFeedback(
+              record,
+              caller,
+              request,
+              this.dependencies.config(),
+              binding.inputId,
+            ),
+          )
+        : undefined;
+      const event = selected?.event;
+      feedbackTurn ||= Boolean(event);
+      if (event) {
+        const provider = await this.dependencies.feedbackConnect?.(
+          { manifest, workspaceDir: workspace },
+          authority.signal ?? new AbortController().signal,
         );
-        const event = selected?.event;
-        feedbackTurn ||= Boolean(event);
-        if (event) {
-          const provider = await this.dependencies.feedbackConnect?.(
-            { manifest, workspaceDir: workspace },
-            authority.signal ?? new AbortController().signal,
-          );
-          if (!provider) throw new Error('feedback-provider-unavailable');
-          await authorizeFeedback({
-            conversation: true,
-            record,
-            event,
-            intake: admission,
-            policy: manifest.github!.notifications!,
-            provider,
-            assertCurrent,
-          });
-          feedback = feedbackInputContext({
-            event,
-            repository: `${admission.repository.owner.login}/${admission.repository.name}`,
-            mode: feedbackConversationMode(record, manifest.github!.notifications!),
-            issueStage: retainedIssueProgression(record)?.stage ?? 'planning',
-            self: JSON.parse(event.source).author?.nodeId === provider.identity.nodeId,
-          });
-        }
-      } catch (error) {
-        feedbackLimitation = { code: openClawDispatchFailureCode(error) };
+        if (!provider) throw new Error('feedback-provider-unavailable');
+        await authorizeFeedback({
+          conversation: true,
+          record,
+          event,
+          intake: admission,
+          policy: manifest.github!.notifications!,
+          provider,
+          assertCurrent,
+        });
+        feedback = feedbackInputContext({
+          event,
+          repository: `${admission.repository.owner.login}/${admission.repository.name}`,
+          mode: feedbackConversationMode(record, manifest.github!.notifications!),
+          issueStage: retainedIssueProgression(record)?.stage ?? 'planning',
+          self: JSON.parse(event.source).author?.nodeId === provider.identity.nodeId,
+        });
       }
-      const initial = [record.firstTurn?.runId, record.assessmentTurn?.runId].includes(
-        binding.runId,
-      );
-      const stage = feedbackTurn
-        ? 'feedback'
-        : retainedIssueProgression(record)
-          ? 'implementation'
-          : record.feedback?.events.length && !initial
-            ? 'conversation'
-            : 'assessment';
-      const context = await taskTurnContext({
-        runtime: 'openclaw',
-        manifest,
-        workspace,
-        record,
-        target: managedTargetUrl(admission),
-        stage,
-        feedback,
-        feedbackLimitation,
-        resolveSkill: (id) =>
+    } catch (error) {
+      feedbackLimitation = { code: openClawDispatchFailureCode(error) };
+    }
+    const initial = [record.firstTurn?.runId, record.assessmentTurn?.runId].includes(binding.runId);
+    const stage = feedbackTurn
+      ? 'feedback'
+      : retainedIssueProgression(record)
+        ? 'implementation'
+        : record.feedback?.events.length && !initial
+          ? 'conversation'
+          : 'assessment';
+    const context = await taskTurnContext({
+      runtime: 'openclaw',
+      manifest,
+      workspace,
+      record,
+      target: managedTargetUrl(admission),
+      stage,
+      feedback,
+      feedbackLimitation,
+      resolveSkill: (id) =>
+        this.dependencies.credential.use(nativeAuthority, (request) =>
           openClawSkill(request, { agentId: binding.agentId!, key: binding.sessionKey! }, id),
-        now: this.dependencies.now?.(),
-      });
-      await assertCurrent();
-      return {
-        record,
-        context,
-        repository: `${admission.repository.owner.login}/${admission.repository.name}`,
-      };
+        ),
+      now: this.dependencies.now?.(),
     });
+    await assertCurrent();
+    return {
+      record,
+      context,
+      repository: `${admission.repository.owner.login}/${admission.repository.name}`,
+    };
   }
 
   async reportScope(manifest: AgentManifest, workspace: string) {

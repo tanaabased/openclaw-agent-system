@@ -4853,6 +4853,54 @@ describe('agent/openclaw issue dispatch', () => {
     });
   }
 
+  for (const failure of ['transport', 'skill', 'guidance'] as const)
+    it(`should preserve openclaw hook task facts when supplementary ${failure} lookup fails`, async () => {
+      const input = await next();
+      await prepare(input);
+      await assess(input.id);
+      const before = await record();
+      if (failure === 'transport')
+        service = new OpenClawDispatch({
+          ...service.dependencies,
+          credential: {
+            async use() {
+              throw new Error('session-dispatch-transport-unavailable');
+            },
+          },
+        });
+      else
+        manifest.github!.notifications!.issueAssignment!.assessment =
+          failure === 'skill' ? { skill: 'missing' } : { guidance: '' };
+      const output = await service.promptContext(manifest, root, {
+        agentId: manifest.agent.id,
+        sessionKey: before.threadId,
+        sessionId: before.sessionCreation!.sessionId,
+        runId: before.assessmentTurn!.runId,
+      });
+      assert.ok(output);
+      const facts = JSON.parse(output.appendContext.split('\n')[1]!);
+      assert.equal(facts.status, 'verified');
+      assert.equal(facts.receipt, before.id);
+      assert.equal(facts.project.path, before.worktree);
+      assert.equal(
+        facts.evidence.source,
+        `https://github.com/owner/repo/issues/${fixture.item.number}`,
+      );
+      assert.equal(facts.assessment, undefined);
+      assert.deepEqual(facts.contextLimitations, [
+        {
+          scope: 'assessment',
+          code:
+            failure === 'transport'
+              ? 'session-dispatch-transport-unavailable'
+              : failure === 'skill'
+                ? 'dispatch-assessment-skill-unavailable'
+                : 'dispatch-assessment-guidance-content-invalid',
+        },
+      ]);
+      assert.deepEqual(await record(), before);
+    });
+
   it('should retain a full assessment with native caller binding and free capacity without another send', async () => {
     const input = await next();
     await prepare(input);

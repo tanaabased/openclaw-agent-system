@@ -126,6 +126,42 @@ describe('agent/implementation-entry', () => {
       await assert.rejects(implementationEntry({ ...request, target }, deps), /entry-unavailable/);
     });
 
+  for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should preserve delivered ${runtime} implementation facts when skill lookup fails`, async () => {
+      deps.binding.runtime = runtime;
+      const ownerId = 'd'.repeat(64);
+      const nativeContext = nativeIssueContext({ id: ownerId, phase: 'complete', worktree: root });
+      const before = structuredClone(nativeContext);
+      deps.managed = async () => ({
+        digest: 'c'.repeat(64),
+        owner: { id: ownerId },
+        path: root,
+        nativeContext,
+        entries: async () => {
+          throw new Error('must not read historical implementations');
+        },
+      });
+      deps.resolveSkill = async () => {
+        throw new Error('PRIVATE skill failure');
+      };
+      const complete = await hydrateImplementation(await call(), (read) =>
+        implementationEntry(read, deps),
+      );
+      assert.equal(complete.status, 'native');
+      assert.deepEqual(complete.project, { path: root });
+      assert.deepEqual(complete.evidence, { source: target });
+      assert.equal(complete.implementation, undefined);
+      assert.deepEqual(complete.contextLimitations, [
+        { scope: 'implementation', code: 'workflow-guidance-unavailable' },
+      ]);
+      assert.doesNotMatch(JSON.stringify(complete), /PRIVATE/);
+      assert.deepEqual(nativeContext, before);
+      deps.assertCurrent = async () => {
+        throw new Error('native-owner-changed');
+      };
+      await assert.rejects(call(), /native-owner-changed/);
+    });
+  }
   for (const runtime of ['codex', 'openclaw'] as const)
     it(`should refresh delivered ${runtime} context without another managed implementation round`, async () => {
       deps.binding.runtime = runtime;
