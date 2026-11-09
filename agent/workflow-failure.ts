@@ -22,7 +22,7 @@ export default function workflowFailure(error: unknown, fallback: string) {
     if (value instanceof ContextMaterialError && value.code.endsWith('-stale'))
       recovery ??= {
         instruction:
-          'Compare with the complete returned page request, preserving action, operation, identity, digest and offset. Correct an identifiable transcription mistake once; otherwise refresh the owning context and use its new requests without mixing versions.',
+          'Refresh the owning context and restart the affected field at offset 0 using its returned page requests. The runtime supplies the content version; do not supply identity or digest fields or mix pages from different versions.',
       };
     const entry = value as {
       snapshotConflict?: unknown;
