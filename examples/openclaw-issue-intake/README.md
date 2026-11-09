@@ -158,7 +158,7 @@ assessment_run=$(jq -er '.[0].assessmentTurn.runId' "$TMPDIR/notification-starte
 touch "$TMPDIR/notification-assessment-released-$receipt"
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$assessment_run" 600000
 jq -es '[.[].records[]] | length == 3 and all(.[]; .result == null and .stageReceipt == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
-jq -es --arg run "$assessment_run" '[.[] | (.drafts // [.])[] | select(.update != null and .receipt != null)] | length == 1 and any(.[0].update.facts[]; .reference == $run)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json
+jq -es --arg run "$assessment_run" '[.[] | (.drafts // [.])[] | select(.update != null and .receipt != null)] | length == 1 and .[0].turnId == $run' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json
 
 # should release the remaining responses and complete every native assessment
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-intake/tanaabot"
