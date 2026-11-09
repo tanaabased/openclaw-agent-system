@@ -90,8 +90,6 @@ fixtures.push(
           name: 'agent_system_model_routing',
           arguments: JSON.stringify({
             action: 'resolve',
-            manifestDigest: routingResult(request, inspectCall)!.manifestDigest,
-            instructionsDigest: routingResult(request, inspectCall)!.instructionsDigest,
             context: 'An unspecified task.',
             assessment: { complexity: 'unset', reason: 'No defensible tier.' },
             fallback: 'default',

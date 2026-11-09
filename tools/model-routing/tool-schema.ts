@@ -19,8 +19,6 @@ export const modelRoutingRequestSchema = Type.Union([
   Type.Object(
     {
       action: Type.Literal('resolve'),
-      manifestDigest: Type.String({ minLength: 1, maxLength: 128 }),
-      instructionsDigest: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
       context: modelRoutingContextSchema,
       assessment: assessmentSchema,
       evidence: Type.Optional(

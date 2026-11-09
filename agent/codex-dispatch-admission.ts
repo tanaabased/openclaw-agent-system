@@ -734,7 +734,6 @@ export async function prepareDispatch(
       current.digest,
       {
         action: 'resolve',
-        manifestDigest: current.digest,
         context: JSON.stringify({ source: snapshot.source, metadata: snapshot.metadata }),
         assessment: dispatchRoutingAssessment(input.assessment, metadata),
         ...(record.manualIssue?.selections?.routing

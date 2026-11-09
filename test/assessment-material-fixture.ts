@@ -62,7 +62,6 @@ export function hostedAssessmentContextFixture() {
       'c'.repeat(64),
       {
         action: 'resolve',
-        manifestDigest: 'c'.repeat(64),
         context: 'test',
         fallback: 'default',
         assessment: { complexity: 'low', reason: 'A bounded disposable documentation plan.' },

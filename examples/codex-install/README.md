@@ -248,9 +248,8 @@ plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/plugin-data"
 inspection=$(printf '%s\n' '{"action":"inspect"}' | node "$runtime" model-routing --plugin-data "$plugin_data")
-digest=$(printf '%s\n' "$inspection" | jq -r .manifestDigest)
-instructions=$(printf '%s\n' "$inspection" | jq -er 'select(.instructions.defaultSkill == true and (.instructions.guidance.content | contains("Preserve verified complexity."))) | .instructionsDigest')
-jq -n --arg digest "$digest" --arg instructions "$instructions" '{action:"resolve",manifestDigest:$digest,instructionsDigest:$instructions,context:{title:"Notification settings",body:"Add workflow enable controls."},assessment:{complexity:"medium",reason:"Extend existing configuration and scheduling."}}' \
+printf '%s\n' "$inspection" | jq -e 'select(.instructions.defaultSkill == true and (.instructions.guidance.content | contains("Preserve verified complexity.")))'
+jq -n '{action:"resolve",context:{title:"Notification settings",body:"Add workflow enable controls."},assessment:{complexity:"medium",reason:"Extend existing configuration and scheduling."}}' \
   | node "$runtime" model-routing --plugin-data "$plugin_data" \
   | jq -e '.status == "resolved" and .profile == "medium" and .candidate.model == "gpt-5.6-sol" and .candidate.thinking == "high" and .execution == "unverified"'
 

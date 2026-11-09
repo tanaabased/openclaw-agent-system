@@ -135,7 +135,6 @@ export default class OpenClawDispatchAdmission {
         current.manifestDigest,
         {
           action: 'resolve',
-          manifestDigest: current.manifestDigest,
           context: JSON.stringify({ source: snapshot.source, metadata: snapshot.metadata }),
           assessment: dispatchRoutingAssessment(input.assessment, metadata),
           ...(record.manualIssue?.selections?.routing
