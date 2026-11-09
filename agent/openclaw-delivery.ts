@@ -562,7 +562,7 @@ export function presentOpenClawDelivery(
   const presentation =
     githubNotificationPullRequestOpenedCard({
       issueNumber: managedPullRequest(intake) ? undefined : intake.issue.number,
-      updated: Boolean(managedPullRequest(intake)) || updatedSinceAnnouncement,
+      updated: updatedSinceAnnouncement,
       pullRequestNumber: receipt.pullRequestNumber,
       repositoryOwner: intake.repository.owner.login,
       repositoryName: intake.repository.name,
@@ -574,7 +574,6 @@ export function presentOpenClawDelivery(
       managedTargetUrl(intake),
       undefined,
       linkedDelivery?.announcementRecovery,
-      updatedSinceAnnouncement,
     ) +
     (notice ? '\n\n' + notice.message : '');
   return {

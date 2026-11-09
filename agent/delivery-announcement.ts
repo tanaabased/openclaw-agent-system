@@ -103,7 +103,6 @@ export function announcementPresentation(
   issueUrl: string,
   authorLogin = state?.authorLogin,
   recovery?: AnnouncementRecovery,
-  historical = false,
 ) {
   const confirmed = state?.receipt && !state.code && !recovery;
   const quote = state?.publicText
@@ -112,7 +111,7 @@ export function announcementPresentation(
         author: authorLogin
           ? { label: authorLogin, url: `https://github.com/${encodeURIComponent(authorLogin)}` }
           : undefined,
-        label: confirmed && historical ? 'Original PR announcement' : 'PR announcement',
+        label: confirmed ? 'Original PR announcement' : 'PR announcement',
         connector: 'by',
         publication: confirmed
           ? { url: `${issueUrl}#issuecomment-${state.receipt!.databaseId}` }

@@ -789,7 +789,7 @@ describe('agent/codex-delivery', () => {
     assert.equal(retained.issueBranch?.name, 'pirog-work');
     assert.equal(retained.delivery?.binding.branch, 'existing-work');
     assert.equal(retained.delivery?.pullRequest?.pullRequestNumber, 7);
-    assert.match(String((await request('present')).presentation), /Pull request updated/);
+    assert.match(String((await request('present')).presentation), /Pull request\n/);
   });
 
   it('should stop before an adopted push when its provider identity or native authority changes', async () => {
@@ -1121,7 +1121,7 @@ describe('agent/codex-delivery', () => {
       assert.equal((await request('announce', {})).status, 'announced');
       await request('announce');
       const shown = await request('present');
-      assert.match(String(shown.presentation), /Pull request opened/);
+      assert.match(String(shown.presentation), /Pull request/);
       assert.match(String(shown.presentation), /#issuecomment-91/);
       assert.equal(announcement.posts, 1);
       assert.match(announcement.comments[0]!.body, /pull\/7/);
@@ -1343,6 +1343,11 @@ describe('agent/codex-delivery', () => {
     };
     const linked = await request('link');
     assert.equal(linked.attached, true);
+    const shown = await request('present');
+    assert.ok('presentation' in shown);
+    assert.match(shown.presentation!, /Pull request\n/);
+    assert.match(shown.presentation!, /pull\/8/);
+    assert.doesNotMatch(shown.presentation!, /Pull request (opened|updated)/);
     assert.deepEqual((await store.read()).records[0]!.delivery, receipt);
     assert.equal(creates, 1);
   });
@@ -1589,7 +1594,7 @@ describe('agent/codex-delivery', () => {
     assert.equal(reconciled.status, 'ready');
     const presented = await request('present');
     assert.equal(presented.status, 'linked');
-    assert.match(String(presented.presentation), /Pull request opened/);
+    assert.match(String(presented.presentation), /Pull request/);
     assert.ok(reconciled.notices?.some((notice) => notice.severity === 'warning'));
   });
   it('should suppress retained ssh transport notices while preserving actionable warnings', async () => {
@@ -1916,6 +1921,33 @@ describe('agent/codex-delivery', () => {
     assert.equal(creates, 1);
     assert.equal(bodyWrites, 0);
   });
+  for (const snapshot of [true, false])
+    it(`should show neutral pr readback after metadata updates with snapshot ${snapshot}`, async () => {
+      await publish();
+      if (snapshot) {
+        await request('compose');
+        await request('candidate', { publicText: 'Delivers the requested change.' });
+        await request('announce', {});
+      }
+      await publish({ title: 'New title', body: 'Revised description.' });
+      const shown = await request('present');
+      assert.ok('presentation' in shown);
+      assert.match(shown.presentation!, /Pull request\n/);
+      assert.doesNotMatch(shown.presentation!, /Pull request (opened|updated)/);
+      assert.match(shown.presentation!, /pull\/7/);
+      assert.equal(pr!.title, 'New title');
+      assert.equal(creates, 1);
+      if (snapshot) {
+        assert.match(shown.presentation!, /Original PR announcement/);
+        assert.match(shown.presentation!, /#issuecomment-91/);
+        assert.match(shown.presentation!, /Delivers the requested change/);
+        const repeated = await request('compose');
+        assert.ok('presentation' in repeated);
+        assert.match(repeated.presentation!, /Original PR announcement/);
+        assert.match(repeated.presentation!, /#issuecomment-91/);
+      } else assert.doesNotMatch(shown.presentation!, /Original PR announcement/);
+      assert.equal(announcement.posts, snapshot ? 1 : 0);
+    });
   it('should preserve github body edits when explicitly updating only the title', async () => {
     await publish();
     pr!.body = 'Operator clarification. Closes #3';
@@ -1987,8 +2019,8 @@ describe('agent/codex-delivery', () => {
     await request('link', { pullRequest: url });
     const initial = await request('present');
     assert.ok('presentation' in initial);
-    assert.match(initial.presentation!, /Pull request opened/);
-    assert.doesNotMatch(initial.presentation!, /Original PR announcement/);
+    assert.match(initial.presentation!, /Pull request/);
+    assert.match(initial.presentation!, /Original PR announcement/);
     head = 'b'.repeat(40);
     await publish({ title: String(pr!.title), body: String(pr!.body) });
     assert.equal(remote, head);

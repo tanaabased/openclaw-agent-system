@@ -472,7 +472,7 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(record.work?.delivery?.pullRequest?.pullRequestNumber, 7);
     const shown = await request('present');
     assert.ok('presentation' in shown);
-    assert.match(String(shown.presentation), /Pull request updated/);
+    assert.match(String(shown.presentation), /Pull request\n/);
     assert.equal((await publish()).status, 'published');
     assert.equal(pushes, 1);
   });
@@ -706,7 +706,7 @@ describe('agent/openclaw-delivery', () => {
       await request('announce');
       const shown = await request('present');
       assert.ok('presentation' in shown);
-      assert.match(shown.presentation!, /Pull request opened/);
+      assert.match(shown.presentation!, /Pull request/);
       assert.match(shown.presentation!, /#issuecomment-91/);
       assert.equal(announcement.posts, 1);
       assert.ok(announcement.comments[0]!.body.includes(draft ? 'Draft.' : 'Ready for review.'));
@@ -811,7 +811,7 @@ describe('agent/openclaw-delivery', () => {
     assert.equal((await publish()).status, 'published');
     const shown = await request('present');
     assert.ok('presentation' in shown);
-    assert.match(shown.presentation!, /^> ## 🔀 Pull request opened/m);
+    assert.match(shown.presentation!, /^> ## 🔀 Pull request/m);
     assert.match(shown.presentation!, /issues\/3/);
     assert.match(shown.presentation!, /pull\/7/);
     assert.match(shown.presentation!, /Automatic GitHub feedback delivery is not available/);
@@ -1016,6 +1016,33 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(pr!.body, content.body);
     assert.equal(creates, 1);
   });
+  for (const snapshot of [true, false])
+    it(`should show neutral pr readback after metadata updates with snapshot ${snapshot}`, async () => {
+      await publish();
+      if (snapshot) {
+        await request('compose');
+        await request('candidate', { publicText: 'Delivers the requested change.' });
+        await request('announce', {});
+      }
+      await publish({ title: 'New title', body: 'Revised description.' });
+      const shown = await request('present');
+      assert.ok('presentation' in shown);
+      assert.match(shown.presentation!, /Pull request\n/);
+      assert.doesNotMatch(shown.presentation!, /Pull request (opened|updated)/);
+      assert.match(shown.presentation!, /pull\/7/);
+      assert.equal(pr!.title, 'New title');
+      assert.equal(creates, 1);
+      if (snapshot) {
+        assert.match(shown.presentation!, /Original PR announcement/);
+        assert.match(shown.presentation!, /#issuecomment-91/);
+        assert.match(shown.presentation!, /Delivers the requested change/);
+        const repeated = await request('compose');
+        assert.ok('presentation' in repeated);
+        assert.match(repeated.presentation!, /Original PR announcement/);
+        assert.match(repeated.presentation!, /#issuecomment-91/);
+      } else assert.doesNotMatch(shown.presentation!, /Original PR announcement/);
+      assert.equal(announcement.posts, snapshot ? 1 : 0);
+    });
   it('should preserve github body edits when explicitly updating only the title', async () => {
     await publish();
     pr!.body = 'Operator clarification. Closes #3';
@@ -1098,7 +1125,7 @@ describe('agent/openclaw-delivery', () => {
     };
     const result = await request('present');
     assert.ok('presentation' in result && typeof result.presentation === 'string');
-    assert.match(result.presentation, /^> ## 🔀 Pull request opened/m);
+    assert.match(result.presentation, /^> ## 🔀 Pull request/m);
     assert.match(result.presentation, /issues\/3/);
     assert.match(result.presentation, /pull\/7/);
     assert.deepEqual(record.work!.delivery!.pullRequest, persisted.work!.delivery!.pullRequest);

@@ -535,7 +535,7 @@ export default async function runCodexDelivery(
           presentation: [
             githubNotificationPullRequestOpenedCard({
               issueNumber: adoptedPullRequest ? undefined : intake.issue.number,
-              updated: Boolean(adoptedPullRequest) || updatedSinceAnnouncement,
+              updated: updatedSinceAnnouncement,
               pullRequestNumber: previous.pullRequest.pullRequestNumber,
               repositoryOwner: intake.repository.owner.login,
               repositoryName: intake.repository.name,
@@ -546,7 +546,6 @@ export default async function runCodexDelivery(
               managedTargetUrl(intake),
               undefined,
               previous.announcementRecovery,
-              updatedSinceAnnouncement,
             ),
             ...presentationNotices.map((notice) => notice.message),
           ].join('\n\n'),

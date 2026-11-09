@@ -20,7 +20,7 @@ describe('channels/github/presentation/feedback', () => {
     assert.equal(
       privateText,
       [
-        '> ## 🔀 Pull request opened',
+        '> ## 🔀 Pull request',
         '>',
         '> - **Issue:** [tanaabased/example#12](https://github.com/tanaabased/example/issues/12)',
         '> - **Pull request:** [tanaabased/example#45](https://github.com/tanaabased/example/pull/45)',

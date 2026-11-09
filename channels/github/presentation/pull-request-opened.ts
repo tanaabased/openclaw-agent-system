@@ -48,7 +48,7 @@ export function githubNotificationPullRequestOpenedCard(
               },
             ]),
       ],
-      title: input.updated ? 'Pull request updated' : 'Pull request opened',
+      title: input.updated ? 'Pull request updated' : 'Pull request',
     },
     { quoted: true },
   );

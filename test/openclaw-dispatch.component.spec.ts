@@ -5886,7 +5886,7 @@ describe('agent/openclaw issue dispatch', () => {
     }
     const shown = await pending;
     assert.ok('presentation' in shown && typeof shown.presentation === 'string');
-    assert.match(shown.presentation, /^> ## 🔀 Pull request opened/m);
+    assert.match(shown.presentation, /^> ## 🔀 Pull request$/m);
     assert.match(shown.presentation, /issues\/3/);
     assert.match(shown.presentation, /pull\/7/);
     service = new OpenClawDispatch(service.dependencies);

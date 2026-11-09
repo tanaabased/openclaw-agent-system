@@ -470,21 +470,17 @@ describe('agent/delivery-announcement', () => {
     assert.ok(confirmed.includes(delivery.announcement!.publicText!.split('\n')[0]!));
     assert.ok(
       confirmed.includes(
-        '[PR announcement ↗](https://github.com/owner/repo/issues/3#issuecomment-1) by [@posting-agent]',
+        '[Original PR announcement ↗](https://github.com/owner/repo/issues/3#issuecomment-1) by [@posting-agent]',
       ),
     );
     assert.ok(!confirmed.includes('announcement published'));
-    const historical = announcementPresentation(
-      delivery.announcement,
-      'https://github.com/owner/repo/issues/3',
-      undefined,
-      undefined,
-      true,
-    );
-    assert.match(historical, /Original PR announcement ↗/);
-    assert.match(historical, /#issuecomment-1/);
-    assert.match(historical, /by \[@posting-agent\]/);
-    assert.ok(historical.includes(delivery.announcement!.publicText!.split('\n')[0]!));
+    const repeated = await run('compose', {});
+    assert.ok('presentation' in repeated);
+    assert.match(repeated.presentation!, /Original PR announcement ↗/);
+    assert.match(repeated.presentation!, /#issuecomment-1/);
+    assert.match(repeated.presentation!, /by \[@posting-agent\]/);
+    assert.ok(repeated.presentation!.includes(delivery.announcement!.publicText!.split('\n')[0]!));
+    assert.equal(posts, 1);
     delete delivery.announcement!.authorLogin;
     assert.ok(
       announcementPresentation(
