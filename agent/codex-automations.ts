@@ -49,6 +49,7 @@ import {
   CodexAutomationError,
   nativeAutomationSchema,
   parseAutomationReceipt,
+  readCodexAutomationSelection,
   readCodexAutomations,
   readCodexAutomationDefaults,
   type SavedAutomation,
@@ -615,14 +616,10 @@ export async function inspectCodexPickupActivation(
     job.payload.kind !== 'prompt'
   )
     throw new CodexAutomationError('issue-pickup-activation-required');
-  const saved = await (dependencies.readAutomations ?? readCodexAutomations)(selected.codexHome);
-  const matches = saved.filter(
-    (item) =>
-      item.id === record.nativeId ||
-      item.definition.prompt.includes(
-        codexAutomationMarker(selected.scope, issuePickupAutomationId),
-      ),
-  );
+  const matches = await readCodexAutomationSelection(selected.codexHome, {
+    nativeId: record.nativeId,
+    marker: codexAutomationMarker(selected.scope, issuePickupAutomationId),
+  });
   if (
     matches.length !== 1 ||
     matches[0]!.id !== record.nativeId ||
@@ -665,7 +662,12 @@ export async function inspectCodexDispatchActivation(
       : 'dispatch-activation-required';
   if (!retainedWork && !pausedRecovery && job?.enabled === false)
     throw new CodexAutomationError('intake-automation-paused');
-  const saved = await readCodexAutomations(selected.codexHome);
+  const saved = record
+    ? await readCodexAutomationSelection(selected.codexHome, {
+        nativeId: record.nativeId,
+        marker: codexAutomationMarker(selected.scope, intakeAutomationId),
+      })
+    : [];
   const actual = saved.find((entry) => entry.id === record?.nativeId);
   if (!retainedWork && !pausedRecovery && actual?.definition.status === 'PAUSED')
     throw new CodexAutomationError('intake-automation-paused');
@@ -688,7 +690,8 @@ export async function inspectCodexDispatchActivation(
     throw new CodexAutomationError(activationCode);
   if (
     !retainedWork &&
-    (!actual ||
+    (saved.length !== 1 ||
+      !actual ||
       !savedMatches(
         actual,
         pausedRecovery ? { ...record.definition, status: 'PAUSED' } : record.definition,

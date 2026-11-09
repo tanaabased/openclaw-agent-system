@@ -16,6 +16,7 @@ import {
   syncCodexAutomationThreads,
 } from '../agent/codex-automations.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
+import checkCodexActivationIsolation from './codex-activation-fixture.ts';
 import {
   connectCodexGitHub,
   inspectCodexIntake,
@@ -516,6 +517,12 @@ describe('agent/codex-intake', () => {
     assert.equal((await plan()).status, 'aligned');
     assert.equal((await plan()).actions.length, 0);
     if (!legacy) {
+      await checkCodexActivationIsolation(
+        codexHome,
+        nativeId,
+        () => inspectCodexDispatchActivation(pluginData, deps, false, false, 'intake'),
+        plan,
+      );
       const selected = await selectCodexIntake(pluginData, deps);
       const before = await selected.store.read();
       const file = (await readdir(pluginData)).find(
