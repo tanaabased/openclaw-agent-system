@@ -187,23 +187,23 @@ retirement; a managed denial never falls back to unmanaged cleanup.
 
 #### Parameters
 
-| Parameter | Type   | Required  | Default | Description                                                                                     |
-| --------- | ------ | --------- | ------- | ----------------------------------------------------------------------------------------------- |
-| `action`  | string | yes       | none    | `retire`.                                                                                       |
-| `digest`  | string | for apply | none    | Digest returned by the latest exact-target preview.                                             |
-| `native`  | string | yes       | none    | Exact OpenClaw session key or standalone Codex thread id. Cannot be combined with managed `id`. |
+| Parameter | Type    | Required | Default | Description                                                                |
+| --------- | ------- | -------- | ------- | -------------------------------------------------------------------------- |
+| `action`  | string  | yes      | none    | `retire`.                                                                  |
+| `native`  | string  | yes      | none    | Exact OpenClaw session key or standalone Codex thread id for unmanaged work. |
+| `preview` | boolean | no       | `false` | Inspect the target and effects without applying cleanup.                    |
 
 #### Usage
 
 Preview one unmanaged OpenClaw session:
 
 ```json
-{ "action": "retire", "native": "agent:example:disposable" }
+{ "action": "retire", "native": "agent:example:disposable", "preview": true }
 ```
 
-Inspect its target and effects, then repeat with the returned `digest`. Existing
-explicit cleanup intent authorizes apply without another conversational
-confirmation. OpenClaw requires enrolled session transport; explicit Install with
+Inspect its target and effects, then repeat without `preview` to apply cleanup.
+The runtime resolves the binding internally; do not supply a digest. Existing
+explicit cleanup intent authorizes apply without another conversational confirmation. OpenClaw requires enrolled session transport; explicit Install with
 `--manual-session-dispatch` supplies it when absent. Standalone Codex requires the
 native desktop archive tool and uses its exact thread id through the shared skill.
 
