@@ -1,4 +1,5 @@
 import resolveGitProtocol from '../tools/git/protocol.ts';
+import invalidDeliveryRequest from '../tools/dispatch/delivery-request-error.ts';
 import { cardCopyInstructions } from '../channels/github/presentation/card.ts';
 import { implementationMaterialSchema } from '../tools/dispatch/implementation-material-schema.ts';
 import taskPullRequest, {
@@ -179,11 +180,10 @@ export default async function runCodexDelivery(
     const unsupported = Object.keys(fields).some(
       (key) => !Object.hasOwn(requestSchema.properties, key),
     );
-    throw Object.assign(
-      new Error(
-        `invalid delivery request${invalid.length ? `; missing or invalid fields: ${invalid.join(', ')}` : ''}${unsupported ? '; unsupported fields supplied' : ''}. supply authored title and body for publication; the native adapter resolves the task and verifies the checkout.`,
-      ),
-      { code: 'delivery-request-invalid' },
+    throw invalidDeliveryRequest(
+      fields.action,
+      'codex',
+      `invalid delivery request${invalid.length ? `; missing or invalid fields: ${invalid.join(', ')}` : ''}${unsupported ? '; unsupported fields supplied' : ''}`,
     );
   }
   const input: DeliveryRequest = request;
@@ -195,11 +195,11 @@ export default async function runCodexDelivery(
       input.body ||
       input.pullRequest !== undefined)
   )
-    throw new Error('delivery-request-invalid');
+    throw invalidDeliveryRequest(input.action, 'codex');
   if (input.pullRequest !== undefined && !['bind', 'link'].includes(input.action))
-    throw new Error('delivery-request-invalid');
+    throw invalidDeliveryRequest(input.action, 'codex');
   if (input.title?.includes('\0') || input.body?.includes('\0'))
-    throw new Error('delivery-request-invalid');
+    throw invalidDeliveryRequest(input.action, 'codex');
   const current = await selectCodexIntake(pluginData, {
     codexHome: deps.codexHome,
     inspectBinding: deps.inspectBinding,

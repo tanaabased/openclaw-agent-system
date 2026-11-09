@@ -56,6 +56,23 @@ const result = (value: unknown) => ({
 });
 
 describe('agent/codex-delivery request validation', () => {
+  it('should correct an extra link url without asking for publication content or reading state', async () => {
+    await assert.rejects(
+      runCodexDelivery('/unused-plugin-data', {
+        action: 'link',
+        id: 'a'.repeat(64),
+        url: 'private-url',
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.equal('code' in error && error.code, 'delivery-request-invalid');
+        assert.match(error.message, /\{"action":"link"\}/);
+        assert.match(error.message, /pullRequest/);
+        assert.doesNotMatch(error.message, /private-url|title|body/);
+        return true;
+      },
+    );
+  });
   it('should identify invalid request fields without exposing their content or accessing state', async () => {
     for (const request of [
       {

@@ -1,4 +1,5 @@
 import codexIssueNotice from './codex-issue-notice.ts';
+import invalidDeliveryRequest from '../tools/dispatch/delivery-request-error.ts';
 import taskPullRequest, { isCurrentTaskPullRequest } from './task-pull-request.ts';
 import { retainImplementationDelivery } from './implementation-delivery.ts';
 import {
@@ -72,7 +73,7 @@ export default async function openClawDelivery(input: {
     await input.save();
   };
   if (action.pullRequest !== undefined && !['bind', 'link'].includes(action.operation))
-    throw new Error('delivery-request-invalid');
+    throw invalidDeliveryRequest(action.operation, 'openclaw');
   if (action.operation === 'present')
     return presentOpenClawDelivery(record, intake, input.feedbackEnabled);
   const adoptedPullRequest = managedPullRequest(intake);

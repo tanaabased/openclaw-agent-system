@@ -1,4 +1,5 @@
 import WorkflowRequestError from '../../agent/workflow-request-error.ts';
+import invalidDeliveryRequest from './delivery-request-error.ts';
 import {
   implementationMaterialSchema,
   modelMaterialParameters,
@@ -267,6 +268,11 @@ export function assertDispatchModelRequest(
   const action = input && typeof input === 'object' && 'action' in input ? input.action : undefined;
   if (action === 'reply') throw invalidReplyRequest(input, dispatchModelParameters);
   if (action === 'implementation') throw invalidImplementationRequest(input);
+  if (action === 'delivery')
+    throw invalidDeliveryRequest(
+      input && typeof input === 'object' && 'operation' in input ? input.operation : undefined,
+      'openclaw',
+    );
   if (action === 'context' || action === 'contextRequest')
     throw new WorkflowRequestError(
       fallback,
