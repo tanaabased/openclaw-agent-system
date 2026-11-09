@@ -2,13 +2,40 @@ import { getTextContent, type ChatCompletionRequest, type Fixture } from '@copil
 
 import type { OpenClawAIMockScenario } from './aimock-scenario.ts';
 
+function resultDiagnostic(content: string): { status?: string; code?: string } {
+  try {
+    let value = JSON.parse(content);
+    // Tool Search wraps the same plugin result delivered by a direct call.
+    if (value?.tool?.source === 'openclaw' && Array.isArray(value.result?.content))
+      value = JSON.parse(getTextContent(value.result.content) ?? '');
+    const status = ['verified', 'material', 'blocked', 'failed', 'error', 'pending'].includes(
+      value?.status,
+    )
+      ? value.status
+      : undefined;
+    const code =
+      typeof value?.code === 'string' && /^[a-z]+(?:-[a-z]+)+$/u.test(value.code)
+        ? value.code
+        : undefined;
+    return { ...(status ? { status } : {}), ...(code ? { code } : {}) };
+  } catch {
+    return {};
+  }
+}
+
 /** AIMock does not journal predicate exceptions; retain their location without prompt data. */
 export default function captureFixtureErrors(source: OpenClawAIMockScenario) {
   const errors: Array<{
     phase: string;
     name: string;
     frames: string[];
-    toolResults: Array<{ callId?: string; characters: number; truncated: boolean }>;
+    toolResults: Array<{
+      callId?: string;
+      characters: number;
+      truncated: boolean;
+      status?: string;
+      code?: string;
+    }>;
   }> = [];
   const capture = (phase: string, request: ChatCompletionRequest, error: unknown) => {
     if (errors.length < 4)
@@ -33,6 +60,7 @@ export default function captureFixtureErrors(source: OpenClawAIMockScenario) {
               truncated: /(?:tokens truncated|truncated dynamic tool result|\[truncated\])/u.test(
                 content,
               ),
+              ...resultDiagnostic(content),
             };
           }),
       });
