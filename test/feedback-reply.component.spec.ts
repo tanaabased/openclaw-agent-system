@@ -102,7 +102,6 @@ describe('agent/feedback-reply', () => {
   const call = async (operation: string, extra: object = {}) =>
     feedbackReply({ action: 'reply', operation, ...extra }, deps);
   it('reads interleaved reply material by authored content without selecting the latest draft', async () => {
-    deps.modelInput = true;
     const first = {
       action: 'reply',
       operation: 'compose',
@@ -141,7 +140,7 @@ describe('agent/feedback-reply', () => {
       assert.ok('composeRequest' in context && context.composeRequest);
       const request = context.composeRequest;
       assert.equal(request.target, url);
-      assert.equal(request.update.observation, context.observation);
+      assert.equal('observation' in request.update, false);
       assert.equal((await feedbackReply(request, deps)).status, 'already-current');
       const compose = {
         ...request,
@@ -157,13 +156,16 @@ describe('agent/feedback-reply', () => {
           { ...compose, update: { ...compose.update, observation: '0'.repeat(64) } },
           deps,
         ),
-        /status-update-observation-changed/,
+        /reply-request-invalid/,
       );
       assert.deepEqual(await new ReplyStore(deps.root, deps.binding).read(), []);
       const result = await feedbackReply(compose, deps);
       assert.equal(result.status, 'composition-ready');
       assert.ok('source' in result && result.source && 'facts' in result.source);
-      assert.deepEqual(result.source.facts, [progressFact]);
+      assert.deepEqual(
+        result.source.facts.map(({ reference, text }) => ({ reference, text })),
+        [progressFact],
+      );
       assert.equal(writes, 0);
     });
 
@@ -180,19 +182,15 @@ describe('agent/feedback-reply', () => {
       assert.equal(drafts.length, 1);
       assert.equal(drafts[0]!.privateText, privateText);
       assert.equal(drafts[0]!.publicText, undefined);
-      const composed = await call('compose', { id: drafts[0]!.id });
+      const composed = await run(request);
       assert.ok('contextMaterials' in composed && composed.contextMaterials);
-      assert.ok('id' in composed && 'digest' in composed);
-      const page = composed.contextMaterials.fields[0]!.request;
+      assert.equal(composed.status, 'composition-ready');
+      const page = { ...composed.contextMaterials.fields[0]!.request, privateText };
       await assert.rejects(run({ ...page, operation: 'publish' }), /reply-request-invalid/);
-      await assert.rejects(run({ ...page, digest: '0'.repeat(64) }), /reply-material-stale/);
-      await call('candidate', {
-        id: composed.id,
-        digest: composed.digest,
-        publicText: 'Verified progress.',
-      });
+      await assert.rejects(run({ ...page, digest: '0'.repeat(64) }), /reply-request-invalid/);
+      await call('candidate', { target: url, privateText, publicText: 'Verified progress.' });
       const saved = await new ReplyStore(deps.root, deps.binding).read();
-      await assert.rejects(run(page), /reply-material-stale/);
+      assert.equal((await run(page)).status, 'material');
       assert.deepEqual(await new ReplyStore(deps.root, deps.binding).read(), saved);
       assert.equal(writes, 0);
     });
@@ -223,6 +221,24 @@ describe('agent/feedback-reply', () => {
     });
   }
 
+  function selection(value: object) {
+    assert.ok('target' in value && typeof value.target === 'string');
+    assert.ok('privateResponse' in value && typeof value.privateResponse === 'string');
+    return { target: value.target, privateText: value.privateResponse };
+  }
+  type Selection = ReturnType<typeof selection>;
+  function matches(draft: { target: string; privateText: string }, choice: Selection) {
+    return (
+      JSON.parse(draft.target).url === choice.target && draft.privateText === choice.privateText
+    );
+  }
+  async function stored(choice: Selection) {
+    const draft = (await new ReplyStore(deps.root, deps.binding).read()).find((entry) =>
+      matches(entry, choice),
+    );
+    assert.ok(draft);
+    return draft;
+  }
   async function candidate(target = url) {
     const composed = await call('compose', {
       target,
@@ -230,22 +246,14 @@ describe('agent/feedback-reply', () => {
       outcome: 'No checks were run.',
     });
     assert.equal(composed.status, 'composition-ready');
-    assert.ok('id' in composed && typeof composed.id === 'string' && 'digest' in composed);
     await call('candidate', {
-      id: composed.id,
-      digest: composed.digest,
+      ...selection(composed),
       publicText: 'Here is the answer. No checks were run.',
     });
-    return composed.id;
-  }
-  async function preview(id: string) {
-    const result = await call('publish', { id });
-    assert.ok('digest' in result && result.status === 'publication-ready');
-    return result.digest;
+    return selection(composed);
   }
   for (const runtime of ['codex', 'openclaw'] as const) {
     it(`should select exact semantic reply drafts and reconcile uncertain publication in ${runtime}`, async () => {
-      deps.modelInput = true;
       deps.binding.runtime = runtime;
       deps.defaultTarget = url;
       await call('compose', { privateText: 'First answer.' });
@@ -277,39 +285,35 @@ describe('agent/feedback-reply', () => {
     const first = await candidate();
     const store = new ReplyStore(deps.root, deps.binding);
     const drafts = await store.read();
-    const firstPath = join(deps.root, `github-reply-${store.scope}-${first}.json`);
+    const firstPath = join(deps.root, `github-reply-${store.scope}-${drafts[0]!.id}.json`);
     await writeFile(store.path, JSON.stringify({ scope: store.scope, drafts }), { mode: 0o600 });
     await rm(firstPath);
     deps.inputId = 'later-input';
     const second = await candidate(`${url}#issuecomment-5`);
-    assert.notEqual(second, first);
+    assert.notDeepEqual(second, first);
     assert.equal((await store.read()).length, 2);
     const oldContents = await readFile(store.path, 'utf8');
-    const digest = await preview(first);
-    await call('publish', { id: first, digest });
+    await call('publish', { ...first });
     const readback = await new ReplyStore(deps.root, deps.binding).read();
-    assert.ok(readback.find((draft) => draft.id === first)?.receipt);
-    assert.ok(readback.find((draft) => draft.id === second));
+    assert.ok(readback.find((draft) => matches(draft, first))?.receipt);
+    assert.ok(readback.find((draft) => matches(draft, second)));
     assert.equal(await readFile(store.path, 'utf8'), oldContents);
   });
 
   it('should reconcile a sent reply after its source comment disappears', async () => {
-    const id = await candidate(`${url}#issuecomment-4`);
-    const digest = await preview(id);
+    const reply = await candidate(`${url}#issuecomment-4`);
     lost = hidden = true;
-    await assert.rejects(call('publish', { id, digest }), /transport lost/);
+    await assert.rejects(call('publish', { ...reply }), /transport lost/);
     provider.getIssueComment = async () => {
       throw new Error('source deleted');
     };
     hidden = false;
-    assert.equal((await call('reconcile', { id })).status, 'published');
+    assert.equal((await call('reconcile', { ...reply })).status, 'published');
     assert.equal(writes, 1);
   });
 
   const progressFact = {
-    key: 'unit-check',
     reference: 'commit:abc',
-    revision: 'abc:unit-run-1',
     text: 'The unit checks passed.',
   };
   async function updateContext(target = url) {
@@ -322,19 +326,21 @@ describe('agent/feedback-reply', () => {
       purpose: 'status-update',
       target,
       privateText: 'Complete private answer.\nPreserve the caveats.',
-      update: { observation: await updateContext(target), facts: [progressFact] },
+      update: { facts: [progressFact] },
     });
-    assert.ok('id' in result && 'digest' in result && 'source' in result);
+    assert.ok('source' in result);
     assert.ok('kind' in result.source && result.source.kind === 'status-update');
     assert.ok('facts' in result.source);
-    assert.deepEqual(result.source.facts, [progressFact]);
+    assert.deepEqual(
+      result.source.facts.map(({ reference, text }) => ({ reference, text })),
+      [progressFact],
+    );
     assert.equal(result.source.destination, target.split('#')[0]);
     await call('candidate', {
-      id: result.id,
-      digest: result.digest,
+      ...selection(result),
       publicText: 'Unit checks passed.\n\nNo installed checks ran.',
     });
-    return result.id!;
+    return selection(result);
   }
   function linkedPullRequest() {
     const pr = {
@@ -439,12 +445,12 @@ describe('agent/feedback-reply', () => {
   });
   it('should publish at the selected pr or explicit issue without rerouting either write', async () => {
     const pr = linkedPullRequest();
-    const prId = await updateCandidate(pr.url);
-    const prResult = await call('publish', { id: prId, digest: await preview(prId) });
+    const prReply = await updateCandidate(pr.url);
+    const prResult = await call('publish', { ...prReply });
     assert.ok('url' in prResult && prResult.url === `${pr.url}#issuecomment-9`);
     assert.equal(postedNumber, 4);
-    const issueId = await updateCandidate(url);
-    await call('publish', { id: issueId, digest: await preview(issueId) });
+    const issueReply = await updateCandidate(url);
+    await call('publish', { ...issueReply });
     assert.equal(postedNumber, 3);
     assert.equal(writes, 2);
   });
@@ -457,8 +463,8 @@ describe('agent/feedback-reply', () => {
       const context = await call('context', { purpose: 'status-update', target });
       assert.ok('publicContext' in context && context.publicContext);
       assert.deepEqual(context.publicContext.discussion, { source: target });
-      const id = await updateCandidate(target);
-      assert.equal((await call('publish', { id, digest: await preview(id) })).status, 'published');
+      const reply = await updateCandidate(target);
+      assert.equal((await call('publish', { ...reply })).status, 'published');
     }
     assert.equal(writes, 2);
   });
@@ -475,16 +481,18 @@ describe('agent/feedback-reply', () => {
         inactive: false,
       },
     ];
-    const id = await updateCandidate(pr.url);
+    const reply = await updateCandidate(pr.url);
     lost = true;
-    assert.equal((await call('publish', { id, digest: await preview(id) })).status, 'uncertain');
+    assert.equal((await call('publish', { ...reply })).status, 'uncertain');
     pr.item.state = 'closed';
     pr.item.pullRequest.merged = true;
     const issueContext = await call('context', { purpose: 'status-update', target: url });
     assert.equal(issueContext.status, 'status-update-context');
     assert.ok('pendingUpdates' in issueContext);
-    assert.deepEqual(issueContext.pendingUpdates, [{ id, destination: pr.url }]);
-    const recovered = await call('reconcile', { id });
+    assert.deepEqual(issueContext.pendingUpdates, [
+      { id: (await stored(reply)).id, destination: pr.url },
+    ]);
+    const recovered = await call('reconcile', { ...reply });
     assert.ok('url' in recovered && recovered.url === `${pr.url}#issuecomment-9`);
     assert.equal(postedNumber, 4);
     assert.equal(writes, 1);
@@ -531,24 +539,24 @@ describe('agent/feedback-reply', () => {
       purpose: 'status-update',
       target: pr.url,
       privateText: 'Verified progress.',
-      update: { observation: await updateContext(pr.url), facts: [progressFact] },
+      update: { facts: [progressFact] },
     });
     assert.ok('selection' in update && update.selection);
     assert.equal(update.selection.requestedSkill, 'agent:voice-reply');
     assert.equal(update.selection.guidance?.content, 'Keep the agent voice.');
-    const id = await candidate(pr.url);
-    assert.equal((await call('publish', { id, digest: await preview(id) })).status, 'published');
+    const reply = await candidate(pr.url);
+    assert.equal((await call('publish', { ...reply })).status, 'published');
     assert.equal(postedNumber, 4);
     assert.deepEqual(owners, before);
   });
   it('should return current public and retained facts before selecting a status composer and no-op without a draft', async () => {
-    const observation = await updateContext();
+    await updateContext();
     assert.equal(selections, 0);
     const result = await call('compose', {
       purpose: 'status-update',
       target: url,
       privateText: 'Already current.',
-      update: { observation, facts: [] },
+      update: { facts: [] },
     });
     assert.equal(result.status, 'already-current');
     assert.equal(selections, 0);
@@ -556,10 +564,10 @@ describe('agent/feedback-reply', () => {
     assert.deepEqual(await readdir(deps.root), []);
   });
   it('should publish a source-less status update once and keep its full private answer and exact public quote', async () => {
-    const id = await updateCandidate();
+    const reply = await updateCandidate();
     deps.turnId = 'later';
     deps.inputId = 'later-input';
-    const done = await call('publish', { id, digest: await preview(id) });
+    const done = await call('publish', { ...reply });
     assert.equal(done.status, 'published');
     assert.ok(posted?.body.startsWith('Unit checks passed.\n\nNo installed checks ran.'));
     assert.ok(posted?.body.includes(':status-update:'));
@@ -581,19 +589,16 @@ describe('agent/feedback-reply', () => {
       purpose: 'status-update',
       target: url,
       privateText: 'Reworded private response.',
-      update: {
-        observation: await updateContext(),
-        facts: [{ ...progressFact, text: 'Same verified run, different wording.' }],
-      },
+      update: { facts: [progressFact] },
     });
     assert.equal(again.status, 'already-current');
-    await call('reconcile', { id });
+    await call('reconcile', { ...reply });
     assert.equal(writes, 1);
     assert.equal(selections, 1);
   });
   it('should keep completed and uncertain receipts usable after more than forty distinct drafts', async () => {
     const completed = await updateCandidate();
-    await call('publish', { id: completed, digest: await preview(completed) });
+    await call('publish', { ...completed });
     const completedComment = posted;
     for (let index = 0; index < 40; index++) {
       const next = await call('compose', {
@@ -603,78 +608,67 @@ describe('agent/feedback-reply', () => {
       assert.equal(next.status, 'composition-ready');
     }
     const uncertain = await candidate();
-    assert.equal(typeof uncertain, 'string');
+    assert.equal(uncertain.target, url);
     lost = true;
-    await assert.rejects(
-      call('publish', { id: uncertain, digest: await preview(uncertain) }),
-      /transport lost/,
-    );
-    assert.equal((await call('reconcile', { id: uncertain })).status, 'published');
+    await assert.rejects(call('publish', { ...uncertain }), /transport lost/);
+    assert.equal((await call('reconcile', { ...uncertain })).status, 'published');
     posted = completedComment;
-    assert.equal((await call('reconcile', { id: completed })).status, 'published');
+    assert.equal((await call('reconcile', { ...completed })).status, 'published');
     assert.equal(writes, 2);
   });
   it('should expose an uncertain update independently and reconcile without another composer or create', async () => {
-    const id = await updateCandidate();
-    const digest = await preview(id);
+    const reply = await updateCandidate();
     lost = true;
-    const lostResult = await call('publish', { id, digest });
+    const lostResult = await call('publish', { ...reply });
     assert.equal(lostResult.status, 'uncertain');
     hidden = true;
     const pending = await call('context', { purpose: 'status-update', target: url });
     assert.equal(pending.status, 'status-update-context');
     assert.ok('pendingUpdates' in pending);
-    assert.deepEqual(pending.pendingUpdates, [{ id, destination: url }]);
-    const uncertain = await call('reconcile', { id });
+    assert.deepEqual(pending.pendingUpdates, [{ id: (await stored(reply)).id, destination: url }]);
+    const uncertain = await call('reconcile', { ...reply });
     assert.equal(uncertain.status, 'uncertain');
     assert.ok('presentation' in uncertain && !uncertain.presentation?.includes('#issuecomment-9'));
     hidden = false;
-    await call('reconcile', { id });
+    await call('reconcile', { ...reply });
     assert.equal(writes, 1);
     assert.equal(selections, 1);
   });
   it('should permit new material facts while preserving an uncertain earlier update', async () => {
-    const id = await updateCandidate();
+    const reply = await updateCandidate();
     lost = true;
-    await call('publish', { id, digest: await preview(id) });
+    await call('publish', { ...reply });
     const firstComment = posted;
     const overlapping = await call('compose', {
       purpose: 'status-update',
       target: url,
       privateText: 'Same evidence.',
-      update: { observation: await updateContext(), facts: [progressFact] },
+      update: { facts: [progressFact] },
     });
     assert.equal(overlapping.status, 'reply-reconciliation-required');
-    assert.ok('id' in overlapping && overlapping.id === id);
+    assert.ok('id' in overlapping && overlapping.id === (await stored(reply)).id);
     const next = await call('compose', {
       purpose: 'status-update',
       target: url,
       privateText: 'The revised plan is ready.',
       update: {
-        observation: await updateContext(),
         facts: [
           {
-            key: 'plan',
             reference: 'chat:decision',
-            revision: '2',
             text: 'The revised plan removes the extra step.',
           },
         ],
       },
     });
-    assert.ok('id' in next && 'digest' in next && next.status === 'composition-ready');
+    assert.ok(next.status === 'composition-ready');
     await call('candidate', {
-      id: next.id,
-      digest: next.digest,
+      ...selection(next),
       publicText: 'The revised plan removes the extra step.',
     });
     lost = false;
-    assert.equal(
-      (await call('publish', { id: next.id, digest: await preview(next.id!) })).status,
-      'published',
-    );
+    assert.equal((await call('publish', { ...selection(next) })).status, 'published');
     posted = firstComment;
-    assert.equal((await call('reconcile', { id })).status, 'published');
+    assert.equal((await call('reconcile', { ...reply })).status, 'published');
     assert.equal(writes, 2);
   });
   it('should coalesce published facts and preserve an issue attempt after the linked pr opens', async () => {
@@ -688,56 +682,54 @@ describe('agent/feedback-reply', () => {
         inactive: false,
       },
     ];
-    const id = await updateCandidate();
+    const reply = await updateCandidate();
     lost = true;
-    await call('publish', { id, digest: await preview(id) });
+    await call('publish', { ...reply });
     const pr = linkedPullRequest();
     owners[0]!.pullRequestNumber = 4;
     const overlap = await call('compose', {
       purpose: 'status-update',
       target: pr.url,
       privateText: 'Reworded progress.',
-      update: { observation: await updateContext(pr.url), facts: [progressFact] },
+      update: { facts: [progressFact] },
     });
     assert.equal(overlap.status, 'reply-reconciliation-required');
     assert.ok('destination' in overlap && overlap.destination === url);
-    await call('reconcile', { id });
+    await call('reconcile', { ...reply });
     const fresh = {
-      key: 'delivery',
       reference: 'commit:def',
-      revision: 'def',
       text: 'The follow-up fix is delivered.',
     };
     const next = await call('compose', {
       purpose: 'status-update',
       target: pr.url,
       privateText: 'Checks and follow-up delivery.',
-      update: { observation: await updateContext(pr.url), facts: [progressFact, fresh] },
+      update: { facts: [progressFact, fresh] },
     });
     assert.ok('source' in next && 'facts' in next.source);
-    assert.deepEqual(next.source.facts, [fresh]);
+    assert.deepEqual(
+      next.source.facts.map(({ reference, text }) => ({ reference, text })),
+      [fresh],
+    );
     assert.equal(writes, 1);
   });
   it('should leave discussion comparison to native reads without blocking an authorized update', async () => {
-    const id = await updateCandidate();
-    const digest = await preview(id);
+    const reply = await updateCandidate();
     provider.listIssueComments = async () => {
       throw new Error('discussion belongs to native reads');
     };
-    assert.equal((await call('publish', { id, digest })).status, 'published');
+    assert.equal((await call('publish', { ...reply })).status, 'published');
     assert.equal(writes, 1);
   });
   it('should refresh a changed pr snapshot while retaining the unattempted fact identity', async () => {
     const pr = linkedPullRequest();
-    const id = await updateCandidate(pr.url);
-    const digest = await preview(id);
+    const reply = await updateCandidate(pr.url);
     pr.item.pullRequest.headSha = 'b'.repeat(40);
-    const stale = await call('publish', { id, digest });
+    const stale = await call('publish', { ...reply });
     assert.equal(stale.status, 'blocked');
     assert.ok('code' in stale && stale.code === 'status-update-observation-changed');
-    assert.equal(await updateCandidate(pr.url), id);
-    await assert.rejects(call('publish', { id, digest }), /reply-publication-stale/);
-    assert.equal((await call('publish', { id, digest: await preview(id) })).status, 'published');
+    assert.deepEqual(await updateCandidate(pr.url), reply);
+    assert.equal((await call('publish', { ...reply })).status, 'published');
     assert.equal(writes, 1);
     assert.equal(selections, 2);
   });
@@ -765,7 +757,7 @@ describe('agent/feedback-reply', () => {
         })),
       },
     ];
-    const id = await updateCandidate();
+    const reply = await updateCandidate();
     const store = new ReplyStore(deps.root, deps.binding);
     const stored = () => store.exclusive(async (drafts) => structuredClone(drafts[0]!));
     assert.deepEqual(JSON.parse((await stored()).ownerContext), {
@@ -782,9 +774,9 @@ describe('agent/feedback-reply', () => {
       drafts[0]!.update!.observation = 'f'.repeat(64);
       await save();
     });
-    assert.equal(await updateCandidate(), id);
+    assert.deepEqual(await updateCandidate(), reply);
     lost = true;
-    assert.equal((await call('publish', { id, digest: await preview(id) })).status, 'uncertain');
+    assert.equal((await call('publish', { ...reply })).status, 'uncertain');
     await store.exclusive(async (drafts, save) => {
       drafts[0]!.ownerContext = JSON.stringify({
         status: 'status-update-context',
@@ -799,30 +791,31 @@ describe('agent/feedback-reply', () => {
     const pending = await call('context', { purpose: 'status-update', target: url });
     assert.equal(pending.status, 'status-update-context');
     assert.ok(
-      'pendingUpdates' in pending && pending.pendingUpdates?.some((entry) => entry.id === id),
+      'pendingUpdates' in pending &&
+        pending.pendingUpdates?.some((entry) => entry.id === attempted.id),
     );
     const refused = await call('compose', {
-      id,
+      ...reply,
       purpose: 'status-update',
       privateText: 'Replacement text.',
-      update: { observation: 'e'.repeat(64), facts: [{ ...progressFact, text: 'Reworded.' }] },
+      update: { facts: [progressFact] },
     });
     assert.equal(refused.status, 'reply-reconciliation-required');
     assert.deepEqual(await stored(), attempted);
-    assert.equal((await call('reconcile', { id })).status, 'published');
+    assert.equal((await call('reconcile', { ...reply })).status, 'published');
     assert.equal((await stored()).ownerContext, attempted.ownerContext);
     assert.equal((await stored()).publicText, attempted.publicText);
     assert.equal(writes, 1);
   });
   it('should reject invalid fact identities without fetching discussion', async () => {
-    const observation = await updateContext();
-    for (const facts of [[{ ...progressFact, key: ' ' }], [progressFact, progressFact]])
+    await updateContext();
+    for (const facts of [[{ ...progressFact, reference: ' ' }], [progressFact, progressFact]])
       await assert.rejects(
         call('compose', {
           purpose: 'status-update',
           target: url,
           privateText: 'Progress.',
-          update: { observation, facts },
+          update: { facts },
         }),
         /status-update-facts-invalid/,
       );
@@ -894,15 +887,14 @@ describe('agent/feedback-reply', () => {
     assert.ok('publicContext' in read && read.publicContext);
     assert.equal(read.publicContext.pullRequests.length, 1);
     assert.equal(read.publicContext.pullRequests[0]!.item.pullRequest.headSha, head);
-    const id = await updateCandidate();
-    const digest = await preview(id);
+    const reply = await updateCandidate();
     head = 'b'.repeat(40);
-    const result = await call('publish', { id, digest });
+    const result = await call('publish', { ...reply });
     assert.equal(result.status, 'blocked');
     assert.ok('code' in result && result.code === 'status-update-observation-changed');
     assert.equal(writes, 0);
-    assert.equal(await updateCandidate(), id);
-    assert.equal((await call('publish', { id, digest: await preview(id) })).status, 'published');
+    assert.deepEqual(await updateCandidate(), reply);
+    assert.equal((await call('publish', { ...reply })).status, 'published');
     assert.equal(writes, 1);
   });
   async function nativeFeedback(number = 42) {
@@ -949,20 +941,14 @@ describe('agent/feedback-reply', () => {
         privateText:
           'The announcement covered completion, but the author also asked about a limitation.',
       });
-      assert.ok(
-        'verifiedOutcome' in composed &&
-          composed.verifiedOutcome &&
-          'id' in composed &&
-          'digest' in composed,
-      );
+      assert.ok('verifiedOutcome' in composed && composed.verifiedOutcome && 'target' in composed);
       assert.deepEqual(composed.verifiedOutcome.announcement, announcement);
       assert.equal(writes, 0);
       await call('candidate', {
-        id: composed.id,
-        digest: composed.digest,
+        ...selection(composed),
         publicText: 'The requested limitation: this has not been verified in a live runtime.',
       });
-      const done = await call('publish', { id: composed.id, digest: await preview(composed.id!) });
+      const done = await call('publish', { ...selection(composed) });
       assert.equal(done.status, 'published');
       assert.equal(writes, 1);
       assert.equal(postedNumber, 3);
@@ -995,15 +981,14 @@ describe('agent/feedback-reply', () => {
         /reply-feedback-target-mismatch/,
       );
       const composed = await call('compose', { target: url, privateText });
-      assert.ok('id' in composed && 'digest' in composed);
-      assert.ok(typeof composed.id === 'string');
+      assert.equal(composed.status, 'composition-ready');
+      assert.ok('target' in composed);
       await call('candidate', {
-        id: composed.id,
-        digest: composed.digest,
+        ...selection(composed),
         publicText:
           'Haiku about overengineering confirmed. A continuation error currently prevents writing it.',
       });
-      const done = await call('publish', { id: composed.id, digest: await preview(composed.id) });
+      const done = await call('publish', { ...selection(composed) });
       assert.equal(done.status, 'published');
       assert.ok('presentation' in done && typeof done.presentation === 'string');
       assert.ok(!done.presentation.includes('> A question.'));
@@ -1021,7 +1006,7 @@ describe('agent/feedback-reply', () => {
       assert.ok(!posted!.body.includes(privateText));
       assert.ok(!posted!.body.includes('Debug'));
       deps.manifest.debug = false;
-      const recovered = await call('reconcile', { id: composed.id });
+      const recovered = await call('reconcile', { ...selection(composed) });
       assert.equal(recovered.status, 'published');
       assert.ok('presentation' in recovered && typeof recovered.presentation === 'string');
       assert.ok(!recovered.presentation.includes('Debug'));
@@ -1035,9 +1020,9 @@ describe('agent/feedback-reply', () => {
       const source = deps.feedback!.source;
       const text = 'The supplied choices are sufficient.';
       const composed = await call('compose', { target, privateText: text });
-      assert.ok('id' in composed && typeof composed.id === 'string' && 'digest' in composed);
-      await call('candidate', { id: composed.id, digest: composed.digest, publicText: text });
-      const done = await call('publish', { id: composed.id, digest: await preview(composed.id) });
+      assert.equal(composed.status, 'composition-ready');
+      await call('candidate', { ...selection(composed), publicText: text });
+      const done = await call('publish', { ...selection(composed) });
       assert.equal(done.status, 'published');
       assert.ok('presentation' in done && typeof done.presentation === 'string');
       assert.equal(done.presentation.split(text).length - 1, 1);
@@ -1045,7 +1030,7 @@ describe('agent/feedback-reply', () => {
       assert.ok(!done.presentation.includes('[Comment ↗]'));
       assert.ok(done.presentation.includes('[Reply ↗](' + url + '#issuecomment-9)'));
       assert.equal(deps.feedback!.source, source);
-      assert.equal((await call('reconcile', { id: composed.id })).status, 'published');
+      assert.equal((await call('reconcile', { ...selection(composed) })).status, 'published');
       assert.equal(writes, 1);
     });
   it('should keep a native reply independent of evolving issue outcomes without progress comparison', async () => {
@@ -1061,44 +1046,41 @@ describe('agent/feedback-reply', () => {
         result: { outcome: 'plan-ready', summary: 'Old plan.' } as never,
       },
     ];
-    const id = await candidate(target);
+    const reply = await candidate(target);
     owners[0]!.result = { outcome: 'clarification-needed', summary: 'Changed plan.' } as never;
-    const digest = await preview(id);
-    assert.equal((await call('publish', { id, digest })).status, 'published');
+    assert.equal((await call('publish', { ...reply })).status, 'published');
     const repeated = await call('compose', {
       target,
       privateText: 'Different wording for the same source.',
     });
     assert.equal(repeated.status, 'reply-reconciliation-required');
-    assert.equal('id' in repeated && repeated.id, id);
+    assert.equal('id' in repeated && repeated.id, (await stored(reply)).id);
     assert.equal(writes, 1);
     assert.equal(selections, 1);
   });
   it('should recheck native source authority before writing while keeping uncertain reply recovery independent', async () => {
     const target = await nativeFeedback();
-    const id = await candidate(target);
-    const digest = await preview(id);
+    const reply = await candidate(target);
     const authorize = deps.authorizeFeedback!;
     deps.authorizeFeedback = async () => {
       throw new Error('feedback-not-approved');
     };
-    await assert.rejects(call('publish', { id, digest }), /feedback-not-approved/);
+    await assert.rejects(call('publish', { ...reply }), /feedback-not-approved/);
     assert.equal(writes, 0);
     deps.authorizeFeedback = authorize;
     lost = hidden = true;
-    await assert.rejects(call('publish', { id, digest }));
+    await assert.rejects(call('publish', { ...reply }));
     deps.authorizeFeedback = async () => {
       throw new Error('feedback-not-approved');
     };
     hidden = false;
-    assert.equal((await call('reconcile', { id })).status, 'published');
+    assert.equal((await call('reconcile', { ...reply })).status, 'published');
     assert.equal(writes, 1);
   });
   it('should identify an uncertain native reply during discovery without posting or repeating work', async () => {
-    const id = await candidate(await nativeFeedback());
-    const digest = await preview(id);
+    const reply = await candidate(await nativeFeedback());
     lost = hidden = true;
-    await assert.rejects(call('publish', { id, digest }));
+    await assert.rejects(call('publish', { ...reply }));
     hidden = false;
     assert.deepEqual(
       await replyOwnPublications({
@@ -1134,21 +1116,19 @@ describe('agent/feedback-reply', () => {
         purpose: 'status-update',
         target,
         privateText: 'The checks passed; no further progress.',
-        update: { observation: read.observation, facts },
+        update: { facts },
       });
       assert.equal(composed.status, 'composition-ready');
-      assert.ok('id' in composed && 'digest' in composed && 'source' in composed);
+      assert.ok('source' in composed);
       assert.equal('request' in composed.source && composed.source.request?.databaseId, 42);
       await call('candidate', {
-        id: composed.id,
-        digest: composed.digest,
+        ...selection(composed),
         publicText: 'The checks passed; no further progress.',
       });
-      const digest = await preview(composed.id!);
       lost = hidden = true;
-      assert.equal((await call('publish', { id: composed.id, digest })).status, 'uncertain');
+      assert.equal((await call('publish', { ...selection(composed) })).status, 'uncertain');
       hidden = false;
-      assert.equal((await call('reconcile', { id: composed.id })).status, 'published');
+      assert.equal((await call('reconcile', { ...selection(composed) })).status, 'published');
       assert.equal(postedNumber, 3);
       assert.ok(posted?.body.includes('@author'));
       assert.equal(
@@ -1159,20 +1139,20 @@ describe('agent/feedback-reply', () => {
         purpose: 'status-update',
         target,
         privateText: 'New wording.',
-        update: { observation: 'f'.repeat(64), facts: [{ ...progressFact, revision: 'new' }] },
+        update: { facts: [progressFact] },
       });
       assert.equal(repeated.status, 'reply-reconciliation-required');
-      assert.equal('id' in repeated && repeated.id, composed.id);
+      assert.equal('id' in repeated && repeated.id, (await stored(selection(composed))).id);
       assert.equal(writes, 1);
       assert.equal(selections, 1);
     });
   it('should allow the same progress facts to answer separate native questions', async () => {
     const target = await nativeFeedback();
-    const id = await updateCandidate(target);
-    await call('publish', { id, digest: await preview(id) });
+    const reply = await updateCandidate(target);
+    await call('publish', { ...reply });
     const next = await updateCandidate(await nativeFeedback(43));
-    assert.notEqual(next, id);
-    await call('publish', { id: next, digest: await preview(next) });
+    assert.notDeepEqual(next, reply);
+    await call('publish', { ...next });
     assert.equal(writes, 2);
   });
   it('should keep native self feedback private for replies and status updates', async () => {
@@ -1194,7 +1174,7 @@ describe('agent/feedback-reply', () => {
     assert.equal(selections, 0);
   });
   it('should prepare the default context without automation and reuse its draft without another selection', async () => {
-    const id = await candidate();
+    const reply = await candidate();
     assert.equal(writes, 0);
     deps.turnId = 'later-turn';
     deps.inputId = 'later-input';
@@ -1204,70 +1184,68 @@ describe('agent/feedback-reply', () => {
       outcome: 'No checks were run.',
     });
     assert.equal(again.status, 'candidate-recorded');
-    assert.ok('id' in again && again.id === id);
+    assert.ok('id' in again && again.id === (await stored(reply)).id);
     assert.equal(selections, 1);
-    const digest = await preview(id!);
     assert.equal(writes, 0);
-    const done = await call('publish', { id, digest });
+    const done = await call('publish', { ...reply });
     assert.equal(done.status, 'published');
     assert.ok(posted?.body.includes('manual-response:'));
     assert.ok(!posted?.body.includes('@author'));
-    await call('reconcile', { id });
+    await call('reconcile', { ...reply });
     assert.equal(writes, 1);
   });
-  it('should retain real comment attribution and reject stale candidates and substituted destinations', async () => {
+  it('should retain real comment attribution and reject binding overrides and substituted destinations', async () => {
     const composed = await call('compose', {
       target: `${url}#issuecomment-42`,
       privateText: 'Supplied answer.',
     });
-    assert.ok('id' in composed && 'digest' in composed && 'factsProvenance' in composed);
+    assert.ok('factsProvenance' in composed);
     assert.equal(composed.factsProvenance, 'operator-supplied');
-    assert.ok('verifiedOutcome' in composed && !('assessment' in composed.verifiedOutcome));
+    assert.ok('verifiedOutcome' in composed && !('assessment' in (composed.verifiedOutcome ?? {})));
     await assert.rejects(
-      call('candidate', { id: composed.id, digest: 'a'.repeat(64), publicText: 'Answer.' }),
-      /reply-composition-stale/,
+      call('candidate', { ...selection(composed), digest: '0'.repeat(64), publicText: 'Answer.' }),
+      /reply-request-invalid/,
     );
-    await call('candidate', { id: composed.id, digest: composed.digest, publicText: 'Answer.' });
+    await call('candidate', { ...selection(composed), publicText: 'Answer.' });
     await assert.rejects(
-      call('publish', { id: composed.id, target: 'https://github.com/owner/repo/issues/4' }),
-      /reply-target-diverged|reply-source-changed/,
+      call('publish', { ...selection(composed), target: 'https://github.com/owner/repo/issues/4' }),
+      /reply-target-diverged|reply-source-changed|reply-draft-required/,
     );
-    await call('publish', { id: composed.id, digest: await preview(composed.id!) });
+    await call('publish', { ...selection(composed) });
     assert.ok(posted!.body.startsWith('@author\n\nAnswer.'));
     assert.ok(posted!.body.includes('github-reply:'));
     assert.equal(selections, 1);
   });
   it('should stop after an uncertain write and reconcile original text without another create', async () => {
-    const id = await candidate();
-    const digest = await preview(id!);
+    const reply = await candidate();
     lost = hidden = true;
-    await assert.rejects(call('publish', { id, digest }), /transport lost/);
-    assert.equal((await call('reconcile', { id })).status, 'uncertain');
+    await assert.rejects(call('publish', { ...reply }), /transport lost/);
+    assert.equal((await call('reconcile', { ...reply })).status, 'uncertain');
     await assert.rejects(
-      call('candidate', { id, digest, publicText: 'Different answer.' }),
+      call('candidate', { ...reply, publicText: 'Different answer.' }),
       /already-attempted/,
     );
     hidden = false;
     await writeFile(join(root, 'SKILL.md'), '# newer composer');
-    assert.equal((await call('reconcile', { id })).status, 'published');
+    assert.equal((await call('reconcile', { ...reply })).status, 'published');
     assert.equal(writes, 1);
     assert.equal(selections, 1);
   });
   it('should reconcile an original comment attempt after the source is edited without recomposing', async () => {
-    const id = await candidate(`${url}#issuecomment-42`);
+    const reply = await candidate(`${url}#issuecomment-42`);
     lost = true;
-    await assert.rejects(call('publish', { id, digest: await preview(id!) }), /transport lost/);
+    await assert.rejects(call('publish', { ...reply }), /transport lost/);
     const read = provider.getIssueComment;
     provider.getIssueComment = async (...args) => ({
       ...(await read(...args)),
       body: 'A later edit.',
     });
-    assert.equal((await call('reconcile', { id })).status, 'published');
+    assert.equal((await call('reconcile', { ...reply })).status, 'published');
     assert.equal(writes, 1);
     assert.equal(selections, 1);
   });
   it('should keep admission-only and unrelated workflow edits out of the pinned composition inputs', async () => {
-    const id = await candidate();
+    const reply = await candidate();
     deps.manifest.github = {
       notifications: {
         ...intakeFixture().policy,
@@ -1278,15 +1256,15 @@ describe('agent/feedback-reply', () => {
         },
       },
     } as AgentManifest['github'];
-    assert.equal((await call('publish', { id })).status, 'publication-ready');
+    assert.equal((await call('publish', { ...reply })).status, 'published');
     assert.equal(selections, 1);
-    assert.equal(writes, 0);
+    assert.equal(writes, 1);
   });
   it('should reject changed source, configuration and skill without silent fallback', async () => {
-    const id = await candidate();
+    const reply = await candidate();
     await writeFile(join(root, 'SKILL.md'), '# changed');
-    await assert.rejects(call('publish', { id }), /reply-selection-changed/);
-    const refreshed = await call('compose', { id });
+    await assert.rejects(call('publish', { ...reply }), /reply-selection-changed/);
+    const refreshed = await call('compose', { ...reply });
     assert.equal(refreshed.status, 'composition-ready');
     assert.equal(selections, 2);
     deps.manifest.github = {
@@ -1300,7 +1278,7 @@ describe('agent/feedback-reply', () => {
         },
       },
     } as AgentManifest['github'];
-    await assert.rejects(call('compose', { id }), /guidance-unreadable/);
+    await assert.rejects(call('compose', { ...reply }), /guidance-unreadable/);
     assert.equal(writes, 0);
   });
   it('should share default and custom inline or file guidance across both workflow kinds', async () => {
@@ -1346,10 +1324,7 @@ describe('agent/feedback-reply', () => {
           target,
           privateText: JSON.stringify(configuration),
           purpose: 'status-update',
-          update: {
-            observation: await updateContext(target),
-            facts: [{ ...progressFact, key: JSON.stringify(configuration) }],
-          },
+          update: { facts: [{ ...progressFact, reference: JSON.stringify(configuration) }] },
         });
         assert.ok('selection' in result && result.selection);
         assert.equal(
@@ -1429,10 +1404,10 @@ describe('agent/feedback-reply', () => {
       },
       find: async () => (posted ? reviewCommentFixture(posted) : undefined),
     };
-    const id = await candidate(
+    const reply = await candidate(
       `https://github.com/owner/repo/pull/3#discussion_r${comment.databaseId}`,
     );
-    await call('publish', { id, digest: await preview(id!) });
+    await call('publish', { ...reply });
     assert.equal(rootId, 71);
     assert.equal(writes, 1);
   });
@@ -1580,18 +1555,18 @@ describe('agent/feedback-reply', () => {
     assert.equal(writes, 0);
   });
   it('should stop publication after native authority or the exact source changes', async () => {
-    const id = await candidate(`${url}#issuecomment-42`);
+    const reply = await candidate(`${url}#issuecomment-42`);
     deps.assertCurrent = async () => {
       throw new Error('native-approval-denied');
     };
-    await assert.rejects(call('publish', { id }), /native-approval-denied/);
+    await assert.rejects(call('publish', { ...reply }), /native-approval-denied/);
     deps.assertCurrent = async () => {};
     const original = provider.getIssueComment;
     provider.getIssueComment = async (...args) => ({
       ...(await original(...args)),
       body: 'Changed question.',
     });
-    await assert.rejects(call('publish', { id }), /reply-source-changed/);
+    await assert.rejects(call('publish', { ...reply }), /reply-source-changed/);
     assert.equal(writes, 0);
   });
   it('should keep direct codex entry independent of intake activation and use native input and skill discovery', async () => {

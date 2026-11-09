@@ -18,7 +18,7 @@ import { assessmentSubmissionSchema } from '../../agent/assessment-result.ts';
 import { assessmentSchema } from '../../agent/model-routing.ts';
 import { feedbackResultSchema } from '../../agent/feedback-state.ts';
 import { implementationResultSchema } from '../../agent/implementation-result.ts';
-import { replyRequestSchema, replyModelSchema, type ReplyModelRequest } from './reply-schema.ts';
+import { replyModelSchema, type ReplyModelRequest } from './reply-schema.ts';
 import discriminatedSchema from '../../utils/discriminated-schema.ts';
 
 const id = Type.String({ pattern: '^[a-f0-9]{64}$' });
@@ -26,7 +26,7 @@ const object = <P extends TProperties>(properties: P) =>
   Type.Object(properties, { additionalProperties: false });
 const dispatchRequestVariants = Type.Union([
   launchRequestSchema,
-  replyRequestSchema,
+  replyModelSchema,
   directAssessmentRequestSchema,
   directImplementationRequestSchema,
   object({

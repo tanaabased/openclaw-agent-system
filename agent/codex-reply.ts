@@ -160,7 +160,6 @@ export default async function codexReply(
       return fresh.manifest;
     };
     return await feedbackReply(input, {
-      modelInput: true,
       defaultTarget,
       root: pluginData,
       binding,

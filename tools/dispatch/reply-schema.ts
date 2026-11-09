@@ -23,7 +23,8 @@ export const statusUpdateSchema = Type.Object(
   { additionalProperties: false },
 );
 export type StatusUpdate = Static<typeof statusUpdateSchema>;
-export const replyRequestSchema = Type.Object(
+/** model arguments carry prose and source choices, never draft custody or observation hashes. */
+export const replyModelSchema = Type.Object(
   {
     action: Type.Literal('reply'),
     operation: Type.Union([
@@ -34,25 +35,13 @@ export const replyRequestSchema = Type.Object(
       Type.Literal('reconcile'),
     ]),
     purpose: Type.Optional(Type.Literal('status-update')),
-    update: Type.Optional(statusUpdateSchema),
     material: Type.Optional(implementationMaterialSchema),
-    id: Type.Optional(hash),
     target: Type.Optional(Type.String({ minLength: 1, maxLength: 2048 })),
     privateText: Type.Optional(Type.String({ minLength: 1, maxLength: 32000 })),
     outcome: Type.Optional(Type.String({ minLength: 1, maxLength: 32000 })),
-    digest: Type.Optional(hash),
     publicText: Type.Optional(
       Type.String({ minLength: 1, maxLength: maximumGitHubNotificationReplyLength }),
     ),
-  },
-  { additionalProperties: false },
-);
-export type ReplyRequest = Static<typeof replyRequestSchema>;
-
-/** model arguments carry prose and source choices, never draft custody or observation hashes. */
-export const replyModelSchema = Type.Object(
-  {
-    ...Type.Omit(replyRequestSchema, ['id', 'digest', 'update']).properties,
     update: Type.Optional(
       Type.Object(
         {

@@ -160,7 +160,6 @@ export default async function openClawReply(input: {
         throw new Error('reply-input-changed');
     };
     return feedbackReply(input.action, {
-      modelInput: true,
       defaultTarget,
       root: deps.root,
       binding,
