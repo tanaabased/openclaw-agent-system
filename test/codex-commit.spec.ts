@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import codexCommit from '../agent/codex-commit.ts';
 import type { DispatchRecord, DispatchState } from '../agent/codex-dispatch-state.ts';
+import mergeStateSnapshot from '../core/merge-state-snapshot.ts';
 
 function record(id: string): DispatchRecord {
   return {
@@ -48,6 +49,37 @@ describe('agent/codex-commit', () => {
     assert.doesNotThrow(() => codexCommit(1, 'second').reconcile(before, before, current));
   });
 
+  for (const operation of ['delivery', 'continuation'] as const)
+    it(`should merge ${operation} observations while protecting authority and effect ownership`, () => {
+      const before = state();
+      const proposed = structuredClone(before);
+      proposed.records[0]!.context = 'task progress';
+      const current = structuredClone(before);
+      current.records[0]!.capacityObservation = { at: 2, code: 'dispatch-capacity-native-active' };
+      current.records[0]!.nativeInactive = false;
+      current.records[0]!.lifecycleCheckedAt = 2;
+      current.records[0]!.intakeReportedAt = 2;
+      current.continuationRun = { id: 'new occurrence', actions: 0 };
+      const commit = codexCommit(1, 'first', operation);
+      assert.doesNotThrow(() => commit.reconcile(before, proposed, current));
+      const merged = mergeStateSnapshot(before, proposed, current) as DispatchState;
+      assert.deepEqual(merged.records[0], { ...current.records[0], context: 'task progress' });
+      assert.deepEqual(merged.continuationRun, current.continuationRun);
+      for (const change of [
+        { context: 'changed source' },
+        { retired: { at: 2, by: 'operator' } },
+        { handoff: { at: 2, by: 'operator', turnId: 'new turn' } },
+        { issueBranch: { attemptId: 'first', name: 'other', phase: 'ready' as const } },
+      ]) {
+        const conflicting = structuredClone(current);
+        Object.assign(conflicting.records[0]!, change);
+        assert.throws(() => commit.reconcile(before, proposed, conflicting), {
+          code: 'private-state-snapshot-conflict',
+          snapshotConflict: 'owner',
+        });
+      }
+    });
+
   it('should reject stale occurrence counters instead of collapsing equal increments', () => {
     const before = state();
     before.continuationRun = { id: 'occurrence', actions: 0 };
@@ -63,6 +95,38 @@ describe('agent/codex-commit', () => {
       code: 'private-state-snapshot-conflict',
     });
   });
+
+  it('should merge task-local continuation with unrelated counters but retain owner conflicts', () => {
+    const before = state();
+    const proposed = structuredClone(before);
+    proposed.records[0]!.context = 'task progress';
+    const current = structuredClone(before);
+    current.continuationRun = { id: 'other occurrence', actions: 1 };
+    const commit = codexCommit(1, 'first', 'continuation');
+    assert.doesNotThrow(() => commit.reconcile(before, proposed, current));
+    assert.throws(() => codexCommit(1, 'first').reconcile(before, proposed, current), {
+      code: 'private-state-snapshot-conflict',
+      snapshotConflict: 'occurrence',
+    });
+    current.records[0]!.retired = { at: 2, by: 'operator' };
+    assert.throws(() => commit.reconcile(before, proposed, current), {
+      code: 'private-state-snapshot-conflict',
+      snapshotConflict: 'owner',
+    });
+  });
+
+  for (const operation of ['delivery', 'continuation'] as const)
+    it(`should reject competing counter writes even for ${operation}`, () => {
+      const before = state();
+      before.continuationRun = { id: 'occurrence', actions: 0 };
+      const proposed = structuredClone(before);
+      proposed.continuationRun!.actions++;
+      const current = structuredClone(proposed);
+      assert.throws(() => codexCommit(1, 'first', operation).reconcile(before, proposed, current), {
+        code: 'private-state-snapshot-conflict',
+        snapshotConflict: 'occurrence',
+      });
+    });
 
   it('should reject a fresh branch reservation owned by another issue including retired custody', () => {
     const before = state();
@@ -96,8 +160,11 @@ describe('agent/codex-commit', () => {
         },
       };
     }
+    const request = before.records[1]!.request;
+    delete before.records[1]!.request;
     before.records[0]!.phase = 'creating';
     const proposed = structuredClone(before);
+    proposed.records[1]!.request = request;
     proposed.records[1]!.phase = 'creating';
     assert.throws(() => codexCommit(1).validate(before, proposed), /dispatch-at-capacity/);
     assert.doesNotThrow(() => codexCommit(2).validate(before, proposed));

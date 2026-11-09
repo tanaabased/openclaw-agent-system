@@ -1,8 +1,33 @@
+import openClawNativeMaterial from './openclaw-native-material.ts';
+import { nativeMaterialResponse } from './native-material.ts';
+import nativeOperatorSelection from './native-operator-selection.ts';
+import nativeFeedbackReconciliation from './native-feedback-reconciliation.ts';
+import {
+  isNativeDispatchSelection,
+  nativeDispatchDigest,
+  nativeDispatchSelection,
+  nativeDispatchResponse,
+} from './native-dispatch-selection.ts';
+import nativeFeedbackSource from './native-feedback-source.ts';
+import { resolveOpenClawTurnFeedback } from './openclaw-feedback-input.ts';
+import { dispatchAdmission } from './managed-issue.ts';
+import {
+  assertNativeContextInput,
+  isNativeContextRequest,
+  isNativeFeedbackRequest,
+  nativeContextRequest,
+  nativeContextResponse,
+} from './native-context-request.ts';
+import launchPending from './launch-pending.ts';
+import renderNativeAssessment, { renderBoundAssessment } from './assessment-render.ts';
 import feedbackContextMaterial from './feedback-context-material.ts';
+import dispatchInspection, { dispatchInspectionSummary } from './dispatch-inspection.ts';
 import { isDeepStrictEqual } from 'node:util';
 
 import assessmentMaterial from './assessment-material.ts';
-import implementationMaterial from './implementation-material.ts';
+import implementationMaterial, {
+  type ImplementationMaterialRead,
+} from './implementation-material.ts';
 import recoverOpenClawTask from './openclaw-dispatch-recovery.ts';
 import issueLaunch from './issue-launch.ts';
 import openClawEntryContext from './openclaw-entry-context.ts';
@@ -20,7 +45,10 @@ import { stateSnapshotConflictCode } from '../core/merge-state-snapshot.ts';
 import { privateStateFileLockBusyErrorCode } from '../core/private-state-file-lock.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import type { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
+import {
+  assertDispatchModelRequest,
+  type dispatchParameters,
+} from '../tools/dispatch/tool-schema.ts';
 import discoveryCheckpoint from './discovery-checkpoint.ts';
 import discoveryNotice from './discovery-notice.ts';
 import { dispatchFailurePhase, scheduleDispatchRetry } from './dispatch-retry.ts';
@@ -107,6 +135,183 @@ export default class OpenClawDispatch {
     };
   }
 
+  async runModel(
+    manifest: AgentManifest,
+    workspace: string,
+    caller: DispatchCaller,
+    input: Record<string, unknown>,
+    operator = false,
+    authority: DispatchAuthority = {},
+  ) {
+    if (isNativeContextRequest('dispatch', input)) assertNativeContextInput(input);
+    assertDispatchModelRequest(input);
+    const modelInput = input;
+    if (input.material)
+      input = await this.dependencies.credential.use(authority, (request) =>
+        openClawNativeMaterial(request, caller, 'agent_system_dispatch', input),
+      );
+    if (input.action === 'context') {
+      const retained = await this.context.readTurnContext(
+        manifest,
+        workspace,
+        { ...caller, agentId: manifest.agent.id },
+        authority,
+      );
+      if (!retained) throw new Error('native-context-owner-unavailable');
+      return nativeMaterialResponse(
+        assessmentMaterial(
+          retained.context,
+          { action: 'context' },
+          input.material as ImplementationMaterialRead | undefined,
+        ),
+        'agent_system_dispatch',
+        modelInput,
+      );
+    }
+    let request = input;
+    if (input.action === 'retry') {
+      const current = await this.scope(manifest, workspace);
+      const record = nativeOperatorSelection(
+        input,
+        (await current.journal.read()).records,
+        current.admitted.records,
+        caller.sessionKey,
+      );
+      request = { action: 'retry', id: record.id };
+    }
+    if (input.action === 'recover') {
+      const current = await this.scope(manifest, workspace);
+      const record = await openClawEntryContext(
+        {
+          manifest,
+          workspace,
+          caller,
+          action: input,
+          operator,
+          authority,
+          dependencies: this.dependencies,
+        },
+        async (entry) =>
+          nativeOperatorSelection(
+            input,
+            (await current.journal.read()).records,
+            current.admitted.records,
+            caller.sessionKey,
+            entry,
+          ),
+      );
+      const authored = { ...input };
+      delete authored.target;
+      delete authored.chat;
+      delete authored.preview;
+      request = { ...authored, id: record.id, apply: !input.preview };
+    }
+    if (input.action === 'retire') {
+      const authored = { ...input };
+      delete authored.target;
+      delete authored.preview;
+      request = { ...authored, apply: !input.preview };
+      if (!input.native) {
+        const current = await this.scope(manifest, workspace);
+        const record = nativeOperatorSelection(
+          input,
+          (await current.journal.read()).records,
+          current.admitted.records,
+          caller.sessionKey,
+        );
+        request.id = record.id;
+      }
+    }
+    if (isNativeDispatchSelection(input.action)) {
+      const current = await this.scope(manifest, workspace);
+      const record = nativeDispatchSelection(
+        input,
+        (await current.journal.read()).records,
+        current.admitted.records,
+        caller.sessionKey,
+      );
+      const authored = { ...input };
+      delete authored.target;
+      request = {
+        ...authored,
+        id: record.id,
+        ...(input.action === 'prepare' ? { digest: nativeDispatchDigest(record, 'openclaw') } : {}),
+      };
+    }
+    if (isNativeContextRequest('dispatch', input)) {
+      assertNativeContextInput(input);
+      const current = await this.scope(manifest, workspace);
+      const owners = (await current.journal.read()).records.filter(
+        (record) => record.threadId === caller.sessionKey,
+      );
+      if (owners.length > 1) throw new Error('native-context-owner-ambiguous');
+      const owner = owners[0];
+      if (!owner && input.action === 'feedback' && input.operation === 'reconcile') {
+        const authored = { ...input };
+        delete authored.source;
+        request = {
+          ...authored,
+          ...nativeFeedbackReconciliation(
+            (await current.journal.read()).records,
+            current.admitted.records,
+            caller.sessionKey,
+            input.source,
+          ),
+        };
+      } else {
+        request = nativeContextRequest(input, owner);
+      }
+      if (owner && isNativeFeedbackRequest('dispatch', input)) {
+        const admission = dispatchAdmission(owner!, current.admitted.records);
+        const selected = input.source
+          ? undefined
+          : await this.dependencies.credential.use(authority, (request) =>
+              resolveOpenClawTurnFeedback(owner, caller, request, this.dependencies.config()),
+            );
+        const event = nativeFeedbackSource(
+          owner.feedback?.events ?? [],
+          selected?.event.id,
+          admission && `${admission.repository.owner.login}/${admission.repository.name}`,
+          input.source,
+        );
+        const authored = { ...request };
+        delete authored.source;
+        request = { ...authored, eventId: event.id };
+      }
+    }
+    let response = await this.run(
+      manifest,
+      workspace,
+      caller,
+      request as Static<typeof dispatchParameters>,
+      operator,
+      authority,
+    );
+    if (response && typeof response === 'object' && 'id' in response) {
+      const current = await this.dependencies.intake.select(manifest, workspace, {
+        resolvePolicy: false,
+      });
+      const journal = new OpenClawDispatchStore(
+        this.dependencies.root,
+        current.store.location.scope,
+      );
+      response = nativeDispatchResponse(
+        response,
+        (await journal.read()).records,
+        (await current.store.read())?.records ?? [],
+      );
+    }
+    return nativeMaterialResponse(
+      nativeContextResponse(
+        response,
+        'dispatch',
+        typeof input.source === 'string' ? input.source : undefined,
+      ),
+      'agent_system_dispatch',
+      modelInput,
+    );
+  }
+
   async run(
     manifest: AgentManifest,
     workspace: string,
@@ -123,12 +328,19 @@ export default class OpenClawDispatch {
         (input.action === 'implementation-context' && !input.scope) ||
         (input.action === 'summary' &&
           input.operation === 'compose' &&
-          !input.digest &&
           !input.publicText &&
           !input.diagnostic) ||
         (input.action === 'feedback' &&
-          ['context', 'implementation-context'].includes(input.operation) &&
+          ['context', 'implementation-context', 'compose'].includes(input.operation) &&
           !input.decision) ||
+        (input.action === 'assessment' && ['context', 'render'].includes(input.operation)) ||
+        (input.action === 'delivery' &&
+          input.operation === 'compose' &&
+          !input.publicText &&
+          !input.title &&
+          !input.body &&
+          input.pullRequest === undefined) ||
+        (input.action === 'reply' && ['context', 'compose'].includes(input.operation)) ||
         (input.action === 'implementation' &&
           input.operation === 'context' &&
           !input.scope &&
@@ -141,18 +353,25 @@ export default class OpenClawDispatch {
       : this.execute(manifest, workspace, caller, input, operator, authority));
     if (
       input.action === 'implementation-context' ||
+      (input.action === 'implementation' && input.operation === 'context') ||
       (input.action === 'feedback' && input.operation === 'implementation-context')
     ) {
-      if ('resultContract' in response && response.resultContract === 'implementation-result/v1') {
+      if (response.status === 'verified' && 'implementation' in response) {
         const request =
-          input.action === 'feedback'
+          input.action === 'implementation'
             ? {
-                action: 'feedback',
-                operation: 'implementation-context',
-                id: input.id,
-                eventId: input.eventId,
+                action: 'implementation',
+                operation: 'context',
+                ...(input.target ? { target: input.target } : {}),
               }
-            : { action: 'implementation-context', id: input.id };
+            : input.action === 'feedback'
+              ? {
+                  action: 'feedback',
+                  operation: 'implementation-context',
+                  id: input.id,
+                  eventId: input.eventId,
+                }
+              : { action: 'implementation-context', id: input.id };
         return implementationMaterial(response, request, input.material);
       }
     }
@@ -207,7 +426,7 @@ export default class OpenClawDispatch {
           create: (record) => record,
           verifyExisting: async (record) => {
             await this.dependencies.credential.use(authority, (request) =>
-              describeIssueSession(request, record, this.dependencies.config(), true),
+              describeIssueSession(request, record, this.dependencies.config(), 'retained'),
             );
           },
         });
@@ -215,19 +434,25 @@ export default class OpenClawDispatch {
     );
     if (action.operation === 'context' || admitted.status === 'clarification-needed')
       return admitted;
-    if (!action.id || !('id' in admitted) || action.id !== admitted.id)
-      throw new Error('launch-receipt-required');
+    if (!('id' in admitted)) throw new Error('launch-owner-unavailable');
     const selected = await this.context.scope(manifest, workspace);
-    const record = (await selected.journal.read()).records.find((entry) => entry.id === action.id);
+    const record = (await selected.journal.read()).records.find(
+      (entry) => entry.id === admitted.id,
+    );
     if (
       !record?.manualIssue ||
       record.sourceThreadId !== caller.sessionKey ||
       (admitted.status === 'existing' &&
-        (record.result || record.handoff || action.operation !== 'reconcile'))
+        (!launchPending(record) || action.operation !== 'reconcile'))
     )
       return admitted;
     if (action.operation === 'prepare') {
-      if (!action.assessment || !action.title || !action.digest)
+      if (
+        !action.assessment ||
+        !action.title ||
+        !('digest' in admitted) ||
+        typeof admitted.digest !== 'string'
+      )
         throw new Error('launch-preparation-required');
       const prepared = await this.execute(
         manifest,
@@ -235,11 +460,11 @@ export default class OpenClawDispatch {
         caller,
         {
           action: 'prepare',
-          id: action.id,
+          id: admitted.id,
           assessment: action.assessment,
           ...(action.fallback ? { fallback: action.fallback } : {}),
           title: action.title,
-          digest: action.digest,
+          digest: admitted.digest,
         },
         true,
         authority,
@@ -252,7 +477,7 @@ export default class OpenClawDispatch {
         manifest,
         workspace,
         caller,
-        { action: 'reconcile', id: action.id },
+        { action: 'reconcile', id: admitted.id },
         true,
         authority,
       );
@@ -263,7 +488,7 @@ export default class OpenClawDispatch {
       manifest,
       workspace,
       caller,
-      { action: 'assess', id: action.id },
+      { action: 'assess', id: admitted.id },
       true,
       authority,
     );
@@ -302,13 +527,33 @@ export default class OpenClawDispatch {
               operation: input.deliveryOperation ?? 'prepare',
               title: input.title,
               body: input.body,
-              digest: input.digest,
             }
           : input.operation === 'context'
-            ? { action: 'implementation-context', id, scope: input.scope }
+            ? { action: 'implementation-context', id, scope: input.scope, material: input.material }
             : input.operation === 'result' && input.result
               ? { action: 'implementation-result', id, implementationResult: input.result }
               : { action: 'implementation-context', id };
+    }
+    if (input.action === 'assessment' && input.operation === 'render') {
+      if (caller.sessionKey) {
+        const current = await this.dependencies.intake.select(manifest, workspace, {
+          resolvePolicy: false,
+        });
+        const journal = new OpenClawDispatchStore(
+          this.dependencies.root,
+          current.store.location.scope,
+        );
+        return renderBoundAssessment(input, {
+          runtime: 'openclaw',
+          records: (await journal.read()).records,
+          admitted: (await current.store.read())?.records ?? [],
+          session: caller.sessionKey,
+          workspace,
+          debug: manifest.debug,
+          workflow: manifest.github?.notifications?.issueAssignment,
+        });
+      }
+      return renderNativeAssessment(input, 'openclaw');
     }
     if (input.action === 'assessment')
       return openClawAssessmentEntry({
@@ -338,6 +583,7 @@ export default class OpenClawDispatch {
         caller,
         native: input.native,
         digest: input.digest,
+        apply: input.apply,
         operator,
         authority,
       });
@@ -539,53 +785,67 @@ export default class OpenClawDispatch {
             throw new Error('feedback-schedule-owner-changed');
           if (applyOpenClawFeedbackScans(state.records, scans)) await save();
         }
-        if (input.action === 'inspect')
+        if (input.action === 'inspect') {
+          const { records, summary, ...page } = dispatchInspection(
+            state.records,
+            current.admitted.records,
+            input,
+          );
           return {
             status: 'ready' as const,
-            records: state.records.map((record) => ({
-              id: record.id,
-              intakeId: record.intakeId,
-              phase: record.phase,
-              workflowStatus: workflowStatus(record),
-              assignmentObservation: record.assignmentObservation,
-              assignmentWarning:
-                record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
-              threadId: record.threadId,
-              effective: record.effective,
-              sessionCreation: record.sessionCreation,
-              firstTurn: record.firstTurn
-                ? {
-                    status: record.firstTurn.status,
-                    runId: record.firstTurn.runId,
-                    consumedByEventId: record.firstTurn.consumedByEventId,
-                    replyEventId: record.firstTurn.replyEventId,
-                    executionModel: record.firstTurn.executionModel,
+            discoveryCheckedAt: state.discoveryCheckedAt,
+            discoveryTimings: state.discoveryTimings,
+            ...page,
+            records: summary
+              ? records.map(dispatchInspectionSummary)
+              : records.map((record) => ({
+                  id: record.id,
+                  intakeId: record.intakeId,
+                  phase: record.phase,
+                  workflowStatus: workflowStatus(record),
+                  assignmentObservation: record.assignmentObservation,
+                  assignmentWarning:
+                    record.assignmentObservation &&
+                    workflowRecovery(record.assignmentObservation.code),
+                  threadId: record.threadId,
+                  effective: record.effective,
+                  sessionCreation: record.sessionCreation,
+                  firstTurn: record.firstTurn
+                    ? {
+                        status: record.firstTurn.status,
+                        runId: record.firstTurn.runId,
+                        consumedByEventId: record.firstTurn.consumedByEventId,
+                        replyEventId: record.firstTurn.replyEventId,
+                        executionModel: record.firstTurn.executionModel,
+                        executionEffort: 'unverified',
+                      }
+                    : undefined,
+                  assessmentTurn: record.assessmentTurn && {
+                    status: record.assessmentTurn.status,
+                    runId: record.assessmentTurn.runId,
+                    consumedByEventId: record.assessmentTurn.consumedByEventId,
+                    replyEventId: record.assessmentTurn.replyEventId,
+                    executionModel: record.assessmentTurn.executionModel,
                     executionEffort: 'unverified',
-                  }
-                : undefined,
-              assessmentTurn: record.assessmentTurn && {
-                status: record.assessmentTurn.status,
-                runId: record.assessmentTurn.runId,
-                consumedByEventId: record.assessmentTurn.consumedByEventId,
-                replyEventId: record.assessmentTurn.replyEventId,
-                executionModel: record.assessmentTurn.executionModel,
-                executionEffort: 'unverified',
-              },
-              blocker: record.blocker,
-              failureStage: record.failureStage,
-              outcome: record.result?.outcome,
-              pendingPublicResponse: pendingPublicResponse(record),
-              summaryRecovery: record.summaryRecovery && {
-                revision: record.summaryRecovery.revision,
-                runId: record.summaryRecovery.turn.runId,
-                status: record.summaryRecovery.turn.status,
-                code: record.summaryRecovery.code,
-              },
-              retirement: record.retirement,
-              retired: record.retired,
-              feedback: record.feedback,
-            })),
+                  },
+                  blocker: record.blocker,
+                  failureStage: record.failureStage,
+                  outcome: record.result?.outcome,
+                  pendingPublicResponse: pendingPublicResponse(record),
+                  summaryRecovery: record.summaryRecovery && {
+                    revision: record.summaryRecovery.revision,
+                    runId: record.summaryRecovery.turn.runId,
+                    status: record.summaryRecovery.turn.status,
+                    code: record.summaryRecovery.code,
+                  },
+                  retirement: record.retirement,
+                  retired: record.retired,
+                  lifecycleCheckedAt: record.lifecycleCheckedAt,
+                  lifecyclePending: record.lifecyclePending,
+                  feedback: record.feedback,
+                })),
           };
+        }
         const now = (this.dependencies.now ?? Date.now)();
         const tx: OpenClawDispatchTransaction = {
           manifest,
@@ -636,6 +896,10 @@ export default class OpenClawDispatch {
           authority.signal
             ? AbortSignal.any([authority.signal, transactionSignal])
             : transactionSignal,
+          !(
+            input.action === 'delivery' &&
+            ['link', 'compose', 'candidate', 'announce'].includes(input.operation)
+          ),
         );
         if (childAction) return this.issue.run(input, record, tx, verified, operator);
         return this.admission.run(input, record, tx, verified, (stage) => {

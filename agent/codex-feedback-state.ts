@@ -17,7 +17,7 @@ export const feedbackEventSchema = Type.Object(
           request: Type.Object(
             {
               threadId: text,
-              prompt: Type.String({ maxLength: 32000 }),
+              prompt: Type.String({ minLength: 1 }),
               model: Type.Optional(text),
               thinking: Type.Optional(text),
             },

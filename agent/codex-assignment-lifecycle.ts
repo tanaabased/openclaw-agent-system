@@ -1,4 +1,7 @@
-import { managedIssueState } from './managed-issue.ts';
+import taskPullRequest from './task-pull-request.ts';
+import replyOwnPublications from './reply-own-publications.ts';
+import { dispatchAdmission, managedIssueState } from './managed-issue.ts';
+import { verifyDispatchWorktree } from './codex-dispatch-project.ts';
 import cleanupConfiguration from './cleanup-configuration.ts';
 import retainedIntakePolicy from './retained-intake-policy.ts';
 import DiscoveryBudget from './discovery-budget.ts';
@@ -130,8 +133,25 @@ export default async function reconcileCodexLifecycle(
             observationOnly: true,
           });
           if (!found) throw new Error('retirement-native-observation-unavailable');
-          if (record.worktree && found.cwd !== record.worktree)
-            throw new Error('retirement-worktree-identity-changed');
+          if (record.worktree && !found.archived && found.cwd !== record.worktree) {
+            if (
+              record.retirement?.reason !== 'issue-closed' ||
+              record.retirement.archiveAttempt ||
+              !record.project
+            )
+              throw new Error('retirement-worktree-identity-changed');
+            const intake = dispatchAdmission(record, admitted.records);
+            if (!intake) throw new Error('retirement-native-resource-unresolved');
+            // native handoff may replace the checkout without replacing this task's identity.
+            record.worktree = await verifyDispatchWorktree(
+              record.project,
+              found.cwd,
+              intake.repository.owner.login + '/' + intake.repository.name,
+              deps.git,
+              'handoff',
+            );
+            await save();
+          }
           if (record.retirement?.archiveAttempt && !found.archived) {
             const reader =
               deps.retirementNative ??
@@ -161,7 +181,7 @@ export default async function reconcileCodexLifecycle(
           };
         },
         reactivate: async (record, intake) => {
-          const pr = record.delivery?.pullRequest;
+          const pr = taskPullRequest(record);
           return reactivateAssignmentFeedback({
             record,
             intake,
@@ -174,6 +194,25 @@ export default async function reconcileCodexLifecycle(
               (await (deps.feedbackConnect ?? connectCodexFeedback)(current.workspace, signal))
                 .comments,
             announcement: record.delivery?.announcement,
+            ownReplies: async () => {
+              const provider = await (deps.feedbackConnect ?? connectCodexFeedback)(
+                current.workspace,
+                signal,
+              );
+              return replyOwnPublications({
+                root: current.store.location.root,
+                binding: {
+                  runtime: 'codex',
+                  agentId: current.agentId,
+                  workspace: current.workspace,
+                  namespace: current.codexHome,
+                  session: record.threadId!,
+                  incarnation: record.threadId!,
+                },
+                client: provider.comments,
+                replies: provider.replies,
+              });
+            },
             pullRequest: pr
               ? { number: pr.pullRequestNumber, nodeId: pr.pullRequestNodeId }
               : undefined,

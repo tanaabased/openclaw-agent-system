@@ -1,4 +1,6 @@
+import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import nodeErrorCode from '../utils/node-error-code.ts';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
@@ -21,6 +23,20 @@ const draftSchema = Type.Object(
     privateText: Type.String({ minLength: 1, maxLength: 32000 }),
     outcome: Type.Optional(Type.String({ maxLength: 32000 })),
     update: Type.Optional(statusUpdateSchema),
+    feedback: Type.Optional(
+      Type.Object(
+        {
+          ownerId: hash,
+          eventId: hash,
+          revision: hash,
+          source: Type.String({ minLength: 1, maxLength: 256000 }),
+          number: Type.Integer({ minimum: 1 }),
+          nodeId: text,
+          itemType: Type.Union([Type.Literal('issue'), Type.Literal('pull-request')]),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     configuration: hash,
     selection: assessmentSelectionSchema,
     authorLogin: text,
@@ -82,6 +98,46 @@ export default class ReplyStore {
       await lock.release();
     }
   }
+  private draftFile(id: string) {
+    if (!/^[a-f0-9]{64}$/u.test(id)) throw new Error('reply-state-invalid');
+    return new PrivateStateFile({
+      currentUid: process.getuid?.(),
+      directories: [this.root],
+      label: 'reply draft',
+      maximumBytes: 8 * 1024 * 1024,
+      path: join(this.root, `github-reply-${this.scope}-${id}.json`),
+    });
+  }
+  async read(): Promise<ReplyDraft[]> {
+    // Older journals remain readable. New writes are bounded per operation, not
+    // by the lifetime volume of an otherwise valid conversation.
+    const contents = await this.file.read();
+    const state: unknown =
+      contents === undefined ? { scope: this.scope, drafts: [] } : JSON.parse(contents);
+    if (!Value.Check(schema, state) || state.scope !== this.scope)
+      throw new Error('reply-state-invalid');
+    const drafts = new Map(state.drafts.map((draft) => [draft.id, draft]));
+    let names: string[];
+    try {
+      names = await readdir(this.root);
+    } catch (error) {
+      if (nodeErrorCode(error) !== 'ENOENT') throw error;
+      return [...drafts.values()];
+    }
+    const prefix = `github-reply-${this.scope}-`;
+    for (const name of names.sort()) {
+      if (!name.startsWith(prefix) || !/^[a-f0-9]{64}\.json$/u.test(name.slice(prefix.length)))
+        continue;
+      const id = name.slice(prefix.length, -5);
+      const content = await this.draftFile(id).read();
+      if (content === undefined) throw new Error('reply-state-invalid');
+      const draft: unknown = JSON.parse(content);
+      if (!Value.Check(draftSchema, draft) || draft.id !== id)
+        throw new Error('reply-state-invalid');
+      drafts.set(id, draft);
+    }
+    return [...drafts.values()];
+  }
   async exclusive<T>(run: (drafts: ReplyDraft[], save: () => Promise<void>) => Promise<T>) {
     await ensurePrivateStateDirectories({
       directories: [this.root],
@@ -94,15 +150,18 @@ export default class ReplyStore {
     });
     try {
       return await withPrivateStateLock(lock, async () => {
-        const contents = await this.file.read();
-        const state: unknown =
-          contents === undefined ? { scope: this.scope, drafts: [] } : JSON.parse(contents);
-        if (!Value.Check(schema, state) || state.scope !== this.scope)
-          throw new Error('reply-state-invalid');
-        return run(state.drafts, async () => {
+        const drafts = await this.read();
+        const saved = new Map(drafts.map((draft) => [draft.id, JSON.stringify(draft)]));
+        return run(drafts, async () => {
           lock.assertHeld();
-          if (!Value.Check(schema, state)) throw new Error('reply-state-invalid');
-          await this.file.write(JSON.stringify(state));
+          if (!Value.Check(schema, { scope: this.scope, drafts }))
+            throw new Error('reply-state-invalid');
+          for (const draft of drafts) {
+            const content = JSON.stringify(draft);
+            if (saved.get(draft.id) === content) continue;
+            await this.draftFile(draft.id).write(content);
+            saved.set(draft.id, content);
+          }
         });
       });
     } finally {

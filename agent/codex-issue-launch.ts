@@ -1,3 +1,4 @@
+import launchPending from './launch-pending.ts';
 import { routingInstructionsDigest } from './routing-instructions.ts';
 import { Value } from 'typebox/value';
 
@@ -72,15 +73,14 @@ export default async function codexIssueLaunch(
       }
       return admitted;
     }
-    if (!input.id || !('id' in admitted) || input.id !== admitted.id)
-      throw new Error('launch-receipt-required');
+    if (!('id' in admitted)) throw new Error('launch-owner-unavailable');
     return journal.exclusive(async (state, save, lockSignal) => {
-      const record = state.records.find((entry) => entry.id === input.id);
+      const record = state.records.find((entry) => entry.id === admitted.id);
       if (
         !record?.manualIssue ||
         record.sourceThreadId !== context.binding.session ||
         (admitted.status === 'existing' &&
-          (record.result || record.handoff || input.operation !== 'reconcile'))
+          (!launchPending(record) || input.operation !== 'reconcile'))
       )
         return admitted;
       const admissions = managedIssueState(await current.store.read(), state.records)!;
@@ -127,9 +127,24 @@ export default async function codexIssueLaunch(
           record.project.commit !== record.manualIssue.pullRequest.headSha)
       )
         return prepareIssueProject(input, record, issue, tx);
-      if (!input.assessment || !input.title || !input.digest)
-        throw new Error('launch-preparation-required');
-      return prepareDispatch(input, record, issue, tx);
+      if (!input.assessment || !input.title) throw new Error('launch-preparation-required');
+      return prepareDispatch(
+        {
+          ...input,
+          id: record.id,
+          digest: automationHash({
+            context: record.context,
+            ...(record.adoptedPullRequest ? { adoptedPullRequest: record.adoptedPullRequest } : {}),
+            project: record.project,
+            manifest: record.manifestDigest,
+            instructions:
+              record.routingInstructions && routingInstructionsDigest(record.routingInstructions),
+          }),
+        },
+        record,
+        issue,
+        tx,
+      );
     }, true);
   });
 }

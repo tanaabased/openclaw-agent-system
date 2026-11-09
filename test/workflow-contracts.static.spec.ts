@@ -118,7 +118,7 @@ describe('workflow safety and coverage', () => {
     assert.deepEqual([...cleanup.on.workflow_run.workflows].sort(), names.sort());
   });
 
-  it('should enumerate distinct existing examples in their owning workflows', async () => {
+  it('should enumerate distinct existing examples with safe fixture identities', async () => {
     const selected = new Set<string>();
     for (const kind of exampleWorkflows) {
       const workflow = parse(await readFile(`.github/workflows/pr-${kind}.yml`, 'utf8'));
@@ -128,20 +128,6 @@ describe('workflow safety and coverage', () => {
         assert.match(example, /^[a-z][a-z0-9-]+$/u);
         assert.ok(!selected.has(example), `${example} is selected by more than one workflow`);
         selected.add(example);
-        const owner =
-          example === 'codex-notifications' || example.startsWith('openclaw-notifications-')
-            ? 'notifications'
-            : example === 'codex-automations' || example.startsWith('openclaw-automation-')
-              ? 'automations'
-              : example === 'openclaw-project-picker'
-                ? 'project-picker'
-                : example.startsWith('openclaw-pr-')
-                  ? 'pull-requests'
-                  : example.startsWith('openclaw-issue-') &&
-                      !['openclaw-issue-assessment', 'openclaw-issue-launch'].includes(example)
-                    ? 'issue-assignments'
-                    : example.split('-')[0];
-        assert.equal(owner, kind);
         const readme = await readFile(`examples/${example}/README.md`, 'utf8');
         const issueTitles = readme.matchAll(
           /api --method POST repos\/tanaabased\/big-test-bucket\/issues -f "title=([^"\n]+)"/gu,

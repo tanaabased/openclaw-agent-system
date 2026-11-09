@@ -1,3 +1,5 @@
+import taskPullRequest from './task-pull-request.ts';
+import replyOwnPublications from './reply-own-publications.ts';
 import { managedPullRequest } from './managed-issue.ts';
 import { lstat } from 'node:fs/promises';
 
@@ -21,6 +23,7 @@ export default async function reconcileOpenClawLifecycle(input: {
   authority: DispatchAuthority;
   targetId?: string;
   activeSessionKey?: string;
+  budget?: DiscoveryBudget;
 }) {
   const { service, manifest, workspace, authority } = input;
   const readConfiguration = () => openClawCleanupConfiguration(service.dependencies.config);
@@ -36,7 +39,7 @@ export default async function reconcileOpenClawLifecycle(input: {
   const owner = manualTarget
     ? manualTarget.sourceThreadId
     : await service.dependencies.coordinator(manifest, workspace);
-  const feedbackBudget = new DiscoveryBudget();
+  const feedbackBudget = input.budget ?? new DiscoveryBudget();
   const now = (service.dependencies.now ?? Date.now)();
   const snapshot = await current.journal.read();
   if (
@@ -48,6 +51,7 @@ export default async function reconcileOpenClawLifecycle(input: {
     )
   )
     return;
+  input.budget?.check();
   const client = await service.dependencies.connect(
     { manifest, workspaceDir: workspace },
     authority.signal ?? AbortSignal.timeout(20_000),
@@ -73,6 +77,8 @@ export default async function reconcileOpenClawLifecycle(input: {
   };
   const observe = async (request: DispatchRequest, record: OpenClawDispatchRecord) => {
     const observed = await observeRetirementSession(request, record, manifest.agent.id, owner);
+    if (observed && !observed.unavailableSession && !record.retirement)
+      record.nativeInactive = observed.idle;
     return (
       observed && { ...observed, idle: observed.idle && record.threadId !== input.activeSessionKey }
     );
@@ -84,6 +90,7 @@ export default async function reconcileOpenClawLifecycle(input: {
         const retirement = record.retirement;
         const code = retirement?.code;
         return retirement &&
+          !retirement.childArchiveRequests &&
           code &&
           (code.startsWith('session-dispatch-sessions-patch-') ||
             code === 'retirement-archive-unverified')
@@ -103,13 +110,14 @@ export default async function reconcileOpenClawLifecycle(input: {
       client,
       owner,
       targetId: input.targetId,
+      budget: input.budget,
       now,
       fresh,
       save,
       observe: (record) =>
         service.dependencies.credential.use(authority, (request) => observe(request, record)),
       reactivate: async (record, intake) => {
-        const pr = record.work?.delivery?.reconciled ? record.work.delivery.pullRequest : undefined;
+        const pr = taskPullRequest(record);
         return reactivateAssignmentFeedback({
           record,
           intake,
@@ -128,6 +136,27 @@ export default async function reconcileOpenClawLifecycle(input: {
             return provider;
           },
           announcement: record.work?.delivery?.announcement,
+          ownReplies: async () => {
+            const provider = await service.dependencies.feedbackConnect?.(
+              { manifest, workspaceDir: workspace },
+              authority.signal ?? AbortSignal.timeout(20_000),
+              client,
+            );
+            if (!provider) throw new Error('feedback-provider-unavailable');
+            return replyOwnPublications({
+              root: service.dependencies.root,
+              binding: {
+                runtime: 'openclaw',
+                agentId: manifest.agent.id,
+                workspace,
+                namespace: service.dependencies.intake.dependencies.namespace,
+                session: record.threadId!,
+                incarnation: record.sessionCreation!.sessionId!,
+              },
+              client: provider,
+              replies: provider.replies,
+            });
+          },
           pullRequest: pr
             ? { number: pr.pullRequestNumber, nodeId: pr.pullRequestNodeId }
             : undefined,
@@ -192,7 +221,7 @@ export default async function reconcileOpenClawLifecycle(input: {
               }),
             );
             let totalCount: number | undefined;
-            const nativeOwners = new Set<string>();
+            const nativeOwners = new Map<string, Record<string, unknown>>();
             for (let offset = 0; ; offset += 100) {
               const inventory = retirementObject(
                 await request('sessions.list', {
@@ -218,8 +247,7 @@ export default async function reconcileOpenClawLifecycle(input: {
                 const session = retirementObject(value, 'sessions-list-session');
                 if (typeof session.key !== 'string' || nativeOwners.has(session.key))
                   throw new Error('retirement-native-inventory-unresolved');
-                nativeOwners.add(session.key);
-                if (!owners.has(session.key)) throw new Error('retirement-worktree-shared');
+                nativeOwners.set(session.key, session);
               }
               if (nativeOwners.size === totalCount) {
                 if (inventory.hasMore === true)
@@ -229,6 +257,32 @@ export default async function reconcileOpenClawLifecycle(input: {
               if (inventory.sessions.length !== 100 || nativeOwners.size > totalCount)
                 throw new Error('retirement-native-inventory-unresolved');
             }
+            const children = new Map<string, Record<string, unknown>>();
+            const parents = new Set([record.threadId ?? record.request!.key]);
+            if (issueClosed) {
+              let added = true;
+              while (added) {
+                added = false;
+                for (const [key, row] of nativeOwners) {
+                  if (
+                    parents.has(key) ||
+                    !key.startsWith(`agent:${manifest.agent.id}:subagent:`) ||
+                    row.agentId !== manifest.agent.id ||
+                    typeof row.sessionId !== 'string' ||
+                    !row.sessionId ||
+                    !parents.has(String(row.parentSessionKey))
+                  )
+                    continue;
+                  children.set(key, row);
+                  parents.add(key);
+                  owners.add(key);
+                  owners.add(`session:${key}`);
+                  added = true;
+                }
+              }
+            }
+            for (const key of nativeOwners.keys())
+              if (!owners.has(key)) throw new Error('retirement-worktree-shared');
             if (
               jobs.some(
                 (job) =>
@@ -239,10 +293,11 @@ export default async function reconcileOpenClawLifecycle(input: {
               )
             )
               throw new Error('retirement-automation-owner');
+            return children;
           };
           const recheck = async () => {
             await checkLifecycle();
-            await custody();
+            return custody();
           };
           await custody();
           const repo = await client.getRepository(
@@ -300,7 +355,47 @@ export default async function reconcileOpenClawLifecycle(input: {
             record.retirement!.worktreeRemovedAt = now;
             await save();
           }
-          await recheck();
+          const children = await recheck();
+          let childArchiveCode: string | undefined;
+          for (const [key, child] of children) {
+            const retirement = record.retirement!;
+            const requests = (retirement.childArchiveRequests ??= {});
+            const attempted = requests[key];
+            if (attempted && attempted.sessionId !== child.sessionId)
+              throw new Error('retirement-session-identity-changed');
+            if (child.archived !== true && !child.archivedAt && !attempted) {
+              requests[key] = { at: now, sessionId: String(child.sessionId) };
+              await save();
+              try {
+                await request('sessions.patch', {
+                  key,
+                  expectedSessionId: child.sessionId,
+                  ...(typeof child.lifecycleRevision === 'string'
+                    ? { expectedLifecycleRevision: child.lifecycleRevision }
+                    : {}),
+                  archived: true,
+                });
+              } catch (error) {
+                requests[key]!.code = workflowFailure(error, 'retirement-archive-unverified').code;
+                await save();
+              }
+            }
+            const row = retirementObject(
+              retirementObject(await request('sessions.describe', { key }), 'sessions-describe')
+                .session,
+              'sessions-describe-session',
+            );
+            if (
+              row.key !== key ||
+              row.sessionId !== child.sessionId ||
+              row.agentId !== manifest.agent.id ||
+              row.parentSessionKey !== child.parentSessionKey ||
+              (row.spawnedCwd ?? row.spawnedWorkspaceDir ?? row.workspaceDir) !== record.worktree
+            )
+              throw new Error('retirement-session-identity-changed');
+            if (row.archived !== true && !row.archivedAt)
+              childArchiveCode ??= requests[key]?.code ?? 'retirement-archive-unverified';
+          }
           let archiveObserved = false;
           if (observed.unavailableSession) {
             record.retirement!.sessionUnavailableObserved = {
@@ -341,7 +436,7 @@ export default async function reconcileOpenClawLifecycle(input: {
           }
           await save();
           const settled = {
-            archived: archiveObserved,
+            archived: archiveObserved && !childArchiveCode,
             ...(!observed.unavailableSession && !archiveObserved
               ? { code: record.retirement!.archiveRequest?.code ?? 'retirement-archive-unverified' }
               : {}),
@@ -349,6 +444,8 @@ export default async function reconcileOpenClawLifecycle(input: {
               ? { unavailableSession: observed.unavailableSession }
               : {}),
           };
+          if (childArchiveCode)
+            return { ...settled, code: childArchiveCode, worktreeRemoved: false };
           if (!issueClosed && !archiveObserved && !observed.unavailableSession)
             return { ...settled, worktreeRemoved: false };
           for (const other of issueClosed ? [] : shared) {

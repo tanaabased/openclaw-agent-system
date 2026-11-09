@@ -3,6 +3,29 @@ import { spawnSync } from 'node:child_process';
 import { setTimeout } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 
+/** Capture native failures before later scenario steps or Gateway shutdown lose the evidence. */
+export async function reportNativeRunDiagnostics(
+  runId: string,
+  dependencies: {
+    request(method: 'logs.tail', params: Record<string, never>): Promise<unknown>;
+    report(value: unknown): void;
+  },
+) {
+  try {
+    // The native endpoint owns log redaction, size limits and truncation metadata.
+    const nativeLogs = (await dependencies.request('logs.tail', {})) as {
+      lines: string[];
+      [key: string]: unknown;
+    };
+    const { lines, ...metadata } = nativeLogs;
+    dependencies.report({ runId, nativeLogs: metadata });
+    // Keep each native line separate instead of producing one oversized CI log record.
+    for (const line of lines) dependencies.report({ runId, nativeLogLine: line });
+  } catch {
+    dependencies.report({ runId, nativeLogsUnavailable: true });
+  }
+}
+
 /** a wait timeout is an observation, not a completed or cancelled agent run. */
 export default async function waitForAgentRun(input: {
   runId: string;
@@ -39,29 +62,65 @@ export default async function waitForAgentRun(input: {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   assert.equal(process.env.GITHUB_ACTIONS, 'true', 'GitHub Actions only.');
   const [runId = '', timeout = '600000'] = process.argv.slice(2);
-  await waitForAgentRun({
-    runId,
-    timeoutMs: Number(timeout),
-    request(timeoutMs) {
-      const result = spawnSync(
-        'openclaw',
-        [
-          'gateway',
-          'call',
-          'agent.wait',
-          '--params',
-          JSON.stringify({ runId, timeoutMs }),
-          '--timeout',
-          String(timeoutMs + 5000),
-          '--json',
-        ],
-        { encoding: 'utf8', timeout: timeoutMs + 10000 },
+  try {
+    await waitForAgentRun({
+      runId,
+      timeoutMs: Number(timeout),
+      request(timeoutMs) {
+        const result = spawnSync(
+          'openclaw',
+          [
+            'gateway',
+            'call',
+            'agent.wait',
+            '--params',
+            JSON.stringify({ runId, timeoutMs }),
+            '--timeout',
+            String(timeoutMs + 5000),
+            '--json',
+          ],
+          { encoding: 'utf8', timeout: timeoutMs + 10000 },
+        );
+        assert.equal(result.status, 0, result.error?.message ?? result.stdout + result.stderr);
+        return JSON.parse(result.stdout);
+      },
+      report: (receipt) => process.stdout.write(JSON.stringify(receipt) + '\n'),
+      sleep: setTimeout,
+      now: Date.now,
+    });
+  } catch (error) {
+    await reportNativeRunDiagnostics(runId, {
+      async request(method, params) {
+        const { callGatewayFromCli } = await import('openclaw/plugin-sdk/gateway-runtime');
+        return callGatewayFromCli(method, { json: true }, params, {
+          scopes: ['operator.read'],
+          progress: false,
+          sharedStateMode: 'read-only',
+        });
+      },
+      report: (diagnostics) => process.stderr.write(JSON.stringify(diagnostics) + '\n'),
+    });
+    // The shared mock captures predicate exceptions that the native receipt cannot explain.
+    // This entrypoint runs only in hosted, disposable examples; never mask the original failure.
+    try {
+      const response = await fetch('http://127.0.0.1:4010/proof/diagnostics', {
+        signal: AbortSignal.timeout(5000),
+      });
+      const diagnostics = (await response.json()) as {
+        scenario?: string;
+        fixtureErrors?: unknown;
+        requests?: Array<{ status: number; checks: unknown }>;
+      };
+      process.stderr.write(
+        JSON.stringify({
+          scenario: diagnostics.scenario,
+          fixtureErrors: diagnostics.fixtureErrors,
+          requests: diagnostics.requests,
+        }) + '\n',
       );
-      assert.equal(result.status, 0, result.error?.message ?? result.stdout + result.stderr);
-      return JSON.parse(result.stdout);
-    },
-    report: (receipt) => process.stdout.write(JSON.stringify(receipt) + '\n'),
-    sleep: setTimeout,
-    now: Date.now,
-  });
+    } catch {
+      /* Diagnostics are optional; the original native failure remains authoritative. */
+    }
+    throw error;
+  }
 }

@@ -5,7 +5,26 @@ import type { ManagedIssueState as IntakeState } from './managed-issue.ts';
 /** Reporting and delivery do not change which assignments the last dispatch check covered. */
 export function dispatchCheckDigest(state: DispatchState, intake: IntakeState) {
   return automationHash({
-    records: state.records,
+    records: state.records.map((record) => ({
+      id: record.id,
+      intakeId: record.intakeId,
+      manualIssue: record.manualIssue,
+      issueKey: record.issueKey,
+      sourceThreadId: record.sourceThreadId,
+      request: record.request,
+      project: record.project,
+      threadId: record.threadId,
+      clientThreadId: record.clientThreadId,
+      receiptThreadId: record.receiptThreadId,
+      worktree: record.worktree,
+      effective: record.effective,
+      retired: record.retired,
+      retirement: record.retirement,
+      reset: record.reset,
+      supersededBy: record.supersededBy,
+      nativeInactive: record.nativeInactive,
+      denial: record.denial,
+    })),
     intake: intake.records,
     policy: intake.policyDigest,
   });

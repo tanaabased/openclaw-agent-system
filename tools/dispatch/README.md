@@ -12,6 +12,7 @@ skill below.
 
 - [Requirements](#requirements)
 - [Configuration](#configuration)
+- [`agent_system_context`](#agent_system_context)
 - [`agent_system_dispatch`](#agent_system_dispatch)
   - [Parameters](#parameters)
   - [Usage](#usage)
@@ -30,6 +31,25 @@ Use the [GitHub workflow configuration](../../channels/github/CONFIG.md)
 for modes, stage skills, guidance, and delivery. [Model profiles](../../MANIFEST.md#models)
 select the configured model and effort. There is no separate Dispatch manifest section.
 
+## `agent_system_context`
+
+Refresh the current managed task's context when native hook context is missing.
+Normally, use the context already supplied in the turn. This read-only tool takes
+no parameters and resolves ownership from the native invocation.
+
+### Parameters
+
+None. Task, agent, session and authority overrides are rejected.
+
+### Usage
+
+```json
+{}
+```
+
+The response supplies the task source, checkout, current configuration and verified
+incoming feedback when available. Effects still perform their own authorization checks.
+
 ## `agent_system_dispatch`
 
 Start with the skill for the requested operation; its returned context
@@ -39,6 +59,7 @@ supplies the current request, required inputs, and recovery instructions.
 | ---------------------------------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------- |
 | Assess an issue in the current checkout              | `assessment`                          | [Task Assessment](../../skills/task-assessment/SKILL.md)                                      |
 | Implement an authorized plan in the current checkout | `implementation`                      | [Task Implementation](../../skills/task-implementation/SKILL.md)                              |
+| Inspect saved discovery progress                     | `inspect`                             | [Saved discovery inspection](#saved-discovery-inspection)                                     |
 | Launch or reuse issue or existing PR work            | `launch`                              | [Task Launch](../../skills/task-launch/SKILL.md) and [launch reference](#manual-issue-launch) |
 | Rebind a managed task to an existing PR              | `delivery` with `operation: bind`     | [Task Implementation](../../skills/task-implementation/SKILL.md)                              |
 | Replace a stranded managed task                      | `recover`                             | [Task Launch](../../skills/task-launch/SKILL.md)                                              |
@@ -50,6 +71,45 @@ The installed workflow also uses this tool internally. Follow the owning skill a
 returned task context rather than assembling an action sequence. Exact variants are
 in the [tool schema](./tool-schema.ts); shared behavior and recovery are in the
 [GitHub workflow guide](../../channels/github/README.md).
+
+### Saved discovery inspection
+
+Read retained observations without scanning GitHub or running lifecycle reconciliation.
+Both runtimes support the same filters and paging. A saved observation is not a fresh
+provider check or proof of recovery.
+
+#### Parameters
+
+| Parameter | Type    | Required | Default                                       | Description                                                                                                            |
+| --------- | ------- | -------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `action`  | string  | yes      | none                                          | `inspect`.                                                                                                             |
+| `id`      | string  | no       | none                                          | Exact retained task id. Combined filters must all match.                                                               |
+| `limit`   | integer | no       | `12` for bounded reads                        | Records per page, from `1` through `50`.                                                                               |
+| `offset`  | integer | no       | `0`                                           | Record offset within the filtered results.                                                                             |
+| `summary` | boolean | no       | `true` when any inspection option is supplied | Omit prompts, comment bodies, baselines, and event payloads. Set `false` for the runtime's normal detailed projection. |
+| `target`  | string  | no       | none                                          | Qualified `owner/repo#number` issue reference, or exact issue/PR URL. A linked PR selects its issue owner too.         |
+
+#### Usage
+
+Inspect one issue's saved scan time, pending discovery, stalls, and lifecycle check time:
+
+```json
+{ "action": "inspect", "target": "owner/repo#69", "limit": 1 }
+```
+
+When returned, pass `nextOffset` as `offset` with the same filters to continue.
+`total` counts matching retained owners, including history. With no inspection options,
+inspection still returns the full retained list. Prefer a compact selected read when
+large journals would truncate tool output.
+
+OpenClaw also returns `discoveryCheckedAt` and `discoveryTimings` for its last completed
+discovery check. The assignment duration includes scope preparation; the feedback
+duration includes feedback setup. These are occurrence-wide timings, not per-item
+provider timings. Lifecycle reconciliation shares the remaining occurrence time with
+feedback. Lifecycle checks not reached keep their priority; attempted checks rotate
+behind older ones on later passes. An interrupted check keeps `lifecyclePending: true`
+and takes priority over completed checks from the same pass. `lifecycleCheckedAt`
+records an attempt, not proof that every lifecycle operation completed.
 
 <a id="manual-issue-launch"></a>
 
@@ -147,23 +207,23 @@ retirement; a managed denial never falls back to unmanaged cleanup.
 
 #### Parameters
 
-| Parameter | Type   | Required  | Default | Description                                                                                     |
-| --------- | ------ | --------- | ------- | ----------------------------------------------------------------------------------------------- |
-| `action`  | string | yes       | none    | `retire`.                                                                                       |
-| `digest`  | string | for apply | none    | Digest returned by the latest exact-target preview.                                             |
-| `native`  | string | yes       | none    | Exact OpenClaw session key or standalone Codex thread id. Cannot be combined with managed `id`. |
+| Parameter | Type    | Required | Default | Description                                                                  |
+| --------- | ------- | -------- | ------- | ---------------------------------------------------------------------------- |
+| `action`  | string  | yes      | none    | `retire`.                                                                    |
+| `native`  | string  | yes      | none    | Exact OpenClaw session key or standalone Codex thread id for unmanaged work. |
+| `preview` | boolean | no       | `false` | Inspect the target and effects without applying cleanup.                     |
 
 #### Usage
 
 Preview one unmanaged OpenClaw session:
 
 ```json
-{ "action": "retire", "native": "agent:example:disposable" }
+{ "action": "retire", "native": "agent:example:disposable", "preview": true }
 ```
 
-Inspect its target and effects, then repeat with the returned `digest`. Existing
-explicit cleanup intent authorizes apply without another conversational
-confirmation. OpenClaw requires enrolled session transport; explicit Install with
+Inspect its target and effects, then repeat without `preview` to apply cleanup.
+The runtime resolves the binding internally; do not supply a digest. Existing
+explicit cleanup intent authorizes apply without another conversational confirmation. OpenClaw requires enrolled session transport; explicit Install with
 `--manual-session-dispatch` supplies it when absent. Standalone Codex requires the
 native desktop archive tool and uses its exact thread id through the shared skill.
 

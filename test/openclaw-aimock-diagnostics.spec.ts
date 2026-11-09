@@ -52,6 +52,41 @@ describe('scripts/aimock-diagnostics', () => {
     assert.deepEqual(entry, original);
   });
 
+  it('should expose repeated successful tool exchanges when a native turn stalls', () => {
+    const entry: Entry = {
+      method: 'POST',
+      path: '/responses',
+      response: { fixture: {}, status: 200 },
+      body: {
+        model: 'gpt-5.5',
+        messages: [
+          { role: 'user', content: 'private-prompt' },
+          {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: 'call_material_0_6000',
+                function: { name: 'agent_system_dispatch', arguments: 'private-arguments' },
+              },
+            ],
+          },
+          { role: 'tool', tool_call_id: 'call_material_0_6000', content: 'private-page' },
+        ],
+      },
+    };
+    const result = diagnostics(
+      resolveScenario('os-execution'),
+      Array.from({ length: 20 }, () => entry),
+    );
+    assert.equal(result.failed, false);
+    assert.equal(result.requests?.length, 4);
+    assert.deepEqual(result.requests?.at(-1)?.toolCalls, [
+      { id: 'call_material_0_6000', name: 'agent_system_dispatch' },
+    ]);
+    assert.doesNotMatch(JSON.stringify(result), /private-/u);
+  });
+
   it('should report evidence projection errors with the offending owned result', () => {
     const scenario = resolveScenario('openclaw-lifecycle-approvals');
     const result = diagnostics(scenario, [

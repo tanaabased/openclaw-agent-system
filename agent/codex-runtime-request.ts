@@ -30,6 +30,7 @@ const actions: Record<string, readonly string[]> = {
     'retry-denied',
   ],
   delivery: [
+    'link',
     'bind',
     'prepare',
     'publish',
@@ -61,8 +62,38 @@ export default function codexRuntimeRequest(route: string, args: string[], input
     throw new Error('workflow-command-invalid');
   if (!input || typeof input !== 'object' || Array.isArray(input))
     throw new Error('workflow-request-invalid');
-  const request = { ...input } as Record<string, unknown>;
   const [action, operation] = args.slice(0, index);
+  const envelope = input as Record<string, unknown>;
+  const prepared = envelope.publishRequest;
+  let source = envelope;
+  if ('publishRequest' in envelope) {
+    if (
+      envelope.status !== 'prepared' ||
+      !prepared ||
+      typeof prepared !== 'object' ||
+      Array.isArray(prepared) ||
+      !(
+        (route === 'delivery' && action === 'publish' && !operation) ||
+        (route === 'continuation' && action === 'delivery' && operation === 'publish') ||
+        (route === 'dispatch' && action === 'implementation' && operation === 'publish')
+      )
+    )
+      throw new Error('workflow-prepared-publication-invalid');
+    const publication = prepared as Record<string, unknown>;
+    if (
+      publication.action !== action ||
+      (route === 'dispatch' &&
+        (publication.operation !== 'delivery' || publication.deliveryOperation !== 'publish')) ||
+      (route === 'continuation' &&
+        (!publication.delivery ||
+          typeof publication.delivery !== 'object' ||
+          !('action' in publication.delivery) ||
+          publication.delivery.action !== 'publish'))
+    )
+      throw new Error('workflow-command-action-mismatch');
+    source = publication;
+  }
+  const request = { ...source };
   if (!action) {
     if (
       (route === 'feedback' && request.action === 'reply') ||
@@ -113,7 +144,9 @@ export default function codexRuntimeRequest(route: string, args: string[], input
         ['assessment', 'implementation', 'launch'].includes(action)
           ? action === 'launch'
             ? ['context', 'prepare', 'reconcile']
-            : ['context', 'result', 'present']
+            : action === 'assessment'
+              ? ['context', 'render', 'result', 'present']
+              : ['context', 'result', 'present']
           : action === 'reply'
             ? ['context', 'compose', 'candidate', 'publish', 'reconcile']
             : ['compose', 'candidate', 'publish', 'reconcile']

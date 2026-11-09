@@ -1,3 +1,7 @@
+import { cardCopyInstructions } from '../channels/github/presentation/card.ts';
+import replyMaterial from './reply-material.ts';
+import type { ImplementationMaterialRead } from './implementation-material.ts';
+import taskUpdateInstructions from './task-update-instructions.ts';
 import isFilesystemAccessError from '../utils/is-filesystem-access-error.ts';
 
 import { automationHash } from './automation-hash.ts';
@@ -72,11 +76,34 @@ export async function reconcileAnnouncement(input: {
   return result.receipt;
 }
 
+/** compare verified publication evidence, never a planned or merely local head. */
+export function announcementPrecedesDelivery(
+  delivery:
+    | {
+        reconciled: boolean;
+        pushedHead?: string;
+        pullRequest?: { pullRequestNodeId: string; pullRequestNumber: number };
+        announcement?: DeliveryAnnouncementState;
+      }
+    | undefined,
+): boolean {
+  const snapshot = delivery?.announcement?.snapshot;
+  return Boolean(
+    delivery?.reconciled &&
+    delivery.pushedHead &&
+    snapshot &&
+    delivery.pullRequest?.pullRequestNodeId === snapshot.pullRequestNodeId &&
+    delivery.pullRequest.pullRequestNumber === snapshot.pullRequestNumber &&
+    delivery.pushedHead !== snapshot.head,
+  );
+}
+
 export function announcementPresentation(
   state: DeliveryAnnouncementState | undefined,
   issueUrl: string,
   authorLogin = state?.authorLogin,
   recovery?: AnnouncementRecovery,
+  updatedSinceAnnouncement = false,
 ) {
   const confirmed = state?.receipt && !state.code && !recovery;
   const quote = state?.publicText
@@ -85,7 +112,7 @@ export function announcementPresentation(
         author: authorLogin
           ? { label: authorLogin, url: `https://github.com/${encodeURIComponent(authorLogin)}` }
           : undefined,
-        label: 'PR announcement',
+        label: confirmed ? 'Original PR announcement' : 'PR announcement',
         connector: 'by',
         publication: confirmed
           ? { url: `${issueUrl}#issuecomment-${state.receipt!.databaseId}` }
@@ -120,6 +147,9 @@ export function announcementPresentation(
       : `> **Recovery:** ${recovery.status === 'exhausted' ? 'Automatic checks exhausted.' : 'Automatic recovery is held.'} ${heldNext} Do not bypass a native denial or create a replacement PR.`
     : '';
   return [
+    confirmed && updatedSinceAnnouncement && quote
+      ? 'Original announcement (before this update):'
+      : '',
     quote,
     obstacle,
     next,
@@ -238,14 +268,15 @@ export function announcementRecoveryInstructions(
   if (state?.attempted || state?.receipt)
     return 'Call delivery announce to reconcile the retained announcement attempt. Do not compose or post a replacement.';
   if (state?.publicText)
-    return 'Call delivery announce without a digest to verify and preview the saved draft, then announce with its returned digest through native approval. Preserve the draft; do not compose a replacement merely to resume delivery. A stale snapshot or changed reply skill requires fresh composition before any write.';
-  return 'Call delivery compose, invoke the selected reply skill, submit candidate, then execute announce with its preview digest.';
+    return 'Call delivery announce through native approval to verify and publish the saved draft. Preserve the draft; do not compose a replacement merely to resume delivery. A stale snapshot or changed reply skill requires fresh composition before any write.';
+  return 'Call delivery compose, invoke the selected reply skill, submit candidate, then execute announce through native approval.';
 }
 
 /** native attachment is the only host-specific step after verified publication. */
 export function deliveryCompletionInstructions(
   runtime: 'codex' | 'openclaw',
   delivery: Delivery & { attached?: boolean },
+  updated = false,
 ) {
   const attachment =
     runtime === 'openclaw'
@@ -254,11 +285,21 @@ export function deliveryCompletionInstructions(
         ? 'Native PR attachment is confirmed. '
         : 'Call native attach_artifact for this pull_request URL, then list_artifacts and delivery reconcile. ';
   return (
+    cardCopyInstructions +
+    ' ' +
+    (updated
+      ? ''
+      : 'Submit the complete returned linkRequest for the initial task/PR association; follow its native attachment instructions and reuse that request for attachment readback. ') +
     attachment +
+    (updated
+      ? 'This delivery updated the existing PR. Invoke Task Update for its material verified changes as a separate publication, coalescing any source-bound reply that already conveys them. An update failure does not undo delivery or prevent card presentation. '
+      : '') +
+    taskUpdateInstructions() +
+    ' ' +
     announcementRecoveryInstructions(delivery.announcement, delivery.announcementRecovery) +
-    ' Then call delivery present and reproduce its complete private PR card and announcement outcome. Attempt these steps in this turn; retain any specific failure without reopening implementation or preparing a generic resume. Never recreate the verified PR. ' +
+    ' When an admitted feedback request is on the announcement destination, include its completion answer in the announcement and reuse that confirmed comment as the reply. Do not publish a separate done/PR-ready reply with the same information. Different destinations or distinct unanswered questions still need their own source-bound replies. Then call delivery present and reproduce its complete private PR card and announcement outcome. Attempt these steps in this turn; retain any specific failure without reopening implementation or preparing a generic resume. Never recreate the verified PR. ' +
     (runtime === 'codex'
-      ? 'Use deliveryRuntime directly for these external effects; the completed implementation no longer requires continuationRuntime.'
+      ? 'Use deliveryRuntime directly for these independent external effects; no conversation phase changes.'
       : 'Use agent_system_dispatch action delivery with the requested operation.')
   );
 }
@@ -266,8 +307,10 @@ export function deliveryCompletionInstructions(
 /** the native delivery owner supplies authority and serializes state with the PR receipt. */
 export default async function deliveryAnnouncement(input: {
   operation: 'compose' | 'candidate' | 'announce';
+  runtime: 'codex' | 'openclaw';
+  request: Record<string, unknown>;
+  material?: ImplementationMaterialRead;
   now?: number;
-  digest?: string;
   publicText?: string;
   delivery: Delivery;
   publication: IssueDeliveryInput;
@@ -293,6 +336,13 @@ export default async function deliveryAnnouncement(input: {
   let prerequisite = true;
   try {
     await input.authorize();
+    if (
+      input.material &&
+      (input.operation !== 'compose' ||
+        delivery.announcement?.attempted ||
+        delivery.announcement?.receipt)
+    )
+      throw new Error('delivery-announcement-material-unavailable');
     if (delivery.announcement?.attempted || delivery.announcement?.receipt) {
       const state = delivery.announcement;
       state.receipt = await reconcileAnnouncement({
@@ -333,24 +383,43 @@ export default async function deliveryAnnouncement(input: {
     const digest = automationHash(current);
     if (input.operation === 'compose') {
       // a fresh provider snapshot replaces only an unattempted candidate.
-      delivery.announcement = current;
-      delete delivery.announcementRecovery;
-      await input.save();
-      return {
-        status: 'composition-ready',
-        digest,
-        selection: composition,
-        event: {
-          kind: 'pull-request-delivery',
-          title: snapshot.title,
-          body: snapshot.body,
-          draft: snapshot.draft,
-          url: `https://github.com/${repository}/pull/${snapshot.pullRequestNumber}`,
+      if (input.material) {
+        if (
+          !delivery.announcement ||
+          automationHash({
+            ...delivery.announcement,
+            publicText: undefined,
+            code: undefined,
+            publication: undefined,
+          }) !== digest
+        )
+          throw new Error('delivery-announcement-material-stale');
+      } else {
+        delivery.announcement = current;
+        delete delivery.announcementRecovery;
+        await input.save();
+      }
+      return replyMaterial(
+        {
+          runtime: input.runtime,
+          status: 'composition-ready' as const,
+          destination: issueUrl,
+          digest,
+          selection: composition,
+          event: {
+            kind: 'pull-request-delivery',
+            title: snapshot.title,
+            body: snapshot.body,
+            draft: snapshot.draft,
+            url: `https://github.com/${repository}/pull/${snapshot.pullRequestNumber}`,
+          },
+          maximumPublicCharacters: 500,
+          instruction:
+            'Invoke the selected reply skill with this public delivery event and applicable voice guidance. Return only a short description of what the PR delivers; the host adds its verified link and draft/ready state. If this also answers an admitted feedback request on this destination, include its answer and source-author attribution in this one comment; reuse its confirmed text and permalink instead of a separate completion reply. Different destinations or distinct unanswered questions still require their own source-bound replies. Do not claim tests, approval or merge or expose private context. Submit delivery candidate with publicText, then inspect its preview and call announce through native approval. Missing skills stop composition. If skill content or guidance changes before publication is attempted, call compose again and replace the candidate; an uncertain write must be reconciled without reposting. Keep the full private PR card even if announcing fails.',
         },
-        maximumPublicCharacters: 500,
-        instruction:
-          'Invoke the selected reply skill with this public delivery event and applicable voice guidance. Return only a short description of what the PR delivers; the host adds its verified link and draft/ready state. Do not claim tests, approval or merge or expose private context. Submit delivery candidate with this digest and publicText, then inspect its exact preview and call announce with the returned digest through native approval. Missing skills stop composition. If skill content or guidance changes before publication is attempted, call compose again and replace the candidate; an uncertain write must be reconciled without reposting. Keep the full private PR card even if announcing fails.',
-      };
+        input.request,
+        input.material,
+      );
     }
     const state = delivery.announcement;
     if (
@@ -364,7 +433,6 @@ export default async function deliveryAnnouncement(input: {
     )
       throw new Error('delivery-announcement-stale');
     if (input.operation === 'candidate') {
-      if (input.digest !== digest) throw new Error('delivery-announcement-stale');
       if (!input.publicText?.trim() || input.publicText.length > 500)
         throw new Error('delivery-announcement-description-required');
       const text = githubNotificationPublicationText(
@@ -377,7 +445,7 @@ export default async function deliveryAnnouncement(input: {
         redactFeedback,
       );
       await taskUpdate({
-        request: { operation: 'candidate', text, digest: input.digest, expectedDigest: digest },
+        request: { operation: 'candidate', text, digest, expectedDigest: digest },
         draft: state,
         publication: (text) => ({
           ...announcementPublication({ ...state, publicText: text }, item),
@@ -391,7 +459,7 @@ export default async function deliveryAnnouncement(input: {
     }
     const prepared = announcementPublication(state, item);
     const previewDigest = automationHash({ ...current, publicText: state.publicText });
-    if (input.operation === 'candidate' || input.digest === undefined)
+    if (input.operation === 'candidate')
       return {
         status: 'announcement-prepared',
         digest: previewDigest,
@@ -410,11 +478,10 @@ export default async function deliveryAnnouncement(input: {
           publication: { draft: true },
         }),
         instruction:
-          'Publish this exact announcement using delivery announce with this digest through native approval. Existing managed-delivery authority covers only this issue/PR announcement; stop on denial. Afterwards present the full private PR card and announcement outcome.',
+          'Publish this exact announcement using delivery announce through native approval. Existing managed-delivery authority covers only this issue/PR announcement; stop on denial. Afterwards present the full private PR card and announcement outcome.',
       };
-    if (input.digest !== previewDigest) throw new Error('delivery-announcement-stale');
     const result = await taskUpdate({
-      request: { operation: 'publish', digest: input.digest, expectedDigest: previewDigest },
+      request: { operation: 'publish', digest: previewDigest, expectedDigest: previewDigest },
       draft: state,
       publication: (text) => ({ ...prepared, text }),
       save: input.save,
@@ -453,6 +520,7 @@ export default async function deliveryAnnouncement(input: {
       ),
     };
   } catch (error) {
+    if (input.material) throw error;
     if (
       error instanceof WorkflowPolicyHeld ||
       isFilesystemAccessError(error) ||

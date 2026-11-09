@@ -56,8 +56,9 @@ describe('agent/automation-report-document', () => {
     const report = prepare(envelope(cards));
     const body = expected(report);
     const prompt = automationReport(report);
-    const marker = '\n\nResponse body (copy literally from the next line to end of message):\n';
-    const [metadata, literal] = prompt.split(marker);
+    const marker = '\n<response_body>\n';
+    const [metadata, section] = prompt.split(marker);
+    const literal = section!.slice(0, section!.indexOf('\n</response_body>'));
     assert.equal(literal, body);
     assert.ok(!metadata!.includes(JSON.stringify(body)));
     assert.ok(!metadata!.includes('> ## ⚠️ canon'));
@@ -68,6 +69,8 @@ describe('agent/automation-report-document', () => {
       body.replaceAll('\n\n> ##', '\n>\n> ##'),
       body + '\n\n' + body,
       body + '\n\n' + JSON.stringify(body),
+      `<response_body>\n${body}\n</response_body>`,
+      body + '\n\nPrivate context: git protocol ssh',
       body +
         '\n\n' +
         renderStructuredReport({

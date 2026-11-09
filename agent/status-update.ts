@@ -9,8 +9,7 @@ export default async function statusUpdateContext(
   target: ReplyTarget,
   retainedPullRequest?: number,
 ) {
-  if (target.source) throw new Error('status-update-item-required');
-  const discussion = await provider.listIssueComments(target.owner, target.name, target.number);
+  const discussion = { source: target.destination };
   const number = target.itemType === 'pull-request' ? target.number : retainedPullRequest;
   const pullRequests = [];
   if (number !== undefined) {
@@ -29,7 +28,11 @@ export default async function statusUpdateContext(
     ({ item }) =>
       item.number === retainedPullRequest && item.state === 'open' && !item.pullRequest.merged,
   );
-  return { discussion, pullRequests, defaultDestination: linked?.url ?? target.destination };
+  return {
+    discussion,
+    pullRequests,
+    defaultDestination: target.source ? target.url : (linked?.url ?? target.destination),
+  };
 }
 
 /** effect identity follows cited facts, not wording, public chatter, or native turn ids. */

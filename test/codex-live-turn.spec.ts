@@ -144,13 +144,35 @@ describe('agent/codex-live-turn', () => {
   it('should reject later user direction and native steering after the observation', async () => {
     for (const item of [
       { type: 'userMessage' },
-      { type: 'commandExecution', status: 'completed' },
-      { type: 'mcpToolCall', status: 'completed' },
+      {
+        type: 'mcpToolCall',
+        server: 'codex_app',
+        tool: 'send_message_to_thread',
+        status: 'completed',
+      },
       { type: 'functionCallOutput', namespace: 'codex_app', name: 'send_message_to_thread' },
     ]) {
       const f = fixture();
       f.entries.push({ turnId: 'assessment', item });
       assert.equal((await f.read(input)).status, 'unresolved');
+    }
+  });
+
+  it('should preserve a live observation across execution and the required sandbox retry', async () => {
+    const f = fixture();
+    for (const item of [
+      {
+        type: 'commandExecution',
+        status: 'failed',
+        exitCode: 1,
+        output: JSON.stringify({ code: 'codex-host-access-required' }),
+      },
+      { type: 'commandExecution', status: 'completed', exitCode: 0 },
+      { type: 'fileChange', status: 'completed' },
+      { type: 'mcpToolCall', server: 'github', tool: 'fetch_issue', status: 'completed' },
+    ]) {
+      f.entries.push({ turnId: 'assessment', item });
+      assert.deepEqual(await f.read(input), { status: 'active', receiptId: 'live-read' });
     }
   });
 

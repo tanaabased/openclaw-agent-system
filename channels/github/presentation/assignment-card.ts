@@ -7,7 +7,7 @@ export default function assignmentCard(
     item: { kind: string; label: string; url: string };
     sender?: { label: string; url: string };
   },
-  action: string,
+  note = '',
 ) {
   return githubNotificationCard({
     emoji: projection.emoji,
@@ -17,8 +17,8 @@ export default function assignmentCard(
         githubNotificationMarkdownText(projection.item.label) +
         '](' +
         projection.item.url +
-        '). ' +
-        action
+        ').' +
+        (note ? ' ' + note : '')
       : '[@' +
         githubNotificationMarkdownText(projection.sender.label) +
         '](' +
@@ -27,7 +27,7 @@ export default function assignmentCard(
         githubNotificationMarkdownText(projection.item.label) +
         '](' +
         projection.item.url +
-        '). ' +
-        action,
+        ').' +
+        (note ? ' ' + note : ''),
   });
 }

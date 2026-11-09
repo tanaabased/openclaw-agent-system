@@ -75,7 +75,7 @@ target=$(jq -er .html_url "$TMPDIR/notification-manual-issue.json")
 params=$(jq -nc --arg target "$target" '{sessionKey:"agent:github-reply-tanaabot:manual-reply",agentId:"github-reply-tanaabot",message:("Direct reply draft target: " + $target),deliver:false,idempotencyKey:"notification-manual-draft"}')
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-manual-draft"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-manual-draft 600000
-jq -es '[.[].drafts[]] | if length == 1 then .[0] else error("one manual draft required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-manual-draft.json"
+jq -es '[.[] | (.drafts // [.])[]] | if length == 1 then .[0] else error("one manual draft required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-manual-draft.json"
 jq -e '.publicText != null and .receipt == null and .attempted != true' "$TMPDIR/notification-manual-draft.json"
 number=$(jq -er .number "$TMPDIR/notification-manual-issue.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e 'length == 0'
@@ -89,8 +89,8 @@ NODE
 
 # should publish only after a later explicit request and reconcile without another post
 cd "$GITHUB_WORKSPACE/examples/openclaw-github-reply/emori"
-draft_id=$(jq -er .id "$TMPDIR/notification-manual-draft.json")
-params=$(jq -nc --arg id "$draft_id" '{sessionKey:"agent:github-reply-tanaabot:manual-reply",agentId:"github-reply-tanaabot",message:("Direct reply publish draft: " + $id),deliver:false,idempotencyKey:"notification-manual-publish"}')
+draft_id=$(jq -c '{target:(.target | fromjson | .url),publicText}' "$TMPDIR/notification-manual-draft.json")
+params=$(jq -nc --arg id "$draft_id" '{sessionKey:"agent:github-reply-tanaabot:manual-reply",agentId:"github-reply-tanaabot",message:("Direct reply publish: " + $id),deliver:false,idempotencyKey:"notification-manual-publish"}')
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-manual-publish"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-manual-publish 600000
 number=$(jq -er .number "$TMPDIR/notification-manual-issue.json")
@@ -115,14 +115,14 @@ target=$(jq -er .html_url "$TMPDIR/notification-manual-issue.json")
 params=$(jq -nc --arg key "$conversation" --arg target "$target" '{sessionKey:$key,agentId:"github-reply-tanaabot",message:("Operator status update target: " + $target + "\nDecision: use the shared reply approach; implementation remains unstarted. Draft this public update."),deliver:false,idempotencyKey:"notification-status-draft"}')
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-status-draft"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-status-draft 600000
-jq -es '[.[].drafts[] | select(.update != null)] | if length == 1 then .[0] else error("one status draft required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-status-draft.json"
+jq -es '[.[] | (.drafts // [.])[] | select(.update != null)] | if length == 1 then .[0] else error("one status draft required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-status-draft.json"
 jq -e '.publicText != null and .receipt == null and .attempted != true' "$TMPDIR/notification-status-draft.json"
 number=$(jq -er .number "$TMPDIR/notification-manual-issue.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-status-before.json"
 
 # should publish the original update on a later operator turn and reconcile its receipt
-id=$(jq -er .id "$TMPDIR/notification-status-draft.json")
-params=$(jq -nc --arg key "$conversation" --arg id "$id" '{sessionKey:$key,agentId:"github-reply-tanaabot",message:("Direct reply publish draft: " + $id),deliver:false,idempotencyKey:"notification-status-publish"}')
+id=$(jq -c '{target:(.target | fromjson | .url),publicText}' "$TMPDIR/notification-status-draft.json")
+params=$(jq -nc --arg key "$conversation" --arg id "$id" '{sessionKey:$key,agentId:"github-reply-tanaabot",message:("Direct reply publish: " + $id),deliver:false,idempotencyKey:"notification-status-publish"}')
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-status-publish"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-status-publish 600000
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-status-comments.json"
@@ -149,7 +149,7 @@ node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-status-current 600000
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-status-after.json"
 jq -e --slurpfile before "$TMPDIR/notification-status-comments.json" '. == $before[0]' "$TMPDIR/notification-status-after.json"
-jq -es '[.[].drafts[] | select(.update != null)] | length == 1 and .[0].receipt != null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json
+jq -es '[.[] | (.drafts // [.])[] | select(.update != null)] | length == 1 and .[0].receipt != null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json
 ```
 
 ## Cleanup

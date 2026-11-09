@@ -29,19 +29,15 @@ const cacheSchema = Type.Object(
 type Purpose = 'assignment' | 'feedback' | 'delivery' | 'all';
 
 function pins(policy: GitHubNotificationPolicy, purpose: Purpose = 'all') {
-  const result: Array<{ pin: GitHubIdentityPin; user: boolean }> =
-    policy.routing === undefined && (purpose === 'assignment' || purpose === 'all')
-      ? policy.allowedRepositoryOwners.map((pin) => ({ pin, user: false }))
-      : [];
+  const result: GitHubIdentityPin[] = [];
   // A reserved workflow cannot cause credential access or provider lookups.
   const workflow = policy.issueAssignment;
   if (workflow) {
-    if (purpose !== 'delivery')
-      result.push(...workflow.allowed.map((pin) => ({ pin, user: true })));
+    if (purpose !== 'delivery') result.push(...workflow.allowed);
     if ((purpose === 'feedback' || purpose === 'all') && typeof workflow.feedback === 'object')
-      result.push(...workflow.feedback.allowed.map((pin) => ({ pin, user: true })));
+      result.push(...workflow.feedback.allowed);
     for (const pin of purpose === 'assignment' ? [] : (workflow.pullRequest?.recipients ?? []))
-      if (!('source' in pin)) result.push({ pin, user: true });
+      if (!('source' in pin)) result.push(pin);
   }
   return result;
 }
@@ -81,9 +77,9 @@ export default class GitHubIdentityCache {
   async hydrate(policy: GitHubNotificationPolicy | undefined) {
     if (!policy) return;
     const state = await this.read();
-    for (const { pin, user } of pins(policy)) {
+    for (const pin of pins(policy)) {
       const cached = state.entries[key(pin)];
-      if (cached && (!user || cached.type === 'User')) {
+      if (cached && cached.type === 'User') {
         if (!pin.reference && pin.login.toLowerCase() !== cached.login.toLowerCase()) continue;
         Object.assign(pin, { login: cached.login, nodeId: cached.nodeId });
       }
@@ -100,7 +96,7 @@ export default class GitHubIdentityCache {
     if (!policy) return;
     const selected = pins(policy, purpose);
     if (!client.resolveIdentity) {
-      if (selected.some(({ pin }) => pin.reference))
+      if (selected.some((pin) => pin.reference))
         throw new Error('github-identity-resolution-unavailable');
       return;
     }
@@ -116,7 +112,7 @@ export default class GitHubIdentityCache {
       const entries = (await this.read()).entries;
       const references = [
         ...new Set(
-          selected.flatMap(({ pin }) => {
+          selected.flatMap((pin) => {
             const reference = key(pin);
             if (refreshed.has(`${this.path}\0${reference}`) || (!refresh && entries[reference]))
               return [];
@@ -136,7 +132,7 @@ export default class GitHubIdentityCache {
     }
     // Resolve outside the file lease so provider latency cannot block other issue turns.
     // Commit each verified pin before the next lookup, preserving partial progress.
-    for (const { pin, user } of selected) {
+    for (const pin of selected) {
       const reference = key(pin);
       const cacheKey = `${this.path}\0${reference}`;
       let identity = refreshed.get(cacheKey);
@@ -149,12 +145,12 @@ export default class GitHubIdentityCache {
           identity = batch.get(id) ?? (await client.resolveIdentity(id));
           resolved = true;
         }
-        if (!Value.Check(identitySchema, identity) || (user && identity.type !== 'User'))
+        if (!Value.Check(identitySchema, identity) || identity.type !== 'User')
           throw new Error('github-identity-type-invalid');
         if (retained && identity.nodeId !== retained.nodeId)
           throw new Error('github-identity-conflict');
       }
-      if (user && identity.type !== 'User') throw new Error('github-identity-type-invalid');
+      if (identity.type !== 'User') throw new Error('github-identity-type-invalid');
       if (pin.reference && !pin.reference.startsWith('@') && pin.reference !== identity.nodeId)
         throw new Error('github-identity-conflict');
       if (

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import waitForAgentRun from '../scripts/wait-for-agent-run.ts';
+import waitForAgentRun, { reportNativeRunDiagnostics } from '../scripts/wait-for-agent-run.ts';
 
 function fixture(receipts: unknown[], timeoutMs = 5000) {
   let now = 0;
@@ -27,6 +27,49 @@ function fixture(receipts: unknown[], timeoutMs = 5000) {
 }
 
 describe('scripts/wait-for-agent-run', () => {
+  it('should retain native startup errors and log truncation information before any model request', async () => {
+    const reports: unknown[] = [];
+    const nativeLogs = {
+      lines: ['startup failed: session storage unavailable; credential=[REDACTED]'],
+      truncated: true,
+      cursor: 1024,
+    };
+    await reportNativeRunDiagnostics('startup-run', {
+      async request(method, params) {
+        assert.equal(method, 'logs.tail');
+        assert.deepEqual(params, {});
+        return nativeLogs;
+      },
+      report: (value) => reports.push(value),
+    });
+    assert.deepEqual(reports, [
+      { runId: 'startup-run', nativeLogs: { truncated: true, cursor: 1024 } },
+      { runId: 'startup-run', nativeLogLine: nativeLogs.lines[0] },
+    ]);
+  });
+
+  it('should report unavailable native logs without replacing the original run failure', async () => {
+    const reports: unknown[] = [];
+    const original = new Error('native startup failed');
+    await assert.rejects(
+      async () => {
+        try {
+          throw original;
+        } catch (error) {
+          await reportNativeRunDiagnostics('startup-run', {
+            async request() {
+              throw new Error('gateway unavailable');
+            },
+            report: (value) => reports.push(value),
+          });
+          throw error;
+        }
+      },
+      (error) => error === original,
+    );
+    assert.deepEqual(reports, [{ runId: 'startup-run', nativeLogsUnavailable: true }]);
+  });
+
   it('should keep waiting after observation timeouts and preserve the terminal receipt', async () => {
     const receipts = [
       { runId: 'publish', status: 'pending' },

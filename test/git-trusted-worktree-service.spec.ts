@@ -327,7 +327,7 @@ describe('tools/git/trusted-worktree-service', () => {
     assert.deepEqual(prepared, [
       {
         baseRef: 'origin/main',
-        cloneUrl: 'https://github.com/tanaabased/openclaw-agent-system.git',
+        cloneUrl: 'git@github.com:tanaabased/openclaw-agent-system.git',
         issueBranch: { number: 42, suffix, title: 'Fix agent path resolution' },
         reconcileOrigin: true,
         repositoryId: 'github-7',

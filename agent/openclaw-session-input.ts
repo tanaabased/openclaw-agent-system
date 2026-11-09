@@ -111,12 +111,16 @@ export async function operatorInputEvent(
 }
 
 /** user input custody is journaled by idempotency key; run metadata is optional. */
-export function issueInputEventId(entry: Record<string, unknown>, runId: string) {
+export function issueInputEventId(
+  entry: Record<string, unknown>,
+  runId: string,
+  executionRunId = runId,
+) {
   const key = `${runId}:user`;
   const meta = sessionObject(entry.__openclaw);
   if (
     entry.role !== 'user' ||
-    (meta.runId !== undefined && meta.runId !== runId) ||
+    (meta.runId !== undefined && meta.runId !== executionRunId) ||
     typeof meta.id !== 'string' ||
     !meta.id ||
     meta.truncated === true ||
@@ -131,6 +135,7 @@ export function issueInputEventId(entry: Record<string, unknown>, runId: string)
 export default function issueInputEvent(
   entry: Record<string, unknown>,
   turn: Pick<NonNullable<OpenClawDispatchRecord['assessmentTurn']>, 'runId' | 'message'>,
+  executionRunId = turn.runId,
 ) {
   const content =
     typeof entry.content === 'string'
@@ -143,5 +148,5 @@ export default function issueInputEvent(
         ? entry.content.map((block) => sessionObject(block).text).join('')
         : undefined;
   if (content !== turn.message) return;
-  return issueInputEventId(entry, turn.runId);
+  return issueInputEventId(entry, turn.runId, executionRunId);
 }

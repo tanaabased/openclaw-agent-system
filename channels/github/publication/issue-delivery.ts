@@ -203,6 +203,33 @@ export default class IssueDeliveryProvider {
     >,
     private readonly delay = abortableDelay,
   ) {}
+  /** existing PR delivery reads authored fields when needed, independently of assessment context. */
+  async content(input: {
+    repository: string;
+    number: number;
+    nodeId: string;
+    signal?: AbortSignal;
+  }) {
+    const observed = record(
+      await this.#github(
+        this.client,
+        [
+          'api',
+          `repos/${input.repository}/pulls/${input.number}`,
+          '--jq',
+          '{nodeId:.node_id,title,body}',
+        ],
+        input.signal,
+      ),
+      'pull request content',
+    );
+    if (observed.nodeId !== input.nodeId) throw new Error('delivery-content-identity-mismatch');
+    return {
+      title: requiredString(observed.title, 'pull request title', 512),
+      body: boundedString(observed.body ?? '', 'pull request body', 65536),
+    };
+  }
+
   /** explicit selection observes existing work; it is not a publication receipt. */
   async adopt(
     input: Pick<IssueDeliveryInput, 'item' | 'repositoryNodeId' | 'signal'>,

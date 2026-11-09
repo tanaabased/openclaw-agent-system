@@ -1,9 +1,13 @@
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
 import { inspectFeedbackAssignment } from './assignment-feedback-reactivation.ts';
+import { inspectIssueIdentity } from './dispatch-assignment.ts';
 import { admitFeedback, feedbackRevision } from './feedback-source.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
-import type connectCodexFeedback from './codex-feedback-client.ts';
+import type {
+  GitHubNotificationIntakeClient,
+  GitHubNotificationCommentClient,
+} from '../channels/github/provider/work-event-types.ts';
 import type { selectCodexIntake } from './codex-intake.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
 import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
@@ -15,11 +19,15 @@ import {
 
 /** verify the exact admitted source before work and every dependent provider write. */
 export default async function authorizeCodexFeedback(input: {
+  conversation?: boolean;
   current: Awaited<ReturnType<typeof selectCodexIntake>>;
   record: DispatchRecord;
-  event: FeedbackSourceEvent;
+  event: Pick<FeedbackSourceEvent, 'number' | 'nodeId' | 'itemType' | 'source' | 'revision'>;
   intake: IntakeRecord;
-  provider: Awaited<ReturnType<typeof connectCodexFeedback>>;
+  provider: {
+    client: GitHubNotificationIntakeClient;
+    comments: GitHubNotificationCommentClient;
+  };
 }) {
   const { current, record, event, intake, provider } = input;
   if (record.supersededBy) throw new Error('dispatch-task-superseded');
@@ -27,7 +35,9 @@ export default async function authorizeCodexFeedback(input: {
   if (!policy) throw new WorkflowPolicyHeld('feedback-disabled');
   const owner = intake.repository.owner.login,
     name = intake.repository.name;
-  const assignment = await inspectFeedbackAssignment(policy, intake, provider.client, record);
+  const assignment = input.conversation
+    ? await inspectIssueIdentity(intake, provider.client)
+    : await inspectFeedbackAssignment(policy, intake, provider.client, record);
   const item =
     event.number === intake.issue.number
       ? assignment.item
@@ -35,8 +45,9 @@ export default async function authorizeCodexFeedback(input: {
   if (
     item.nodeId !== event.nodeId ||
     item.itemType !== event.itemType ||
-    item.state !== 'open' ||
-    (event.itemType === 'pull-request' &&
+    (!input.conversation && item.state !== 'open') ||
+    (!input.conversation &&
+      event.itemType === 'pull-request' &&
       (record.delivery?.pullRequest?.pullRequestNodeId !== event.nodeId ||
         record.delivery.pullRequest.pullRequestNumber !== event.number))
   )
@@ -44,7 +55,7 @@ export default async function authorizeCodexFeedback(input: {
   const source = JSON.parse(event.source) as GitHubCanonicalFeedback;
   const exact = isReviewFeedback(source)
     ? await readReviewFeedback(
-        provider.comments.reviews,
+        provider.comments.reviews!,
         owner,
         name,
         event.number,

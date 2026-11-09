@@ -1,3 +1,4 @@
+import resolveGitProtocol, { type GitProtocol } from '../tools/git/protocol.ts';
 import { realpath } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
@@ -16,7 +17,7 @@ import GitRepositoryService, {
 } from '../tools/git/repository-service.ts';
 import resolveGitWorktreeLayout from '../tools/git/worktree-layout.ts';
 import { gitWorktreeRepositoryDirectoryName } from '../tools/git/worktree-names.ts';
-import { gitRemoteIdentity, preferGitHubSshWorktreeRemote } from '../tools/git/worktree-remote.ts';
+import { gitRemoteIdentity, githubWorktreeRemote } from '../tools/git/worktree-remote.ts';
 import type { GitWorktreeServiceContext } from '../tools/git/worktree-service.ts';
 
 export type DispatchRepositoryPreparation = NonNullable<DispatchRecord['repositoryPreparation']>;
@@ -29,6 +30,7 @@ export default async function prepareDispatchRepository(
     repositoryId: string;
     repository: string;
     cloneUrl: string;
+    protocol?: GitProtocol;
     defaultBranch: string;
     previous?: DispatchRepositoryPreparation;
   },
@@ -45,7 +47,7 @@ export default async function prepareDispatchRepository(
   const identity = gitRemoteIdentity(input.cloneUrl);
   if (identity !== 'github.com/' + input.repository.toLowerCase())
     throw new Error('dispatch-repository-identity-invalid');
-  const cloneUrl = preferGitHubSshWorktreeRemote(input.cloneUrl);
+  const cloneUrl = githubWorktreeRemote(input.cloneUrl, input.protocol ?? resolveGitProtocol({}));
   const selected = await service.selection(layout, input.repositoryId, cloneUrl);
   if (
     input.previous &&
@@ -102,7 +104,7 @@ export default async function prepareDispatchRepository(
         layout,
         input.repositoryId,
         cloneUrl,
-        false,
+        true,
         true,
       );
       const form = await service.verify(context, repository.path, cloneUrl);

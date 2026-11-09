@@ -1,3 +1,4 @@
+import { retainOpenClawTurnInput } from '../agent/openclaw-turn-binding.ts';
 import OpenClawAssignmentClaims from '../agent/openclaw-assignment-claims.ts';
 import GitHubAssignmentClaimClient from '../channels/github/provider/assignment-claim-client.ts';
 import { commandTerminationGraceMs } from '../api/cli-budget.ts';
@@ -14,9 +15,9 @@ import { readFile, realpath } from 'node:fs/promises';
 
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import createIntakeTool from '../tools/intake/tool.ts';
-import ProjectPickupEnrollmentStore from '../agent/project-pickup-enrollment.ts';
+import IssuePickupEnrollmentStore from '../agent/issue-pickup-enrollment.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import { projectPickupAutomationId } from '../agent/project-pickup-jobs.ts';
+import { issuePickupAutomationId } from '../agent/issue-pickup-jobs.ts';
 import createDispatchTool from '../tools/dispatch/tool.ts';
 import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
 import instanceIdentity from '../agent/instance-identity.ts';
@@ -53,6 +54,7 @@ import AgentDoctorService from '../agent/doctor-service.ts';
 import AgentEnvironmentService from '../environment/service.ts';
 import AgentInstallService from '../agent/install-service.ts';
 import createSessionDispatchCredential from '../credentials/session-dispatch-runtime.ts';
+import openClawNativeMaterial from '../agent/openclaw-native-material.ts';
 import createSessionDispatchLifecycle from '../agent/session-dispatch-lifecycle.ts';
 import createCollaborationLifecycleContribution from '../agent/collaboration-lifecycle.ts';
 import AgentLifecycleApproval from '../agent/lifecycle-approval.ts';
@@ -260,7 +262,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     privateStateRoot,
   });
   let readScheduler: (() => NotificationScheduler | undefined) | undefined;
-  const pickupStore = new ProjectPickupEnrollmentStore(
+  const pickupStore = new IssuePickupEnrollmentStore(
     join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-instance'),
   );
   const intakeV2: OpenClawIntake = new OpenClawIntake({
@@ -462,7 +464,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
               undefined,
               loaded.manifest,
               admitted.run,
-              projectPickupAutomationId,
+              issuePickupAutomationId,
               async (method, params) => {
                 const result = await request(method, params);
                 if (!nativeObject(result))
@@ -477,6 +479,19 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         return { nativeId: admitted.run.jobId, assertCurrent };
       },
       api,
+      async (scope, input, assertCurrent) => {
+        await assertCurrent();
+        if (!scope.sessionKey || !scope.sessionId)
+          throw new Error('material-native-caller-required');
+        return sessionDispatch.use({ assertCurrent }, (request) =>
+          openClawNativeMaterial(
+            request,
+            { sessionKey: scope.sessionKey!, sessionId: scope.sessionId! },
+            'agent_system_intake',
+            input,
+          ),
+        );
+      },
     ),
     ...gitCapability.tools,
     ...githubCapability.tools,
@@ -814,7 +829,15 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         readConsistency: 'latest',
       });
       if (!entry || entry.archivedAt || entry.sessionId !== binding.sessionId) return;
-      return dispatchV2.service.promptContext(manifest, workspace, binding);
+      retainOpenClawTurnInput(api.runContext, binding);
+      const context = await dispatchV2.service.promptContext(manifest, workspace, binding);
+      const fresh = api.runtime.agent.session.getSessionEntry({
+        sessionKey: binding.sessionKey,
+        readConsistency: 'latest',
+      });
+      if (!fresh || fresh.archivedAt || fresh.sessionId !== binding.sessionId)
+        throw new Error('turn-context-native-caller-changed');
+      return context;
     },
   );
   api.registerCli(({ program }) => {

@@ -1,6 +1,6 @@
 import type { AgentManifest } from '../manifest/types.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
-import { projectWorkMatches, retainedPickupReceipt } from './project-pickup-authority.ts';
+import { projectWorkMatches, retainedPickupReceipt } from './issue-pickup-authority.ts';
 import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
 import repositoryScope from '../channels/github/repository-scope.ts';

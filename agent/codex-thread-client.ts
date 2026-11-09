@@ -1,4 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { realpath } from 'node:fs/promises';
 
 import { gte } from 'semver';
@@ -214,6 +216,15 @@ export async function connectCodexThreads(
     await close();
     throw error;
   }
+}
+
+/** Read the invoking Codex profile without treating cwd as an Agent System workspace. */
+export function connectCodexCaller() {
+  if (!process.env.CODEX_THREAD_ID) throw new Error('native-caller-required');
+  return connectCodexThreads(
+    process.cwd(),
+    resolve(process.env.CODEX_HOME ?? join(homedir(), '.codex')),
+  );
 }
 
 export function codexThreadAdapter(

@@ -21,7 +21,7 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
   const reasons: Record<string, [string, string]> = {
     'dispatch-project-inventory-invalid': [
       'The dispatch call did not supply a valid saved-project inventory.',
-      'Read the saved Codex projects with list_projects and supply its projects array to dispatch next. Preserve the pending assignment; a valid call can retry it without resetting state or registering the repository again.',
+      'Read the saved Codex projects with list_projects, then retry dispatch next without copying the inventory. Preserve the pending assignment; a valid call can retry it without resetting state or registering the repository again.',
     ],
     'delivery-implementation-incomplete': [
       'Completed implementation has not been established, so PR delivery was refused before publication.',
@@ -77,11 +77,11 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     ],
     'assessment-result-incomplete': [
       'The new assessment is missing its complete source; the result was not recorded.',
-      'Include the complete assessment, evidence, plan or questions in `fullAssessment` and resubmit the result in this chat. Keep the previous saved result; do not substitute a summary for the source.',
+      'Include the complete assessment, evidence, plan or questions in `fullAssessment` and use assessment render in this chat. The full source stays in native context; show its concise presentation without saving or reinjecting it.',
     ],
     'dispatch-receipt-id-invalid': [
       'The supplied receipt ID is malformed, so it was not looked up or used to change workflow state.',
-      'Copy the exact receipt ID from verified workflow context and retry. Do not guess, correct, reset, or recreate the workflow.',
+      'Retry the owning operation without a receipt ID; the runtime resolves the current task. If native ownership is unavailable, inspect it through its owning runtime. Do not guess, reset, or recreate the workflow.',
     ],
     'launch-open-issue-required': [
       'Manual launch requires an accessible open GitHub issue.',
@@ -93,7 +93,7 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     ],
     'launch-owner-ambiguous': [
       'More than one retained owner matches this issue.',
-      'Supply the exact task id to select intentional additional work, or reconcile unexpected competing owners. No new chat or checkout was authorized.',
+      'Continue in the intended existing task chat, where native ownership identifies it, or reconcile unexpected competing owners. No new chat or checkout was authorized.',
     ],
     'launch-preparation-owner-required': [
       'The issue is already being prepared by another managed source.',
@@ -101,7 +101,7 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     ],
     'launch-selections-conflict': [
       'Explicit launch choices differ from the retained preparation.',
-      'Retry the original receipt with its saved choices. Use the existing stage owner for subsequent policy or direction changes, not a new launch.',
+      'Reconcile the original target from the original launching chat with its saved choices. Use the existing stage owner for subsequent policy or direction changes, not a new launch.',
     ],
     'launch-assignment-actor-recipient-unavailable': [
       'An explicit delivery recipient requires an assignment actor, but this work was requested manually.',
@@ -319,7 +319,7 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
   )
     return {
       summary: 'The selected PR or work changed after its preview; the selection was not applied.',
-      next: 'Refresh the same launch or binding preview with its exact target and receipt, inspect the current head and destination, then apply its new digest within the operator request. Preserve local work and any existing creation request; never replay an uncertain creation.',
+      next: 'Refresh the same launch or binding target, inspect the current head and destination, and continue within the operator request without supplying receipt IDs or digests. Preserve local work and any existing creation request; never replay an uncertain creation.',
     };
   const field =
     /^delivery-(repository|issue|session|thread|worktree|branch|base|account|policy)-changed$/.exec(

@@ -1,0 +1,8 @@
+schema-version: 1
+agent:
+  id: install-data
+github:
+  username: example
+  routing: ['example/*']
+  allowed-repository-owners: ['@example']
+  issue-assignment: {}

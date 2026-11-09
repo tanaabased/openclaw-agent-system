@@ -52,7 +52,7 @@ unsupported. Use [`status`](#openclaw-agent-system-notifications-status) to insp
 
 ## `openclaw agent-system notifications reset`
 
-Reset tracking and replace the issue-assignment and installed project-pickup chats
+Reset tracking and replace the issue-assignment and installed issue-pickup chats
 for selected agents. The command pauses both jobs, waits for managed turns without
 aborting them, establishes a new assignment baseline, and restores each job’s prior
 enabled or paused state. Cached pickup scans and selections are cleared; consumed
@@ -218,12 +218,12 @@ openclaw agent-system notifications wait \
 
 Supported targets:
 
-| Target           | Selector required | Meaning                                       |
-| ---------------- | ----------------- | --------------------------------------------- |
-| `baseline-ready` | no                | The first safe provider observation completed |
-| `plan-ready`     | yes               | The retained assessment is ready              |
-| `prepared`       | yes               | The conversation and worktree are verified    |
-| `worktree-ready` | yes               | The selected issue worktree is ready          |
+| Target           | Selector required | Meaning                                            |
+| ---------------- | ----------------- | -------------------------------------------------- |
+| `baseline-ready` | no                | The first safe provider observation completed      |
+| `plan-ready`     | yes               | An explicitly recorded assessment has a ready plan |
+| `prepared`       | yes               | The conversation and worktree are verified         |
+| `worktree-ready` | yes               | The selected issue worktree is ready               |
 
 Only the listed targets are supported; rejection and retirement are not wait targets.
 Without `--refresh`, wait observes state without advancing intake.
@@ -232,4 +232,9 @@ With `--refresh` and an issue selector, wait scans that issue but does not dispa
 work; the native coordinator must make progress. Without a selector, it requests the
 ordinary automation and waits for that run before requesting another cycle.
 
-Terminal diagnostics fail immediately; timeout or an incomplete wait returns nonzero.
+`plan-ready` observes saved assessment history only; native planning does not have to
+record an assessment. Use `prepared` or `worktree-ready` to wait for the issue chat
+and checkout, then follow planning and questions in that chat. Reply and delivery
+failures do not invalidate completed preparation.
+
+Intake diagnostics fail pending preparation; timeout or an incomplete wait returns nonzero.

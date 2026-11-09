@@ -1,5 +1,8 @@
+import { matchFixture, type ChatCompletionRequest } from '@copilotkit/aimock';
+import { conversationExampleScenario } from '../examples/openclaw-issue-conversation/model-fixture.ts';
+import renderNativeAssessment from '../agent/assessment-render.ts';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -12,13 +15,15 @@ import assessmentSkillSource from '../agent/assessment-skill-source.ts';
 import { automationHash } from '../agent/automation-hash.ts';
 import type { AssessmentEntry } from '../agent/assessment-entry-state.ts';
 import {
-  assessmentResultContextSchema,
+  assessmentResultFormat,
   type AssessmentResult,
   type AssessmentSubmission,
 } from '../agent/assessment-result.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
+import hydrateImplementation from './implementation-material-fixture.ts';
+import nativeMaterialFixture from './native-material-fixture.ts';
 const target = 'https://github.com/owner/repo/issues/3';
 const ready = {
   version: 1,
@@ -86,46 +91,140 @@ describe('agent/assessment-entry', () => {
   afterEach(async () => rm(root, { recursive: true, force: true }));
   const call = (operation: string, extra: object = {}) =>
     assessmentEntry({ action: 'assessment', operation, target, path: root, ...extra }, deps);
+  async function legacyContext() {
+    const context = await call('context');
+    assert.ok('assessment' in context && 'project' in context);
+    const fixture = intakeFixture();
+    const id = 'd'.repeat(64);
+    await new AssessmentEntryStore(deps.root, deps.binding).exclusive(async (entries, save) => {
+      entries.push({
+        id,
+        binding: automationHash(deps.binding),
+        target,
+        repositoryId: fixture.repository.nodeId,
+        subjectId: fixture.item.nodeId,
+        checkout: context.project!,
+        evidence: JSON.stringify({ source: target }),
+        selection: context.assessment!,
+        turnId: deps.turnId,
+        inputId: deps.inputId,
+      });
+      await save();
+    });
+    return { ...context, id };
+  }
+  for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should read fresh ${runtime} context without consulting or changing legacy storage`, async () => {
+      deps.binding.runtime = runtime;
+      const store = new AssessmentEntryStore(deps.root, deps.binding);
+      await store.exclusive(async (_entries, save) => {
+        await save();
+        const before = await readFile(store.path, 'utf8');
+        const context = await call('context');
+        assert.equal(context.status, 'verified');
+        assert.equal('id' in context, false);
+        assert.equal(await readFile(store.path, 'utf8'), before);
+      });
+      await writeFile(store.path, 'invalid legacy storage');
+      assert.equal((await call('context')).status, 'verified');
+      assert.equal(await readFile(store.path, 'utf8'), 'invalid legacy storage');
+      await assert.rejects(call('context', { id: 'd'.repeat(64) }));
+    });
   for (const runtime of ['codex', 'openclaw'] as const)
     it(`should reject incomplete direct ${runtime} results before recording`, async () => {
       deps.binding.runtime = runtime;
-      const context = await call('context');
-      assert.ok('id' in context);
+      const context = await legacyContext();
+      assert.ok('id' in context && typeof context.id === 'string');
       await assert.rejects(
-        call('result', { id: context.id, result: { ...ready, fullAssessment: undefined } }),
+        call('result', { result: { ...ready, fullAssessment: undefined } }),
         /assessment-result-incomplete/,
       );
       await assert.rejects(
-        call('result', { id: context.id, result: { ...ready, fullAssessment: ' ' } }),
+        call('result', { result: { ...ready, fullAssessment: ' ' } }),
         /assessment-result-incomplete/,
       );
       const unchanged = await call('context');
-      assert.ok('previousResult' in unchanged);
-      assert.equal(unchanged.previousResult, undefined);
-      assert.equal((await call('result', { id: context.id, result: ready })).status, 'recorded');
+      assert.equal('previousResult' in unchanged, false);
+      assert.equal((await call('result', { result: ready })).status, 'formatted');
     });
-  it('should select once and retain complete output without workflow authority or invented routing', async () => {
-    const context = await call('context');
-    assert.ok('id' in context && 'assessment' in context && 'resultSubmission' in context);
-    assert.deepEqual(context.resultSchema, assessmentResultContextSchema);
-    assert.deepEqual(context.resultSubmission.request, {
-      action: 'assessment',
-      operation: 'result',
-      id: context.id,
-      target,
+  for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should deliver direct assessment references without prefetching issue content in ${runtime}`, async () => {
+      deps.binding.runtime = runtime;
+      const connect = deps.connectProvider;
+      deps.connectProvider = async () => ({
+        ...(await connect()),
+        getItemContext: async () => {
+          throw new Error('assessment must read GitHub natively');
+        },
+      });
+      const request = { action: 'assessment', operation: 'context', target, path: root };
+      const run = (read: Record<string, unknown>) => assessmentEntry(read, deps);
+      const verify = (complete: Record<string, unknown>) => {
+        assert.deepEqual(complete.evidence, { source: target });
+        assert.equal('contextMaterials' in complete, false);
+        assert.deepEqual(complete.resultFormat, assessmentResultFormat);
+        assert.equal(typeof complete.instructions, 'string');
+      };
+      if (runtime === 'openclaw')
+        await nativeMaterialFixture({ request, run, verify, minimumPages: 0 });
+      else verify(await hydrateImplementation(await run(request), run));
+      await assert.rejects(readdir(deps.root), { code: 'ENOENT' });
     });
-    assert.deepEqual(context.resultSubmission.refreshRequest, {
+
+  it('should deliver every clarification through the real native tool output limit', async () => {
+    const partial = {
+      version: ready.version,
+      summary: ready.summary,
+      assessment: ready.assessment,
+      fullAssessment: ready.fullAssessment,
+      reviewSummary: ready.reviewSummary,
+      evidence: ready.evidence,
+      progress: ready.progress,
+    };
+    const source = {
+      ...partial,
+      outcome: 'clarification-needed',
+      reviewSummary: 'Choose the intended experience.',
+      questions: Array.from(
+        { length: 5 },
+        (_, i) => `Question ${i}: ` + 'important detail '.repeat(70),
+      ),
+    };
+    const request = { action: 'assessment', operation: 'render', target, result: source };
+    await nativeMaterialFixture({
+      request,
+      run: (input) => renderNativeAssessment(input, 'openclaw'),
+      verify: (output) => {
+        assert.equal(output.retained, false);
+        for (const question of source.questions)
+          assert.ok(String(output.presentation).includes(question));
+      },
+    });
+    await assert.rejects(readdir(deps.root), { code: 'ENOENT' });
+  });
+
+  it('should refresh context and format complete output without saving a plan or granting authority', async () => {
+    const context = await legacyContext();
+    assert.ok('id' in context && 'assessment' in context && 'presentationRequest' in context);
+    const complete = await hydrateImplementation(context, (request) =>
+      assessmentEntry(request, deps),
+    );
+    assert.deepEqual(complete.resultFormat, assessmentResultFormat);
+    assert.deepEqual(context.presentationRequest, {
       action: 'assessment',
-      operation: 'context',
-      id: context.id,
+      operation: 'render',
       target,
+      assessmentOnly: true,
     });
     assert.equal(context.assessment!.requestedSkill, 'agent-system:agent-system-task-assessment');
+    const beforeRefresh = selections.length;
     assert.equal((await call('context')).status, 'verified');
-    assert.equal(selections.length, 1);
+    assert.equal(selections.length, beforeRefresh + 1);
     const result = await assessmentEntry(
       {
-        ...context.resultSubmission.request,
+        action: 'assessment',
+        operation: 'result',
+        target,
         result: {
           ...ready,
           decision: { mode: 'work', reasons: ['Model recommendation is not permission.'] },
@@ -133,19 +232,16 @@ describe('agent/assessment-entry', () => {
       },
       deps,
     );
-    assert.equal(result.status, 'recorded');
+    assert.equal(result.status, 'formatted');
     assert.deepEqual('handoff' in result && result.handoff, { next: 'assessment-only' });
     assert.ok('presentation' in result && !result.presentation!.includes('Continue automatically'));
     assert.ok('presentation' in result && !result.presentation!.includes('Model routing'));
-    const recovered = await call('context');
-    assert.equal(recovered.status, 'presented');
-    assert.ok('currentTurnId' in recovered && 'previousResultTurnId' in recovered);
-    assert.equal(recovered.currentTurnId, recovered.previousResultTurnId);
-    assert.deepEqual(
-      'previousResult' in recovered && recovered.previousResult?.fullAssessment,
-      ready.fullAssessment,
+    const entries = await new AssessmentEntryStore(deps.root, deps.binding).exclusive(
+      async (entries) => entries,
     );
-    assert.equal(selections.length, 1);
+    assert.equal(entries[0]!.result, undefined);
+    assert.equal(entries[0]!.history, undefined);
+    assert.equal('assessment' in result, false);
     assert.ok(
       !(await readdir(deps.root)).some(
         (name) => name.includes('dispatch') || name.includes('intake'),
@@ -153,70 +249,72 @@ describe('agent/assessment-entry', () => {
     );
   });
   it('should present retained source without provider access or another checkout inspection', async () => {
-    const context = await call('context');
-    assert.ok('id' in context);
-    await call('result', { id: context.id, result: ready });
+    const context = await legacyContext();
+    assert.ok('id' in context && typeof context.id === 'string');
+    await new AssessmentEntryStore(deps.root, deps.binding).exclusive(async (entries, save) => {
+      entries[0]!.result = ready;
+      entries[0]!.resultTurnId = deps.turnId;
+      await save();
+    });
     deps.connectProvider = async () => {
       throw new Error('provider unavailable');
     };
     deps.git = async () => {
       throw new Error('checkout unavailable');
     };
-    const restored = await call('context');
+    const restored = await call('present', {});
     assert.equal(restored.status, 'presented');
     const full = await assessmentEntry(
-      { action: 'assessment', operation: 'present', id: context.id, includeDetails: true },
+      { action: 'assessment', operation: 'present', includeDetails: true },
       deps,
     );
     assert.ok('presentation' in full && full.presentation!.includes(ready.fullAssessment!));
   });
-  it('should retain assessments and revision history beyond the former lifetime counts', async () => {
-    const connect = deps.connectProvider;
-    deps.connectProvider = async () => {
-      const provider = await connect();
-      return {
-        ...provider,
-        getItem: async (owner, name, number) => ({
-          ...(await provider.getItem(owner, name, number)),
-          number,
-          nodeId: `I_${number}`,
-        }),
-      };
-    };
-    const first = await call('context');
-    assert.ok('id' in first);
-    await call('result', { id: first.id, result: ready });
-    for (let number = 4; number <= 23; number++)
-      await call('context', { target: `https://github.com/owner/repo/issues/${number}` });
-    for (let revision = 1; revision <= 11; revision++) {
-      deps.turnId = `revision-${revision}`;
-      deps.inputId = deps.turnId;
-      const context = await call('context', { id: first.id, revise: true });
-      assert.ok('previousResultDigest' in context);
-      await call('result', {
-        id: first.id,
-        previousResultDigest: context.previousResultDigest,
-        result: { ...ready, plan: `Revision ${revision}.` },
+  for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should select historical ${runtime} assessments by native custody and semantic target`, async () => {
+      deps.binding.runtime = runtime;
+      const original = await legacyContext();
+      const store = new AssessmentEntryStore(deps.root, deps.binding);
+      await store.exclusive(async (entries, save) => {
+        entries[0]!.result = ready as AssessmentResult;
+        await save();
       });
+      const present = (extra: object = {}) =>
+        assessmentEntry({ action: 'assessment', operation: 'present', ...extra }, deps);
+      assert.equal((await present()).status, 'presented');
+      for (const field of ['id', 'previousResultDigest', 'agentId', 'workspace', 'threadId'])
+        await assert.rejects(present({ [field]: original.id }), /assessment-request-invalid/);
+      await store.exclusive(async (entries, save) => {
+        entries.push({ ...entries[0]!, id: 'e'.repeat(64), target: target.replace('/3', '/4') });
+        await save();
+      });
+      await assert.rejects(present(), /assessment-target-selection-required/);
+      assert.equal((await present({ target })).status, 'presented');
+      deps.binding = { ...deps.binding, incarnation: 'another-native-session' };
+      assert.equal((await present()).status, 'clarification-needed');
+    });
+  it('should format revisions without retaining the initial plan or later versions', async () => {
+    const first = await legacyContext();
+    assert.ok('id' in first);
+    for (const plan of ['Original plan', 'Current revised plan']) {
+      deps.turnId = `turn-${plan.length}`;
+      deps.inputId = deps.turnId;
+      await assessmentEntry({ action: 'assessment', operation: 'context', target }, deps);
+      const formatted = await call('result', { result: { ...ready, plan } });
+      assert.equal(formatted.status, 'formatted');
     }
     const entries = await new AssessmentEntryStore(deps.root, deps.binding).exclusive(
       async (entries) => entries,
     );
-    assert.equal(entries.length, 21);
-    assert.deepEqual(
-      entries[0]!.history?.map((result) => {
-        assert.ok(result.outcome === 'plan-ready');
-        return result.plan;
-      }),
-      [ready.plan, ...Array.from({ length: 10 }, (_, index) => `Revision ${index + 1}.`)],
+    assert.equal(entries[0]!.result, undefined);
+    assert.equal(entries[0]!.history, undefined);
+    assert.doesNotMatch(
+      JSON.stringify(entries),
+      /Original plan|Current revised plan|Complete source and evidence/,
     );
-    const recovered = await call('context', { id: first.id });
-    assert.ok('previousResult' in recovered);
-    assert.ok(recovered.previousResult?.outcome === 'plan-ready');
-    assert.equal(recovered.previousResult.plan, 'Revision 11.');
   });
-  it('should retain questions then revise with a later native answer and exact previous digest', async () => {
-    const first = await call('context');
+  it('should keep questions and the completed assessment in native context after the answer', async () => {
+    const first = await legacyContext();
     assert.ok('id' in first);
     const question: AssessmentResult = {
       version: 1,
@@ -228,47 +326,37 @@ describe('agent/assessment-entry', () => {
       evidence: [],
       progress: { completed: ['Inspected code.'], remaining: ['Answer.'] },
     };
-    await call('result', { id: first.id, result: question });
+    assert.equal((await call('result', { result: question })).status, 'formatted');
     deps.turnId = 'answer';
     deps.inputId = 'answer-input';
-    await assert.rejects(
-      call('result', { id: first.id, result: ready }),
-      /assessment-context-required/,
+    await assert.rejects(call('result', { result: ready }), /assessment-context-required/);
+    const revised = await assessmentEntry(
+      { action: 'assessment', operation: 'context', target, revise: true },
+      deps,
     );
-    const revised = await call('context', { id: first.id, revise: true });
-    assert.ok('previousResultDigest' in revised);
-    await assert.rejects(
-      call('result', { id: first.id, result: ready }),
-      /assessment-result-conflict/,
-    );
+    assert.equal('previousResultDigest' in revised, false);
     await call('result', {
-      id: first.id,
       result: ready,
-      previousResultDigest: revised.previousResultDigest,
     });
-    const full = await call('present', { id: first.id, includeDetails: true });
-    assert.ok('presentation' in full && full.presentation!.includes(ready.fullAssessment!));
+    const entries = await new AssessmentEntryStore(deps.root, deps.binding).exclusive(
+      async (entries) => entries,
+    );
+    assert.equal(entries[0]!.result, undefined);
   });
   it('should reject checkout changes, malformed output and changed native custody without overwriting a result', async () => {
-    const first = await call('context');
+    const first = await legacyContext();
     assert.ok('id' in first);
     revision = 'b'.repeat(40);
-    await assert.rejects(
-      call('result', { id: first.id, result: ready }),
-      /assessment-checkout-changed/,
-    );
+    await assert.rejects(call('result', { result: ready }), /assessment-checkout-changed/);
     revision = 'a'.repeat(40);
-    await call('result', { id: first.id, result: ready });
+    await call('result', { result: ready });
     await assert.rejects(
-      call('result', { id: first.id, result: { ...ready, progress: [] } }),
+      call('result', { result: { ...ready, progress: [] } }),
       /assessment-result-invalid/,
     );
-    const correction = await call('context');
-    assert.ok('previousResult' in correction);
-    assert.deepEqual(correction.previousResult, ready);
-    assert.equal((await call('result', { id: first.id, result: ready })).status, 'recorded');
+    assert.equal((await call('result', { result: ready })).status, 'formatted');
     await assert.rejects(
-      call('result', { id: first.id, result: { ...ready, fullAssessment: 'x'.repeat(96001) } }),
+      call('result', { result: { ...ready, fullAssessment: 'x'.repeat(96001) } }),
       /assessment-result-invalid/,
     );
     deps.assertCurrent = async () => {
@@ -276,11 +364,13 @@ describe('agent/assessment-entry', () => {
     };
     await assert.rejects(call('context'), /native-input-changed/);
     deps.assertCurrent = async () => {};
-    const read = await call('context');
-    assert.ok('previousResult' in read);
-    assert.equal(read.previousResult?.fullAssessment, ready.fullAssessment);
+    const read = await assessmentEntry(
+      { action: 'assessment', operation: 'context', target },
+      deps,
+    );
+    assert.equal('previousResult' in read, false);
   });
-  it('should reuse matching managed result and receipt without selecting or changing lifecycle state', async () => {
+  it('should refresh managed evidence and configuration without changing historical results', async () => {
     const selection = await deps.resolveSkill('configured');
     selections = [];
     const managed = {
@@ -302,22 +392,59 @@ describe('agent/assessment-entry', () => {
     };
     deps.managed = async () => managed;
     const retained = await call('context');
-    assert.equal(retained.status, 'presented');
-    assert.deepEqual('receipt' in retained && retained.receipt, managed.receipt);
-    assert.equal(selections.length, 0);
-    const entries: AssessmentEntry[] = [];
-    managed.entries = async (run) => run(entries, async () => {});
+    assert.equal(retained.status, 'verified');
+    assert.equal('previousResult' in retained, false);
+    assert.equal(selections.length, 1);
+    managed.entries = async () => {
+      throw new Error('fresh context must not read managed history');
+    };
     const revision = await call('context', { revise: true });
-    assert.ok('id' in revision);
-    await call('result', {
-      id: revision.id,
-      result: { ...ready, fullAssessment: 'Revised assessment only.' },
-      previousResultDigest: automationHash(ready),
-    });
+    assert.equal('id' in revision, false);
     assert.equal(managed.result, ready);
-    assert.equal(entries[0]!.result!.fullAssessment, 'Revised assessment only.');
-    assert.equal(selections.length, 0);
+    assert.equal(selections.length, 2);
+    assert.ok(
+      'evidence' in revision &&
+        JSON.stringify(revision.evidence) === JSON.stringify({ source: target }),
+    );
   });
+  for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should preserve delivered ${runtime} planning facts when skill lookup fails`, async () => {
+      deps.binding.runtime = runtime;
+      const nativeContext = nativeIssueContext({
+        id: 'delivered',
+        phase: 'complete',
+        worktree: root,
+      });
+      const before = structuredClone(nativeContext);
+      deps.managed = async () => ({
+        digest: 'c'.repeat(64),
+        path: root,
+        nativeContext,
+        entries: async () => {
+          throw new Error('must not read historical assessments');
+        },
+      });
+      deps.resolveSkill = async () => {
+        throw new Error('PRIVATE skill failure');
+      };
+      const complete = await hydrateImplementation(await call('context'), (read) =>
+        assessmentEntry(read, deps),
+      );
+      assert.equal(complete.status, 'native');
+      assert.deepEqual(complete.project, { path: root });
+      assert.deepEqual(complete.evidence, { source: target });
+      assert.equal(complete.assessment, undefined);
+      assert.deepEqual(complete.contextLimitations, [
+        { scope: 'assessment', code: 'workflow-guidance-unavailable' },
+      ]);
+      assert.doesNotMatch(JSON.stringify(complete), /PRIVATE/);
+      assert.deepEqual(nativeContext, before);
+      deps.assertCurrent = async () => {
+        throw new Error('native-owner-changed');
+      };
+      await assert.rejects(call('context'), /native-owner-changed/);
+    });
+  }
   for (const runtime of ['codex', 'openclaw'] as const)
     it(`should keep post-delivery ${runtime} planning native without creating or revising an assessment`, async () => {
       deps.binding.runtime = runtime;
@@ -346,6 +473,7 @@ describe('agent/assessment-entry', () => {
           observedAt: 1,
         },
         nativeContext,
+        selections: { assessment: { skill: 'current-override' } },
         entries: async () => {
           throw new Error('assessment history must remain untouched');
         },
@@ -353,20 +481,119 @@ describe('agent/assessment-entry', () => {
       deps.git = async () => {
         throw new Error('native planning must not inspect managed checkout');
       };
-      deps.connectProvider = async () => {
-        throw new Error('native planning must not load provider context');
-      };
+      const provider = intakeFixture().client;
+      deps.connectProvider = async () => ({
+        ...provider,
+        getItemContext: async () => ({
+          title: 'Current issue',
+          body: 'CURRENT REQUIREMENT',
+          comments: [],
+          labels: [],
+          truncated: false,
+        }),
+      });
       for (const request of [
         { operation: 'context', revise: true },
-        { operation: 'result', id: 'a'.repeat(64), result: { ...ready, plan: 'Revised plan.' } },
-        { operation: 'present', id: 'a'.repeat(64) },
+        { operation: 'result', result: { ...ready, plan: 'Revised plan.' } },
       ]) {
         const response = await call(request.operation, request);
-        assert.deepEqual(response, before);
+        if (request.operation === 'context') {
+          const complete = await hydrateImplementation(response, (read) =>
+            assessmentEntry(read, deps),
+          );
+          assert.equal(complete.status, 'native');
+          assert.deepEqual(complete.evidence, { source: target });
+          assert.equal(
+            (complete.assessment as { requestedSkill: string }).requestedSkill,
+            'current-override',
+          );
+          assert.equal('previousResult' in complete, false);
+          if (runtime === 'openclaw') {
+            // feed the real native response into the CI conversation driver, not a copied status fixture.
+            const conversation: ChatCompletionRequest = {
+              model: 'gpt-5.5',
+              messages: [
+                { role: 'system', content: 'Name: Notification Tanaabot' },
+                {
+                  role: 'user',
+                  content: `Direct issue assessment target: ${target} checkout: ${root}`,
+                },
+              ],
+              tools: ['agent_system_dispatch', 'agent_system_github', 'read'].map((name) => ({
+                type: 'function',
+                function: { name },
+              })),
+            };
+            let rendered = '';
+            let completed = false;
+            let rejected = 0;
+            for (let step = 0; step < 8; step++) {
+              const fixture = matchFixture([...conversationExampleScenario.fixtures], conversation);
+              assert.ok(fixture);
+              const response =
+                typeof fixture.response === 'function'
+                  ? await fixture.response(conversation)
+                  : fixture.response;
+              if (!('toolCalls' in response) || !response.toolCalls?.length) {
+                assert.deepEqual(response, { content: rendered });
+                completed = true;
+                break;
+              }
+              const tool = response.toolCalls[0]!;
+              assert.ok(tool.id);
+              const args = JSON.parse(tool.arguments);
+              let output: unknown;
+              if (tool.name === 'read') output = await readFile(args.path, 'utf8');
+              else if (tool.name === 'agent_system_github')
+                output = {
+                  exitCode: 0,
+                  truncated: false,
+                  stdout: JSON.stringify({ body: 'Current issue requirement.', comments: [] }),
+                };
+              else if (args.operation === 'context') output = complete;
+              else {
+                assert.equal(args.operation, 'render');
+                try {
+                  const result = renderNativeAssessment(args, runtime);
+                  assert.equal(result.status, 'formatted');
+                  assert.equal(result.retained, false);
+                  assert.ok('presentation' in result);
+                  rendered = result.presentation;
+                  output = result;
+                } catch (error) {
+                  assert.ok(error instanceof Error && error.message.includes('result.plan'));
+                  rejected++;
+                  output = error.message;
+                }
+              }
+              conversation.messages.push(
+                {
+                  role: 'assistant',
+                  content: null,
+                  tool_calls: [
+                    {
+                      id: tool.id,
+                      type: 'function',
+                      function: { name: tool.name, arguments: tool.arguments },
+                    },
+                  ],
+                },
+                {
+                  role: 'tool',
+                  tool_call_id: tool.id,
+                  content: typeof output === 'string' ? output : JSON.stringify(output),
+                },
+              );
+            }
+            assert.equal(completed, true);
+            assert.equal(rejected, 1);
+            assert.ok(rendered.includes('Plan ready'));
+          }
+        } else assert.deepEqual(response, before);
         assert.equal('resultSubmission' in response, false);
       }
       assert.deepEqual(history, [{ result: ready }]);
-      assert.equal(selections.length, 0);
+      assert.ok(selections.length > 0);
       assert.deepEqual(await readdir(deps.root), []);
     });
   it('should fail explicitly on invalid managed context without selecting a manual method', async () => {
@@ -392,7 +619,12 @@ describe('agent/assessment-entry', () => {
   it('should preserve dirty checkout evidence and reject an invalid configured skill without fallback', async () => {
     dirty = true;
     const context = await call('context');
-    assert.ok('project' in context && 'dirty' in context.project);
+    assert.ok(
+      'project' in context &&
+        context.project &&
+        typeof context.project === 'object' &&
+        'dirty' in context.project,
+    );
     assert.equal(context.project.dirty, true);
     deps.turnId = 'later';
     deps.inputId = 'later-input';
@@ -427,29 +659,28 @@ describe('agent/assessment-entry', () => {
         },
       } as AgentManifest;
       const selected = await call('context');
-      assert.ok('resultSubmission' in selected);
+      assert.ok('presentationRequest' in selected);
       assert.equal(
         selected.assessment!.requestedSkill,
         configuration?.skill ?? 'agent-system:agent-system-task-assessment',
       );
       assert.equal(
         selected.assessment!.guidance?.content,
-        typeof configuration?.guidance === 'string'
-          ? 'Inline guidance.'
-          : configuration?.guidance
-            ? 'File guidance.'
-            : undefined,
+        typeof configuration?.guidance === 'string' ? 'Inline guidance.' : undefined,
       );
+      if (configuration?.guidance && typeof configuration.guidance !== 'string') {
+        assert.equal(selected.assessment!.guidance?.path, join(root, 'guidance.md'));
+      }
       assert.equal(selected.mode, 'plan');
       await call('context');
-      assert.equal(selections.length, index + 1);
+      assert.equal(selections.length, (index + 1) * 2);
     }
     deps.binding.session = 'invalid-guidance';
     deps.manifest.github!.notifications!.issueAssignment!.assessment = {
       guidance: { file: 'missing.md' },
     };
     await assert.rejects(call('context'), /guidance/);
-    assert.equal(selections.length, variants.length + 1);
+    assert.equal(selections.length, variants.length * 2 + 1);
   });
   it('should resolve managed ownership from state, rejecting stale, missing and other-session owners', () => {
     const fixture = intakeFixture();
@@ -517,6 +748,7 @@ describe('agent/native-assessment-entry', () => {
   it('should assess in an ordinary codex chat without activation, native creation or managed tools', async () => {
     const { bindCodexWorkspace } = await import('../agent/codex-workspace-binding.ts');
     const { default: codexAssessmentEntry } = await import('../agent/codex-assessment-entry.ts');
+    const { runCodexDispatch } = await import('../agent/codex-dispatch.ts');
     const home = join(root, 'codex'),
       data = join(root, 'plugin');
     await mkdir(home);
@@ -584,15 +816,18 @@ describe('agent/native-assessment-entry', () => {
       { action: 'assessment', operation: 'context', target, path: workspace },
       deps,
     );
-    assert.ok('id' in context);
-    const result = await codexAssessmentEntry(
+    assert.equal('id' in context, false);
+    assert.ok('presentationRequest' in context);
+    const result = await runCodexDispatch(
       data,
-      { action: 'assessment', operation: 'result', id: context.id, target, result: ready },
+      'assessment',
+      { ...context.presentationRequest, result: ready },
       deps,
     );
-    assert.equal(result.status, 'recorded');
-    assert.deepEqual('handoff' in result && result.handoff, { next: 'assessment-only' });
-    assert.equal(calls.filter((name) => name === 'skills/list').length, 1);
+    assert.ok(result && 'status' in result);
+    assert.equal(result.status, 'formatted');
+    assert.equal('handoff' in result, false);
+    assert.equal('cards' in context.presentationRequest, false);
     assert.ok(
       !(await readdir(data)).some(
         (name) => name.includes('github-intake') || name.includes('codex-dispatch'),
@@ -712,19 +947,18 @@ describe('agent/native-assessment-entry', () => {
       { action: 'assessment', operation: 'context', target, path: workspace },
       true,
     );
-    assert.ok('id' in context);
+    assert.equal('id' in context, false);
+    assert.ok('presentationRequest' in context);
     const result = await service.run(
       manifest,
       workspace,
       caller,
-      { action: 'assessment', operation: 'result', target, id: context.id, result: ready },
+      { ...context.presentationRequest, result: ready },
       true,
     );
-    assert.equal(result.status, 'recorded');
-    assert.deepEqual('handoff' in result && result.handoff, { next: 'assessment-only' });
-    assert.equal(calls.filter((name) => name === 'skills.status').length, 1);
-    assert.ok(
-      !(await readdir(join(root, 'dispatch'))).some((name) => name.includes('openclaw-dispatch')),
-    );
+    assert.equal(result.status, 'formatted');
+    assert.equal('handoff' in result, false);
+    assert.equal('cards' in context.presentationRequest, false);
+    await assert.rejects(readdir(join(root, 'dispatch')), { code: 'ENOENT' });
   });
 });

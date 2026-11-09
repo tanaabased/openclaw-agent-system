@@ -14,7 +14,6 @@ const assessment = { complexity: 'low' as const, reason: 'One established local 
 const unresolved = { complexity: 'unset' as const, reason: 'The task has no actionable scope.' };
 const request = {
   action: 'resolve',
-  manifestDigest: 'digest',
   context: 'Bounded task evidence.',
   assessment,
 };
@@ -257,11 +256,21 @@ describe('shared model routing', () => {
     }
   });
 
-  it('should reject stale profiles, oversized context, and conflicting evidence', () => {
-    assert.throws(
-      () => resolveModelRoutingRequest(profiles, 'changed', request, 'codex'),
-      code('model-routing-manifest-changed'),
-    );
+  it('should use runtime profiles and reject metadata overrides, oversized context, and conflicting evidence', () => {
+    for (const runtime of ['codex', 'openclaw'] as const) {
+      const changed = resolveModelRoutingRequest(profiles, 'changed', request, runtime);
+      assert.equal(changed.manifestDigest, 'changed');
+      for (const metadata of [
+        { manifestDigest: 'changed' },
+        { instructionsDigest: 'a'.repeat(64) },
+        { agentId: 'other' },
+      ])
+        assert.throws(
+          () =>
+            resolveModelRoutingRequest(profiles, 'changed', { ...request, ...metadata }, runtime),
+          code('model-routing-request-invalid'),
+        );
+    }
     assert.throws(
       () =>
         resolveModelRoutingRequest(

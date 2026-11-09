@@ -36,10 +36,9 @@ Inspect saved assignments or scan GitHub for eligible work.
 
 ### Parameters
 
-| Parameter      | Type                                    | Required | Default | Description                                                                                                                           |
-| -------------- | --------------------------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `action`       | `inspect`, `check`, `scan`, or `pickup` | yes      | none    | Inspect retained state, scan assignments, or select and self-assign one project issue from its verified native pickup job.            |
-| `policyDigest` | string                                  | no       | none    | Optional compatibility field for `check` and `scan`: 64 lowercase hexadecimal characters. It does not override or freeze live policy. |
+| Parameter | Type                                    | Required | Default | Description                                                                                                                |
+| --------- | --------------------------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `action`  | `inspect`, `check`, `scan`, or `pickup` | yes      | none    | Inspect retained state, scan assignments, or select and self-assign one project issue from its verified native pickup job. |
 
 `inspect` accepts only `action` and reads the saved baseline, checkpoint, records, and
 blockers without contacting GitHub.
@@ -52,7 +51,7 @@ blockers without contacting GitHub.
 cannot activate it. A `selection-required` result accepts `selection` with the returned
 `id`, `digest`, chosen `issueNodeId` (or `null`) and a short `rationale`. It may self-assign
 one issue on GitHub. Reconcile an uncertain assignment through the same operation,
-never a separate GitHub command. See [project pickup setup](../../channels/github/CONFIG.md#githubproject-pickup).
+never a separate GitHub command. See [issue pickup setup](../../channels/github/CONFIG.md#githubissue-pickup).
 
 ### Usage
 

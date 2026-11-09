@@ -1,17 +1,30 @@
-import { implementationMaterialSchema } from './implementation-material-schema.ts';
+import WorkflowRequestError from '../../agent/workflow-request-error.ts';
+import invalidDeliveryRequest from './delivery-request-error.ts';
+import {
+  implementationMaterialSchema,
+  modelMaterialParameters,
+  type modelMaterialSchema,
+} from './implementation-material-schema.ts';
+import { implementationDecisionSchema } from '../../agent/issue-progression.ts';
+import { dispatchInspectionProperties } from '../../agent/dispatch-inspection.ts';
 import { issueChatTitleGuidance } from '../../agent/issue-chat-title.ts';
 import { launchRequestSchema } from './launch-schema.ts';
-import { retirementRequestSchema } from './retirement-schema.ts';
-import { directImplementationRequestSchema } from './implementation-schema.ts';
+import { operatorTargetProperties } from './recovery-schema.ts';
+import { retirementRequestSchema, retirementModelSchema } from './retirement-schema.ts';
+import {
+  directImplementationRequestSchema,
+  invalidImplementationRequest,
+} from './implementation-schema.ts';
 import { directAssessmentRequestSchema } from './assessment-schema.ts';
 import { feedbackDecisionSchema } from '../../agent/feedback-work.ts';
-import { Type, type TProperties } from 'typebox';
+import { Type, type Static, type TProperties } from 'typebox';
 import { assessmentSummaryRequestProperties } from '../../agent/assessment-summary-state.ts';
 import { assessmentSubmissionSchema } from '../../agent/assessment-result.ts';
 import { assessmentSchema } from '../../agent/model-routing.ts';
 import { feedbackResultSchema } from '../../agent/feedback-state.ts';
 import { implementationResultSchema } from '../../agent/implementation-result.ts';
-import { replyRequestSchema } from './reply-schema.ts';
+import { replyExecutionSchema, invalidReplyRequest } from './reply-schema.ts';
+import { Value } from 'typebox/value';
 import discriminatedSchema from '../../utils/discriminated-schema.ts';
 
 const id = Type.String({ pattern: '^[a-f0-9]{64}$' });
@@ -19,7 +32,7 @@ const object = <P extends TProperties>(properties: P) =>
   Type.Object(properties, { additionalProperties: false });
 const dispatchRequestVariants = Type.Union([
   launchRequestSchema,
-  replyRequestSchema,
+  replyExecutionSchema,
   directAssessmentRequestSchema,
   directImplementationRequestSchema,
   object({
@@ -27,6 +40,7 @@ const dispatchRequestVariants = Type.Union([
     id,
     pullRequest: Type.String({ minLength: 1, maxLength: 4096 }),
     digest: Type.Optional(id),
+    apply: Type.Optional(Type.Boolean()),
   }),
   retirementRequestSchema,
   object({
@@ -40,7 +54,7 @@ const dispatchRequestVariants = Type.Union([
     ),
   }),
   object({ action: Type.Literal('report') }),
-  object({ action: Type.Literal('inspect') }),
+  object({ action: Type.Literal('inspect'), ...dispatchInspectionProperties }),
   object({ action: Type.Literal('next') }),
   object({
     action: Type.Literal('prepare'),
@@ -68,6 +82,7 @@ const dispatchRequestVariants = Type.Union([
   object({
     action: Type.Literal('handoff'),
     id,
+    apply: Type.Optional(Type.Boolean()),
     permission: Type.Optional(
       Type.Union([
         Type.Literal('implementation'),
@@ -80,6 +95,7 @@ const dispatchRequestVariants = Type.Union([
   object({
     action: Type.Literal('implementation-context'),
     id,
+    decision: Type.Optional(implementationDecisionSchema),
     material: Type.Optional(implementationMaterialSchema),
     scope: Type.Optional(Type.Union([Type.Literal('local'), Type.Literal('pull-request')])),
   }),
@@ -91,7 +107,9 @@ const dispatchRequestVariants = Type.Union([
   object({
     action: Type.Literal('delivery'),
     id,
+    material: Type.Optional(implementationMaterialSchema),
     operation: Type.Union([
+      Type.Literal('link'),
       Type.Literal('bind'),
       Type.Literal('prepare'),
       Type.Literal('publish'),
@@ -101,8 +119,9 @@ const dispatchRequestVariants = Type.Union([
       Type.Literal('candidate'),
       Type.Literal('announce'),
     ]),
-    pullRequest: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
-    digest: Type.Optional(id),
+    pullRequest: Type.Optional(
+      Type.Union([Type.String({ minLength: 1, maxLength: 4096 }), Type.Null()]),
+    ),
     publicText: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
     title: Type.Optional(Type.String({ minLength: 1, maxLength: 512, pattern: '\\S' })),
     body: Type.Optional(Type.String({ minLength: 1, maxLength: 65536, pattern: '\\S' })),
@@ -153,3 +172,114 @@ const dispatchRequestVariants = Type.Union([
   object({ action: Type.Literal('retry'), id }),
 ]);
 export const dispatchParameters = discriminatedSchema('action', dispatchRequestVariants);
+
+// current-task reads have no model-facing owner selector.
+type ModelDispatchInput<T = Static<typeof dispatchParameters>> = T extends {
+  action:
+    | 'context'
+    | 'present'
+    | 'summary'
+    | 'handoff'
+    | 'result'
+    | 'implementation-context'
+    | 'implementation-result'
+    | 'delivery';
+}
+  ? Omit<T, 'id' | 'previousResultDigest' | 'digest' | 'apply'>
+  : T extends { action: 'feedback' }
+    ? Omit<T, 'id' | 'eventId' | 'digest'> & { source?: string }
+    : T extends { action: 'retry' }
+      ? Omit<T, 'id'> & { target?: string; chat?: string }
+      : T extends { action: 'recover' }
+        ? Omit<T, 'id' | 'digest' | 'apply'> & { target?: string; chat?: string; preview?: boolean }
+        : T extends { action: 'retire' }
+          ? Static<typeof retirementModelSchema>
+          : T extends { action: 'prepare' | 'reconcile' | 'start' | 'assess' }
+            ? Omit<T, 'id' | 'digest'> & { target?: string }
+            : Omit<T, 'projects' | 'observation'>;
+type ModelMaterialInput<T> = T extends { material?: unknown }
+  ? Omit<T, 'material'> & { material?: Static<typeof modelMaterialSchema> }
+  : T;
+export const dispatchModelParameters = Type.Unsafe<ModelMaterialInput<ModelDispatchInput>>(
+  discriminatedSchema(
+    'action',
+    Type.Union(
+      dispatchRequestVariants.anyOf
+        .map((variant) =>
+          [
+            'context',
+            'present',
+            'summary',
+            'handoff',
+            'result',
+            'implementation-context',
+            'implementation-result',
+            'delivery',
+          ].includes(String(variant.properties.action.const))
+            ? Type.Omit(variant, ['id', 'previousResultDigest', 'digest', 'apply'], {
+                additionalProperties: false,
+              })
+            : variant.properties.action.const === 'feedback'
+              ? object({
+                  ...Type.Omit(variant, ['id', 'eventId', 'digest']).properties,
+                  source: Type.Optional(Type.String({ minLength: 1, maxLength: 2048 })),
+                })
+              : variant.properties.action.const === 'retry'
+                ? object({ action: Type.Literal('retry'), ...operatorTargetProperties })
+                : variant.properties.action.const === 'recover'
+                  ? object({
+                      ...Type.Omit(variant, ['id', 'digest', 'apply']).properties,
+                      target: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+                      chat: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+                      preview: Type.Optional(Type.Boolean()),
+                    })
+                  : variant.properties.action.const === 'retire'
+                    ? retirementModelSchema
+                    : ['prepare', 'reconcile', 'start', 'assess'].includes(
+                          String(variant.properties.action.const),
+                        )
+                      ? object({
+                          ...Type.Omit(variant, ['id', 'digest']).properties,
+                          target:
+                            variant.properties.action.const === 'prepare'
+                              ? Type.String({ minLength: 1, maxLength: 4096 })
+                              : Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+                        })
+                      : variant,
+        )
+        .map((schema) => {
+          const fields = Type.Omit(schema, ['projects', 'observation']);
+          return modelMaterialParameters({
+            ...schema,
+            properties: fields.properties,
+            required: fields.required,
+          });
+        }),
+    ),
+  ),
+);
+
+/** validate public arguments before runtime binding, preserving safe operation-specific guidance. */
+export function assertDispatchModelRequest(
+  input: unknown,
+  fallback = 'dispatch-model-request-invalid',
+): asserts input is Static<typeof dispatchModelParameters> & Record<string, unknown> {
+  if (Value.Check(dispatchModelParameters, input)) return;
+  const action = input && typeof input === 'object' && 'action' in input ? input.action : undefined;
+  if (action === 'reply') throw invalidReplyRequest(input, dispatchModelParameters);
+  if (action === 'implementation') throw invalidImplementationRequest(input);
+  if (action === 'delivery')
+    throw invalidDeliveryRequest(
+      input && typeof input === 'object' && 'operation' in input ? input.operation : undefined,
+      'openclaw',
+    );
+  if (action === 'context' || action === 'contextRequest')
+    throw new WorkflowRequestError(
+      fallback,
+      'Current task context needs no authored selectors. Use agent_system_context with {}, or agent_system_dispatch with {"action":"context"}. Do not supply target, operation, contextRequest, checkout, path, IDs, or authority fields.',
+    );
+  throw new Error(fallback);
+}
+
+/** The native caller supplies every lookup selector. */
+export const turnContextParameters = Type.Object({}, { additionalProperties: false });

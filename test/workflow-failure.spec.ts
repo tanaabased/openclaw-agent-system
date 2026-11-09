@@ -5,6 +5,20 @@ import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import { scheduleDispatchRetry, dispatchFailurePhase } from '../agent/dispatch-retry.ts';
 
 describe('agent/workflow-failure', () => {
+  it('should retain bounded conflict categories through wrapped publication failures', () => {
+    const failure = workflowFailure(
+      new Error('wrapper', {
+        cause: { code: 'private-state-snapshot-conflict', snapshotConflict: 'owner' },
+      }),
+      'fallback',
+    );
+    assert.equal(failure.snapshotConflict, 'owner');
+    assert.equal(
+      workflowFailure({ snapshotConflict: '/private/context' }, 'fallback').snapshotConflict,
+      undefined,
+    );
+  });
+
   it('should preserve only owned contention fields through wrapped failures', () => {
     const contention = {
       category: 'dispatch' as const,

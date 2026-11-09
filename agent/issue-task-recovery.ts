@@ -1,7 +1,23 @@
 import { automationHash } from './automation-hash.ts';
+import taskRecoveryCaller from './task-recovery-caller.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { ManagedIssue } from './managed-issue.ts';
 import type { AdoptedPullRequest } from './delivery-state.ts';
+import type { OpenClawFeedbackEvent } from './openclaw-feedback-state.ts';
+
+/** Replacement must preserve input and uncertain effects, not old reporting checkpoints. */
+export function pendingRecoveryFeedback(event: OpenClawFeedbackEvent) {
+  if (event.native) return event.phase !== 'delivered';
+  const delivery = event.workDelivery;
+  return Boolean(
+    ['queued', 'prepared', 'running'].includes(event.phase) ||
+    (event.turn && event.turn.status !== 'completed' && !event.turn.inactive) ||
+    (event.publicationAttempted && !event.receipt) ||
+    delivery?.pendingPush ||
+    (delivery?.creationAttempted && !delivery.pullRequest) ||
+    (delivery?.announcement?.attempted && !delivery.announcement.receipt),
+  );
+}
 
 function recoveryBlockers(
   record: SharedDispatchRecord,
@@ -9,7 +25,6 @@ function recoveryBlockers(
 ) {
   return Object.entries({
     nativeTaskMissing: !record.threadId || !record.worktree || !record.request,
-    assessmentMissing: !record.result,
     inactiveLifecycle: Boolean(record.reset || record.retired || record.retirement),
     uncertainAssessmentSummary: record.assessmentSummaries?.some(
       (summary) => summary.attempt && !summary.receipt,
@@ -31,6 +46,7 @@ export default async function recoverIssueTask<R extends SharedDispatchRecord>(i
   issueUrl: string;
   now: number;
   digest?: unknown;
+  apply?: boolean;
   mode?: 'plan' | 'work' | 'auto';
   effects: Record<string, boolean | undefined>;
   revalidate(): Promise<unknown>;
@@ -60,8 +76,7 @@ export default async function recoverIssueTask<R extends SharedDispatchRecord>(i
     adopt,
     create,
   } = input;
-  if (state.records.some((entry) => entry.threadId === caller))
-    throw new Error('dispatch-operator-caller-required');
+  if (taskRecoveryCaller(record, caller)) throw new Error('dispatch-operator-caller-required');
   if (
     state.records.some(
       (entry) =>
@@ -83,7 +98,7 @@ export default async function recoverIssueTask<R extends SharedDispatchRecord>(i
       status: 'recovery-ready',
       id: record.id,
       successorId: successor.id,
-      launch: { action: 'launch', operation: 'context', target: issueUrl, id: successor.id },
+      launch: { action: 'launch', operation: 'context', target: issueUrl },
       instruction:
         'Continue this retained successor through Task Launch; reconcile its prepared native request without creating another successor.',
     };
@@ -105,7 +120,7 @@ export default async function recoverIssueTask<R extends SharedDispatchRecord>(i
   const claim = await input.claim?.('preview');
   const digest = automationHash({ record, operator, native, adopted, manifestDigest, id, claim });
   await fresh();
-  if (input.digest === undefined)
+  if (!input.apply && input.digest === undefined)
     return {
       status: 'recovery-available',
       id: record.id,
@@ -115,9 +130,9 @@ export default async function recoverIssueTask<R extends SharedDispatchRecord>(i
       pullRequest: adopted,
       preserved: { threadId: record.threadId, worktree: record.worktree },
       instruction:
-        'Approve this exact replacement with its digest. Preserve old work and history; supersede only this installation’s managed task. No remote computer is disabled and no PR is published.',
+        'Use the same issue target and pullRequest without preview to request replacement. Preserve old work and history; supersede only this installation’s managed task. No remote computer is disabled and no PR is published.',
     };
-  if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
+  if (!input.apply && input.digest !== digest) throw new Error('dispatch-recovery-stale');
   const latest = await observe();
   const latestOperator = await operatorInput();
   if (
@@ -192,7 +207,7 @@ export default async function recoverIssueTask<R extends SharedDispatchRecord>(i
     status: 'recovery-ready',
     id: record.id,
     successorId: id,
-    launch: { action: 'launch', operation: 'context', target: issueUrl, id },
+    launch: { action: 'launch', operation: 'context', target: issueUrl },
     instruction:
       'Use Task Launch with this exact successor id, then prepare and reconcile its one native creation. Old chat, checkout, commits and assessment remain evidence; the old managed task cannot resume.',
   };

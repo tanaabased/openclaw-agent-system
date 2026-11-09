@@ -1,4 +1,4 @@
-import { Type } from 'typebox';
+import { Type, type TObject } from 'typebox';
 
 export const implementationMaterialSchema = Type.Object(
   {
@@ -8,3 +8,17 @@ export const implementationMaterialSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
+/** Page location is a resource choice; the content version belongs to native response custody. */
+export const modelMaterialSchema = Type.Omit(implementationMaterialSchema, ['digest'], {
+  additionalProperties: false,
+});
+
+export function modelMaterialParameters<T extends TObject>(schema: T): T {
+  return schema.properties.material
+    ? {
+        ...schema,
+        properties: { ...schema.properties, material: Type.Optional(modelMaterialSchema) },
+      }
+    : schema;
+}

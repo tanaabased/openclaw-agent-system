@@ -14,7 +14,7 @@ import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
+import { dispatchParameters, dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 
 describe('agent/native retirement receipts', () => {
   let root: string;
@@ -55,6 +55,13 @@ describe('agent/native retirement receipts', () => {
     };
     return { deps, target, archives: () => archives };
   }
+
+  it('should apply authorized cleanup without a copied fingerprint and reconcile without replay', async () => {
+    const { deps, archives } = fixture();
+    assert.equal((await nativeRetirement({ ...deps, apply: true })).status, 'archived');
+    assert.equal((await nativeRetirement({ ...deps, apply: true })).status, 'archived');
+    assert.equal(archives(), 1);
+  });
 
   it('should reject managed targets and stale incarnations before mutation', async () => {
     const { deps, target, archives } = fixture();
@@ -255,23 +262,27 @@ describe('agent/native retirement runtime entries', () => {
       /native-retirement-agent-mismatch/,
     );
     assert.equal(credentials, 0);
-    const preview = await service.run(
+    const action = { action: 'retire', native: target.key };
+    const preview = await service.runModel(
       manifest,
       root,
       caller,
-      { action: 'retire', native: target.key },
+      { ...action, preview: true },
       true,
     );
     assert.equal(preview.status, 'retire-available');
     assert.equal(patches.length, 0);
-    const digest = 'digest' in preview ? String(preview.digest) : '';
-    const result = await service.run(
-      manifest,
-      root,
-      caller,
-      { action: 'retire', native: target.key, digest },
-      true,
-    );
+    for (const field of ['id', 'digest', 'apply']) {
+      assert.equal(
+        Value.Check(dispatchModelParameters, { ...action, [field]: 'a'.repeat(64) }),
+        false,
+      );
+      await assert.rejects(
+        service.runModel(manifest, root, caller, { ...action, [field]: 'a'.repeat(64) }, true),
+        /model-request-invalid/,
+      );
+    }
+    const result = await service.runModel(manifest, root, caller, action, true);
     assert.equal(result.status, 'archived');
     assert.ok('checkout' in result && 'cwd' in result);
     assert.deepEqual(result.checkout, { disposition: 'native-owned' });
@@ -366,7 +377,7 @@ describe('agent/native retirement runtime entries', () => {
       (await runCodexDispatch(pluginData, 'retire', input, deps)) as Record<string, unknown>;
     const preview = await run({ native: 'native' });
     assert.equal(preview?.status, 'retire-available');
-    const prepared = await run({ native: 'native', digest: preview?.digest });
+    const prepared = await run({ native: 'native', apply: true });
     assert.equal(prepared?.status, 'retirement-prepared');
     assert.deepEqual(prepared?.request, { threadId: 'native', archived: true, hostId: 'local' });
     assert.equal((await run({ native: 'native' }))?.status, 'pending');

@@ -1,3 +1,6 @@
+import type connectCodexFeedback from './codex-feedback-client.ts';
+import { implementationDecisionSchema } from './issue-progression.ts';
+import type { FeedbackEvent } from './codex-feedback-state.ts';
 import { implementationMaterialSchema } from '../tools/dispatch/implementation-material-schema.ts';
 import type { ManagedIssueState } from './managed-issue.ts';
 import { type Static, Type } from 'typebox';
@@ -34,14 +37,14 @@ export const requestSchema = Type.Object(
     ]),
     id: Type.Optional(Type.String()),
     material: Type.Optional(implementationMaterialSchema),
-    digest: Type.Optional(Type.String()),
-    approvedCallId: Type.Optional(Type.String()),
+    decision: Type.Optional(implementationDecisionSchema),
     result: Type.Optional(implementationResultSchema),
     delivery: Type.Optional(Type.Unknown()),
   },
   { additionalProperties: false },
 );
 export interface CodexContinuationDependencies extends CodexDispatchDependencies {
+  feedbackConnect?: typeof connectCodexFeedback;
   directOperator?: boolean;
   directScope?: 'local' | 'pull-request';
   continuationNative?: ReturnType<typeof codexContinuationNative>;
@@ -65,6 +68,12 @@ export interface CodexWorkContext {
   git: typeof dispatchGit;
   preparedSelections?: Set<string>;
   operatorInput?: { turnId: string; inputId: string };
+  feedbackInput?: {
+    turnId: string;
+    inputId: string;
+    attempt: NonNullable<FeedbackEvent['attempt']>;
+    authorize(): Promise<void>;
+  };
   occurrence: Awaited<ReturnType<ReturnType<typeof codexDispatchNative>['occurrence']>> | undefined;
   admissions: ManagedIssueState | undefined;
   save: () => Promise<void>;

@@ -1,3 +1,4 @@
+import assessmentSource from '../../scripts/aimock-assessment-source.ts';
 import assert from 'node:assert/strict';
 
 import {
@@ -16,14 +17,16 @@ const dispatchStages = [
   ...Array.from({ length: 8 }, (_, index) =>
     ['next', 'prepare', 'assess', 'reconcile'].map((stage) => `${stage}-${index}`),
   ).flat(),
+  ...['context', 'compose', 'candidate', 'publish'].map((stage) => `native-plan-${stage}`),
+  'native-plan-render',
   'context',
   'result',
   'recovery-present',
   'summary-compose',
   'summary-candidate',
-  'summary-preview',
   'summary-publish',
   'report',
+  'discovery-inspect',
   'binding-verify',
   'work-context',
   'work-result',
@@ -34,6 +37,7 @@ const dispatchStages = [
     `delivery-link-prepare-${index}`,
     `delivery-link-publish-${index}`,
   ]).flat(),
+  'delivery-association',
   'delivery-compose',
   'delivery-candidate',
   'delivery-announce',
@@ -41,6 +45,8 @@ const dispatchStages = [
   'delivery-present',
   'assessment-present',
   'feedback-context',
+  'feedback-resume-context',
+  'feedback-resume-context-repeat',
   'feedback-work-context',
   'feedback-work-result',
   'feedback-delivery-prepare',
@@ -49,13 +55,14 @@ const dispatchStages = [
     `feedback-link-prepare-${index}`,
     `feedback-link-publish-${index}`,
   ]).flat(),
+  'feedback-delivery-association',
   'feedback-delivery-compose',
   'feedback-delivery-candidate',
   'feedback-delivery-announce',
+  'feedback-delivery-present',
   'feedback-result',
   'feedback-compose',
   'feedback-candidate',
-  'feedback-preview',
   'feedback-publish',
 ];
 
@@ -74,7 +81,7 @@ function currentTurn(request: ChatCompletionRequest) {
   );
 }
 
-function currentFacts(messages: ChatCompletionRequest['messages']) {
+export function currentFacts(messages: ChatCompletionRequest['messages'], required = true) {
   const context = messages
     .filter(({ role }) => role === 'user')
     .map(({ content }) => getTextContent(content) ?? '')
@@ -82,8 +89,8 @@ function currentFacts(messages: ChatCompletionRequest['messages']) {
   const facts = /Agent System model-only current-turn facts \(keep private\):\n([^\n]+)/u.exec(
     context,
   )?.[1];
-  assert.ok(facts, 'the native hook must retain task facts in the current turn');
-  return JSON.parse(facts);
+  if (required) assert.ok(facts, 'the native hook must retain task facts in the current turn');
+  return facts ? JSON.parse(facts) : {};
 }
 
 function isContention(result: Record<string, unknown> | undefined) {
@@ -97,13 +104,32 @@ function isContention(result: Record<string, unknown> | undefined) {
   );
 }
 
+function isTransientDelivery(result: Record<string, unknown>) {
+  const diagnostic = result.providerDiagnostic as Record<string, unknown> | undefined;
+  return (
+    result.status === 'retrying' &&
+    result.code === 'github-delivery-github-request' &&
+    diagnostic?.classification === 'transport' &&
+    [500, 502, 503, 504].includes(Number(diagnostic.httpStatus))
+  );
+}
+
 function isPendingDelivery(result: Record<string, unknown>) {
   return (
-    result.status === 'waiting' &&
-    ['github-delivery-linkage-unverified', 'github-delivery-head-not-observed'].includes(
-      String(result.code),
-    )
+    isTransientDelivery(result) ||
+    (result.status === 'waiting' &&
+      ['github-delivery-linkage-unverified', 'github-delivery-head-not-observed'].includes(
+        String(result.code),
+      ))
   );
+}
+
+function deliveryObstacle(result: Record<string, unknown>): FixtureResponse | undefined {
+  if (!['blocked', 'waiting', 'needs-attention', 'retrying'].includes(String(result.status)))
+    return;
+  return {
+    content: `notification-delivery-stopped: ${JSON.stringify({ status: result.status, code: result.code, providerDiagnostic: result.providerDiagnostic })}`,
+  };
 }
 
 const retryStage = (stage: string, attempt: number) =>
@@ -114,8 +140,122 @@ function call(stage: string, name: string, args: unknown): FixtureResponse {
 }
 
 interface PRFixtureOptions {
+  explicitInitialLink?: boolean;
+  initialQuestion?: boolean;
   incorporateCollaborator?: boolean;
   interruptFeedbackReply?: boolean;
+  inspectDiscovery?: boolean;
+}
+
+function publicText(composed: Record<string, unknown>, text: string) {
+  const selected = composed.selection as {
+    defaultSkill: boolean;
+    guidance?: { content?: string; path?: string };
+  };
+  if (selected.defaultSkill) return text;
+  assert.match(selected.guidance!.content!, /Evidence first/u);
+  return `Evidence first: ${text} Live interpretation remains untested.`;
+}
+
+export function nativePlanResponse(
+  context: Record<string, unknown>,
+  result: (stage: string) => Record<string, unknown> | undefined,
+  dispatch: (stage: string, input: Record<string, unknown>) => FixtureResponse,
+  call: (stage: string, name: string, input: Record<string, unknown>) => FixtureResponse,
+  skillRead: boolean,
+  initialQuestion = false,
+  source: Record<string, unknown> = {},
+  leavePending = false,
+): FixtureResponse | undefined {
+  const target = (context.evidence as { source?: string })?.source;
+  assert.ok(target);
+  const sourceRead = assessmentSource(context, result, call);
+  if (sourceRead) return sourceRead;
+  const plan =
+    typeof source.reviewSummary === 'string'
+      ? source.reviewSummary
+      : initialQuestion
+        ? 'Should disposable test issues be closed after capturing evidence?'
+        : 'Add a short cleanup rule for disposable test issues, then check and commit the diff before creating the PR.';
+  const rendered = result('native-plan-render');
+  if (!rendered)
+    return dispatch('native-plan-render', {
+      action: 'assessment',
+      operation: 'render',
+      target,
+      ...(context.presentationRequest as object),
+      result: {
+        version: 1,
+        outcome: initialQuestion ? 'clarification-needed' : 'plan-ready',
+        summary: plan,
+        assessment: 'Disposable test issues need an explicit cleanup rule.',
+        fullAssessment:
+          'Inspected the existing test guidance. Add a cleanup rule after evidence capture, preserve evidence limits, review the diff and verify both runtimes. No deployment is needed.',
+        reviewSummary: plan,
+        ...(initialQuestion
+          ? { questions: [plan] }
+          : {
+              plan: 'Update the disposable issue cleanup guidance, inspect the diff, commit it and create the authorized PR.',
+            }),
+        evidence: [],
+        progress: {
+          completed: ['Inspected test guidance.'],
+          remaining: ['Apply the agreed cleanup rule.'],
+        },
+        ...source,
+      },
+    });
+  assert.equal(rendered.status, 'formatted');
+  assert.equal(rendered.retained, false);
+  assert.ok(typeof rendered.presentation === 'string');
+  for (const card of (context.presentationRequest as { cards?: string[] })?.cards ?? [])
+    assert.ok(rendered.presentation.includes(card));
+  const observed = result('native-plan-context');
+  if (!observed)
+    return {
+      ...dispatch('native-plan-context', {
+        action: 'reply',
+        operation: 'context',
+        purpose: 'status-update',
+        target,
+      }),
+      content: String(rendered.presentation),
+    };
+  assert.equal(observed.status, 'status-update-context');
+  const composed = result('native-plan-compose');
+  if (!composed)
+    return dispatch('native-plan-compose', {
+      action: 'reply',
+      operation: 'compose',
+      purpose: 'status-update',
+      target,
+      privateText: plan,
+      update: {
+        facts: [{ reference: target, text: plan }],
+      },
+    });
+  assert.equal(composed.status, 'composition-ready');
+  const skill = (composed.selection as { skill: { path: string } }).skill;
+  if (!skillRead) return call('summary-skill', 'read', { path: skill.path });
+  const candidate = result('native-plan-candidate');
+  if (!candidate)
+    return dispatch('native-plan-candidate', {
+      action: 'reply',
+      operation: 'candidate',
+      target,
+      publicText: publicText(composed, plan),
+    });
+  assert.equal(candidate.publication, 'workflow-authorized');
+  if (leavePending) return { content: String(rendered.presentation) };
+  const published = result('native-plan-publish');
+  if (!published)
+    return dispatch('native-plan-publish', {
+      action: 'reply',
+      operation: 'publish',
+      target,
+    });
+  assert.equal(published.status, 'published');
+  return { content: String(published.presentation) };
 }
 
 /** fixture judgment follows native structured results; it never manufactures their identities. */
@@ -130,7 +270,7 @@ function respond(
     .join('\n');
   if (prompt.includes('Explain the completed PR in this ordinary conversation.')) {
     const retained = currentFacts(messages);
-    assert.equal(retained.previousImplementationResult?.outcome, 'done');
+    assert.equal(retained.previousImplementationResult, undefined);
     assert.ok(retained.pullRequest?.pullRequestNumber);
     assert.ok(retained.worktree);
     assert.ok(retained.branch);
@@ -156,29 +296,34 @@ function respond(
   };
   const dispatch = (stage: string, args: unknown) =>
     call(retryStage(stage, attempts.get(stage) ?? 0), 'agent_system_dispatch', args);
+  if (options.inspectDiscovery && prompt.includes('Inspect saved discovery for ')) {
+    const target =
+      /Inspect saved discovery for (https:\/\/github\.com\/[^\s]+\/issues\/[1-9][0-9]*)/u.exec(
+        prompt,
+      )?.[1];
+    assert.ok(target);
+    const inspected = result('discovery-inspect');
+    if (!inspected) return dispatch('discovery-inspect', { action: 'inspect', target, limit: 1 });
+    assert.equal(inspected.status, 'ready');
+    const records = inspected.records as Array<{ feedback?: { events?: unknown } }>;
+    assert.equal(records.length, 1);
+    assert.equal(records[0]!.feedback?.events, undefined);
+    return { content: JSON.stringify(inspected) };
+  }
   const report = (): FixtureResponse | undefined => {
     const retained = result('report');
     if (!retained) return dispatch('report', { action: 'report' });
     if (retained.status !== 'reported' || typeof retained.response !== 'string') return;
     return { content: retained.response || 'notification-intake-unchanged' };
   };
-  const publicText = (composed: Record<string, unknown>, text: string) => {
-    const selected = composed.selection as {
-      defaultSkill: boolean;
-      guidance?: { content: string };
-    };
-    if (selected.defaultSkill) return text;
-    assert.match(selected.guidance!.content, /Evidence first/u);
-    return `Evidence first: ${text} Live interpretation remains untested.`;
-  };
   const summary = (id: string, presentation?: string): FixtureResponse | undefined => {
     if (!presentation) {
       const shown = result('recovery-present');
-      if (!shown) return dispatch('recovery-present', { action: 'present', id });
+      if (!shown) return dispatch('recovery-present', { action: 'present' });
       if (shown.status !== 'presented' || typeof shown.presentation !== 'string') return;
       presentation = shown.presentation;
     }
-    const args = { action: 'summary', id };
+    const args = { action: 'summary' };
     const composed = result('summary-compose');
     if (!composed)
       return {
@@ -186,12 +331,7 @@ function respond(
         content: presentation,
       };
     const skill = (composed.selection as { skill?: { path?: string } } | undefined)?.skill;
-    if (
-      composed.status !== 'composition-ready' ||
-      typeof composed.digest !== 'string' ||
-      !skill?.path
-    )
-      return;
+    if (composed.status !== 'composition-ready' || !skill?.path) return;
     if (openClawAIMockToolResultText(messages, prefix + 'summary-skill') === undefined)
       return call('summary-skill', 'read', { path: skill.path });
     const candidate = result('summary-candidate');
@@ -199,22 +339,26 @@ function respond(
       return dispatch('summary-candidate', {
         ...args,
         operation: 'candidate',
-        digest: composed.digest,
         publicText: publicText(
           composed,
           'The plan is to document closing disposable test issues after capturing their evidence. The retained plan is ready for the configured workflow to continue.',
         ),
       });
     if (candidate.status !== 'candidate-recorded') return;
-    const preview = result('summary-preview');
-    if (!preview) return dispatch('summary-preview', { ...args, operation: 'publish' });
-    if (preview.status !== 'publication-ready' || typeof preview.digest !== 'string') return;
     const published = result('summary-publish');
-    if (!published)
-      return dispatch('summary-publish', { ...args, operation: 'publish', digest: preview.digest });
+    if (!published) return dispatch('summary-publish', { ...args, operation: 'publish' });
     if (published.status !== 'published' || typeof published.presentation !== 'string') return;
     return { content: published.presentation };
   };
+  const nativePlan = (context: Record<string, unknown>) =>
+    nativePlanResponse(
+      context,
+      result,
+      dispatch,
+      call,
+      Boolean(openClawAIMockToolResultText(messages, prefix + 'summary-skill')),
+      options.initialQuestion,
+    );
   const recoveryId =
     /recover only the pending public assessment summary[\s\S]*?id ([a-f0-9]{64})/u.exec(
       prompt,
@@ -223,12 +367,10 @@ function respond(
   const manual = prompt.includes('Advance previously admitted issue or feedback work.');
   if (manual || prompt.includes('Fill initially available intake slots in one bounded pass.')) {
     if (!manual && !prompt.includes('Consume saved discoveries')) {
-      const digest = /Policy digest: ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
       const scan = result('scan');
       if (!scan)
         return call('scan', 'agent_system_intake', {
           action: 'scan',
-          ...(digest ? { policyDigest: digest } : {}),
         });
       if (scan.status === 'blocked') return report();
       if (scan.status !== 'ready') return;
@@ -270,19 +412,18 @@ function respond(
       if (next.status === 'routing-required') {
         const context = next.context as Record<string, unknown> | undefined;
         if (
-          typeof next.digest !== 'string' ||
           !/^https:\/\/github\.com\/tanaabased\/big-test-bucket\/issues\/[1-9][0-9]*$/u.test(
             String(context?.source),
-          ) ||
-          !String(context?.body).includes('disposable Agent System notification-flow fixture')
+          )
         )
           return;
+        const read = assessmentSource({ evidence: context }, result, call, stage('routing-source'));
+        if (read) return read;
         const prepared = result(stage('prepare'));
         if (!prepared)
           return dispatch(stage('prepare'), {
             action: 'prepare',
-            id: next.id,
-            digest: next.digest,
+            target: next.target,
             assessment: { complexity: 'low', reason: 'A bounded disposable documentation plan.' },
             fallback: 'default',
             title: 'Document disposable test issue cleanup',
@@ -290,7 +431,8 @@ function respond(
         advanced = prepared;
       } else if (next.status === 'reconcile-required') {
         const reconciled = result(stage('reconcile'));
-        if (!reconciled) return dispatch(stage('reconcile'), { action: 'reconcile', id: next.id });
+        if (!reconciled)
+          return dispatch(stage('reconcile'), { action: 'reconcile', target: next.target });
         advanced = reconciled;
       }
       if (advanced.nextAction === 'next') continue;
@@ -302,7 +444,7 @@ function respond(
         )
       ) {
         const assessed = result(stage('assess'));
-        if (!assessed) return dispatch(stage('assess'), { action: 'assess', id: next.id });
+        if (!assessed) return dispatch(stage('assess'), { action: 'assess', target: next.target });
         advanced = assessed;
       }
       if (advanced.nextAction === 'next') continue;
@@ -317,18 +459,31 @@ function respond(
     }
     return;
   }
-  const feedback = /operation context, id ([a-f0-9]{64}), eventId ([a-f0-9]{64})/u.exec(prompt);
-  if (feedback) {
-    const [, id, eventId] = feedback;
-    const args = { action: 'feedback', id, eventId };
-    const resume = prompt.includes('Resume the retained feedback reply only.');
-    const context = result('feedback-context');
-    if (!context)
-      return dispatch('feedback-context', {
-        ...args,
-        operation: 'context',
-        ...(resume ? { resume: true } : {}),
-      });
+  const retainedReply = /Publish retained reply: (\{[^\n]+\})/u.exec(prompt)?.[1];
+  if (retainedReply) {
+    const selected = JSON.parse(retainedReply) as { target: string; publicText: string };
+    for (const stage of ['feedback-resume-context', 'feedback-resume-context-repeat']) {
+      const context = result(stage);
+      if (!context)
+        return dispatch(stage, {
+          action: 'feedback',
+          operation: 'context',
+          source: selected.target,
+        });
+      assert.equal(context.status, 'verified');
+      assert.equal(context.replyTarget, selected.target);
+    }
+    const published = result('feedback-publish');
+    if (!published)
+      return dispatch('feedback-publish', { action: 'reply', operation: 'publish', ...selected });
+    if (published.status !== 'published') return;
+    return { content: String(published.presentation) };
+  }
+  const turnContext = currentFacts(messages, false);
+  const privateFeedback = turnContext.feedback;
+  if (privateFeedback) {
+    const id = turnContext.receipt;
+    const context = { ...turnContext, ...privateFeedback };
     if (
       context.status !== 'verified' ||
       context.runtime !== 'openclaw' ||
@@ -336,48 +491,27 @@ function respond(
     )
       return;
     const initial = context.issueStage === 'planning';
-    if (!resume) {
+    {
+      assert.equal(context.mode, initial ? 'plan' : 'work');
+      const work = initial ? result('feedback-work-context') : context;
+      if (!work) return dispatch('feedback-work-context', { action: 'implementation-context' });
+      const worktree = (work.project as { path?: string } | undefined)?.path;
+      if (work.status !== 'verified' || !worktree) return;
       if (initial) {
-        assert.equal(context.mode, 'plan');
-        assert.equal(context.previousImplementation, undefined);
-        assert.deepEqual(context.previousFeedbackWork, []);
-      } else {
-        assert.equal(context.mode, 'work');
-        assert.equal(context.previousImplementation, undefined);
-        const previous = context.previousFeedbackWork as Array<{ result?: { outcome?: string } }>;
-        assert.equal(previous.length, 1);
-        assert.equal(previous[0]?.result?.outcome, 'done');
+        const implementation = work.implementation as { skill?: { path?: string } } | undefined;
+        if (!implementation?.skill?.path) return;
+        if (
+          openClawAIMockToolResultText(messages, prefix + 'feedback-implementation-skill') ===
+          undefined
+        )
+          return call('feedback-implementation-skill', 'read', { path: implementation.skill.path });
       }
-      const work = result('feedback-work-context');
-      if (!work)
-        return dispatch('feedback-work-context', {
-          action: 'implementation',
-          operation: 'context',
-          id,
-          scope: 'local',
-        });
-      const implementation = work.implementation as { skill?: { path?: string } } | undefined;
-      if (
-        work.status !== 'verified' ||
-        typeof work.worktree !== 'string' ||
-        !implementation?.skill?.path
-      )
-        return;
-      assert.equal(work.issueStage, 'implementation');
-      assert.equal((work.work as { decision?: unknown }).decision, undefined);
-      assert.deepEqual(work.previousFeedbackWork, context.previousFeedbackWork);
-      assert.deepEqual(work.previousImplementation, context.previousImplementation);
-      if (
-        openClawAIMockToolResultText(messages, prefix + 'feedback-implementation-skill') ===
-        undefined
-      )
-        return call('feedback-implementation-skill', 'read', { path: implementation.skill.path });
       const branch = result('feedback-branch');
       if (!initial) {
         if (!branch)
           return call('feedback-branch', 'agent_system_git', {
             argv: ['branch', '--show-current'],
-            cwd: work.worktree,
+            cwd: worktree,
           });
         if (
           branch.exitCode !== 0 ||
@@ -414,16 +548,15 @@ function respond(
         if (!executed)
           return call(step.stage, 'agent_system_git', {
             argv: step.argv,
-            cwd: work.worktree,
+            cwd: worktree,
             ...('stdin' in step ? { stdin: step.stdin } : {}),
           });
         if (executed.exitCode !== 0 || executed.truncated !== false) return;
       }
       const completed = result('feedback-work-result');
-      if (!completed)
+      if (initial && !completed)
         return dispatch('feedback-work-result', {
-          ...args,
-          operation: 'implementation-result',
+          action: 'implementation-result',
           implementationResult: {
             outcome: 'done',
             summary: initial
@@ -434,127 +567,124 @@ function respond(
               : 'Updated the original note, checked the diff, and committed the feedback change.',
           },
         });
-      if (completed.status !== 'recorded') return;
+      if (initial && completed?.status !== 'recorded') return;
       const title = 'Document disposable notification fixture cleanup';
       const body = 'Document closing disposable test issues after their evidence is captured.';
       const delivery = result('feedback-delivery-prepare');
       if (!delivery)
         return dispatch('feedback-delivery-prepare', {
-          ...args,
-          operation: 'delivery',
-          deliveryOperation: 'prepare',
+          action: 'delivery',
+          operation: 'prepare',
           ...(initial ? { title, body } : {}),
         });
-      if (delivery.status !== 'prepared' || typeof delivery.digest !== 'string') return;
+      if (delivery.status !== 'prepared') return;
       let delivered = result('feedback-delivery-publish');
       if (!delivered)
         return dispatch('feedback-delivery-publish', {
-          ...args,
-          operation: 'delivery',
-          deliveryOperation: 'publish',
-          digest: delivery.digest,
+          action: 'delivery',
+          operation: 'publish',
           ...(initial ? { title, body } : {}),
         });
       for (let index = 0; index < 3 && isPendingDelivery(delivered); index++) {
         const prepared = result(`feedback-link-prepare-${index}`);
         if (!prepared)
           return dispatch(`feedback-link-prepare-${index}`, {
-            ...args,
-            operation: 'delivery',
-            deliveryOperation: 'prepare',
+            action: 'delivery',
+            operation: 'prepare',
             ...(initial ? { title, body } : {}),
           });
-        if (prepared.status !== 'prepared' || typeof prepared.digest !== 'string') return;
+        if (prepared.status !== 'prepared') return;
         // feedback's waiting envelope may omit the receipt; preparation reads the saved operation.
         const operation = prepared.operation as Record<string, unknown> | undefined;
         const receipt = (operation?.pullRequest ?? delivered.pullRequest) as
           Record<string, unknown> | undefined;
-        if (!receipt?.pullRequestNodeId || !receipt.pullRequestNumber) return;
+        if (
+          !isTransientDelivery(delivered) &&
+          (!receipt?.pullRequestNodeId || !receipt.pullRequestNumber)
+        )
+          return;
         const published = result(`feedback-link-publish-${index}`);
         if (!published)
           return dispatch(`feedback-link-publish-${index}`, {
-            ...args,
-            operation: 'delivery',
-            deliveryOperation: 'publish',
-            digest: prepared.digest,
+            action: 'delivery',
+            operation: 'publish',
             ...(initial ? { title, body } : {}),
           });
         delivered = published;
       }
       if (isPendingDelivery(delivered))
         throw new Error(`notification-delivery-reconciliation-exhausted: ${delivered.code}`);
-      if (delivered.status !== 'published') return;
+      if (delivered.status !== 'published') return deliveryObstacle(delivered);
       if (initial) {
+        const linked = result('feedback-delivery-association');
+        if (!linked)
+          return dispatch('feedback-delivery-association', {
+            action: 'delivery',
+            operation: 'link',
+          });
+        assert.equal(linked.status, 'linked');
+        assert.ok((linked.pullRequest as Record<string, unknown>)?.pullRequestNumber);
         const composed = result('feedback-delivery-compose');
         if (!composed)
           return dispatch('feedback-delivery-compose', {
-            ...args,
-            operation: 'delivery',
-            deliveryOperation: 'compose',
+            action: 'delivery',
+            operation: 'compose',
           });
         const selection = composed.selection as { skill?: { path?: string } } | undefined;
-        if (
-          composed.status !== 'composition-ready' ||
-          typeof composed.digest !== 'string' ||
-          !selection?.skill?.path
-        )
-          return;
+        if (composed.status !== 'composition-ready' || !selection?.skill?.path) return;
         if (!openClawAIMockToolResultText(messages, prefix + 'delivery-skill'))
           return call('delivery-skill', 'read', { path: selection.skill.path });
         const candidate = result('feedback-delivery-candidate');
+        const author = (context.source as { author?: { login?: string } } | undefined)?.author
+          ?.login;
         if (!candidate)
           return dispatch('feedback-delivery-candidate', {
-            ...args,
-            operation: 'delivery',
-            deliveryOperation: 'candidate',
-            digest: composed.digest,
-            publicText: publicText(composed, 'Adds the disposable issue cleanup note.'),
+            action: 'delivery',
+            operation: 'candidate',
+            publicText: publicText(
+              composed,
+              `${author ? '@' + author + ' ' : ''}Implemented the agreed disposable issue cleanup note.`,
+            ),
           });
-        if (candidate.status !== 'announcement-prepared' || typeof candidate.digest !== 'string')
-          return;
+        if (candidate.status !== 'announcement-prepared') return;
         const announced = result('feedback-delivery-announce');
         if (!announced)
           return dispatch('feedback-delivery-announce', {
-            ...args,
-            operation: 'delivery',
-            deliveryOperation: 'announce',
-            digest: candidate.digest,
+            action: 'delivery',
+            operation: 'announce',
           });
         if (announced.status !== 'announced') return;
+        const presented = result('feedback-delivery-present');
+        if (!presented)
+          return dispatch('feedback-delivery-present', {
+            action: 'delivery',
+            operation: 'present',
+          });
+        if (presented.status !== 'presented' || typeof presented.presentation !== 'string') return;
+        return { content: presented.presentation };
       }
-      const saved = result('feedback-result');
-      if (!saved)
-        return dispatch('feedback-result', {
-          ...args,
-          operation: 'result',
-          privateText: initial
-            ? 'Implemented the retained plan from approved feedback without an extra decision, checked the diff, and published its linked PR in the same chat and worktree.'
-            : 'The approved feedback added a continuity note on the original branch. The diff check passed and the new commit was pushed to the same PR; the original assessment and announcement remain intact.',
-        });
-      if (saved.status !== 'recorded') return;
-      if (!initial && options.interruptFeedbackReply)
-        return {
-          content:
-            'The pushed repair and private reply are retained. Awaiting the explicit reply-only continuation.',
-        };
     }
+    const privateText = initial
+      ? 'Implemented the retained plan from approved feedback, checked the diff, and published its linked PR in the same chat and worktree.'
+      : 'The approved feedback added a continuity note on the original branch. The diff check passed and the new commit was pushed to the same PR; the original assessment and announcement remain intact.';
     const composition = result('feedback-compose');
-    if (!composition) return dispatch('feedback-compose', { ...args, operation: 'compose' });
+    if (!composition)
+      return dispatch('feedback-compose', {
+        action: 'reply',
+        operation: 'compose',
+        target: context.replyTarget,
+        privateText,
+      });
+    const reply = { action: 'reply', target: context.replyTarget };
     const skill = (composition.selection as { skill?: { path?: string } } | undefined)?.skill;
-    if (
-      composition.status !== 'composition-ready' ||
-      typeof composition.digest !== 'string' ||
-      !skill?.path
-    )
-      return;
+    if (composition.status !== 'composition-ready' || !skill?.path) return;
     if (openClawAIMockToolResultText(messages, prefix + 'feedback-skill') === undefined)
       return call('feedback-skill', 'read', { path: skill.path });
     const candidate = result('feedback-candidate');
     if (!candidate)
       return dispatch('feedback-candidate', {
-        ...args,
+        ...reply,
         operation: 'candidate',
-        digest: composition.digest,
         publicText: publicText(
           composition,
           initial
@@ -563,47 +693,33 @@ function respond(
         ),
       });
     if (candidate.status !== 'candidate-recorded') return;
-    const preview = result('feedback-preview');
-    if (!preview) return dispatch('feedback-preview', { ...args, operation: 'publish' });
-    if (preview.status !== 'publication-ready' || typeof preview.digest !== 'string') return;
+    if (!initial && options.interruptFeedbackReply)
+      return { content: privateText + '\n\nReply draft retained: ' + composition.id };
     const published = result('feedback-publish');
-    if (!published)
-      return dispatch('feedback-publish', {
-        ...args,
-        operation: 'publish',
-        digest: preview.digest,
-      });
+    if (!published) return dispatch('feedback-publish', { ...reply, operation: 'publish' });
     if (published.status !== 'published' || typeof published.presentation !== 'string') return;
     return { content: published.presentation };
   }
-  const id = /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(
-    prompt,
-  )?.[1];
+  const id =
+    (currentFacts(messages, false).stage === 'assessment'
+      ? currentFacts(messages, false).receipt
+      : undefined) ??
+    /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
   let automaticId: string | undefined;
-  if (
-    id &&
-    prompt.includes('Agent System: assess this admitted issue and retain its complete plan.')
-  ) {
-    const context = result('context');
-    if (!context) {
-      const privateContext = request.messages
-        .map(({ content }) => getTextContent(content) ?? '')
-        .join('\n');
-      if (
-        !privateContext.includes('Agent System model-only current-turn facts') ||
-        !privateContext.includes('notification-hidden-initial-fact')
-      )
-        return;
-      return dispatch('context', { action: 'context', id });
-    }
+  if (id) {
+    const context = currentFacts(messages);
+    assert.equal(
+      context.status,
+      'verified',
+      'the native hook must supply usable assessment context',
+    );
     const project = context.project as { path?: unknown } | undefined;
     if (
       context.status !== 'verified' ||
       context.runtime !== 'openclaw' ||
-      context.id !== id ||
       typeof project?.path !== 'string' ||
       !context.assessment ||
-      context.resultContract !== 'assessment-result/v1'
+      !context.resultFormat
     )
       return;
     const git = result('git');
@@ -613,59 +729,25 @@ function respond(
     const selection = context.assessment as {
       defaultSkill: boolean;
       skill: { path: string };
-      guidance?: { content: string };
+      guidance?: { content?: string; path?: string };
     };
     if (openClawAIMockToolResultText(messages, prefix + 'assessment-skill') === undefined)
       return call('assessment-skill', 'read', { path: selection.skill.path });
     if (!selection.defaultSkill) {
-      assert.match(selection.guidance!.content, /Preserve the evidence limit/u);
+      assert.match(selection.guidance!.content!, /Preserve the evidence limit/u);
       assert.match(
         openClawAIMockToolResultText(messages, prefix + 'assessment-skill')!,
         /cleanup sequence/u,
       );
     }
-    const saved = result('result');
-    if (!saved)
-      return dispatch('result', {
-        action: 'result',
-        id,
-        result: {
-          version: 1,
-          ...(context.mode === 'auto'
-            ? {
-                decision: {
-                  mode: 'work',
-                  reasons: ['A bounded disposable documentation change with explicit cleanup.'],
-                },
-              }
-            : {}),
-          outcome: 'plan-ready',
-          summary: 'Document disposable issue cleanup.',
-          assessment: 'The admitted issue requests a small documentation change.',
-          planSummary: 'Describe closing disposable test issues after capturing evidence.',
-          plan: 'Add the cleanup rule to the repository documentation and review the resulting diff.',
-          fullAssessment:
-            'Verified the assigned repository in its managed worktree. Add a short documentation rule to close disposable test issues after capturing evidence, then review the diff. No implementation or publication was performed.' +
-            (!selection.defaultSkill
-              ? ' Retain sanitized evidence before cleanup; live interpretation remains untested.'
-              : ''),
-          evidence: [
-            {
-              source: project.path,
-              status: 'observed',
-              detail: 'Managed Git confirmed this worktree.',
-            },
-          ],
-          progress: {
-            completed: ['Verified the managed worktree.'],
-            remaining: ['Implement after approval.'],
-          },
-        },
-      });
-    if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-    const summarized = summary(id, saved.presentation);
-    if (!summarized || 'toolCalls' in summarized) return summarized;
-    if ((saved.handoff as { next?: string })?.next !== 'implementation') return summarized;
+    const published = nativePlan(context);
+    if (
+      !published ||
+      'toolCalls' in published ||
+      options.initialQuestion ||
+      !['work', 'auto'].includes(String(context.mode))
+    )
+      return published;
     automaticId = id;
   }
   const operatorId =
@@ -679,7 +761,6 @@ function respond(
         return dispatch('binding-verify', {
           action: 'delivery',
           operation: 'bind',
-          id: operatorId,
           pullRequest: selectedPr,
         });
       assert.equal(bound.status, 'bound');
@@ -692,7 +773,6 @@ function respond(
         return dispatch('delivery-prepare', {
           action: 'delivery',
           operation: 'prepare',
-          id: operatorId,
         });
       assert.equal(prepared.status, 'prepared');
       return { content: 'Reviewer delivery prepared without publication.' };
@@ -711,14 +791,18 @@ function respond(
     const body = update
       ? 'Document closing disposable test issues and verifying the retained delivery after follow-up commits.'
       : 'Document closing disposable test issues after their evidence is captured.';
+    let published = result('delivery-publish');
     if (!retry) {
       const nativeWork = update;
       const context = nativeWork ? currentFacts(messages) : result('work-context');
       if (!context)
         return dispatch('work-context', {
           ...(automaticId
-            ? { action: 'implementation-context', id: operatorId }
-            : { action: 'implementation', operation: 'context', id: operatorId }),
+            ? {
+                action: 'implementation-context',
+                decision: { mode: 'work', reasons: ['The current cleanup scope is clear.'] },
+              }
+            : { action: 'implementation', operation: 'context' }),
         });
       const path = nativeWork ? context.worktree : context.project?.path;
       if (!path) return;
@@ -734,17 +818,29 @@ function respond(
           context.publicationAuthorized !== true
         )
           return;
-        assert.equal(context.deliveryOnly, false);
+        for (const key of ['resultContract', 'resultSchema', 'recording', 'handoff'])
+          assert.equal(key in context, false);
         const selected = context.implementation as {
           defaultSkill: boolean;
           skill: { path: string };
-          guidance?: { content: string };
+          guidance?: { content?: string; path?: string };
         };
         if (openClawAIMockToolResultText(messages, prefix + 'implementation-skill') === undefined)
           return call('implementation-skill', 'read', { path: selected.skill.path });
         customized = !selected.defaultSkill;
         if (customized) {
-          assert.match(selected.guidance!.content, /Retain sanitized evidence/u);
+          const guidance = selected.guidance!;
+          if (
+            guidance.path &&
+            openClawAIMockToolResultText(messages, prefix + 'implementation-guidance') === undefined
+          )
+            return call('implementation-guidance', 'read', { path: guidance.path });
+          assert.match(
+            guidance.path
+              ? openClawAIMockToolResultText(messages, prefix + 'implementation-guidance')!
+              : guidance.content!,
+            /Retain sanitized evidence/u,
+          );
           assert.match(
             openClawAIMockToolResultText(messages, prefix + 'implementation-skill')!,
             /cleanup sequence/u,
@@ -776,83 +872,45 @@ function respond(
           });
         if (executed.exitCode !== 0 || executed.truncated !== false) return;
       }
-      if (!nativeWork) {
-        const saved = result('work-result');
-        if (!saved)
-          return dispatch('work-result', {
-            action: 'implementation-result',
-            id: operatorId,
-            implementationResult: {
-              outcome: 'done',
-              summary: 'Committed the disposable cleanup note.',
-              fullResult:
-                'Committed and diff-checked the cleanup note in the verified worktree.' +
-                (customized ? ' Retained sanitized evidence before cleanup.' : ''),
-            },
-          });
-        const handoff = saved.handoff as { next?: string; request?: Record<string, unknown> };
-        if (saved.status !== 'recorded' || handoff?.next !== 'delivery') return;
-        if (!result('delivery-prepare'))
-          return dispatch('delivery-prepare', { ...handoff.request, title, body });
-      }
-    }
-    if (!retry) {
       const prepared = result('delivery-prepare');
       if (!prepared)
         return dispatch('delivery-prepare', {
           action: 'delivery',
           operation: 'prepare',
-          id: operatorId,
           title,
           body,
         });
-      if (prepared.status !== 'prepared' || typeof prepared.digest !== 'string') return;
-      let published = result('delivery-publish');
+      if (prepared.status !== 'prepared') return;
       if (!published)
         return dispatch('delivery-publish', {
           action: 'delivery',
           operation: 'publish',
-          id: operatorId,
-          digest: prepared.digest,
           title,
           body,
         });
-      if (published.status === 'prepared' && published.code === 'delivery-preview-stale') {
-        if (typeof published.digest !== 'string') return;
-        const refreshed = result('delivery-publish-refreshed');
-        if (!refreshed)
-          return dispatch('delivery-publish-refreshed', {
-            action: 'delivery',
-            operation: 'publish',
-            id: operatorId,
-            digest: published.digest,
-            title,
-            body,
-          });
-        published = refreshed;
-      }
       for (let index = 0; index < 3 && isPendingDelivery(published); index++) {
         const receipt = published.pullRequest as Record<string, unknown> | undefined;
-        if (!receipt?.pullRequestNodeId || !receipt.pullRequestNumber) return;
+        if (
+          !isTransientDelivery(published) &&
+          (!receipt?.pullRequestNodeId || !receipt.pullRequestNumber)
+        )
+          return;
         const prepareStage = `delivery-link-prepare-${index}`;
         const retained = result(prepareStage);
         if (!retained)
           return dispatch(prepareStage, {
             action: 'delivery',
             operation: 'prepare',
-            id: operatorId,
             title,
             body,
           });
-        if (retained.status !== 'prepared' || typeof retained.digest !== 'string') return;
+        if (retained.status !== 'prepared') return;
         const publishStage = `delivery-link-publish-${index}`;
         const reconciled = result(publishStage);
         if (!reconciled)
           return dispatch(publishStage, {
             action: 'delivery',
             operation: 'publish',
-            id: operatorId,
-            digest: retained.digest,
             title,
             body,
           });
@@ -860,21 +918,26 @@ function respond(
       }
       if (isPendingDelivery(published))
         throw new Error(`notification-delivery-reconciliation-exhausted: ${published.code}`);
-      if (published.status !== 'published') return;
-      if (!update && published.workflowStatus !== 'delivered')
-        throw new Error(
-          'completed implementation with verified pr linkage must be delivered before its announcement',
-        );
+      if (published.status !== 'published') return deliveryObstacle(published);
     }
     if (!retry && !update) {
+      if (options.explicitInitialLink) assert.equal(typeof published?.url, 'string');
+      const linked = result('delivery-association');
+      if (!linked)
+        return dispatch('delivery-association', {
+          action: 'delivery',
+          operation: 'link',
+          ...(options.explicitInitialLink ? { pullRequest: published?.url } : {}),
+        });
+      assert.equal(linked.status, 'linked');
+      assert.ok((linked.pullRequest as Record<string, unknown>)?.pullRequestNumber);
       const composed = result('delivery-compose');
       if (!composed)
         return dispatch('delivery-compose', {
           action: 'delivery',
           operation: 'compose',
-          id: operatorId,
         });
-      if (composed.status !== 'composition-ready' || typeof composed.digest !== 'string') return;
+      if (composed.status !== 'composition-ready') return;
       const selection = composed.selection as { skill?: { path?: string } } | undefined;
       if (!selection?.skill?.path) return;
       if (!openClawAIMockToolResultText(messages, prefix + 'delivery-skill'))
@@ -884,19 +947,14 @@ function respond(
         return dispatch('delivery-candidate', {
           action: 'delivery',
           operation: 'candidate',
-          id: operatorId,
-          digest: composed.digest,
           publicText: publicText(composed, 'Adds the disposable issue cleanup note.'),
         });
-      if (candidate.status !== 'announcement-prepared' || typeof candidate.digest !== 'string')
-        return;
+      if (candidate.status !== 'announcement-prepared') return;
       const announced = result('delivery-announce');
       if (!announced)
         return dispatch('delivery-announce', {
           action: 'delivery',
           operation: 'announce',
-          id: operatorId,
-          digest: candidate.digest,
         });
       if (announced.status !== 'announced') return;
       if (!automaticId)
@@ -905,17 +963,12 @@ function respond(
             'Publication retained. Presentation intentionally deferred for recovery coverage.',
         };
     }
-    if (retry) {
-      const plan = result('assessment-present');
-      if (!plan) return dispatch('assessment-present', { action: 'present', id: operatorId });
-      if (plan.status !== 'presented' || typeof plan.presentation !== 'string') return;
-    } else {
+    if (!retry) {
       const repeated = result('delivery-repeat');
       if (!repeated)
         return dispatch('delivery-repeat', {
           action: 'delivery',
           operation: 'announce',
-          id: operatorId,
         });
       if (repeated.status !== 'announced') return;
     }
@@ -924,16 +977,10 @@ function respond(
       return dispatch('delivery-present', {
         action: 'delivery',
         operation: 'present',
-        id: operatorId,
       });
     if (presented.status !== 'presented' || typeof presented.presentation !== 'string') return;
     return {
-      content: [
-        retry ? result('assessment-present')?.presentation : undefined,
-        presented.presentation,
-      ]
-        .filter(Boolean)
-        .join('\n\n'),
+      content: presented.presentation,
     };
   }
 }
@@ -944,12 +991,12 @@ function response(request: ChatCompletionRequest, options: PRFixtureOptions) {
   } catch (error) {
     if (
       error instanceof Error &&
-      /^(?:notification-retry-exhausted: (?:private-state-(?:file-lock-busy|snapshot-conflict)|discovery-checkpoint-changed)|notification-delivery-reconciliation-exhausted: github-delivery-(?:linkage-unverified|head-not-observed))$/u.test(
+      /^(?:notification-retry-exhausted: (?:private-state-(?:file-lock-busy|snapshot-conflict)|discovery-checkpoint-changed)|notification-delivery-reconciliation-exhausted: github-delivery-(?:linkage-unverified|head-not-observed|github-request))$/u.test(
         error.message,
       )
     )
       return { content: error.message };
-    return undefined;
+    throw error;
   }
 }
 
@@ -979,6 +1026,11 @@ export function createPRExampleScenario(
     finalResponses: [],
     dynamicFinalResponseFixtures: [final],
     toolCalls: [
+      { id: prefix + 'assessment-source', name: 'agent_system_github' },
+      ...Array.from({ length: 8 }, (_, index) => ({
+        id: prefix + `routing-source-${index}`,
+        name: 'agent_system_github',
+      })),
       { id: prefix + 'scan', name: 'agent_system_intake' },
       { id: prefix + 'feedback-skill', name: 'read' },
       { id: prefix + 'feedback-implementation-skill', name: 'read' },
@@ -986,6 +1038,7 @@ export function createPRExampleScenario(
       { id: prefix + 'summary-skill', name: 'read' },
       { id: prefix + 'assessment-skill', name: 'read' },
       { id: prefix + 'implementation-skill', name: 'read' },
+      { id: prefix + 'implementation-guidance', name: 'read' },
       ...dispatchStages.flatMap((stage) =>
         [0, 1, 2, 3].map((attempt) => ({
           id: prefix + retryStage(stage, attempt),
@@ -1028,4 +1081,6 @@ export function createPRExampleScenario(
   };
 }
 
-export const prExampleScenario = createPRExampleScenario('openclaw-pr-journey');
+export const prExampleScenario = createPRExampleScenario('openclaw-pr-journey', {
+  initialQuestion: true,
+});

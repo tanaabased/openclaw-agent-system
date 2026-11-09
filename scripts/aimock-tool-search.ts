@@ -10,6 +10,7 @@ import {
 
 import type { OpenClawAIMockScenario, OpenClawAIMockToolCall } from './aimock-scenario.ts';
 import { matchesOpenClawAIMockToolCallId } from './aimock-tool-result.ts';
+import contextMaterialExchange from './aimock-context-material.ts';
 
 const discoveryPrefix = 'call_aimock_discover_';
 const preExecutionDenial = /^(?:Error: )?Denied by user\. The tool call did not run\.(?:\n|$)/u;
@@ -20,9 +21,15 @@ function parse(text: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function searchTool(request: ChatCompletionRequest) {
+  return request.tools?.find((tool) =>
+    ['tool_search', 'openclaw_tool_search'].includes(tool.function.name),
+  )?.function.name;
+}
+
 function controls(request: ChatCompletionRequest): boolean {
-  return ['tool_search', 'tool_call'].every((name) =>
-    request.tools?.some((tool) => tool.function.name === name),
+  return (
+    !!searchTool(request) && !!request.tools?.some((tool) => tool.function.name === 'tool_call')
   );
 }
 
@@ -230,13 +237,33 @@ export default function withToolSearch(scenario: OpenClawAIMockScenario): OpenCl
       toolCalls: [
         {
           id: `${discoveryPrefix}${request.messages.filter((message) => message.role === 'user').length}`,
-          name: 'tool_search',
+          name: searchTool(request)!,
           arguments: JSON.stringify({ queries: names.map((query) => ({ query, limit: 1 })) }),
         },
       ],
     }),
   };
   const adapted = new Map<Fixture, Fixture>();
+  const exchange = (request: ChatCompletionRequest) =>
+    contextMaterialExchange(
+      normalizeToolSearchRequest(
+        request,
+        scenario.expectedDeniedToolCalls,
+        scenario.expectedInvalidToolCalls,
+      ),
+    );
+  const materials: Fixture = {
+    match: {
+      model: scenario.model.match,
+      predicate: (request) =>
+        (!needsDiscovery(request) || !!discoveryResult(request)) && !!exchange(request).pending,
+    },
+    response: (request) => {
+      const pending = exchange(request).pending;
+      assert.ok(pending);
+      return wrapResponse(request, pending);
+    },
+  };
   for (const fixture of scenario.fixtures) {
     const response = fixture.response;
     adapted.set(fixture, {
@@ -244,14 +271,7 @@ export default function withToolSearch(scenario: OpenClawAIMockScenario): OpenCl
       match: {
         predicate: (request) =>
           (!needsDiscovery(request) || !!discoveryResult(request)) &&
-          matchFixture(
-            [fixture],
-            normalizeToolSearchRequest(
-              request,
-              scenario.expectedDeniedToolCalls,
-              scenario.expectedInvalidToolCalls,
-            ),
-          ) !== null,
+          matchFixture([fixture], exchange(request).request) !== null,
       },
       response:
         typeof response !== 'function' && !('toolCalls' in response)
@@ -260,13 +280,7 @@ export default function withToolSearch(scenario: OpenClawAIMockScenario): OpenCl
               wrapResponse(
                 request,
                 typeof response === 'function'
-                  ? await response(
-                      normalizeToolSearchRequest(
-                        request,
-                        scenario.expectedDeniedToolCalls,
-                        scenario.expectedInvalidToolCalls,
-                      ),
-                    )
+                  ? await response(exchange(request).request)
                   : response,
               ),
     });
@@ -274,7 +288,7 @@ export default function withToolSearch(scenario: OpenClawAIMockScenario): OpenCl
   return {
     ...scenario,
     toolSearchDiscoveryFixture: discovery,
-    fixtures: [discovery, ...adapted.values()],
+    fixtures: [discovery, materials, ...adapted.values()],
     dynamicFinalResponseFixtures: scenario.dynamicFinalResponseFixtures?.map((fixture) =>
       adapted.get(fixture)!,
     ),

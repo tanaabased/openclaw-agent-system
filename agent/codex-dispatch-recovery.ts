@@ -1,6 +1,6 @@
-import { hasDeliveredImplementation } from './implementation-delivery.ts';
 import { dispatchGit, type DispatchGit } from './codex-dispatch-project.ts';
-import recoverIssueTask from './issue-task-recovery.ts';
+import taskRecoveryCaller from './task-recovery-caller.ts';
+import recoverIssueTask, { pendingRecoveryFeedback } from './issue-task-recovery.ts';
 import { type CleanupConfiguration } from './cleanup-configuration.ts';
 import { automationHash } from './automation-hash.ts';
 import assignmentRetirement from './assignment-retirement.ts';
@@ -39,7 +39,6 @@ export default async function recoverDispatch(
 ) {
   const {
     action,
-    state,
     record,
     intake,
     sourceThreadId,
@@ -54,15 +53,15 @@ export default async function recoverDispatch(
     withNative,
   } = context;
   if (action === 'recover') {
-    if (state.records.some((entry) => [entry.threadId, entry.receiptThreadId].includes(caller)))
-      throw new Error('dispatch-operator-caller-required');
+    if (taskRecoveryCaller(record, caller)) throw new Error('dispatch-operator-caller-required');
     const operatorInput = () => withNative((host) => host.operatorInput(caller));
-    const execution = hasDeliveredImplementation(record) ? undefined : record;
+    const execution = record;
     return recoverIssueTask({
       ...context,
       operator: await operatorInput(),
       operatorInput,
       digest: input.digest,
+      apply: input.apply === true,
       mode: record.issueMode,
       create: (record) => record,
       effects: {
@@ -77,11 +76,11 @@ export default async function recoverDispatch(
         pendingSummaryTurn: Boolean(execution?.summaryRecovery && !execution.summaryRecovery.ended),
         pendingAutoDecision: Boolean(execution?.autoDecision && !execution.autoDecision.ended),
         unfinishedImplementation: Boolean(
-          execution?.continuation && execution.continuation.phase !== 'complete',
+          (execution?.continuation?.attempt && !execution.continuation.attempt.ended) ||
+          (execution?.continuation?.publicationAttempt &&
+            !execution.continuation.publicationAttempt.ended),
         ),
-        pendingFeedback: record.feedback?.events.some(
-          (event) => !['complete', 'cancelled', 'held'].includes(event.phase),
-        ),
+        pendingFeedback: record.feedback?.events.some(pendingRecoveryFeedback),
         assignmentClaim: Boolean((record.claimId || record.claimAccepted) && !context.claim),
       },
       observe: async () => {
@@ -138,15 +137,6 @@ export default async function recoverDispatch(
     });
   }
   if (action === 'retire') {
-    if (
-      state.records.some(
-        (entry) =>
-          !entry.handoff &&
-          entry.id !== record.id &&
-          (entry.threadId === caller || entry.receiptThreadId === caller),
-      )
-    )
-      throw new Error('dispatch-operator-caller-required');
     const nativeCaller = await withNative((host) => host.operatorInput(caller));
     const client = await connect();
     const item = await client.getItem(
@@ -192,7 +182,7 @@ export default async function recoverDispatch(
       nativeCaller,
     });
     await fresh();
-    if (input.digest === undefined)
+    if (!input.apply && input.digest === undefined)
       return {
         status: 'retire-available',
         id: record.id,
@@ -202,7 +192,7 @@ export default async function recoverDispatch(
         instruction:
           'Retire this exact managed task now, leaving its issue and branch unchanged. Reuse safe native cleanup immediately without grace; running work, preservation blockers and asynchronous reclamation remain pending.',
       };
-    if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
+    if (!input.apply && input.digest !== digest) throw new Error('dispatch-recovery-stale');
     const verifiedConfiguration = await context.readConfiguration();
     if (automationHash(verifiedConfiguration) !== automationHash(configuration))
       throw new Error('retirement-configuration-changed');
@@ -232,10 +222,9 @@ export default async function recoverDispatch(
     return { status: 'retirement-pending', id: record.id, retirement: record.retirement };
   }
   if (action === 'reset') {
-    if (
-      state.records.some((entry) => entry.threadId === caller || entry.receiptThreadId === caller)
-    )
-      throw new Error('dispatch-operator-caller-required');
+    if (input.apply || input.digest !== undefined)
+      await withNative((host) => host.operatorInput(caller));
+    if (taskRecoveryCaller(record, caller)) throw new Error('dispatch-operator-caller-required');
     if (record.phase !== 'complete' || !record.result || !record.request || !record.threadId)
       throw new Error('dispatch-reset-unavailable');
     const native = await withNative((client) =>
@@ -256,7 +245,7 @@ export default async function recoverDispatch(
       throw new Error('dispatch-reset-chat-active');
     const digest = automationHash({ record, manifest: manifestDigest, turnId: native.turnId });
     await fresh();
-    if (input.digest === undefined)
+    if (!input.apply && input.digest === undefined)
       return {
         status: 'reset-available',
         id: record.id,
@@ -267,7 +256,7 @@ export default async function recoverDispatch(
         instruction:
           'Reset preserves this assessment and worktree. Only a new assignment event after reset permits one fresh assessment through normal intake. No implementation is authorized.',
       };
-    if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
+    if (!input.apply && input.digest !== digest) throw new Error('dispatch-recovery-stale');
     record.reset = { at: now, by: caller };
     await save();
     return {
@@ -280,17 +269,9 @@ export default async function recoverDispatch(
     };
   }
   if (action === 'retry-denied') {
-    if (
-      state.records.some((entry) =>
-        [
-          entry.sourceThreadId,
-          entry.preparationObservation?.sourceThreadId,
-          entry.threadId,
-          entry.receiptThreadId,
-        ].includes(caller),
-      )
-    )
-      throw new Error('dispatch-operator-caller-required');
+    if (input.apply || input.renewAuthorization)
+      await withNative((host) => host.operatorInput(caller));
+    if (taskRecoveryCaller(record, caller)) throw new Error('dispatch-operator-caller-required');
     if (record.denial?.operation === 'prepare') {
       if (
         !record.preparationObservation ||
@@ -318,18 +299,18 @@ export default async function recoverDispatch(
       if (!evidence || automationHash(evidence) !== automationHash(retained))
         throw new Error('dispatch-denial-unverified');
       // command readback does not distinguish human refusal from automatic review.
-      if (input.approvedCallId !== evidence.callId)
+      if (!input.renewAuthorization && input.approvedCallId !== evidence.callId)
         throw new Error('dispatch-denial-approval-required');
       const digest = automationHash({
         record,
         manifest: manifestDigest,
         denial: evidence,
-        approvedCallId: input.approvedCallId,
+        approvedCallId: input.renewAuthorization ? evidence.callId : input.approvedCallId,
       });
       await fresh();
-      if (input.digest === undefined)
+      if (!input.apply && input.digest === undefined)
         return { status: 'retry-available', id: record.id, digest, denial: record.denial };
-      if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
+      if (!input.apply && input.digest !== digest) throw new Error('dispatch-recovery-stale');
       (record.recoveredDenials ??= []).push({
         denial: record.denial,
         observation: record.preparationObservation,
@@ -365,6 +346,7 @@ export default async function recoverDispatch(
         record.request!,
         { createdAt: record.createdAt, turnId: record.preparationTurnId },
         input.approvedCallId as string | undefined,
+        input.renewAuthorization === true,
       );
       const found = await native.find({
         sourceThreadId: record.sourceThreadId,
@@ -378,12 +360,12 @@ export default async function recoverDispatch(
       record,
       manifest: manifestDigest,
       denial,
-      approvedCallId: input.approvedCallId,
+      approvedCallId: input.renewAuthorization ? denial.callId : input.approvedCallId,
     });
     await fresh();
-    if (input.digest === undefined)
+    if (!input.apply && input.digest === undefined)
       return { status: 'retry-available', id: record.id, digest, denial };
-    if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
+    if (!input.apply && input.digest !== digest) throw new Error('dispatch-recovery-stale');
     record.deniedCreations = [
       ...(record.deniedCreations ?? []),
       {
@@ -392,7 +374,7 @@ export default async function recoverDispatch(
         recoveredAt: now,
         ...(record.continuation ? { continuation: record.continuation } : {}),
         ...denial,
-        ...(input.approvedCallId ? { approvedBy: caller } : {}),
+        ...(input.renewAuthorization || input.approvedCallId ? { approvedBy: caller } : {}),
       },
     ];
     if (record.denial) {

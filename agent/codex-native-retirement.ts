@@ -11,7 +11,7 @@ import { connectCodexThreads } from './codex-thread-client.ts';
 /** the native desktop owns archive and checkout effects; this entry prepares and observes them. */
 export default async function retireCodexNative(
   pluginData: string,
-  input: { native: string; digest?: string },
+  input: { native: string; digest?: string; apply?: boolean },
   deps: CodexDispatchDependencies,
 ) {
   const current = await selectCodexIntake(pluginData, deps, { resolvePolicy: false });
@@ -40,6 +40,7 @@ export default async function retireCodexNative(
       },
       target: input.native,
       digest: input.digest,
+      apply: input.apply,
       turnId: turn.turnId,
       inputId: turn.inputId,
       now: (deps.now ?? Date.now)(),

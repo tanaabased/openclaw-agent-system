@@ -55,7 +55,7 @@ describe('agent/assessment-summary', () => {
       assert.ok(
         'code' in foreign && foreign.code === 'assessment-summary-assessment-turn-required',
       );
-      const invalid = await f.run({ operation: 'publish', material, digest: composed.digest });
+      const invalid = await f.run({ operation: 'publish', material });
       assert.ok(
         'code' in invalid && invalid.code === 'assessment-summary-material-request-invalid',
       );
@@ -82,14 +82,14 @@ describe('agent/assessment-summary', () => {
     for (const held of [false, true]) {
       const f = fixture();
       f.retain();
-      const digest = await f.compose();
-      await f.run({ operation: held ? 'hold' : 'publish', digest });
+      await f.compose();
+      await f.run({ operation: held ? 'hold' : 'publish' });
       const summaries = structuredClone(f.record.assessmentSummaries);
       delete f.record.result!.fullAssessment;
       const pending = pendingPublicResponse(f.record);
       if (held) {
         assert.equal(pending?.state, 'blocked');
-        assert.equal(pending?.summary?.code, 'assessment-summary-native-approval-denied');
+        assert.equal(pending?.code, 'assessment-summary-native-approval-denied');
         assert.match(pending!.instruction, /Do not retry/);
       } else assert.equal(pending, undefined);
       assert.deepEqual(f.record.assessmentSummaries, summaries);
@@ -99,9 +99,9 @@ describe('agent/assessment-summary', () => {
     it(`should reconcile an attempted ${runtime} plan update without restoring a conversation checkpoint`, async () => {
       const f = fixture(runtime);
       f.retain();
-      const digest = await f.compose();
+      await f.compose();
       f.lose();
-      await f.run({ operation: 'publish', digest });
+      await f.run({ operation: 'publish' });
       delete f.record.result!.fullAssessment;
       const recovered = await f.run({ operation: 'reconcile' });
       assert.equal(recovered.status, 'published');
@@ -113,10 +113,9 @@ describe('agent/assessment-summary', () => {
   it('should retain a summary-only denial without publishing or granting implementation', async () => {
     const f = fixture();
     f.retain();
-    const digest = await f.compose();
+    await f.compose();
     const held = await f.run({
       operation: 'hold',
-      digest,
       diagnostic: 'Native review refused this summary.',
     } as unknown as AssessmentSummaryRequest);
     assert.equal(held.status, 'blocked');
@@ -137,7 +136,7 @@ describe('agent/assessment-summary', () => {
     const saved = JSON.parse(JSON.stringify(f.record));
     Object.assign(f.record, saved);
     for (const operation of ['compose', 'publish', 'reconcile'] as const) {
-      const stopped = await f.run({ operation, digest }, 'recovery', undefined, true);
+      const stopped = await f.run({ operation }, 'recovery', undefined, true);
       assert.equal(stopped.status, 'blocked');
       assert.ok('code' in stopped && stopped.code === 'assessment-summary-native-approval-denied');
     }
@@ -153,9 +152,14 @@ describe('agent/assessment-summary', () => {
       f.record.assessmentSummaries?.[0]?.diagnostic,
       'Native review refused this summary.',
     );
-    assert.equal(pendingPublicResponse(f.record)?.state, 'blocked');
+    const pending = pendingPublicResponse(f.record);
+    assert.equal(pending?.state, 'blocked');
+    assert.doesNotMatch(
+      JSON.stringify(pending),
+      /A revised assessment|publicText|publicationCommand/,
+    );
     assert.equal(
-      pendingPublicResponse(f.record)?.summary?.diagnostic,
+      pendingPublicResponse(f.record)?.diagnostic,
       'Native review refused this summary.',
     );
     assert.equal(f.writes, 0);
@@ -163,9 +167,9 @@ describe('agent/assessment-summary', () => {
   it('should retain denial discovered while authorizing an existing summary', async () => {
     const f = fixture();
     f.retain();
-    const digest = await f.compose();
+    await f.compose();
     f.revoke();
-    const blocked = await f.run({ operation: 'publish', digest });
+    const blocked = await f.run({ operation: 'publish' });
     assert.ok('code' in blocked && blocked.code === 'native-approval-denied');
     assert.equal(f.record.assessmentSummaries?.[0]?.code, 'native-approval-denied');
     assert.equal(f.writes, 0);
@@ -173,10 +177,10 @@ describe('agent/assessment-summary', () => {
   it('should retain a known refusal without refreshing composition or publication authority', async () => {
     const f = fixture();
     f.retain();
-    const digest = await f.compose();
+    await f.compose();
     f.changeSkill();
     f.revoke();
-    const held = await f.run({ operation: 'hold', digest }, 'recovery', undefined, true);
+    const held = await f.run({ operation: 'hold' }, 'recovery', undefined, true);
     assert.ok('code' in held && held.code === 'assessment-summary-native-approval-denied');
     assert.equal(f.record.assessmentSummaries?.[0]?.turnId, 'turn');
     assert.equal(f.record.progression, undefined);
@@ -195,7 +199,7 @@ describe('agent/assessment-summary', () => {
         await f.run(
           {
             operation: 'candidate',
-            digest: composed.digest,
+
             publicText: 'The proposal would restore your result.',
           },
           'recovery',
@@ -205,11 +209,8 @@ describe('agent/assessment-summary', () => {
       ).status,
       'candidate-recorded',
     );
-    const preview = await f.run({ operation: 'publish' }, 'recovery', undefined, true);
-    assert.ok('digest' in preview);
     assert.equal(
-      (await f.run({ operation: 'publish', digest: preview.digest }, 'recovery', undefined, true))
-        .status,
+      (await f.run({ operation: 'publish' }, 'recovery', undefined, true)).status,
       'published',
     );
     assert.deepEqual(f.record.stageReceipt, source);
@@ -228,12 +229,12 @@ describe('agent/assessment-summary', () => {
   it('retries a definitive rejection without treating it as an uncertain write', async () => {
     const f = fixture();
     f.retain();
-    const digest = await f.compose();
+    await f.compose();
     f.rejectWrite(true);
-    assert.equal((await f.run({ operation: 'publish', digest })).status, 'blocked');
+    assert.equal((await f.run({ operation: 'publish' })).status, 'blocked');
     assert.equal(f.record.assessmentSummaries![0]!.attempt, undefined);
     f.rejectWrite(false);
-    assert.equal((await f.run({ operation: 'publish', digest })).status, 'published');
+    assert.equal((await f.run({ operation: 'publish' })).status, 'published');
     assert.equal(f.writes, 2);
   });
 
@@ -248,14 +249,14 @@ describe('agent/assessment-summary', () => {
       'privateResponse' in composed && composed.privateResponse === f.result.fullAssessment,
     );
     assert.equal(f.writes, 0);
-    assert.equal((await f.run({ operation: 'publish', digest: 'a'.repeat(64) })).status, 'blocked');
+    assert.equal((await f.run({ operation: 'publish' })).status, 'blocked');
     assert.deepEqual(f.record.result, f.result);
   });
   it('publishes once and reuses the provider receipt across repeated submission and retry', async () => {
     const f = fixture();
     f.retain();
-    const digest = await f.compose();
-    const published = await f.run({ operation: 'publish', digest });
+    await f.compose();
+    const published = await f.run({ operation: 'publish' });
     assert.equal(published.status, 'published');
     assert.ok(
       'presentation' in published && published.presentation?.includes(f.result.reviewSummary),
@@ -275,16 +276,16 @@ describe('agent/assessment-summary', () => {
     assert.equal(f.record.phase, 'complete');
     f.retain();
     assert.equal(f.record.assessmentRevision, 1);
-    assert.equal((await f.run({ operation: 'publish', digest })).status, 'published');
+    assert.equal((await f.run({ operation: 'publish' })).status, 'published');
     assert.equal(f.writes, 1);
   });
   it('keeps older published receipts readable without guessing the author or connecting', async () => {
     const f = fixture();
     f.retain();
-    const digest = await f.compose();
-    await f.run({ operation: 'publish', digest });
+    await f.compose();
+    await f.run({ operation: 'publish' });
     delete f.record.assessmentSummaries![0]!.authorLogin;
-    const result = await f.run({ operation: 'publish', digest });
+    const result = await f.run({ operation: 'publish' });
     assert.equal(result.status, 'published');
     assert.ok('presentation' in result && result.presentation?.includes('by author unavailable*'));
     assert.equal(f.writes, 1);
@@ -292,20 +293,20 @@ describe('agent/assessment-summary', () => {
   it('reconciles a lost response without repeating the write or losing the private plan', async () => {
     const f = fixture();
     f.retain();
-    const digest = await f.compose();
+    await f.compose();
     f.lose();
-    assert.equal((await f.run({ operation: 'publish', digest })).status, 'blocked');
+    assert.equal((await f.run({ operation: 'publish' })).status, 'blocked');
     assert.deepEqual(f.record.result, f.result);
-    assert.equal((await f.run({ operation: 'publish', digest })).status, 'reconcile-required');
+    assert.equal((await f.run({ operation: 'publish' })).status, 'reconcile-required');
     assert.equal((await f.run({ operation: 'reconcile' }, 'recovery-turn')).status, 'published');
     assert.equal(f.writes, 1);
   });
   it('recognizes an uncertain own summary from the provider without writing or blocking human feedback', async () => {
     const f = fixture();
     f.retain();
-    const digest = await f.compose();
+    await f.compose();
     f.lose();
-    await f.run({ operation: 'publish', digest });
+    await f.run({ operation: 'publish' });
     assert.deepEqual(await f.own(), ['comment-1']);
     assert.equal(f.record.assessmentSummaries?.[0]?.receipt, undefined);
     f.clearProvider();
@@ -315,9 +316,9 @@ describe('agent/assessment-summary', () => {
   it('does not recreate an uncertain or deleted provider comment', async () => {
     const f = fixture();
     f.retain();
-    const digest = await f.compose();
+    await f.compose();
     f.lose();
-    await f.run({ operation: 'publish', digest });
+    await f.run({ operation: 'publish' });
     f.clearProvider();
     const unknown = await f.run({ operation: 'reconcile' });
     assert.equal(unknown.status, 'blocked');
@@ -327,19 +328,19 @@ describe('agent/assessment-summary', () => {
   it('rejects a stale candidate and changed composition skill before publication', async () => {
     const f = fixture();
     f.retain();
-    const digest = await f.compose();
+    await f.compose();
     f.changeSkill();
-    const blocked = await f.run({ operation: 'publish', digest });
+    const blocked = await f.run({ operation: 'publish' });
     assert.ok('code' in blocked && blocked.code === 'assessment-summary-composition-changed');
     const refreshed = await f.run({ operation: 'compose' });
     assert.equal(refreshed.status, 'composition-ready');
-    assert.ok('digest' in refreshed && refreshed.digest !== digest);
+    assert.ok('digest' in refreshed);
     assert.equal(f.record.assessmentSummaries?.[0]?.publicText, undefined);
     assert.equal(
       (
         await f.run({
           operation: 'candidate',
-          digest: refreshed.digest,
+
           publicText: 'Updated summary.',
         })
       ).status,
@@ -351,9 +352,9 @@ describe('agent/assessment-summary', () => {
   it('should retain a prepared assessment summary when configuration provenance changes', async () => {
     const f = fixture();
     f.retain();
-    const digest = await f.compose();
+    await f.compose();
     assert.equal(
-      (await f.run({ operation: 'publish', digest }, 'turn', 'f'.repeat(64))).status,
+      (await f.run({ operation: 'publish' }, 'turn', 'f'.repeat(64))).status,
       'published',
     );
     assert.equal(f.writes, 1);
@@ -361,10 +362,10 @@ describe('agent/assessment-summary', () => {
   it('rejects lost authority and a different assessment turn without changing readiness', async () => {
     const f = fixture();
     f.retain();
-    const digest = await f.compose();
-    assert.equal((await f.run({ operation: 'publish', digest }, 'other-turn')).status, 'blocked');
+    await f.compose();
+    assert.equal((await f.run({ operation: 'publish' }, 'other-turn')).status, 'blocked');
     f.revoke();
-    assert.equal((await f.run({ operation: 'publish', digest })).status, 'blocked');
+    assert.equal((await f.run({ operation: 'publish' })).status, 'blocked');
     assert.equal(f.writes, 0);
     assert.equal(f.record.phase, 'complete');
   });
@@ -373,19 +374,22 @@ describe('agent/assessment-summary', () => {
     f.retain();
     const oldDigest = await f.compose();
     f.retain({ ...f.result, fullAssessment: 'A deliberately revised complete private plan.' });
-    const digest = await f.compose();
-    assert.notEqual(digest, oldDigest);
+    await f.compose();
+    assert.ok(oldDigest);
     assert.equal(f.record.assessmentSummaries?.length, 1);
-    assert.equal((await f.run({ operation: 'publish', digest: oldDigest })).status, 'blocked');
-    assert.equal((await f.run({ operation: 'publish', digest })).status, 'published');
+    await assert.rejects(
+      f.run({ operation: 'publish', digest: oldDigest } as unknown as AssessmentSummaryRequest),
+      /binding-override/,
+    );
+    assert.equal((await f.run({ operation: 'publish' })).status, 'published');
     assert.equal(f.writes, 1);
   });
   it('reconciles an uncertain old revision before composing the replacement', async () => {
     const f = fixture();
     f.retain();
-    const digest = await f.compose();
+    await f.compose();
     f.lose();
-    await f.run({ operation: 'publish', digest });
+    await f.run({ operation: 'publish' });
     f.retain({ ...f.result, fullAssessment: 'A revised plan.' });
     assert.equal((await f.run({ operation: 'compose' })).status, 'reconcile-required');
     assert.equal((await f.run({ operation: 'reconcile' })).status, 'published');
@@ -395,12 +399,12 @@ describe('agent/assessment-summary', () => {
   it('rejects a summary bound to another issue without changing the private plan', async () => {
     const f = fixture();
     f.retain();
-    const digest = await f.compose();
+    await f.compose();
     f.record.assessmentSummaries![0]!.binding = {
       ...f.record.assessmentSummaries![0]!.binding,
       subjectId: 'other-issue',
     };
-    const blocked = await f.run({ operation: 'publish', digest });
+    const blocked = await f.run({ operation: 'publish' });
     assert.ok('code' in blocked && blocked.code === 'assessment-summary-binding-mismatch');
     assert.equal(f.writes, 0);
     assert.deepEqual(f.record.result, f.result);
@@ -408,17 +412,12 @@ describe('agent/assessment-summary', () => {
   it('retains a reconciled provider receipt even when its local attempt was absent', async () => {
     const f = fixture();
     f.retain();
-    const digest = await f.compose();
-    await f.run({ operation: 'publish', digest });
+    await f.compose();
+    await f.run({ operation: 'publish' });
     const summary = f.record.assessmentSummaries![0]!;
     delete summary.attempt;
     delete summary.receipt;
-    const preview = await f.run({ operation: 'publish' });
-    assert.ok('digest' in preview);
-    assert.equal(
-      (await f.run({ operation: 'publish', digest: preview.digest })).status,
-      'published',
-    );
+    assert.equal((await f.run({ operation: 'publish' })).status, 'published');
     assert.equal(f.writes, 1);
     f.retain({ ...f.result, fullAssessment: 'Revised assessment.' });
     assert.equal((await f.run({ operation: 'compose' })).status, 'composition-ready');
@@ -429,8 +428,8 @@ describe('agent/assessment-summary', () => {
   it('keeps existing receipts without imposing a lifetime revision ceiling', async () => {
     const f = fixture();
     f.retain();
-    const digest = await f.compose();
-    await f.run({ operation: 'publish', digest });
+    await f.compose();
+    await f.run({ operation: 'publish' });
     const published = f.record.assessmentSummaries![0]!;
     f.record.assessmentSummaries = Array.from({ length: 32 }, (_, index) => ({
       ...structuredClone(published),
@@ -453,7 +452,7 @@ describe('agent/assessment-summary', () => {
       (
         await f.run({
           operation: 'candidate',
-          digest: composed.digest,
+
           publicText: 'TOKEN=private',
         })
       ).status,
@@ -463,7 +462,7 @@ describe('agent/assessment-summary', () => {
     assert.equal(f.record.assessmentSummaries?.[0]?.publicText, undefined);
     const privateCopy = await f.run({
       operation: 'candidate',
-      digest: composed.digest,
+
       publicText: f.result.fullAssessment,
     });
     assert.ok(

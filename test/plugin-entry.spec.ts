@@ -172,6 +172,7 @@ describe('index', () => {
     );
     assert.deepEqual(toolNames, [
       'agent_system_dispatch',
+      'agent_system_context',
       'agent_system_intake',
       'agent_system_git',
       'agent_system_git_worktree',

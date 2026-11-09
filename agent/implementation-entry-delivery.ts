@@ -24,7 +24,7 @@ export default async function implementationEntryDelivery(input: {
   const repository = `${locator.owner}/${locator.name}`;
   const authorize = async () => {
     await deps.assertCurrent();
-    if (entry.scope !== 'pull-request' || entry.result?.outcome !== 'done')
+    if (entry.scope !== 'pull-request' || entry.progression?.stage !== 'implementation')
       throw new Error('implementation-publication-not-authorized');
     if (await deps.managed({ repository, number: locator.number }))
       throw new Error('implementation-managed-context-changed');
@@ -118,19 +118,35 @@ export default async function implementationEntryDelivery(input: {
     (title !== previous.title || body !== previous.body || head !== previous.binding.head)
   )
     throw new Error('delivery-content-changed');
-  const delivery = (entry.delivery ??= {
+  const delivery = entry.delivery ?? {
     id: automationHash({ binding, title, body }),
     binding,
     title,
     body,
     creationAttempted: false,
     reconciled: false,
-  });
-  await save();
+  };
   if (operation === 'prepare')
-    return { status: 'prepared', id: entry.id, digest: delivery.id, title, body, branch, head };
-  if (operation === 'publish' && action.digest !== delivery.id)
-    throw new Error('delivery-digest-stale');
+    return {
+      status: 'prepared',
+      id: entry.id,
+      title,
+      body,
+      branch,
+      head,
+      publishRequest: {
+        action: 'implementation' as const,
+        operation: 'delivery' as const,
+        deliveryOperation: 'publish' as const,
+        target: entry.target,
+        title,
+        body,
+      },
+      instruction:
+        'Publish authored title and body through the owning runtime within the existing publication scope. The native caller and selected issue determine the retained work; do not supply IDs or digests. Native denials stop publication; reconcile uncertain effects through their original receipts without replay.',
+    };
+  entry.delivery = delivery;
+  await save();
   await publishIssueDelivery({
     delivery,
     publication: {

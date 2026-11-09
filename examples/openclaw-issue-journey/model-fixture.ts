@@ -1,3 +1,5 @@
+import assessmentSource from '../../scripts/aimock-assessment-source.ts';
+import { currentFacts, nativePlanResponse } from '../openclaw-pr-journey/model-fixture.ts';
 import assert from 'node:assert/strict';
 
 import {
@@ -7,7 +9,8 @@ import {
   type FixtureResponse,
 } from '@copilotkit/aimock';
 
-import { type TSchema } from 'typebox';
+import { assessmentPresentationSchema } from '../../agent/assessment-result.ts';
+import { dispatchModelParameters } from '../../tools/dispatch/tool-schema.ts';
 import { Value } from 'typebox/value';
 
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
@@ -24,29 +27,21 @@ const dispatchStages = [
     ['next', 'prepare', 'assess', 'reconcile'].map((stage) => `${stage}-${index}`),
   ).flat(),
   'context',
-  'result',
-  'detail-readback',
+  'native-plan-render',
+  'native-plan-context',
+  'native-plan-compose',
+  'native-plan-candidate',
+  'native-plan-publish',
   'report',
   'refresh-context',
-  'refresh-result',
-  'recovery-present',
-  'summary-compose',
-  'summary-candidate',
-  'summary-preview',
-  'summary-publish',
-  'summary-duplicate',
   'feedback-context',
-  'feedback-result',
   'feedback-compose',
   'feedback-candidate',
-  'feedback-preview',
   'feedback-publish',
-  'direct-question-context',
   'direct-assessment-context',
   'direct-assessment-result',
   'manual-compose',
   'manual-candidate',
-  'manual-preview',
   'manual-publish',
   'manual-reconcile',
   'update-context',
@@ -55,22 +50,19 @@ const dispatchStages = [
 ];
 
 function assessmentRequest(context: Record<string, unknown>, payload: object) {
-  assert.ok(Value.Check(context.resultSchema as TSchema, payload));
-  const submission = context.resultSubmission as {
-    request: Record<string, unknown>;
-    resultField: string;
+  assert.ok(Value.Check(assessmentPresentationSchema, payload));
+  const presentation = { ...(context.presentationRequest as Record<string, unknown>) };
+  return {
+    action: 'assessment',
+    operation: 'render',
+    target: context.target ?? (context.evidence as { source?: string })?.source,
+    ...(context.entry === 'direct' ? { assessmentOnly: true } : {}),
+    ...presentation,
+    result: payload,
   };
-  assert.equal(submission.resultField, 'result');
-  assert.deepEqual(submission.request, {
-    action: context.entry === 'direct' ? 'assessment' : 'result',
-    ...(context.entry === 'direct' ? { operation: 'result', target: context.target } : {}),
-    id: context.id,
-    ...(context.previousResultDigest ? { previousResultDigest: context.previousResultDigest } : {}),
-  });
-  return { ...submission.request, [submission.resultField]: payload };
 }
 
-function currentTurn(request: ChatCompletionRequest) {
+export function currentTurn(request: ChatCompletionRequest) {
   return request.messages.slice(
     Math.max(
       0,
@@ -134,72 +126,23 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (retained.status !== 'reported' || typeof retained.response !== 'string') return;
     return { content: retained.response || 'notification-intake-unchanged' };
   };
-  const summary = (
-    id: string,
-    saved: Record<string, unknown>,
-    source: Record<string, unknown>,
-  ): FixtureResponse | undefined => {
-    if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-    const details = result('detail-readback');
-    if (!details)
-      return {
-        ...dispatch('detail-readback', { action: 'present', id, includeDetails: true }),
-        content: saved.presentation,
-      };
-    assert.equal(details.status, 'presented');
-    assert.ok(String(details.presentation).includes('Managed Git confirmed this worktree.'));
-    assert.ok(String(details.presentation).includes('Verified the managed worktree.'));
-    if (typeof source.fullAssessment === 'string') {
-      assert.ok(String(details.presentation).includes(source.fullAssessment));
-      if (typeof source.reviewSummary === 'string') {
-        assert.ok(saved.presentation.includes(source.reviewSummary));
-        assert.ok(!saved.presentation.includes(source.fullAssessment));
-      }
-    }
-    assert.ok(!saved.presentation.includes('Managed Git confirmed this worktree.'));
-    assert.ok(!saved.presentation.includes('Verified the managed worktree.'));
-    const args = { action: 'summary', id };
-    const composed = result('summary-compose');
-    if (!composed) return dispatch('summary-compose', { ...args, operation: 'compose' });
-    const skill = (composed.selection as { skill?: { path?: string } } | undefined)?.skill;
-    if (
-      composed.status !== 'composition-ready' ||
-      typeof composed.digest !== 'string' ||
-      !skill?.path
-    )
-      return;
-    if (openClawAIMockToolResultText(messages, prefix + 'summary-skill') === undefined)
-      return call('summary-skill', 'read', { path: skill.path });
-    const candidate = result('summary-candidate');
-    if (!candidate)
-      return dispatch('summary-candidate', {
-        ...args,
-        operation: 'candidate',
-        digest: composed.digest,
-        publicText:
-          'Today disposable test issues can hang around after a run. The plan is to explain when to close them, so you can keep the results you need without leaving a cluttered issue list. This is proposed documentation work; implementation has not started.',
-      });
-    if (candidate.status === 'waiting' && typeof candidate.code === 'string')
-      return { content: `Assessment summary candidate was not recorded: ${candidate.code}.` };
-    if (candidate.status !== 'candidate-recorded') return;
-    if (prompt.includes('leave summary pending')) return { content: saved.presentation };
-    const preview = result('summary-preview');
-    if (!preview) return dispatch('summary-preview', { ...args, operation: 'publish' });
-    if (preview.status !== 'publication-ready' || typeof preview.digest !== 'string') return;
-    const published = result('summary-publish');
-    if (!published)
-      return dispatch('summary-publish', { ...args, operation: 'publish', digest: preview.digest });
-    if (published.status !== 'published' || typeof published.presentation !== 'string') return;
-    const duplicate = result('summary-duplicate');
-    if (!duplicate)
-      return dispatch('summary-duplicate', {
-        ...args,
-        operation: 'publish',
-        digest: preview.digest,
-      });
-    if (duplicate.status !== 'published') return;
-    return { content: published.presentation };
-  };
+  const nativePlan = (context: Record<string, unknown>, revised = false) =>
+    nativePlanResponse(
+      context,
+      result,
+      dispatch,
+      call,
+      Boolean(openClawAIMockToolResultText(messages, prefix + 'summary-skill')),
+      false,
+      {
+        fullAssessment:
+          fullAssessment + (revised ? '\nFresh issue context verified after restart.' : ''),
+        reviewSummary:
+          reviewSummary + (revised ? ' Fresh issue facts confirm the cleanup approach.' : ''),
+        plan: fullAssessment,
+      },
+      prompt.includes('leave summary pending'),
+    );
   const assessmentTarget =
     /Direct issue assessment target: (https:\/\/github\.com\/[^\s]+) checkout: ([^\n]+)/u.exec(
       prompt,
@@ -217,8 +160,19 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       assert.equal((context.handoff as { next: string }).next, 'assessment-only');
       return { content: String(context.presentation) };
     }
-    assert.equal(context.status, 'verified');
-    assert.equal(context.entry, 'direct');
+    if (context.status === 'native') {
+      assert.equal(typeof context.id, 'string');
+      assert.equal((context.project as { path: string }).path, assessmentTarget[2]!.trim());
+      const presentation = context.presentationRequest as { operation: string; target: string };
+      assert.equal(presentation.operation, 'render');
+      assert.equal(presentation.target, assessmentTarget[1]);
+    } else {
+      assert.equal(context.status, 'verified');
+      assert.equal(context.entry, 'direct');
+      assert.equal('id' in context, false);
+    }
+    const sourceRead = assessmentSource(context, result, call);
+    if (sourceRead) return sourceRead;
     const selected = context.assessment as { skill: { path: string } };
     if (openClawAIMockToolResultText(messages, prefix + 'direct-assessment-skill') === undefined)
       return call('direct-assessment-skill', 'read', { path: selected.skill.path });
@@ -230,8 +184,6 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       fullAssessment,
       plan: fullAssessment,
       reviewSummary,
-      evidence: [],
-      progress: { completed: ['Read the selected assessment method.'], remaining: [] },
     };
     const rejection = openClawAIMockToolResultText(messages, prefix + 'direct-assessment-invalid');
     if (rejection === undefined) {
@@ -248,8 +200,8 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     assert.doesNotMatch(diagnostic, /result\.questions|result\.remediation/u);
     const saved = result('direct-assessment-result');
     if (!saved) return dispatch('direct-assessment-result', assessmentRequest(context, payload));
-    assert.equal(saved.status, 'recorded');
-    assert.equal((saved.handoff as { next: string }).next, 'assessment-only');
+    assert.equal(saved.status, 'formatted');
+    assert.equal(saved.retained, false);
     return { content: String(saved.presentation) };
   }
   const updateTarget =
@@ -266,27 +218,27 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         target: updateTarget,
       });
     assert.equal(current.status, 'status-update-context');
-    assert.ok(typeof current.observation === 'string');
+    const composeRequest = current.composeRequest;
+    assert.ok(
+      Value.Check(dispatchModelParameters, composeRequest) && composeRequest.action === 'reply',
+    );
+    assert.ok(composeRequest.update);
+    assert.equal(composeRequest.target, updateTarget);
     const noOp = prompt.includes('Check current status target:');
     const composed = result('update-compose');
     if (!composed)
       return dispatch('update-compose', {
-        action: 'reply',
-        operation: 'compose',
-        purpose: 'status-update',
-        target: updateTarget,
+        ...composeRequest,
         privateText: noOp
           ? 'The issue already reflects the selected approach.'
           : 'The operator selected the shared reply approach. Implementation remains unstarted.',
         update: {
-          observation: current.observation,
+          ...composeRequest.update,
           facts: noOp
             ? []
             : [
                 {
-                  key: 'operator-decision',
                   reference: 'current-chat:operator-decision',
-                  revision: 'shared-reply-v1',
                   text: 'The operator selected the shared reply approach. Implementation remains unstarted.',
                 },
               ],
@@ -306,8 +258,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       return dispatch('update-candidate', {
         action: 'reply',
         operation: 'candidate',
-        id: composed.id,
-        digest: composed.digest,
+        target: updateTarget,
         publicText:
           'The operator selected the shared reply approach. Implementation remains unstarted.',
       });
@@ -338,48 +289,33 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       return dispatch('manual-candidate', {
         action: 'reply',
         operation: 'candidate',
-        id: composed.id,
-        digest: composed.digest,
+        target: directTarget,
         publicText:
           'The disposable manual reply fixture is ready. No implementation or test result is claimed.',
       });
     assert.equal(candidate.status, 'candidate-recorded');
     return { content: String(candidate.presentation) };
   }
-  const directDraft = /Direct reply publish draft: ([a-f0-9]{64})/u.exec(prompt)?.[1];
-  if (directDraft) {
-    const preview = result('manual-preview');
-    if (!preview)
-      return dispatch('manual-preview', { action: 'reply', operation: 'publish', id: directDraft });
-    assert.equal(preview.status, 'publication-ready');
+  const directReply = /Direct reply publish: (\{[^\n]+\})/u.exec(prompt)?.[1];
+  if (directReply) {
+    const selected = JSON.parse(directReply) as { target: string; publicText: string };
     const published = result('manual-publish');
     if (!published)
-      return dispatch('manual-publish', {
-        action: 'reply',
-        operation: 'publish',
-        id: directDraft,
-        digest: preview.digest,
-      });
+      return dispatch('manual-publish', { action: 'reply', operation: 'publish', ...selected });
     assert.equal(published.status, 'published');
     const reconciled = result('manual-reconcile');
     if (!reconciled)
-      return dispatch('manual-reconcile', {
-        action: 'reply',
-        operation: 'reconcile',
-        id: directDraft,
-      });
+      return dispatch('manual-reconcile', { action: 'reply', operation: 'reconcile', ...selected });
     assert.equal(reconciled.status, 'published');
     return { content: String(reconciled.presentation) };
   }
   const manual = prompt.includes('Advance previously admitted issue or feedback work.');
   if (manual || prompt.includes('Fill initially available intake slots in one bounded pass.')) {
     if (!manual && !prompt.includes('Consume saved discoveries')) {
-      const digest = /Policy digest: ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
       const scan = result('scan');
       if (!scan)
         return call('scan', 'agent_system_intake', {
           action: 'scan',
-          ...(digest ? { policyDigest: digest } : {}),
         });
       if (scan.status === 'blocked') return report();
       if (scan.status !== 'ready') return;
@@ -410,19 +346,18 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       if (next.status === 'routing-required') {
         const context = next.context as Record<string, unknown> | undefined;
         if (
-          typeof next.digest !== 'string' ||
           !/^https:\/\/github\.com\/tanaabased\/big-test-bucket\/issues\/[1-9][0-9]*$/u.test(
             String(context?.source),
-          ) ||
-          !String(context?.body).includes('disposable Agent System notification-flow fixture')
+          )
         )
           return;
+        const read = assessmentSource({ evidence: context }, result, call, stage('routing-source'));
+        if (read) return read;
         const prepared = result(stage('prepare'));
         if (!prepared)
           return dispatch(stage('prepare'), {
             action: 'prepare',
-            id: next.id,
-            digest: next.digest,
+            target: next.target,
             assessment: { complexity: 'low', reason: 'A bounded disposable documentation plan.' },
             fallback: 'default',
             title: `big-test-bucket #${String(context?.source).split('/').at(-1)} — #${String(context?.source).split('/').at(-1)} Document disposable test issue cleanup`,
@@ -430,7 +365,8 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         advanced = prepared;
       } else if (next.status === 'reconcile-required') {
         const reconciled = result(stage('reconcile'));
-        if (!reconciled) return dispatch(stage('reconcile'), { action: 'reconcile', id: next.id });
+        if (!reconciled)
+          return dispatch(stage('reconcile'), { action: 'reconcile', target: next.target });
         advanced = reconciled;
       }
       if (advanced.nextAction === 'next') continue;
@@ -442,7 +378,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         )
       ) {
         const assessed = result(stage('assess'));
-        if (!assessed) return dispatch(stage('assess'), { action: 'assess', id: next.id });
+        if (!assessed) return dispatch(stage('assess'), { action: 'assess', target: next.target });
         advanced = assessed;
       }
       if (advanced.nextAction === 'next') continue;
@@ -459,118 +395,92 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   }
   const questionId = /Explain retained plan for managed issue ([a-f0-9]{64})/u.exec(prompt)?.[1];
   if (questionId) {
-    const context = result('direct-question-context');
-    if (!context) return dispatch('direct-question-context', { action: 'context', id: questionId });
-    if (context.status !== 'verified' || context.mode !== 'plan') return;
-    const history = context.feedbackWork as Array<{ privateText?: string }>;
-    assert.equal(history.length, 2);
-    assert.ok(history.every((entry) => entry.privateText?.includes('disposable issue cleanup')));
-    return { content: history[0]!.privateText! };
+    const history = request.messages.map(({ content }) => getTextContent(content) ?? '').join('\n');
+    assert.ok(history.includes('disposable issue cleanup'));
+    return {
+      content:
+        'The retained plan proposes documenting disposable issue cleanup after evidence is captured. Implementation remains unstarted.',
+    };
   }
-  const recoveryId =
-    /recover only the pending public assessment summary[\s\S]*?id ([a-f0-9]{64})/u.exec(
-      prompt,
-    )?.[1];
-  if (recoveryId) {
-    const shown = result('recovery-present');
-    if (!shown) return dispatch('recovery-present', { action: 'present', id: recoveryId });
-    if (shown.status !== 'presented') return;
-    return summary(recoveryId, { ...shown, status: 'recorded' }, {});
-  }
-  const refreshId = /Refresh retained assessment for managed issue ([a-f0-9]{64})/u.exec(
-    prompt,
-  )?.[1];
+  const refreshId = /Refresh native assessment for managed issue ([a-f0-9]{64})/u.exec(prompt)?.[1];
   if (refreshId) {
     const privateContext = request.messages
       .map(({ content }) => getTextContent(content) ?? '')
       .join('\n');
-    if (
-      !privateContext.includes('Agent System model-only current-turn facts') ||
-      !privateContext.includes('previousResultDigest')
-    )
-      return;
+    if (!privateContext.includes('Agent System model-only current-turn facts')) return;
     const fresh = result('refresh-context');
-    if (!fresh) return dispatch('refresh-context', { action: 'context', id: refreshId });
-    const evidence = fresh.evidence as { body?: string } | undefined;
-    if (
-      fresh.status !== 'verified' ||
-      !fresh.previousResult ||
-      typeof fresh.previousResultDigest !== 'string' ||
-      !evidence?.body?.includes('notification-hidden-later-fact')
-    )
-      return;
-    const saved = result('refresh-result');
-    if (!saved)
-      return dispatch(
-        'refresh-result',
-        assessmentRequest(fresh, {
-          ...(fresh.previousResult as Record<string, unknown>),
-          fullAssessment:
-            String((fresh.previousResult as Record<string, unknown>).fullAssessment) +
-            '\n\nFresh issue context verified after restart.',
-        }),
-      );
-    if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-    return summary(refreshId, saved, fresh.previousResult as Record<string, unknown>);
+    if (!fresh) return dispatch('refresh-context', { action: 'context' });
+    assert.equal(fresh.status, 'verified', JSON.stringify(fresh));
+    assert.equal(fresh.contextMaterials, undefined, 'ordinary refreshed context must fit inline');
+    const sourceRead = assessmentSource(fresh, result, call);
+    if (sourceRead) return sourceRead;
+    const evidence = JSON.parse(String(result('assessment-source')!.stdout));
+    if (!evidence.body.includes('notification-hidden-later-fact')) return;
+    return nativePlan(fresh, true);
   }
-  const feedback = /operation context, id ([a-f0-9]{64}), eventId ([a-f0-9]{64})/u.exec(prompt);
-  if (feedback) {
-    const [, id, eventId] = feedback;
-    const args = { action: 'feedback', id, eventId };
-    const context = result('feedback-context');
-    if (!context) return dispatch('feedback-context', { ...args, operation: 'context' });
+  const facts = currentFacts(messages, false);
+  const available = facts.availableFeedback as
+    | Array<{
+        source: { number: number; itemType: string; commentId: number; kind: string };
+        url?: string;
+      }>
+    | undefined;
+  const incoming = prompt.split('Agent System model-only current-turn facts (keep private):')[0]!;
+  const received = available?.filter(({ source }) =>
+    incoming.includes(
+      `/${source.itemType === 'issue' ? 'issues' : 'pull'}/${source.number}#${source.kind}${source.commentId}`,
+    ),
+  );
+  const privateFeedback =
+    facts.feedback ?? (received?.length === 1 ? { source: received[0]!.url } : undefined);
+  if (privateFeedback) {
+    const args = { action: 'feedback', ...(facts.feedback ? {} : privateFeedback) };
+    const context = facts.feedback ? { ...facts, ...facts.feedback } : result('feedback-context');
+    if (!context) {
+      const privateContext = request.messages
+        .map(({ content }) => getTextContent(content) ?? '')
+        .join('\n');
+      if (
+        !privateContext.includes(
+          '"contextProbe":{"version":1,"runtime":"openclaw","hook":"before_prompt_build"}',
+        ) ||
+        !privateContext.includes('"git":{"protocol":"ssh"}')
+      )
+        return;
+      return dispatch('feedback-context', { ...args, operation: 'context' });
+    }
     if (
       context.status !== 'verified' ||
       context.runtime !== 'openclaw' ||
       context.publication !== 'allowed'
     )
       return;
-    const history = context.previousFeedbackWork as Array<{ privateText?: string }>;
-    const source = context.source as { body: string };
-    if (source.body.includes('using the earlier explanation')) {
-      assert.equal(history.length, 1);
-      assert.ok(history[0]!.privateText?.includes('disposable issue cleanup'));
-    } else assert.deepEqual(history, []);
-    const saved = result('feedback-result');
-    if (!saved)
-      return dispatch('feedback-result', {
-        ...args,
-        operation: 'result',
-        privateText:
-          'The retained plan proposes documenting disposable issue cleanup after evidence is captured. This feedback turn explains the plan; implementation remains unstarted and no pull request has been created.',
-      });
-    if (saved.status !== 'recorded') return;
+    const privateText =
+      'The retained plan proposes documenting disposable issue cleanup after evidence is captured. This feedback turn explains the plan; implementation remains unstarted and no pull request has been created.';
     const composition = result('feedback-compose');
-    if (!composition) return dispatch('feedback-compose', { ...args, operation: 'compose' });
+    if (!composition)
+      return dispatch('feedback-compose', {
+        action: 'reply',
+        operation: 'compose',
+        target: context.replyTarget,
+        privateText,
+      });
+    const reply = { action: 'reply', target: context.replyTarget };
     const skill = (composition.selection as { skill?: { path?: string } } | undefined)?.skill;
-    if (
-      composition.status !== 'composition-ready' ||
-      typeof composition.digest !== 'string' ||
-      !skill?.path
-    )
-      return;
+    if (composition.status !== 'composition-ready' || !skill?.path) return;
     if (openClawAIMockToolResultText(messages, prefix + 'feedback-skill') === undefined)
       return call('feedback-skill', 'read', { path: skill.path });
     const candidate = result('feedback-candidate');
     if (!candidate)
       return dispatch('feedback-candidate', {
-        ...args,
+        ...reply,
         operation: 'candidate',
-        digest: composition.digest,
         publicText:
           'The plan is to document closing disposable test issues after capturing their evidence. Implementation has not started.',
       });
     if (candidate.status !== 'candidate-recorded') return;
-    const preview = result('feedback-preview');
-    if (!preview) return dispatch('feedback-preview', { ...args, operation: 'publish' });
-    if (preview.status !== 'publication-ready' || typeof preview.digest !== 'string') return;
     const published = result('feedback-publish');
-    if (!published)
-      return dispatch('feedback-publish', {
-        ...args,
-        operation: 'publish',
-        digest: preview.digest,
-      });
+    if (!published) return dispatch('feedback-publish', { ...reply, operation: 'publish' });
     if (published.status !== 'published' || typeof published.presentation !== 'string') return;
     return { content: published.presentation };
   }
@@ -579,11 +489,15 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   );
   const id =
     revision?.[2] ??
+    (currentFacts(messages, false).stage === 'assessment'
+      ? currentFacts(messages, false).receipt
+      : undefined) ??
     /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
   if (
     !id ||
     (!revision &&
-      !prompt.includes('Agent System: assess this admitted issue and retain its complete plan.'))
+      !(currentFacts(messages, false).stage === 'assessment') &&
+      !prompt.includes('Call agent_system_dispatch with action context and id '))
   )
     return;
   const context = result('context');
@@ -592,20 +506,21 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       .map(({ content }) => getTextContent(content) ?? '')
       .join('\n');
     if (
-      !privateContext.includes('Agent System model-only current-turn facts') ||
-      !privateContext.includes('notification-hidden-initial-fact')
+      !privateContext.includes(
+        '"contextProbe":{"version":1,"runtime":"openclaw","hook":"before_prompt_build"}',
+      ) ||
+      !privateContext.includes('"git":{"protocol":"ssh"}')
     )
       return;
-    return dispatch('context', { action: 'context', id });
+    return call(retryStage('context', attempts.get('context') ?? 0), 'agent_system_context', {});
   }
   const project = context.project as { path?: unknown } | undefined;
   if (
     context.status !== 'verified' ||
     context.runtime !== 'openclaw' ||
-    context.id !== id ||
     typeof project?.path !== 'string' ||
     !context.assessment ||
-    context.resultContract !== 'assessment-result/v1'
+    !context.resultFormat
   )
     return;
   const method = (context.assessment as { skill?: { name?: string; path?: string } }).skill;
@@ -619,43 +534,9 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   if (!git) return call('git', 'agent_system_git', { argv: ['rev-parse', '--show-toplevel'] });
   if (git.exitCode !== 0 || String(git.stdout).trim() !== project.path || git.truncated !== false)
     return;
-  const saved = result('result');
-  if (!saved)
-    return dispatch(
-      'result',
-      assessmentRequest(context, {
-        version: 1,
-        outcome: revision?.[1] === 'Clarify' ? 'clarification-needed' : 'plan-ready',
-        summary: 'Document disposable issue cleanup so test runs leave no abandoned issues.',
-        assessment: 'Document disposable issue cleanup so test runs leave no abandoned issues.',
-        ...(revision?.[1] === 'Clarify'
-          ? { questions: ['Should cleanup close the issue only after evidence capture?'] }
-          : {
-              plan: 'Add the cleanup rule to the repository documentation and review the resulting diff.',
-            }),
-        fullAssessment: revision
-          ? String((context.previousResult as Record<string, unknown>).fullAssessment) +
-            (revision?.[1] === 'Clarify'
-              ? '\n\nShould cleanup close the issue only after evidence capture? The ordering is unresolved.'
-              : '\n\nThe operator confirmed cleanup only after evidence capture; retain the original findings.')
-          : fullAssessment,
-        reviewSummary,
-        evidence: [
-          {
-            source: project.path,
-            status: 'observed',
-            detail: 'Managed Git confirmed this worktree.',
-          },
-        ],
-        progress: {
-          completed: ['Verified the managed worktree.'],
-          remaining: ['Implement after approval.'],
-        },
-      }),
-    );
-  if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-  if (revision) return { content: saved.presentation };
-  return summary(id, saved, { fullAssessment, reviewSummary });
+  if (revision?.[1] === 'Clarify')
+    return { content: 'Should cleanup close the issue only after evidence capture?' };
+  return nativePlan(context, Boolean(revision));
 }
 
 function response(request: ChatCompletionRequest) {
@@ -669,7 +550,7 @@ function response(request: ChatCompletionRequest) {
       )
     )
       return { content: error.message };
-    return undefined;
+    throw error;
   }
 }
 
@@ -699,6 +580,11 @@ export const issueExampleScenario: OpenClawAIMockScenario = {
   ],
   dynamicFinalResponseFixtures: [final],
   toolCalls: [
+    { id: prefix + 'assessment-source', name: 'agent_system_github' },
+    ...Array.from({ length: 8 }, (_, index) => ({
+      id: prefix + `routing-source-${index}`,
+      name: 'agent_system_github',
+    })),
     { id: prefix + 'scan', name: 'agent_system_intake' },
     { id: prefix + 'assessment-skill', name: 'read' },
     { id: prefix + 'direct-assessment-skill', name: 'read' },
@@ -709,7 +595,7 @@ export const issueExampleScenario: OpenClawAIMockScenario = {
     ...dispatchStages.flatMap((stage) =>
       [0, 1, 2, 3].map((attempt) => ({
         id: prefix + retryStage(stage, attempt),
-        name: 'agent_system_dispatch',
+        name: stage === 'context' ? 'agent_system_context' : 'agent_system_dispatch',
       })),
     ),
     ...['git'].map((stage) => ({

@@ -1,4 +1,22 @@
-import { managedPullRequest, managedIssueState, dispatchAdmission } from './managed-issue.ts';
+import {
+  managedPullRequest,
+  managedIssueState,
+  dispatchAdmission,
+  managedTargetUrl,
+} from './managed-issue.ts';
+import { feedbackInputContext } from './feedback-input.ts';
+import authorizeFeedback from './feedback-source-context.ts';
+import { feedbackConversationMode } from './feedback-work.ts';
+import { retainedIssueProgression } from './issue-progression.ts';
+import {
+  resolveOpenClawTurnFeedback,
+  selectedOpenClawFeedback,
+} from './openclaw-feedback-input.ts';
+import openClawSkill from './openclaw-skill.ts';
+import taskTurnContext from './task-turn-context.ts';
+import { ContextMaterialError } from './implementation-material.ts';
+import AssessmentValidationError from './assessment-validation.ts';
+import WorkflowRequestError from './workflow-request-error.ts';
 
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type AssignmentClaimStore from './assignment-claim-store.ts';
@@ -34,7 +52,11 @@ import GitCommandError from '../tools/git/command-error.ts';
 import type TrustedGitWorktreeService from '../tools/git/trusted-worktree-service.ts';
 import { inspectFeedbackAssignment } from './assignment-feedback-reactivation.ts';
 import { automationHash } from './automation-hash.ts';
-import { inspectContinuedIssue, inspectAdmittedIssue } from './dispatch-assignment.ts';
+import {
+  inspectContinuedIssue,
+  inspectAdmittedIssue,
+  inspectIssueIdentity,
+} from './dispatch-assignment.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import type OpenClawAssignmentClaims from './openclaw-assignment-claims.ts';
 import { type OpenClawDeliveryConnection } from './openclaw-delivery.ts';
@@ -93,6 +115,9 @@ export interface OpenClawDispatchDependencies {
 }
 
 export function openClawDispatchFailureCode(error: unknown): string {
+  if (error instanceof ContextMaterialError) return error.code;
+  if (error instanceof AssessmentValidationError || error instanceof WorkflowRequestError)
+    return error.code;
   const conflict = error instanceof AgentSystemToolError ? error.cause : error;
   if (conflict instanceof GitWorktreeConflict) return conflict.code;
   const code = error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined;
@@ -145,7 +170,7 @@ export default class OpenClawDispatchContext {
     workspace: string,
     record: OpenClawDispatchRecord,
     work = false,
-    feedback = false,
+    feedback: boolean | 'native' = false,
   ) {
     const current = await this.scope(manifest, workspace);
     const fresh = await this.dependencies.intake.dependencies.manifestService.loadForAgentId(
@@ -163,10 +188,12 @@ export default class OpenClawDispatchContext {
       (await current.journal.read()).records.find((r) => r.id === record.id)?.supersededBy
     )
       throw new Error('dispatch-task-superseded');
-    if (record.retired || (record.retirement && record.retirement.reason !== 'assignment-removed'))
+    if (
+      feedback !== 'native' &&
+      (record.retired || (record.retirement && record.retirement.reason !== 'assignment-removed'))
+    )
       throw new Error('dispatch-issue-inactive');
     if (record.reset) throw new Error('dispatch-reset-pending');
-    if (record.handoff && !work && !feedback) throw new Error('dispatch-assessment-handed-off');
     const intake = dispatchAdmission(record, current.admitted.records ?? []);
     if (!intake) throw new Error('dispatch-admission-missing');
     if (
@@ -213,9 +240,10 @@ export default class OpenClawDispatchContext {
     workspace: string,
     record: OpenClawDispatchRecord,
     work = false,
-    feedback = false,
+    feedback: boolean | 'native' = false,
     connection?: GitHubNotificationIntakeClient & GitHubNotificationItemContextClient,
     signal?: AbortSignal,
+    inspectCheckout = true,
   ) {
     const {
       current,
@@ -244,23 +272,29 @@ export default class OpenClawDispatchContext {
             record,
             (this.dependencies.now ?? Date.now)(),
           )
-        : feedback
-          ? await inspectFeedbackAssignment(
-              {
-                ...current.policy,
-                policy: {
-                  ...current.policy.policy,
-                  issueAssignment: {
-                    ...current.policy.policy.issueAssignment!,
-                    allowed: liveManifest.github?.notifications?.issueAssignment?.allowed ?? [],
+        : feedback === 'native'
+          ? await inspectIssueIdentity(intake, client)
+          : feedback
+            ? await inspectFeedbackAssignment(
+                {
+                  ...current.policy,
+                  policy: {
+                    ...current.policy.policy,
+                    issueAssignment: {
+                      ...current.policy.policy.issueAssignment!,
+                      allowed: liveManifest.github?.notifications?.issueAssignment?.allowed ?? [],
+                    },
                   },
                 },
-              },
-              intake,
-              client,
-              record,
-            )
-          : await inspectAdmittedIssue(intake, client, Boolean(record.sessionCreation?.attempted));
+                intake,
+                client,
+                record,
+              )
+            : await inspectAdmittedIssue(
+                intake,
+                client,
+                Boolean(record.sessionCreation?.attempted),
+              );
     const pullRequest = managedPullRequest(intake);
     if (
       pullRequest &&
@@ -282,7 +316,7 @@ export default class OpenClawDispatchContext {
         : {}),
       repositoryDatabaseId: repo.databaseId,
     };
-    if (record.worktree) {
+    if (record.worktree && !feedback && inspectCheckout) {
       const path = await realpath(record.worktree).catch((cause) => {
         throw new Error('dispatch-worktree-unavailable', { cause });
       });
@@ -296,14 +330,121 @@ export default class OpenClawDispatchContext {
     workspace: string,
     binding: Parameters<typeof openclawTurnContext>[1],
   ) {
+    const retained = await this.readTurnContext(manifest, workspace, binding);
+    return (
+      retained &&
+      openclawTurnContext(
+        retained.record,
+        { ...binding, workspace, repository: retained.repository },
+        retained.context,
+      )
+    );
+  }
+
+  async readTurnContext(
+    manifest: AgentManifest,
+    workspace: string,
+    binding: Parameters<typeof openclawTurnContext>[1],
+    authority: DispatchAuthority = {},
+  ) {
     const current = await this.dependencies.intake.select(manifest, workspace, {
       resolvePolicy: false,
     });
     const journal = new OpenClawDispatchStore(this.dependencies.root, current.store.location.scope);
-    const record = (await journal.read()).records.find(
+    const records = (await journal.read()).records.filter(
       (entry) => entry.threadId === binding.sessionKey,
     );
-    return record && openclawTurnContext(record, binding);
+    if (records.length > 1) throw new Error('native-context-owner-ambiguous');
+    const record = records[0];
+    const admission =
+      record && dispatchAdmission(record, (await current.store.read())?.records ?? []);
+    if (!record || !openclawTurnContext(record, binding)) return;
+    if (!admission) throw new Error('turn-context-admission-unavailable');
+    const assertCurrent = async () => {
+      authority.signal?.throwIfAborted();
+      await authority.assertCurrent?.();
+      const next = (await journal.read()).records.find((entry) => entry.id === record.id);
+      if (!next || !openclawTurnContext(next, binding))
+        throw new Error('turn-context-native-caller-changed');
+    };
+    const nativeAuthority = { ...authority, assertCurrent };
+    let feedback;
+    let feedbackLimitation;
+    let feedbackTurn = Boolean(selectedOpenClawFeedback(record, binding.runId!));
+    const caller = {
+      sessionKey: binding.sessionKey!,
+      sessionId: binding.sessionId!,
+      runId: binding.runId!,
+    };
+    try {
+      const selected = record.feedback?.events.length
+        ? await this.dependencies.credential.use(nativeAuthority, (request) =>
+            resolveOpenClawTurnFeedback(
+              record,
+              caller,
+              request,
+              this.dependencies.config(),
+              binding.inputId,
+            ),
+          )
+        : undefined;
+      const event = selected?.event;
+      feedbackTurn ||= Boolean(event);
+      if (event) {
+        const provider = await this.dependencies.feedbackConnect?.(
+          { manifest, workspaceDir: workspace },
+          authority.signal ?? new AbortController().signal,
+        );
+        if (!provider) throw new Error('feedback-provider-unavailable');
+        await authorizeFeedback({
+          conversation: true,
+          record,
+          event,
+          intake: admission,
+          policy: manifest.github!.notifications!,
+          provider,
+          assertCurrent,
+        });
+        feedback = feedbackInputContext({
+          event,
+          repository: `${admission.repository.owner.login}/${admission.repository.name}`,
+          mode: feedbackConversationMode(record, manifest.github!.notifications!),
+          issueStage: retainedIssueProgression(record)?.stage ?? 'planning',
+          self: JSON.parse(event.source).author?.nodeId === provider.identity.nodeId,
+        });
+      }
+    } catch (error) {
+      feedbackLimitation = { code: openClawDispatchFailureCode(error) };
+    }
+    const initial = [record.firstTurn?.runId, record.assessmentTurn?.runId].includes(binding.runId);
+    const stage = feedbackTurn
+      ? 'feedback'
+      : retainedIssueProgression(record)
+        ? 'implementation'
+        : record.feedback?.events.length && !initial
+          ? 'conversation'
+          : 'assessment';
+    const context = await taskTurnContext({
+      runtime: 'openclaw',
+      manifest,
+      workspace,
+      record,
+      target: managedTargetUrl(admission),
+      stage,
+      feedback,
+      feedbackLimitation,
+      resolveSkill: (id) =>
+        this.dependencies.credential.use(nativeAuthority, (request) =>
+          openClawSkill(request, { agentId: binding.agentId!, key: binding.sessionKey! }, id),
+        ),
+      now: this.dependencies.now?.(),
+    });
+    await assertCurrent();
+    return {
+      record,
+      context,
+      repository: `${admission.repository.owner.login}/${admission.repository.name}`,
+    };
   }
 
   async reportScope(manifest: AgentManifest, workspace: string) {

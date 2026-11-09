@@ -22,7 +22,7 @@ export function originalIntakeDigest(manifest: AgentManifest) {
       runtimes: policy.runtimes,
       intervalMinutes: policy.intervalMinutes,
       maxConcurrentItems: policy.maxConcurrentItems,
-      allowedRepositoryOwners: policy.allowedRepositoryOwners,
+      allowedRepositoryOwners: [owner],
       issueAssignment: policy.issueAssignment,
     },
   });
@@ -33,7 +33,7 @@ export function intakeFixture() {
     runtimes: ['codex'],
     intervalMinutes: 5,
     maxConcurrentItems: 2,
-    allowedRepositoryOwners: [owner],
+    routing: ['owner/*'],
     issueAssignment: { allowed: [account], mode: 'plan' },
   };
   const repository: GitHubRepositoryIdentity = {

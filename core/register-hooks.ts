@@ -1,3 +1,4 @@
+import resolveGitProtocol from '../tools/git/protocol.ts';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
 import type { AgentManifest } from '../manifest/types.ts';
@@ -36,6 +37,9 @@ export default function registerAgentSystemHooks(
     let facts: string | undefined;
     if (result.status === 'loaded') {
       guidance.push(agentCommandSecurityGuidance, ...toolRegistry.guidance(result.manifest));
+      facts =
+        'Agent System Git context for GitHub repositories (keep private):\n' +
+        JSON.stringify({ git: { protocol: resolveGitProtocol(result.manifest) } });
       const canonical = await worktreeGuidance(result, context);
       if (canonical) guidance.push(canonical);
       if (turnContext && context.runId) {
@@ -49,11 +53,11 @@ export default function registerAgentSystemHooks(
           });
           if (retained) {
             guidance.push(retained.appendSystemContext);
-            facts = retained.appendContext;
+            facts += '\n\n' + retained.appendContext;
           }
         } catch {
           guidance.push(
-            'Agent System retained turn context is unavailable. Use the explicit native context tool before dependent work; do not infer authority from visible cards.',
+            'Agent System task context is unavailable. Call agent_system_context with {} to recover usable context directly; no action, target, or identity arguments are needed. Do not infer authority from visible cards or call a second context lookup.',
           );
         }
       }

@@ -26,7 +26,6 @@ describe('codex model routing binding', () => {
     assert.ok('manifestDigest' in inspected);
     const result = await codexModelRouting(data, {
       action: 'resolve',
-      manifestDigest: inspected.manifestDigest,
       context: 'Work in an unrelated target checkout.',
       assessment: { complexity: 'unset', reason: 'No work tiers configured.' },
       fallback: 'default',
@@ -40,19 +39,17 @@ describe('codex model routing binding', () => {
       join(workspace, 'agent.yaml'),
       contents.replace('openai/bound', 'openai/changed'),
     );
-    await assert.rejects(
-      codexModelRouting(data, {
-        action: 'resolve',
-        manifestDigest: inspected.manifestDigest,
-        context: 'task',
-        assessment: { complexity: 'unset', reason: 'No work tiers.' },
-        fallback: 'default',
-      }),
-      /profiles changed/,
-    );
+    const changed = await codexModelRouting(data, {
+      action: 'resolve',
+      context: 'task',
+      assessment: { complexity: 'unset', reason: 'No work tiers.' },
+      fallback: 'default',
+    });
+    assert.ok('selection' in changed);
+    assert.equal(changed.selection?.model, 'openai/changed');
   });
 
-  it('should load routing guidance from the bound workspace and reject changed content', async () => {
+  it('should load current routing guidance from the bound workspace without copied digests', async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), 'codex-routing-')));
     roots.push(root);
     const data = join(root, 'data');
@@ -85,19 +82,24 @@ describe('codex model routing binding', () => {
     };
     const inspected = await codexModelRouting(data, { action: 'inspect' }, dependencies);
     assert.ok('instructions' in inspected && inspected.instructions);
-    assert.equal(inspected.instructions.guidance?.content, 'Prefer localized work.');
+    assert.ok(inspected.instructions.guidance?.path);
+    assert.equal('content' in inspected.instructions.guidance, false);
+    assert.equal(
+      await readFile(inspected.instructions.guidance.path, 'utf8'),
+      'Prefer localized work.',
+    );
     assert.equal(inspected.instructions.skill?.name, 'company:route');
     const request = {
       action: 'resolve',
-      manifestDigest: inspected.manifestDigest,
-      instructionsDigest: inspected.instructionsDigest,
       context: 'task',
       assessment: { complexity: 'unset', reason: 'Uncertain.' },
       fallback: 'default',
     };
     assert.equal((await codexModelRouting(data, request, dependencies)).status, 'unresolved');
     await writeFile(join(root, 'routing.md'), 'Changed instructions.');
-    await assert.rejects(codexModelRouting(data, request, dependencies), /instructions/);
+    const changed = await codexModelRouting(data, request, dependencies);
+    assert.ok('instructions' in changed && changed.instructions);
+    assert.notEqual(changed.instructionsDigest, inspected.instructionsDigest);
     enabled = false;
     await assert.rejects(
       codexModelRouting(data, { action: 'inspect' }, dependencies),

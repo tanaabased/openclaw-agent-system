@@ -19,7 +19,8 @@ export default function createAgentToolAccessGrants(
         .configuredToolNames(manifest)
         .filter(
           (name) =>
-            name !== 'agent_system_dispatch' || sessionDispatchRequirements(manifest).length > 0,
+            !['agent_system_dispatch', 'agent_system_context'].includes(name) ||
+            sessionDispatchRequirements(manifest).length > 0,
         ),
       ...githubToolNames,
     ],

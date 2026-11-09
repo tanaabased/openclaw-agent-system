@@ -1,15 +1,15 @@
+import codexFeedbackInput from './codex-feedback-input.ts';
+import taskRecoveryCaller from './task-recovery-caller.ts';
+import authorizeCodexFeedback from './codex-feedback-authority.ts';
+import connectCodexFeedback from './codex-feedback-client.ts';
 import recoverCodexAnnouncement from './codex-announcement-recovery.ts';
-import { hasDeliveredImplementation, nativeIssueContext } from './implementation-delivery.ts';
 import workflowFailure from './workflow-failure.ts';
 import codexCommit from './codex-commit.ts';
 import implementationMaterial from './implementation-material.ts';
 import { managedIssueState, dispatchAdmission } from './managed-issue.ts';
-import codexCapacity from './codex-capacity.ts';
-import { code as responseFailureCode } from './codex-dispatch-context.ts';
-import continueCodexResponse from './codex-response-continuation.ts';
 import { Value } from 'typebox/value';
 
-import advanceCodexAutoDecision from './codex-auto-decision.ts';
+import reconcileCodexRequests from './codex-request-reconciliation.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import {
   requestSchema,
@@ -25,9 +25,7 @@ import { selectCodexIntake } from './codex-intake.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
 import codexLiveTurn from './codex-live-turn.ts';
 import advanceCodexWork, { prepareCodexWork } from './codex-work.ts';
-import { feedbackWorkStarted } from './feedback-work.ts';
 import { retainedIssueProgression } from './issue-progression.ts';
-import issueWorkflowProgress from './issue-workflow-progress.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import { requireWorkflowSchedule } from './workflow-result.ts';
 
@@ -56,20 +54,6 @@ export default async function runCodexContinuation(
       record.threadId === caller &&
       !['next', 'reconcile'].includes(input.action),
   );
-  if (localOwner && hasDeliveredImplementation(localOwner)) {
-    if (input.action === 'delivery' && input.delivery && typeof input.delivery === 'object')
-      return (deps.deliver ?? runCodexDelivery)(
-        pluginData,
-        { ...input.delivery, id: localOwner.id },
-        {
-          ...deps.deliveryDependencies,
-          threadId: caller,
-          codexHome: current.codexHome,
-          inspectBinding: deps.inspectBinding,
-        },
-      );
-    return nativeIssueContext(localOwner);
-  }
   const activation = localOwner
     ? { sourceThreadId: localOwner.sourceThreadId }
     : await (deps.activation ?? inspectCodexDispatchActivation)(
@@ -103,20 +87,23 @@ export default async function runCodexContinuation(
   const git = deps.git ?? dispatchGit;
   let entered = false;
   const commitOptions = {
-    ...codexCommit(current.policy?.policy.maxConcurrentItems, input.id),
+    ...codexCommit(
+      current.policy?.policy.maxConcurrentItems,
+      input.id,
+      input.action === 'next' || input.action === 'reconcile' ? undefined : 'continuation',
+    ),
     operation: 'continuation-checkpoint' as const,
   };
   try {
     const response = await store.transaction(async (state, save, signal) => {
       entered = true;
-      if (
-        retry &&
-        state.records.some(
-          (record) =>
-            !record.handoff && (record.threadId === caller || record.receiptThreadId === caller),
-        )
-      )
-        throw new Error('continuation-operator-caller-required');
+      if (retry) {
+        const record = state.records.find((entry) => entry.id === input.id);
+        if (!record) throw new Error('continuation-record-missing');
+        if (taskRecoveryCaller(record, caller))
+          throw new Error('continuation-operator-caller-required');
+        await native.operatorInput(caller);
+      }
       const occurrence =
         input.action === 'next' || input.action === 'reconcile'
           ? await native.occurrence(caller)
@@ -124,19 +111,6 @@ export default async function runCodexContinuation(
       if (occurrence && occurrence.automationId !== schedule?.current.automationId)
         throw new Error('continuation-occurrence-mismatch');
       if (occurrence) {
-        await acceptCodexIntakeOccurrence(
-          state,
-          occurrence,
-          () =>
-            (deps.activation ?? inspectCodexDispatchActivation)(
-              pluginData,
-              { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
-              false,
-              false,
-              'intake',
-            ),
-          save,
-        );
         if (state.continuationRun?.id !== occurrence.id)
           state.continuationRun = { id: occurrence.id, actions: 0 };
         if (state.continuationRun.actions >= 12) return { status: 'budget-exhausted' as const };
@@ -161,97 +135,91 @@ export default async function runCodexContinuation(
         admissions,
         save,
         signal,
-        ...(deps.directOperator ? { operatorInput: await native.operatorInput(caller) } : {}),
       };
-      const decision = context.operatorInput
-        ? { response: undefined, decisionPending: undefined }
-        : await advanceCodexAutoDecision(state, context);
-      if (decision.response) return decision.response;
-      const decisionPending = decision.decisionPending;
-      if (input.action !== 'next' && decisionPending) return decisionPending;
-      if (!input.material) await prepareCodexWork(state, context);
-      if (input.action === 'next') {
-        for (const record of state.records) {
-          if (hasDeliveredImplementation(record)) {
-            if (!record.retired && !record.retirement && !record.reset && !record.supersededBy)
-              await recoverCodexAnnouncement(record, context);
-            continue;
-          }
-          if (state.continuationRun?.responses?.includes(record.id)) continue;
-          if (
-            !record.summaryRecovery &&
-            codexCapacity(
-              state.records,
-              current.policy!.policy.maxConcurrentItems,
-              state.projectPickup,
-              record.projectWork?.pickup?.issueNodeId,
-            ).available === 0
-          )
-            continue;
-          let response;
+      if (localOwner?.feedback?.events.some((event) => event.native) && input.action !== 'cancel') {
+        const found = await native.find({
+          sourceThreadId: localOwner.sourceThreadId,
+          prompt: localOwner.request!.prompt,
+          createdAfter: localOwner.createdAt,
+          threadId: caller,
+        });
+        const source =
+          found?.turnId &&
+          (await codexFeedbackInput(state.records, caller, found.turnId, continuationNative));
+        if (source) {
+          const admitted = dispatchAdmission(source.record, admissions?.records ?? []);
+          if (!admitted) throw new Error('feedback-admission-missing');
+          const provider = await (deps.feedbackConnect ?? connectCodexFeedback)(
+            current.workspace,
+            signal,
+          );
+          const authorize = async () =>
+            authorizeCodexFeedback({
+              conversation: true,
+              current: await selectCodexIntake(pluginData, deps),
+              record: source.record,
+              event: source.event,
+              intake: admitted,
+              provider,
+            });
+          await authorize();
+          context.feedbackInput = {
+            turnId: found!.turnId!,
+            inputId: source.attempt.id,
+            attempt: source.attempt,
+            authorize,
+          };
+        }
+      }
+      if (!context.feedbackInput && ['context', 'result'].includes(input.action)) {
+        const record = state.records.find(
+          (entry) => entry.id === input.id && entry.threadId === caller,
+        );
+        const found =
+          record?.request &&
+          (await native.find({
+            sourceThreadId: record.sourceThreadId,
+            prompt: record.request.prompt,
+            createdAfter: record.createdAt,
+            threadId: caller,
+          }));
+        if (deps.directOperator || found?.followUpUserTurn) {
           try {
-            response = await continueCodexResponse(record, context);
+            context.operatorInput = await native.operatorInput(caller);
           } catch (error) {
-            response = {
-              status: 'pending' as const,
-              id: record.id,
-              code: responseFailureCode(error),
-              nextAction: 'next',
-            };
-          }
-          if (response) {
-            if (state.continuationRun) (state.continuationRun.responses ??= []).push(record.id);
-            await save();
-            return response;
+            // Existing task permission does not depend on a new human message.
+            if (!(error instanceof Error) || error.message !== 'reply-native-user-input-required')
+              throw error;
+            if (
+              deps.directScope &&
+              deps.directScope !== (record?.continuation?.scope ?? 'pull-request')
+            )
+              throw error;
           }
         }
       }
-      const candidates =
-        input.action === 'next'
-          ? state.records.filter(
-              (record) =>
-                !hasDeliveredImplementation(record) &&
-                record.continuation &&
-                !feedbackWorkStarted(record) &&
-                record.result &&
-                record.threadId &&
-                record.worktree &&
-                !record.supersededBy &&
-                !record.retired &&
-                !record.retirement &&
-                !record.feedbackReactivation &&
-                !record.reset &&
-                (['implementation', 'delivery'].includes(issueWorkflowProgress(record).action) ||
-                  [
-                    'continuation-auto-wait',
-                    'continuation-assessment-not-actionable',
-                    'continuation-turn-ended',
-                  ].includes(record.continuation.code ?? '')),
-            )
-          : state.records.filter((record) => record.id === input.id);
-      if (!candidates.length && input.action !== 'next')
-        throw new Error('continuation-record-missing');
-      let pending: Awaited<ReturnType<typeof advanceCodexWork>>;
+      if (input.action === 'next' || input.action === 'reconcile') {
+        const receipts = await reconcileCodexRequests(context);
+        for (const record of state.records) {
+          if (record.delivery?.announcement?.attempted && !record.delivery.announcement.receipt)
+            await recoverCodexAnnouncement(record, context);
+        }
+        return receipts;
+      }
+      if (!input.material) await prepareCodexWork(state, context);
+      const candidates = state.records.filter((record) => record.id === input.id);
+      if (!candidates.length) throw new Error('continuation-record-missing');
       for (const record of candidates) {
         const result = await advanceCodexWork(record, context);
         if (result === undefined) continue;
-        if (input.action !== 'next' || result.status === 'prepared') return result;
-        if (
-          'providerDiagnostic' in result &&
-          ['authentication', 'missing-credential'].includes(
-            result.providerDiagnostic?.classification ?? '',
-          )
-        )
-          return { ...result, nextAction: 'report' };
-        pending ??= result;
+        return result;
       }
-      const held = pending ?? decisionPending;
-      return held ? { ...held, nextAction: 'dispatch' } : { status: 'idle' as const };
+      return { status: 'idle' as const };
     }, commitOptions);
     if (
       input.action === 'context' &&
-      'resultContract' in response &&
-      response.resultContract === 'implementation-result/v1'
+      response.status === 'verified' &&
+      'implementation' in response
     )
       return implementationMaterial(response, { action: 'context', id: input.id }, input.material);
     if (response.status !== 'deliver') return response;
@@ -299,6 +267,16 @@ export default async function runCodexContinuation(
         },
       },
     );
+    if ('publishRequest' in delivery && delivery.publishRequest) {
+      const publication = delivery.publishRequest;
+      return {
+        ...delivery,
+        publishRequest: {
+          action: 'delivery' as const,
+          delivery: publication,
+        },
+      };
+    }
     return delivery;
   } catch (error) {
     const failure = workflowFailure(error, 'continuation-operation-failed');
@@ -313,4 +291,3 @@ export default async function runCodexContinuation(
     await connection?.close();
   }
 }
-import acceptCodexIntakeOccurrence from './codex-intake-occurrence.ts';

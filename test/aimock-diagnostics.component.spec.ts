@@ -43,6 +43,41 @@ describe('scripts/aimock-server diagnostics', () => {
         failed: false,
       });
 
+      const exception = await fetch(`${url}/v1/responses`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer private-transport-token',
+        },
+        body: JSON.stringify({
+          model: 'gpt-5.5',
+          tools: ['tool_search', 'tool_call'].map((name) => ({ type: 'function', name })),
+          input: [
+            { role: 'user', content: 'private-user' },
+            {
+              type: 'function_call_output',
+              call_id: 'call_aimock_discover_fixture',
+              output: 'private-value …123 tokens truncated…',
+            },
+          ],
+        }),
+        signal: timeout,
+      });
+      assert.equal(exception.status, 500);
+      await exception.text();
+      for (const endpoint of ['diagnostics', 'evidence']) {
+        const observed = await fetch(`${url}/proof/${endpoint}`, { signal: timeout });
+        assert.equal(observed.status, 500);
+        const report = (await observed.json()) as {
+          failed: boolean;
+          fixtureErrors: Array<{ name: string; toolResults: Array<{ truncated: boolean }> }>;
+        };
+        assert.equal(report.failed, true);
+        assert.equal(report.fixtureErrors[0]!.name, 'SyntaxError');
+        assert.equal(report.fixtureErrors[0]!.toolResults[0]!.truncated, true);
+        assert.doesNotMatch(JSON.stringify(report), /private-/u);
+      }
+
       const missed = await fetch(`${url}/v1/chat/completions`, {
         method: 'POST',
         headers: {
@@ -75,6 +110,7 @@ describe('scripts/aimock-server diagnostics', () => {
           const report = JSON.parse(failure.stdout ?? '');
           assert.equal(report.failed, true);
           assert.equal(report.requests[0].matched, false);
+          assert.equal(report.requests[0].method, 'POST');
           assert.equal(report.requests[0].checks.model, true);
           assert.equal(report.requests[0].checks.systemPrompt, false);
           assert.doesNotMatch(failure.stdout ?? '', /private-/u);

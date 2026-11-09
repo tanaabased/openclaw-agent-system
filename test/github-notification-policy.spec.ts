@@ -9,8 +9,7 @@ import {
 import parseAgentManifest from '../manifest/parse.ts';
 
 const actor = { login: 'pirog', 'node-id': 'MDQ6VXNlcjcxMzQyNA==' };
-const owner = { login: 'tanaabased', 'node-id': 'O_kgDODNGy1g' };
-const policy = { 'schema-version': 3, 'allowed-repository-owners': [owner] };
+const policy = { 'schema-version': 3, routing: ['tanaabased/*'] };
 
 function parse(configuration: unknown, username: unknown = 'pirog') {
   return parseAgentManifest(
@@ -190,8 +189,8 @@ describe('channels/github/notification-policy', () => {
       { 'interval-minutes': 1.5 },
       { 'max-concurrent-items': 0 },
       { 'max-concurrent-items': 1.5 },
-      { 'allowed-repository-owners': [] },
-      { 'allowed-repository-owners': [{ ...owner, 'operator-owner': true }] },
+      { routing: null },
+      { routing: ['owner/**'] },
       { 'schema-version': 4 },
     ])
       assert.equal(parse({ ...policy, ...extra }).status, 'invalid', JSON.stringify(extra));
@@ -212,10 +211,5 @@ describe('channels/github/notification-policy', () => {
       ])
         assert.equal(parse({ ...policy, [key]: { allowed } }).status, 'invalid');
     }
-    assert.equal(
-      parse({ ...policy, 'allowed-repository-owners': [owner, { ...owner, login: 'renamed' }] })
-        .status,
-      'invalid',
-    );
   });
 });

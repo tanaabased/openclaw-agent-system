@@ -15,6 +15,16 @@ export default class DiscoveryBudget {
   get exhausted() {
     return this.signal.aborted || this.clock() >= this.deadline - 250;
   }
+  get remaining() {
+    return Math.max(0, this.deadline - this.clock());
+  }
+  fork(milliseconds: number) {
+    return new DiscoveryBudget(
+      Math.max(0, Math.floor(Math.min(milliseconds, this.remaining))),
+      this.signal,
+      this.clock,
+    );
+  }
   check() {
     if (this.exhausted) throw new DiscoveryPaused();
   }

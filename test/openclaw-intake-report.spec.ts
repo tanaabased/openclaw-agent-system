@@ -34,6 +34,47 @@ describe('agent/openclaw-intake-report', () => {
     assert.doesNotMatch(report.response, /retirement-worktree-dirty|Started|⚠️/);
     assert.deepEqual(record, before);
   });
+  it('should attribute a current pr stall to the explicit link rather than historical delivery', () => {
+    const journal = state();
+    const owner = {
+      id: 'a'.repeat(64),
+      createdAt: 1,
+      sourceThreadId: 'coordinator',
+      issueKey: 'c'.repeat(64),
+      manifestDigest: 'manifest',
+      intakeId: 'b'.repeat(64),
+      phase: 'complete',
+      threadId: 'chat',
+      sessionCreation: { verified: true },
+      intakeReportedAt: 1,
+      pullRequestLink: { pullRequestNodeId: 'PR_8', pullRequestNumber: 8 },
+      work: { delivery: { pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 } } },
+      feedback: {
+        baseline: {},
+        events: [],
+        code: 'feedback-discovery-no-progress',
+        discoveryStalls: { PR_8: { operation: 'comments:1', attempts: 3 } },
+      },
+    } as unknown as OpenClawDispatchState['records'][number];
+    journal.records.push(owner);
+    const intake = {
+      records: [
+        {
+          id: owner.intakeId,
+          issue: { number: 3 },
+          repository: { owner: { login: 'owner' }, name: 'repo' },
+        },
+      ],
+    } as NonNullable<Parameters<typeof openclawIntakeReport>[0]['intake']>;
+    const report = openclawIntakeReport({
+      state: journal,
+      intake,
+      slots: 3,
+      observation: { status: 'ready', changed: false },
+    });
+    assert.match(report.response, /\[PR #8\]\(https:\/\/github.com\/owner\/repo\/pull\/8\)/);
+    assert.doesNotMatch(report.response, /\/pull\/7/);
+  });
   it('should keep retirement progress quiet and report real blockers once', () => {
     const journal = state();
     const record = {
@@ -247,7 +288,7 @@ describe('agent/openclaw-intake-report', () => {
     });
     assert.match(report.response, /Issue:/);
     assert.match(report.response, /Operation:\*\* preparation/);
-    assert.match(report.response, /Status:\*\* needs-attention/);
+    assert.match(report.response, /dispatch-assignment-event-missing/);
     assert.match(report.response, /assignment-history/);
     assert.doesNotMatch(report.response, /pending assignments are unknown/);
   });

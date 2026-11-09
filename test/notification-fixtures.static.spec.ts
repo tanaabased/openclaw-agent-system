@@ -31,7 +31,6 @@ for (const id of [
   describe(`examples/${id} fixture configuration`, () => {
     it('should accept the prepared fixture and route its supported workflow to the owning runtime', async () => {
       const source = (await readFile(`examples/${id}/tanaabot/agent.yaml`, 'utf8'))
-        .replaceAll('__OWNER_NODE_ID__', 'O_owner')
         .replaceAll('__ACTOR_NODE_ID__', 'U_actor')
         .replaceAll('__RECEIVER_NODE_ID__', 'U_receiver')
         .replaceAll('__MILESTONE_NUMBER__', '123');
@@ -74,7 +73,7 @@ for (const runtime of ['openclaw', 'codex']) {
       assert.equal(parsed.status, 'valid', JSON.stringify(parsed.diagnostics));
       assert.ok(parsed.manifest);
       const jobs = openclawIntakeJobs(parsed.manifest);
-      assert.ok(jobs.some((job) => job.id === 'github-project-pickup' && job.enabled));
+      assert.ok(jobs.some((job) => job.id === 'github-issue-pickup' && job.enabled));
       assert.ok(jobs.some((job) => job.id === 'github-issue-assignment' && job.enabled));
       const policy = parsed.manifest.github!.notifications!;
       assert.deepEqual(policy.runtimes, ['openclaw']);
@@ -83,8 +82,8 @@ for (const runtime of ['openclaw', 'codex']) {
         policy.issueAssignment!.allowed.map((identity) => identity.nodeId),
         ['U_emori'],
       );
-      assert.equal(policy.projectPickup!.windowMinutes, 1440);
-      assert.equal(policy.projectPickup!.timingError, undefined);
+      assert.equal(policy.issuePickup!.windowMinutes, 1440);
+      assert.equal(policy.issuePickup!.timingError, undefined);
     });
   });
 }

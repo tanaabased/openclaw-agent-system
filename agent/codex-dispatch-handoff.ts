@@ -12,24 +12,11 @@ ${String.raw`const actions = {
   continuation: ['next', 'reconcile'],
   feedback: ['reconcile']
 };
+async function executeRuntime(runtimeRoute, runtimeInput) {
 if (!actions[runtimeRoute]?.includes(runtimeInput.action)) throw new Error('scheduled-runtime-action-unsupported');
 const key = 'agent-system:' + runtimeRoute + ':' + runtime.pluginData;
-const retained = load(key);
 store(key, null);
 let input = runtimeInput;
-if (runtimeRoute === 'dispatch' && input.action === 'prepare') {
-  if (!retained || retained.status !== 'routing-required' || !retained.id || !retained.digest) throw new Error('dispatch-routing-evidence-unavailable');
-  if (Object.keys(input).some(key => !['action', 'title', 'assessment', 'fallback'].includes(key))) throw new Error('dispatch-routing-input-invalid');
-  input = {...input, id: retained.id, digest: retained.digest};
-}
-if (runtimeRoute === 'dispatch' && input.action === 'reconcile' && input.id === undefined) {
-  const observation = load(key + ':observation');
-  if (!observation?.id) throw new Error('dispatch-operation-evidence-unavailable');
-  input = {...input, id: observation.id};
-}
-if (runtimeRoute === 'dispatch' && input.action === 'prepare') {
-  store(key + ':observation', {id: input.id, digest: input.digest, operation: 'prepare'});
-}
 const argv = ['node', runtime.entrypoint, runtimeRoute];
 argv.push(input.action);
 argv.push('--plugin-data', runtime.pluginData);
@@ -37,18 +24,17 @@ const request = {...input};
 if (runtimeRoute === 'intake') delete request.action;
 const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
 const command = argv.map(quote).join(' ') + " <<'AGENT_SYSTEM_INPUT'\n" + JSON.stringify(request) + '\nAGENT_SYSTEM_INPUT';
-let escalated = false;
 let busyRetries = 0;
 while (true) {
   let result = await tools.exec_command({
     cmd: command, max_output_tokens: 32000,
-    ...(escalated ? {
+    ...{
       sandbox_permissions: 'require_escalated',
       justification: runtimeRoute === 'intake' && input.action === 'pickup'
-        ? 'Allow this occurrence of the activated project pickup workflow to verify candidates, update its private journal, and self-assign at most one eligible GitHub issue under the designated installation policy? Native denials stop the operation.'
+        ? 'Allow this occurrence of the activated issue pickup workflow to verify candidates, update its private journal, and self-assign at most one eligible GitHub issue under the designated installation policy? Native denials stop the operation.'
         : 'Allow ' + runtimeRoute + ':' + input.action + ' for the operator-activated recurring assignment workflow? This exact command checks workflow evidence, prepares configured repositories when required, and updates private tracking state; it does not create chats, send turns, implement task code, or publish to GitHub. Eligible assignments are selected by the activated manifest policy. Current operator restrictions and native approval decisions still apply.',
       prefix_rule: argv
-    } : {})
+    }
   });
   let output = result.output;
   while (result.session_id !== undefined) {
@@ -62,34 +48,40 @@ while (true) {
     throw new Error('codex-node-unavailable: put a Node.js version supported by this plugin package.json#engines.node on the configured host PATH, then retry; no automation rewrite is needed. The runtime failure formatter cannot start until Node is available.');
   }
   if (response?.code === 'codex-node-version-unsupported') throw new Error(response.message);
-  const accessRequired = response?.code === 'codex-host-access-required' || /^(?:EPERM|EACCES)\b/u.test(output.trim());
-  if (result.exit_code !== 0 && accessRequired && !escalated) {
-    escalated = true;
-    continue;
-  }
   const busy = response?.status === 'busy' || response?.code === 'private-state-file-lock-busy';
   if (busy && busyRetries < 3) {
     busyRetries++;
     await new Promise(resolve => setTimeout(resolve, 2000));
     continue;
   }
-  if (busy) break;
+  if (busy) return response;
   if (result.exit_code !== 0 || !response) throw new Error('native-handoff-preparation-failed; inspect the command result and reconcile before retrying');
   store(key, response);
   store(key + ":observation", null);
-  break;
+  return response;
+}
+}
+const response = await executeRuntime(runtimeRoute, runtimeInput);
+if (runtimeRoute === 'intake' && runtimeInput.action === 'scan' && response?.status === 'ready') {
+  const observed = await executeRuntime('dispatch', {action: 'observe-denials'});
+  if (observed?.status === 'ready') await executeRuntime('continuation', {action: 'next'});
 }`}`;
 }
 
 /** consume the exact request once, separately from host-access preparation. */
 export function codexNativeHandoff(
   pluginData: string,
-  route: 'dispatch' | 'continuation' | 'retirement',
+  route: 'dispatch' | 'continuation' | 'retirement' | 'feedback',
 ) {
   const key = JSON.stringify(
-    `agent-system:${route === 'retirement' ? 'dispatch' : route}:${pluginData}`,
+    `agent-system:${['retirement', 'feedback'].includes(route) ? 'dispatch' : route}:${pluginData}`,
   );
-  const status = route === 'retirement' ? 'retirement-prepared' : 'prepared';
+  const status =
+    route === 'retirement'
+      ? 'retirement-prepared'
+      : route === 'feedback'
+        ? 'feedback-prepared'
+        : 'prepared';
   const tool =
     route === 'retirement'
       ? 'set_thread_archived'
@@ -99,6 +91,7 @@ export function codexNativeHandoff(
   return `const prepared = load(${key});
 if (!prepared || prepared.status !== '${status}') throw new Error('${route}-prepared-request-unavailable');
 store(${key}, null);
-${route === 'dispatch' ? `store(${key} + ':observation', {id: prepared.id, operation: 'create'});` : ''}
-text({id: prepared.id, native: await tools.mcp__codex_app__${tool}(prepared.request)});`;
+
+
+text({id: prepared.id, ${route === 'feedback' ? 'eventId: prepared.eventId, ' : ''}native: await tools.mcp__codex_app__${tool}(prepared.request)});`;
 }

@@ -26,7 +26,9 @@ export interface ReplyOwner {
   number?: number;
   pullRequestNumber?: number;
   events?: FeedbackSourceEvent[];
+  sourceReceipts?: Array<Pick<FeedbackSourceEvent, 'sourceId' | 'nodeId' | 'native'>>;
   deliveredPullRequest?: unknown;
+  announcement?: { destination: string; url: string; publicText: string };
   implementation?: Static<typeof implementationResultSchema>;
   result?: AssessmentResult;
   publisherLogin?: string;
@@ -41,12 +43,30 @@ export default function replyOwner(
   purpose?: 'status-update',
 ) {
   const repository = `${target.owner}/${target.name}`.toLowerCase();
+  const callers = owners.filter((owner) => owner.threadId === session);
+  const callerIssue =
+    callers.length === 1 &&
+    callers[0]!.repository?.toLowerCase() === repository &&
+    callers[0]!.pullRequestNumber === target.number
+      ? callers[0]!.number
+      : undefined;
   const ownership = managedOwner(
     owners,
     session,
     (owner) =>
       owner.repository?.toLowerCase() === repository &&
-      (target.number === owner.number || target.number === owner.pullRequestNumber),
+      (target.number === owner.number ||
+        (target.number === owner.pullRequestNumber &&
+          (callerIssue === undefined || owner.number === callerIssue)) ||
+        Boolean(
+          target.source &&
+          (owner.sourceReceipts ?? owner.events)?.some(
+            (event) =>
+              event.native &&
+              event.nodeId === target.nodeId &&
+              event.sourceId === target.source!.nodeId,
+          ),
+        )),
   );
   if (ownership.status === 'ambiguous') throw new Error('reply-managed-owner-ambiguous');
   const { owner, caller } = ownership;
@@ -76,21 +96,8 @@ export default function replyOwner(
       ownerId: owner.id,
       pullRequestNumber: owner.pullRequestNumber,
       verifiedOutcome: {
-        assessment: owner.result,
-        implementation: owner.implementation,
         delivery: owner.deliveredPullRequest,
-        feedback: owner.events?.flatMap((event) =>
-          event.result || event.work?.result
-            ? [
-                {
-                  eventId: event.id,
-                  result: event.result,
-                  work: event.work?.result,
-                  receipt: event.receipt,
-                },
-              ]
-            : [],
-        ),
+        ...announcementOutcome(owner, target),
       },
     };
   if (target.source) {
@@ -98,7 +105,9 @@ export default function replyOwner(
       (event) => event.nodeId === target.nodeId && event.sourceId === target.source!.nodeId,
     );
     const event = matching?.at(-1);
-    if (!event) return manualContext(owner);
+    if (!event) return manualContext(owner, target);
+    if (event.native || (!event.publicationAttempted && !event.receipt))
+      return manualContext(owner, target);
     if (!event.result || event.phase === 'blocked')
       throw new Error('reply-managed-response-required');
     if (event.receipt) {
@@ -131,11 +140,12 @@ export default function replyOwner(
           publication: { url },
         }),
         instruction:
-          'Show this retained private response and confirmed public quote. This operation only reads the owning result and receipt; do not resume, recompose, implement or publish it again.',
+          'Show the returned presentation once, preserving distinct private context and the confirmed public quote without repeating the answer. This operation only reads the owning result and receipt; do not resume, recompose, implement or publish it again.',
       };
     }
     return {
       status: 'managed-reply-required' as const,
+      sourceUrl: target.url,
       id: owner.id,
       eventId: event.id,
       digest: undefined,
@@ -148,19 +158,24 @@ export default function replyOwner(
         'Reuse this exact managed feedback route and retained response. The owning route verifies current source and authority. If its previous run ended, use supported owner resume with explicit user direction; never fall back to manual reply or repeat implementation.',
     };
   }
-  return manualContext(owner);
+  return manualContext(owner, target);
 }
 
 /** A new requested comment is independent of earlier summary and delivery effects. */
-function manualContext(owner: ReplyOwner) {
+function manualContext(owner: ReplyOwner, target: ReplyTarget) {
   return {
     status: 'manual-reply-context' as const,
     workflow: 'issue-assignment' as const,
     ownerId: owner.id,
     verifiedOutcome: {
-      assessment: owner.result,
-      implementation: owner.implementation,
       delivery: owner.deliveredPullRequest,
+      ...announcementOutcome(owner, target),
     },
   };
+}
+
+function announcementOutcome(owner: ReplyOwner, target: ReplyTarget) {
+  return owner.announcement && owner.announcement.destination === target.destination
+    ? { announcement: owner.announcement }
+    : {};
 }

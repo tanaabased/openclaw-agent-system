@@ -9,7 +9,7 @@ import {
   removeFixtureAssignment,
 } from './github-intake-fixture.ts';
 import { issueKey } from '../agent/dispatch-pending.ts';
-import { beginFeedbackWork } from '../agent/feedback-work.ts';
+import { selectWorkflowStage } from '../agent/workflow-stage.ts';
 import { discoverFeedback } from '../agent/feedback-source.ts';
 import { notificationAuthorityDigest } from '../agent/notification-authority.ts';
 import assert from 'node:assert/strict';
@@ -39,7 +39,7 @@ const manifest = {
     username: 'receiver',
     'schema-version': 3,
     runtimes: ['codex'],
-    'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
+    routing: ['owner/*'],
     'issue-assignment': {
       mode: 'plan',
       allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],
@@ -53,6 +53,47 @@ const result = (value: unknown) => ({
   stderr: '',
   timedOut: false,
   truncated: false,
+});
+
+describe('agent/codex-delivery request validation', () => {
+  it('should correct an extra link url without asking for publication content or reading state', async () => {
+    await assert.rejects(
+      runCodexDelivery('/unused-plugin-data', {
+        action: 'link',
+        id: 'a'.repeat(64),
+        url: 'private-url',
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.equal('code' in error && error.code, 'delivery-request-invalid');
+        assert.match(error.message, /\{"action":"link"\}/);
+        assert.match(error.message, /pullRequest/);
+        assert.doesNotMatch(error.message, /private-url|title|body/);
+        return true;
+      },
+    );
+  });
+  it('should identify invalid request fields without exposing their content or accessing state', async () => {
+    for (const request of [
+      {
+        action: 'prepare',
+        target: 'private-target',
+        path: '/private-path',
+        commit: 'private-head',
+      },
+      { action: 'prepare', id: 'private-invalid-id', title: 123 },
+    ]) {
+      await assert.rejects(runCodexDelivery('/unused-plugin-data', request), (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.equal('code' in error && error.code, 'delivery-request-invalid');
+        assert.match(error.message, /missing or invalid fields: id/);
+        assert.doesNotMatch(error.message, /private-|publicText/);
+        if ('target' in request) assert.match(error.message, /unsupported fields/);
+        else assert.match(error.message, /id, title/);
+        return true;
+      });
+    }
+  });
 });
 
 describe('agent/codex-delivery', () => {
@@ -76,17 +117,11 @@ describe('agent/codex-delivery', () => {
   ) {
     return runCodexDelivery(pluginData, { action, id, ...input }, { ...deps, ...overrides });
   }
-  function requiredDigest(result: object) {
-    assert.ok('digest' in result && typeof result.digest === 'string');
-    return result.digest;
-  }
   async function publish(content = { title: 'Authored title', body: 'Authored body.' }) {
     const preview = await request('prepare', content);
     assert.equal(preview.status, 'prepared');
-    return request('publish', {
-      digest: requiredDigest(preview),
-      ...content,
-    });
+    assert.ok('publishRequest' in preview && preview.publishRequest);
+    return runCodexDelivery(pluginData, { ...preview.publishRequest, id }, deps);
   }
   async function feedbackWorkFixture(firstDelivery = false) {
     const declaration = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
@@ -144,6 +179,7 @@ describe('agent/codex-delivery', () => {
         now: baseline + 80000,
       });
       const event = record.feedback.events[0]!;
+      delete event.native; // retained legacy work still uses its original publication owner
       event.phase = 'running';
       event.attempt = {
         id: 'f'.repeat(64),
@@ -153,15 +189,19 @@ describe('agent/codex-delivery', () => {
         request: { threadId: 'child', prompt: 'feedback', model: 'model', thinking: 'high' },
       };
       record.progression = { stage: 'implementation', via: 'operator' };
-      await beginFeedbackWork({
-        record,
-        event,
-        policy,
+      // Retained legacy publication state, never a new per-comment workflow.
+      const selected = await selectWorkflowStage({
+        stage: 'implementation',
+        configuration: policy.issueAssignment?.implementation,
         workspace,
-        now: baseline + 80000,
-        pullRequest: record.delivery?.pullRequest,
+        observedAt: baseline + 80000,
         resolveSkill: (id) => deps.native!.assessmentSkill!(record.worktree!, id),
       });
+      event.work = {
+        selection: selected.selection,
+        ...(record.delivery?.pullRequest ? { pullRequest: record.delivery.pullRequest } : {}),
+      };
+      record.progression.workOwner = event.id;
       event.work!.result = {
         outcome: 'done',
         summary: 'Fixed.',
@@ -208,13 +248,13 @@ describe('agent/codex-delivery', () => {
 
   it('should reserve one push and pr creation while another delivery and unrelated commit overlap', async () => {
     const content = { title: 'Authored title', body: 'Authored body.' };
-    const preview = await request('prepare', content);
+    await request('prepare', content);
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
     const git = deps.git!;
     const pending = request(
       'publish',
-      { ...content, digest: requiredDigest(preview) },
+      { ...content },
       {
         git: async (...args) => {
           if (args[1].includes('push')) {
@@ -236,8 +276,7 @@ describe('agent/codex-delivery', () => {
         previousHead: '',
         head,
       });
-      const competitor = await request('publish', { ...content, digest: requiredDigest(preview) });
-      assert.equal(competitor.status, 'prepared');
+      await assert.rejects(request('publish', content), /delivery-push-uncertain/);
       assert.equal(creates, 0);
     } finally {
       release.resolve();
@@ -291,8 +330,8 @@ describe('agent/codex-delivery', () => {
       followUpUserTurn: false,
     });
     await assert.rejects(request('prepare'), /feedback-event-required/);
-    const preview = await request('prepare', { eventId });
-    const outcome = await request('publish', { eventId, digest: requiredDigest(preview) });
+    await request('prepare', { eventId });
+    const outcome = await request('publish', { eventId });
     assert.equal(outcome.status, 'published');
     assert.equal(creates, 1);
     assert.equal(remote, head);
@@ -300,14 +339,45 @@ describe('agent/codex-delivery', () => {
     assert.equal(gitCalls.filter((args) => args.includes('push')).length, 2);
   });
 
+  it('should require shared implementation permission even with a legacy feedback event id', async () => {
+    const { eventId } = await feedbackWorkFixture(true);
+    const declaration = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
+    declaration.github['issue-assignment'].mode = 'plan';
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(declaration));
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      delete record.progression;
+      delete record.handoff;
+      await save();
+    });
+    deps.native!.find = async () => ({
+      id: 'child',
+      cwd: (await store.read()).records[0]!.worktree!,
+      status: 'active',
+      turnId: 'turn',
+      followUpUserTurn: false,
+    });
+    await assert.rejects(request('prepare', { eventId }), /workflow-policy-held/);
+    assert.equal(creates, 0);
+  });
+
   it('should end initial execution after feedback delivers the first pr and retain native routing after restart', async () => {
     const { eventId } = await feedbackWorkFixture(true);
     assert.equal((await store.read()).records[0]!.implementationDelivered, undefined);
-    const preview = await request('prepare', { eventId });
-    assert.equal(
-      (await request('publish', { eventId, digest: requiredDigest(preview) })).status,
-      'published',
-    );
+    await request('prepare', { eventId });
+    assert.equal((await request('publish', { eventId })).status, 'published');
+    delete deps.native!.operatorInput;
+    deps.attachment = async () => true;
+    for (const pullRequest of [undefined, url]) {
+      const linked = await request('link', { eventId, pullRequest });
+      assert.equal(linked.status, 'linked');
+      assert.equal('attached' in linked && linked.attached, true);
+    }
+    for (const pullRequest of [null, 'https://github.com/owner/repo/pull/8'])
+      await assert.rejects(
+        request('link', { eventId, pullRequest }),
+        /delivery-link-operator-required/,
+      );
     const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
     store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     const saved = (await store.read()).records[0]!;
@@ -335,7 +405,12 @@ describe('agent/codex-delivery', () => {
           close: async () => {},
         }),
       },
-      async () => assert.fail('must retain the existing issue context'),
+      async (context) => {
+        await context.assertCurrent();
+        const owner = await context.managed({ repository: 'owner/repo', number: 3 });
+        assert.ok(owner?.nativeContext);
+        return owner.nativeContext;
+      },
       async () => assert.fail('continuation must not own delivered work'),
     );
     assert.equal(context.status, 'native');
@@ -355,48 +430,37 @@ describe('agent/codex-delivery', () => {
       }
       return result;
     };
-    const preview = await request('prepare', { eventId });
-    await assert.rejects(
-      request('publish', { eventId, digest: requiredDigest(preview) }),
-      /transport lost/,
-    );
+    await request('prepare', { eventId });
+    await assert.rejects(request('publish', { eventId }), /transport lost/);
     assert.equal(remote, head);
     const retained = (await store.read()).records[0]!.feedback!.events[0]!.work;
-    const retry = await request('prepare', { eventId });
-    assert.equal(
-      (await request('publish', { eventId, digest: requiredDigest(retry) })).status,
-      'published',
-    );
+    await request('prepare', { eventId });
+    assert.equal((await request('publish', { eventId })).status, 'published');
     assert.deepEqual((await store.read()).records[0]!.feedback!.events[0]!.work, retained);
     assert.equal(gitCalls.filter((args) => args.includes('push')).length, 2);
     assert.equal(creates, 1);
   });
-  it('should stop a feedback work push when its native activated authority is revoked after preparation', async () => {
-    const { eventId } = await feedbackWorkFixture();
-    const preview = await request('prepare', { eventId });
-    const active = deps.activation!;
+  it('should stop a feedback push when source authority changes after preparation', async () => {
+    const { eventId, source } = await feedbackWorkFixture();
+    await request('prepare', { eventId });
     const git = deps.git!;
-    let revoked = false;
-    deps.activation = async (...args) => {
-      if (revoked) throw new Error('feedback-authority-revoked');
-      return active(...args);
-    };
     deps.git = async (cwd, args, signal) => {
       const value = await git(cwd, args, signal);
-      if (args[0] === 'ls-remote') revoked = true;
+      if (args[0] === 'ls-remote') source.author.nodeId = 'different-author';
       return value;
     };
-    await assert.rejects(
-      request('publish', { eventId, digest: requiredDigest(preview) }),
-      /authority-revoked/,
-    );
+    await assert.rejects(request('publish', { eventId }), /feedback-source-author-changed/);
     assert.equal(remote, firstHead);
     assert.equal(gitCalls.filter((args) => args.includes('push')).length, 1);
   });
-  it('should reject a different commit or native turn after feedback work is recorded', async () => {
+  it('should accept revised commits without a saved feedback result and reject a foreign native turn', async () => {
     const { eventId } = await feedbackWorkFixture();
     head = 'c'.repeat(40);
-    await assert.rejects(request('prepare', { eventId }), /feedback-implementation-head-changed/u);
+    await store.exclusive(async (state, save) => {
+      delete state.records[0]!.feedback!.events[0]!.work;
+      await save();
+    });
+    assert.equal((await request('prepare', { eventId })).status, 'prepared');
     head = 'b'.repeat(40);
     const find = deps.native!.find;
     deps.native!.find = async (...args) => ({ ...(await find(...args))!, turnId: 'another-turn' });
@@ -406,12 +470,9 @@ describe('agent/codex-delivery', () => {
   });
   it('should stop a changed source before a feedback work push and retain the existing receipt', async () => {
     const { eventId, source } = await feedbackWorkFixture();
-    const preview = await request('prepare', { eventId });
+    await request('prepare', { eventId });
     source.body = '@receiver withdrawn';
-    await assert.rejects(
-      request('publish', { eventId, digest: requiredDigest(preview) }),
-      /feedback-source-changed/,
-    );
+    await assert.rejects(request('publish', { eventId }), /feedback-source-changed/);
     assert.equal(remote, firstHead);
     assert.equal(creates, 1);
     assert.equal(gitCalls.filter((args) => args.includes('push')).length, 1);
@@ -567,6 +628,11 @@ describe('agent/codex-delivery', () => {
             const endpoint = argv.find(
               (arg) => arg.startsWith('repos/') || arg.startsWith('users/'),
             );
+            if (
+              endpoint === 'repos/owner/repo/pulls/7' &&
+              argv.includes('{nodeId:.node_id,title,body}')
+            )
+              return result({ nodeId: pr?.itemNodeId, title: pr?.title, body: pr?.body });
             if (endpoint === 'repos/owner/repo/issues/3')
               return result({ databaseId: 20, nodeId: 'I_issue', number: 3, title: 'Issue title' });
             if (endpoint === 'repos/owner/repo/pulls' && argv.includes('GET'))
@@ -700,7 +766,7 @@ describe('agent/codex-delivery', () => {
         selections: { mode: 'work' },
       };
       delete record.intakeId;
-      record.context = JSON.stringify({ title: 'Original title', body: 'Original body' });
+      record.context = JSON.stringify({ source: 'https://github.com/owner/repo/pull/7' });
       record.issueKey = issueKey(record.manualIssue);
       await save();
     });
@@ -728,7 +794,8 @@ describe('agent/codex-delivery', () => {
   it('should update an adopted pr through its original remote branch without replacing or normalizing it', async () => {
     await adoptTarget();
     const original = structuredClone(pr);
-    assert.equal((await publish()).status, 'published');
+    await request('prepare');
+    assert.equal((await request('publish', {})).status, 'published');
     assert.equal(creates, 0);
     assert.equal(bodyWrites, 0);
     assert.deepEqual(pr, original);
@@ -739,7 +806,7 @@ describe('agent/codex-delivery', () => {
     assert.equal(retained.issueBranch?.name, 'pirog-work');
     assert.equal(retained.delivery?.binding.branch, 'existing-work');
     assert.equal(retained.delivery?.pullRequest?.pullRequestNumber, 7);
-    assert.match(String((await request('present')).presentation), /Pull request updated/);
+    assert.match(String((await request('present')).presentation), /Pull request\n/);
   });
 
   it('should stop before an adopted push when its provider identity or native authority changes', async () => {
@@ -780,14 +847,7 @@ describe('agent/codex-delivery', () => {
       await save();
     });
     dirty = true;
-    const preview = await request('bind', { pullRequest: url });
-    assert.equal(preview.status, 'binding-available');
-    assert.equal((await store.read()).records[0]!.delivery, undefined);
-    assert.equal(
-      gitCalls.some((args) => args[0] === 'fetch'),
-      false,
-    );
-    const bound = await request('bind', { pullRequest: url, digest: requiredDigest(preview) });
+    const bound = await request('bind', { pullRequest: url });
     assert.equal(bound.status, 'bound');
     const saved = (await store.read()).records[0]!;
     assert.equal(saved.issueBranch?.name, 'pirog-work');
@@ -801,14 +861,11 @@ describe('agent/codex-delivery', () => {
     assert.equal(creates, 0);
     dirty = false;
     assert.equal((await request('prepare')).status, 'bound');
-    assert.equal(
-      (await request('bind', { pullRequest: url, digest: requiredDigest(preview) })).status,
-      'bound',
-    );
+    assert.equal((await request('bind', { pullRequest: url })).status, 'bound');
     assert.equal((await store.read()).records[0]!.deliveryHistory, undefined);
     head = 'b'.repeat(40);
-    const delivery = await request('prepare');
-    await request('publish', { digest: requiredDigest(delivery) });
+    await request('prepare');
+    await request('publish', {});
     assert.equal(creates, 0);
     assert.equal(bodyWrites, 0);
     assert.equal(pr.body, 'Keep this body.');
@@ -835,12 +892,12 @@ describe('agent/codex-delivery', () => {
       request('bind', { pullRequest: 'https://github.com/other/repo/pull/7' }),
       /adoption-target-invalid/,
     );
-    const preview = await request('bind', { pullRequest: url });
-    remote = 'b'.repeat(40);
-    await assert.rejects(
-      request('bind', { pullRequest: url, digest: requiredDigest(preview) }),
-      /binding-stale/,
-    );
+    const originalGit = deps.git!;
+    deps.git = async (...args) => {
+      if (args[1][0] === 'fetch') remote = 'b'.repeat(40);
+      return originalGit(...args);
+    };
+    await assert.rejects(request('bind', { pullRequest: url }), /binding-stale/);
     bindingOverride.headRepositoryId = 'R_fork';
     await assert.rejects(request('bind', { pullRequest: url }), /adoption-identity-mismatch/);
     assert.equal((await store.read()).records[0]!.delivery, undefined);
@@ -870,8 +927,8 @@ describe('agent/codex-delivery', () => {
       delete state.records[0]!.delivery!.pendingPush;
       await save();
     });
-    const preview = await request('bind', { pullRequest: target });
-    await request('bind', { pullRequest: target, digest: requiredDigest(preview) });
+    await request('bind', { pullRequest: target });
+    await request('bind', { pullRequest: target });
     const current = (await store.read()).records[0]!;
     assert.deepEqual(current.deliveryHistory, [previous]);
     assert.equal(current.delivery!.pullRequest!.pullRequestNumber, 8);
@@ -894,12 +951,9 @@ describe('agent/codex-delivery', () => {
   });
 
   it('should reject a branch switch after the publication preview', async () => {
-    const preview = await request('prepare');
+    await request('prepare');
     branch = '3-retired-attempt';
-    await assert.rejects(
-      request('publish', { digest: requiredDigest(preview) }),
-      /codex-branch-owner-mismatch/,
-    );
+    await assert.rejects(request('publish', {}), /codex-branch-owner-mismatch/);
     assert.equal(remote, '');
     assert.equal(creates, 0);
   });
@@ -1033,6 +1087,8 @@ describe('agent/codex-delivery', () => {
   }
 
   it('should display the retained pr and reconcile only attachment after head and authority change', async () => {
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify({ ...manifest, debug: true }));
+    delayedLinkReads = 2;
     await publish();
     head = 'b'.repeat(40);
     fixture.item.assignees = [];
@@ -1048,7 +1104,9 @@ describe('agent/codex-delivery', () => {
       throw new Error('presentation must not inspect git');
     };
     const shown = await request('present');
-    assert.equal(shown.status, 'linked');
+    assert.equal(shown.status, 'publication-incomplete');
+    assert.match(String(shown.presentation), /delivery-publication-incomplete/);
+    assert.doesNotMatch(String(shown.presentation), /delivery-linkage-retried/);
     assert.match(String(shown.presentation), /pull\/7/);
     attached = true;
     assert.equal((await request('reconcile')).status, 'publication-incomplete');
@@ -1074,17 +1132,13 @@ describe('agent/codex-delivery', () => {
       const context = await request('compose');
       assert.equal(context.status, 'composition-ready');
       const preview = await request('candidate', {
-        digest: requiredDigest(context),
         publicText: 'Delivers the requested change.',
       });
       assert.equal(preview.status, 'announcement-prepared');
-      assert.equal(
-        (await request('announce', { digest: requiredDigest(preview) })).status,
-        'announced',
-      );
+      assert.equal((await request('announce', {})).status, 'announced');
       await request('announce');
       const shown = await request('present');
-      assert.match(String(shown.presentation), /Pull request opened/);
+      assert.match(String(shown.presentation), /Pull request/);
       assert.match(String(shown.presentation), /#issuecomment-91/);
       assert.equal(announcement.posts, 1);
       assert.match(announcement.comments[0]!.body, /pull\/7/);
@@ -1094,20 +1148,17 @@ describe('agent/codex-delivery', () => {
     });
   it('should recover only the lost announcement despite newer local work without republishing the pr', async () => {
     await publish();
+    await rm((await store.read()).records[0]!.worktree!, { recursive: true });
     head = 'b'.repeat(40);
     deps.git = async () => {
       throw new Error('announcement recovery must not inspect newer local work');
     };
-    const context = await request('compose');
-    const preview = await request('candidate', {
-      digest: requiredDigest(context),
+    await request('compose');
+    await request('candidate', {
       publicText: 'Delivers the requested change.',
     });
     announcement.lost = true;
-    assert.equal(
-      (await request('announce', { digest: requiredDigest(preview) })).status,
-      'announcement-blocked',
-    );
+    assert.equal((await request('announce', {})).status, 'announcement-blocked');
     const saved = (await store.read())!.records[0]!.delivery!;
     assert.equal(saved.reconciled, true);
     assert.equal(saved.announcement!.attempted, true);
@@ -1126,7 +1177,7 @@ describe('agent/codex-delivery', () => {
     assert.equal((await store.read())!.records[0]!.delivery!.reconciled, true);
   });
 
-  it('should retain linked custom implementation instructions after the pr card', async () => {
+  it('should present the pr without repeating configured implementation instructions', async () => {
     await publish();
     await request('reconcile');
     await store.exclusive(async (state, save) => {
@@ -1158,9 +1209,9 @@ describe('agent/codex-delivery', () => {
     assert.ok(!normal.includes('Implementation instructions'));
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify({ ...manifest, debug: true }));
     const shown = String((await request('present')).presentation);
-    assert.ok(shown.indexOf('Implementation instructions') > shown.indexOf('Comment flow'));
-    assert.ok(shown.includes('[`custom:work`](</skills/work/SKILL.md>)'));
-    assert.ok(shown.includes('[`work.md`](<'));
+    assert.ok(!shown.includes('Implementation instructions'));
+    assert.ok(!shown.includes('custom:work'));
+    assert.ok(shown.includes('Comment flow'));
     assert.ok(!shown.includes('Private instructions'));
   });
   it('should show feedback under a verified replacement scheduler without changing the issue owner', async () => {
@@ -1216,7 +1267,12 @@ describe('agent/codex-delivery', () => {
     assert.ok(!gitCalls.some((argv) => argv.includes('push')));
     const published = await publish();
     assert.equal(published.status, 'published');
-    assert.equal(published.workflowStatus, 'running');
+    assert.equal(published.workflowStatus, 'native-unobserved');
+    assert.doesNotMatch(JSON.stringify(published.notices), /delivery-attachment-pending/);
+    assert.ok('linkRequest' in published && published.linkRequest);
+    const initialLink = await runCodexDelivery(pluginData, { ...published.linkRequest, id }, deps);
+    assert.equal(initialLink.status, 'linked');
+    assert.equal(initialLink.attached, false);
     assert.equal(pr!.title, 'Authored title');
     assert.equal(pr!.body, 'Authored body.\n\nCloses https://github.com/owner/repo/issues/3');
     assert.deepEqual(
@@ -1234,7 +1290,9 @@ describe('agent/codex-delivery', () => {
     assert.equal((await request('present')).status, 'linked');
     assert.equal((await request('reconcile')).status, 'ready');
     attached = true;
-    assert.equal((await request('reconcile')).status, 'ready');
+    const linked = await request('link');
+    assert.equal(linked.status, 'linked');
+    assert.equal(linked.attached, true);
     const presented = await request('present');
     assert.equal(presented.status, 'linked');
     assert.deepEqual(presented.notices, []);
@@ -1247,13 +1305,96 @@ describe('agent/codex-delivery', () => {
     );
     assert.equal(creates, 1);
     deps.attachment = async () => undefined;
-    await request('reconcile');
+    await request('link');
     assert.equal((await store.read()).records[0]!.delivery!.attached, true);
     deps.attachment = async () => attached;
     attached = false;
-    await request('reconcile');
+    await request('link');
     assert.equal((await store.read()).records[0]!.delivery!.attached, false);
-    assert.equal((await request('present')).status, 'linked');
+    const missing = await request('present');
+    assert.equal(missing.status, 'linked');
+    assert.match(JSON.stringify(missing.notices), /delivery-attachment-pending/);
+  });
+
+  it('should link the current pr without operator input and refuse association changes', async () => {
+    await publish();
+    await rm((await store.read()).records[0]!.worktree!, { recursive: true });
+    delete deps.native!.operatorInput;
+    const url = 'https://github.com/owner/repo/pull/7';
+    for (const pullRequest of [undefined, url, url]) {
+      const linked = await request('link', { pullRequest });
+      assert.equal(linked.status, 'linked');
+      assert.equal((await request('present')).status, 'linked');
+      assert.deepEqual((await store.read()).records[0]!.pullRequestLink, {
+        pullRequestNodeId: 'PR_7',
+        pullRequestNumber: 7,
+      });
+    }
+    const receipt = (await store.read()).records[0]!.delivery;
+    for (const pullRequest of [
+      null,
+      'https://github.com/owner/repo/pull/8',
+      'https://github.com/other/repo/pull/7',
+    ])
+      await assert.rejects(request('link', { pullRequest }), /delivery-link-operator-required/);
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.pullRequestLink = null;
+      await save();
+    });
+    await assert.rejects(request('link', { pullRequest: url }), /delivery-link-operator-required/);
+    assert.equal((await store.read()).records[0]!.pullRequestLink, null);
+    assert.deepEqual((await store.read()).records[0]!.delivery, receipt);
+    assert.equal(creates, 1);
+  });
+
+  it('should preserve the delivery attachment when observing a different linked pr', async () => {
+    await publish();
+    const receipt = (await store.read()).records[0]!.delivery;
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.pullRequestLink = { pullRequestNodeId: 'PR_8', pullRequestNumber: 8 };
+      await save();
+    });
+    deps.attachment = async (_thread, _turn, target) => {
+      assert.equal(target, 'https://github.com/owner/repo/pull/8');
+      return true;
+    };
+    const linked = await request('link');
+    assert.equal(linked.attached, true);
+    const shown = await request('present');
+    assert.ok('presentation' in shown);
+    assert.match(shown.presentation!, /Pull request\n/);
+    assert.match(shown.presentation!, /pull\/8/);
+    assert.doesNotMatch(shown.presentation!, /Pull request (opened|updated)/);
+    assert.deepEqual((await store.read()).records[0]!.delivery, receipt);
+    assert.equal(creates, 1);
+  });
+
+  it('should publish authored content with the current verified checkout without a copied receipt', async () => {
+    const content = { title: 'One poem', body: 'First line.\n\nSecond line with `code`.' };
+    const preview = await request('prepare', content);
+    assert.ok('publishRequest' in preview && preview.publishRequest);
+    assert.deepEqual(preview.publishRequest, { action: 'publish', ...content });
+    assert.equal(creates, 0);
+    head = 'b'.repeat(40);
+    const published = await request('publish', { ...content, body: 'Revised poem.' });
+    assert.equal(published.status, 'published');
+    await request('reconcile');
+    assert.equal(creates, 1);
+    assert.equal(pr!.title, content.title);
+    assert.ok(String(pr!.body).startsWith('Revised poem.'));
+    assert.ok(gitCalls.some((args) => args.some((arg) => arg.startsWith(`${head}:refs/heads/`))));
+  });
+  it('should reject a copied publication fingerprint before effects', async () => {
+    await assert.rejects(
+      request('publish', {
+        title: 'A poem',
+        body: 'Text',
+        digest: 'a'.repeat(64),
+      }),
+      /unsupported fields/,
+    );
+    assert.equal(creates, 0);
+    assert.ok(!gitCalls.some((args) => args.includes('push')));
   });
   it('should resume a failed linkage or recipient phase on the checkpointed pr', async () => {
     failLink = true;
@@ -1304,6 +1445,60 @@ describe('agent/codex-delivery', () => {
     assert.equal((await publish()).status, 'published');
     assert.equal(creates, 1);
   });
+  it('should keep initial association and operator unlinking independent of the delivery receipt', async () => {
+    await publish();
+    const receipt = structuredClone((await store.read()).records[0]!.delivery);
+    const linked = await request('link');
+    assert.equal(linked.status, 'linked');
+    assert.deepEqual((await store.read()).records[0]!.pullRequestLink, receipt!.pullRequest);
+    assert.deepEqual((await store.read()).records[0]!.delivery, receipt);
+    deps.connect = async () => {
+      throw new Error('unlink does not require a provider write');
+    };
+    assert.equal((await request('link', { pullRequest: null })).status, 'unlinked');
+    assert.equal((await store.read()).records[0]!.pullRequestLink, null);
+    assert.equal((await request('link')).status, 'unlinked');
+    assert.deepEqual((await store.read()).records[0]!.delivery, receipt);
+    assert.equal(creates, 1);
+  });
+
+  it('should link the newly published pr with or without its url without new human input', async () => {
+    await publish();
+    const receipt = structuredClone((await store.read()).records[0]!.delivery);
+    deps.native!.operatorInput = async () => {
+      throw new Error('reply-native-user-input-required');
+    };
+    deps.connect = async () => {
+      throw new Error('unchanged association needs no provider write');
+    };
+    for (const input of [{ pullRequest: url }, {}, { pullRequest: url }]) {
+      const linked = await request('link', input);
+      assert.equal(linked.status, 'linked');
+      assert.deepEqual((await store.read()).records[0]!.pullRequestLink, receipt!.pullRequest);
+      assert.deepEqual((await store.read()).records[0]!.delivery, receipt);
+    }
+    for (const pullRequest of [
+      null,
+      'https://github.com/owner/repo/pull/8',
+      'https://github.com/other/repo/pull/7',
+    ])
+      await assert.rejects(request('link', { pullRequest }), /reply-native-user-input-required/);
+    assert.deepEqual((await store.read()).records[0]!.pullRequestLink, receipt!.pullRequest);
+    assert.equal(creates, 1);
+  });
+
+  it('should not restore an explicitly cleared association without operator direction', async () => {
+    await publish();
+    await request('link', { pullRequest: null });
+    deps.native!.operatorInput = async () => {
+      throw new Error('reply-native-user-input-required');
+    };
+    await assert.rejects(request('link', { pullRequest: url }), /reply-native-user-input-required/);
+    assert.equal((await request('link')).status, 'unlinked');
+    assert.equal((await store.read()).records[0]!.pullRequestLink, null);
+    assert.equal(creates, 1);
+  });
+
   it('should recover a lost creation response by adopting the same verified pr', async () => {
     failCreate = true;
     await assert.rejects(publish(), /transport lost/);
@@ -1322,11 +1517,8 @@ describe('agent/codex-delivery', () => {
     assert.equal((await store.read()).records[0]!.delivery!.pullRequest!.pullRequestNumber, 7);
   });
   it('should reject a competing publication reservation without replaying its effects', async () => {
-    const preview = await request('prepare');
-    const outcomes = await Promise.allSettled([
-      request('publish', { digest: requiredDigest(preview) }),
-      request('publish', { digest: requiredDigest(preview) }),
-    ]);
+    await request('prepare');
+    const outcomes = await Promise.allSettled([request('publish', {}), request('publish', {})]);
     assert.equal(
       outcomes.filter(
         (outcome) => outcome.status === 'fulfilled' && outcome.value.status === 'published',
@@ -1351,7 +1543,7 @@ describe('agent/codex-delivery', () => {
     assert.equal((await store.read()).records[0]!.delivery!.pullRequest!.pullRequestNumber, 7);
     assert.equal(linkReads, 5);
     const retained = await request('present');
-    assert.equal(retained.workflowStatus, 'running');
+    assert.equal(retained.workflowStatus, 'native-unobserved');
     assert.match(String(retained.presentation), /pull\/7/);
     wrongIssueLink = false;
     await publish();
@@ -1360,8 +1552,8 @@ describe('agent/codex-delivery', () => {
   it('should retain shorthand closing prose while waiting for provider linkage and deduplicate recovery notices', async () => {
     delayedLinkReads = 2;
     const body = 'Authored body.\n\nCloses #3.';
-    const preview = await request('prepare', { body });
-    const published = await request('publish', { body, digest: requiredDigest(preview) });
+    await request('prepare', { body });
+    const published = await request('publish', { body });
     assert.equal(published.status, 'published');
     assert.equal(pr!.body, body);
     assert.equal(bodyWrites, 0);
@@ -1419,7 +1611,7 @@ describe('agent/codex-delivery', () => {
     assert.equal(reconciled.status, 'ready');
     const presented = await request('present');
     assert.equal(presented.status, 'linked');
-    assert.match(String(presented.presentation), /Pull request opened/);
+    assert.match(String(presented.presentation), /Pull request/);
     assert.ok(reconciled.notices?.some((notice) => notice.severity === 'warning'));
   });
   it('should suppress retained ssh transport notices while preserving actionable warnings', async () => {
@@ -1464,9 +1656,11 @@ describe('agent/codex-delivery', () => {
         {},
         { schedule: { current, saved: { ...current, version: 1, capabilities: ['publication'] } } },
       ),
-      /delivery-body-required/,
+      /workflow-policy-held/,
     );
-    await assert.rejects(request('prepare', { schedule: current }), /request-invalid/);
+    await assert.rejects(request('prepare', { schedule: current }), {
+      code: 'delivery-request-invalid',
+    });
     assert.equal(creates, 0);
   });
   it('should publish retained implementation without another human turn or handoff', async () => {
@@ -1505,10 +1699,7 @@ describe('agent/codex-delivery', () => {
     deps.authorizeSchedule = async () => {};
     for (const body of [undefined, '', '  \n']) {
       await assert.rejects(request('prepare', { body }), /delivery-body-required/);
-      await assert.rejects(
-        request('publish', { body, digest: 'a'.repeat(64) }),
-        /delivery-body-required/,
-      );
+      await assert.rejects(request('publish', { body }), /delivery-body-required/);
     }
     assert.equal(creates, 0);
     assert.equal(
@@ -1517,8 +1708,8 @@ describe('agent/codex-delivery', () => {
     );
     const body =
       'Added the marker. Exact bytes and final newline verified; git diff --check passed. Closes #3.';
-    const preview = await request('prepare', { body });
-    await request('publish', { body, digest: requiredDigest(preview) });
+    await request('prepare', { body });
+    await request('publish', { body });
     assert.equal(pr!.body, body);
     // recovery must not require inventing a body for an already attempted publication.
     await store.exclusive(async (state, save) => {
@@ -1571,12 +1762,7 @@ describe('agent/codex-delivery', () => {
         boundary === 'create',
       );
     });
-  it('should refresh stale previews and reject changed assignments foreign chats and dirty work before writes', async () => {
-    const preview = await request('prepare');
-    head = 'b'.repeat(40);
-    const refreshed = await request('publish', { digest: requiredDigest(preview) });
-    assert.equal(refreshed.status, 'prepared');
-    assert.ok('digest' in refreshed && requiredDigest(refreshed) !== requiredDigest(preview));
+  it('should reject changed assignments foreign chats and dirty work before writes', async () => {
     await assert.rejects(request('prepare', {}, { threadId: 'other' }), /managed-issue-required/);
     dirty = true;
     await assert.rejects(request('prepare'), /uncommitted-work/);
@@ -1752,6 +1938,33 @@ describe('agent/codex-delivery', () => {
     assert.equal(creates, 1);
     assert.equal(bodyWrites, 0);
   });
+  for (const snapshot of [true, false])
+    it(`should show neutral pr readback after metadata updates with snapshot ${snapshot}`, async () => {
+      await publish();
+      if (snapshot) {
+        await request('compose');
+        await request('candidate', { publicText: 'Delivers the requested change.' });
+        await request('announce', {});
+      }
+      await publish({ title: 'New title', body: 'Revised description.' });
+      const shown = await request('present');
+      assert.ok('presentation' in shown);
+      assert.match(shown.presentation!, /Pull request\n/);
+      assert.doesNotMatch(shown.presentation!, /Pull request (opened|updated)/);
+      assert.match(shown.presentation!, /pull\/7/);
+      assert.equal(pr!.title, 'New title');
+      assert.equal(creates, 1);
+      if (snapshot) {
+        assert.match(shown.presentation!, /Original PR announcement/);
+        assert.match(shown.presentation!, /#issuecomment-91/);
+        assert.match(shown.presentation!, /Delivers the requested change/);
+        const repeated = await request('compose');
+        assert.ok('presentation' in repeated);
+        assert.match(repeated.presentation!, /Original PR announcement/);
+        assert.match(repeated.presentation!, /#issuecomment-91/);
+      } else assert.doesNotMatch(shown.presentation!, /Original PR announcement/);
+      assert.equal(announcement.posts, snapshot ? 1 : 0);
+    });
   it('should preserve github body edits when explicitly updating only the title', async () => {
     await publish();
     pr!.body = 'Operator clarification. Closes #3';
@@ -1762,16 +1975,99 @@ describe('agent/codex-delivery', () => {
     assert.equal(pr!.title, 'Revised title');
     assert.equal(pr!.body, 'Operator clarification. Closes #3');
   });
+  for (const checkpoint of ['prepare-save', 'push-save'] as const)
+    it(`should preserve concurrent activity observations during follow-up ${checkpoint}`, async () => {
+      await publish();
+      head = 'b'.repeat(40);
+      let observed = false;
+      const observe = async () => {
+        if (observed) return;
+        observed = true;
+        await store.exclusive(async (state, save) => {
+          state.records[0]!.capacityObservation = {
+            at: baseline + 90000,
+            code: 'dispatch-capacity-native-active',
+            threadId: 'child',
+            turnId: 'turn',
+          };
+          state.records[0]!.lifecycleCheckedAt = baseline + 90000;
+          state.run = {
+            id: 'later-intake',
+            automationId: 'intake',
+            currentTimeIso: new Date(baseline + 90000).toISOString(),
+            actions: 0,
+          };
+          await save();
+        });
+      };
+      const preview = await request('prepare');
+      const git = deps.git!;
+      const find = deps.native!.find!;
+      if (checkpoint === 'prepare-save')
+        deps.native!.find = async (...args) => {
+          await observe();
+          return find(...args);
+        };
+      else
+        deps.git = async (...args) => {
+          if (args[1][0] === 'ls-remote') await observe();
+          return git(...args);
+        };
+      assert.ok('publishRequest' in preview);
+      const published = await runCodexDelivery(pluginData, { ...preview.publishRequest, id }, deps);
+      assert.equal(published.status, 'published');
+      const saved = await store.read();
+      assert.equal(saved.records[0]!.capacityObservation?.at, baseline + 90000);
+      assert.equal(saved.run?.id, 'later-intake');
+      assert.equal(saved.records[0]!.delivery!.reconciled, true);
+      assert.equal(remote, head);
+      assert.equal(creates, 1);
+    });
+  it('should publish a new head after announcement with the provider closing reference retained', async () => {
+    delayedLinkReads = 2;
+    attached = true;
+    await publish();
+    await request('compose');
+    await request('candidate', {
+      publicText: 'Delivers the requested change.',
+    });
+    await request('announce', {});
+    const retained = (await store.read()).records[0]!.delivery!;
+    await request('link', { pullRequest: url });
+    const initial = await request('present');
+    assert.ok('presentation' in initial);
+    assert.match(initial.presentation!, /Pull request/);
+    assert.match(initial.presentation!, /Original PR announcement/);
+    assert.doesNotMatch(initial.presentation!, /before this update/);
+    head = 'b'.repeat(40);
+    await publish({ title: String(pr!.title), body: String(pr!.body) });
+    assert.equal(remote, head);
+    const updated = (await store.read()).records[0]!.delivery!;
+    assert.equal(updated.reconciled, true);
+    assert.deepEqual(updated.announcement, retained.announcement);
+    const shown = await request('present');
+    assert.ok('presentation' in shown);
+    assert.match(shown.presentation!, /Pull request updated/);
+    assert.match(shown.presentation!, /Original PR announcement/);
+    assert.ok(
+      shown.presentation!.indexOf('Original announcement (before this update):') <
+        shown.presentation!.indexOf('Delivers the requested change'),
+    );
+    assert.match(shown.presentation!, /before this update/);
+    assert.match(shown.presentation!, /#issuecomment-91/);
+    assert.match(shown.presentation!, /Delivers the requested change/);
+    assert.equal(creates, 1);
+    assert.equal(announcement.posts, 1);
+  });
   for (const lostAnnouncement of [false, true])
     it(`should recover an interrupted follow-up push with a ${lostAnnouncement ? 'pending' : 'confirmed'} announcement`, async () => {
       await publish();
-      const context = await request('compose');
-      const preview = await request('candidate', {
-        digest: requiredDigest(context),
+      await request('compose');
+      await request('candidate', {
         publicText: 'Delivers the requested change.',
       });
       announcement.lost = lostAnnouncement;
-      await request('announce', { digest: requiredDigest(preview) });
+      await request('announce', {});
       const retained = (await store.read()).records[0]!.delivery!;
       head = 'b'.repeat(40);
       const git = deps.git!;

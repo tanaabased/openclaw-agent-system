@@ -1,6 +1,5 @@
 import decodeGitHubV3, {
   githubV3Properties,
-  githubLegacyScopeProperties,
   githubRoutingScopeProperties,
   type ExternalGitHubV3,
 } from '../channels/github/v3-config-schema.ts';
@@ -28,10 +27,6 @@ const sharedGitHubProperties = {
 export const externalGitHubSectionSchema = Type.Union([
   Type.Object(sharedGitHubProperties, { additionalProperties: false }),
   Type.Object(
-    { ...sharedGitHubProperties, ...githubV3Properties, ...githubLegacyScopeProperties },
-    { additionalProperties: false },
-  ),
-  Type.Object(
     { ...sharedGitHubProperties, ...githubV3Properties, ...githubRoutingScopeProperties },
     { additionalProperties: false },
   ),
@@ -40,12 +35,12 @@ export const externalGitHubSectionSchema = Type.Union([
 type ExternalGitHubSection = Static<typeof externalGitHubSectionSchema>;
 
 const githubWorkflowProperties = new Set([
+  'issue-pickup',
   'project-pickup',
   'schema-version',
   'runtimes',
   'interval-minutes',
   'max-concurrent-items',
-  'allowed-repository-owners',
   'routing',
   'issue-assignment',
   'review-request',

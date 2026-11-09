@@ -12,13 +12,27 @@ export default function assessmentOwner<
   session: string,
   target: { repository: string; number: number },
 ) {
+  const callers = records.filter((record) => record.threadId === session);
+  const current = callers.length === 1 ? callers[0] : undefined;
+  const currentAdmission = current && dispatchAdmission(current, admitted);
+  const matches = (item: IntakeRecord) =>
+    `${item.repository.owner.login}/${item.repository.name}`.toLowerCase() ===
+      target.repository.toLowerCase() && item.issue.number === target.number;
   const ownership = managedOwner(records, session, (record) => {
     const item = dispatchAdmission(record, admitted);
-    if (!item) throw new Error('assessment-managed-admission-missing');
-    return (
-      `${item.repository.owner.login}/${item.repository.name}`.toLowerCase() ===
-        target.repository.toLowerCase() && item.issue.number === target.number
-    );
+    if (!item) {
+      if (
+        currentAdmission &&
+        matches(currentAdmission) &&
+        record.threadId !== session &&
+        record.issueKey &&
+        current?.issueKey &&
+        record.issueKey !== current.issueKey
+      )
+        return false;
+      throw new Error('assessment-managed-admission-missing');
+    }
+    return matches(item);
   });
   if (ownership.status === 'ambiguous') throw new Error('assessment-managed-owner-ambiguous');
   const { owner: record, caller } = ownership;
@@ -31,10 +45,7 @@ export default function assessmentOwner<
     record.retired ||
     record.retirement ||
     !record.request ||
-    record.threadId !== session ||
-    !record.worktree ||
-    !record.context ||
-    !record.assessment
+    record.threadId !== session
   )
     throw new Error('assessment-managed-context-invalid');
   return {

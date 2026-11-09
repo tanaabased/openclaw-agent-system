@@ -128,14 +128,14 @@ export default class OpenClawDispatchAdmission {
       setStage('routing');
       const instructions = await openClawRoutingInstructions(this.context, tx);
       assertRoutingInstructions(instructions, record.routingInstructions);
-      const metadata = JSON.parse(record.context).metadata?.complexity;
+      const snapshot = JSON.parse(record.context);
+      const metadata = snapshot.metadata?.complexity;
       const routing = resolveModelRoutingRequest(
         manifest.models,
         current.manifestDigest,
         {
           action: 'resolve',
-          manifestDigest: current.manifestDigest,
-          context: record.context.slice(0, 17950) + '\n[Bounded routing snapshot.]',
+          context: JSON.stringify({ source: snapshot.source, metadata: snapshot.metadata }),
           assessment: dispatchRoutingAssessment(input.assessment, metadata),
           ...(record.manualIssue?.selections?.routing
             ? { overrides: record.manualIssue.selections.routing }

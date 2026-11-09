@@ -23,12 +23,9 @@ export default async function managedImplementationRoute<T>(input: {
     number: locator.number,
   });
   if (!owner) return;
-  if (
-    !owner.owner ||
-    (action.id && action.id !== owner.owner.id) ||
-    (action.path && (await realpath(action.path)) !== owner.path)
-  )
+  if (!owner.owner || (action.path && (await realpath(action.path)) !== owner.path))
     throw new Error('implementation-managed-context-mismatch');
+  if (owner.nativeContext && action.operation === 'context') return;
   return {
     result: owner.nativeContext ?? (await input.route(owner.owner, owner.implementationResult)),
   };

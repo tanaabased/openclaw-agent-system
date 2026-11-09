@@ -13,7 +13,7 @@ const parse = (reviewers: unknown) =>
       github: {
         username: 'receiver',
         'schema-version': 3,
-        'allowed-repository-owners': [{ org: 'owner', 'node-id': 'O_owner' }],
+        routing: ['owner/*'],
         'issue-assignment': { reviewers },
       },
     }),

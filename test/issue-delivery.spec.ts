@@ -71,6 +71,17 @@ function fixture() {
 }
 
 describe('github delivery head observation', () => {
+  it('should read existing pr content from the provider and reject another identity', async () => {
+    const f = fixture();
+    const input = { repository: 'owner/repo', number: 7, nodeId: 'PR_7' };
+    Object.assign(f.observed, { title: 'Current PR title', body: '' });
+    assert.deepEqual(await f.provider.content(input), { title: 'Current PR title', body: '' });
+    Object.assign(f.observed, { body: 'Latest requirements. '.repeat(2000) });
+    assert.equal((await f.provider.content(input)).body, 'Latest requirements. '.repeat(2000));
+    f.observed.nodeId = 'PR_other';
+    await assert.rejects(f.provider.content(input), /delivery-content-identity-mismatch/);
+  });
+
   for (const variant of ['missing', 'unobserved', 'malformed'] as const)
     it(`should distinguish ${variant} closing association without writing a link`, async () => {
       const f = fixture();
@@ -210,6 +221,7 @@ describe('shared delivery push recovery', () => {
       async git(argv) {
         if (argv[0] === 'ls-remote') return `${remote}\trefs/heads/task`;
         if (argv[0] === 'remote') return 'https://github.com/owner/repo.git';
+        if (argv[0] === 'branch') return '';
         if (argv[0] === 'merge-base') return '';
         if (argv[0] === 'push') {
           // the pending transition must survive a process interruption after push.

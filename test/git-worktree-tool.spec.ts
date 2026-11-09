@@ -5,7 +5,12 @@ import GitCommandError from '../tools/git/command-error.ts';
 import { createGitWorktreeToolDefinition } from '../tools/git/worktree-tool.ts';
 
 function definitionFixture(
-  options: { cleanupFails?: boolean; ssh?: boolean; prepareError?: Error } = {},
+  options: {
+    cleanupFails?: boolean;
+    ssh?: boolean;
+    protocol?: 'https' | 'ssh';
+    prepareError?: Error;
+  } = {},
 ) {
   const events: string[] = [];
   const prepared: Array<{ cloneUrl?: string }> = [];
@@ -50,6 +55,7 @@ function definitionFixture(
       ...(options.ssh ? { ssh: { privateKeys: [{ path: '/run/keys/id_ed25519' }] } } : {}),
       worktrees: {},
     },
+    github: { config: { gitProtocol: options.protocol } },
     schemaVersion: 1,
   });
   assert.ok(declared);
@@ -172,6 +178,24 @@ describe('tools/git/worktree-tool', () => {
     );
 
     assert.equal(prepared[0]?.cloneUrl, 'git@github.com:tanaabased/openclaw-agent-system.git');
+  });
+
+  it('should honor explicit https for worktrees even when ssh keys are declared', async () => {
+    const { configuration, definition, prepared, scope } = definitionFixture({
+      ssh: true,
+      protocol: 'https',
+    });
+    await definition.execute(
+      {
+        action: 'prepare',
+        baseRef: 'origin/main',
+        repository: { id: 'repo', cloneUrl: 'git@github.com:owner/repo.git' },
+        workId: 'task',
+      },
+      configuration,
+      scope,
+    );
+    assert.equal(prepared[0]?.cloneUrl, 'https://github.com/owner/repo.git');
   });
 
   it('should parse the registered command route and reject unsupported inputs', () => {

@@ -1,9 +1,9 @@
-import { projectPickupStateSchema } from './project-pickup-state.ts';
-import resetProjectPickup from './project-pickup-reset.ts';
+import { issuePickupStateSchema } from './issue-pickup-state.ts';
+import resetIssuePickup from './issue-pickup-reset.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { projectWorkSchema } from './project-pickup-authority.ts';
+import { projectWorkSchema } from './issue-pickup-authority.ts';
 import { issueKey } from './dispatch-pending.ts';
-import { adoptedPullRequestSchema } from './delivery-state.ts';
+import { adoptedPullRequestSchema, deliveryPullRequestSchema } from './delivery-state.ts';
 import ColdHistory from './cold-history.ts';
 import intakePassStarted from './intake-pass-started.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
@@ -39,7 +39,7 @@ import { assessmentSummarySchema } from './assessment-summary-state.ts';
 import { assessmentSelectionSchema } from './assessment-selection.ts';
 import { openclawIntakePassSchema, sameIntakeRun } from './openclaw-intake-pass.ts';
 import { workflowBindingSchema } from './workflow-result.ts';
-import { issueProgressionSchema } from './issue-progression.ts';
+import { issueProgressionSchema, implementationDecisionSchema } from './issue-progression.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../core/private-state-file.ts';
 import acquirePrivateStateFileLock, {
@@ -66,6 +66,8 @@ export const dispatchRecordProperties = {
   intakeId: Type.Optional(hash),
   manualIssue: Type.Optional(operatorIssueSchema),
   adoptedPullRequest: Type.Optional(adoptedPullRequestSchema),
+  pullRequestLink: Type.Optional(Type.Union([deliveryPullRequestSchema, Type.Null()])),
+  implementationDecision: Type.Optional(implementationDecisionSchema),
   supersededBy: Type.Optional(hash),
   predecessorId: Type.Optional(hash),
   recovery: Type.Optional(
@@ -116,6 +118,7 @@ export const dispatchRecordProperties = {
     Type.Object({ at: Type.Integer({ minimum: 0 }), by: text }, { additionalProperties: false }),
   ),
   lifecycleCheckedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+  lifecyclePending: Type.Optional(Type.Literal(true)),
   assignmentObservation: Type.Optional(assignmentObservationSchema),
   retirement: Type.Optional(retirementSchema),
   feedbackReactivation: Type.Optional(
@@ -161,7 +164,8 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
       scope: hash,
       resetGeneration: Type.Optional(text),
       records: Type.Array(Type.Unsafe<R>(recordSchema)),
-      projectPickup: Type.Optional(projectPickupStateSchema),
+      // persisted compatibility field, not the current manifest policy name.
+      projectPickup: Type.Optional(issuePickupStateSchema),
       openclawOccurrence: Type.Optional(
         Type.Object(
           { sessionKey: text, sessionId: text, runId: text },
@@ -207,6 +211,16 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
       ),
       discoveryCycleAt: Type.Optional(Type.Integer({ minimum: 0 })),
       discoveryCheckedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+      discoveryTimings: Type.Optional(
+        Type.Object(
+          {
+            assignmentMs: Type.Integer({ minimum: 0 }),
+            lifecycleMs: Type.Integer({ minimum: 0 }),
+            feedbackMs: Type.Integer({ minimum: 0 }),
+          },
+          { additionalProperties: false },
+        ),
+      ),
       discoveryRun: Type.Optional(
         Type.Pick(openclawIntakePassSchema, ['sessionKey', 'sessionId', 'runId']),
       ),
@@ -636,14 +650,14 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
   async reset(generation: string): Promise<void> {
     await this.exclusive(async (state, save) => {
       if (state.resetGeneration === generation) return;
-      const projectPickup = resetProjectPickup(state.projectPickup, state.records);
+      const pickup = resetIssuePickup(state.projectPickup, state.records);
       for (const key of Object.keys(state)) delete (state as Record<string, unknown>)[key];
       Object.assign(state, {
         version: 1,
         scope: this.scope,
         resetGeneration: generation,
         records: [],
-        ...(projectPickup ? { projectPickup } : {}),
+        ...(pickup ? { projectPickup: pickup } : {}),
       });
       await save();
     }, true);

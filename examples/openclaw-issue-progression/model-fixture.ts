@@ -1,3 +1,5 @@
+import assessmentSource from '../../scripts/aimock-assessment-source.ts';
+import { currentFacts, nativePlanResponse } from '../openclaw-pr-journey/model-fixture.ts';
 import assert from 'node:assert/strict';
 
 import {
@@ -20,20 +22,15 @@ const dispatchStages = [
     ['next', 'prepare', 'assess', 'reconcile'].map((stage) => `${stage}-${index}`),
   ).flat(),
   'context',
-  'result',
+  'native-plan-render',
+  'native-plan-context',
+  'native-plan-compose',
+  'native-plan-candidate',
+  'native-plan-publish',
   'report',
-  'refresh-context',
-  'refresh-result',
   'work-context',
   'work-result',
   ...Array.from({ length: 64 }, (_, i) => `work-material-${i}`),
-  ...Array.from({ length: 64 }, (_, i) => `summary-material-${i}`),
-  ...Array.from({ length: 64 }, (_, i) => `assessment-material-${i}`),
-  'recovery-present',
-  'summary-compose',
-  'summary-candidate',
-  'summary-preview',
-  'summary-publish',
   'summary-hold',
 ];
 
@@ -75,7 +72,6 @@ function respond(
   request: ChatCompletionRequest,
   interruptDecision: boolean,
   autoDecision: 'plan' | 'work',
-  holdSummary: boolean,
 ): FixtureResponse | undefined {
   const messages = currentTurn(request);
   const prompt = messages
@@ -159,91 +155,13 @@ function respond(
     }
     delete context.contextMaterials;
   };
-  const summary = (
-    id: string,
-    presentation?: string,
-    hold = false,
-  ): FixtureResponse | undefined => {
-    if (!presentation) {
-      const shown = result('recovery-present');
-      if (!shown) return dispatch('recovery-present', { action: 'present', id });
-      if (shown.status !== 'presented' || typeof shown.presentation !== 'string') return;
-      presentation = shown.presentation;
-    }
-    const args = { action: 'summary', id };
-    const composed = result('summary-compose');
-    if (!composed)
-      return {
-        ...dispatch('summary-compose', { ...args, operation: 'compose' }),
-        content: presentation,
-      };
-    const skill = (composed.selection as { skill?: { path?: string } } | undefined)?.skill;
-    if (
-      composed.status !== 'composition-ready' ||
-      typeof composed.digest !== 'string' ||
-      !skill?.path
-    )
-      return;
-    const paged = Boolean(composed.contextMaterials);
-    const pendingMaterial = hydrate(composed, 'summary');
-    if (pendingMaterial) return pendingMaterial;
-    if (holdSummary && paged) {
-      assert.equal(composed.privateResponse, retainedPlan);
-      const assessment = (
-        composed.verifiedOutcome as { assessment: { fullAssessment: string; plan: string } }
-      ).assessment;
-      assert.equal(assessment.fullAssessment, retainedPlan);
-      assert.equal(assessment.plan, retainedPlan);
-    }
-    if (openClawAIMockToolResultText(messages, prefix + 'summary-skill') === undefined)
-      return call('summary-skill', 'read', { path: skill.path });
-    const candidate = result('summary-candidate');
-    if (!candidate)
-      return dispatch('summary-candidate', {
-        ...args,
-        operation: 'candidate',
-        digest: composed.digest,
-        publicText:
-          'The plan is to document closing disposable test issues after capturing their evidence. The retained plan is ready for the configured workflow to continue.',
-      });
-    if (candidate.status !== 'candidate-recorded') return;
-    const preview = result('summary-preview');
-    if (!preview) return dispatch('summary-preview', { ...args, operation: 'publish' });
-    if (preview.status !== 'publication-ready' || typeof preview.digest !== 'string') return;
-    if (hold) {
-      const held = result('summary-hold');
-      if (!held)
-        return dispatch('summary-hold', {
-          ...args,
-          operation: 'hold',
-          digest: preview.digest,
-          diagnostic:
-            'Controlled reported summary denial; native refusal is covered by component tests.',
-        });
-      if (held.status !== 'blocked' || held.code !== 'assessment-summary-native-approval-denied')
-        return;
-      return { content: String(held.presentation) };
-    }
-    const published = result('summary-publish');
-    if (!published)
-      return dispatch('summary-publish', { ...args, operation: 'publish', digest: preview.digest });
-    if (published.status !== 'published' || typeof published.presentation !== 'string') return;
-    return { content: published.presentation };
-  };
-  const recoveryId =
-    /recover only the pending public assessment summary[\s\S]*?id ([a-f0-9]{64})/u.exec(
-      prompt,
-    )?.[1];
-  if (recoveryId) return summary(recoveryId);
   const manual = prompt.includes('Advance previously admitted issue or feedback work.');
   if (manual || prompt.includes('Fill initially available intake slots in one bounded pass.')) {
     if (!manual && !prompt.includes('Consume saved discoveries')) {
-      const digest = /Policy digest: ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
       const scan = result('scan');
       if (!scan)
         return call('scan', 'agent_system_intake', {
           action: 'scan',
-          ...(digest ? { policyDigest: digest } : {}),
         });
       if (scan.status === 'blocked') return report();
       if (scan.status !== 'ready') return;
@@ -283,19 +201,18 @@ function respond(
       if (next.status === 'routing-required') {
         const context = next.context as Record<string, unknown> | undefined;
         if (
-          typeof next.digest !== 'string' ||
           !/^https:\/\/github\.com\/tanaabased\/big-test-bucket\/issues\/[1-9][0-9]*$/u.test(
             String(context?.source),
-          ) ||
-          !String(context?.body).includes('disposable Agent System notification-flow fixture')
+          )
         )
           return;
+        const read = assessmentSource({ evidence: context }, result, call, stage('routing-source'));
+        if (read) return read;
         const prepared = result(stage('prepare'));
         if (!prepared)
           return dispatch(stage('prepare'), {
             action: 'prepare',
-            id: next.id,
-            digest: next.digest,
+            target: next.target,
             assessment: { complexity: 'low', reason: 'A bounded disposable documentation plan.' },
             fallback: 'default',
             title: 'Document disposable test issue cleanup',
@@ -303,7 +220,8 @@ function respond(
         advanced = prepared;
       } else if (next.status === 'reconcile-required') {
         const reconciled = result(stage('reconcile'));
-        if (!reconciled) return dispatch(stage('reconcile'), { action: 'reconcile', id: next.id });
+        if (!reconciled)
+          return dispatch(stage('reconcile'), { action: 'reconcile', target: next.target });
         advanced = reconciled;
       }
       if (advanced.nextAction === 'next') continue;
@@ -315,7 +233,7 @@ function respond(
         )
       ) {
         const assessed = result(stage('assess'));
-        if (!assessed) return dispatch(stage('assess'), { action: 'assess', id: next.id });
+        if (!assessed) return dispatch(stage('assess'), { action: 'assess', target: next.target });
         advanced = assessed;
       }
       if (advanced.nextAction === 'next') continue;
@@ -330,47 +248,16 @@ function respond(
     }
     return;
   }
-  const decisionId = /Refresh agent_system_dispatch action context with id ([a-f0-9]{64})/u.exec(
-    prompt,
-  )?.[1];
-  if (decisionId) {
-    if (interruptDecision && !prompt.includes('Resume the unfinished Auto decision.'))
-      return { content: 'The decision was interrupted before its result was recorded.' };
-    const fresh = result('refresh-context');
-    if (!fresh) return dispatch('refresh-context', { action: 'context', id: decisionId });
-    if (fresh.status !== 'verified' || fresh.mode !== 'auto') return;
-    const pendingAssessment = hydrate(fresh, 'assessment');
-    if (pendingAssessment) return pendingAssessment;
-    if (!fresh.previousResult) return;
-    const saved = result('refresh-result');
-    if (!saved)
-      return dispatch('refresh-result', {
-        action: 'result',
-        id: decisionId,
-        previousResultDigest: fresh.previousResultDigest,
-        result: {
-          ...(fresh.previousResult as Record<string, unknown>),
-          decision: {
-            mode: autoDecision,
-            reasons: [
-              autoDecision === 'plan'
-                ? 'Cleanup timing needs operator confirmation before implementation.'
-                : 'The retained documentation plan is bounded and actionable.',
-            ],
-          },
-        },
-      });
-    if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-    if (autoDecision === 'plan') {
-      assert.equal((saved.handoff as { next?: string } | undefined)?.next, 'planning');
-      return summary(decisionId, saved.presentation);
-    }
-    if ((saved.handoff as { next?: string } | undefined)?.next !== 'implementation') return;
-    if (holdSummary) {
-      const held = summary(decisionId, saved.presentation, true);
-      if (!held || 'toolCalls' in held) return held;
-    }
-  }
+  const decisionId = /Consider current plan for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1];
+  if (decisionId && interruptDecision && !prompt.includes('Resume the discussion.'))
+    return {
+      content: 'The discussion stopped before an implementation decision. Wait for native input.',
+    };
+  if (decisionId && autoDecision === 'plan')
+    return {
+      content:
+        'Cleanup timing needs confirmation. Should cleanup happen after evidence is captured?',
+    };
   const automaticId =
     decisionId ??
     /Continue plan for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1] ??
@@ -383,54 +270,33 @@ function respond(
     const context = result('work-context');
     if (!context)
       return dispatch('work-context', {
-        action: 'implementation-context',
-        id: operatorId,
-        ...(answerId ? { scope: 'local' } : {}),
+        ...(answerId
+          ? { action: 'implementation', operation: 'context' }
+          : { action: 'implementation-context' }),
+        ...(prompt.includes('Do not push or publish a PR.') ? { scope: 'local' } : {}),
+        ...(decisionId
+          ? {
+              decision: {
+                mode: 'work',
+                reasons: ['The retained documentation plan is bounded and actionable.'],
+              },
+            }
+          : {}),
       });
     const path = (context.project as { path?: string } | undefined)?.path;
     if (
       context.status !== 'verified' ||
       context.runtime !== 'openclaw' ||
       !path ||
-      context.publicationAuthorized !== !answerId
+      context.publicationAuthorized !== !prompt.includes('Do not push or publish a PR.')
     )
       return;
     const pendingMaterial = hydrate(context, 'work');
     if (pendingMaterial) return pendingMaterial;
-    if (holdSummary) assert.equal(context.plan, retainedPlan);
-    if (
-      context.pendingPublicResponse &&
-      (context.pendingPublicResponse as { state?: string }).state !== 'blocked'
-    ) {
-      const pending = summary(operatorId);
-      if (!pending || 'toolCalls' in pending) return pending;
-    }
-    if (automaticId) {
-      const saved = result('work-result');
-      if (!saved)
-        return dispatch('work-result', {
-          action: 'implementation-result',
-          id: operatorId,
-          implementationResult: {
-            outcome: 'clarification-needed',
-            summary: 'Confirm cleanup timing.',
-            fullResult:
-              'Reviewed the retained plan. No files changed; cleanup timing needs confirmation.',
-            questions: ['Should cleanup happen after evidence is captured?'],
-          },
-        });
-      if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-      return {
-        content: [result('refresh-result')?.presentation, saved.presentation]
-          .filter(Boolean)
-          .join('\n\n'),
-      };
-    }
+    if (automaticId) return { content: 'Should cleanup happen after evidence is captured?' };
     if (
       answerId &&
-      ((context.previousImplementationResult as { outcome?: string })?.outcome !==
-        'clarification-needed' ||
-        !prompt.includes('Yes, after evidence is captured.') ||
+      (!prompt.includes('Yes, after evidence is captured.') ||
         !prompt.includes('Do not push or publish a PR.'))
     )
       return;
@@ -458,7 +324,6 @@ function respond(
     if (!saved)
       return dispatch('work-result', {
         action: 'implementation-result',
-        id: operatorId,
         implementationResult: {
           outcome: 'done',
           summary: 'Committed the disposable cleanup note.',
@@ -469,84 +334,43 @@ function respond(
     if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
     return { content: saved.presentation };
   }
-  const id = /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(
-    prompt,
-  )?.[1];
-  if (
-    !id ||
-    !prompt.includes('Agent System: assess this admitted issue and retain its complete plan.')
-  )
-    return;
-  const context = result('context');
-  if (!context) {
-    const privateContext = request.messages
-      .map(({ content }) => getTextContent(content) ?? '')
-      .join('\n');
-    if (
-      !privateContext.includes('Agent System model-only current-turn facts') ||
-      !privateContext.includes('notification-hidden-initial-fact')
-    )
-      return;
-    return dispatch('context', { action: 'context', id });
-  }
+  const id =
+    (currentFacts(messages, false).stage === 'assessment'
+      ? currentFacts(messages, false).receipt
+      : undefined) ??
+    /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
+  if (!id) return;
+  const context = currentFacts(messages);
+  assert.equal(context.status, 'verified', 'the native hook must supply usable assessment context');
   const project = context.project as { path?: unknown } | undefined;
   if (
     context.status !== 'verified' ||
     context.runtime !== 'openclaw' ||
-    context.id !== id ||
     typeof project?.path !== 'string' ||
     !context.assessment ||
-    context.resultContract !== 'assessment-result/v1'
+    !context.resultFormat
   )
     return;
   const git = result('git');
   if (!git) return call('git', 'agent_system_git', { argv: ['rev-parse', '--show-toplevel'] });
   if (git.exitCode !== 0 || String(git.stdout).trim() !== project.path || git.truncated !== false)
     return;
-  const saved = result('result');
-  if (!saved)
-    return dispatch('result', {
-      action: 'result',
-      id,
-      result: {
-        version: 1,
-        outcome: 'plan-ready',
-        summary: 'Document disposable issue cleanup.',
-        assessment: 'The admitted issue requests a small documentation change.',
-        planSummary: 'Describe closing disposable test issues after capturing evidence.',
-        reviewSummary:
-          'Document closing disposable test issues after evidence is captured; preserve the complete retained implementation plan.',
-        plan: holdSummary
-          ? retainedPlan
-          : 'Add the cleanup rule to the repository documentation and review the resulting diff.',
-        fullAssessment: holdSummary
-          ? retainedPlan
-          : 'Verified the assigned repository in its managed worktree. Add a short documentation rule to close disposable test issues after capturing evidence, then review the diff. No implementation or publication was performed.',
-        evidence: [
-          {
-            source: project.path,
-            status: 'observed',
-            detail: 'Managed Git confirmed this worktree.',
-          },
-        ],
-        progress: {
-          completed: ['Verified the managed worktree.'],
-          remaining: ['Implement after approval.'],
-        },
-      },
-    });
-  if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-  return summary(id, saved.presentation);
+  return nativePlanResponse(
+    context,
+    result,
+    dispatch,
+    call,
+    Boolean(openClawAIMockToolResultText(messages, prefix + 'summary-skill')),
+  );
 }
 
 function response(
   request: ChatCompletionRequest,
   interruptDecision: boolean,
   autoDecision: 'plan' | 'work',
-  holdSummary: boolean,
 ) {
   try {
-    return respond(request, interruptDecision, autoDecision, holdSummary);
+    return respond(request, interruptDecision, autoDecision);
   } catch (error) {
     if (
       error instanceof Error &&
@@ -565,7 +389,7 @@ export function createProgressionScenario(
   autoDecision: 'plan' | 'work' = 'work',
 ): OpenClawAIMockScenario {
   const respond = (request: ChatCompletionRequest) =>
-    response(request, interruptDecision, autoDecision, id === 'openclaw-issue-progression');
+    response(request, interruptDecision, autoDecision);
   const final: Fixture = {
     match: {
       model: /^(?:aimock\/)?gpt-5\.5$/u,
@@ -586,6 +410,10 @@ export function createProgressionScenario(
     finalResponses: [],
     dynamicFinalResponseFixtures: [final],
     toolCalls: [
+      ...Array.from({ length: 8 }, (_, index) => ({
+        id: prefix + `routing-source-${index}`,
+        name: 'agent_system_github',
+      })),
       { id: prefix + 'summary-skill', name: 'read' },
       { id: prefix + 'scan', name: 'agent_system_intake' },
       ...dispatchStages.flatMap((stage) =>

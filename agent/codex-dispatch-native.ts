@@ -199,6 +199,7 @@ export function codexDispatchNative(request: CodexThreadRequest) {
       expected: Record<string, unknown>,
       prepared: { createdAt: number; turnId?: string },
       approvedCallId?: string,
+      renewAuthorization = false,
     ) {
       const source = await read(sourceThreadId, 'none');
       const history = await creationHistory(request, sourceThreadId, prepared);
@@ -243,7 +244,7 @@ export function codexDispatchNative(request: CodexThreadRequest) {
         );
       if (message !== 'user rejected MCP tool call' && !automatic)
         throw new Error('dispatch-denial-unverified');
-      if (automatic && approvedCallId !== match.item.id)
+      if (automatic && !renewAuthorization && approvedCallId !== match.item.id)
         throw new Error('dispatch-denial-approval-required');
       if (approvedCallId !== undefined && approvedCallId !== match.item.id)
         throw new Error('dispatch-denial-unverified');

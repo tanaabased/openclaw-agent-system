@@ -1,6 +1,6 @@
 import type { AutomationModelSettings } from '../../manifest/automation-schema.ts';
 import type { AssessmentConfiguration } from '../../manifest/assessment-schema.ts';
-import type { ProjectPickupPolicy } from './project-pickup-schema.ts';
+import type { IssuePickupPolicy } from './issue-pickup-schema.ts';
 import type { RepositoryRoute } from './repository-scope.ts';
 
 /** input provenance is retained without selecting a separate execution engine. */
@@ -25,13 +25,12 @@ export type GitHubFeedbackPolicy = {
 
 /** effective workflow controls shared by the configuration decoder and native runtimes. */
 export interface GitHubNotificationPolicy {
-  projectPickup?: ProjectPickupPolicy;
+  issuePickup?: IssuePickupPolicy;
   schemaVersion: 3;
   runtimes: Array<'openclaw' | 'codex'>;
   intervalMinutes: number;
   maxConcurrentItems: number;
-  allowedRepositoryOwners: GitHubIdentityPin[];
-  routing?: RepositoryRoute[];
+  routing: RepositoryRoute[];
   issueAssignment?: AutomationModelSettings & {
     paused?: boolean;
     allowed: GitHubApprovedActor[];

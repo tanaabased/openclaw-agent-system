@@ -46,9 +46,7 @@ github:
   username: pirog
   schema-version: 3
   runtimes: [codex]
-  allowed-repository-owners:
-    - login: tanaabased
-      node-id: O_owner
+  routing: ['tanaabased/*']
   issue-assignment:
     paused: true
     allowed: [{login: pirog, node-id: U_pirog}]
@@ -93,9 +91,7 @@ github:
       - login: pirog
         node-id: U_pirog
   runtimes: [codex]
-  allowed-repository-owners:
-    - login: tanaabased
-      node-id: O_owner
+  routing: ['tanaabased/*']
   issue-assignment:
     mode: plan
     allowed:

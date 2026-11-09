@@ -140,7 +140,7 @@ describe('agent/codex-issue-notice', () => {
       changed: true,
     });
     assert.equal(notice.severity, 'warning');
-    assert.match(notice.message, /same recovery action/);
+    assert.match(notice.message, /same semantic recovery target/);
     assert.match(notice.message, /action:handoff/);
     assert.match(notice.message, /do not refresh assessment context after implementation/);
     assert.match(notice.message, /existing authorization/);
@@ -155,6 +155,25 @@ describe('agent/codex-issue-notice', () => {
     });
     assert.ok(notice.message.includes('Restore /work/my\\_repo before retrying.'));
     assert.ok(!notice.message.includes('my\\\\'));
+  });
+
+  it('should describe verified linkage recovery as debug with its outcome', () => {
+    const recovered = codexIssueNotice({
+      event: 'failure',
+      code: 'delivery-linkage-retried',
+      changed: true,
+    });
+    assert.equal(recovered.severity, 'info');
+    assert.match(recovered.message, /## 🔬 Debug/);
+    assert.match(recovered.message, /\*\*Outcome:\*\* No action is needed/);
+    assert.doesNotMatch(recovered.message, /## ⚠️|## ❌/);
+    const unresolved = codexIssueNotice({
+      event: 'failure',
+      code: 'delivery-attachment-pending',
+      changed: true,
+    });
+    assert.match(unresolved.message, /## ⚠️/);
+    assert.match(unresolved.message, /\*\*Next step:/);
   });
 
   it('should distinguish normal progress, decisions, and failed operations without letting severity force notifications', () => {
@@ -190,7 +209,7 @@ describe('agent/codex-issue-notice', () => {
         code,
       );
       assert.match(first.message, /What happened/);
-      assert.match(first.message, /Next step/);
+      assert.match(first.message, code === 'delivery-linkage-retried' ? /Outcome/ : /Next step/);
       assert.ok(first.message.endsWith('`' + code + '`'));
     }
     for (const event of ['intake-recovered'] as const) {

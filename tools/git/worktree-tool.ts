@@ -1,3 +1,4 @@
+import resolveGitProtocol, { type GitProtocol } from './protocol.ts';
 import AgentSystemToolError from '../../api/error.ts';
 import type { AgentSystemOperation, AgentSystemSemanticToolDefinition } from '../../api/types.ts';
 import type { AgentManifest } from '../../manifest/types.ts';
@@ -12,12 +13,13 @@ import type {
 } from './config-schema.ts';
 import { resolveGitIdentity, type ResolvedGitIdentity } from './identity.ts';
 import type GitWorktreeGitRunnerFactory from './worktree-git-runner.ts';
-import normalizeGitWorktreeRemote, { preferGitHubSshWorktreeRemote } from './worktree-remote.ts';
+import normalizeGitWorktreeRemote, { githubWorktreeRemote } from './worktree-remote.ts';
 import type GitWorktreeService from './worktree-service.ts';
 import type { GitWorktreeCleanupResult, GitWorktreeResult } from './worktree-service.ts';
 import { gitWorktreeToolSchema, type GitWorktreeToolInput } from './worktree-tool-schema.ts';
 
 export interface ResolvedGitWorktreeToolConfiguration {
+  protocol?: GitProtocol;
   externalExtensions: string[];
   identity: ResolvedGitIdentity;
   ssh?: GitSshConfiguration;
@@ -32,7 +34,7 @@ export interface GitWorktreeToolDependencies {
 
 type GitWorktreeToolDefinitionBase = AgentSystemSemanticToolDefinition<
   typeof gitWorktreeToolSchema,
-  GitToolConfiguration,
+  GitToolConfiguration & { protocol: GitProtocol },
   ResolvedGitWorktreeToolConfiguration,
   GitWorktreeResult | GitWorktreeResult[]
 >;
@@ -63,7 +65,9 @@ export type GitWorktreeToolDefinition = GitWorktreeToolDefinitionBase & {
   ): Promise<GitWorktreeResult>;
 };
 
-function readConfiguration(manifest: AgentManifest): GitToolConfiguration | undefined {
+function readConfiguration(
+  manifest: AgentManifest,
+): (GitToolConfiguration & { protocol: GitProtocol }) | undefined {
   if (!manifest.git?.worktrees) return undefined;
   return {
     agent: {
@@ -71,6 +75,7 @@ function readConfiguration(manifest: AgentManifest): GitToolConfiguration | unde
       ...(manifest.agent.name === undefined ? {} : { name: manifest.agent.name }),
     },
     git: manifest.git,
+    protocol: resolveGitProtocol(manifest),
   };
 }
 
@@ -212,10 +217,10 @@ export function createGitWorktreeToolDefinition(
           ...(cloneUrl === undefined
             ? {}
             : {
-                cloneUrl:
-                  configuration.ssh === undefined
-                    ? cloneUrl
-                    : preferGitHubSshWorktreeRemote(cloneUrl),
+                cloneUrl: githubWorktreeRemote(
+                  cloneUrl,
+                  configuration.protocol ?? resolveGitProtocol({}),
+                ),
               }),
           ...(reconcileOrigin ? { reconcileOrigin: true } : {}),
           ...(issueBranch === undefined ? {} : { issueBranch }),
@@ -310,6 +315,7 @@ export function createGitWorktreeToolDefinition(
       read: readConfiguration,
       resolve(configuration, resolver) {
         return {
+          protocol: configuration.protocol,
           externalExtensions: Object.keys(configuration.git.extensions ?? {}).sort(),
           identity: resolveGitIdentity(configuration, resolver),
           ...(configuration.git.ssh === undefined ? {} : { ssh: configuration.git.ssh }),

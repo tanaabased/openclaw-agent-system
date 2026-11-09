@@ -19,6 +19,7 @@ then unbind without changing the workspace manifests.
 
 - Direct checks need no model or provider credentials. Workspaces run in place; independent snapshots verify that shared manifests stay unchanged. Run only in GitHub Actions.
 - Session context includes the model-routing projection; one packaged resolution accepts an issue object and custom routing guidance. Source tests cover routing input, fallback, and override permutations.
+- The per-prompt hook supplies native thread/turn identities and uses existing native task/send receipts to supply usable task context. A native app-server check observes the packaged context at the model boundary for ordinary and delegated input. Delegated input can omit UserPromptSubmit, so SessionStart supplies the no-argument read-only recovery command; it returns the same usable context without a second dispatch call. Managed task/comment matching remains covered by component tests; unattended use of that lookup still requires the pilot.
 - Pending relocation: direct-assessment caller guards, quiet/debug setup diagnostics, missing-identity inspection and rename/rotation, inherited-pipe timeout, local-settings refresh, and inactive/replacement binding checks remain below.
 
 ## Setup
@@ -28,8 +29,8 @@ then unbind without changing the workspace manifests.
 root="$TMPDIR/agent-system-codex-install"
 mkdir -p "$root/package"
 tar -xzf "$AGENT_SYSTEM_PACKAGE" -C "$root/package"
-codex-tools install "$root/package/package" --json | jq -e '.ok == true and .inspection.installed == true and .inspection.enabled == true'
-codex-tools cache check --repo-root "$root/package/package" --json | tee "$root/cache.json" | jq -e '.ok == true and .status == "current"'
+codex-tools install "$root/package/package" --json | jq -e 'if .ok == true and .inspection.installed == true and .inspection.enabled == true then . else error("plugin install failed: " + ({ok, status, issue, inspection, remaining, nativeState} | tojson)) end'
+codex-tools cache check --repo-root "$root/package/package" --json | tee "$root/cache.json" | jq -e 'if .ok == true and .status == "current" then . else error("plugin cache check failed: " + ({ok, status, issue} | tojson)) end'
 
 # should expose complete packaged skills to a fresh codex app server
 bun --cwd "$GITHUB_WORKSPACE" run test:codex-plugin
@@ -189,7 +190,23 @@ printf '%s\n' "$context" | sed -n '/^{/,/^}/p' \
 printf '%s\n' "$context" | sed -n '/^{/,/^}/p' \
   | jq -e '.feedbackRuntime.argvPrefix[-1] == "feedback"'
 printf '%s\n' "$context" | grep -F 'For new routed work, use'
-printf '%s\n' "$context" | grep -F 'Reproduce the complete returned presentation Markdown in the final reply'
+
+# should project per-prompt identities through the packaged hook without granting authority
+root="$TMPDIR/agent-system-codex-install"
+plugin_root="$root/plugin with spaces"
+hook=$(jq -r '.hooks.UserPromptSubmit[0].hooks[0].command' "$plugin_root/hooks/hooks.json")
+for turn in initial-assignment later-feedback; do
+  jq -n --arg turn "$turn" '{hook_event_name:"UserPromptSubmit",session_id:"native-probe-thread",turn_id:$turn,prompt:"private-provider-prose"}' \
+    | PLUGIN_DATA="$root/plugin-data" PLUGIN_ROOT="$plugin_root" sh -c "$hook" \
+    | jq -er '.hookSpecificOutput | select(.hookEventName == "UserPromptSubmit") | .additionalContext | split("\n")[1] | fromjson | select(.contextProbe.runtime == "codex" and .git.protocol == "ssh" and .currentTurn.threadId == "native-probe-thread") | .currentTurn.turnId' \
+    | grep -Fx "$turn"
+done
+PLUGIN_DATA="$root/plugin-data" PLUGIN_ROOT="$plugin_root" sh -c "$hook" <<<'not-json' | jq -e '. == {}'
+
+# should deliver packaged private context to native ordinary and delegated turns
+root="$TMPDIR/agent-system-codex-install"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+node "$GITHUB_WORKSPACE/examples/codex-install/native-context-fixture.mjs" "$plugin_root" "$root/plugin-data" "$root/native-context"
 
 # should approve installed runtime calls and leave unrelated commands to normal approval
 root="$TMPDIR/agent-system-codex-install"
@@ -231,9 +248,8 @@ plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/plugin-data"
 inspection=$(printf '%s\n' '{"action":"inspect"}' | node "$runtime" model-routing --plugin-data "$plugin_data")
-digest=$(printf '%s\n' "$inspection" | jq -r .manifestDigest)
-instructions=$(printf '%s\n' "$inspection" | jq -er 'select(.instructions.defaultSkill == true and (.instructions.guidance.content | contains("Preserve verified complexity."))) | .instructionsDigest')
-jq -n --arg digest "$digest" --arg instructions "$instructions" '{action:"resolve",manifestDigest:$digest,instructionsDigest:$instructions,context:{title:"Notification settings",body:"Add workflow enable controls."},assessment:{complexity:"medium",reason:"Extend existing configuration and scheduling."}}' \
+printf '%s\n' "$inspection" | jq -e 'select(.instructions.defaultSkill == true and (.instructions.guidance.content | contains("Preserve verified complexity.")))'
+jq -n '{action:"resolve",context:{title:"Notification settings",body:"Add workflow enable controls."},assessment:{complexity:"medium",reason:"Extend existing configuration and scheduling."}}' \
   | node "$runtime" model-routing --plugin-data "$plugin_data" \
   | jq -e '.status == "resolved" and .profile == "medium" and .candidate.model == "gpt-5.6-sol" and .candidate.thinking == "high" and .execution == "unverified"'
 

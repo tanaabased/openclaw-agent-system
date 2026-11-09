@@ -103,8 +103,14 @@ export default async function connectCodexGitHubAccount(
   const account = { identity, execute };
   const api = new GitHubWorkEventApiClient(account);
   const client = Object.assign(new GitHubWorkEventClient(account), {
-    getItemContext: (owner: string, name: string, number: number) =>
-      readItemContext(api, owner, name, number, 'issue', true),
+    getItemContext: (
+      owner: string,
+      name: string,
+      number: number,
+      itemType: 'issue' | 'pull-request' = 'issue',
+      includeRoutingMetadata = true,
+      complete = false,
+    ) => readItemContext(api, owner, name, number, itemType, includeRoutingMetadata, complete),
   });
   return { client, account };
 }

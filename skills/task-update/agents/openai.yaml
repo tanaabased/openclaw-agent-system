@@ -4,6 +4,6 @@ interface:
   icon_small: './assets/icon-small.svg'
   icon_large: './assets/icon-large.svg'
   brand_color: '#db2777'
-  default_prompt: "Use $agent-system-task-update to publish verified progress from this chat. Start with the task's issue and use its linked open PR when available, unless I selected a destination. Publish only material missing facts and show the confirmed public reply; do not post if already current."
+  default_prompt: "Use $agent-system-task-update to publish verified progress from this chat. Start with the task's issue and use its linked open PR when available, unless I selected a destination. Publish only material missing facts and show the confirmed public reply; keep general updates quiet if already current, but answer source-bound status questions."
 policy:
   allow_implicit_invocation: true

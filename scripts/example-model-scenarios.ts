@@ -1,4 +1,4 @@
-import { projectPickupScenario } from '../examples/openclaw-project-picker/model-fixture.ts';
+import { issuePickupScenario } from '../examples/openclaw-project-picker/model-fixture.ts';
 import { openClawCollaborationScenario } from '../examples/openclaw-collaboration/model-fixture.ts';
 import { automationRecoveryScenario } from '../examples/openclaw-automation-recovery/model-fixture.ts';
 import { automationCommandChatScenario } from '../examples/openclaw-automation-command-chat/model-fixture.ts';
@@ -40,7 +40,7 @@ import { autoPlanScenario } from '../examples/openclaw-issue-auto-plan/model-fix
 import type { OpenClawAIMockScenario } from './aimock-scenario.ts';
 
 const scenarios = new Map<string, OpenClawAIMockScenario>([
-  [projectPickupScenario.id, projectPickupScenario],
+  [issuePickupScenario.id, issuePickupScenario],
   [agentExampleScenario.id, agentExampleScenario],
   [openClawCollaborationScenario.id, openClawCollaborationScenario],
   [automationExampleScenario.id, automationExampleScenario],
