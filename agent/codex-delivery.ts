@@ -546,6 +546,7 @@ export default async function runCodexDelivery(
               managedTargetUrl(intake),
               undefined,
               previous.announcementRecovery,
+              updatedSinceAnnouncement,
             ),
             ...presentationNotices.map((notice) => notice.message),
           ].join('\n\n'),

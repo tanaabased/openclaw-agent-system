@@ -575,6 +575,7 @@ export function presentOpenClawDelivery(
       managedTargetUrl(intake),
       undefined,
       linkedDelivery?.announcementRecovery,
+      updatedSinceAnnouncement,
     ) +
     (notice ? '\n\n' + notice.message : '');
   return {

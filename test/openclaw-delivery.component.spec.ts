@@ -1113,6 +1113,11 @@ describe('agent/openclaw-delivery', () => {
       assert.equal(pushes, 2);
       assert.match(shown.presentation!, /Pull request updated/);
       assert.match(shown.presentation!, /Original PR announcement/);
+      assert.match(shown.presentation!, /before this update/);
+      assert.ok(
+        shown.presentation!.indexOf('Original announcement (before this update):') <
+          shown.presentation!.indexOf('Delivers the requested change'),
+      );
       assert.match(shown.presentation!, /Delivers the requested change/);
       assert.equal(announcement.posts, 1);
     });

@@ -2038,6 +2038,7 @@ describe('agent/codex-delivery', () => {
     assert.ok('presentation' in initial);
     assert.match(initial.presentation!, /Pull request/);
     assert.match(initial.presentation!, /Original PR announcement/);
+    assert.doesNotMatch(initial.presentation!, /before this update/);
     head = 'b'.repeat(40);
     await publish({ title: String(pr!.title), body: String(pr!.body) });
     assert.equal(remote, head);
@@ -2048,6 +2049,11 @@ describe('agent/codex-delivery', () => {
     assert.ok('presentation' in shown);
     assert.match(shown.presentation!, /Pull request updated/);
     assert.match(shown.presentation!, /Original PR announcement/);
+    assert.ok(
+      shown.presentation!.indexOf('Original announcement (before this update):') <
+        shown.presentation!.indexOf('Delivers the requested change'),
+    );
+    assert.match(shown.presentation!, /before this update/);
     assert.match(shown.presentation!, /#issuecomment-91/);
     assert.match(shown.presentation!, /Delivers the requested change/);
     assert.equal(creates, 1);

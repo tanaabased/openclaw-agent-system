@@ -103,6 +103,7 @@ export function announcementPresentation(
   issueUrl: string,
   authorLogin = state?.authorLogin,
   recovery?: AnnouncementRecovery,
+  updatedSinceAnnouncement = false,
 ) {
   const confirmed = state?.receipt && !state.code && !recovery;
   const quote = state?.publicText
@@ -146,6 +147,9 @@ export function announcementPresentation(
       : `> **Recovery:** ${recovery.status === 'exhausted' ? 'Automatic checks exhausted.' : 'Automatic recovery is held.'} ${heldNext} Do not bypass a native denial or create a replacement PR.`
     : '';
   return [
+    confirmed && updatedSinceAnnouncement && quote
+      ? 'Original announcement (before this update):'
+      : '',
     quote,
     obstacle,
     next,

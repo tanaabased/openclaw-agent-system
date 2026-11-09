@@ -474,6 +474,16 @@ describe('agent/delivery-announcement', () => {
       ),
     );
     assert.ok(!confirmed.includes('announcement published'));
+    assert.doesNotMatch(confirmed, /before this update/);
+    const historical = announcementPresentation(
+      delivery.announcement,
+      'https://github.com/owner/repo/issues/3',
+      undefined,
+      undefined,
+      true,
+    );
+    assert.ok(historical.endsWith(confirmed));
+    assert.match(historical.split('\n')[0]!, /before this update/);
     const repeated = await run('compose', {});
     assert.ok('presentation' in repeated);
     assert.match(repeated.presentation!, /Original PR announcement ↗/);
