@@ -135,7 +135,7 @@ openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" 
 
 # should recover only an explicitly prepared public summary after restart in the same native issue owner
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment-recovery/tanaabot"
-jq -es '[.[] | (.drafts // [.])[] | select(.update != null and any(.update.facts[]; .reference == "notification-refresh-context"))] | if length == 1 then .[0] else error("one pending reply required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-summary-before.json"
+jq -es '[.[] | (.drafts // [.])[] | select(.update != null and .turnId == "notification-refresh-context")] | if length == 1 then .[0] else error("one pending reply required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-summary-before.json"
 jq -e '(.publicText | length > 0) and .attempted != true and .receipt == null' "$TMPDIR/notification-summary-before.json"
 conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
 node --input-type=module -e 'import {callGatewayFromCli} from "openclaw/plugin-sdk/gateway-runtime"; for (let index = 0; index < 201; index++) await callGatewayFromCli("chat.inject", {json:true}, {sessionKey:process.argv[1],message:"Recovery history filler " + index}, {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"});' "$conversation"
