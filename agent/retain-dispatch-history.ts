@@ -271,7 +271,10 @@ export default function retainDispatchHistory<R extends SharedDispatchRecord>(
     ]);
     const removed = events.filter(
       (event) =>
-        !current.has(event) && event.id !== record.progression?.workOwner && settledFeedback(event),
+        !current.has(event) &&
+        event.id !== record.progression?.workOwner &&
+        (!event.native || record.nativeInactive === true) &&
+        settledFeedback(event),
     );
     if (removed.length) {
       const ids = new Set(removed.map((event) => event.id));

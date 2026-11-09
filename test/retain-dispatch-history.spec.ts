@@ -247,6 +247,15 @@ describe('agent/retain-dispatch-history', () => {
       result: undefined,
     };
     source.feedback = { baseline: {}, events: [first, next] };
+    for (const inactive of [false, undefined]) {
+      source.nativeInactive = inactive;
+      assert.equal(
+        retainDispatchHistory(source),
+        undefined,
+        'active or unknown native work retains its source',
+      );
+    }
+    source.nativeInactive = true;
     const projected = retainDispatchHistory(source)!;
     assert.deepEqual(projected.feedback!.events, [next]);
     assert.deepEqual(projected.feedback!.completed, [
@@ -266,6 +275,7 @@ describe('agent/retain-dispatch-history', () => {
     const source = record();
     delete source.retired;
     delete source.retirement;
+    source.nativeInactive = true;
     const first = {
       ...event(1),
       native: true as const,

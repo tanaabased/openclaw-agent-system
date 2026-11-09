@@ -9281,6 +9281,31 @@ describe('agent/openclaw issue dispatch', () => {
     );
   });
 
+  it('should stop reconciling consumed feedback while native conversation remains active', async () => {
+    await feedbackOwner();
+    consumeSend = true;
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const saved = await record();
+    const event = saved.feedback!.events[0]!;
+    assert.equal(event.phase, 'delivered');
+    assert.equal(event.turn!.status, 'consumed');
+    assert.equal(event.turn!.executionRunId, undefined);
+    assert.equal(saved.nativeInactive, false);
+    assert.equal(openClawCapacity([saved], 1).occupied, 1);
+    const before = sends().length;
+    const nativeCalls = calls.length;
+    historyRejected = true;
+    coordinator.runId = 'after-delivery';
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.deepEqual((await record()).feedback!.events[0], event);
+    assert.equal(sends().length, before);
+    assert.equal(
+      calls
+        .slice(nativeCalls)
+        .some((call) => call.method === 'agent.wait' && call.params.runId === event.turn!.runId),
+      false,
+    );
+  });
   it('should reject an edited source before admitting it to the native queue', async () => {
     const { comments } = await feedbackOwner();
     const before = sends().length;
@@ -9356,7 +9381,7 @@ describe('agent/openclaw issue dispatch', () => {
     active = false;
     inputReceipts = [];
     await service.run(manifest, root, coordinator, { action: 'next' });
-    assert.equal((await record()).feedback!.events[0]!.phase, 'running');
+    assert.equal((await record()).feedback!.events[0]!.phase, 'delivered');
     assert.equal(sends().length, before);
   });
   for (const limit of [1, 3])

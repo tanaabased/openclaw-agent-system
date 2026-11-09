@@ -614,10 +614,10 @@ describe('agent/codex-feedback', () => {
     const state = await store.read();
     assert.equal(
       state.records.find((record) => record.id === ref.id)!.feedback!.events[0]!.phase,
-      'running',
+      'delivered',
     );
     const missing = state.records.find((record) => record.id === missingId)!;
-    assert.equal(missing.feedback!.events[0]!.phase, 'running');
+    assert.equal(missing.feedback!.events[0]!.phase, 'delivered');
     assert.equal(missing.feedback!.events[0]!.code, undefined);
     assert.deepEqual(missing.feedback!.events[0]!.attempt, {
       ...before.feedback!.events[0]!.attempt,
@@ -758,6 +758,8 @@ describe('agent/codex-feedback', () => {
       'https://github.com/owner/repo/issues/3#issuecomment-42',
     );
     const during = (await store.read()).records[0]!;
+    assert.equal(during.feedback!.events[0]!.phase, 'delivered');
+    assert.notEqual(during.nativeInactive, true);
     assert.equal(during.feedback!.events[0]!.work, undefined);
     assert.equal(during.feedback!.events[0]!.result, undefined);
     assert.deepEqual(during.result, before.result);
@@ -770,6 +772,33 @@ describe('agent/codex-feedback', () => {
     assert.equal(after.feedback!.events[0]!.resumed, undefined);
     assert.equal((await call('next')).status, 'idle');
     assert.equal(creates, 0);
+  });
+  it('should settle verified native delivery while its response is still running', async () => {
+    await prepare(commenter, '@receiver why this approach?');
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.nativeInactive = true;
+      state.records[0]!.feedback!.events[0]!.code = 'continuation-history-incomplete';
+      await save();
+    });
+    sent = true;
+    turn = 'feedback';
+    ended = false;
+    occurrence++;
+    assert.equal((await call('next')).status, 'idle');
+    const record = (await store.read()).records[0]!;
+    const event = record.feedback!.events[0]!;
+    assert.equal(event.phase, 'delivered');
+    assert.equal(event.attempt!.turnId, 'feedback');
+    assert.equal(event.code, undefined);
+    assert.notEqual(record.nativeInactive, true);
+    assert.equal(event.result, undefined);
+    assert.equal(creates, 0);
+    deps.continuationNative = async () => {
+      throw new Error('settled delivery must not be polled');
+    };
+    occurrence++;
+    assert.equal((await call('next')).status, 'idle');
+    assert.deepEqual((await store.read()).records[0]!.feedback!.events[0], event);
   });
   it('should deliver a native question without requiring repository access', async () => {
     deps.git = async () => {

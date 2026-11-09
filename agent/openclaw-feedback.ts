@@ -81,6 +81,8 @@ export async function advanceFeedbackTurn(input: {
   livePolicy?(): Promise<GitHubNotificationPolicy>;
 }) {
   const { record, event, request, save } = input;
+  if (event.native && event.phase === 'delivered')
+    return { status: 'feedback-completed' as const, id: record.id, eventId: event.id };
   const expected = record.request;
   if (!expected || !('key' in expected) || !record.sessionCreation?.verified)
     throw new Error('feedback-session-unverified');
@@ -126,6 +128,7 @@ export async function advanceFeedbackTurn(input: {
   await describeIssueSession(request, record, input.config, 'feedback');
   await reconcileOpenClawTurn({
     allowExecutionRunId: event.native === true,
+    deliveryOnly: event.native === true,
     reselection:
       event.native && record.feedback?.context?.eventId === event.id
         ? record.feedback.context
@@ -137,15 +140,19 @@ export async function advanceFeedbackTurn(input: {
     turn: event.turn!,
     save,
   });
-  if (event.turn!.status === 'completed' && (event.native || !event.publicationAttempted)) {
+  const settled =
+    event.turn!.status === 'completed' ||
+    (event.native === true && event.turn!.status === 'consumed');
+  if (settled && (event.native || !event.publicationAttempted)) {
     event.phase = 'delivered';
+    if (event.native) delete event.code;
     record.feedback!.lastServedAt = Date.now();
   }
   delete event.retry;
   delete event.retryAfter;
   await save();
   return {
-    status: event.turn!.status === 'completed' ? 'feedback-completed' : 'feedback-pending',
+    status: settled ? 'feedback-completed' : 'feedback-pending',
     id: record.id,
     eventId: event.id,
   };

@@ -126,6 +126,7 @@ export async function reconcileOpenClawTurn(input: {
   sessionId: string;
   turn: OpenClawTurn;
   allowExecutionRunId?: boolean;
+  deliveryOnly?: boolean;
   reselection?: FeedbackReselection;
   record?: Pick<OpenClawDispatchRecord, 'nativeInactive'>;
   save(): Promise<void>;
@@ -192,6 +193,8 @@ export async function reconcileOpenClawTurn(input: {
       turn.status = 'accepted';
     } else throw new Error('dispatch-turn-receipt-invalid');
     await save();
+    // native feedback delivery ends at verified consumption, not responder completion.
+    if (input.deliveryOnly) return;
     const executionRunId = turn.executionRunId ?? turn.runId;
     const observed = sessionObject(
       await request('agent.wait', { runId: executionRunId, timeoutMs: 0 }),
