@@ -37,6 +37,86 @@ const result: AssessmentSubmission = {
 
 describe('agent/assessment-render', () => {
   for (const runtime of ['codex', 'openclaw'] as const)
+    for (const managed of [false, true])
+      it(`should render ${runtime} ${managed ? 'managed' : 'direct'} questions when metadata refresh fails`, async () => {
+        const owner = {
+          id: 'd'.repeat(64),
+          threadId: 'thread',
+          request: { key: 'issue' },
+          manualIssue: {
+            repository: { owner: { login: 'owner' }, name: 'repo' },
+            issue: { number: 3 },
+          },
+          assessment: {
+            version: 1,
+            observedAt: 1,
+            requestedSkill: 'stale:skill',
+            defaultSkill: false,
+            skill: {
+              name: 'stale:skill',
+              path: '/stale/SKILL.md',
+              scope: 'user',
+              digest: 'a'.repeat(64),
+            },
+          },
+        } as SharedDispatchRecord;
+        const before = structuredClone(owner);
+        const request = {
+          action: 'assessment',
+          operation: 'render',
+          target,
+          result: {
+            version: 1,
+            summary: 'Choose a subject.',
+            assessment: 'The form is known.',
+            fullAssessment: 'Only the subject remains unknown.',
+            evidence: [],
+            progress: { completed: [], remaining: [] },
+            outcome: 'clarification-needed',
+            questions: ['Which subject?'],
+            reviewSummary: 'Choose a subject.',
+          },
+        };
+        const renderContext = {
+          runtime,
+          records: managed ? [owner] : [],
+          admitted: [],
+          session: 'thread',
+          workspace: '/workspace',
+          debug: true,
+          nativeContext: async () => {
+            throw new Error('private raw metadata failure');
+          },
+        };
+        const shown = await renderBoundAssessment(request, renderContext);
+        assert.equal(shown.status, 'formatted');
+        assert.ok('presentation' in shown);
+        assert.match(String(shown.presentation), /Which subject/);
+        assert.match(String(shown.presentation), /⚠️ Warning/);
+        assert.doesNotMatch(JSON.stringify(shown), /private raw metadata failure|stale:skill/);
+        assert.deepEqual(shown.contextLimitations, [
+          { scope: 'assessment', code: 'assessment-metadata-unavailable' },
+        ]);
+        assert.deepEqual(owner, before);
+        if (managed) {
+          await assert.rejects(
+            renderBoundAssessment(
+              { ...request, target: 'https://github.com/owner/repo/issues/99' },
+              renderContext,
+            ),
+            /assessment-managed-target-mismatch/,
+          );
+          await assert.rejects(
+            renderBoundAssessment(request, {
+              ...renderContext,
+              records: [{ ...owner, retired: {} } as SharedDispatchRecord],
+            }),
+            /assessment-managed-context-invalid/,
+          );
+        }
+      });
+
+  for (const runtime of ['codex', 'openclaw'] as const)
     it(`should format ${runtime} input without boilerplate while preserving substantive requirements`, () => {
       const unversioned: Record<string, unknown> = { ...result };
       delete unversioned.version;

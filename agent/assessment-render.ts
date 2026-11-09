@@ -1,4 +1,5 @@
 import { cardCopyInstructions } from '../channels/github/presentation/card.ts';
+import workflowFailure from './workflow-failure.ts';
 import implementationMaterial from './implementation-material.ts';
 import { Value } from 'typebox/value';
 import { Type } from 'typebox';
@@ -62,10 +63,28 @@ export async function renderBoundAssessment(
     repository: `${target.owner}/${target.name}`,
     number: target.number,
   });
-  if (!owner)
-    return renderNativeAssessment(input, context.runtime, await context.nativeContext?.());
-  const record = owner.record;
-  const current = await context.nativeContext?.(record);
+  const record = owner?.record;
+  let current;
+  let metadataLimitation: { code: string } | undefined;
+  try {
+    current = await context.nativeContext?.(record);
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw error;
+    metadataLimitation = { code: workflowFailure(error, 'assessment-metadata-unavailable').code };
+  }
+  if (!record)
+    return renderNativeAssessment(
+      input,
+      context.runtime,
+      metadataLimitation
+        ? {
+            workspace: context.workspace,
+            debug: context.debug,
+            workflow: context.workflow,
+            metadataLimitation,
+          }
+        : current,
+    );
   return renderNativeAssessment(input, context.runtime, {
     ...dispatchAssessmentContext(
       {
@@ -76,7 +95,11 @@ export async function renderBoundAssessment(
       context.workspace,
       { debug: context.debug, workflow: context.workflow },
     ),
-    ...(current?.assessment ? { assessment: current.assessment } : {}),
+    ...(metadataLimitation
+      ? { assessment: undefined, metadataLimitation }
+      : current?.assessment
+        ? { assessment: current.assessment }
+        : {}),
   });
 }
 
@@ -114,6 +137,9 @@ export default function renderNativeAssessment(
       runtime,
       status: 'formatted' as const,
       retained: false as const,
+      ...(context?.metadataLimitation
+        ? { contextLimitations: [{ scope: 'assessment', ...context.metadataLimitation }] }
+        : {}),
       presentation: renderAssessmentResult(assessment, {
         issue: {
           label: `${target.owner}/${target.name}#${target.number}`,
