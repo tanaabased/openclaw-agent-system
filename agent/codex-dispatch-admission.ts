@@ -837,6 +837,8 @@ export async function prepareDispatch(
     record.phase = 'creating';
     await fresh();
     await save();
+    const unsubmitted = record.unsubmittedCreations?.at(-1);
+    const denied = record.deniedCreations?.at(-1);
     return {
       status: 'prepared' as const,
       changed: true,
@@ -844,21 +846,34 @@ export async function prepareDispatch(
       request: record.request,
       instruction:
         'Next, call native create_thread once with this request unchanged. Do not call prepare again to retrieve or reauthorize it. In a code orchestration tool, parse this response and pass its request object directly to create_thread; do not reconstruct the prompt. Reconcile only the receipt returned by that call, never one from history or another assessment, even for the same issue. If the call fails or its outcome is unknown, reconcile without a receipt; never repeat an uncertain creation.',
-      ...(record.deniedCreations?.length
+      ...(unsubmitted && (!denied || unsubmitted.recoveredAt > denied.recoveredAt)
         ? {
             recovery: {
-              status: 'verified-denial' as const,
+              status: 'verified-unsubmitted' as const,
               previousAttempt: {
-                turnId: record.deniedCreations.at(-1)!.turnId,
-                callId: record.deniedCreations.at(-1)!.callId,
-                recoveredAt: record.deniedCreations.at(-1)!.recoveredAt,
-                approvedBy: record.deniedCreations.at(-1)!.approvedBy,
+                turnId: unsubmitted.turnId,
+                createdAt: unsubmitted.createdAt,
+                recoveredAt: unsubmitted.recoveredAt,
               },
               instruction:
-                'The operator recovered a verified non-executed denial. This is a new prepared request, not a replay of an uncertain creation. Execute this exact request at most once.',
+                'Complete native history verified that the previous prepared request was never submitted to create_thread. Its earlier unresolved status has been reconciled. This is a new prepared request under the active assignment authorization, not a repeat of an uncertain creation. Execute this exact request at most once; native approval still applies.',
             },
           }
-        : {}),
+        : denied
+          ? {
+              recovery: {
+                status: 'verified-denial' as const,
+                previousAttempt: {
+                  turnId: denied.turnId,
+                  callId: denied.callId,
+                  recoveredAt: denied.recoveredAt,
+                  approvedBy: denied.approvedBy,
+                },
+                instruction:
+                  'The operator recovered a verified non-executed denial. This is a new prepared request, not a replay of an uncertain creation. Execute this exact request at most once.',
+              },
+            }
+          : {}),
     };
   } catch (error) {
     return fail(record, error);

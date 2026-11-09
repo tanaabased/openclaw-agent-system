@@ -3462,6 +3462,7 @@ describe('agent/codex-dispatch', () => {
   it('should rearm an unsubmitted creation only on a later verified occurrence', async () => {
     const preparedAt = now;
     const prepared = await prepare();
+    assert.equal(prepared.recovery, undefined);
     await request('reconcile', { id: prepared.id });
     assert.equal((await next()).changed, false);
     now += 300001;
@@ -3477,6 +3478,16 @@ describe('agent/codex-dispatch', () => {
     };
     const retry = await prepare();
     assert.equal(retry.id, prepared.id);
+    const recovery = retry.recovery as {
+      status: string;
+      previousAttempt: { turnId: string; createdAt: number; recoveredAt: number };
+    };
+    assert.equal(recovery.status, 'verified-unsubmitted');
+    assert.deepEqual(recovery.previousAttempt, {
+      turnId: 'run-' + preparedAt,
+      createdAt: preparedAt,
+      recoveredAt: now,
+    });
     const original = prepared.request as { prompt: string; model: string; thinking: string };
     const replacement = retry.request as typeof original;
     assert.notEqual(replacement.prompt, original.prompt);
