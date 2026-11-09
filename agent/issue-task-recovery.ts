@@ -1,4 +1,5 @@
 import { automationHash } from './automation-hash.ts';
+import taskRecoveryCaller from './task-recovery-caller.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { ManagedIssue } from './managed-issue.ts';
 import type { AdoptedPullRequest } from './delivery-state.ts';
@@ -75,8 +76,7 @@ export default async function recoverIssueTask<R extends SharedDispatchRecord>(i
     adopt,
     create,
   } = input;
-  if (state.records.some((entry) => entry.threadId === caller))
-    throw new Error('dispatch-operator-caller-required');
+  if (taskRecoveryCaller(record, caller)) throw new Error('dispatch-operator-caller-required');
   if (
     state.records.some(
       (entry) =>

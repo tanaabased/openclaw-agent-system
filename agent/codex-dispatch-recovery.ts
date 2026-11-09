@@ -1,4 +1,5 @@
 import { dispatchGit, type DispatchGit } from './codex-dispatch-project.ts';
+import taskRecoveryCaller from './task-recovery-caller.ts';
 import recoverIssueTask, { pendingRecoveryFeedback } from './issue-task-recovery.ts';
 import { type CleanupConfiguration } from './cleanup-configuration.ts';
 import { automationHash } from './automation-hash.ts';
@@ -38,7 +39,6 @@ export default async function recoverDispatch(
 ) {
   const {
     action,
-    state,
     record,
     intake,
     sourceThreadId,
@@ -53,8 +53,7 @@ export default async function recoverDispatch(
     withNative,
   } = context;
   if (action === 'recover') {
-    if (state.records.some((entry) => [entry.threadId, entry.receiptThreadId].includes(caller)))
-      throw new Error('dispatch-operator-caller-required');
+    if (taskRecoveryCaller(record, caller)) throw new Error('dispatch-operator-caller-required');
     const operatorInput = () => withNative((host) => host.operatorInput(caller));
     const execution = record;
     return recoverIssueTask({
@@ -223,11 +222,9 @@ export default async function recoverDispatch(
     return { status: 'retirement-pending', id: record.id, retirement: record.retirement };
   }
   if (action === 'reset') {
-    if (input.apply) await withNative((host) => host.operatorInput(caller));
-    if (
-      state.records.some((entry) => entry.threadId === caller || entry.receiptThreadId === caller)
-    )
-      throw new Error('dispatch-operator-caller-required');
+    if (input.apply || input.digest !== undefined)
+      await withNative((host) => host.operatorInput(caller));
+    if (taskRecoveryCaller(record, caller)) throw new Error('dispatch-operator-caller-required');
     if (record.phase !== 'complete' || !record.result || !record.request || !record.threadId)
       throw new Error('dispatch-reset-unavailable');
     const native = await withNative((client) =>
@@ -274,15 +271,7 @@ export default async function recoverDispatch(
   if (action === 'retry-denied') {
     if (input.apply || input.renewAuthorization)
       await withNative((host) => host.operatorInput(caller));
-    if (
-      [
-        record.sourceThreadId,
-        record.preparationObservation?.sourceThreadId,
-        record.threadId,
-        record.receiptThreadId,
-      ].includes(caller)
-    )
-      throw new Error('dispatch-operator-caller-required');
+    if (taskRecoveryCaller(record, caller)) throw new Error('dispatch-operator-caller-required');
     if (record.denial?.operation === 'prepare') {
       if (
         !record.preparationObservation ||

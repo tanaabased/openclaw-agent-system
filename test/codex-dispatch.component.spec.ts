@@ -587,12 +587,25 @@ describe('agent/codex-dispatch', () => {
       request('recover', input, { threadId: native!.id }),
       /operator-caller-required/,
     );
+    await store.exclusive(async (state, save) => {
+      state.records.push({
+        ...structuredClone(state.records[0]!),
+        id: 'b'.repeat(64),
+        issueKey: 'c'.repeat(64),
+        intakeId: 'c'.repeat(64),
+        manualIssue: undefined,
+        threadId: 'operator',
+      });
+      await save();
+    });
+    const unrelated = (await store.read()).records[1]!;
     const applied = await request('recover', { ...input, apply: true }, { threadId: 'operator' });
     assert.equal(applied.status, 'recovery-ready');
     const after = await store.read();
-    assert.equal(after.records.length, 2);
+    assert.equal(after.records.length, 3);
+    assert.deepEqual(after.records[1], unrelated);
     const old = after.records[0]!,
-      successor = after.records[1]!;
+      successor = after.records[2]!;
     assert.deepEqual(old, {
       ...before.records[0],
       supersededBy: successor.id,
@@ -611,7 +624,7 @@ describe('agent/codex-dispatch', () => {
       (await request('recover', input, { threadId: 'operator' })).successorId,
       successor.id,
     );
-    assert.equal((await store.read()).records.length, 2);
+    assert.equal((await store.read()).records.length, 3);
     await assert.rejects(
       request('context', { id: old.id }, { threadId: native!.id }),
       /task-superseded/,
@@ -2655,6 +2668,47 @@ describe('agent/codex-dispatch', () => {
       (after[0]!.retirement as { operatorRequest: { caller: string } }).operatorRequest.caller,
       'operator',
     );
+  });
+
+  it('should reset only the selected task from an unrelated managed operator chat', async () => {
+    const first = await prepare();
+    created();
+    await historicalResult('result', { id: first.id, result }, { threadId: 'issue-thread' });
+    native!.status = 'idle';
+    native!.turnStatus = 'completed';
+    await next();
+    const store = await workStore();
+    await store.exclusive(async (state, save) => {
+      state.records.push({
+        ...structuredClone(state.records[0]!),
+        id: 'b'.repeat(64),
+        issueKey: 'c'.repeat(64),
+        intakeId: 'c'.repeat(64),
+        threadId: 'operator',
+      });
+      await save();
+    });
+    const before = await store.read();
+    const preview = await request('reset', { id: first.id }, { threadId: 'operator' });
+    assert.equal(preview.status, 'reset-available');
+    const input = { id: first.id, digest: preview.digest };
+    await assert.rejects(
+      request('reset', input, {
+        threadId: 'operator',
+        native: {
+          ...deps.native!,
+          operatorInput: async () => {
+            throw new Error('reply-native-user-input-required');
+          },
+        },
+      }),
+      /reply-native-user-input-required/,
+    );
+    assert.deepEqual(await store.read(), before);
+    assert.equal((await request('reset', input, { threadId: 'operator' })).status, 'reset');
+    const after = await store.read();
+    assert.equal(after.records[0]!.reset?.by, 'operator');
+    assert.deepEqual(after.records[1], before.records[1]);
   });
 
   it('should preserve a completed assessment and dispatch once after an explicit reset and new assignment', async () => {
@@ -4821,6 +4875,45 @@ describe('agent/codex-dispatch', () => {
         assert.equal(after.summaryRecovery, undefined);
         assert.equal(after.progression, undefined);
       });
+
+  it('should return native continuation guidance to an unrelated verified operator without releasing effects', async () => {
+    const work = await workIssue();
+    await work.run('context', {}, true);
+    const store = await workStore();
+    await store.exclusive(async (state, save) => {
+      state.records.push({
+        ...structuredClone(state.records[0]!),
+        id: 'b'.repeat(64),
+        issueKey: 'c'.repeat(64),
+        intakeId: 'c'.repeat(64),
+        threadId: 'operator',
+      });
+      state.records[0]!.denial = {
+        sourceThreadId: 'intake-thread',
+        turnId: 'denied',
+        callId: 'denied',
+        operation: 'prepare',
+        automatic: true,
+        observedAt: now,
+      };
+      await save();
+    });
+    const before = await store.read();
+    const operatorInput = work.continuation.native!.operatorInput;
+    for (const action of ['retry', 'retry-denied']) {
+      await assert.rejects(work.run(action, {}, true), /continuation-operator-caller-required/);
+      work.continuation.native!.operatorInput = async () => {
+        throw new Error('reply-native-user-input-required');
+      };
+      await assert.rejects(work.run(action, {}, 'operator'), /reply-native-user-input-required/);
+      work.continuation.native!.operatorInput = operatorInput;
+      const response = await work.run(action, {}, 'operator');
+      assert.equal(response.status, 'native');
+      assert.ok('threadId' in response);
+      assert.equal(response.threadId, before.records[0]!.threadId);
+      assert.deepEqual((await store.read()).records, before.records);
+    }
+  });
 
   it('should reject incomplete continuation requests before accessing workflow state', async () => {
     for (const action of [

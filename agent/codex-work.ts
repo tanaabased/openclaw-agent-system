@@ -87,14 +87,15 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       record.reset
     )
       throw new Error('continuation-managed-issue-required');
-    if (caller !== record.threadId) throw new Error('continuation-issue-caller-required');
     if (input.action === 'retry' || input.action === 'retry-denied')
       return {
         status: 'native' as const,
         id: record.id,
+        threadId: record.threadId,
         instructions:
           'Continue in the existing native chat. Existing request receipts remain available for reconciliation; no replacement coordinator message is queued.',
       };
+    if (caller !== record.threadId) throw new Error('continuation-issue-caller-required');
     const admitted = dispatchAdmission(record, admissions?.records ?? []);
     if (!admitted) throw new Error('continuation-admission-missing');
     const enteringImplementation = !retainedIssueProgression(record);

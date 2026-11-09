@@ -1,3 +1,4 @@
+import taskRecoveryCaller from './task-recovery-caller.ts';
 import recoverFeedbackPublication from './feedback-publication-recovery.ts';
 import feedbackPresentation, { feedbackResponseInstructions } from './feedback-presentation.ts';
 import { feedbackInputContext } from './feedback-input.ts';
@@ -393,11 +394,7 @@ export default async function runCodexFeedback(
               return { status: event.phase, id: record.id, eventId: event.id, code: event.code };
             if (
               operatorPublication &&
-              (caller === activation!.sourceThreadId ||
-                state.records.some(
-                  (item) =>
-                    !item.handoff && (item.threadId === caller || item.receiptThreadId === caller),
-                ))
+              (caller === activation!.sourceThreadId || taskRecoveryCaller(record, caller))
             )
               throw new Error('feedback-operator-caller-required');
             if (

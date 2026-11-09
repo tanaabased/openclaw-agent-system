@@ -706,6 +706,45 @@ describe('agent/codex-feedback', () => {
     assert.ok(!prompt.includes(result.eventId));
     return { id, eventId: result.eventId };
   }
+  it('should recover retained feedback from an unrelated managed operator chat only', async () => {
+    const ref = await prepare();
+    sent = ended = true;
+    turn = 'feedback';
+    await store.exclusive(async (state, save) => {
+      const event = state.records[0]!.feedback!.events[0]!;
+      event.attempt!.turnId = turn;
+      event.phase = 'responded';
+      delete event.native;
+      event.publicationAttempted = true;
+      event.result = { privateText: 'Verified result.', publicText: 'Retained answer.' };
+      const other = structuredClone(state.records[0]!);
+      other.id = 'b'.repeat(64);
+      other.issueKey = 'c'.repeat(64);
+      other.issueBranch!.attemptId = other.id;
+      other.threadId = 'operator';
+      delete other.feedback;
+      state.records.push(other);
+      await save();
+    });
+    const unrelated = (await store.read()).records[1]!;
+    const run = (threadId: string, extra = {}) =>
+      runCodexFeedback(
+        pluginData,
+        { action: 'publish-approved', ...ref, ...extra },
+        { ...deps, threadId },
+      );
+    for (const caller of ['intake', 'child']) {
+      const denied = await run(caller);
+      assert.equal('code' in denied && denied.code, 'feedback-operator-caller-required');
+    }
+    const preview = await run('operator');
+    assert.equal(preview.status, 'publication-approval-required', JSON.stringify(preview));
+    assert.equal(creates, 0);
+    const stale = await run('operator', { apply: true, publicText: 'Different answer.' });
+    assert.equal('code' in stale && stale.code, 'feedback-publication-approval-stale');
+    assert.equal(creates, 0);
+    assert.deepEqual((await store.read()).records[1], unrelated);
+  });
   it('should deliver native conversation once without a feedback result or a reply gate', async () => {
     const before = (await store.read()).records[0]!;
     const ref = await prepare(commenter, '@receiver why this approach?');

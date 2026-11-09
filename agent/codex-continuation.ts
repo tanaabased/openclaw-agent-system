@@ -1,4 +1,5 @@
 import codexFeedbackInput from './codex-feedback-input.ts';
+import taskRecoveryCaller from './task-recovery-caller.ts';
 import authorizeCodexFeedback from './codex-feedback-authority.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';
 import recoverCodexAnnouncement from './codex-announcement-recovery.ts';
@@ -96,14 +97,13 @@ export default async function runCodexContinuation(
   try {
     const response = await store.transaction(async (state, save, signal) => {
       entered = true;
-      if (
-        retry &&
-        state.records.some(
-          (record) =>
-            !record.handoff && (record.threadId === caller || record.receiptThreadId === caller),
-        )
-      )
-        throw new Error('continuation-operator-caller-required');
+      if (retry) {
+        const record = state.records.find((entry) => entry.id === input.id);
+        if (!record) throw new Error('continuation-record-missing');
+        if (taskRecoveryCaller(record, caller))
+          throw new Error('continuation-operator-caller-required');
+        await native.operatorInput(caller);
+      }
       const occurrence =
         input.action === 'next' || input.action === 'reconcile'
           ? await native.occurrence(caller)

@@ -9329,8 +9329,13 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await record()).feedback?.startedAt, baseline);
     assert.deepEqual((await record()).feedback?.events, []);
   });
-  for (const claimed of [false, true])
-    it(`should replace a stranded openclaw task through one native successor with claim transfer ${claimed}`, async () => {
+  for (const { claimed, managedCaller } of [
+    { claimed: false, managedCaller: false },
+    { claimed: true, managedCaller: false },
+    { claimed: false, managedCaller: true },
+    { claimed: true, managedCaller: true },
+  ])
+    it(`should replace a stranded openclaw task through one native successor with claim transfer ${claimed} and managed caller ${managedCaller}`, async () => {
       multiple = true;
       if (claimed) {
         enableClaims();
@@ -9428,6 +9433,38 @@ describe('agent/openclaw issue dispatch', () => {
         id: input.id,
         pullRequest: 'https://github.com/owner/repo/pull/7',
       };
+      const current = await service.scope(manifest, root);
+      const { journal } = current;
+      if (managedCaller) {
+        const otherAdmission = await current.store.exclusive(async (state, save) => {
+          const other = structuredClone(state!.records[0]!);
+          other.issue.nodeId = 'I_other';
+          other.issue.number = 99;
+          other.id = automationHash([
+            other.scope,
+            other.repository.nodeId,
+            other.issue.nodeId,
+            other.assignment.nodeId,
+          ]);
+          state!.records.push(other);
+          await save(state!);
+          return other;
+        });
+        await journal.exclusive(async (state, save) => {
+          state.records.push({
+            id: 'b'.repeat(64),
+            issueKey: issueKey(otherAdmission),
+            intakeId: otherAdmission.id,
+            sourceThreadId: coordinator.sessionKey,
+            phase: 'waiting',
+            manifestDigest: predecessor.manifestDigest,
+            createdAt: predecessor.createdAt,
+            threadId: operator.sessionKey,
+          });
+          await save();
+        });
+      }
+      const unrelated = (await journal.read()).records[1]!;
       const preview = await service.run(manifest, root, operator, action, true);
       assert.equal(preview.status, 'recovery-available', JSON.stringify(preview));
       assert.ok('digest' in preview && typeof preview.digest === 'string');
@@ -9478,6 +9515,13 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal(old.worktree, predecessor.worktree);
       assert.deepEqual(old.result, predecessor.result);
       await assert.rejects(context(input.id), /dispatch-task-superseded/);
+      if (managedCaller) {
+        const records = (await journal.read()).records;
+        assert.equal(records.length, 3);
+        assert.deepEqual(records[1], unrelated);
+        assert.equal(creates().length, 1);
+        return;
+      }
       const target = 'owner/repo#3';
       const admitted = await service.run(
         manifest,
