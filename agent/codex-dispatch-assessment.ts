@@ -297,7 +297,7 @@ export async function assessDispatch(
           current.manifestSources?.['/models/routing/guidance']?.path ?? current.manifestPath,
       }),
       save,
-      publicationCommand: (digest) =>
+      publicationCommand: () =>
         [
           process.execPath,
           process.argv[1]!,
@@ -310,7 +310,7 @@ export async function assessDispatch(
           .map((value) => "'" + value.replaceAll("'", "'\\''") + "'")
           .join(' ') +
         " <<'AGENT_SYSTEM_INPUT'\n" +
-        JSON.stringify({ action: 'summary', id: record.id, operation: 'publish', digest }) +
+        JSON.stringify({ action: 'summary', operation: 'publish' }) +
         '\nAGENT_SYSTEM_INPUT',
       redact: redactCodexFeedback,
       authorize: async () => {

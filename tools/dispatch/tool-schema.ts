@@ -165,6 +165,7 @@ type ModelDispatchInput<T = Static<typeof dispatchParameters>> = T extends {
   action:
     | 'context'
     | 'present'
+    | 'summary'
     | 'result'
     | 'implementation-context'
     | 'implementation-result'
@@ -184,6 +185,7 @@ export const dispatchModelParameters = Type.Unsafe<ModelDispatchInput>(
         [
           'context',
           'present',
+          'summary',
           'result',
           'implementation-context',
           'implementation-result',

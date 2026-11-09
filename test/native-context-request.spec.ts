@@ -9,6 +9,7 @@ describe('native current-task context inputs', () => {
   it('should resolve result and readback ownership inside both native adapters', async () => {
     const requests = [
       { action: 'present' },
+      { action: 'summary', operation: 'candidate', publicText: 'A concise proposal.' },
       {
         action: 'result',
         result: {

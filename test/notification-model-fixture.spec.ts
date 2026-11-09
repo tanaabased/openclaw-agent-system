@@ -301,7 +301,6 @@ for (const scenario of [
           selection: { defaultSkill: true, skill: { path: '/tmp/SUMMARY.md' } },
         };
     assert.ok('digest' in composition);
-    const compositionDigest = composition.digest;
     const beforePages = owner && structuredClone(owner.record);
     assert.ok(JSON.stringify(composition).length < 48000);
     append(input, 'summary-compose', composition);
@@ -329,12 +328,10 @@ for (const scenario of [
     append(input, 'summary-skill', { text: 'Selected reply guidance' });
     const candidate = await action(input, 'summary', selectedScenario);
     assert.equal(candidate.operation, 'candidate');
-    assert.equal(candidate.digest, compositionDigest);
+    assert.equal('digest' in candidate, false);
     append(input, 'summary-candidate', { status: 'candidate-recorded' });
-    assert.equal((await action(input, 'summary', selectedScenario)).digest, undefined);
-    append(input, 'summary-preview', { status: 'publication-ready', digest: 'e'.repeat(64) });
     const publication = await action(input, 'summary', selectedScenario);
-    assert.equal(publication.digest, 'e'.repeat(64));
+    assert.equal('digest' in publication, false);
     assert.equal(publication.operation, hold ? 'hold' : 'publish');
     append(input, hold ? 'summary-hold' : 'summary-publish', {
       status: hold ? 'blocked' : 'published',

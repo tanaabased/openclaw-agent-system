@@ -4038,24 +4038,20 @@ describe('agent/openclaw issue dispatch', () => {
       const who = assessor(input.id);
       const summary = (
         operation: 'compose' | 'candidate' | 'publish' | 'hold',
-        digest?: string,
         publicText?: string,
       ) =>
         service.run(manifest, root, who, {
           action: 'summary',
           id: input.id,
           operation,
-          digest,
           publicText,
           ...(operation === 'hold' ? { diagnostic: 'Native review refused this summary.' } : {}),
         });
       const composed = await summary('compose');
       assert.ok('digest' in composed);
-      await summary('candidate', composed.digest, 'The proposal restores your result.');
-      const preview = await summary('publish');
-      assert.ok('digest' in preview);
+      await summary('candidate', 'The proposal restores your result.');
       // the native host rejects the publish call before invoking its handler.
-      const held = await summary('hold', preview.digest);
+      const held = await summary('hold');
       assert.equal(held.status, 'blocked');
       await assert.rejects(
         service.run(
@@ -4106,7 +4102,7 @@ describe('agent/openclaw issue dispatch', () => {
         'Native review refused this summary.',
       );
       assert.equal(retained.assessmentSummaries?.[0]?.attempt, undefined);
-      assert.equal((await summary('publish', preview.digest)).status, 'blocked');
+      assert.equal((await summary('publish')).status, 'blocked');
       assert.equal(sends().length, 1);
     });
 
@@ -4684,7 +4680,6 @@ describe('agent/openclaw issue dispatch', () => {
               action: 'summary',
               id: input.id,
               operation: 'candidate',
-              digest: composed.digest,
               publicText: 'Retained summary after connection recovery.',
             }),
             /session-dispatch-connect-failed/,
@@ -4748,14 +4743,12 @@ describe('agent/openclaw issue dispatch', () => {
       });
       const summary = async (
         operation: 'compose' | 'candidate' | 'publish' | 'reconcile',
-        digest?: string,
         publicText?: string,
       ) =>
         service.run(manifest, root, who, {
           action: 'summary',
           id: input.id,
           operation,
-          digest,
           publicText,
         });
       if (recover) {
@@ -4794,18 +4787,12 @@ describe('agent/openclaw issue dispatch', () => {
         (
           await summary(
             'candidate',
-            composed.digest,
             'The proposal would show your result immediately, so you can keep going.',
           )
         ).status,
         'candidate-recorded',
       );
-      const preview = await summary('publish');
-      assert.ok('digest' in preview);
-      const competing = await Promise.allSettled([
-        summary('publish', preview.digest),
-        summary('publish', preview.digest),
-      ]);
+      const competing = await Promise.allSettled([summary('publish'), summary('publish')]);
       assert.ok(
         competing.some(
           (entry) =>
@@ -4816,7 +4803,7 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal(writes, 1);
       service = new OpenClawDispatch(service.dependencies);
       if (loseResponse) {
-        assert.equal((await summary('publish', preview.digest)).status, 'reconcile-required');
+        assert.equal((await summary('publish')).status, 'reconcile-required');
         assert.equal((await summary('reconcile')).status, 'published');
       }
       assert.equal((await summary('compose')).status, 'published');

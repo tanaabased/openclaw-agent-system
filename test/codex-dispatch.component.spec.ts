@@ -1372,24 +1372,18 @@ describe('agent/codex-dispatch', () => {
         (
           await summary({
             operation: 'candidate',
-            digest: composed.digest,
             publicText:
               'The proposed change would show your result immediately, so you can keep going.',
           })
         ).status,
         'candidate-recorded',
       );
-      const preview = await summary({ operation: 'publish' });
-      assert.equal(preview.destination, 'https://github.com/owner/repo/issues/3');
       assert.equal(
-        (await summary({ operation: 'publish', digest: preview.digest })).status,
+        (await summary({ operation: 'publish' })).status,
         loseResponse ? 'blocked' : 'published',
       );
       if (loseResponse) {
-        assert.equal(
-          (await summary({ operation: 'publish', digest: preview.digest })).status,
-          'reconcile-required',
-        );
+        assert.equal((await summary({ operation: 'publish' })).status, 'reconcile-required');
         assert.equal((await summary({ operation: 'reconcile' })).status, 'published');
       }
       const retained = await summary({ operation: 'compose' });
@@ -5144,13 +5138,13 @@ describe('agent/codex-dispatch', () => {
         deps.summaryAuthority = async () => {};
         const summary = (input: object) =>
           request('summary', { id: work.id, ...input }, { threadId: native!.id });
-        const composed = await summary({ operation: 'compose' });
-        await summary({
+        await summary({ operation: 'compose' });
+        const preview = await summary({
           operation: 'candidate',
-          digest: composed.digest,
           publicText: 'The proposed change restores your result.',
         });
-        const preview = await summary({ operation: 'publish' });
+        assert.match(String(preview.command), /"action":"summary","operation":"publish"/);
+        assert.doesNotMatch(String(preview.command), /"id"|"digest"/);
         const items = [
           {
             id: 'summary-denial',
@@ -5165,7 +5159,6 @@ describe('agent/codex-dispatch', () => {
         // native refusal happens before the publish command executes; do not call publish again.
         const held = await summary({
           operation: 'hold',
-          digest: preview.digest,
           diagnostic: 'Native review refused summary publication.',
         });
         assert.equal(held.status, 'blocked');
@@ -5232,10 +5225,7 @@ describe('agent/codex-dispatch', () => {
         );
         if (permitted && !broader)
           assert.equal(retained.assessmentSummaries?.[0]?.nativeDenial?.callId, 'summary-denial');
-        assert.equal(
-          (await summary({ operation: 'publish', digest: preview.digest })).status,
-          'blocked',
-        );
+        assert.equal((await summary({ operation: 'publish' })).status, 'blocked');
         assert.equal(retained.assessmentSummaries?.[0]?.attempt, undefined);
       });
 

@@ -148,17 +148,13 @@ export default function fixture(runtime: 'openclaw' | 'codex' = 'openclaw') {
       (
         await run({
           operation: 'candidate',
-          digest: composed.digest,
           publicText:
             'Today you finish the action without seeing a result. The plan would show it immediately, so you can keep going.',
         })
       ).status,
       'candidate-recorded',
     );
-    const preview = await run({ operation: 'publish' });
-    assert.equal(preview.status, 'publication-ready');
-    assert.ok('digest' in preview);
-    return preview.digest!;
+    return composed.digest!;
   };
   return {
     record,

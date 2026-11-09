@@ -186,7 +186,6 @@ export default class OpenClawDispatch {
         (input.action === 'implementation-context' && !input.scope) ||
         (input.action === 'summary' &&
           input.operation === 'compose' &&
-          !input.digest &&
           !input.publicText &&
           !input.diagnostic) ||
         (input.action === 'feedback' &&

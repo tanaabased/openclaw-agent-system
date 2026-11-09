@@ -12,6 +12,7 @@ export function isNativeContextRequest(route: string, input: Record<string, unkn
       [
         'context',
         'present',
+        'summary',
         'result',
         'implementation-context',
         'implementation-result',

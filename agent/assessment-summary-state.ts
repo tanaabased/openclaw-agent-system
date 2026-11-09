@@ -14,7 +14,6 @@ export const assessmentSummaryRequestProperties = {
     Type.Literal('reconcile'),
     Type.Literal('hold'),
   ]),
-  digest: Type.Optional(hash),
   publicText: Type.Optional(
     Type.String({ minLength: 1, maxLength: maximumGitHubNotificationReplyLength }),
   ),

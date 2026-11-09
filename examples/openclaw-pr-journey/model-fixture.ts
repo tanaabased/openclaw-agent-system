@@ -325,7 +325,7 @@ function respond(
       if (shown.status !== 'presented' || typeof shown.presentation !== 'string') return;
       presentation = shown.presentation;
     }
-    const args = { action: 'summary', id };
+    const args = { action: 'summary' };
     const composed = result('summary-compose');
     if (!composed)
       return {
@@ -346,19 +346,14 @@ function respond(
       return dispatch('summary-candidate', {
         ...args,
         operation: 'candidate',
-        digest: composed.digest,
         publicText: publicText(
           composed,
           'The plan is to document closing disposable test issues after capturing their evidence. The retained plan is ready for the configured workflow to continue.',
         ),
       });
     if (candidate.status !== 'candidate-recorded') return;
-    const preview = result('summary-preview');
-    if (!preview) return dispatch('summary-preview', { ...args, operation: 'publish' });
-    if (preview.status !== 'publication-ready' || typeof preview.digest !== 'string') return;
     const published = result('summary-publish');
-    if (!published)
-      return dispatch('summary-publish', { ...args, operation: 'publish', digest: preview.digest });
+    if (!published) return dispatch('summary-publish', { ...args, operation: 'publish' });
     if (published.status !== 'published' || typeof published.presentation !== 'string') return;
     return { content: published.presentation };
   };

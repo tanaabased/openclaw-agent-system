@@ -50,10 +50,11 @@ export default async function assessmentSummary(input: {
   connect(): Promise<GitHubNotificationCommentPublicationConnection & { authorLogin?: string }>;
   redact(text: string): string;
   save(): Promise<void>;
-  publicationCommand?(digest: string): string;
+  publicationCommand?(): string;
   runtime: 'openclaw' | 'codex';
 }) {
   const { record, intake, action } = input;
+  if (Object.hasOwn(action, 'digest')) throw new Error('assessment-summary-binding-override');
   const destination = managedTargetUrl(intake);
   const summaryCard = (summary: AssessmentSummary) =>
     githubCommentCard({
@@ -101,7 +102,7 @@ export default async function assessmentSummary(input: {
   try {
     if (
       action.material &&
-      (action.operation !== 'compose' || action.digest || action.publicText || action.diagnostic)
+      (action.operation !== 'compose' || action.publicText || action.diagnostic)
     )
       throw new Error('assessment-summary-material-request-invalid');
     const summaries = record.assessmentSummaries ?? [];
@@ -144,7 +145,7 @@ export default async function assessmentSummary(input: {
     if (action.operation === 'hold') {
       if (!summary?.publicText || summary.attempt || summary.receipt)
         throw new Error('assessment-summary-hold-source-unavailable');
-      if (action.digest !== summary.previewDigest || action.digest !== summaryDigest(summary))
+      if (summary.previewDigest !== summaryDigest(summary))
         throw new Error('assessment-summary-publication-stale');
       summary.code = 'assessment-summary-native-approval-denied';
       summary.diagnostic = input.redact(
@@ -168,7 +169,7 @@ export default async function assessmentSummary(input: {
           verifiedOutcome: { assessment: record.result },
           maximumPublicCharacters: maximumGitHubNotificationReplyLength,
           instruction:
-            'This explicit historical publication uses the recorded assessment as its exact source, not as current implementation direction. The recorded private review must already be presented here. Read and invoke the selected reply skill and applicable user/agent voice skills. Explain what the user experiences today, the proposed change, and what it will let them do, for someone unfamiliar with the code. Preserve material questions and limitations. This is a proposal, never completed implementation. Do not copy the checklist, private context or operational details; do not invent a commenter. Submit only the separate publicText through summary operation candidate with this digest. Missing skills stop composition. Changed skill content or guidance requires compose again and a new candidate before any write; never substitute a fallback.',
+            'This explicit historical publication uses the recorded assessment as its exact source, not as current implementation direction. The recorded private review must already be presented here. Read and invoke the selected reply skill and applicable user/agent voice skills. Explain what the user experiences today, the proposed change, and what it will let them do, for someone unfamiliar with the code. Preserve material questions and limitations. This is a proposal, never completed implementation. Do not copy the checklist, private context or operational details; do not invent a commenter. Submit only the separate publicText through summary operation candidate. Missing skills stop composition. Changed skill content or guidance requires compose again and a new candidate before any write; never substitute a fallback.',
         },
         { action: 'summary', id: record.id, operation: 'compose' },
         action.material,
@@ -254,7 +255,6 @@ export default async function assessmentSummary(input: {
       const digest = summaryDigest(summary);
       if (action.operation === 'compose') return composition(summary);
       if (action.operation === 'candidate') {
-        if (action.digest !== digest) throw new Error('assessment-summary-composition-stale');
         const text = githubNotificationPublicationText(
           'assessment-summary',
           [{ text: action.publicText ?? '' }],
@@ -270,7 +270,7 @@ export default async function assessmentSummary(input: {
         if (summary.publicText && summary.publicText !== text)
           throw new Error('assessment-summary-candidate-conflict');
         await taskUpdate({
-          request: { operation: 'candidate', text, digest: action.digest, expectedDigest: digest },
+          request: { operation: 'candidate', text, digest, expectedDigest: digest },
           draft,
           publication: (text) => ({
             ...assessmentSummaryPublication(record, intake, summary!),
@@ -278,37 +278,34 @@ export default async function assessmentSummary(input: {
           }),
           save: input.save,
         });
-        return {
-          status: 'candidate-recorded',
-          instruction:
-            'Call summary operation publish without a digest to inspect the exact destination and draft, then with its digest through native approval. This bounded summary is covered by the freshly activated assessment workflow; a native denial stops publication. Preserve the recorded private review presentation in the final answer; treat this saved assessment only as the source of this historical publication; continue implementation from current native context.',
-        };
-      }
-      if (!summary.publicText) throw new Error('assessment-summary-candidate-required');
-      if (!action.digest) {
-        summary.previewDigest = digest;
-        if (input.publicationCommand) {
-          summary.publicationCommand = input.publicationCommand(digest);
-        }
+        // Journal saves can replace the in-memory snapshot; update the retained draft,
+        // not the pre-save object that supplied taskUpdate's setters.
+        const retained = { revision: summary.revision, resultDigest: summary.resultDigest };
+        summary = record.assessmentSummaries?.find(
+          (entry) =>
+            entry.revision === retained.revision && entry.resultDigest === retained.resultDigest,
+        );
+        if (!summary) throw new Error('assessment-summary-state-changed');
+        summary.previewDigest = summaryDigest(summary);
+        if (input.publicationCommand) summary.publicationCommand = input.publicationCommand();
         await input.save();
         return {
-          status: 'publication-ready',
-          digest,
+          status: 'candidate-recorded',
           destination,
           body: summary.publicText,
           presentation: summaryCard(summary),
           ...(summary.publicationCommand ? { command: summary.publicationCommand } : {}),
           instruction:
-            'Inspect this exact issue and proposed summary, then call summary operation publish with this digest through native approval. When command is supplied, use that exact single-command transport. No new per-summary human confirmation is needed. A denial stops this publication: if the host permits further tracking, retain it with operation hold, this digest and a bounded redacted diagnostic. Never repeat publish or substitute another route. Then follow the assessment handoff through fresh implementation context; broader restrictions and implementation denial remain stops.',
+            'Call summary operation publish through native approval to verify and publish this retained candidate. Stop on denial; operation hold may retain a bounded diagnostic without retrying publication. Preserve the private assessment presentation and continue ordinary work from current native direction.',
         };
       }
-      if (action.digest !== digest) throw new Error('assessment-summary-publication-stale');
+      if (!summary.publicText) throw new Error('assessment-summary-candidate-required');
     }
     if (!summary?.publicText) throw new Error('assessment-summary-candidate-required');
     const result = await taskUpdate({
       request: {
         operation: action.operation === 'reconcile' ? 'reconcile' : 'publish',
-        digest: action.digest,
+        digest: summaryDigest(summary),
         expectedDigest: summaryDigest(summary),
       },
       draft,
