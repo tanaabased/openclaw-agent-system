@@ -243,11 +243,16 @@ export const dispatchModelParameters = Type.Unsafe<ModelMaterialInput<ModelDispa
                         })
                       : variant.properties.action.const === 'reply'
                         ? replyModelSchema
-                        : variant.properties.action.const === 'launch'
-                          ? Type.Omit(variant, ['projects'])
-                          : variant,
+                        : variant,
         )
-        .map((schema) => modelMaterialParameters(Type.Omit(schema, ['projects', 'observation']))),
+        .map((schema) => {
+          const fields = Type.Omit(schema, ['projects', 'observation']);
+          return modelMaterialParameters({
+            ...schema,
+            properties: fields.properties,
+            required: fields.required,
+          });
+        }),
     ),
   ),
 );

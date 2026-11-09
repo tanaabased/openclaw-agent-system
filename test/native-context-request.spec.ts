@@ -2,10 +2,42 @@ import assert from 'node:assert/strict';
 import { Value } from 'typebox/value';
 
 import codexContextRequest from '../agent/codex-context-request.ts';
-import { nativeContextRequest, nativeContextResponse } from '../agent/native-context-request.ts';
+import {
+  nativeContextRequest,
+  nativeContextResponse,
+  assertModelWorkflowInput,
+} from '../agent/native-context-request.ts';
 import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 
 describe('native current-task context inputs', () => {
+  it('rejects bindings on scheduler reads and nested legacy delivery while retaining historical selection', async () => {
+    for (const route of ['feedback', 'continuation'])
+      assert.throws(
+        () => assertModelWorkflowInput(route, { action: 'next', id: 'copied' }),
+        /binding-override/,
+      );
+    for (const key of ['id', 'eventId', 'digest', 'agentId'])
+      assert.throws(
+        () =>
+          assertModelWorkflowInput('continuation', {
+            action: 'delivery',
+            delivery: { action: 'publish', [key]: 'copied' },
+          }),
+        /binding-override/,
+      );
+    assert.doesNotThrow(() =>
+      assertModelWorkflowInput('dispatch', { action: 'inspect', id: 'historical-resource' }),
+    );
+    const input = { action: 'delivery', delivery: { action: 'compose' } };
+    assert.deepEqual(
+      await codexContextRequest('private', 'continuation', input, 'thread', async () => ({
+        receipt: 'owner',
+        feedbackContextRequest: { eventId: 'verified-source' },
+      })),
+      { ...input, id: 'owner', delivery: { action: 'compose', eventId: 'verified-source' } },
+    );
+  });
+
   it('should bind an authorized handoff without a model-selected receipt or fingerprint', async () => {
     const input = { action: 'handoff' };
     assert.equal(Value.Check(dispatchModelParameters, input), true);

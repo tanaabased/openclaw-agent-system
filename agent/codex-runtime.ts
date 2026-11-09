@@ -5,7 +5,7 @@ import codexNativeMaterial, { codexNativeRuntimeResult } from './codex-native-ma
 import codexNativeInventory, { assertNoNativeInventory } from './codex-native-inventory.ts';
 import { nativeMaterialResponse } from './native-material.ts';
 import { codexDispatchResponse } from './codex-dispatch-binding.ts';
-import { nativeContextResponse } from './native-context-request.ts';
+import { nativeContextResponse, assertModelWorkflowInput } from './native-context-request.ts';
 import workflowFailure, { workflowFailureScope } from './workflow-failure.ts';
 import IssuePickupFailure from './issue-pickup-failure.ts';
 import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
@@ -142,12 +142,12 @@ function summarizePreview(preview: CodexWorkspacePreview): Record<string, unknow
   };
 }
 
-let materialInput: { route: string; input: Record<string, unknown> } | undefined;
+let materialInput: { route: string; input: Record<string, unknown>; argv?: string[] } | undefined;
 function writeJson(value: unknown): void {
   if (materialInput)
     value = nativeMaterialResponse(value, materialInput.route, materialInput.input);
   process.stdout.write(
-    `${JSON.stringify(contextMaterialTransport(value, { argv: [process.execPath, ...process.argv.slice(1)] }))}\n`,
+    `${JSON.stringify(contextMaterialTransport(value, { argv: materialInput?.argv ?? [process.execPath, ...process.argv.slice(1)] }))}\n`,
   );
 }
 
@@ -277,9 +277,31 @@ async function readWorkflowCommand(route: string, args: string[]) {
   }
   const result = codexRuntimeRequest(route, args, input);
   failureScope = workflowFailureScope('codex', route, result.request);
+  assertModelWorkflowInput(route, result.request);
   assertNoNativeInventory(result.request);
   materialInput = { route, input: result.request };
-  result.request = await codexNativeMaterial(result.pluginData, route, result.request);
+  if (
+    route === 'continuation' &&
+    result.request.action === 'delivery' &&
+    result.request.delivery &&
+    typeof result.request.delivery === 'object' &&
+    !Array.isArray(result.request.delivery)
+  ) {
+    const delivery = result.request.delivery as Record<string, unknown>;
+    materialInput = {
+      route: 'delivery',
+      input: delivery,
+      argv: [
+        process.execPath,
+        process.argv[1]!,
+        'delivery',
+        String(delivery.action),
+        '--plugin-data',
+        result.pluginData,
+      ],
+    };
+    result.request.delivery = await codexNativeMaterial(result.pluginData, 'delivery', delivery);
+  } else result.request = await codexNativeMaterial(result.pluginData, route, result.request);
   const modelSource = typeof result.request.source === 'string' ? result.request.source : undefined;
   result.request = await codexContextRequest(result.pluginData, route, result.request);
   if (
@@ -396,7 +418,10 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   if (command === 'continuation') {
     const { pluginData, request } = await readWorkflowCommand(command, args.slice(1));
     writeJson(
-      nativeContextResponse(await runCodexContinuation(pluginData, request), 'continuation'),
+      nativeContextResponse(
+        await runCodexContinuation(pluginData, request),
+        request.action === 'delivery' ? 'delivery' : 'continuation',
+      ),
     );
     return;
   }

@@ -45,6 +45,21 @@ export function assertNativeContextInput(input: Record<string, unknown>) {
     if (Object.hasOwn(input, field)) throw new Error('native-context-binding-override');
 }
 
+/** Reject invocation plumbing at the raw command boundary, including legacy nested delivery. */
+export function assertModelWorkflowInput(route: string, input: Record<string, unknown>) {
+  const fields = { ...input };
+  if (route === 'dispatch' && input.action === 'inspect') delete fields.id; // historical record selection
+  assertNativeContextInput(fields);
+  if (
+    route === 'continuation' &&
+    input.action === 'delivery' &&
+    input.delivery &&
+    typeof input.delivery === 'object' &&
+    !Array.isArray(input.delivery)
+  )
+    assertNativeContextInput(input.delivery as Record<string, unknown>);
+}
+
 export function nativeContextRequest(
   input: Record<string, unknown>,
   owner: { id: string; retired?: unknown; reset?: unknown; supersededBy?: unknown } | undefined,

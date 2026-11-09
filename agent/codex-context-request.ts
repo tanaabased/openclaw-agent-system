@@ -61,10 +61,22 @@ export default async function codexContextRequest(
   if (!task && route === 'feedback' && input.action === 'reconcile')
     return codexFeedbackReconciliation(pluginData, input, threadId);
   const request = nativeContextRequest(input, task ? { id: task.receipt } : undefined);
-  if (!isNativeFeedbackRequest(route, input))
-    return route === 'delivery' && task?.feedbackContextRequest
-      ? { ...request, eventId: task.feedbackContextRequest.eventId }
-      : request;
+  if (!isNativeFeedbackRequest(route, input)) {
+    if (task?.feedbackContextRequest) {
+      if (route === 'delivery') return { ...request, eventId: task.feedbackContextRequest.eventId };
+      if (
+        route === 'continuation' &&
+        input.action === 'delivery' &&
+        request.delivery &&
+        typeof request.delivery === 'object'
+      )
+        return {
+          ...request,
+          delivery: { ...request.delivery, eventId: task.feedbackContextRequest.eventId },
+        };
+    }
+    return request;
+  }
   const admission = task?.admission;
   const event = nativeFeedbackSource(
     task?.record?.feedback?.events ?? [],
