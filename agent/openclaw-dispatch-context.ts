@@ -320,7 +320,16 @@ export default class OpenClawDispatchContext {
     const record = (await journal.read()).records.find(
       (entry) => entry.threadId === binding.sessionKey,
     );
-    return record && openclawTurnContext(record, { ...binding, workspace });
+    const admission =
+      record && dispatchAdmission(record, (await current.store.read())?.records ?? []);
+    return (
+      record &&
+      openclawTurnContext(record, {
+        ...binding,
+        workspace,
+        repository: admission && `${admission.repository.owner.login}/${admission.repository.name}`,
+      })
+    );
   }
 
   async reportScope(manifest: AgentManifest, workspace: string) {

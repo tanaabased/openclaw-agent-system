@@ -502,12 +502,9 @@ function respond(
     return { content: String(published.presentation) };
   }
   const privateFeedback = currentFacts(messages, false).feedbackContextRequest;
-  const feedback = privateFeedback
-    ? ['', privateFeedback.id, privateFeedback.eventId]
-    : /operation context, id ([a-f0-9]{64}), eventId ([a-f0-9]{64})/u.exec(prompt);
-  if (feedback) {
-    const [, id, eventId] = feedback;
-    const args = { action: 'feedback', id, eventId };
+  if (privateFeedback) {
+    const id = currentFacts(messages, false).receipt;
+    const args = { action: 'feedback', ...privateFeedback };
     const context = result('feedback-context');
     if (!context)
       return dispatch('feedback-context', {

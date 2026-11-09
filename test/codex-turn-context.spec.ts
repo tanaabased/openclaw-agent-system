@@ -66,7 +66,7 @@ describe('agent/codex-turn-context', () => {
           stage: 'feedback',
           contextRequest: undefined,
           contextRuntime: 'dispatchRuntime',
-          feedbackContextRequest: { action: 'context', id: 'owner', eventId: 'source' },
+          feedbackContextRequest: { action: 'context' },
           worktree: '/task',
           nativeCwd: '/task',
           git: { protocol: 'ssh' },
@@ -76,7 +76,7 @@ describe('agent/codex-turn-context', () => {
       },
     );
     const facts = JSON.parse(output!.split('\n')[1]!);
-    assert.equal(facts.feedbackContextRequest.eventId, 'source');
+    assert.deepEqual(facts.feedbackContextRequest, { action: 'context' });
     assert.match(output!, /feedbackRuntime context/);
     assert.match(output!, /--plugin-data/);
     assert.match(output!, /session_id.*write_stdin/u);

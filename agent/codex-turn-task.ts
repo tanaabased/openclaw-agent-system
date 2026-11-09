@@ -1,3 +1,4 @@
+import { dispatchAdmission } from './managed-issue.ts';
 import resolveGitProtocol from '../tools/git/protocol.ts';
 import codexContinuationNative from './codex-continuation-native.ts';
 import { codexDispatchNative, type DispatchNativeThread } from './codex-dispatch-native.ts';
@@ -68,7 +69,6 @@ export async function selectCodexTurnTask(
       continue;
     const receipt = await lookup.receipt(record.sourceThreadId, event.attempt);
     if (receipt.status === 'verified' && receipt.turnId === turnId) {
-      if (!event.native) return;
       feedback.push(event);
     } else if (receipt.status !== 'verified') unresolvedFeedback = true;
   }
@@ -94,7 +94,7 @@ export async function selectCodexTurnTask(
 }
 
 /** read the bound journal and native receipts without discovery, reconciliation, or writes. */
-export default async function readCodexTurnTask(pluginData: string, turn: Turn) {
+export async function readCodexTaskOwner(pluginData: string, turn: Turn) {
   const current = await selectCodexIntake(
     pluginData,
     {},
@@ -115,8 +115,28 @@ export default async function readCodexTurnTask(pluginData: string, turn: Turn) 
       find: codexDispatchNative(connection.request).find,
       receipt: codexContinuationNative(connection.request),
     });
-    return selected && { ...selected, git: { protocol: resolveGitProtocol(current.manifest) } };
+    const record = selected && records.find((record) => record.id === selected.receipt);
+    return (
+      selected &&
+      record && {
+        ...selected,
+        record,
+        admission: dispatchAdmission(record, (await current.store.read())?.records ?? []),
+        git: { protocol: resolveGitProtocol(current.manifest) },
+      }
+    );
   } finally {
     await connection.close();
   }
+}
+
+/** expose lookup hints without making native ownership an input to subsequent tools. */
+export default async function readCodexTurnTask(pluginData: string, turn: Turn) {
+  const owner = await readCodexTaskOwner(pluginData, turn);
+  if (!owner) return;
+  const { record: _record, admission: _admission, ...facts } = owner;
+  return {
+    ...facts,
+    feedbackContextRequest: facts.feedbackContextRequest && { action: 'context' },
+  };
 }

@@ -1,3 +1,4 @@
+import { feedbackTarget } from './reply-target.ts';
 import { selectedOpenClawFeedback } from './openclaw-feedback-input.ts';
 import {
   isReviewFeedback,
@@ -15,6 +16,7 @@ export default function openclawTurnContext(
   record: OpenClawDispatchRecord,
   binding: {
     workspace?: string;
+    repository?: string;
     agentId?: string;
     sessionKey?: string;
     sessionId?: string;
@@ -36,7 +38,6 @@ export default function openclawTurnContext(
   )
     return;
   const selected = selectedOpenClawFeedback(record, binding.runId);
-  if (selected && !selected.native) return;
   const implementation = Boolean(retainedIssueProgression(record));
   const source = selected && !selected.turn?.cancelled ? selected : undefined;
   const available = (record.feedback?.events ?? []).filter(
@@ -48,11 +49,10 @@ export default function openclawTurnContext(
     (!available.length ||
       record.assessmentTurn?.runId === binding.runId ||
       record.firstTurn?.runId === binding.runId);
-  const contextRequest = (eventId: string) => ({
+  const contextRequest = (source?: string) => ({
     action: 'feedback',
     operation: 'context',
-    id: record.id,
-    eventId,
+    ...(source ? { source } : {}),
   });
   return {
     appendSystemContext: [
@@ -86,7 +86,7 @@ export default function openclawTurnContext(
             : available.length && !assessment
               ? 'conversation'
               : 'assessment',
-        feedbackContextRequest: source && contextRequest(source.id),
+        feedbackContextRequest: source && contextRequest(),
         availableFeedback:
           !source && available.length
             ? available.map((event) => {
@@ -102,7 +102,9 @@ export default function openclawTurnContext(
                         : 'pullrequestreview-'
                       : 'issuecomment-',
                   },
-                  contextRequest: contextRequest(event.id),
+                  contextRequest: binding.repository
+                    ? contextRequest(feedbackTarget(binding.repository, event))
+                    : undefined,
                 };
               })
             : undefined,

@@ -443,7 +443,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   const available = facts.availableFeedback as
     | Array<{
         source: { number: number; itemType: string; commentId: number; kind: string };
-        contextRequest: { id: string; eventId: string };
+        contextRequest: { source?: string };
       }>
     | undefined;
   const received = available?.filter(({ source }) =>
@@ -454,12 +454,8 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   const privateFeedback =
     facts.feedbackContextRequest ??
     (received?.length === 1 ? received[0]!.contextRequest : undefined);
-  const feedback = privateFeedback
-    ? ['', privateFeedback.id, privateFeedback.eventId]
-    : /operation context, id ([a-f0-9]{64}), eventId ([a-f0-9]{64})/u.exec(prompt);
-  if (feedback) {
-    const [, id, eventId] = feedback;
-    const args = { action: 'feedback', id, eventId };
+  if (privateFeedback) {
+    const args = { action: 'feedback', ...privateFeedback };
     const context = result('feedback-context');
     if (!context) {
       const privateContext = request.messages

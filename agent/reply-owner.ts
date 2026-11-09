@@ -145,6 +145,7 @@ export default function replyOwner(
     }
     return {
       status: 'managed-reply-required' as const,
+      sourceUrl: target.url,
       id: owner.id,
       eventId: event.id,
       digest: undefined,

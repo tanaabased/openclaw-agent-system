@@ -1,6 +1,10 @@
+import nativeFeedbackSource from './native-feedback-source.ts';
+import { selectedOpenClawFeedback } from './openclaw-feedback-input.ts';
+import { dispatchAdmission } from './managed-issue.ts';
 import {
   assertNativeContextInput,
   isNativeContextRequest,
+  isNativeFeedbackRequest,
   nativeContextRequest,
   nativeContextResponse,
 } from './native-context-request.ts';
@@ -132,7 +136,19 @@ export default class OpenClawDispatch {
         (record) => record.threadId === caller.sessionKey,
       );
       if (owners.length > 1) throw new Error('native-context-owner-ambiguous');
-      request = nativeContextRequest(input, owners[0]);
+      const owner = owners[0];
+      request = nativeContextRequest(input, owner);
+      if (isNativeFeedbackRequest('dispatch', input)) {
+        const admission = dispatchAdmission(owner!, current.admitted.records);
+        const event = nativeFeedbackSource(
+          owner?.feedback?.events ?? [],
+          owner && selectedOpenClawFeedback(owner, caller.runId)?.id,
+          admission && `${admission.repository.owner.login}/${admission.repository.name}`,
+          input.source,
+        );
+        const { source: _source, ...authored } = request;
+        request = { ...authored, eventId: event.id };
+      }
     }
     return nativeContextResponse(
       await this.run(
@@ -144,6 +160,7 @@ export default class OpenClawDispatch {
         authority,
       ),
       'dispatch',
+      typeof input.source === 'string' ? input.source : undefined,
     );
   }
 

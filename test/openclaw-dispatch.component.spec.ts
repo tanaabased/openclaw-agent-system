@@ -6979,15 +6979,13 @@ describe('agent/openclaw issue dispatch', () => {
           };
         }),
       );
-    const first = await service.run(
+    const first = await service.runModel(
       manifest,
       root,
       who,
       {
         action: 'feedback',
         operation: 'context',
-        id,
-        eventId: event.id,
       },
       true,
     );
@@ -6996,15 +6994,13 @@ describe('agent/openclaw issue dispatch', () => {
     const initialReads = exactReads;
     const before = await record();
     const restored = await hydrateImplementation(first, async (request) =>
-      service.run(
+      service.runModel(
         manifest,
         root,
         who,
         request as {
           action: 'feedback';
           operation: 'context';
-          id: string;
-          eventId: string;
         },
         true,
       ),
@@ -7027,12 +7023,21 @@ describe('agent/openclaw issue dispatch', () => {
     const event = before.feedback!.events[0]!;
     assert.ok(event.turn);
     const who = assessor(id, event.turn.runId);
-    const context = await service.run(
+    const context = await service.runModel(
       manifest,
       root,
       who,
-      { action: 'feedback', operation: 'context', id, eventId: event.id },
+      { action: 'feedback', operation: 'context' },
       true,
+    );
+    await assert.rejects(
+      service.runModel(manifest, root, who, {
+        action: 'feedback',
+        operation: 'context',
+        id,
+        eventId: event.id,
+      }),
+      /binding-override/,
     );
     assert.equal(context.status, 'verified');
     assert.ok('source' in context);
@@ -7040,15 +7045,13 @@ describe('agent/openclaw issue dispatch', () => {
       ((context as Record<string, unknown>).source as GitHubCanonicalIssueComment).body,
       '@receiver explain this',
     );
-    const answer = await service.run(
+    const answer = await service.runModel(
       manifest,
       root,
       who,
       {
         action: 'feedback',
         operation: 'result',
-        id,
-        eventId: event.id,
         privateText: 'The retained plan describes the proposed change; no implementation started.',
         reply: false,
       },

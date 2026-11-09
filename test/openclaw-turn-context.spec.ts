@@ -70,8 +70,6 @@ describe('agent/openclaw-turn-context', () => {
     assert.deepEqual(facts.feedbackContextRequest, {
       action: 'feedback',
       operation: 'context',
-      id: record.id,
-      eventId: 'comment',
     });
     assert.match(output.appendSystemContext, /operation context/);
     assert.match(output.appendSystemContext, /configured reply skill/);
@@ -80,7 +78,10 @@ describe('agent/openclaw-turn-context', () => {
     feedback.feedback!.events[0]!.turn!.executionRunId = 'queued-execution';
     const before = structuredClone(feedback);
     const queued = openclawTurnContext(feedback, { ...binding, runId: 'queued-execution' })!;
-    assert.match(queued.appendContext, /"eventId":"comment"/);
+    assert.deepEqual(JSON.parse(queued.appendContext.split('\n')[1]!).feedbackContextRequest, {
+      action: 'feedback',
+      operation: 'context',
+    });
     assert.deepEqual(feedback, before);
     assert.doesNotMatch(
       openclawTurnContext(feedback, { ...binding, runId: 'feedback-run' })!.appendContext,
@@ -98,7 +99,7 @@ describe('agent/openclaw-turn-context', () => {
     }));
     const output = openclawTurnContext(
       { ...record, feedback: { baseline: {}, events } } as OpenClawDispatchRecord,
-      { ...binding, runId: 'queued-execution' },
+      { ...binding, runId: 'queued-execution', repository: 'owner/repo' },
     )!;
     const facts = JSON.parse(output.appendContext.split('\n')[1]!);
     assert.equal(facts.feedbackContextRequest, undefined);
@@ -109,6 +110,10 @@ describe('agent/openclaw-turn-context', () => {
         (entry: { source: { commentId: number } }) => entry.source.commentId,
       ),
       [42, 43],
+    );
+    assert.equal(
+      facts.availableFeedback[1].contextRequest.source,
+      'https://github.com/owner/repo/issues/3#issuecomment-43',
     );
     assert.doesNotMatch(output.appendContext, /PRIVATE-COMMENT/);
     const initial = JSON.parse(
@@ -135,7 +140,7 @@ describe('agent/openclaw-turn-context', () => {
       ...record,
       feedback: { baseline: {}, events: [{ turn: { runId: 'legacy' } }] },
     } as OpenClawDispatchRecord;
-    assert.equal(openclawTurnContext(legacy, { ...binding, runId: 'legacy' }), undefined);
+    assert.ok(openclawTurnContext(legacy, { ...binding, runId: 'legacy' }));
   });
   it('should route an automatic implementation and its later answer through implementation context', () => {
     const working = {

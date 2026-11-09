@@ -194,7 +194,10 @@ describe('agent/codex-turn-task', () => {
         ],
       },
     } as DispatchRecord;
-    assert.equal(await selectCodexTurnTask([legacy], turn, lookup), undefined);
+    assert.equal(
+      (await selectCodexTurnTask([legacy], turn, lookup))?.feedbackContextRequest?.eventId,
+      'source',
+    );
   });
   it('should retain implementation on ordinary resumed turns without reinjecting an old plan', async () => {
     const working = {

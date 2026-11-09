@@ -264,9 +264,10 @@ async function readWorkflowCommand(route: string, args: string[]) {
     );
   }
   const result = codexRuntimeRequest(route, args, input);
+  const modelSource = typeof result.request.source === 'string' ? result.request.source : undefined;
   result.request = await codexContextRequest(result.pluginData, route, result.request);
   failureScope = workflowFailureScope('codex', route, result.request);
-  return result;
+  return { ...result, modelSource };
 }
 
 export async function runCodexRuntime(args = process.argv.slice(2)): Promise<void> {
@@ -338,8 +339,10 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     return;
   }
   if (command === 'feedback') {
-    const { pluginData, request } = await readWorkflowCommand(command, args.slice(1));
-    writeJson(await runCodexFeedback(pluginData, request));
+    const { pluginData, request, modelSource } = await readWorkflowCommand(command, args.slice(1));
+    writeJson(
+      nativeContextResponse(await runCodexFeedback(pluginData, request), 'feedback', modelSource),
+    );
     return;
   }
   if (command === 'continuation') {

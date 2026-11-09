@@ -166,7 +166,9 @@ type ModelDispatchInput<T = Static<typeof dispatchParameters>> = T extends {
   action: 'context' | 'implementation-context';
 }
   ? Omit<T, 'id'>
-  : T;
+  : T extends { action: 'feedback' }
+    ? Omit<T, 'id' | 'eventId'> & { source?: string }
+    : T;
 export const dispatchModelParameters = Type.Unsafe<ModelDispatchInput>(
   discriminatedSchema(
     'action',
@@ -174,7 +176,12 @@ export const dispatchModelParameters = Type.Unsafe<ModelDispatchInput>(
       dispatchRequestVariants.anyOf.map((variant) =>
         ['context', 'implementation-context'].includes(String(variant.properties.action.const))
           ? Type.Omit(variant, ['id'], { additionalProperties: false })
-          : variant,
+          : variant.properties.action.const === 'feedback'
+            ? object({
+                ...Type.Omit(variant, ['id', 'eventId']).properties,
+                source: Type.Optional(Type.String({ minLength: 1, maxLength: 2048 })),
+              })
+            : variant,
       ),
     ),
   ),

@@ -1,9 +1,17 @@
+export function isNativeFeedbackRequest(route: string, input: Record<string, unknown>) {
+  return (
+    (route === 'dispatch' && input.action === 'feedback') ||
+    (route === 'feedback' && !['next', 'reply', 'publish-approved'].includes(String(input.action)))
+  );
+}
+
 /** bind current-task reads without accepting model-supplied ownership selectors. */
 export function isNativeContextRequest(route: string, input: Record<string, unknown>) {
   return (
     (route === 'dispatch' &&
       ['context', 'implementation-context'].includes(String(input.action))) ||
-    (route === 'continuation' && input.action === 'context')
+    (route === 'continuation' && input.action === 'context') ||
+    isNativeFeedbackRequest(route, input)
   );
 }
 
@@ -15,7 +23,7 @@ export function assertNativeContextInput(input: Record<string, unknown>) {
 export function nativeContextRequest(
   input: Record<string, unknown>,
   owner: { id: string; retired?: unknown; reset?: unknown; supersededBy?: unknown } | undefined,
-) {
+): Record<string, unknown> & { id: string } {
   assertNativeContextInput(input);
   if (!owner || owner.retired || owner.reset || owner.supersededBy)
     throw new Error('native-context-owner-unavailable');
@@ -23,15 +31,18 @@ export function nativeContextRequest(
 }
 
 /** project prepared read requests, never provider content or retained effect records. */
-export function nativeContextResponse<T>(value: T, route: string): T {
+export function nativeContextResponse<T>(value: T, route: string, source?: string): T {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const response = { ...value } as Record<string, unknown>;
   const project = (request: unknown, requestRoute = route) => {
     if (!request || typeof request !== 'object' || Array.isArray(request)) return request;
     const input = request as Record<string, unknown>;
     if (!isNativeContextRequest(requestRoute, input)) return request;
-    const { id: _id, ...semantic } = input;
-    return semantic;
+    const { id: _id, eventId: _eventId, ...semantic } = input;
+    return {
+      ...semantic,
+      ...(isNativeFeedbackRequest(requestRoute, input) && source ? { source } : {}),
+    };
   };
   for (const field of ['contextRequest', 'continuationRequest'])
     if (response[field])
