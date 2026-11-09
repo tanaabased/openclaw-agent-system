@@ -55,12 +55,39 @@ export default async function codexReply(
     const nativeInput = () =>
       codexReplyInput(connection.request, caller, async (turnId, items) => {
         const records = (await journal.read()).records;
-        const match = await codexFeedbackInput(
+        let match = await codexFeedbackInput(
           records,
           caller,
           turnId,
           deps.continuationNative ?? codexContinuationNative(connection.request),
         );
+        if (!match && input.target) {
+          const admitted = (await current.store.read())?.records ?? [];
+          const selected = records.flatMap((record) => {
+            const issue = record.threadId === caller && dispatchAdmission(record, admitted);
+            return issue
+              ? (record.feedback?.events ?? []).filter(
+                  (event) =>
+                    event.native &&
+                    feedbackTarget(
+                      `${issue.repository.owner.login}/${issue.repository.name}`,
+                      event,
+                    ) === input.target,
+                )
+              : [];
+          });
+          if (selected.length > 1) throw new Error('feedback-native-input-ambiguous');
+          if (selected[0]) {
+            match = await codexFeedbackInput(
+              records,
+              caller,
+              turnId,
+              deps.continuationNative ?? codexContinuationNative(connection.request),
+              selected[0].id,
+            );
+            if (!match) throw new Error('feedback-input-unverified');
+          }
+        }
         if (!match) {
           const owners = records.filter((record) => record.threadId === caller);
           if (owners.length > 1) throw new Error('reply-managed-owner-ambiguous');

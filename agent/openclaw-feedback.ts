@@ -127,6 +127,10 @@ export async function advanceFeedbackTurn(input: {
   await describeIssueSession(request, record, input.config, 'feedback');
   await reconcileOpenClawTurn({
     allowExecutionRunId: event.native === true,
+    reselection:
+      event.native && record.feedback?.context?.eventId === event.id
+        ? record.feedback.context
+        : undefined,
     record,
     request,
     sessionKey: expected.key,
@@ -391,12 +395,6 @@ export default async function openClawFeedback(input: {
       if (event.turn.status !== 'completed') event.turn.status = 'consumed';
       if (event.native) {
         // The native caller explicitly selected this delivered source; no transcript inference.
-        if (
-          event.turn.status !== 'completed' &&
-          !event.turn.executionRunId &&
-          caller.runId !== event.turn.runId
-        )
-          event.turn.executionRunId = caller.runId;
         record.feedback!.context = {
           runId: caller.runId,
           eventId: event.id,

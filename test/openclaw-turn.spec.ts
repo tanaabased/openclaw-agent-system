@@ -2,9 +2,66 @@ import assert from 'node:assert/strict';
 
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
 import type { OpenClawTurn } from '../agent/openclaw-turn-state.ts';
-import { reconcileOpenClawTurn } from '../agent/openclaw-turn.ts';
+import { consumedInputEvent, reconcileOpenClawTurn } from '../agent/openclaw-turn.ts';
 
 describe('agent/openclaw-turn', () => {
+  for (const conflict of ['selection', 'input', 'body', 'key'] as const)
+    it(`should refuse execution-hint repair with a conflicting ${conflict}`, () => {
+      const turn: OpenClawTurn = {
+        runId: 'delivery',
+        message: 'original feedback',
+        status: 'consumed',
+        consumedByEventId: 'input',
+        executionRunId: 'later-responder',
+      };
+      const selection = {
+        runId: conflict === 'selection' ? 'another-responder' : 'later-responder',
+        inputEventId: 'input',
+      };
+      const message = {
+        role: 'user',
+        content: conflict === 'body' ? 'different feedback' : turn.message,
+        __openclaw: {
+          id: conflict === 'input' ? 'different-input' : 'input',
+          runId: 'delivery',
+          idempotencyKey: conflict === 'key' ? 'another-delivery:user' : 'delivery:user',
+        },
+      };
+      assert.throws(
+        () => consumedInputEvent([message], turn, true, selection),
+        /dispatch-turn-run-mismatch|dispatch-turn-input-mismatch/,
+      );
+      assert.equal(turn.executionRunId, 'later-responder');
+    });
+  it('should not replace a retained execution from an unrelated native observation', () => {
+    const turn: OpenClawTurn = {
+      runId: 'delivery',
+      message: 'feedback',
+      status: 'consumed',
+      consumedByEventId: 'input',
+      executionRunId: 'original-execution',
+    };
+    assert.throws(
+      () =>
+        consumedInputEvent(
+          [
+            {
+              role: 'user',
+              content: 'feedback',
+              __openclaw: {
+                id: 'input',
+                idempotencyKey: 'delivery:user',
+                runId: 'different-execution',
+              },
+            },
+          ],
+          turn,
+          true,
+        ),
+      /dispatch-turn-run-mismatch/,
+    );
+    assert.equal(turn.executionRunId, 'original-execution');
+  });
   it('should settle a queued input through its native execution without resending it', async () => {
     const turn: OpenClawTurn = { runId: 'delivery', message: 'queued comment', status: 'accepted' };
     const waited: unknown[] = [];

@@ -1826,6 +1826,12 @@ for (const scenario of [
             input = request(
               `Publish retained reply: ${JSON.stringify({ target: source, publicText: candidate.publicText })}`,
             );
+            for (const stage of ['feedback-resume-context', 'feedback-resume-context-repeat']) {
+              const context = await runAction(input, 'feedback');
+              assert.equal(context.operation, 'context');
+              assert.equal(context.source, source);
+              append(input, stage, { status: 'verified', replyTarget: source });
+            }
           }
           assert.equal('digest' in (await runAction(input, 'reply')), false);
           append(input, 'feedback-publish', {

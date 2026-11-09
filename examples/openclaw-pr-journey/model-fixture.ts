@@ -45,6 +45,8 @@ const dispatchStages = [
   'delivery-present',
   'assessment-present',
   'feedback-context',
+  'feedback-resume-context',
+  'feedback-resume-context-repeat',
   'feedback-work-context',
   'feedback-work-result',
   'feedback-delivery-prepare',
@@ -460,6 +462,17 @@ function respond(
   const retainedReply = /Publish retained reply: (\{[^\n]+\})/u.exec(prompt)?.[1];
   if (retainedReply) {
     const selected = JSON.parse(retainedReply) as { target: string; publicText: string };
+    for (const stage of ['feedback-resume-context', 'feedback-resume-context-repeat']) {
+      const context = result(stage);
+      if (!context)
+        return dispatch(stage, {
+          action: 'feedback',
+          operation: 'context',
+          source: selected.target,
+        });
+      assert.equal(context.status, 'verified');
+      assert.equal(context.replyTarget, selected.target);
+    }
     const published = result('feedback-publish');
     if (!published)
       return dispatch('feedback-publish', { action: 'reply', operation: 'publish', ...selected });

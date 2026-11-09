@@ -7,13 +7,16 @@ export default async function codexFeedbackInput(
   caller: string,
   turnId: string,
   receiptFor: ReturnType<typeof codexContinuationNative>,
+  selectedEventId?: string,
 ) {
   const candidates = records.flatMap((record) =>
     record.threadId === caller
       ? (record.feedback?.events ?? []).flatMap((event) =>
           event.native &&
           event.attempt &&
-          (!event.attempt.turnId || event.attempt.turnId === turnId)
+          (selectedEventId
+            ? event.id === selectedEventId
+            : !event.attempt.turnId || event.attempt.turnId === turnId)
             ? [{ record, event, attempt: event.attempt }]
             : [],
         )
@@ -25,15 +28,25 @@ export default async function codexFeedbackInput(
     try {
       receipt = await receiptFor(candidate.record.sourceThreadId, candidate.attempt);
     } catch (error) {
-      if (candidate.attempt.turnId === turnId) throw error;
+      if (selectedEventId || candidate.attempt.turnId === turnId) throw error;
       continue;
     }
     if (receipt.status === 'blocked') {
-      if (candidate.attempt.turnId === turnId || ('turnId' in receipt && receipt.turnId === turnId))
+      if (
+        selectedEventId ||
+        candidate.attempt.turnId === turnId ||
+        ('turnId' in receipt && receipt.turnId === turnId)
+      )
         throw new Error(receipt.code);
       continue;
     }
-    if (receipt.status !== 'verified' || receipt.turnId !== turnId || receipt.ended) continue;
+    if (receipt.status !== 'verified') continue;
+    if (selectedEventId) {
+      if (candidate.attempt.turnId && candidate.attempt.turnId !== receipt.turnId)
+        throw new Error('feedback-turn-changed');
+      if (candidate.attempt.request.threadId !== caller)
+        throw new Error('feedback-native-binding-mismatch');
+    } else if (receipt.turnId !== turnId || receipt.ended) continue;
     if (candidate.record.reset || candidate.record.supersededBy)
       throw new Error('reply-managed-context-invalid');
     verified.push(candidate);

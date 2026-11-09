@@ -782,6 +782,33 @@ describe('agent/codex-feedback', () => {
     assert.equal((await call('context', ref, true)).status, 'verified');
     assert.equal((await store.read()).records[0]!.feedback!.events[0]!.work, undefined);
   });
+  it('should reselect delivered feedback in a later turn and publish one source-bound reply', async () => {
+    const ref = await prepare(commenter, '@receiver please explain.');
+    sent = true;
+    turn = 'feedback';
+    await call('context', ref, true);
+    receiptTurn = turn;
+    ended = true;
+    turn = 'operator-retry';
+    assert.equal((await call('context', ref, true)).status, 'verified');
+    await replyTransport();
+    const target = 'https://github.com/owner/repo/issues/3#issuecomment-42';
+    assert.equal(
+      (
+        await call(
+          'reply',
+          { operation: 'compose', target, privateText: 'Recovered answer.' },
+          true,
+        )
+      ).status,
+      'composition-ready',
+    );
+    await call('reply', { operation: 'candidate', target, publicText: 'The answer.' }, true);
+    assert.equal((await call('reply', { operation: 'publish', target }, true)).status, 'published');
+    assert.equal((await call('reply', { operation: 'publish', target }, true)).status, 'published');
+    assert.equal(creates, 1);
+    assert.equal((await store.read()).records[0]!.feedback!.events[0]!.attempt!.turnId, 'feedback');
+  });
   async function replyTransport() {
     const workspace = join(root, 'workspace');
     const path = join(root, 'SKILL.md');
@@ -860,7 +887,7 @@ describe('agent/codex-feedback', () => {
         },
         true,
       ),
-      /reply-native-user-input-required/,
+      /feedback-input-unverified/,
     );
     assert.equal(creates, 1);
   });

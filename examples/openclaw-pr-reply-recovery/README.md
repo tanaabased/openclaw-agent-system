@@ -2,12 +2,13 @@
 
 Push a change requested through approved PR feedback and save the private answer.
 Stop before composing the public reply, then explicitly resume that reply in the same
-chat. Verify that it publishes without repeating the pushed change.
+chat. Reselect and reread the original feedback before publishing, without repeating
+the pushed change.
 
 ## What Belongs Here
 
 - The responded event retaining its pushed work and having no public receipt before continuation.
-- Native owner resumption preserving the earlier turn, implementation result, delivery, and private answer, followed by one exact reply and repeat-scan duplicate prevention.
+- Native owner resumption revalidating the original source and its paged context while preserving the earlier turn, delivery, and private answer, followed by one exact reply and repeat-scan duplicate prevention.
 
 ## What Does Not Belong Here
 
