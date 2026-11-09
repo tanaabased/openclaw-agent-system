@@ -9,8 +9,16 @@ export function isNativeFeedbackRequest(route: string, input: Record<string, unk
 export function isNativeContextRequest(route: string, input: Record<string, unknown>) {
   return (
     (route === 'dispatch' &&
-      ['context', 'implementation-context', 'delivery'].includes(String(input.action))) ||
-    (route === 'continuation' && ['context', 'delivery'].includes(String(input.action))) ||
+      [
+        'context',
+        'present',
+        'result',
+        'implementation-context',
+        'implementation-result',
+        'delivery',
+      ].includes(String(input.action))) ||
+    (route === 'continuation' &&
+      ['context', 'result', 'cancel', 'delivery'].includes(String(input.action))) ||
     route === 'delivery' ||
     isNativeFeedbackRequest(route, input)
   );
@@ -26,6 +34,7 @@ export function assertNativeContextInput(input: Record<string, unknown>) {
     'sessionKey',
     'eventId',
     'digest',
+    'previousResultDigest',
   ])
     if (Object.hasOwn(input, field)) throw new Error('native-context-binding-override');
 }

@@ -324,7 +324,6 @@ function respond(
     if (!saved)
       return dispatch('work-result', {
         action: 'implementation-result',
-        id: operatorId,
         implementationResult: {
           outcome: 'done',
           summary: 'Committed the disposable cleanup note.',

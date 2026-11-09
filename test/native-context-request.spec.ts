@@ -6,6 +6,67 @@ import { nativeContextRequest, nativeContextResponse } from '../agent/native-con
 import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 
 describe('native current-task context inputs', () => {
+  it('should resolve result and readback ownership inside both native adapters', async () => {
+    const requests = [
+      { action: 'present' },
+      {
+        action: 'result',
+        result: {
+          version: 1,
+          outcome: 'plan-ready',
+          summary: 'Ready.',
+          assessment: 'Small change.',
+          fullAssessment: 'Change one line and verify the output.',
+          plan: 'Change and verify.',
+          evidence: [],
+          progress: { completed: [], remaining: [] },
+        },
+      },
+      {
+        action: 'implementation-result',
+        implementationResult: {
+          outcome: 'done',
+          summary: 'Changed.',
+          fullResult: 'Changed the line and verified the output.',
+        },
+      },
+    ];
+    for (const request of requests) {
+      assert.equal(Value.Check(dispatchModelParameters, request), true);
+      assert.deepEqual(nativeContextRequest(request, { id: 'verified-owner' }), {
+        ...request,
+        id: 'verified-owner',
+      });
+      assert.deepEqual(
+        await codexContextRequest('private', 'dispatch', request, 'thread', async () => ({
+          receipt: 'verified-owner',
+        })),
+        { ...request, id: 'verified-owner' },
+      );
+      for (const field of ['id', 'eventId', 'digest', 'previousResultDigest']) {
+        assert.equal(
+          Value.Check(dispatchModelParameters, { ...request, [field]: 'verified-owner' }),
+          false,
+        );
+        await assert.rejects(
+          codexContextRequest(
+            'private',
+            'dispatch',
+            { ...request, [field]: 'verified-owner' },
+            'thread',
+          ),
+          /binding-override/,
+        );
+      }
+    }
+    for (const action of ['result', 'cancel'])
+      assert.deepEqual(
+        await codexContextRequest('private', 'continuation', { action }, 'thread', async () => ({
+          receipt: 'verified-owner',
+        })),
+        { action, id: 'verified-owner' },
+      );
+  });
   it('should bind publication to the verified current task and exact native feedback source', async () => {
     const input = { action: 'publish', title: 'A poem', body: 'Authored description' };
     const read = async () => ({ receipt: 'bound', feedbackContextRequest: { eventId: 'source' } });

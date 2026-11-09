@@ -3875,9 +3875,8 @@ describe('agent/openclaw issue dispatch', () => {
       summary: 'Delivery interrupted.',
       fullResult: 'Distinct previous blocker evidence.\n'.repeat(1300),
     };
-    await service.run(manifest, root, assessor(input.id), {
+    await service.runModel(manifest, root, assessor(input.id), {
       action: 'implementation-result',
-      id: input.id,
       implementationResult: blocker,
     });
     const first = await service.run(manifest, root, assessor(input.id), request);

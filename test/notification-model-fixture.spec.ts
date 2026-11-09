@@ -1617,7 +1617,7 @@ for (const scenario of [
               append(input, stage, { exitCode: 0, truncated: false });
             }
             if (initial) {
-              assert.equal((await runAction(input, 'implementation-result')).id, id);
+              assert.equal('id' in (await runAction(input, 'implementation-result')), false);
               append(input, 'feedback-work-result', { status: 'recorded' });
             }
             assert.equal((await runAction(input, 'delivery')).operation, 'prepare');

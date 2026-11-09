@@ -162,9 +162,15 @@ export const dispatchParameters = discriminatedSchema('action', dispatchRequestV
 
 // current-task reads have no model-facing owner selector.
 type ModelDispatchInput<T = Static<typeof dispatchParameters>> = T extends {
-  action: 'context' | 'implementation-context' | 'delivery';
+  action:
+    | 'context'
+    | 'present'
+    | 'result'
+    | 'implementation-context'
+    | 'implementation-result'
+    | 'delivery';
 }
-  ? Omit<T, 'id'>
+  ? Omit<T, 'id' | 'previousResultDigest'>
   : T extends { action: 'feedback' }
     ? Omit<T, 'id' | 'eventId' | 'digest'> & { source?: string }
     : T extends { action: 'reply' }
@@ -175,10 +181,15 @@ export const dispatchModelParameters = Type.Unsafe<ModelDispatchInput>(
     'action',
     Type.Union(
       dispatchRequestVariants.anyOf.map((variant) =>
-        ['context', 'implementation-context', 'delivery'].includes(
-          String(variant.properties.action.const),
-        )
-          ? Type.Omit(variant, ['id'], { additionalProperties: false })
+        [
+          'context',
+          'present',
+          'result',
+          'implementation-context',
+          'implementation-result',
+          'delivery',
+        ].includes(String(variant.properties.action.const))
+          ? Type.Omit(variant, ['id', 'previousResultDigest'], { additionalProperties: false })
           : variant.properties.action.const === 'feedback'
             ? object({
                 ...Type.Omit(variant, ['id', 'eventId', 'digest']).properties,

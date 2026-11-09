@@ -321,7 +321,7 @@ function respond(
   const summary = (id: string, presentation?: string): FixtureResponse | undefined => {
     if (!presentation) {
       const shown = result('recovery-present');
-      if (!shown) return dispatch('recovery-present', { action: 'present', id });
+      if (!shown) return dispatch('recovery-present', { action: 'present' });
       if (shown.status !== 'presented' || typeof shown.presentation !== 'string') return;
       presentation = shown.presentation;
     }
@@ -564,7 +564,6 @@ function respond(
       if (initial && !completed)
         return dispatch('feedback-work-result', {
           action: 'implementation-result',
-          id,
           implementationResult: {
             outcome: 'done',
             summary: initial
