@@ -13,7 +13,7 @@ import type { OpenClawDispatchDependencies } from './openclaw-dispatch-context.t
 import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
 import { nativeInputEvent, operatorInputEvent } from './openclaw-session-input.ts';
 import { describeIssueSession, type DispatchCaller } from './openclaw-session-create.ts';
-import replyOwner from './reply-owner.ts';
+import replyOwner, { retainedReply } from './reply-owner.ts';
 import replyOwnerContext from './reply-owner-context.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -215,7 +215,7 @@ export default async function openClawReply(input: {
       assertCurrent,
       resolveSkill: (id) =>
         openClawSkill(request, { agentId: manifest.agent.id, key: caller.sessionKey }, id),
-      managed: async (target, purpose) => {
+      managed: async (target, purpose, privateText) => {
         const state = await journal.read();
         const admitted = await current.store.read();
         if (purpose || feedback) {
@@ -225,27 +225,35 @@ export default async function openClawReply(input: {
             await describeIssueSession(request, owners[0], deps.config(), 'conversation');
         }
         return replyOwner(
-          state.records.map((record) =>
-            replyOwnerContext({
-              record,
-              conversation: Boolean(feedback),
-              intake: dispatchAdmission(record, admitted?.records ?? []),
-              caller: caller.sessionKey,
-              incarnation: record.sessionCreation?.sessionId,
-              custodyInvalid:
-                !record.sessionCreation?.verified ||
-                !record.sessionCreation.sessionId ||
-                !record.request ||
-                !('key' in record.request) ||
-                record.request.key !== record.threadId ||
-                record.request.agentId !== manifest.agent.id,
-              delivery: record.work?.delivery,
-            }),
-          ),
+          state.records
+            .filter(
+              (record) =>
+                purpose ||
+                record.threadId === caller.sessionKey ||
+                retainedReply(record.feedback?.events, target, privateText),
+            )
+            .map((record) =>
+              replyOwnerContext({
+                record,
+                conversation: Boolean(feedback),
+                intake: dispatchAdmission(record, admitted?.records ?? []),
+                caller: caller.sessionKey,
+                incarnation: record.sessionCreation?.sessionId,
+                custodyInvalid:
+                  !record.sessionCreation?.verified ||
+                  !record.sessionCreation.sessionId ||
+                  !record.request ||
+                  !('key' in record.request) ||
+                  record.request.key !== record.threadId ||
+                  record.request.agentId !== manifest.agent.id,
+                delivery: record.work?.delivery,
+              }),
+            ),
           caller.sessionKey,
           caller.sessionId,
           target,
           purpose,
+          privateText,
         );
       },
     });

@@ -15,7 +15,7 @@ import { selectCodexIntake } from './codex-intake.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
 import codexAssessmentSkill from './codex-assessment-skill.ts';
 import feedbackReply from './feedback-reply.ts';
-import replyOwner from './reply-owner.ts';
+import replyOwner, { retainedReply } from './reply-owner.ts';
 import replyOwnerContext from './reply-owner-context.ts';
 import type { OpenClawFeedbackProvider } from './openclaw-feedback.ts';
 import { parseReplyRequest } from '../tools/dispatch/reply-schema.ts';
@@ -232,7 +232,7 @@ export default async function codexReply(
         if (fresh.turnId !== turn.turnId || fresh.inputId !== turn.inputId)
           throw new Error('reply-native-input-changed');
       },
-      managed: async (target, purpose) => {
+      managed: async (target, purpose, privateText) => {
         const state = await journal.read();
         const admitted = await current.store.read();
         if (purpose || feedback) {
@@ -254,20 +254,28 @@ export default async function codexReply(
           }
         }
         return replyOwner(
-          state.records.map((record) =>
-            replyOwnerContext({
-              record,
-              conversation: Boolean(feedback),
-              intake: dispatchAdmission(record, admitted?.records ?? []),
-              caller,
-              custodyInvalid: !record.request,
-              delivery: record.delivery,
-            }),
-          ),
+          state.records
+            .filter(
+              (record) =>
+                purpose ||
+                record.threadId === caller ||
+                retainedReply(record.feedback?.events, target, privateText),
+            )
+            .map((record) =>
+              replyOwnerContext({
+                record,
+                conversation: Boolean(feedback),
+                intake: dispatchAdmission(record, admitted?.records ?? []),
+                caller,
+                custodyInvalid: !record.request,
+                delivery: record.delivery,
+              }),
+            ),
           caller,
           caller,
           target,
           purpose,
+          privateText,
         );
       },
     });
