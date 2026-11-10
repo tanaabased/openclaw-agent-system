@@ -1085,7 +1085,8 @@ describe('agent/openclaw-delivery', () => {
     const content = { title: 'Revised title', body: 'Closes #3' };
     await assert.rejects(publish(content), /github-delivery-content-unverified/);
     assert.equal(record.work!.delivery!.reconciled, false);
-    assert.deepEqual(record.work!.delivery!.contentUpdate, { title: content.title });
+    assert.deepEqual(record.work!.delivery!.contentUpdate, content);
+    assert.equal(record.work!.delivery!.contentUpdateAttempted, true);
     input.connect = connect;
     await publish(content);
     assert.equal(pr!.title, content.title);

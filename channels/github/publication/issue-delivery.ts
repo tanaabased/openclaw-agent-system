@@ -74,6 +74,8 @@ export interface IssueDeliveryInput {
   contentUpdate?: { title?: string; body?: string };
   beforeCreate?: () => Promise<void>;
   onCreateRejected?: () => Promise<void>;
+  beforeUpdate?: (content: { title: string; body: string }) => Promise<void>;
+  onUpdateRejected?: () => Promise<void>;
   beforeLink?: () => Promise<void>;
   checkpoint?: (receipt: GitHubNotificationIssueDeliveryReceipt) => Promise<void>;
 }
@@ -287,7 +289,52 @@ export default class IssueDeliveryProvider {
     return { pullRequestNodeId: pullRequest.itemNodeId, pullRequestNumber: pullRequest.number };
   }
 
-  /** verify the exact published pr before an issue announcement. */
+  /** observe an attempted effect after local disposal; never reopen, normalize, push or publish. */
+  async retirementOutcome(
+    input: IssueDeliveryInput,
+    pending: {
+      pendingPush?: { head: string };
+      creationAttempted?: boolean;
+    },
+  ): Promise<boolean> {
+    const repository = `${input.item.repositoryOwner}/${input.item.repositoryName}`;
+    const observed = record(
+      await this.#github(
+        this.client,
+        ['api', `repos/${repository}`, '--jq', '{nodeId:.node_id}'],
+        input.signal,
+      ),
+      'repository',
+    );
+    if (observed.nodeId !== input.repositoryNodeId)
+      throw new Error('delivery-repository-identity-changed');
+    if (pending.pendingPush) {
+      const ref = record(
+        await this.#github(
+          this.client,
+          [
+            'api',
+            `repos/${repository}/git/ref/heads/${encodeURIComponent(input.branch)}`,
+            '--jq',
+            '{sha:.object.sha}',
+          ],
+          input.signal,
+        ),
+        'branch',
+      );
+      if (ref.sha !== pending.pendingPush.head) return false;
+    }
+    if (!pending.creationAttempted && !input.contentUpdate) return true;
+    const pullRequest = await this.#find(input);
+    if (!pullRequest) return false;
+    await this.#verify({ ...input, headSha: undefined }, pullRequest, false, true);
+    return (
+      (!input.contentUpdate?.title || input.contentUpdate.title === pullRequest.title) &&
+      (input.contentUpdate?.body === undefined || input.contentUpdate.body === pullRequest.body)
+    );
+  }
+
+  /** verify the exact published PR before an issue announcement. */
   async announcement(input: IssueDeliveryInput) {
     if (!input.expectedPullRequest || !input.headSha || !input.repositoryNodeId)
       throw new Error('delivery-announcement-binding-required');
@@ -328,14 +375,13 @@ export default class IssueDeliveryProvider {
       typeof observed.draft !== 'boolean'
     )
       throw new Error('delivery-announcement-state-unverified');
-    const body = boundedString(observed.body ?? '', 'pull request body', 65536);
     return {
       pullRequestNodeId: pullRequest.itemNodeId,
       pullRequestNumber: pullRequest.number,
       draft: observed.draft,
       head: input.headSha,
       title: requiredString(observed.title, 'pull request title', 512),
-      body,
+      body: boundedString(observed.body ?? '', 'pull request body', 65536),
     };
   }
 
@@ -411,6 +457,7 @@ export default class IssueDeliveryProvider {
     input: IssueDeliveryInput,
     pullRequest: PullRequestIdentity,
     normalize: boolean,
+    allowClosed = false,
   ): Promise<void> {
     const github = this.client;
     const branch = input.branch;
@@ -418,7 +465,7 @@ export default class IssueDeliveryProvider {
     if (
       pullRequest.headRef !== branch ||
       pullRequest.headRepository.toLowerCase() !== repository.toLowerCase() ||
-      pullRequest.state !== 'open'
+      (!allowClosed && pullRequest.state !== 'open')
     ) {
       throw new Error('The managed branch belongs to an incompatible pull request.');
     }
@@ -584,6 +631,7 @@ export default class IssueDeliveryProvider {
       const body = input.contentUpdate.body ?? pullRequest.body;
       if (body.length > 65_536) throw new Error('github-delivery-body-too-large');
       if (pullRequest.title !== title || pullRequest.body !== body) {
+        await input.beforeUpdate?.({ title, body });
         pullRequest = parsePullRequest(
           await this.#github(
             github,
@@ -599,7 +647,10 @@ export default class IssueDeliveryProvider {
             ],
             input.signal,
             JSON.stringify({ title, body }),
-          ),
+          ).catch(async (error) => {
+            if (providerWriteRejected(error)) await input.onUpdateRejected?.();
+            throw error;
+          }),
         );
         await this.#verify(input, pullRequest, false);
         if (

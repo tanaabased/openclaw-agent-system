@@ -1,4 +1,6 @@
 import { issuePickupStateSchema } from './issue-pickup-state.ts';
+import { validPendingRetirement } from './pending-retirement.ts';
+import { retirementEffectSchema, type RetirementEffect } from './retirement-effects.ts';
 import resetIssuePickup from './issue-pickup-reset.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { projectWorkSchema } from './issue-pickup-authority.ts';
@@ -58,6 +60,7 @@ export const assessmentStageReceiptSchema = Type.Object(
   { additionalProperties: false },
 );
 export const dispatchRecordProperties = {
+  cleanupPending: Type.Optional(Type.Literal(true)),
   projectWork: Type.Optional(projectWorkSchema),
   retainedHistory: Type.Optional(retainedHistorySchema),
   directAssessments: Type.Optional(assessmentEntriesSchema),
@@ -164,6 +167,7 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
       scope: hash,
       resetGeneration: Type.Optional(text),
       records: Type.Array(Type.Unsafe<R>(recordSchema)),
+      retirementEffects: Type.Optional(Type.Array(retirementEffectSchema)),
       // persisted compatibility field, not the current manifest policy name.
       projectPickup: Type.Optional(issuePickupStateSchema),
       openclawOccurrence: Type.Optional(
@@ -322,18 +326,16 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
       state.records.some(
         (r) =>
           (r.supersededBy &&
-            !state.records.some(
+            state.records.some(
               (successor) =>
                 successor.id === r.supersededBy &&
-                successor.predecessorId === r.id &&
-                successor.issueKey === r.issueKey,
+                (successor.predecessorId !== r.id || successor.issueKey !== r.issueKey),
             )) ||
           (r.predecessorId &&
-            !state.records.some(
+            state.records.some(
               (predecessor) =>
                 predecessor.id === r.predecessorId &&
-                predecessor.supersededBy === r.id &&
-                predecessor.issueKey === r.issueKey,
+                (predecessor.supersededBy !== r.id || predecessor.issueKey !== r.issueKey),
             )) ||
           Boolean(r.intakeId) === Boolean(r.manualIssue) ||
           (r.manualIssue &&
@@ -342,6 +344,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
               r.manualIssue.initiation.session !== r.sourceThreadId ||
               issueKey(r.manualIssue) !== r.issueKey)) ||
           (!r.retainedHistory?.terminal &&
+            !r.cleanupPending &&
             ((r.request && (!r.context || !r.routing || !r.routingNote)) ||
               (['creating', 'assessing', 'complete'].includes(r.phase) && !r.request) ||
               (r.phase === 'created' &&
@@ -354,7 +357,11 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
       ) ||
       state.records.some((r) => r.reset && (r.phase !== 'complete' || !r.threadId)) ||
       state.records.some((r) =>
-        r.retainedHistory?.terminal ? !validTerminalRecord(r) : !this.contract.validRecord(r),
+        r.cleanupPending
+          ? !validPendingRetirement(r)
+          : r.retainedHistory?.terminal
+            ? !validTerminalRecord(r)
+            : !this.contract.validRecord(r),
       )
     )
       throw new Error('dispatch-state-invalid');
@@ -382,6 +389,27 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
       throw new Error('notification-state-reset-required');
     this.validate(state);
     return state;
+  }
+  retainRetirementEffects(state: DispatchState<R>, effects: RetirementEffect[]) {
+    if (!effects.length) return;
+    const retained = (state.retirementEffects ??= []);
+    for (const effect of effects)
+      if (!retained.some((entry) => entry.id === effect.id)) retained.push(effect);
+  }
+
+  /** caller has verified native cleanup and independent assignment consumption. */
+  async dispose(state: DispatchState<R>, record: R) {
+    const index = state.records.findIndex((entry) => entry.id === record.id);
+    if (index < 0) throw new Error('retirement-task-missing');
+    await this.history.exclusive(() => this.history.removeTask(record.id));
+    state.records.splice(index, 1);
+    // References on other attempts preserve their historical fence and checkout identity.
+    // They may point to a disposed task; removing them could reactivate a predecessor.
+    for (const pass of state.openclawPasses ?? []) {
+      pass.selected = pass.selected.filter((id) => id !== record.id);
+      pass.recovery = pass.recovery.filter((id) => id !== record.id);
+      if (pass.started) pass.started = pass.started.filter((id) => id !== record.id);
+    }
   }
   /** external work runs unlocked; each save commits only checked changes to fresh state. */
   async transaction<T>(
@@ -619,7 +647,15 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
             const fresh = await this.read();
             if (fresh.resetGeneration !== committed.resetGeneration)
               throw new Error('notification-reset-stale-operation');
-            if (!isDeepStrictEqual(fresh, committed)) throw new Error(stateSnapshotConflictCode);
+            if (!isDeepStrictEqual(fresh, committed)) {
+              // A concurrent retirement can commit while this writer archives a stale snapshot.
+              await this.history.exclusive(async () => {
+                for (const record of committed.records)
+                  if (!fresh.records.some((current) => current.id === record.id))
+                    await this.history.removeTask(record.id);
+              });
+              throw new Error(stateSnapshotConflictCode);
+            }
             if (archiveFailed) throw archiveError;
           }
           this.validate(retained);

@@ -74,6 +74,7 @@ export default function createDispatchTool(input: {
   credential: OpenClawDispatchDependencies['credential'];
   delivery?: OpenClawDispatchDependencies['delivery'];
   feedbackConnect?: OpenClawDispatchDependencies['feedbackConnect'];
+  retirementDelivery?: OpenClawDispatchDependencies['retirementDelivery'];
   assessmentGit?: OpenClawDispatchDependencies['assessmentGit'];
 }) {
   const { api } = input;
@@ -96,6 +97,7 @@ export default function createDispatchTool(input: {
     connect: input.connect,
     delivery: input.delivery,
     feedbackConnect: input.feedbackConnect,
+    retirementDelivery: input.retirementDelivery,
     assessmentGit: input.assessmentGit,
     async coordinator(manifest, workspace) {
       const { store } = await input.automations.scope(manifest, workspace);
