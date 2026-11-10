@@ -157,13 +157,14 @@ jq -e '.phase == "waiting" and .failureStage == "worktree" and .threadId == null
 mv "$TMPDIR/notification-retry-key" keys/id_ed25519
 
 # should retry only the current assignment through its issue url
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/tanaabot"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 target="https://github.com/tanaabased/big-test-bucket/issues/$number"
-openclaw gateway call chat.send --params "$(jq -nc --arg target "$target" '{sessionKey:"agent:retirement-tanaabot:retry",message:("Retry waiting assignment " + $target),deliver:false,idempotencyKey:"retirement-retry-waiting"}')" --json | jq -e '.runId == "retirement-retry-waiting"'
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" retirement-retry-waiting 600000
+openclaw agent --agent retirement-tanaabot --session-key agent:retirement-tanaabot:retry --message "Retry waiting assignment $target"
 jq -es --slurpfile waiting "$TMPDIR/notification-waiting.json" '[.[].records[] | select(.id == $waiting[0].id)] | length == 1 and .[0].phase == "routing" and .[0].blocker == null and .[0].threadId == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 
 # should prepare the retried assignment from the base while preserving the retired branch
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/tanaabot"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
