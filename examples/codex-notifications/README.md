@@ -8,7 +8,7 @@ conversation remains usable independently of the schedule.
 
 - Active and paused declaration handling without silently activating intake or writing scheduler files.
 - Retired repository-owner configuration is rejected before binding, with direction to routing.
-- Installed runtime/caller/receipt boundaries before managed workflow effects, including rejection of unowned retained assessments.
+- Installed runtime/caller/receipt boundaries before managed workflow effects.
 - Built-in assignment model/effort selection with real app-server chat readback, without activating its schedule or generating a model response.
 - A native schedule request using the installed runtime and bound plugin data, without global scanner rules; its saved launch block survives replacement of the host PATH Node executable.
 
@@ -25,7 +25,7 @@ conversation remains usable independently of the schedule.
 - Issue pickup selection and uncertain-assignment recovery have controlled native-adapter coverage in `test/issue-pickup-selection.component.spec.ts`. The packaged check below validates coordinator-free routing and rejects pickup before installation activation. Native desktop activation still needs app receipts; unattended acceptance remains [#529](https://github.com/tanaabased/openclaw-agent-system/issues/529). This headless scenario does not establish desktop activation or unattended execution.
 
 - These direct Ubuntu checks use isolated Codex state without hosted secrets or model generation. Both active and paused fixtures declare V3; a paused declaration retains configuration while future occurrences remain disabled.
-- Pending relocation: explicit-target reset refusal, host/update/quiet heartbeat cases, restored pre-reset history, removed configuration fields, and cadence-change checks remain below.
+- Pending relocation: explicit-target reset refusal, host/update/quiet heartbeat cases, removed configuration fields, and cadence-change checks remain below.
 - Native acceptance below is an inventory of separate installed/manual checks, not coverage executed by this README. Keep results, app/plugin revision, time, redacted source IDs, and actual native receipts in issue or PR evidence.
 
 ### Native Acceptance Inventory
@@ -200,22 +200,6 @@ node "$runtime" setup inspect --plugin-data "$plugin_data" \
 test ! -e "$GITHUB_WORKSPACE/examples/codex-notifications/active/.setup-applied"
 test ! -d "$CODEX_HOME/automations"
 
-# should preserve restored pre-reset history and reject it before any workflow execution
-root="$TMPDIR/agent-system-codex-notifications"
-plugin_root=$(jq -r .cachePath "$root/cache.json")
-runtime="$plugin_root/dist/codex/codex-runtime.js"
-plugin_data="$root/notification-data"
-scope=$(printf '%s\n' '{}' | node "$runtime" dispatch inspect --plugin-data "$plugin_data" | jq -er .scope)
-state="$plugin_data/codex-dispatch-$scope.json"
-umask 077
-jq -nc --arg scope "$scope" '{version:1,scope:$scope,records:[{retired:{at:1,by:"historical-owner"},result:{decision:{action:"proceed"}}}]}' > "$state"
-cp "$state" "$root/pre-reset-before.json"
-if output=$(printf '%s\n' '{}' | node "$runtime" dispatch inspect --plugin-data "$plugin_data" 2>&1); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.status == "error" and .code == "notification-state-reset-required" and (.notice.next | contains("Preserve the original file"))'
-cmp "$state" "$root/pre-reset-before.json"
-mv "$state" "$root/pre-reset-history.json"
-printf '%s\n' '{}' | node "$runtime" dispatch inspect --plugin-data "$plugin_data" | jq -e '.records == [] and .resetGeneration == "initial"'
-
 # should expose direct reply without intake activation while requiring an actual native caller
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
@@ -270,7 +254,6 @@ while IFS='|' read -r route action operation caller expected request; do
   fi
 done <<'CASES'
 delivery|bind|||native-context-binding-override|{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","pullRequest":"https://github.com/tanaabased/big-test-bucket/pull/2"}
-dispatch|summary|candidate||native-context-binding-override|{"action":"summary","operation":"candidate","id":"malformed"}
 dispatch|||fixture-intake|native-context-binding-override|{"action":"reconcile","id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
 dispatch|||fixture-operator|native-context-binding-override|{"action":"retire","id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
 dispatch|||fixture-operator|native-context-binding-override|{"action":"retry-denied","id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","approvedCallId":"fixture-denied-call"}
@@ -337,7 +320,7 @@ plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/notification-data"
 printf '%s\n' '{"action":"inspect"}' | node "$runtime" dispatch --plugin-data "$plugin_data" \
-  | jq -e '.version == 1 and .records == []'
+  | jq -e '.version == 4 and .records == []'
 test ! -d "$CODEX_HOME/automations"
 test ! -d "$GITHUB_WORKSPACE/examples/codex-notifications/active/checkouts"
 test ! -d "$GITHUB_WORKSPACE/examples/codex-notifications/active/.agent-system/repositories"
@@ -347,11 +330,11 @@ root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 cat > "$TMPDIR/assessment-shape.json" <<'JSON'
-{"action":"assessment","operation":"render","target":"https://github.com/tanaabased/big-test-bucket/issues/1","result":{"version":1,"outcome":"plan-ready","summary":"Inspect the documented change.","assessment":"Bounded change.","fullAssessment":"PRIVATE-ASSESSMENT-SOURCE","reviewSummary":"You can review the documented change.","plan":"Complete source plan.","evidence":[],"progress":{"completed":[]}}}
+{"action":"assessment","operation":"render","target":"https://github.com/tanaabased/big-test-bucket/issues/1","result":{"outcome":"plan-ready","summary":"Inspect the documented change.","assessment":"Bounded change.","fullAssessment":"PRIVATE-ASSESSMENT-SOURCE","reviewSummary":"You can review the documented change."}}
 JSON
 if output=$(node "$runtime" dispatch assessment render --plugin-data "$root/notification-data" < "$TMPDIR/assessment-shape.json" 2>&1); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.status == "error" and .code == "assessment-render-request-invalid" and .recovery.fields == ["request.result.progress.remaining"] and (tostring | contains("PRIVATE-ASSESSMENT-SOURCE") | not)'
-jq '.result.progress.remaining = []' "$TMPDIR/assessment-shape.json" > "$TMPDIR/assessment-corrected.json"
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "assessment-render-request-invalid" and .recovery.fields == ["request.result.plan"] and (tostring | contains("PRIVATE-ASSESSMENT-SOURCE") | not)'
+jq '.result.plan = "Complete source plan."' "$TMPDIR/assessment-shape.json" > "$TMPDIR/assessment-corrected.json"
 node "$runtime" dispatch assessment render --plugin-data "$root/notification-data" < "$TMPDIR/assessment-corrected.json" | jq -e '.status == "formatted" and .retained == false and (.presentation | contains("You can review the documented change.")) and (tostring | contains("PRIVATE-ASSESSMENT-SOURCE") | not)'
 
 # should reject packaged continuation without newly reconciled work authority
