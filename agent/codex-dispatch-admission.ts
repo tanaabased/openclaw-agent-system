@@ -1,3 +1,4 @@
+import dispatchBlocker from './dispatch-blocker.ts';
 import resolveGitProtocol from '../tools/git/protocol.ts';
 import { assignmentClaimRoute } from './assignment-claim-source.ts';
 import { dispatchStoragePressure } from './dispatch-storage.ts';
@@ -166,8 +167,9 @@ export async function recover(
       throw new Error('claim-recovery-owner-unresolved');
   }
   record.phase = record.phase === 'complete' ? 'complete' : 'assessing';
-  if (record.phase !== 'complete' && record.result?.outcome === 'operator-setup-blocker') {
+  if (record.phase !== 'complete' && dispatchBlocker(record) !== undefined) {
     delete record.result;
+    delete record.blocker;
     delete record.stageReceipt;
   }
   await save();
@@ -245,7 +247,10 @@ async function selectClaim(
 
 function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
   const attempt =
-    (record.deniedCreations?.length ?? 0) + (record.unsubmittedCreations?.length ?? 0) + 1;
+    (record.creationRecovery?.attempts ?? 0) +
+    (record.deniedCreations?.length ?? 0) +
+    (record.unsubmittedCreations?.length ?? 0) +
+    1;
   const card = assignmentCard(
     {
       emoji: '📥',
@@ -279,14 +284,21 @@ export function unpreparedDispatch(record: DispatchRecord) {
     !record.retirement &&
     !record.supersededBy &&
     !record.handoff &&
+    !record.nativeRequests?.length &&
     !record.continuation?.attempt &&
     !record.continuation?.publicationAttempt
   );
 }
 
 function creationRecovery(record: DispatchRecord, next: 'prepare' | 'create') {
-  const unsubmitted = record.unsubmittedCreations?.at(-1);
-  const denied = record.deniedCreations?.at(-1);
+  const unsubmitted =
+    record.creationRecovery?.latest?.kind === 'unsubmitted'
+      ? record.creationRecovery.latest
+      : record.unsubmittedCreations?.at(-1);
+  const denied =
+    record.creationRecovery?.latest?.kind === 'denied'
+      ? record.creationRecovery.latest
+      : record.deniedCreations?.at(-1);
   const instruction =
     next === 'prepare'
       ? 'Use the current routing result to call dispatch prepare. There is no pending creation to reconcile. Native approval still applies to the next creation.'
@@ -415,11 +427,11 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
       (!record.effective || (deps.claims && record.claimId && !record.claimAccepted)) &&
       record.phase !== 'complete' &&
       (record.phase !== 'blocked' ||
-        (record.result?.outcome === 'operator-setup-blocker' &&
-          record.result.code === 'dispatch-assignment-superseded')) &&
-      (record.result?.outcome !== 'operator-setup-blocker' ||
+        (dispatchBlocker(record) !== undefined &&
+          dispatchBlocker(record)! === 'dispatch-assignment-superseded')) &&
+      (dispatchBlocker(record) === undefined ||
         Boolean(record.retry) ||
-        dispatchRecheckable(record.result.code)) &&
+        dispatchRecheckable(dispatchBlocker(record)!)) &&
       (record.retryAfter ?? 0) <= now,
   )) {
     const intake = dispatchAdmission(pending, admitted.records);
@@ -468,6 +480,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
         !pending.receiptThreadId &&
         !pending.clientThreadId &&
         !pending.worktree &&
+        !pending.nativeRequests?.length &&
         !pending.continuation?.attempt &&
         !pending.continuation?.publicationAttempt
       ) {
@@ -493,8 +506,10 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
               turnId: proof.turnId,
             });
             delete pending.continuation;
+            delete pending.nativeWork;
             delete pending.request;
             delete pending.result;
+            delete pending.blocker;
             delete pending.stageReceipt;
             delete pending.retryAfter;
             delete pending.preparationTurnId;
@@ -525,10 +540,12 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
         !record?.request &&
         (!deps.claims || record?.claimPass !== (tx.operatorInput?.turnId ?? state.run!.id)) &&
         (record?.phase !== 'blocked' || record.intakeId !== intake.id) &&
-        (record?.result?.outcome !== 'operator-setup-blocker' ||
+        (!record ||
+          dispatchBlocker(record) === undefined ||
           Boolean(record.retry) ||
-          dispatchRecheckable(record.result.code) ||
-          (record.result.code === 'dispatch-creation-not-prepared' && unpreparedDispatch(record)) ||
+          dispatchRecheckable(dispatchBlocker(record)!) ||
+          (dispatchBlocker(record)! === 'dispatch-creation-not-prepared' &&
+            unpreparedDispatch(record)) ||
           record.intakeId !== intake.id) &&
         (record?.retryAfter ?? 0) <= now,
     )?.intake;
@@ -746,6 +763,7 @@ export async function prepareIssueProject(
         ),
       };
     delete record.result;
+    delete record.blocker;
     delete record.stageReceipt;
     await fresh();
     await save();

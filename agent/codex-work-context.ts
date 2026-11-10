@@ -1,3 +1,4 @@
+import codexWorkState from './codex-work-state.ts';
 import nativeTaskInstructions from './native-task-instructions.ts';
 import implementationContext from './implementation-context.ts';
 import assessmentReviewContext from './assessment-review-context.ts';
@@ -24,7 +25,7 @@ export default async function codexWorkContext(
 ) {
   const { current, git, signal, save, deps } = context;
   const { admitted, selection } = verified;
-  const work = record.continuation!;
+  const work = codexWorkState(record)!;
   if (!readOnly)
     await codexIssueBranch({
       record,

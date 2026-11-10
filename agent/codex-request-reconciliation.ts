@@ -8,6 +8,7 @@ export default async function reconcileCodexRequests(context: CodexWorkContext) 
     if (context.input.id && record.id !== context.input.id) continue;
     const work = record.continuation;
     const requests = [
+      ...(record.nativeRequests ?? []),
       ...(work?.attempt && !work.attempt.ended
         ? [{ kind: 'implementation', attempt: work.attempt }]
         : []),
@@ -31,8 +32,10 @@ export default async function reconcileCodexRequests(context: CodexWorkContext) 
         if (receipt.status === 'verified') {
           attempt.turnId = receipt.turnId;
           if (receipt.ended) attempt.ended = true;
-          if (receipt.ended && kind === 'decision') record.autoDecision!.ended = true;
-          if (receipt.ended && kind === 'summary') record.summaryRecovery!.ended = true;
+          if (receipt.ended && kind === 'decision' && record.autoDecision)
+            record.autoDecision.ended = true;
+          if (receipt.ended && kind === 'summary' && record.summaryRecovery)
+            record.summaryRecovery.ended = true;
           await context.save();
         }
         outcomes.push({ id: record.id, kind, ...receipt });

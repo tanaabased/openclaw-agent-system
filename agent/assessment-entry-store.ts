@@ -1,3 +1,5 @@
+import compactImplementationEntry from './compact-implementation-entry.ts';
+import type { ImplementationEntry } from './implementation-entry-state.ts';
 import { join } from 'node:path';
 import { Type, type TSchema, type Static } from 'typebox';
 import { Value } from 'typebox/value';
@@ -66,6 +68,9 @@ export class DirectEntryStore<S extends TSchema> {
           throw new Error(`${this.kind}-state-invalid`);
         return run(state.entries, async (removeEmpty = false) => {
           lock.assertHeld();
+          if (this.kind === 'implementation')
+            for (const entry of state.entries as ImplementationEntry[])
+              compactImplementationEntry(entry);
           if (!Value.Check(schema, state)) throw new Error(`${this.kind}-state-invalid`);
           if (removeEmpty && Array.isArray(state.entries) && state.entries.length === 0)
             await this.file.remove();

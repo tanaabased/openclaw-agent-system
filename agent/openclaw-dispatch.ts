@@ -823,6 +823,15 @@ export default class OpenClawDispatch {
                   threadId: record.threadId,
                   effective: record.effective,
                   sessionCreation: record.sessionCreation,
+                  nativeTurns: record.nativeTurns?.map(({ role, turn }) => ({
+                    role,
+                    runId: turn.runId,
+                    status: turn.status,
+                    consumedByEventId: turn.consumedByEventId,
+                    replyEventId: turn.replyEventId,
+                    cancelled: turn.cancelled,
+                    failed: turn.failed,
+                  })),
                   firstTurn: record.firstTurn
                     ? {
                         status: record.firstTurn.status,
@@ -897,7 +906,7 @@ export default class OpenClawDispatch {
           childAction &&
           (caller.sessionKey !== record.threadId ||
             caller.sessionId !== record.sessionCreation?.sessionId ||
-            !record.assessmentTurn)
+            (!record.assessmentTurn && !record.nativeRecord))
         )
           throw new Error('dispatch-assessment-caller-mismatch');
         const verified = await this.validate(

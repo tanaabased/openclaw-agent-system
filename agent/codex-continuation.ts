@@ -1,3 +1,4 @@
+import codexWorkState from './codex-work-state.ts';
 import codexFeedbackInput from './codex-feedback-input.ts';
 import taskRecoveryCaller from './task-recovery-caller.ts';
 import authorizeCodexFeedback from './codex-feedback-authority.ts';
@@ -192,7 +193,7 @@ export default async function runCodexContinuation(
               throw error;
             if (
               deps.directScope &&
-              deps.directScope !== (record?.continuation?.scope ?? 'pull-request')
+              deps.directScope !== ((record && codexWorkState(record)?.scope) ?? 'pull-request')
             )
               throw error;
           }

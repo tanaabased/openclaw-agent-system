@@ -1,3 +1,4 @@
+import codexWorkState from './codex-work-state.ts';
 import { observeCodexActivity } from './codex-capacity-reconcile.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import codexWorkContext from './codex-work-context.ts';
@@ -27,7 +28,7 @@ export async function prepareCodexWork(state: DispatchState, context: CodexWorkC
         throw new Error('continuation-issue-caller-required');
       const admitted = dispatchAdmission(record, admissions?.records ?? []);
       if (
-        record.continuation ||
+        codexWorkState(record) ||
         !record.project ||
         !record.worktree ||
         !record.request ||
@@ -74,7 +75,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
   const direction = context.operatorInput ?? context.feedbackInput;
   const liveMode = issueWorkflowMode(current.manifest.github?.notifications, record);
   try {
-    const work = record.continuation;
+    const work = codexWorkState(record);
     if (
       !work ||
       !record.threadId ||
@@ -168,7 +169,8 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     record.effective = codexSessionSettings(record, found);
     await save();
     if (input.action === 'cancel') {
-      work.phase = 'cancelled';
+      if (record.nativeRecord) work.cancelled = true;
+      else work.phase = 'cancelled';
       await save();
       return { status: 'cancelled' as const, id: record.id };
     }
@@ -222,8 +224,8 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       return { status: 'deliver' as const, id: record.id };
     }
   } catch (error) {
-    if (error instanceof WorkflowPolicyHeld && record.continuation) {
-      record.continuation.policyHeld = error.reason;
+    if (error instanceof WorkflowPolicyHeld && codexWorkState(record)) {
+      codexWorkState(record)!.policyHeld = error.reason;
       await save();
       return {
         status: 'policy-held' as const,

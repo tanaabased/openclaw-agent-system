@@ -1,3 +1,5 @@
+import { nativeTurnFor } from './openclaw-native-turns.ts';
+import type { OpenClawTurn } from './openclaw-turn-state.ts';
 import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import { reconcileOpenClawTurn } from './openclaw-turn.ts';
 import { assessmentTurnMessage } from './openclaw-assessment.ts';
@@ -42,6 +44,8 @@ export default async function advanceIssueTurn(input: {
 }) {
   const { record, save, authority } = input;
   const slot = input.assessment ? 'assessmentTurn' : 'firstTurn';
+  const role = input.assessment ? 'assessment' : 'first';
+  const currentTurn = () => nativeTurnFor(record, role);
   const expected = record.request;
   const sessionId = record.sessionCreation?.sessionId;
   if (
@@ -59,10 +63,10 @@ export default async function advanceIssueTurn(input: {
   };
   await guard();
   return input.credential.use(authority, async (request) => {
-    if (!record[slot]) {
+    if (!currentTurn()) {
       let leaf: string | null = null;
-      if (input.assessment && record.firstTurn) {
-        if (record.firstTurn.status !== 'completed')
+      if (input.assessment && nativeTurnFor(record, 'first')) {
+        if (nativeTurnFor(record, 'first')!.status !== 'completed')
           throw new Error('dispatch-investigation-incomplete');
         await describeIssueSession(request, record, input.config);
         const history = sessionObject(
@@ -76,7 +80,7 @@ export default async function advanceIssueTurn(input: {
           !Array.isArray(history.messages) ||
           history.messages.length !== 1 ||
           sessionObject(sessionObject(history.messages[0]).__openclaw).id !==
-            record.firstTurn.replyEventId ||
+            nativeTurnFor(record, 'first')!.replyEventId ||
           typeof info.activeLeafEntryId !== 'string' ||
           !info.activeLeafEntryId
         )
@@ -99,15 +103,17 @@ export default async function advanceIssueTurn(input: {
         },
         assertCurrent: guard,
         recordAttempt() {
-          record[slot] = { runId, message, status: 'attempted' };
+          const turn: OpenClawTurn = { runId, message, status: 'attempted' };
+          if (record.nativeRecord) (record.nativeTurns ??= []).push({ role, turn });
+          else record[slot] = turn;
         },
         recordAcceptance() {
-          record[slot]!.status = 'accepted';
+          currentTurn()!.status = 'accepted';
         },
         save,
       });
     }
-    const turn = record[slot]!;
+    const turn = currentTurn()! as OpenClawTurn;
     await describeIssueSession(request, record, input.config);
     await reconcileOpenClawTurn({
       record,

@@ -1,3 +1,4 @@
+import openClawNativeTurns from './openclaw-native-turns.ts';
 import nativeClarification from './native-clarification.ts';
 import nativeTaskInstructions from './native-task-instructions.ts';
 import implementationContext from './implementation-context.ts';
@@ -45,6 +46,9 @@ export async function verifyOpenClawWork(input: {
   await describeIssueSession(input.request, record, input.config);
   const operator =
     input.operator &&
+    !openClawNativeTurns(record).some(
+      ({ turn }) => turn.runId === caller.runId || turn.executionRunId === caller.runId,
+    ) &&
     caller.runId !== record.firstTurn?.runId &&
     caller.runId !== record.assessmentTurn?.runId &&
     caller.runId !== record.decisionTurn?.runId &&
@@ -79,6 +83,9 @@ export async function verifyOpenClawWork(input: {
     record.work?.implementation,
     record.work?.publication,
     record.assessmentCaller,
+    ...(record.nativeTurns ?? []).flatMap(({ turn }) =>
+      turn.consumedByEventId ? [{ runId: turn.runId, inputEventId: turn.consumedByEventId }] : [],
+    ),
   ];
   const context = {
     request: input.request,
@@ -190,6 +197,18 @@ export default async function openClawWorkAction(input: {
     throw new Error('implementation-context-missing');
   if (action.implementationResult.outcome === 'clarification-needed')
     return nativeClarification(record.id, implementationPresentation(action.implementationResult));
+  if (record.nativeRecord)
+    return {
+      status: 'native',
+      id: record.id,
+      outcome: action.implementationResult.outcome,
+      handoff: implementationHandoff(
+        action.implementationResult.outcome,
+        'openclaw',
+        record.work.scope === 'local' ? { publication: false } : undefined,
+      ),
+      presentation: implementationPresentation(action.implementationResult),
+    };
   record.work.resultSource = resultSource;
   record.work.result = action.implementationResult;
   delete record.work.revisionSource;

@@ -35,6 +35,34 @@ describe('agent/openclaw-turn-context', () => {
     });
     assert.match(output.appendSystemContext, /agent_system_context/);
   });
+  it('should retain the initial assessment stage after migration while other feedback is queued', () => {
+    const migrated = {
+      ...record,
+      assessmentTurn: undefined,
+      nativeRecord: true,
+      nativeTurns: [
+        {
+          role: 'assessment',
+          turn: { runId: binding.runId, status: 'accepted', message: 'input' },
+        },
+      ],
+      feedback: {
+        baseline: {},
+        events: [
+          {
+            id: 'other',
+            native: true,
+            itemType: 'issue',
+            number: 3,
+            source: JSON.stringify({ databaseId: 42 }),
+            turn: { runId: 'other-run' },
+          },
+        ],
+      },
+    } as OpenClawDispatchRecord;
+    const output = openclawTurnContext(migrated, binding)!;
+    assert.equal(JSON.parse(output.appendContext.split('\n')[1]!).stage, 'assessment');
+  });
   it('should bind native runs without inventing an optional input id', () => {
     const output = openclawTurnContext(record, { ...binding, inputId: undefined })!;
     assert.doesNotMatch(output.appendContext, /PRIVATE-GITHUB-FACT/);

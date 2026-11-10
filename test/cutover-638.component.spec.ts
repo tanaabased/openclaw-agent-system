@@ -1,3 +1,5 @@
+import AssessmentEntryStore, { DirectEntryStore } from '../agent/assessment-entry-store.ts';
+import { implementationEntriesSchema } from '../agent/implementation-entry-state.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -241,6 +243,116 @@ describe('scripts/cutover-638', () => {
     return { ...f, record: record as OpenClawDispatchRecord };
   }
 
+  for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should trim only mapped direct stores and preserve current delivery custody in ${runtime}`, async () => {
+      const f = await activeFixture(runtime);
+      const binding = {
+        runtime,
+        agentId: f.request.agent,
+        workspace: f.request.workspace,
+        namespace: f.request.namespace,
+        session: f.record.threadId!,
+        incarnation: runtime === 'codex' ? f.record.threadId! : 'incarnation',
+      };
+      const assessments = new AssessmentEntryStore(f.store.root, binding);
+      const implementations = new DirectEntryStore(
+        f.store.root,
+        binding,
+        implementationEntriesSchema,
+        'implementation',
+      );
+      const entry = {
+        id: 'e'.repeat(64),
+        target: 'https://github.com/owner/repo/issues/3',
+        repositoryId: 'R_repo',
+        subjectId: 'I_issue',
+        checkout: { path: f.record.worktree!, revision: 'head', dirty: false },
+        plan: 'OLD PLAN',
+        evidence: 'OLD ISSUE',
+        result: { outcome: 'done', summary: 'OLD SUMMARY', fullResult: 'OLD RESULT' },
+        authorization: { turnId: 'original', inputId: 'input' },
+        scopeSource: { turnId: 'scope', inputId: 'scope-input' },
+        caller: { turnId: 'current', inputId: 'current-input' },
+        scope: 'pull-request',
+        delivery: {
+          id: 'f'.repeat(64),
+          binding: {
+            repositoryId: 'R_repo',
+            issueId: 'I_issue',
+            sessionId: binding.incarnation,
+            threadId: binding.session,
+            worktree: f.record.worktree!,
+            branch: 'task',
+            base: 'main',
+            head: 'a'.repeat(40),
+            authorId: account.nodeId,
+            policyDigest: 'b'.repeat(64),
+          },
+          title: 'exact draft',
+          body: 'exact pending publication',
+          creationAttempted: true,
+          reconciled: false,
+          pendingPush: { previousHead: '', head: 'a'.repeat(40) },
+        },
+      };
+      // Legacy snapshots bypass the current writer, which already suppresses these copies.
+      await writeFile(assessments.path, JSON.stringify({ scope: assessments.scope, entries: [] }));
+      await writeFile(
+        implementations.path,
+        JSON.stringify({ scope: implementations.scope, entries: [entry] }),
+      );
+      const unknown = new DirectEntryStore(
+        f.store.root,
+        { ...binding, session: 'unmapped', incarnation: 'unmapped' },
+        implementationEntriesSchema,
+        'implementation',
+      );
+      const unknownBytes = JSON.stringify({ scope: unknown.scope, entries: [entry] });
+      await writeFile(unknown.path, unknownBytes);
+      const report = await cutover638(f.request);
+      const targetRoot = join(report.output, runtime === 'codex' ? 'state' : 'dispatch');
+      const migrated = new DirectEntryStore(
+        targetRoot,
+        binding,
+        implementationEntriesSchema,
+        'implementation',
+      );
+      const saved = await migrated.exclusive(async (entries) => entries);
+      assert.deepEqual(saved, [omit(entry, ['plan', 'evidence', 'result'])]);
+      await assert.rejects(readFile(new AssessmentEntryStore(targetRoot, binding).path), {
+        code: 'ENOENT',
+      });
+      assert.equal(report.unmappedDirectStores.length, 1);
+      assert.equal(
+        await readFile(join(report.output, report.unmappedDirectStores[0]!), 'utf8'),
+        unknownBytes,
+      );
+      assert.deepEqual(JSON.parse(await readFile(implementations.path, 'utf8')).entries, [entry]);
+      const completed = await cutover638({
+        ...f.request,
+        source: report.output,
+        output: join(root, 'with-direct'),
+        directSessions: [{ session: 'unmapped', incarnation: 'unmapped' }],
+      });
+      assert.deepEqual(completed.unmappedDirectStores, []);
+      const direct = new DirectEntryStore(
+        join(completed.output, runtime === 'codex' ? 'state' : 'dispatch'),
+        { ...binding, session: 'unmapped', incarnation: 'unmapped' },
+        implementationEntriesSchema,
+        'implementation',
+      );
+      assert.deepEqual(await direct.exclusive(async (entries) => entries), [
+        omit(entry, ['plan', 'evidence', 'result']),
+      ]);
+      const repeat = await cutover638({
+        ...f.request,
+        source: completed.output,
+        output: join(root, 'direct-repeat'),
+        directSessions: [{ session: 'unmapped', incarnation: 'unmapped' }],
+      });
+      assert.deepEqual(repeat.changes, []);
+    });
+
   function feedback(index: number) {
     return {
       id: automationHash(index),
@@ -261,14 +373,15 @@ describe('scripts/cutover-638', () => {
     it(`should use archive-free storage for fresh and migrated journals in ${runtime}`, async () => {
       const f = await activeFixture(runtime);
       const Store = runtime === 'codex' ? CodexDispatchStore : OpenClawDispatchStore;
-      assert.equal((await new Store(join(root, 'fresh'), f.location.scope).read()).version, 2);
+      assert.equal((await new Store(join(root, 'fresh'), f.location.scope).read()).version, 3);
       const report = await cutover638(f.request);
       const migrated = new Store(
         join(report.output, runtime === 'codex' ? 'state' : 'dispatch'),
         f.location.scope,
       );
-      const initial = await migrated.read();
-      assert.equal(initial.version, 2);
+      const initial = await migrated.readNative();
+      await assert.rejects(f.store.readNative(), /dispatch-migration-required/);
+      assert.equal(initial.version, 3);
       assert.equal((await f.store.read()).version, 1);
       const beforeRegression = await readFile(migrated.path);
       await assert.rejects(
@@ -279,7 +392,12 @@ describe('scripts/cutover-638', () => {
         /dispatch-storage-version-regression/,
       );
       assert.deepEqual(await readFile(migrated.path), beforeRegression);
-      assert.equal(report.requiresCompatibleRuntime, 'dispatch-storage-v2');
+      const invalid = structuredClone(initial);
+      invalid.records[0]!.directAssessments = [];
+      await writeFile(migrated.path, JSON.stringify(invalid));
+      await assert.rejects(migrated.readNative(), /dispatch-state-invalid/);
+      await writeFile(migrated.path, beforeRegression);
+      assert.equal(report.requiresCompatibleRuntime, 'dispatch-storage-v3');
       assert.deepEqual(JSON.parse(initial.records[0]!.context!), {
         source: 'https://github.com/owner/repo/issues/3',
       });
@@ -310,7 +428,7 @@ describe('scripts/cutover-638', () => {
       });
       assert.deepEqual(again.changes, []);
       await migrated.reset('reset-after-cutover');
-      assert.equal((await migrated.read()).version, 2);
+      assert.equal((await migrated.read()).version, 3);
     });
   }
 
@@ -375,19 +493,19 @@ describe('scripts/cutover-638', () => {
         };
       f.record.feedback!.events.push({ ...feedback(1), workDelivery: delivery });
       await writeFile(f.store.path, JSON.stringify(f.state));
-      const expected = retirementEffects(f.record, intake);
+      const expected = JSON.parse(JSON.stringify(retirementEffects(f.record, intake)));
       assert.equal(expected.length, 1);
       const report = await cutover638(f.request);
       assert.equal(report.uncertainEffects, 1);
       const migrated = new OpenClawDispatchStore(join(report.output, 'dispatch'), f.location.scope);
-      assert.deepEqual(retirementEffects((await migrated.read()).records[0]!, intake), expected);
+      assert.deepEqual((await migrated.read()).retirementEffects, expected);
       await migrated.exclusive(async (state, save) => {
         state.records[0]!.feedback!.events.push(
           ...Array.from({ length: 350 }, (_, n) => feedback(n + 2)),
         );
         await save();
       });
-      assert.deepEqual(retirementEffects((await migrated.read()).records[0]!, intake), expected);
+      assert.deepEqual((await migrated.read()).retirementEffects, expected);
       const second = await cutover638({
         ...f.request,
         source: report.output,
@@ -395,15 +513,8 @@ describe('scripts/cutover-638', () => {
       });
       assert.equal(second.uncertainEffects, 1);
       assert.deepEqual(
-        retirementEffects(
-          (
-            await new OpenClawDispatchStore(
-              join(second.output, 'dispatch'),
-              f.location.scope,
-            ).read()
-          ).records[0]!,
-          intake,
-        ),
+        (await new OpenClawDispatchStore(join(second.output, 'dispatch'), f.location.scope).read())
+          .retirementEffects,
         expected,
       );
     });
@@ -419,7 +530,7 @@ describe('scripts/cutover-638', () => {
       const dispatchRoot = join(result.output, runtime === 'codex' ? 'state' : 'dispatch');
       const Store = runtime === 'codex' ? CodexDispatchStore : OpenClawDispatchStore;
       const migrated = new Store(dispatchRoot, f.location.scope);
-      assert.deepEqual((await migrated.read()).records, [f.active]);
+      assert.deepEqual((await migrated.read()).records, [{ ...f.active, nativeRecord: true }]);
       assert.equal(
         (await readdir(migrated.history.directory)).filter((name) => name.endsWith('.json')).length,
         0,
@@ -514,7 +625,10 @@ describe('scripts/cutover-638', () => {
       join(result.output, 'state'),
       f.location.scope,
     ).read();
-    assert.deepEqual(migrated.records, [f.active, ...manual]);
+    assert.deepEqual(
+      migrated.records,
+      [f.active, ...manual].map((record) => ({ ...record, nativeRecord: true })),
+    );
     const next = JSON.parse(
       await readFile(
         join(result.output, 'state', `github-intake-${f.location.scope}.json`),
@@ -603,7 +717,7 @@ describe('scripts/cutover-638', () => {
     assert.equal(migrated.records[0]!.cleanupPending, true);
     assert.equal(migrated.records[0]!.context, undefined);
     assert.deepEqual(migrated.records[0]!.retirement, record.retirement);
-    assert.deepEqual(migrated.records[1], grace);
+    assert.deepEqual(migrated.records[1], { ...grace, nativeRecord: true });
   });
 
   it('should refuse unknown assignment evidence without producing a replacement', async () => {

@@ -16,6 +16,7 @@ function pending(id = 'a'.repeat(64)) {
     issueKey: id,
     sourceThreadId: 'agent:receiver:automation:intake',
     phase: 'routing',
+    nativeRecord: true,
     createdAt: 1,
     manifestDigest: 'manifest',
   } satisfies OpenClawDispatchRecord;

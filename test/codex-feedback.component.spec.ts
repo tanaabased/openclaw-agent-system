@@ -1,3 +1,4 @@
+import cutover638Active from '../scripts/cutover-638-active.ts';
 import discoveryCheckpoint from '../agent/discovery-checkpoint.ts';
 import hydrateImplementation, { type Field } from './implementation-material-fixture.ts';
 import commentProviderFixture from './github-comment-provider-fixture.ts';
@@ -99,9 +100,10 @@ describe('agent/codex-feedback', () => {
     const current = await selectCodexIntake(pluginData, { codexHome });
     const admitted = (await current.store.read())!.records[0]!;
     store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.file.write(JSON.stringify({ ...(await store.read()), version: 2 }));
     await store.exclusive(async (state, save) => {
       state.records.push({
-        context: 'context',
+        context: JSON.stringify({ source: 'https://github.com/owner/repo/issues/3' }),
         routing: 'routing',
         routingNote: 'note',
         result: {
@@ -282,6 +284,11 @@ describe('agent/codex-feedback', () => {
             },
           },
         };
+        await save();
+      });
+      await store.exclusive(async (state, save) => {
+        state.records = state.records.map((record) => cutover638Active(record).record);
+        state.version = 3;
         await save();
       });
       const before = (await store.read()).records[0]!;

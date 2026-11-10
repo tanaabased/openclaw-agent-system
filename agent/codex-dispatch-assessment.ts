@@ -165,7 +165,8 @@ export async function handoffDispatch(
       deps.git,
       'handoff',
     );
-    if (record.continuation?.phase === 'cancelled') throw new Error('implementation-cancelled');
+    if (record.nativeWork?.cancelled || record.continuation?.phase === 'cancelled')
+      throw new Error('implementation-cancelled');
     if (
       record.continuation?.phase === 'blocked' &&
       (['continuation-native-send-failed', 'continuation-native-approval-denied'].includes(
@@ -179,6 +180,11 @@ export async function handoffDispatch(
                 record.continuation.binding?.turnId))))
     )
       throw new Error(record.continuation.code ?? 'continuation-implementation-blocked');
+    if (
+      record.nativeWork?.blocked &&
+      (!native.followUpUserTurn || native.turnId === record.nativeWork.blockedTurnId)
+    )
+      throw new Error(record.nativeWork.code ?? 'continuation-implementation-blocked');
     if (record.handoff)
       return {
         status: 'handed-off' as const,

@@ -1,3 +1,4 @@
+import codexWorkState from './codex-work-state.ts';
 import { automationHash } from './automation-hash.ts';
 import type { AssessmentSelection } from './assessment-selection.ts';
 import type { CodexWorkContext } from './codex-continuation-context.ts';
@@ -18,7 +19,7 @@ export default async function advanceCodexWorkTurn(
   },
 ) {
   const { found, admitted, transition, selection } = verified;
-  const work = record.continuation!;
+  const work = codexWorkState(record)!;
   if (found.turnEnded || ['completed', 'failed'].includes(found.turnStatus ?? ''))
     return {
       ready: false as const,
@@ -103,6 +104,7 @@ export default async function advanceCodexWorkTurn(
   }
   if (context.input.action === 'context' && transition.status === 'ready') {
     record.progression = { ...transition.progression, workOwner: 'issue' };
+    if (direction) delete work.cancelled;
     work.activeTurnId = found.turnId;
     work.contextSelection = selection;
     work.binding = {

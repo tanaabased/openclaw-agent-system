@@ -237,7 +237,7 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
       assessmentInstructions +
       '\n\nDirect execution: use these verified inputs and the selected assessment body once. Preserve the current chat/model. Use presentationRequest plus result matching resultFormat through dispatch assessment render. This pure formatter saves no assessment or summary. Show its presentation; keep the full result in native tool context. Historical assessment present remains an explicit read. No assignment, setup, implementation, publication, or new chat is authorized.',
   });
-  if (fresh) {
+  if (input.operation === 'context') {
     const { selection } = await selectWorkflowStage({
       stage: 'assessment',
       configuration: deps.manifest.github?.notifications?.issueAssignment?.assessment,
@@ -249,6 +249,21 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
     if (currentOwner?.digest !== managed?.digest)
       throw new Error('assessment-managed-context-changed');
     await deps.assertCurrent();
+    // Older callers may still submit through the bound result formatter. Refresh only
+    // their exact caller and method; never create a new assessment journal entry.
+    if (saved)
+      await (managed?.entries ?? store.exclusive.bind(store))(async (entries, save) => {
+        const entry = entries.find((entry) => entry.id === saved.id);
+        if (!entry) throw new Error('assessment-entry-context-changed');
+        Object.assign(entry, {
+          turnId: deps.turnId,
+          inputId: deps.inputId,
+          selection,
+          checkout,
+          evidence: JSON.stringify({ source: canonical }),
+        });
+        await save();
+      });
     return assessmentMaterial(
       response({ checkout, evidence: JSON.stringify({ source: canonical }), selection }),
       { action: 'assessment', operation: 'context', target: canonical, path: checkout.path },
@@ -256,9 +271,9 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
     );
   }
   const entries: AssessmentEntries = managed?.entries ?? store.exclusive.bind(store);
-  return entries(async (records, save) => {
+  return entries(async (records) => {
     const binding = automationHash(deps.binding);
-    let entry = records.find((e) => e.binding === binding && e.target === canonical);
+    const entry = records.find((e) => e.binding === binding && e.target === canonical);
     if (
       entry &&
       (entry.target !== canonical ||
@@ -272,64 +287,6 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
     if (currentOwner?.digest !== managed?.digest)
       throw new Error('assessment-managed-context-changed');
     await deps.assertCurrent();
-    if (input.operation === 'context') {
-      const currentEvidence = { source: canonical };
-      if (!entry) {
-        const selected = (
-          await selectWorkflowStage({
-            stage: 'assessment',
-            configuration: deps.manifest.github?.notifications?.issueAssignment?.assessment,
-            workspace: deps.binding.workspace,
-            observedAt: deps.now,
-            resolveSkill: deps.resolveSkill,
-          })
-        ).selection;
-        const evidence = JSON.stringify(currentEvidence);
-        entry = {
-          id: automationHash({ binding, canonical, owner: managed?.digest }),
-          binding,
-          target: canonical,
-          repositoryId: repo.nodeId,
-          subjectId: issue.nodeId,
-          checkout,
-          evidence,
-          selection: selected,
-          turnId: deps.turnId,
-          inputId: deps.inputId,
-          ...(managed ? { ownerDigest: managed.digest } : {}),
-        };
-        records.push(entry);
-      } else {
-        entry.turnId = deps.turnId;
-        entry.inputId = deps.inputId;
-        entry.checkout = checkout;
-        entry.selection = (
-          await selectWorkflowStage({
-            stage: 'assessment',
-            configuration: deps.manifest.github?.notifications?.issueAssignment?.assessment,
-            workspace: deps.binding.workspace,
-            observedAt: deps.now,
-            resolveSkill: deps.resolveSkill,
-          })
-        ).selection;
-        entry.evidence = JSON.stringify(currentEvidence);
-      }
-      await deps.assertCurrent();
-      await save();
-      return assessmentMaterial(
-        {
-          ...response(entry),
-          evidence: currentEvidence,
-        },
-        {
-          action: 'assessment',
-          operation: 'context',
-          target: canonical,
-          path: checkout.path,
-        },
-        input.material,
-      );
-    }
     if (!entry) throw new Error('assessment-context-required');
     if (input.operation === 'present') {
       if (!entry.result) throw new Error('assessment-result-missing');

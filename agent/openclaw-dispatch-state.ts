@@ -1,3 +1,4 @@
+import { nativeTurnSchema } from './openclaw-native-turns.ts';
 import { Type, type Static } from 'typebox';
 import { isDeepStrictEqual } from 'node:util';
 import { stateSnapshotConflictCode } from '../core/merge-state-snapshot.ts';
@@ -30,6 +31,7 @@ const sessionCreationRequestSchema = Type.Object(
 export const openclawDispatchRecordSchema = Type.Object(
   {
     ...dispatchRecordProperties,
+    nativeTurns: Type.Optional(Type.Array(nativeTurnSchema)),
     adoptedLocalBranch: Type.Optional(text),
     separateCheckout: Type.Optional(Type.Literal(true)),
     worktreeAttemptId: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
@@ -246,13 +248,17 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
                   record.decisionTurn,
                   `${record.id}:auto-decision${record.previousDecisionTurns?.length ? ':resume:' + record.previousDecisionTurns.length : ''}`,
                 ))) &&
-            (!record.assessmentCaller || record.assessmentTurn) &&
+            (!record.assessmentCaller || record.assessmentTurn || record.nativeRecord) &&
             (!record.result ||
               (record.assessmentTurn &&
                 record.assessmentCaller &&
                 record.stageReceipt &&
                 record.resultTurnId)) &&
-            (!['assessing', 'complete'].includes(record.phase) || record.assessmentTurn) &&
+            (!['assessing', 'complete'].includes(record.phase) ||
+              record.assessmentTurn ||
+              (record.nativeRecord &&
+                record.sessionCreation.verified &&
+                record.nativeTurns?.some(({ role }) => role === 'assessment'))) &&
             (record.phase !== 'created' || record.sessionCreation.verified),
           );
         }

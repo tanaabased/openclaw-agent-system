@@ -62,6 +62,7 @@ export default async function reconcileCodexCapacity(
       !threadId &&
       !record.clientThreadId &&
       !record.worktree &&
+      !record.nativeRequests?.length &&
       !record.continuation?.attempt &&
       !record.continuation?.publicationAttempt &&
       !record.feedback?.events.some((event) => event.attempt)

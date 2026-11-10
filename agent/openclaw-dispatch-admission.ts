@@ -1,3 +1,4 @@
+import { nativeTurnFor } from './openclaw-native-turns.ts';
 import { assignmentClaimRoute } from './assignment-claim-source.ts';
 import issueChatTitle from './issue-chat-title.ts';
 import { dispatchAdmission, managedPullRequest } from './managed-issue.ts';
@@ -227,8 +228,9 @@ export default class OpenClawDispatchAdmission {
           managedGroupName(intake.repository.name, 512)
       )
         throw new Error('dispatch-session-binding-changed');
-      const assessment = input.action === 'assess' || Boolean(record.assessmentTurn);
-      const working = assessment || input.action === 'start' || Boolean(record.firstTurn);
+      const assessment = input.action === 'assess' || Boolean(nativeTurnFor(record, 'assessment'));
+      const working =
+        assessment || input.action === 'start' || Boolean(nativeTurnFor(record, 'first'));
       setStage(assessment ? 'assessment-turn' : working ? 'first-turn' : 'session-create');
       const signal = authority.signal
         ? AbortSignal.any([authority.signal, transactionSignal])
@@ -248,7 +250,7 @@ export default class OpenClawDispatchAdmission {
           signal.throwIfAborted();
         },
       };
-      if (assessment && !record.assessmentTurn) {
+      if (assessment && !nativeTurnFor(record, 'assessment')) {
         await turnAuthority.assertCurrent();
         await this.context.dependencies.credential.use(turnAuthority, async (request) => {
           await selectOpenClawAssessment({

@@ -83,12 +83,12 @@ let record;
 const deadline = Date.now() + 300000;
 while (Date.now() < deadline) {
   record = records()[0];
-  if (record?.assessmentTurn?.runId) break;
+  if (record?.nativeTurns?.find(entry => entry.role === "assessment")?.turn.runId) break;
   await setTimeout(1000);
 }
 assert.equal(records().length, 1);
-assert.ok(record?.assessmentTurn?.runId);
-execFileSync(process.execPath, ['--import', 'tsx', process.env.GITHUB_WORKSPACE + '/scripts/wait-for-agent-run.ts', record.assessmentTurn.runId, '600000'], {stdio:'inherit'});
+assert.ok(record?.nativeTurns?.find(entry => entry.role === "assessment")?.turn.runId);
+execFileSync(process.execPath, ['--import', 'tsx', process.env.GITHUB_WORKSPACE + '/scripts/wait-for-agent-run.ts', record.nativeTurns.find(entry => entry.role === "assessment").turn.runId, '600000'], {stdio:'inherit'});
 record = records()[0];
 assert.equal(record.result, undefined);
 assert.equal(record.stageReceipt, undefined);
@@ -163,12 +163,12 @@ let record;
 const deadline = Date.now() + 300000;
 while (Date.now() < deadline) {
   record = records()[0];
-  if (record?.assessmentTurn?.runId) break;
+  if (record?.nativeTurns?.find(entry => entry.role === "assessment")?.turn.runId) break;
   await setTimeout(1000);
 }
 assert.equal(records().length, 1);
-assert.ok(record?.assessmentTurn?.runId);
-execFileSync(process.execPath, ['--import', 'tsx', process.env.GITHUB_WORKSPACE + '/scripts/wait-for-agent-run.ts', record.assessmentTurn.runId, '600000'], {stdio:'inherit'});
+assert.ok(record?.nativeTurns?.find(entry => entry.role === "assessment")?.turn.runId);
+execFileSync(process.execPath, ['--import', 'tsx', process.env.GITHUB_WORKSPACE + '/scripts/wait-for-agent-run.ts', record.nativeTurns.find(entry => entry.role === "assessment").turn.runId, '600000'], {stdio:'inherit'});
 record = records()[0];
 assert.equal(record.result, undefined);
 assert.equal(record.stageReceipt, undefined);
@@ -180,7 +180,7 @@ assert.equal(record.effective.model, 'aimock/gpt-5.5');
 assert.equal(record.effective.effort, 'medium');
 writeFileSync(process.env.TMPDIR + '/manual-pr-launch.json', JSON.stringify(record));
 NODE
-child_run=$(jq -er .assessmentTurn.runId "$TMPDIR/manual-pr-launch.json")
+child_run=$(jq -er '(.nativeTurns | map(select(.role == "assessment")) | last | .turn).runId' "$TMPDIR/manual-pr-launch.json")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$child_run" 600000
 
 # should send authorized work to the original pr without changing its metadata or draft state

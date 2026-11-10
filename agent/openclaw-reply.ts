@@ -1,3 +1,4 @@
+import openClawNativeTurns from './openclaw-native-turns.ts';
 import selectReplyDraft from './reply-selection.ts';
 import { parseReplyRequest } from '../tools/dispatch/reply-schema.ts';
 import ReplyStore, { type ReplyDraft } from './reply-store.ts';
@@ -101,6 +102,7 @@ export default async function openClawReply(input: {
       }
       if (!input.operator) {
         const turn = [
+          ...(record ? openClawNativeTurns(record).map(({ turn }) => turn) : []),
           record?.assessmentTurn,
           record?.decisionTurn,
           record?.work?.turn,

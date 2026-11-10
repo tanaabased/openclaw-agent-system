@@ -105,7 +105,7 @@ number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for worktree-ready --timeout 600 --json | tee "$TMPDIR/notification-plan.json" | jq -e '.status == "completed" and (.observation.items | length) == 1'
 conversation=$(jq -er .observation.items[0].workflow.conversation "$TMPDIR/notification-plan.json")
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
-run_id=$(jq -er .assessmentTurn.runId "$TMPDIR/notification-dispatch-before.json")
+run_id=$(jq -er '(.nativeTurns | map(select(.role == "assessment")) | last | .turn).runId' "$TMPDIR/notification-dispatch-before.json")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 # reconcile native completion before a later run selects feedback for this issue
 reconcile_run=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
@@ -173,7 +173,7 @@ worktree=$(jq -er .worktree "$TMPDIR/notification-fresh.json")
 test "$(git -C "$worktree" branch --show-current)" != "$(cat "$TMPDIR/notification-retired-branch")"
 test "$(git --git-dir="$(cat "$TMPDIR/notification-git-dir")" rev-parse "$(cat "$TMPDIR/notification-retired-branch")")" = "$(cat "$TMPDIR/notification-retired-tip")"
 test "$(git -C "$worktree" rev-parse HEAD)" = "$(git -C "$worktree" rev-parse "origin/$(jq -er .default_branch "$TMPDIR/notification-repository.json")")"
-run_id=$(jq -er .assessmentTurn.runId "$TMPDIR/notification-fresh.json")
+run_id=$(jq -er '(.nativeTurns | map(select(.role == "assessment")) | last | .turn).runId' "$TMPDIR/notification-fresh.json")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 
 # should retain a finished native helper in the task checkout
@@ -238,7 +238,7 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 60
 openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for worktree-ready --timeout 600 --json > "$TMPDIR/notification-unavailable-plan.json"
 conversation=$(jq -er .observation.items[0].workflow.conversation "$TMPDIR/notification-unavailable-plan.json")
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-unavailable-before.json"
-run_id=$(jq -er .assessmentTurn.runId "$TMPDIR/notification-unavailable-before.json")
+run_id=$(jq -er '(.nativeTurns | map(select(.role == "assessment")) | last | .turn).runId' "$TMPDIR/notification-unavailable-before.json")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 
 # should record explicit retirement of open assigned work without archiving its active turn

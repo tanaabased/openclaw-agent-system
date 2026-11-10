@@ -1,3 +1,5 @@
+import openClawNativeTurns from './openclaw-native-turns.ts';
+import type { OpenClawTurn } from './openclaw-turn-state.ts';
 import workflowFailure from './workflow-failure.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import { describeIssueSession } from './openclaw-session-create.ts';
@@ -7,6 +9,8 @@ import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 
 /** Only an existing native request can need reconciliation; idle is never new work. */
 export function openClawWorkSlot(record: OpenClawDispatchRecord) {
+  if (record.nativeTurns?.some(({ turn }) => turn.status !== 'completed' && !turn.inactive))
+    return 'native';
   for (const slot of ['turn', 'deliveryTurn'] as const) {
     const turn = record.work?.[slot];
     if (turn && turn.status !== 'completed' && !turn.inactive) return slot;
@@ -28,8 +32,12 @@ export default async function advanceOpenClawWork(input: {
   await input.assertCurrent();
   await describeIssueSession(request, record, input.config, 'feedback');
   const outcomes = [];
-  for (const key of ['turn', 'deliveryTurn'] as const) {
-    const turn = record.work?.[key];
+  const turns = record.nativeRecord
+    ? openClawNativeTurns(record).filter(({ role }) => role !== 'feedback')
+    : (['turn', 'deliveryTurn'] as const).flatMap((key) =>
+        record.work?.[key] ? [{ role: key, turn: record.work[key]! }] : [],
+      );
+  for (const { role: key, turn } of turns) {
     if (!turn || turn.status === 'completed' || turn.inactive) continue;
     try {
       await input.assertCurrent();
@@ -38,7 +46,7 @@ export default async function advanceOpenClawWork(input: {
         request,
         sessionKey: expected.key,
         sessionId: record.sessionCreation!.sessionId!,
-        turn,
+        turn: turn as OpenClawTurn,
         save,
       });
       outcomes.push({ key, status: turn.status });

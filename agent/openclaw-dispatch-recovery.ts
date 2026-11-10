@@ -1,3 +1,4 @@
+import openClawNativeTurns from './openclaw-native-turns.ts';
 import recoverIssueTask, { pendingRecoveryFeedback } from './issue-task-recovery.ts';
 import openClawEntryContext from './openclaw-entry-context.ts';
 import { observeRetiringSession } from './openclaw-retirement-observation.ts';
@@ -49,6 +50,7 @@ export default async function recoverOpenClawTask(options: {
         const delivery = record.work?.delivery;
         const execution = record;
         const turns = [
+          ...openClawNativeTurns(record).map(({ turn }) => turn),
           execution?.firstTurn,
           execution?.assessmentTurn,
           execution?.decisionTurn,

@@ -1,3 +1,4 @@
+import codexWorkState from './codex-work-state.ts';
 import nativeClarification from './native-clarification.ts';
 import type { ImplementationSource } from './implementation-revision.ts';
 import type { CodexWorkContext } from './codex-continuation-context.ts';
@@ -15,7 +16,7 @@ export default async function recordCodexWorkResult(
   revisionInput?: ImplementationSource,
 ) {
   const { input, git, signal, save } = context;
-  const work = record.continuation!;
+  const work = codexWorkState(record)!;
   if (!input.result) throw new Error('continuation-result-required');
   if (input.result.outcome === 'clarification-needed')
     return nativeClarification(record.id, implementationPresentation(input.result));
@@ -34,7 +35,30 @@ export default async function recordCodexWorkResult(
       throw new Error('continuation-uncommitted-work');
     const head = (await git(found.cwd, ['rev-parse', '--verify', 'HEAD'], signal)).trim();
     if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('continuation-head-invalid');
-    work.head = head;
+    if (!record.nativeRecord) work.head = head;
+  }
+  if (record.nativeRecord) {
+    if (input.result.outcome === 'blocked') {
+      work.blockedTurnId = found.turnId;
+      work.blocked = true;
+    } else {
+      delete work.blockedTurnId;
+      delete work.blocked;
+    }
+    delete work.code;
+    await save();
+    return {
+      status: 'native' as const,
+      id: record.id,
+      outcome: input.result.outcome,
+      handoff: implementationHandoff(
+        input.result.outcome,
+        'codex',
+        work.scope === 'local' ? { publication: false } : undefined,
+        Boolean(record.adoptedPullRequest),
+      ),
+      presentation: implementationPresentation(input.result),
+    };
   }
   work.resultSource = work.revisionSource ??
     revisionInput ?? {

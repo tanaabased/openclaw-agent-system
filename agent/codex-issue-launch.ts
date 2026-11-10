@@ -52,7 +52,7 @@ export default async function codexIssueLaunch(
           deps,
           async () => {},
           undefined,
-          record.continuation ? 'handoff' : 'assessment',
+          record.nativeWork || record.continuation ? 'handoff' : 'assessment',
           false,
         );
       },

@@ -1,3 +1,5 @@
+import { codexWorkStateSchema } from './codex-work-state.ts';
+import { codexNativeRequestSchema } from './codex-native-request.ts';
 import { Type, type Static } from 'typebox';
 
 import { codexFeedbackSchema } from './codex-feedback-state.ts';
@@ -85,6 +87,30 @@ export type IntakeDenial = Static<typeof intakeDenialSchema>;
 export const dispatchRecordSchema = Type.Object(
   {
     ...dispatchRecordProperties,
+    creationRecovery: Type.Optional(
+      Type.Object(
+        {
+          attempts: Type.Integer({ minimum: 0 }),
+          denialRecovered: Type.Optional(Type.Literal(true)),
+          latest: Type.Optional(
+            Type.Object(
+              {
+                kind: Type.Union([Type.Literal('denied'), Type.Literal('unsubmitted')]),
+                turnId: text,
+                callId: Type.Optional(text),
+                approvedBy: Type.Optional(text),
+                createdAt: Type.Optional(Type.Integer({ minimum: 0 })),
+                recoveredAt: Type.Integer({ minimum: 0 }),
+              },
+              { additionalProperties: false },
+            ),
+          ),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    nativeWork: Type.Optional(codexWorkStateSchema),
+    nativeRequests: Type.Optional(Type.Array(codexNativeRequestSchema)),
     preparationObservation: Type.Optional(preparationObservationSchema),
     implementationPreparationError: Type.Optional(text),
     denial: Type.Optional(intakeDenialSchema),
@@ -225,6 +251,7 @@ export default class CodexDispatchStore extends DispatchStore<DispatchRecord> {
         (!(
           record.continuation?.attempt ||
           record.continuation?.binding ||
+          record.nativeWork?.binding ||
           record.continuation?.result
         ) ||
           record.progression?.stage === 'implementation') &&

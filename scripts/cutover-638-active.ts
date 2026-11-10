@@ -1,5 +1,8 @@
-import { omit } from 'lodash-es';
-
+import nativeDispatchRecord, {
+  obsoleteDispatchFields,
+  obsoleteWorkFields,
+  obsoleteFeedbackFields,
+} from '../agent/native-dispatch-record.ts';
 import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
@@ -7,98 +10,30 @@ import { settledFeedback } from '../agent/retain-dispatch-history.ts';
 
 type Record = DispatchRecord & OpenClawDispatchRecord;
 
-/** remove conversation copies while retaining native custody and exact unfinished operations. */
+/** the cutover owner transfers external effects from source before committing this projection. */
 export default function cutover638Active<R extends SharedDispatchRecord>(source: R) {
-  const record = structuredClone(source) as unknown as Record;
+  const original = source as unknown as Record;
+  const record = nativeDispatchRecord(source, true) as unknown as Record;
   const pending: string[] = [];
-  // A launch without a verified native destination still owns its original prepared inputs.
-  if (!record.threadId || !record.worktree || !record.request)
-    return { record: structuredClone(source), pending: ['native-creation'] };
+  if (!record.threadId || !record.worktree || !record.request) pending.push('native-creation');
+  if (original.result?.outcome === 'operator-setup-blocker') pending.push('assessment-blocker');
+  if (
+    original.continuation?.result?.outcome === 'blocked' ||
+    original.work?.result?.outcome === 'blocked'
+  )
+    pending.push('implementation-blocker');
+  for (const key of ['attempt', 'publicationAttempt'] as const)
+    if (original.continuation?.[key] && !original.continuation[key].ended)
+      pending.push('native-' + key);
+  if (original.previousSummaryAttempts?.some((attempt) => !attempt.ended))
+    pending.push('native-previous-summary');
+  if (record.nativeTurns?.some(({ turn }) => turn.status !== 'completed'))
+    pending.push('native-turn');
+  if (original.nativeRequests?.length)
+    pending.push(...original.nativeRequests.map(({ kind }) => 'native-' + kind));
+  if (original.autoDecision && !original.autoDecision.ended) pending.push('native-decision');
+  if (original.summaryRecovery && !original.summaryRecovery.ended) pending.push('native-summary');
 
-  const summaries = (record.assessmentSummaries ?? []).filter(
-    (summary) =>
-      !summary.receipt && Boolean(summary.attempt || summary.publicText || summary.nativeDenial),
-  );
-  if (summaries.length) {
-    record.assessmentSummaries = summaries;
-    pending.push('assessment-publication');
-  } else {
-    delete record.assessmentSummaries;
-    if (record.result?.outcome === 'operator-setup-blocker') pending.push('assessment-blocker');
-    else {
-      delete record.result;
-      delete record.stageReceipt;
-      delete record.assessmentRevision;
-      delete record.assessmentHistory;
-      // OpenClaw's original implementation turn may still use this exact source binding.
-      if (
-        ![
-          record.work?.turn,
-          record.work?.deliveryTurn,
-          ...(record.work?.previousTurns ?? []).map((entry) => entry.turn),
-        ].some((turn) => turn?.origin === 'assessment')
-      )
-        delete record.resultTurnId;
-    }
-  }
-  if (record.context) {
-    const context: unknown = JSON.parse(record.context);
-    if (!context || typeof context !== 'object' || Array.isArray(context))
-      throw new Error('cutover-context-invalid');
-    record.context = JSON.stringify(omit(context, ['body', 'comments', 'files', 'truncated']));
-  }
-
-  const continuation = record.continuation;
-  if (continuation) {
-    delete continuation.resultHistory;
-    delete continuation.handoffs;
-    if (continuation.result?.outcome === 'blocked') pending.push('implementation-blocker');
-    else {
-      delete continuation.result;
-      delete continuation.resultSource;
-      delete continuation.revisionSource;
-    }
-    for (const key of ['attempt', 'publicationAttempt'] as const) {
-      if (continuation[key]?.ended) delete continuation[key];
-      else if (continuation[key]) pending.push('native-' + key);
-    }
-    if (!continuation.attempt && !continuation.publicationAttempt) {
-      delete continuation.retries;
-      delete continuation.assessmentDigest;
-      delete continuation.assessmentSelectionDigest;
-    }
-  }
-  const work = record.work;
-  if (work) {
-    delete work.resultHistory;
-    if (work.result?.outcome === 'blocked') pending.push('implementation-blocker');
-    else {
-      delete work.result;
-      delete work.resultSource;
-      delete work.revisionSource;
-    }
-    // Native turn receipts remain with their owner; deleting one may resend its original input.
-    if ([work.turn, work.deliveryTurn].some((turn) => turn && turn.status !== 'completed'))
-      pending.push('native-turn');
-  }
-  if (record.autoDecision?.ended) delete record.autoDecision;
-  else if (record.autoDecision) pending.push('native-decision');
-  if (record.summaryRecovery) {
-    if ('ended' in record.summaryRecovery && record.summaryRecovery.ended)
-      delete record.summaryRecovery;
-    else if ('turn' in record.summaryRecovery && record.summaryRecovery.turn.status === 'completed')
-      delete record.summaryRecovery;
-    else pending.push('native-summary');
-  }
-  if (record.previousSummaryAttempts) {
-    record.previousSummaryAttempts = record.previousSummaryAttempts.filter(
-      (attempt) => !attempt.ended,
-    );
-    if (record.previousSummaryAttempts.length) pending.push('native-previous-summary');
-    else delete record.previousSummaryAttempts;
-  }
-
-  // Keep source/revision fences while dropping settled feedback's copied conversation.
   if (record.feedback && record.nativeInactive) {
     const settled = record.feedback.events.filter(
       (event) =>
@@ -129,50 +64,15 @@ export default function cutover638Active<R extends SharedDispatchRecord>(source:
   return { record: record as unknown as R, pending };
 }
 
-/** remaining compatibility owners must be replaced before their schemas can be deleted. */
-export function cutover638Compatibility(record: SharedDispatchRecord) {
-  const fields = [
-    'directAssessments',
-    'assessment',
-    'result',
-    'stageReceipt',
-    'assessmentRevision',
-    'assessmentHistory',
-    'assessmentSummaries',
-    'resultTurnId',
-    'assessmentCaller',
-    'turnEvidence',
-    'firstTurn',
-    'assessmentTurn',
-    'decisionTurn',
-    'previousDecisionTurns',
-    'previousSummaryTurns',
-    'previousSummaryAttempts',
-    'autoDecision',
-    'summaryRecovery',
-    'continuation',
-    'work.turn',
-    'work.previousTurns',
-    'work.deliveryTurn',
-    'work.assessmentDigest',
-    'work.implementation',
-    'work.publication',
-    'work.result',
-    'work.resultSource',
-    'work.revisionSource',
-    'work.resultHistory',
-    'deliveryHistory',
-    'retainedHistory',
-    'deniedCreations',
-    'unsubmittedCreations',
-    'recoveredDenials',
+export function cutover638Compatibility(source: SharedDispatchRecord) {
+  const record = source as Record;
+  return [
+    ...obsoleteDispatchFields.filter((key) => record[key] !== undefined),
+    ...obsoleteWorkFields
+      .filter((key) => record.work?.[key] !== undefined)
+      .map((key) => 'work.' + key),
+    ...obsoleteFeedbackFields
+      .filter((key) => record.feedback?.events.some((event) => Object.hasOwn(event, key)))
+      .map((key) => 'feedback.events.' + key),
   ];
-  return fields.filter((path) => {
-    let value: unknown = record;
-    for (const key of path.split('.')) {
-      if (!value || typeof value !== 'object' || !(key in value)) return false;
-      value = (value as { [key: string]: unknown })[key];
-    }
-    return value !== undefined && (!Array.isArray(value) || value.length > 0);
-  });
 }

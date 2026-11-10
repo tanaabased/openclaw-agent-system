@@ -76,6 +76,7 @@ export default async function recoverDispatch(
         pendingSummaryTurn: Boolean(execution?.summaryRecovery && !execution.summaryRecovery.ended),
         pendingAutoDecision: Boolean(execution?.autoDecision && !execution.autoDecision.ended),
         unfinishedImplementation: Boolean(
+          execution?.nativeRequests?.length ||
           (execution?.continuation?.attempt && !execution.continuation.attempt.ended) ||
           (execution?.continuation?.publicationAttempt &&
             !execution.continuation.publicationAttempt.ended),
@@ -280,6 +281,7 @@ export default async function recoverDispatch(
         record.worktree ||
         record.clientThreadId ||
         record.receiptThreadId ||
+        record.nativeRequests?.length ||
         record.continuation?.attempt ||
         record.continuation?.publicationAttempt
       )
@@ -320,6 +322,7 @@ export default async function recoverDispatch(
       delete record.denial;
       delete record.preparationObservation;
       delete record.result;
+      delete record.blocker;
       delete record.stageReceipt;
       delete record.retry;
       delete record.retryAfter;
@@ -335,6 +338,7 @@ export default async function recoverDispatch(
       record.receiptThreadId ||
       record.threadId ||
       record.worktree ||
+      record.nativeRequests?.length ||
       record.continuation?.attempt ||
       record.continuation?.publicationAttempt
     )
@@ -388,9 +392,11 @@ export default async function recoverDispatch(
     delete record.creationAfterItemId;
     delete record.preparationObservation;
     delete record.continuation;
+    delete record.nativeWork;
     delete record.preparationTurnId;
     delete record.request;
     delete record.result;
+    delete record.blocker;
     delete record.stageReceipt;
     delete record.retryAfter;
     record.phase = 'routing';

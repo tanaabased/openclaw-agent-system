@@ -1,3 +1,4 @@
+import dispatchBlocker from './dispatch-blocker.ts';
 import { dispatchStorageNotice } from './dispatch-storage.ts';
 import { awaitingReassignment } from './assignment-retirement.ts';
 import { dispatchAdmission, type ManagedIssueState as IntakeState } from './managed-issue.ts';
@@ -80,7 +81,7 @@ export default function prepareDispatchReport(input: {
     (record) =>
       !record.effective &&
       ['blocked', 'waiting', 'retrying'].includes(record.phase) &&
-      record.result?.outcome === 'operator-setup-blocker',
+      Boolean(dispatchBlocker(record)),
   );
   const observations = [
     ...(intake.blocker

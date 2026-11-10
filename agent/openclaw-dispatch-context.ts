@@ -1,3 +1,4 @@
+import { nativeTurnFor } from './openclaw-native-turns.ts';
 import {
   managedPullRequest,
   managedIssueState,
@@ -432,7 +433,10 @@ export default class OpenClawDispatchContext {
     } catch (error) {
       feedbackLimitation = { code: openClawDispatchFailureCode(error) };
     }
-    const initial = [record.firstTurn?.runId, record.assessmentTurn?.runId].includes(binding.runId);
+    const initial = [
+      nativeTurnFor(record, 'first')?.runId,
+      nativeTurnFor(record, 'assessment')?.runId,
+    ].includes(binding.runId);
     const stage = feedbackTurn
       ? 'feedback'
       : retainedIssueProgression(record)

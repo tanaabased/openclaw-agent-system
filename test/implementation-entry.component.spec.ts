@@ -103,8 +103,8 @@ describe('agent/implementation-entry', () => {
       const context = await call();
       assert.ok('id' in context);
       await call('result', { result: ready });
-      const request = { action: 'implementation', operation: 'present' };
-      assert.equal((await implementationEntry(request, deps)).status, 'presented');
+      const request = { action: 'implementation', operation: 'context' };
+      assert.equal((await implementationEntry(request, deps)).status, 'verified');
       for (const field of ['id', 'digest', 'agentId', 'workspace', 'threadId'])
         await assert.rejects(
           implementationEntry({ ...request, [field]: context.id }, deps),
@@ -125,9 +125,12 @@ describe('agent/implementation-entry', () => {
         await save();
       });
       await assert.rejects(implementationEntry(request, deps), /target-selection-required/);
-      assert.equal((await implementationEntry({ ...request, target }, deps)).status, 'presented');
+      assert.equal((await implementationEntry({ ...request, target }, deps)).status, 'verified');
       deps.binding.incarnation = 'another-native-conversation';
-      await assert.rejects(implementationEntry({ ...request, target }, deps), /entry-unavailable/);
+      assert.equal(
+        (await implementationEntry({ ...request, target }, deps)).status,
+        'clarification-needed',
+      );
     });
 
   for (const runtime of ['codex', 'openclaw'] as const) {
@@ -228,7 +231,7 @@ describe('agent/implementation-entry', () => {
       );
     });
 
-  it('should retain completed implementation after more than twenty direct entries', async () => {
+  it('should retain direct custody without copying completed output across twenty entries', async () => {
     const connect = deps.connectProvider;
     deps.connectProvider = async () => {
       const provider = await connect();
@@ -256,10 +259,8 @@ describe('agent/implementation-entry', () => {
     deps.connectProvider = async () => {
       throw new Error('completed work must recover without provider access');
     };
-    const recovered = await call('present', {});
-    assert.equal(recovered.status, 'presented');
-    assert.ok('previousResult' in recovered);
-    assert.deepEqual(recovered.previousResult, ready);
+    assert.equal(entries[0]!.result, undefined);
+    await assert.rejects(call('present', {}), /implementation-result-missing/);
   });
 
   for (const runtime of ['codex', 'openclaw'] as const)
@@ -304,7 +305,7 @@ describe('agent/implementation-entry', () => {
     ['openclaw', undefined],
     ['openclaw', 'custom:implement'],
   ] as const) {
-    it(`should inject the ${runtime} ${skillName ? 'custom' : 'built-in'} implementation once and retain ordinary output unchanged`, async () => {
+    it(`should inject the ${runtime} ${skillName ? 'custom' : 'built-in'} implementation once and format ordinary output without saving it`, async () => {
       deps.binding.runtime = runtime;
       deps.manifest.github = {
         notifications: { issueAssignment: { implementation: { skill: skillName } } },
@@ -338,9 +339,7 @@ describe('agent/implementation-entry', () => {
       const completed = await call('context', {});
       assert.equal(completed.status, 'verified');
       assert.equal('previousResult' in completed, false);
-      const readback = await call('present', {});
-      assert.ok('previousResult' in readback);
-      assert.deepEqual(readback.previousResult, ready);
+      await assert.rejects(call('present', {}), /implementation-result-missing/);
     });
   }
   it('should reject malformed execution and delivery requests before native or provider access', async () => {
@@ -474,7 +473,7 @@ describe('agent/implementation-entry', () => {
     const resumed = await call('context', {});
     assert.equal('previousResult' in resumed, false);
     assert.equal(selections.length, 3);
-    assert.equal((await call('result', { result: ready })).status, 'recorded');
+    assert.equal((await call('result', { result: ready })).status, 'native');
   });
   it('should keep ownership failures ahead of provider access and never fall back to manual work', async () => {
     for (const code of [
@@ -609,7 +608,7 @@ describe('agent/implementation-entry', () => {
         turnId: 'publication-request',
         inputId: 'publication-input',
       });
-      assert.deepEqual(entries[0]!.result, ready);
+      assert.equal(entries[0]!.result, undefined);
     });
   });
   it('should recover lost push and pr responses through the same persisted publication without repeated effects', async () => {
@@ -847,7 +846,7 @@ describe('agent/native-implementation-entry', () => {
       { action: 'implementation', operation: 'result', target, result: ready },
       deps,
     );
-    assert.equal(result.status, 'recorded');
+    assert.equal(result.status, 'native');
     assert.deepEqual('handoff' in result && result.handoff, { next: 'complete' });
     assert.equal(calls.filter((name) => name === 'skills/list').length, 1);
     assert.ok(
@@ -978,7 +977,7 @@ describe('agent/native-implementation-entry', () => {
       { action: 'implementation', operation: 'result', target, result: ready },
       true,
     );
-    assert.equal(result.status, 'recorded');
+    assert.equal(result.status, 'native');
     assert.deepEqual('handoff' in result && result.handoff, { next: 'complete' });
     assert.equal(calls.filter((name) => name === 'skills.status').length, 1);
     assert.ok(

@@ -1,3 +1,5 @@
+import cutover638Local from './cutover-638-local.ts';
+import nativeDispatchRecord from '../agent/native-dispatch-record.ts';
 import { createHash } from 'node:crypto';
 import { lstat, mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -31,6 +33,11 @@ const requestSchema = Type.Object(
     namespace: text,
     workspace: text,
     agent: text,
+    directSessions: Type.Optional(
+      Type.Array(
+        Type.Object({ session: text, incarnation: text }, { additionalProperties: false }),
+      ),
+    ),
   },
   { additionalProperties: false },
 );
@@ -185,16 +192,32 @@ export default async function cutover638(input: unknown) {
     );
     const intakeStore = new IntakeRecordStore(location(output));
     const state = structuredClone(original);
-    state.version = 2;
+    state.version = 3;
     const removed: string[] = [];
     const pending: string[] = [];
     const transformed: string[] = [];
+    const mappedDirectStores = new Set<string>();
     const pendingOperations: { id: string; reasons: string[] }[] = [];
     // consume exact historical events before disposing any task. existing consumers win.
     for (const { record, intake } of selected)
       await retirementConsumption(intakeStore, intake, record.id, intake.observedAt);
     for (const { record: sourceRecord, intake } of selected) {
       const record = state.records.find((entry) => entry.id === sourceRecord.id)!;
+      const sessionId =
+        input.runtime === 'codex'
+          ? record.threadId
+          : (record as { sessionCreation?: { sessionId?: string } }).sessionCreation?.sessionId;
+      if (record.threadId && sessionId) {
+        for (const path of await cutover638Local(store.root, {
+          runtime: input.runtime,
+          agentId: input.agent,
+          workspace: input.workspace,
+          namespace: input.namespace,
+          session: record.threadId,
+          incarnation: sessionId,
+        }))
+          mappedDirectStores.add(relative(output, path));
+      }
       const complete = verifiedTerminalCleanup(record);
       const cleanup = record.retirement;
       const started =
@@ -207,6 +230,7 @@ export default async function cutover638(input: unknown) {
           cleanup.worktreeRemovedAt !== undefined);
       if (!complete && !started) {
         const projected = cutover638Active(record);
+        projected.record = nativeDispatchRecord(projected.record);
         if (projected.pending.length)
           pendingOperations.push({ id: record.id, reasons: projected.pending });
         const history = projected.record as typeof record & {
@@ -263,9 +287,23 @@ export default async function cutover638(input: unknown) {
       await store.dispose(state, record);
       removed.push(record.id);
     }
+    // Standalone native chats need not have a managed assignment record. Their exact
+    // bindings select only this installation's hashed direct stores.
+    for (const binding of input.directSessions ?? []) {
+      if (input.runtime === 'codex' && binding.session !== binding.incarnation)
+        throw new Error('cutover-native-session-mismatch');
+      for (const path of await cutover638Local(store.root, {
+        runtime: input.runtime,
+        agentId: input.agent,
+        workspace: input.workspace,
+        namespace: input.namespace,
+        ...binding,
+      }))
+        mappedDirectStores.add(relative(output, path));
+    }
     // avoid normal transaction housekeeping: ageing/offloading unrelated active state is not cutover.
     if (!isDeepStrictEqual(state, original)) await store.file.write(assertDispatchStorage(state));
-    await store.read();
+    await store.readNative();
     await intakeStore.read();
     if (!isDeepStrictEqual(await inventory(source), before))
       throw new Error('cutover-source-changed');
@@ -275,8 +313,8 @@ export default async function cutover638(input: unknown) {
       .filter((path) => before[path] !== after[path])
       .map((path) => ({ path, before: before[path] ?? null, after: after[path] ?? null }));
     return {
-      artifact: 'cutover-638-v3',
-      requiresCompatibleRuntime: 'dispatch-storage-v2',
+      artifact: 'cutover-638-v4',
+      requiresCompatibleRuntime: 'dispatch-storage-v3',
       runtime: input.runtime,
       scope: original.scope,
       output,
@@ -284,6 +322,11 @@ export default async function cutover638(input: unknown) {
       pending,
       transformed,
       pendingOperations,
+      unmappedDirectStores: Object.keys(after).filter(
+        (path) =>
+          /(?:^|\/)github-(?:assessment|implementation)-[a-f0-9]+\.json$/.test(path) &&
+          !mappedDirectStores.has(path),
+      ),
       remainingCompatibility: state.records.flatMap((record) => {
         const fields = cutover638Compatibility(record);
         return fields.length ? [{ id: record.id, fields }] : [];

@@ -1,3 +1,4 @@
+import dispatchBlocker from './dispatch-blocker.ts';
 import { selectCodexTaskOwner } from './codex-turn-task.ts';
 import { routeMaterialResponse } from './native-material.ts';
 import renderNativeAssessment, { renderBoundAssessment } from './assessment-render.ts';
@@ -283,8 +284,7 @@ async function executeCodexDispatch(
               callId: record.denial.callId,
               turnId: record.denial.turnId,
             },
-            code:
-              record.result?.outcome === 'operator-setup-blocker' ? record.result.code : undefined,
+            code: dispatchBlocker(record),
             implementationPreparationError: record.implementationPreparationError,
             feedback: record.feedback && {
               events: record.feedback.events.map(({ id, phase, code }) => ({ id, phase, code })),

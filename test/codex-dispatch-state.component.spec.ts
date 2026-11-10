@@ -18,7 +18,7 @@ describe('agent/codex-dispatch-state', () => {
 
   it('should initialize absent state and report malformed evidence without replacing it', async () => {
     assert.deepEqual(await store.read(), {
-      version: 2,
+      version: 3,
       scope: store.scope,
       resetGeneration: 'initial',
       records: [],

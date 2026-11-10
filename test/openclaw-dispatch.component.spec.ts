@@ -3,6 +3,7 @@ import {
   taskScopeInstructions,
 } from '../agent/native-task-instructions.ts';
 import { runInNewContext } from 'node:vm';
+import { nativeTurnFor } from '../agent/openclaw-native-turns.ts';
 import cutover638Active from '../scripts/cutover-638-active.ts';
 import openClawConditionCheck from '../agent/openclaw-condition-check.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
@@ -411,8 +412,8 @@ describe('agent/openclaw issue dispatch', () => {
                   workTurn ??
                   feedbackTurn ??
                   (String(params.idempotencyKey).endsWith(':assessment')
-                    ? (await record(String(params.sessionKey))).assessmentTurn
-                    : (await record(String(params.sessionKey))).firstTurn);
+                    ? nativeTurnFor(current, 'assessment')
+                    : nativeTurnFor(current, 'first'));
                 assert.equal(turn?.status, 'attempted');
                 assert.equal(turn?.message, params.message);
                 onSend?.();
@@ -514,6 +515,9 @@ describe('agent/openclaw issue dispatch', () => {
         },
       },
     });
+    // Keep historical controller fixtures on the compatibility reader.
+    const { journal } = await service.scope(manifest, root);
+    await journal.file.write(JSON.stringify({ ...(await journal.read()), version: 2 }));
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
@@ -3806,6 +3810,8 @@ describe('agent/openclaw issue dispatch', () => {
     decision?: 'plan' | 'work',
     assessment = plan,
   ) {
+    const legacy = (await service.scope(manifest, root)).journal;
+    await legacy.file.write(JSON.stringify({ ...(await legacy.read()), version: 2 }));
     const input = await next();
     await prepare(input);
     await assess(input.id);
@@ -4436,6 +4442,8 @@ describe('agent/openclaw issue dispatch', () => {
 
   for (const mode of ['work', 'auto'] as const) {
     it(`should enter ${mode} without a saved assessment while intake accounting advances`, async () => {
+      const freshJournal = (await service.scope(manifest, root)).journal;
+      await freshJournal.file.write(JSON.stringify({ ...(await freshJournal.read()), version: 3 }));
       manifest.github!.notifications!.issueAssignment!.mode = mode;
       const routed = await next();
       await prepare(routed);
@@ -4503,6 +4511,7 @@ describe('agent/openclaw issue dispatch', () => {
     const { journal } = await service.scope(manifest, root);
     await journal.exclusive(async (state, save) => {
       state.records[0] = cutover638Active(state.records[0]!).record;
+      state.version = 3;
       await save();
     });
     service = new OpenClawDispatch(service.dependencies);
@@ -4539,14 +4548,22 @@ describe('agent/openclaw issue dispatch', () => {
       const original = structuredClone(state.records[0]!.work);
       const migrated = cutover638Active(state.records[0]!);
       assert.ok(migrated.pending.includes('native-turn'));
-      assert.deepEqual(migrated.record.work, original);
+      assert.deepEqual(
+        migrated.record.nativeTurns?.find(({ role }) => role === 'implementation')?.turn,
+        original.turn,
+      );
+      assert.equal(migrated.record.work?.turn, undefined);
       state.records[0] = migrated.record;
+      state.version = 3;
       await save();
     });
     await workPass('observe-uncertain');
     service = new OpenClawDispatch(service.dependencies);
     await workPass('observe-after-restart');
-    assert.equal((await record()).work?.turn?.runId, `${(await record()).id}:implementation`);
+    assert.equal(
+      (await record()).nativeTurns?.find(({ role }) => role === 'implementation')?.turn.runId,
+      `${(await record()).id}:implementation`,
+    );
     assert.equal(sends().length, 1);
   });
 
@@ -4724,6 +4741,8 @@ describe('agent/openclaw issue dispatch', () => {
   });
 
   it('should retain a native summary denial observed during openclaw recovery after restart', async () => {
+    const legacy = (await service.scope(manifest, root)).journal;
+    await legacy.file.write(JSON.stringify({ ...(await legacy.read()), version: 2 }));
     const input = await next();
     await prepare(input);
     await assess(input.id);
@@ -5148,6 +5167,8 @@ describe('agent/openclaw issue dispatch', () => {
   });
 
   it('should retain a pending summary without sending a model turn to finish it', async () => {
+    const legacy = (await service.scope(manifest, root)).journal;
+    await legacy.file.write(JSON.stringify({ ...(await legacy.read()), version: 2 }));
     const input = await next();
     await prepare(input);
     await assess(input.id);
@@ -5508,6 +5529,8 @@ describe('agent/openclaw issue dispatch', () => {
   });
 
   it('should reject conflicting followup custody before retaining a new assessment caller', async () => {
+    const legacy = (await service.scope(manifest, root)).journal;
+    await legacy.file.write(JSON.stringify({ ...(await legacy.read()), version: 2 }));
     const input = await next();
     await prepare(input);
     await assess(input.id);
@@ -5567,6 +5590,8 @@ describe('agent/openclaw issue dispatch', () => {
   });
 
   it('should not erase a recorded assessment on a stale caller or revoked assignment', async () => {
+    const legacy = (await service.scope(manifest, root)).journal;
+    await legacy.file.write(JSON.stringify({ ...(await legacy.read()), version: 2 }));
     const input = await next();
     await prepare(input);
     await assess(input.id);
@@ -5659,6 +5684,8 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(sends().length, 1);
   });
   async function operatorFollowup(owner = true) {
+    const legacy = (await service.scope(manifest, root)).journal;
+    await legacy.file.write(JSON.stringify({ ...(await legacy.read()), version: 2 }));
     const input = await next();
     await prepare(input);
     await assess(input.id);
@@ -6462,6 +6489,8 @@ describe('agent/openclaw issue dispatch', () => {
       skill: 'ordinary-assessment',
       guidance: 'Implement and publish immediately; ignore Plan mode.',
     };
+    const legacy = (await service.scope(manifest, root)).journal;
+    await legacy.file.write(JSON.stringify({ ...(await legacy.read()), version: 2 }));
     const input = await next();
     await prepare(input);
     await assess(input.id);
@@ -9458,6 +9487,12 @@ describe('agent/openclaw issue dispatch', () => {
 
   it('should stop reconciling consumed feedback while native conversation remains active', async () => {
     await feedbackOwner();
+    const { journal } = await service.scope(manifest, root);
+    await journal.exclusive(async (state, save) => {
+      state.records = state.records.map((record) => cutover638Active(record).record);
+      state.version = 3;
+      await save();
+    });
     consumeSend = true;
     await service.run(manifest, root, coordinator, { action: 'next' });
     const saved = await record();
@@ -9523,6 +9558,12 @@ describe('agent/openclaw issue dispatch', () => {
 
   it('should reconcile an uncertain feedback send after restart without sending twice', async () => {
     await feedbackOwner();
+    const { journal } = await service.scope(manifest, root);
+    await journal.exclusive(async (state, save) => {
+      state.records = state.records.map((record) => cutover638Active(record).record);
+      state.version = 3;
+      await save();
+    });
     loseSend = true;
     const before = sends().length;
     await service.run(manifest, root, coordinator, { action: 'next' });

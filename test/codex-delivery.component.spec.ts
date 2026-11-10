@@ -1,3 +1,4 @@
+import cutover638Active from '../scripts/cutover-638-active.ts';
 import manualPullRequest from '../agent/manual-pull-request.ts';
 import codexEntryContext from '../agent/codex-entry-context.ts';
 import { codexDispatchNative } from '../agent/codex-dispatch-native.ts';
@@ -248,6 +249,11 @@ describe('agent/codex-delivery', () => {
   });
 
   it('should reserve one push and pr creation while another delivery and unrelated commit overlap', async () => {
+    await store.exclusive(async (state, save) => {
+      state.records = state.records.map((record) => cutover638Active(record).record);
+      state.version = 3;
+      await save();
+    });
     const content = { title: 'Authored title', body: 'Authored body.' };
     await request('prepare', content);
     const entered = Promise.withResolvers<void>();
@@ -506,6 +512,7 @@ describe('agent/codex-delivery', () => {
     const current = await selectCodexIntake(pluginData, { codexHome });
     const intake = (await current.store.read())!.records[0]!;
     store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.file.write(JSON.stringify({ ...(await store.read()), version: 2 }));
     await store.exclusive(async (state, save) => {
       state.records.push({
         id,
@@ -523,7 +530,7 @@ describe('agent/codex-delivery', () => {
           ref: 'origin/main',
           commit: '0'.repeat(40),
         },
-        context: 'context',
+        context: JSON.stringify({ source: 'https://github.com/owner/repo/issues/3' }),
         routing: 'routing',
         routingNote: 'note',
         threadId: 'child',

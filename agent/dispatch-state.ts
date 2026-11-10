@@ -1,3 +1,4 @@
+import nativeDispatchRecord, { validNativeDispatchRecord } from './native-dispatch-record.ts';
 import { issuePickupStateSchema } from './issue-pickup-state.ts';
 import { validPendingRetirement } from './pending-retirement.ts';
 import { retirementEffectSchema, type RetirementEffect } from './retirement-effects.ts';
@@ -60,6 +61,8 @@ export const assessmentStageReceiptSchema = Type.Object(
   { additionalProperties: false },
 );
 export const dispatchRecordProperties = {
+  nativeRecord: Type.Optional(Type.Literal(true)),
+  blocker: Type.Optional(text),
   cleanupPending: Type.Optional(Type.Literal(true)),
   projectWork: Type.Optional(projectWorkSchema),
   retainedHistory: Type.Optional(retainedHistorySchema),
@@ -163,7 +166,7 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
   return Type.Object(
     {
       storageReclaimedBytes: Type.Optional(Type.Integer({ minimum: 0 })),
-      version: Type.Union([Type.Literal(1), Type.Literal(2)]),
+      version: Type.Union([Type.Literal(1), Type.Literal(2), Type.Literal(3)]),
       scope: hash,
       resetGeneration: Type.Optional(text),
       records: Type.Array(Type.Unsafe<R>(recordSchema)),
@@ -354,6 +357,8 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
                   !r.effective)) ||
               (r.handoff && (!r.request || !r.threadId || !r.worktree)))),
       ) ||
+      state.records.some((r) => r.nativeRecord && !validNativeDispatchRecord(r)) ||
+      (state.version === 3 && state.records.some((r) => !r.nativeRecord && !r.cleanupPending)) ||
       state.records.some((r) => r.reset && (r.phase !== 'complete' || !r.threadId)) ||
       state.records.some((r) =>
         r.cleanupPending
@@ -367,7 +372,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
   }
   async read(): Promise<DispatchState<R>> {
     const contents = await this.file.read();
-    let state: unknown = { version: 2, scope: this.scope, resetGeneration: 'initial', records: [] };
+    let state: unknown = { version: 3, scope: this.scope, resetGeneration: 'initial', records: [] };
     if (contents !== undefined) {
       try {
         state = JSON.parse(contents);
@@ -387,6 +392,11 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     )
       throw new Error('notification-state-reset-required');
     this.validate(state);
+    return state;
+  }
+  async readNative(): Promise<DispatchState<R>> {
+    const state = await this.read();
+    if (state.version !== 3) throw new Error('dispatch-migration-required');
     return state;
   }
   retainRetirementEffects(state: DispatchState<R>, effects: RetirementEffect[]) {
@@ -470,6 +480,8 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
             options.reconcile?.(before, state, current);
             const merged = mergeStateSnapshot(before, state, current) as DispatchState<R>;
             options.validate?.(current, merged);
+            if (merged.version === 3)
+              merged.records = merged.records.map((record) => nativeDispatchRecord(record));
             this.validate(merged);
             if (!isDeepStrictEqual(current, merged)) {
               refreshStateSnapshot(current, merged);
@@ -553,10 +565,21 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
           if (current.resetGeneration !== committed.resetGeneration)
             throw new Error('notification-reset-stale-operation');
           if (!isDeepStrictEqual(current, committed)) throw new Error(stateSnapshotConflictCode);
-          if (committed.version === 2 && state.version !== 2)
+          if (state.version < committed.version)
             throw new Error('dispatch-storage-version-regression');
-          this.validate(state);
           const retained = structuredClone(state);
+          if (retained.version === 3) {
+            for (const record of retained.records) {
+              if (
+                record.assessmentSummaries?.some(
+                  (summary) => summary.attempt && !summary.receipt && !summary.nativeDenial,
+                )
+              )
+                throw new Error('dispatch-external-effect-migration-required');
+            }
+            retained.records = retained.records.map((record) => nativeDispatchRecord(record));
+          }
+          this.validate(retained);
           const originalBytes = dispatchStorageBytes(retained).contentBytes;
           const pressure = originalBytes > historySoftBytes;
           const now = Date.now();
@@ -598,7 +621,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
           for (let index = 0; index < retained.records.length; index++) {
             const original = retained.records[index]!;
             // Version two keeps cleanup with its owner and never creates cold task copies.
-            if (retained.version === 2 && verifiedTerminalCleanup(original)) continue;
+            if (retained.version >= 2 && verifiedTerminalCleanup(original)) continue;
             const events = (original as R & { feedback?: { events: unknown[] } }).feedback?.events;
             if (!verifiedTerminalCleanup(original) && !pressure && (events?.length ?? 0) < 350)
               continue;

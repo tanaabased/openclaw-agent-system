@@ -1,3 +1,4 @@
+import openClawNativeTurns from './openclaw-native-turns.ts';
 import authorizeFeedback from './feedback-source-context.ts';
 export { default as authorizeFeedback } from './feedback-source-context.ts';
 import openClawFeedbackInput from './openclaw-feedback-input.ts';
@@ -198,6 +199,7 @@ export default async function openClawFeedback(input: {
         !event.result ||
         event.phase === 'published' ||
         [
+          ...openClawNativeTurns(record).map(({ turn }) => turn),
           record.firstTurn,
           record.assessmentTurn,
           record.decisionTurn,

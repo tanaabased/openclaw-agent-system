@@ -36,6 +36,7 @@ interface Issue {
     outcome: string;
     decision?: { mode: 'plan' | 'work' };
   };
+  nativeWork?: { cancelled?: true };
   continuation?: {
     phase?: string;
     runId?: string;
@@ -66,7 +67,11 @@ export default function issueProgression(
   | { status: 'stopped'; reason: string } {
   if (issue.retired || issue.retirement || issue.reset)
     return { status: 'stopped', reason: 'issue-inactive' };
-  if (issue.continuation?.phase === 'cancelled' && !issue.handoff && !input.operator)
+  if (
+    (issue.nativeWork?.cancelled || issue.continuation?.phase === 'cancelled') &&
+    !issue.handoff &&
+    !input.operator
+  )
     return { status: 'stopped', reason: 'implementation-cancelled' };
   const retained = retainedIssueProgression(issue);
   if (retained) return { status: 'ready', progression: retained };

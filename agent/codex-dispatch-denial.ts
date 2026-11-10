@@ -1,3 +1,4 @@
+import dispatchBlocker from './dispatch-blocker.ts';
 import { withNative, type CodexDispatchTransaction } from './codex-dispatch-context.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
 
@@ -16,6 +17,8 @@ export default async function reconcileIntakeDenial(
     record.project &&
     record.context &&
     !record.preparationObservation &&
+    !record.creationRecovery?.attempts &&
+    !record.creationRecovery?.denialRecovered &&
     !record.recoveredDenials?.length &&
     !record.deniedCreations?.length &&
     !record.unsubmittedCreations?.length
@@ -47,11 +50,9 @@ export default async function reconcileIntakeDenial(
       })
     : undefined;
   if (!evidence) {
-    if (
-      record.result?.outcome === 'operator-setup-blocker' &&
-      record.result.code === 'dispatch-denial-history-unavailable'
-    ) {
+    if (dispatchBlocker(record) === 'dispatch-denial-history-unavailable') {
       delete record.result;
+      delete record.blocker;
       delete record.retryAfter;
       record.phase = record.request ? 'creating' : 'routing';
       await tx.save();

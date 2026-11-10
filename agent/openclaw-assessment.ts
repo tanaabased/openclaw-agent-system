@@ -1,3 +1,4 @@
+import { nativeTurnFor } from './openclaw-native-turns.ts';
 import { dispatchAssessmentContext } from './dispatch-presentation.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import {
@@ -15,7 +16,7 @@ import renderNativeAssessment, { assessmentPresentationRequest } from './assessm
 import { selectWorkflowStage } from './workflow-stage.ts';
 import openClawSkill from './openclaw-skill.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
-import issueInputEvent, { issueInputEventId } from './openclaw-session-input.ts';
+import issueInputEvent, { issueInputEventId, nativeInputEvent } from './openclaw-session-input.ts';
 import { completeOpenClawMessage, openClawHistoryPages } from './openclaw-history.ts';
 import {
   describeIssueSession,
@@ -97,12 +98,11 @@ export async function issueAssessmentAction(input: {
     record.feedback?.events.some(
       (event) => event.turn?.runId === caller.runId || event.turn?.executionRunId === caller.runId,
     ) ||
-    !record.assessmentTurn ||
-    !record.assessment ||
+    (!record.nativeRecord && (!record.assessmentTurn || !record.assessment)) ||
     !record.sessionCreation?.verified ||
     caller.sessionKey !== record.threadId ||
     caller.sessionId !== record.sessionCreation.sessionId ||
-    caller.runId === record.firstTurn?.runId
+    caller.runId === nativeTurnFor(record, 'first')?.runId
   )
     throw new Error('dispatch-assessment-caller-mismatch');
   await describeIssueSession(request, record, input.config);
@@ -110,6 +110,23 @@ export async function issueAssessmentAction(input: {
     record.assessmentCaller?.runId === caller.runId
       ? record.assessmentCaller.inputEventId
       : undefined;
+  if (record.nativeRecord)
+    inputEventId = (
+      await nativeInputEvent({
+        request,
+        sessionKey: caller.sessionKey,
+        sessionId: caller.sessionId,
+        runId: caller.runId,
+        retained: [
+          record.assessmentCaller,
+          ...(record.nativeTurns ?? []).flatMap(({ turn }) =>
+            turn.consumedByEventId
+              ? [{ runId: turn.runId, inputEventId: turn.consumedByEventId }]
+              : [],
+          ),
+        ],
+      })
+    ).inputEventId;
   if (!inputEventId) {
     const history = sessionObject(
       await request('chat.history', {
@@ -137,7 +154,7 @@ export async function issueAssessmentAction(input: {
     const meta = sessionObject(user.__openclaw);
     if (typeof meta.id !== 'string' || !meta.id || meta.truncated === true)
       throw new Error('dispatch-assessment-input-unverified');
-    if (caller.runId === record.assessmentTurn.runId) {
+    if (caller.runId === record.assessmentTurn?.runId) {
       if (issueInputEvent(user, record.assessmentTurn) !== meta.id)
         throw new Error('dispatch-assessment-input-mismatch');
     } else {
@@ -148,7 +165,7 @@ export async function issueAssessmentAction(input: {
   }
   await input.assertCurrent();
   if (input.action === 'context') {
-    if (caller.runId === record.assessmentTurn.runId) {
+    if (caller.runId === record.assessmentTurn?.runId) {
       if (
         record.assessmentTurn.consumedByEventId &&
         record.assessmentTurn.consumedByEventId !== inputEventId
@@ -159,12 +176,14 @@ export async function issueAssessmentAction(input: {
     }
     record.assessmentCaller = { runId: caller.runId, inputEventId };
     // current context uses fresh inputs; exact historical publication owns its saved source.
-    record.turnEvidence = {
-      runId: caller.runId,
-      inputEventId,
-      evidence: input.evidence ?? record.context!,
-      selection: input.selection ?? record.assessment,
-    };
+    if (record.nativeRecord) record.assessment = input.selection ?? record.assessment;
+    else
+      record.turnEvidence = {
+        runId: caller.runId,
+        inputEventId,
+        evidence: input.evidence ?? record.context!,
+        selection: input.selection ?? record.assessment,
+      };
     await input.save();
     return {
       status: 'verified',
@@ -176,7 +195,7 @@ export async function issueAssessmentAction(input: {
       routingNote: record.routingNote,
       effective: record.effective,
       executionEffort: 'unverified',
-      evidence: JSON.parse(record.turnEvidence?.evidence ?? record.context!),
+      evidence: JSON.parse(input.evidence ?? record.turnEvidence?.evidence ?? record.context!),
       assessment: record.turnEvidence?.selection ?? record.assessment,
       currentTurnId: caller.runId,
       mode: issueWorkflowMode(input.policy, record),

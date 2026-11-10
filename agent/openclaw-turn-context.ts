@@ -1,3 +1,4 @@
+import { nativeTurnFor } from './openclaw-native-turns.ts';
 import { feedbackTarget } from './reply-target.ts';
 import { selectedOpenClawFeedback } from './openclaw-feedback-input.ts';
 import {
@@ -47,8 +48,8 @@ export default function openclawTurnContext(
     !source &&
     !implementation &&
     (!available.length ||
-      record.assessmentTurn?.runId === binding.runId ||
-      record.firstTurn?.runId === binding.runId);
+      nativeTurnFor(record, 'assessment')?.runId === binding.runId ||
+      nativeTurnFor(record, 'first')?.runId === binding.runId);
   return {
     appendSystemContext: [
       nativeTaskInstructions('openclaw'),

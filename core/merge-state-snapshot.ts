@@ -64,6 +64,13 @@ export default function mergeStateSnapshot(
   throw Object.assign(new Error(stateSnapshotConflictCode), { code: stateSnapshotConflictCode });
 }
 
+function receiptKey(value: unknown): string | undefined {
+  if (!object(value)) return undefined;
+  if (object(value.turn) && typeof value.turn.runId === 'string') return value.turn.runId;
+  if (object(value.attempt) && typeof value.attempt.id === 'string') return value.attempt.id;
+  return undefined;
+}
+
 /** refresh a working snapshot while preserving references retained by its operation. */
 export function refreshStateSnapshot(
   target: Record<string, unknown>,
@@ -80,6 +87,24 @@ export function refreshStateSnapshot(
         old.length,
         ...value.map((entry) => {
           const existing = retained.get(entry.id);
+          if (!existing) return structuredClone(entry);
+          refreshStateSnapshot(existing, entry);
+          return existing;
+        }),
+      );
+    } else if (
+      Array.isArray(old) &&
+      Array.isArray(value) &&
+      [...old, ...value].every((entry) => receiptKey(entry) !== undefined) &&
+      new Set(old.map(receiptKey)).size === old.length &&
+      new Set(value.map(receiptKey)).size === value.length
+    ) {
+      const retained = new Map(old.map((entry) => [receiptKey(entry), entry]));
+      old.splice(
+        0,
+        old.length,
+        ...value.map((entry) => {
+          const existing = retained.get(receiptKey(entry));
           if (!existing) return structuredClone(entry);
           refreshStateSnapshot(existing, entry);
           return existing;

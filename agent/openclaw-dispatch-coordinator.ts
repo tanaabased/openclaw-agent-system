@@ -1,3 +1,4 @@
+import openClawNativeTurns, { nativeTurnFor } from './openclaw-native-turns.ts';
 import taskPullRequest from './task-pull-request.ts';
 import observeIssueActivity from './openclaw-session-activity.ts';
 import { hasDeliveredImplementation } from './implementation-delivery.ts';
@@ -436,7 +437,7 @@ export default class OpenClawDispatchCoordinator {
       )
         continue;
       delete record.blocker;
-      record.phase = record.assessmentTurn
+      record.phase = nativeTurnFor(record, 'assessment')
         ? 'assessing'
         : record.sessionCreation?.verified
           ? 'created'
@@ -454,8 +455,8 @@ export default class OpenClawDispatchCoordinator {
         !record?.request ||
         !record.sessionCreation?.attempted ||
         record.intakeId === intake.id ||
-        record.firstTurn ||
-        record.assessmentTurn
+        nativeTurnFor(record, 'first') ||
+        nativeTurnFor(record, 'assessment')
       )
         continue;
       try {
@@ -582,6 +583,7 @@ export default class OpenClawDispatchCoordinator {
           !entry.retired &&
           !entry.supersededBy &&
           [
+            ...openClawNativeTurns(entry).map(({ turn }) => (turn.inactive ? undefined : turn)),
             entry.decisionTurn?.inactive ? undefined : entry.decisionTurn,
             entry.work?.turn,
             entry.work?.deliveryTurn,
@@ -828,24 +830,28 @@ function continuationStatus(record: OpenClawDispatchRecord) {
     record.failureStage === 'first-turn' &&
     record.blocker === 'dispatch-turn-delivery-unverified' &&
     record.sessionCreation.verified &&
-    record.firstTurn &&
-    ['accepted', 'consumed'].includes(record.firstTurn.status)
+    nativeTurnFor(record, 'first') &&
+    ['accepted', 'consumed'].includes(nativeTurnFor(record, 'first')!.status)
   )
     return 'reconcile-required';
   if (
     ['blocked', 'waiting'].includes(record.phase) &&
     record.failureStage === 'assessment-turn' &&
     record.blocker === 'dispatch-turn-delivery-unverified' &&
-    record.assessmentTurn &&
-    ['accepted', 'consumed'].includes(record.assessmentTurn.status)
+    nativeTurnFor(record, 'assessment') &&
+    ['accepted', 'consumed'].includes(nativeTurnFor(record, 'assessment')!.status)
   )
     return 'reconcile-required';
   if (record.blocker) return;
+  if (record.nativeRecord && nativeTurnFor(record, 'assessment'))
+    return record.nativeTurns?.some(({ turn }) => turn.status !== 'completed' && !turn.inactive)
+      ? 'reconcile-required'
+      : undefined;
   if (record.assessmentTurn)
     return record.assessmentTurn.status !== 'completed' ? 'reconcile-required' : undefined;
   if (record.phase === 'creating') return 'reconcile-required';
   if (record.phase === 'created')
-    return record.firstTurn && record.firstTurn.status !== 'completed'
+    return nativeTurnFor(record, 'first') && nativeTurnFor(record, 'first')!.status !== 'completed'
       ? 'reconcile-required'
       : 'assessment-required';
 }

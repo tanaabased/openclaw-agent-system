@@ -1,3 +1,4 @@
+import dispatchBlocker from './dispatch-blocker.ts';
 import {
   dispatchAdmission,
   managedIssueState,
@@ -220,7 +221,9 @@ export function notice(record: DispatchRecord, intake?: IntakeRecord) {
   const failure =
     !record.effective && record.result?.outcome === 'operator-setup-blocker'
       ? record.result
-      : undefined;
+      : !record.effective && record.blocker
+        ? { code: record.blocker, remediation: workflowRecovery(record.blocker)?.next }
+        : undefined;
   return {
     id: record.id,
     status: record.handoff ? 'handed-off' : record.phase,
@@ -282,8 +285,7 @@ export async function failDispatch(
     return { status: 'policy-held', id: record.id, reason: error.reason, nextAction: 'next' };
   if (['dispatch-policy-disabled', 'dispatch-activation-required'].includes(code(error)))
     throw error;
-  const previousCode =
-    record.result?.outcome === 'operator-setup-blocker' ? record.result.code : undefined;
+  const previousCode = dispatchBlocker(record);
   if (codexHostAccess(error) || record.phase === 'complete') throw error;
   // Native worktree setup returns a client receipt before the child is readable.
   if (

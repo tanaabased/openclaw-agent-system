@@ -401,6 +401,10 @@ describe('agent/codex-dispatch', () => {
         },
       },
     };
+    // This suite seeds historical controller receipts; native cases select v3 explicitly.
+    const selected = await selectCodexIntake(pluginData, deps);
+    const journal = new CodexDispatchStore(pluginData, selected.store.location.scope);
+    await journal.file.write(JSON.stringify({ ...(await journal.read()), version: 2 }));
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
@@ -690,6 +694,9 @@ describe('agent/codex-dispatch', () => {
   });
 
   it('should reject changed routing instructions before native creation', async () => {
+    const selectedNative = await selectCodexIntake(pluginData, deps);
+    const nativeStore = new CodexDispatchStore(pluginData, selectedNative.store.location.scope);
+    await nativeStore.file.write(JSON.stringify({ ...(await nativeStore.read()), version: 3 }));
     await writeFile(
       join(workspace, 'agent.yaml'),
       JSON.stringify({
@@ -1224,6 +1231,9 @@ describe('agent/codex-dispatch', () => {
   });
 
   it('should retry a transient preparation failure only after its backoff', async () => {
+    const selectedNative = await selectCodexIntake(pluginData, deps);
+    const nativeStore = new CodexDispatchStore(pluginData, selectedNative.store.location.scope);
+    await nativeStore.file.write(JSON.stringify({ ...(await nativeStore.read()), version: 3 }));
     const original = deps.connect!;
     deps.connect = async (...args) => ({
       ...(await original(...args)),
@@ -4478,7 +4488,7 @@ describe('agent/codex-dispatch', () => {
       const record = saved.records.find((entry) => entry.id === work.id)!;
       assert.equal(record.progression?.via, mode);
       assert.deepEqual(record.implementationDecision, decision);
-      assert.equal(record.continuation?.binding?.turnId, native!.turnId);
+      assert.equal(record.nativeWork?.binding?.turnId, native!.turnId);
     });
 
   it('should retain occurrence accounting across competing native observations', async () => {
@@ -4769,6 +4779,15 @@ describe('agent/codex-dispatch', () => {
         },
       },
     });
+    {
+      const journal = new CodexDispatchStore(
+        current.store.location.root,
+        current.store.location.scope,
+      );
+      await journal.file.write(
+        JSON.stringify({ ...(await journal.read()), version: assessment ? 2 : 3 }),
+      );
+    }
     const prepared = await prepare();
     created();
     await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
@@ -4834,6 +4853,7 @@ describe('agent/codex-dispatch', () => {
         },
       ];
       state.records[0] = cutover638Active(state.records[0]!).record;
+      state.version = 3;
       await save();
     });
     work.receive();
@@ -4887,16 +4907,21 @@ describe('agent/codex-dispatch', () => {
         'native-attempt',
         'native-previous-summary',
       ]);
-      assert.deepEqual(migrated.record.previousSummaryAttempts, [before.attempt]);
-      assert.equal(migrated.record.continuation!.phase, 'cancelled');
-      assert.equal(migrated.record.continuation!.scope, 'local');
-      assert.deepEqual(migrated.record.continuation!.attempt, before.attempt);
-      assert.deepEqual(migrated.record.continuation!.result, before.result);
-      assert.equal(migrated.record.continuation!.publicationAttempt, undefined);
+      assert.equal(migrated.record.previousSummaryAttempts, undefined);
+      assert.deepEqual(
+        migrated.record.nativeRequests?.map(({ attempt }) => attempt),
+        [before.attempt],
+      );
+      assert.equal(migrated.record.nativeWork!.cancelled, true);
+      assert.equal(migrated.record.nativeWork!.scope, 'local');
+      assert.equal(migrated.record.continuation, undefined);
+      assert.equal(migrated.record.nativeWork!.blockedTurnId, before.blockedTurnId);
+      assert.ok(!migrated.record.nativeRequests?.some(({ attempt }) => attempt.ended));
       state.records[0] = migrated.record;
+      state.version = 3;
       await save();
     });
-    assert.equal((await store.read()).records[0]!.continuation!.scope, 'local');
+    assert.equal((await store.read()).records[0]!.nativeWork!.scope, 'local');
   });
 
   it('should enter issue work from a verified native answer to the original clarification', async () => {
@@ -5153,7 +5178,7 @@ describe('agent/codex-dispatch', () => {
       const record = (await (await workStore()).read()).records[0]!;
       assert.equal(record.progression?.via, mode);
       assert.equal(record.continuation?.attempt, undefined);
-      assert.equal(record.continuation?.binding?.turnId, native!.turnId);
+      assert.equal(record.nativeWork?.binding?.turnId, native!.turnId);
       assert.equal(record.result, undefined);
       assert.equal(record.stageReceipt, undefined);
       assert.equal(record.continuation?.result, undefined);
@@ -5257,7 +5282,7 @@ describe('agent/codex-dispatch', () => {
       assert.equal(resumed.worktree, original.worktree);
       assert.equal(resumed.result, undefined);
       await store.exclusive(async (state, save) => {
-        state.records[0]!.continuation!.scope = 'local';
+        (state.records[0]!.nativeWork ?? state.records[0]!.continuation)!.scope = 'local';
         await save();
       });
       await assert.rejects(enter('pull-request'), /reply-native-user-input-required/);
@@ -5270,7 +5295,9 @@ describe('agent/codex-dispatch', () => {
       await assert.rejects(enter(), /reply-native-approval-denied/);
       items = items.slice(0, -1);
       await store.exclusive(async (state, save) => {
-        state.records[0]!.continuation!.phase = 'cancelled';
+        const current = state.records[0]!;
+        if (current.nativeWork) current.nativeWork.cancelled = true;
+        else current.continuation!.phase = 'cancelled';
         await save();
       });
       assert.equal((await enter()).reason, 'implementation-cancelled');
