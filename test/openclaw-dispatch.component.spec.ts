@@ -1,3 +1,7 @@
+import {
+  implementationReviewInstructions,
+  taskScopeInstructions,
+} from '../agent/native-task-instructions.ts';
 import { runInNewContext } from 'node:vm';
 import openClawConditionCheck from '../agent/openclaw-condition-check.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
@@ -380,7 +384,7 @@ describe('agent/openclaw issue dispatch', () => {
                 const rows = [
                   ...(multiple ? [...sessions.values()] : session ? [session] : []),
                   ...foreignSessions,
-                ].filter((row) => row.spawnedCwd === params.workspaceDir);
+                ].filter((row) => row.spawnedCwd === params.workspaceDir && row.listed !== false);
                 return {
                   sessions: rows.slice(
                     Number(params.offset ?? 0),
@@ -450,9 +454,12 @@ describe('agent/openclaw issue dispatch', () => {
                 });
               if (params.sessionId !== undefined && params.messageId === undefined)
                 throw new Error('sessionId requires messageId');
-              const saved = multiple
-                ? histories.get(String(params.sessionKey))!
-                : { messages, inputReceipts, active };
+              const helper = foreignSessions.find((row) => row.key === params.sessionKey);
+              const saved = helper
+                ? { messages: [], inputReceipts: [], active: helper.active === true }
+                : multiple
+                  ? histories.get(String(params.sessionKey))!
+                  : { messages, inputReceipts, active };
               const currentMessages = saved.messages;
               const currentReceipts = saved.inputReceipts;
               const available = [...anchoredMessages, ...currentMessages];
@@ -467,6 +474,7 @@ describe('agent/openclaw issue dispatch', () => {
               return {
                 sessionId:
                   historySessionId ??
+                  helper?.sessionId ??
                   (multiple
                     ? sessions.get(String(params.sessionKey))?.sessionId
                     : session?.sessionId),
@@ -755,6 +763,85 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(creates().length, 1);
   });
 
+  it('should retry a chatless waiting assignment by issue url despite retired predecessor history', async () => {
+    const selected = await next();
+    const current = await service.scope(manifest, root);
+    await current.journal.exclusive(async (state, save) => {
+      const waiting = state.records[0]!;
+      waiting.phase = 'waiting';
+      waiting.blocker = 'git-worktree-path-occupied';
+      waiting.failureStage = 'worktree';
+      delete waiting.context;
+      const retired = structuredClone(waiting);
+      retired.id = 'f'.repeat(64);
+      retired.intakeId = 'e'.repeat(64);
+      retired.manualIssue = undefined;
+      retired.threadId = 'archived-predecessor';
+      retired.retired = { at: baseline, by: 'operator' };
+      state.records.unshift(retired);
+      await save();
+    });
+    const target = 'https://github.com/owner/repo/issues/3';
+    // retain historical admission so both attempts genuinely match the issue url.
+    const admission = current.admitted.records[0]!;
+    const originalScope = service.scope.bind(service);
+    service.scope = async (...args) => {
+      const scope = await originalScope(...args);
+      scope.admitted.records.unshift({ ...admission, id: 'e'.repeat(64) });
+      return scope;
+    };
+    const retry = () =>
+      service.runModel(manifest, root, coordinator, { action: 'retry', target }, true);
+    await assert.rejects(
+      service.runModel(manifest, root, coordinator, { action: 'retry', target }),
+      /dispatch-operator-required/,
+    );
+    fixture.item.state = 'closed';
+    await assert.rejects(retry(), /dispatch-issue-closed/);
+    fixture.item.state = 'open';
+    const allowed = manifest.github!.notifications!.issueAssignment!.allowed;
+    manifest.github!.notifications!.issueAssignment!.allowed = [];
+    assert.equal((await retry()).status, 'policy-held');
+    manifest.github!.notifications!.issueAssignment!.allowed = allowed;
+    assert.equal((await retry()).status, 'routing-required');
+    assert.equal(
+      (await current.journal.read()).records.find((entry) => !entry.retired)!.id,
+      selected.id,
+    );
+    assert.equal(creates().length, 0);
+    coordinator.runId = 'fresh-evidence-after-operator-retry';
+    const fresh = await next();
+    assert.equal(fresh.id, selected.id);
+    assert.equal((await prepare(fresh)).status, 'session-created');
+    await assert.rejects(retry(), /dispatch-native-recovery-required/);
+    assert.equal(creates().length, 1);
+    const history = (await current.journal.read()).records.find(
+      (entry) => entry.id === 'f'.repeat(64),
+    )!;
+    assert.equal(history.threadId, 'archived-predecessor');
+    assert.deepEqual(history.retired, { at: baseline, by: 'operator' });
+  });
+
+  it('should refuse retry when retirement starts after target selection', async () => {
+    const selected = await next();
+    const current = await service.scope(manifest, root);
+    await current.journal.exclusive(async (state, save) => {
+      state.records[0]!.retirement = {
+        reason: 'assignment-removed',
+        at: baseline,
+        intakeId: state.records[0]!.intakeId!,
+        checkedAt: baseline,
+        eligibleAt: baseline,
+      };
+      await save();
+    });
+    await assert.rejects(
+      service.run(manifest, root, coordinator, { action: 'retry', id: selected.id }, true),
+      /dispatch-issue-inactive/,
+    );
+    assert.equal(creates().length, 0);
+  });
+
   it('should retain a bounded worktree conflict without creating a session', async () => {
     const selected = await next();
     service.dependencies.worktrees.prepareGitHub = async () => {
@@ -908,11 +995,7 @@ describe('agent/openclaw issue dispatch', () => {
       ['remove', closed.worktree!],
     ]);
     assert.equal(sessions.get(closed.threadId!)!.archived, true);
-    const retired = await record(closed.threadId);
-    assert.ok(retired.retired);
-    assert.equal(retired.retainedHistory?.outcome?.assessment, closed.result?.outcome);
-    assert.equal(retired.result, undefined);
-    assert.equal(retired.stageReceipt, undefined);
+    assert.equal(await record(closed.threadId), undefined);
     await assert.rejects(stat(closed.worktree!), { code: 'ENOENT' });
     const retained = await record(sibling.threadId);
     assert.equal(retained.retirement, undefined);
@@ -954,7 +1037,7 @@ describe('agent/openclaw issue dispatch', () => {
         );
       let removed = false;
       service.dependencies.worktrees.cleanupGitHub = async (input) => {
-        if (protection === 'dirty')
+        if (protection === 'dirty' && !input.purge)
           return {
             ...input.worktree,
             repositoryId: 'github-10',
@@ -984,34 +1067,27 @@ describe('agent/openclaw issue dispatch', () => {
       assert.deepEqual(await record(), before);
       await assert.rejects(retire('f'.repeat(64)), /dispatch-recovery-stale/);
       const applied = await retire('digest' in preview ? String(preview.digest) : '');
-      assert.equal(applied.status, protection === 'none' ? 'retired' : 'retirement-pending');
+      const pending = protection === 'running';
+      assert.equal(applied.status, pending ? 'retirement-pending' : 'retired');
       const after = await record();
-      assert.equal(after.retirement!.reason, 'operator-requested');
-      assert.equal(after.retirement!.eligibleAt, service.dependencies.now!());
-      assert.equal(removed, protection === 'none');
-      if (protection === 'none') {
-        assert.equal(
-          after.retainedHistory?.outcome?.assessment,
-          before.result?.outcome ?? 'missing',
-        );
-        assert.equal(after.result, undefined);
-      } else assert.deepEqual(after.result, before.result);
+      assert.equal(removed, !pending);
       assert.equal(fixture.item.state, 'open');
-      if (protection === 'none') {
-        assert.equal((await retire()).status, 'retired');
-        assert.equal(calls.filter((call) => call.method === 'sessions.patch').length, 1);
-        await assert.rejects(
-          (await service.scope(manifest, root)).journal.exclusive(async (state, save) => {
-            delete state.records[0]!.retirement!.archivedAt;
-            await save();
-          }),
-          /dispatch-state-invalid/,
-        );
-      } else
+      if (pending) {
+        assert.equal(after.retirement!.reason, 'operator-requested');
+        assert.equal(after.retirement!.eligibleAt, service.dependencies.now!());
+        assert.equal(after.result, undefined);
+        assert.equal(after.cleanupPending, true);
         assert.equal(
           calls.some((call) => call.method === 'sessions.patch'),
           false,
         );
+      } else {
+        assert.equal(after, undefined);
+        assert.equal(calls.filter((call) => call.method === 'sessions.patch').length, 1);
+        const consumed = (await (await service.scope(manifest, root)).store.read())!
+          .observedAssignments;
+        assert.ok(consumed?.some((entry) => entry.consumedBy === first.id));
+      }
     });
   }
 
@@ -1098,7 +1174,7 @@ describe('agent/openclaw issue dispatch', () => {
     );
   });
 
-  it('should retire eligible shared owners and remove their closed checkout once', async () => {
+  it('should preserve a genuinely shared checkout even when both tasks are eligible', async () => {
     const { items } = await assignments(2, 2);
     const sharedTree = {
       path: join(root, 'shared'),
@@ -1128,9 +1204,12 @@ describe('agent/openclaw issue dispatch', () => {
     service.dependencies.now = () => deadline + 60_000;
     await service.run(manifest, root, { ...coordinator, runId: 'finish' }, { action: 'next' });
     const state = await (await service.scope(manifest, root)).journal.read();
-    assert.ok(state.records.every((entry) => entry.retired));
-    assert.equal(removals, 1);
-    assert.equal(calls.filter((call) => call.method === 'sessions.patch').length, 2);
+    assert.equal(state.records.length, 2);
+    assert.ok(
+      state.records.every((entry) => entry.retirement?.code === 'retirement-worktree-shared'),
+    );
+    assert.equal(removals, 0);
+    assert.equal(calls.filter((call) => call.method === 'sessions.patch').length, 0);
   });
 
   for (const leftover of ['renamed', 'modified', 'untracked'] as const) {
@@ -1176,11 +1255,7 @@ describe('agent/openclaw issue dispatch', () => {
       service.dependencies.now = () => before.createdAt + 24 * 60 * 60_000;
       await service.run(manifest, root, { ...coordinator, runId: 'cleanup' }, { action: 'next' });
       const after = await record();
-      assert.ok(after.retired, after.retirement?.code ?? 'retirement did not finish');
-      assert.ok(after.retirement?.archivedAt);
-      assert.ok(after.retirement?.worktreeRemovedAt);
-      assert.equal(after.retainedHistory?.outcome?.assessment, before.result?.outcome ?? 'missing');
-      assert.equal(after.result, undefined);
+      assert.equal(after, undefined);
       assert.equal(removed, true);
     });
   }
@@ -1215,7 +1290,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await record()).retired, undefined);
     service = new OpenClawDispatch({ ...service.dependencies, now: () => deadline + 60_000 });
     await service.run(manifest, root, { ...coordinator, runId: 'recover' }, { action: 'next' });
-    assert.ok((await record()).retired);
+    assert.equal(await record(), undefined);
     assert.equal(removals, 1);
     assert.equal(calls.filter((call) => call.method === 'sessions.patch').length, 1);
   });
@@ -1254,15 +1329,7 @@ describe('agent/openclaw issue dispatch', () => {
       { action: 'next' },
     );
     const after = await record();
-    assert.ok(after.retired);
-    assert.equal(after.retainedHistory?.terminal, true);
-    assert.equal(after.request, undefined);
-    assert.equal(after.retainedHistory?.sessionId, before.sessionCreation?.sessionId);
-    assert.equal(after.retirement?.worktreeRemovalAttemptedAt, undefined);
-    assert.deepEqual(after.retirement?.worktreeRemovalObserved, {
-      at: deadline + 60_000,
-      source: 'external-cleanup',
-    });
+    assert.equal(after, undefined);
     service.dependencies.now = () => deadline + 120_000;
     await service.run(manifest, root, { ...coordinator, runId: 'repeat' }, { action: 'next' });
     assert.equal(calls.filter((call) => call.method === 'sessions.patch').length, 1);
@@ -1308,28 +1375,19 @@ describe('agent/openclaw issue dispatch', () => {
         service = new OpenClawDispatch({ ...service.dependencies, now: () => deadline });
         await service.run(manifest, root, { ...coordinator, runId: 'recover' }, { action: 'next' });
         const after = await record();
-        assert.ok(after.retired);
-        assert.equal(openClawCapacity([after], 1).occupied, 0);
-        assert.deepEqual(after.retirement?.sessionUnavailableObserved, {
-          at: deadline,
-          session: shape === 'denied' ? 'access-denied' : 'not-found',
-        });
-        assert.equal(after.retirement?.archivedAt, undefined);
-        assert.equal(after.retirement?.archiveAttempt, undefined);
-        assert.equal(after.retainedHistory?.terminal, true);
-        assert.equal(after.request, undefined);
-        assert.equal(after.retainedHistory?.sessionId, before.sessionCreation?.sessionId);
-        assert.equal(after.threadId, before.threadId);
-        assert.equal(after.nativeInactive, before.nativeInactive);
-        assert.equal(removals, tree === 'existing' ? 1 : 0);
-        if (tree === 'absent') {
-          assert.equal(after.retirement?.worktreeRemovalAttemptedAt, undefined);
-          assert.equal(after.retirement?.worktreeRemovalObserved?.source, 'external-cleanup');
+        if (shape === 'denied') {
+          assert.ok(after);
+          assert.equal(after.retired, undefined);
+          assert.equal(after.retirement?.code, 'retirement-native-access-denied');
+          assert.equal(removals, 0);
+        } else {
+          assert.equal(after, undefined);
+          assert.equal(removals, tree === 'existing' ? 1 : 0);
+          await assert.rejects(stat(before.worktree!), { code: 'ENOENT' });
         }
-        await assert.rejects(stat(before.worktree!), { code: 'ENOENT' });
         service.dependencies.now = () => deadline + 60_000;
         await service.run(manifest, root, { ...coordinator, runId: 'repeat' }, { action: 'next' });
-        assert.equal(removals, tree === 'existing' ? 1 : 0);
+        assert.equal(removals, tree === 'existing' && shape !== 'denied' ? 1 : 0);
         assert.equal(creates().length, 1);
         assert.equal(calls.filter((call) => call.method === 'sessions.patch').length, 0);
       });
@@ -1421,9 +1479,7 @@ describe('agent/openclaw issue dispatch', () => {
     service = new OpenClawDispatch({ ...service.dependencies, now: () => deadline + 60_000 });
     await service.run(manifest, root, { ...coordinator, runId: 'reconcile' }, { action: 'next' });
     const after = await record();
-    assert.ok(after.retired);
-    assert.equal(after.retirement?.worktreeRemovalObserved?.source, 'retirement-attempt');
-    assert.equal(after.retirement?.archivedAt, undefined);
+    assert.equal(after, undefined);
     assert.equal(removals, 1);
     assert.equal(calls.filter((call) => call.method === 'sessions.patch').length, 0);
   });
@@ -1499,7 +1555,7 @@ describe('agent/openclaw issue dispatch', () => {
     };
     await service.run(manifest, root, { ...coordinator, runId: 'cleanup' }, { action: 'next' });
     assert.equal(session!.archived, true);
-    assert.ok((await record()).retired);
+    assert.equal(await record(), undefined);
   });
 
   for (const kind of [
@@ -1549,14 +1605,14 @@ describe('agent/openclaw issue dispatch', () => {
       await service.run(manifest, root, { ...coordinator, runId: 'cleanup' }, { action: 'next' });
       const protectedResource = !['incidental', 'disabled'].includes(kind);
       assert.equal(removals, protectedResource ? 0 : 1);
-      assert.equal(Boolean((await record()).retired), !protectedResource);
+      assert.equal(Boolean(await record()), protectedResource);
       if (protectedResource)
         assert.equal((await record()).retirement?.code, 'retirement-automation-owner');
     });
   }
 
   for (const legacy of [false, true]) {
-    it(`should reclaim a closed checkout despite ${legacy ? 'retained' : 'new'} archive denial without replaying it`, async () => {
+    it(`should preserve a closed checkout after ${legacy ? 'retained' : 'new'} archive denial until native archival is observed`, async () => {
       await prepare(await next());
       const target = await record();
       const inspect = service.dependencies.worktrees.inspectGitHub;
@@ -1599,7 +1655,7 @@ describe('agent/openclaw issue dispatch', () => {
         target.sessionCreation!.sessionId,
       );
       assert.equal(pending.retirement?.archivedAt, undefined);
-      assert.ok(pending.retirement?.worktreeRemovedAt);
+      assert.equal(pending.retirement?.worktreeRemovedAt, undefined);
       assert.equal(pending.retirement?.code, 'session-dispatch-sessions-patch-forbidden');
       service.dependencies.now = () => deadline + 60_000;
       await service.run(
@@ -1608,7 +1664,7 @@ describe('agent/openclaw issue dispatch', () => {
         { ...coordinator, runId: 'reconcile-denial' },
         { action: 'next' },
       );
-      assert.equal(removals, 1);
+      assert.equal(removals, 0);
       assert.equal(
         calls.filter(({ method }) => method === 'sessions.patch').length,
         legacy ? 0 : 1,
@@ -1622,7 +1678,7 @@ describe('agent/openclaw issue dispatch', () => {
         { ...coordinator, runId: 'observe-archive' },
         { action: 'next' },
       );
-      assert.ok((await record()).retired);
+      assert.equal(await record(), undefined);
       assert.equal(
         calls.filter(({ method }) => method === 'sessions.patch').length,
         legacy ? 0 : 1,
@@ -1665,54 +1721,65 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await record()).retired, undefined);
     assert.equal(calls.filter(({ method }) => method === 'sessions.patch').length, 1);
   });
-  it('should retire a closed task and its native helper chats without a shared-checkout veto', async () => {
-    await prepare(await next());
-    const target = await record();
-    const helper = {
-      key: 'agent:receiver:subagent:helper',
-      agentId: 'receiver',
-      sessionId: 'helper-incarnation',
-      spawnedCwd: target.worktree,
-      parentSessionKey: target.threadId,
-      status: 'done',
-      archived: false,
-    };
-    const nested = {
-      ...helper,
-      key: 'agent:receiver:subagent:nested',
-      sessionId: 'nested-incarnation',
-      parentSessionKey: helper.key,
-    };
-    foreignSessions = [nested, helper];
-    let removals = 0;
-    service.dependencies.worktrees.cleanupGitHub = async (input) => {
-      assert.equal(input.purge, true);
-      if (!input.verifyOnly) {
-        assert.equal(session!.archived, true);
-        assert.equal(helper.archived, true);
-        assert.equal(nested.archived, true);
-        removals++;
-      }
-      return {
-        ...input.worktree,
-        repositoryId: 'github-10',
-        workId: 'issue-20',
-        status: input.verifyOnly ? 'preserved' : 'removed',
+  for (const helperState of ['listed', 'omitted', 'active'] as const)
+    it(`should verify ${helperState} native helper custody before closed task disposal`, async () => {
+      await prepare(await next());
+      const target = await record();
+      const helper = {
+        key: 'agent:receiver:subagent:helper',
+        agentId: 'receiver',
+        sessionId: 'helper-incarnation',
+        spawnedCwd: target.worktree,
+        parentSessionKey: target.threadId,
+        status: 'done',
+        archived: false,
+        listed: helperState === 'listed',
+        active: helperState === 'active',
       };
-    };
-    fixture.item.state = 'closed';
-    await service.run(manifest, root, coordinator, { action: 'next' });
-    service.dependencies.now = () => baseline + 24 * 60 * 60_000;
-    await service.run(manifest, root, { ...coordinator, runId: 'cleanup' }, { action: 'next' });
-    assert.ok((await record()).retired);
-    assert.equal(removals, 1);
-    assert.deepEqual(
-      new Set(
-        calls.filter(({ method }) => method === 'sessions.patch').map(({ params }) => params.key),
-      ),
-      new Set([target.threadId, helper.key, nested.key]),
-    );
-  });
+      const nested = {
+        ...helper,
+        key: 'agent:receiver:subagent:nested',
+        sessionId: 'nested-incarnation',
+        parentSessionKey: helper.key,
+        listed: true,
+        active: false,
+      };
+      foreignSessions = [nested, helper];
+      let removals = 0;
+      service.dependencies.worktrees.cleanupGitHub = async (input) => {
+        assert.equal(input.purge, true);
+        if (!input.verifyOnly) {
+          assert.equal(session!.archived, true);
+          assert.equal(helper.archived, true);
+          assert.equal(nested.archived, true);
+          removals++;
+        }
+        return {
+          ...input.worktree,
+          repositoryId: 'github-10',
+          workId: 'issue-20',
+          status: input.verifyOnly ? 'preserved' : 'removed',
+        };
+      };
+      fixture.item.state = 'closed';
+      await service.run(manifest, root, coordinator, { action: 'next' });
+      service.dependencies.now = () => baseline + 24 * 60 * 60_000;
+      await service.run(manifest, root, { ...coordinator, runId: 'cleanup' }, { action: 'next' });
+      if (helperState === 'active') {
+        assert.ok(await record());
+        assert.equal(removals, 0);
+        assert.equal(calls.filter(({ method }) => method === 'sessions.patch').length, 0);
+        return;
+      }
+      assert.equal(await record(), undefined);
+      assert.equal(removals, 1);
+      assert.deepEqual(
+        new Set(
+          calls.filter(({ method }) => method === 'sessions.patch').map(({ params }) => params.key),
+        ),
+        new Set([target.threadId, helper.key, nested.key]),
+      );
+    });
 
   for (const recovery of ['observed', 'replaced', 'archived-parent'] as const) {
     it(`should reconcile ${recovery} helper archival without replaying native refusal`, async () => {
@@ -1760,7 +1827,7 @@ describe('agent/openclaw issue dispatch', () => {
       if (recovery === 'replaced') helper.sessionId = 'replacement';
       now += 60_000;
       await service.run(manifest, root, { ...coordinator, runId: 'observe' }, { action: 'next' });
-      assert.equal(Boolean((await record()).retired), recovery !== 'replaced');
+      assert.equal((await record()) === undefined, recovery !== 'replaced');
       assert.equal(removals, recovery !== 'replaced' ? 1 : 0);
       if (recovery === 'replaced')
         assert.equal((await record()).retirement?.code, 'retirement-session-identity-changed');
@@ -6269,6 +6336,11 @@ describe('agent/openclaw issue dispatch', () => {
         false,
       );
       assert.equal(verified.status, 'verified');
+      const delivered = await hydrateImplementation(verified, (request) =>
+        service.run(manifest, root, assessor(input.id), request as never, false),
+      );
+      assert.ok(String(delivered.instructions).includes(taskScopeInstructions));
+      assert.ok(String(delivered.instructions).includes(implementationReviewInstructions));
       assert.equal('handoff' in verified, false);
       assert.ok('implementation' in verified);
       const selection = verified.implementation as AssessmentSelection;
@@ -10165,6 +10237,39 @@ describe('agent/openclaw issue dispatch', () => {
           true,
         );
         assert.equal(retirement.status, 'retire-available', JSON.stringify(retirement));
+        const pending = await service.run(
+          manifest,
+          root,
+          who,
+          { action: 'retire', id: first.id, apply: true },
+          true,
+        );
+        assert.equal(pending.status, 'retirement-pending', JSON.stringify(pending));
+        const journal = (await service.scope(manifest, root)).journal;
+        const task = (await journal.read()).records[0]!;
+        assert.equal(task.cleanupPending, true);
+        const history = histories.get(task.threadId!)!;
+        history.active = false;
+        history.inputReceipts = [];
+        service.dependencies.worktrees.cleanupGitHub = async (input) => {
+          if (!input.verifyOnly) await rm(input.worktree.path, { recursive: true });
+          return {
+            ...input.worktree,
+            repositoryId: 'github-10',
+            workId: 'issue-20',
+            status: input.verifyOnly ? 'preserved' : 'removed',
+          };
+        };
+        const resumed = await service.run(
+          manifest,
+          root,
+          { ...who, runId: 'next-explicit-invocation' },
+          { action: 'retire', id: first.id, apply: true },
+          true,
+        );
+        assert.equal(resumed.status, 'retired', JSON.stringify(resumed));
+        assert.deepEqual((await journal.read()).records, []);
+        assert.equal(calls.filter((call) => call.method === 'sessions.patch').length, 1);
       });
   }
 });

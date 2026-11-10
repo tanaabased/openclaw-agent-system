@@ -135,6 +135,28 @@ describe('codex retirement cleanup', () => {
     assert.equal(h.saved(), 1);
   });
 
+  it('should discard dirty unpushed work on explicit open-task retirement', async () => {
+    const h = await fixture();
+    h.input.issueClosed = false;
+    h.input.record.retirement!.operatorRequest = {
+      caller: 'operator',
+      turnId: 'turn',
+      targetId: h.input.record.id,
+      at: 30,
+    };
+    const git = h.input.git!;
+    h.input.git = async (path, args) => {
+      if (args[0] === 'status') return ' M tracked.ts\n?? local-notes.md';
+      if (args[0] === 'for-each-ref') return '';
+      return git(path, args);
+    };
+    assert.ok((await h.run()).request);
+    assert.equal((await h.run()).code, 'retirement-native-archive-unverified');
+    h.input.archived = true;
+    await rm(h.input.record.worktree!, { recursive: true });
+    assert.deepEqual(await h.run(), { archived: true, worktreeRemoved: true });
+  });
+
   it('should permit pinned closed owners while protecting unowned peers', async () => {
     const h = await fixture();
     h.input.shared = [{ ...h.input.record, id: 'peer', threadId: 'peer' }];

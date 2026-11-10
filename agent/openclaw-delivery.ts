@@ -473,7 +473,10 @@ export default async function openClawDelivery(input: {
     delivery.binding = binding;
     delivery.title = title;
     delivery.body = body;
-    if (Object.keys(contentUpdate).length) delivery.contentUpdate = contentUpdate;
+    if (Object.keys(contentUpdate).length) {
+      if (!delivery.contentUpdate) delivery.contentUpdateAttempted = false;
+      delivery.contentUpdate = contentUpdate;
+    }
     delivery.reconciled = false;
     work.delivery = delivery;
     await save();

@@ -207,6 +207,14 @@ export default class OpenClawDispatch {
       request = { ...authored, id: record.id, apply: !input.preview };
     }
     if (input.action === 'retire') {
+      if (!operator) throw new Error('dispatch-operator-required');
+      await authority.assertCurrent?.();
+      if (!input.preview)
+        await reconcileOpenClawRetirementEffects({
+          dependencies: this.dependencies,
+          manifest,
+          workspace,
+        });
       const authored = { ...input };
       delete authored.target;
       delete authored.preview;
@@ -870,6 +878,7 @@ export default class OpenClawDispatch {
         const feedback = await this.issue.routeFeedback(input, record, tx, operator);
         if (feedback !== undefined) return feedback;
         if (input.action === 'retry') {
+          if (record.retirement) throw new Error('dispatch-issue-inactive');
           if (record.request) throw new Error('dispatch-native-recovery-required');
           record.manifestDigest = current.manifestDigest;
           await this.validate(manifest, workspace, record);
@@ -950,3 +959,4 @@ export default class OpenClawDispatch {
       });
   }
 }
+import reconcileOpenClawRetirementEffects from './openclaw-retirement-effects.ts';

@@ -56,7 +56,11 @@ export interface FeedbackReplyDependencies {
   provider: OpenClawFeedbackProvider;
   resolveSkill(id: string): Promise<CodexAssessmentSkill>;
   assertCurrent(): Promise<void>;
-  managed(target: ReplyTarget, purpose?: 'status-update'): Promise<ReturnType<typeof replyOwner>>;
+  managed(
+    target: ReplyTarget,
+    purpose?: 'status-update',
+    privateText?: string,
+  ): Promise<ReturnType<typeof replyOwner>>;
 }
 
 function replyOwnerContext(
@@ -64,6 +68,7 @@ function replyOwnerContext(
   purpose?: 'status-update',
   feedback = false,
 ) {
+  if (!purpose && !feedback) return 'null';
   return JSON.stringify(
     (purpose || feedback) && owner && 'ownerId' in owner
       ? { ownerId: owner.ownerId, workflow: owner.workflow }
@@ -81,10 +86,22 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
   await deps.assertCurrent();
   const store = new ReplyStore(deps.root, deps.binding);
   return store.exclusive(async (drafts, save) => {
+    const independent = !input.purpose && !deps.feedback;
     let draft =
       input.operation !== 'compose' || input.material
         ? selectReplyDraft(drafts, authored, deps)
-        : undefined;
+        : independent && input.privateText
+          ? selectReplyDraft(
+              drafts.filter(
+                (entry) =>
+                  !entry.update &&
+                  !entry.feedback &&
+                  (entry.attempted || entry.receipt || entry.outcome === input.outcome),
+              ),
+              authored,
+              deps,
+            )
+          : undefined;
     if (draft && input.operation !== 'compose') {
       // These authored fields selected the exact draft; they cannot replace its contents.
       delete input.privateText;
@@ -154,7 +171,13 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
     };
     if (!draft?.attempted && !draft?.receipt) await authorizeFeedback();
     const owner =
-      !draft?.attempted && !draft?.receipt ? await deps.managed(target, purpose) : undefined;
+      !draft?.attempted && !draft?.receipt
+        ? await deps.managed(
+            target,
+            purpose,
+            feedback ? undefined : (input.privateText ?? draft?.privateText),
+          )
+        : undefined;
     if (
       owner &&
       owner.status !== 'manual-reply-context' &&
@@ -586,7 +609,9 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
         if (!sameDestination(target, current)) throw new Error('reply-target-diverged');
       } else if (JSON.stringify(current) !== record.target) throw new Error('reply-source-changed');
       const freshOwner =
-        !record.attempted && !record.receipt ? await deps.managed(current, purpose) : undefined;
+        !record.attempted && !record.receipt
+          ? await deps.managed(current, purpose, feedback ? undefined : record.privateText)
+          : undefined;
       if (
         freshOwner &&
         freshOwner.status !== 'manual-reply-context' &&

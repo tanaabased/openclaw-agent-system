@@ -36,14 +36,14 @@ export default function replyOwnerContext(input: {
     id: record.id,
     threadId: record.threadId,
     ...(input.incarnation ? { incarnation: input.incarnation } : {}),
-    retired: !input.conversation && Boolean(record.retired),
+    retired: Boolean(record.retired),
     reset: Boolean(record.reset),
     supersededBy: record.supersededBy,
     manualIssue: record.manualIssue?.fresh ? { fresh: true } : undefined,
     inactive: Boolean(
-      (!input.conversation && record.retired) ||
+      record.retired ||
       record.supersededBy ||
-      (!input.conversation && record.retirement) ||
+      record.retirement ||
       record.reset ||
       (record.threadId && input.custodyInvalid),
     ),

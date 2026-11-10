@@ -190,7 +190,7 @@ export default async function recoverDispatch(
         issue: issueUrl,
         threadId: record.threadId ?? record.receiptThreadId,
         instruction:
-          'Retire this exact managed task now, leaving its issue and branch unchanged. Reuse safe native cleanup immediately without grace; running work, preservation blockers and asynchronous reclamation remain pending.',
+          'Retire this exact managed task now without changing GitHub. Native cleanup may discard dirty files and local-only commits. Active work, shared resources and unverified native reclamation remain pending; repeat this retirement invocation to reconcile.',
       };
     if (!input.apply && input.digest !== digest) throw new Error('dispatch-recovery-stale');
     const verifiedConfiguration = await context.readConfiguration();
@@ -202,7 +202,7 @@ export default async function recoverDispatch(
       verifiedCaller.inputId !== nativeCaller.inputId
     )
       throw new Error('dispatch-native-caller-changed');
-    record.reservationVersion = 1;
+    if (!record.cleanupPending) record.reservationVersion = 1;
     record.retirement = assignmentRetirement({
       previous: record.retirement,
       reason: 'operator-requested',

@@ -67,10 +67,16 @@ These are supplied facts, not verified execution results. Ask the returned focus
 question when information is missing; never invent progress or an admitted event.
 
 The native adapter reads applicable settings from the invoking agent's bound
-`agent.yaml`. Follow a returned managed-owner route using its source URL and retained response.
-The runtime resolves native ownership and effect receipts internally. Do not reimplement finished work. Invalid managed
-context must recover through that owner or stop, never fall back to manual entry.
-Invalid explicit skill/guidance configuration stops composition.
+`agent.yaml`. A newly authorized comment is its own publication, even when another
+task tracks the selected issue, PR, or review thread. Do not transfer task ownership,
+fabricate a managed event, or ask again for permission already covering that comment.
+Destination records alone neither grant nor veto publication.
+
+A returned existing-reply route concerns that exact retained response, not exclusive
+rights to its destination. Follow its source and original text for continuation or
+reconciliation; never disguise a retry as a new comment. The runtime retains native
+custody and effect receipts. Invalid caller context or explicit skill/guidance
+configuration stops the affected operation; do not fall back to another authority.
 
 For `composition-ready`, read the returned selected skill and guidance once. If
 this skill is selected, continue below without reentering direct entry. A custom

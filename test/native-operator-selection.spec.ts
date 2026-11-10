@@ -19,6 +19,81 @@ describe('native operator task selection', () => {
     sourceThreadId: 'coordinator',
     threadId: 'original-chat',
   } as SharedDispatchRecord;
+  it('should retry the sole current assignment independently of retired history ordering', () => {
+    const retired = { ...original, retired: { at: 1, by: 'operator' } };
+    const waiting = { ...original, id: 'waiting', threadId: undefined, phase: 'waiting' as const };
+    for (const records of [[retired, waiting], [waiting, retired], [waiting]])
+      assert.equal(
+        nativeOperatorSelection({ action: 'retry', target }, records, [issue], 'operator'),
+        waiting,
+      );
+  });
+  it('should exclude terminal owners without redirecting an exact retry to a sibling', () => {
+    const waiting = { ...original, id: 'waiting', threadId: undefined, phase: 'waiting' as const };
+    const excluded: SharedDispatchRecord[] = [
+      { ...original, retired: { at: 1, by: 'operator' } },
+      {
+        ...original,
+        retirement: {
+          reason: 'assignment-removed',
+          at: 1,
+          eligibleAt: 1,
+        } as SharedDispatchRecord['retirement'],
+      },
+      { ...original, reset: { at: 1, by: 'operator' } },
+      { ...original, supersededBy: waiting.id },
+    ];
+    for (const previous of excluded) {
+      assert.throws(
+        () => nativeOperatorSelection({ action: 'retry', target }, [previous], [issue], 'operator'),
+        /dispatch-target-unavailable/,
+      );
+      assert.equal(
+        nativeOperatorSelection(
+          { action: 'retry', target },
+          [previous, waiting],
+          [issue],
+          'operator',
+        ),
+        waiting,
+      );
+      assert.throws(
+        () =>
+          nativeOperatorSelection(
+            { action: 'retry', chat: previous.threadId },
+            [previous, waiting],
+            [issue],
+            'operator',
+          ),
+        /dispatch-target-unavailable/,
+      );
+    }
+    const sibling = { ...waiting, id: 'sibling', threadId: 'sibling-chat' };
+    for (const records of [
+      [waiting, sibling],
+      [sibling, waiting],
+    ]) {
+      assert.throws(
+        () => nativeOperatorSelection({ action: 'retry', target }, records, [issue], 'operator'),
+        /dispatch-target-ambiguous/,
+      );
+      assert.equal(
+        nativeOperatorSelection(
+          { action: 'retry', target, chat: sibling.threadId },
+          records,
+          [issue],
+          'operator',
+        ),
+        sibling,
+      );
+    }
+    for (const action of ['retire', 'reset', 'retry-denied'])
+      assert.throws(
+        () =>
+          nativeOperatorSelection({ action, target }, [excluded[0]!, waiting], [issue], 'operator'),
+        /dispatch-target-ambiguous/,
+      );
+  });
   it('should resolve the current task or an explicit resource without accepting binding overrides', () => {
     assert.equal(
       nativeOperatorSelection({ action: 'retire' }, [original], [issue], 'original-chat'),

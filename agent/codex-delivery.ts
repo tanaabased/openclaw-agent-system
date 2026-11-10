@@ -771,7 +771,12 @@ export default async function runCodexDelivery(
           ? { body: delivery.body }
           : {}),
       };
-      if (Object.keys(contentUpdate).length) delivery.contentUpdate = contentUpdate;
+      if (Object.keys(contentUpdate).length) {
+        delivery.contentUpdate = contentUpdate;
+        delivery.contentUpdateAttempted = previous?.contentUpdate
+          ? previous.contentUpdateAttempted
+          : false;
+      }
       if (adopted && head === adopted.head && !previous?.pushedHead && !delivery.contentUpdate)
         return {
           status: 'bound',
@@ -894,12 +899,6 @@ export default async function runCodexDelivery(
             linkIssue: !adoptedPullRequest && !adopted,
             adoptedPullRequest,
             contentUpdate: delivery.contentUpdate,
-            onLinkageRetry: async () => {
-              delivery.notices = [
-                ...new Set([...(delivery.notices ?? []), 'delivery-linkage-retried' as const]),
-              ];
-              await save();
-            },
           };
           const provider = new IssueDeliveryProvider(
             {

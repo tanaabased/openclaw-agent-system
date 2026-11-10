@@ -16,7 +16,7 @@ assignment baseline, and restores enabled intake alongside paused pickup.
 
 ## Notes
 
-- Setup creates one real assessment, closes its issue, removes its worktree publicly, and observes retirement before reset. This completed record makes tracking-clear verification meaningful without depending on the full retirement/fresh-assignment journey.
+- Setup creates one real assessment, closes its issue, removes its worktree publicly, and observes retirement before reset. The surviving consumed-assignment tracking makes reset verification meaningful without depending on the full retirement/fresh-assignment journey.
 - Strict AIMock reuses the existing assessment protocol. The Gateway, native coordinator, reset command, automation, and receipts remain real.
 - A disposable milestone enrolls paused pickup without running another model turn. Assignment/allowance retention and partial recovery stay in controlled source coverage.
 - One 61-second setup wait observes retirement; zero cleanup grace does not bypass the lifecycle observation interval. Reset diagnostics preserve safe phase/operation details and keep raw provider errors private.
@@ -123,15 +123,13 @@ sleep 61
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
-jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-retired.json"
-jq -e --slurpfile before "$TMPDIR/notification-dispatch-before.json" '.retirement.worktreeRemovalObserved.source == "external-cleanup" and .retirement.worktreeRemovalAttemptedAt == null and .retirement.reason == "issue-closed" and .retired.at != null and .retirement.archivedAt != null and .retirement.worktreeRemovedAt != null and .retainedHistory.terminal == true and .retainedHistory.outcome.assessment == "missing" and $before[0].result == null and .threadId == $before[0].threadId' "$TMPDIR/notification-retired.json"
 openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session.archived == true or .session.archivedAt != null'
-worktree=$(jq -er .worktree "$TMPDIR/notification-retired.json")
+worktree=$(jq -er .worktree "$TMPDIR/notification-dispatch-before.json")
 test ! -e "$worktree"
 openclaw agent-system tool worktree -- list | jq -e --arg path "$worktree" 'all(.[]; .path != $path)'
 
-# should retain completed management history before reset
-jq -es '[.[].records[]] | length == 1 and .[0].retired.at != null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+# should retain consumed assignment tracking before reset
+jq -es --slurpfile before "$TMPDIR/notification-dispatch-before.json" 'any(.[].observedAssignments[]?; .consumedBy == $before[0].id)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-intake-v2/"github-intake-*.json
 ```
 
 ## Testing
@@ -165,6 +163,7 @@ test "$pickup" != "$old_pickup"
 coordinator=$(jq -er '.jobs[] | select(.id == "github-issue-assignment") | .routing | sub("^session:"; "")' "$TMPDIR/reset-automations-after.json")
 openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$coordinator" '{key:$key}')" --json | jq -e '.session.category == "AGENT SYSTEM"'
 jq -es 'all(.[]; (.records | length) == 0 and .resetGeneration != null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+jq -es --slurpfile before "$TMPDIR/notification-dispatch-before.json" 'all(.[].observedAssignments[]?; .consumedBy != $before[0].id)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-intake-v2/"github-intake-*.json
 openclaw agent-system notifications status --agent reset-tanaabot --json | jq -e '.baseline.status == "ready" and (.items | length) == 0'
 ```
 

@@ -269,9 +269,11 @@ export default function withToolSearch(scenario: OpenClawAIMockScenario): OpenCl
     adapted.set(fixture, {
       ...fixture,
       match: {
-        predicate: (request) =>
-          (!needsDiscovery(request) || !!discoveryResult(request)) &&
-          matchFixture([fixture], exchange(request).request) !== null,
+        predicate: (request) => {
+          if (needsDiscovery(request) && !discoveryResult(request)) return false;
+          const material = exchange(request);
+          return !material.pending && matchFixture([fixture], material.request) !== null;
+        },
       },
       response:
         typeof response !== 'function' && !('toolCalls' in response)

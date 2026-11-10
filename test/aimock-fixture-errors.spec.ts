@@ -4,8 +4,9 @@ import type { ChatCompletionRequest } from '@copilotkit/aimock';
 import captureFixtureErrors from '../scripts/aimock-fixture-errors.ts';
 
 describe('aimock fixture error diagnostics', () => {
-  it('retains result status and diagnostic codes without retaining private result prose', () => {
+  it('should retain result status and diagnostic codes without retaining private result prose', () => {
     const failure = new Error('private assertion detail');
+    failure.stack = `${failure.name}: ${failure.message}\n    at fixture (/private/tmp/fixture.ts:1:1)`;
     const captured = captureFixtureErrors({
       id: 'diagnostics',
       model: { match: /fixture/u, reference: 'fixture' },
@@ -51,6 +52,10 @@ describe('aimock fixture error diagnostics', () => {
     }
     assert.equal(results[2]!.code, undefined);
     assert.equal(results[2]!.status, undefined);
-    assert.doesNotMatch(JSON.stringify(captured.errors), /private/u);
+    assert.deepEqual(captured.errors[0]!.frames, ['    at fixture (/private/tmp/fixture.ts:1:1)']);
+    assert.doesNotMatch(
+      JSON.stringify(captured.errors),
+      /private (?:assertion detail|context|prose with spaces|status)/u,
+    );
   });
 });

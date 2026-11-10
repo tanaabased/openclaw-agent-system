@@ -13,6 +13,10 @@ import replyOwner, { type ReplyOwner } from '../agent/reply-owner.ts';
 import ReplyStore from '../agent/reply-store.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import runCodexFeedback from '../agent/codex-feedback.ts';
+import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
+import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
+import { selectCodexIntake } from '../agent/codex-intake.ts';
+import { issueKey } from '../agent/dispatch-pending.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
@@ -92,8 +96,15 @@ describe('agent/feedback-reply', () => {
         selections++;
         return assessmentSkillSource({ name, path: join(root, 'SKILL.md'), scope: 'user' });
       },
-      managed: async (target, purpose) =>
-        replyOwner(owners, deps.binding.session, deps.binding.incarnation, target, purpose),
+      managed: async (target, purpose, privateText) =>
+        replyOwner(
+          owners,
+          deps.binding.session,
+          deps.binding.incarnation,
+          target,
+          purpose,
+          privateText,
+        ),
     };
   });
   afterEach(async () => {
@@ -1382,7 +1393,7 @@ describe('agent/feedback-reply', () => {
     }
     assert.equal(selections, 12);
   });
-  it('should compose new requested comments independently of prior summaries and reject invalid or foreign owners', async () => {
+  it('should compose new requested comments independently of prior summaries and reject invalid callers', async () => {
     owners = [
       {
         id: 'a'.repeat(64),
@@ -1412,8 +1423,74 @@ describe('agent/feedback-reply', () => {
     await assert.rejects(call('compose', { target: url }), /reply-managed-context-invalid/);
     owners[0]!.inactive = false;
     owners[0]!.threadId = 'another-chat';
-    await assert.rejects(call('compose', { target: url }), /reply-managed-owner-required/);
+    assert.equal(
+      (await call('compose', { target: url, privateText: 'Independent comment.' })).status,
+      'composition-ready',
+    );
   });
+  for (const ownership of ['absent', 'current', 'foreign', 'shared', 'historical'])
+    it(`should compose and publish an independent comment with ${ownership} destination ownership`, async () => {
+      const owner: ReplyOwner = {
+        id: 'owner',
+        repository: 'owner/repo',
+        number: 3,
+        threadId: ownership === 'current' ? 'chat' : 'other-chat',
+        inactive: ownership === 'historical',
+        retired: ownership === 'historical',
+      };
+      owners =
+        ownership === 'absent'
+          ? []
+          : ownership === 'shared'
+            ? [owner, { ...owner, id: 'second', threadId: 'second-chat' }]
+            : [owner];
+      const before = structuredClone(owners);
+      const reply = await candidate();
+      assert.equal((await call('publish', reply)).status, 'published');
+      assert.equal(writes, 1);
+      assert.deepEqual(owners, before);
+    });
+
+  it('should preserve the independent attempt when destination ownership changes', async () => {
+    const reply = await candidate();
+    owners = [
+      {
+        id: 'foreign',
+        repository: 'owner/repo',
+        number: 3,
+        threadId: 'foreign-chat',
+        inactive: false,
+      },
+    ];
+    lost = hidden = true;
+    await assert.rejects(call('publish', reply), /transport lost/);
+    owners.push({ ...owners[0]!, id: 'competing', threadId: 'another-chat' });
+    assert.equal(
+      (
+        await call('compose', {
+          target: url,
+          privateText: 'Detailed supplied response.',
+          outcome: 'No checks were run.',
+        })
+      ).status,
+      'reply-reconciliation-required',
+    );
+    assert.equal(
+      (
+        await call('compose', {
+          target: url,
+          privateText: 'Detailed supplied response.',
+          outcome: 'Changed supporting facts cannot replace the attempt.',
+        })
+      ).status,
+      'reply-reconciliation-required',
+    );
+    hidden = false;
+    assert.equal((await call('reconcile', reply)).status, 'published');
+    assert.equal(writes, 1);
+    assert.equal(selections, 1);
+  });
+
   it('should retain inline thread roots and publish only within that thread', async () => {
     const review = reviewFixture();
     const comment = reviewCommentFixture({ replyToId: 71 });
@@ -1507,11 +1584,26 @@ describe('agent/feedback-reply', () => {
     assert.deepEqual(owners, before);
     assert.equal(selections, 0);
     assert.equal(writes, 0);
+    const independentText = 'A separate explicitly requested reply.';
+    owners[0]!.threadId = 'another-chat';
+    assert.equal(
+      (await call('compose', { target: `${url}#issuecomment-42`, privateText: independentText }))
+        .status,
+      'composition-ready',
+    );
+    await call('candidate', {
+      target: `${url}#issuecomment-42`,
+      privateText: independentText,
+      publicText: 'An independent answer.',
+    });
+    await call('publish', { target: `${url}#issuecomment-42`, privateText: independentText });
+    assert.equal(writes, 1);
+    owners[0]!.threadId = 'chat';
     owners[0]!.events![0]!.phase = 'blocked';
     await assert.rejects(
       call('compose', {
         target: `${url}#issuecomment-42`,
-        privateText: 'Do not bypass this owner.',
+        privateText: 'The complete private explanation.',
       }),
       /reply-managed-response-required/,
     );
@@ -1609,6 +1701,114 @@ describe('agent/feedback-reply', () => {
     await assert.rejects(call('publish', { ...reply }), /reply-source-changed/);
     assert.equal(writes, 0);
   });
+  async function independentAdapterComments(
+    direct: (
+      operation: 'compose' | 'candidate' | 'publish' | 'reconcile',
+      extra: object,
+    ) => Promise<{ status: string }>,
+    journal: CodexDispatchStore | OpenClawDispatchStore,
+  ) {
+    const pr = linkedPullRequest();
+    const comment = reviewCommentFixture({ replyToId: 71 });
+    const parent = reviewCommentFixture({ databaseId: 71, replyToId: 71 });
+    provider = { ...provider, reviews: reviewClientFixture(reviewFixture(), [comment, parent]) };
+    provider.replies = {
+      create: async (_o, _n, number, thread, body) => {
+        assert.equal(number, 4);
+        assert.equal(thread, 71);
+        writes++;
+        posted = { nodeId: 'inline', databaseId: 9, body };
+        return reviewCommentFixture(posted);
+      },
+      find: async (_o, _n, _number, _thread, marker) =>
+        hidden || !posted?.body.includes(marker) ? undefined : reviewCommentFixture(posted),
+    };
+    const seed = async (kind: string) =>
+      journal.exclusive(async (state, save) => {
+        state.records = [];
+        for (let index = 0; index < (kind === 'shared' ? 2 : 1); index++) {
+          const id = String(index + 1).repeat(64);
+          const manualIssue = {
+            version: 1 as const,
+            id,
+            scope: journal.scope,
+            receiving: { login: account.login, nodeId: account.nodeId },
+            workspaceDir: root,
+            agentId: 'receiver',
+            host: 'github.com' as const,
+            repository: {
+              nodeId: 'R_repo',
+              databaseId: 10,
+              owner: { login: 'owner', nodeId: 'O_owner' },
+              name: 'repo',
+            },
+            issue: { nodeId: 'I_issue', databaseId: 20, number: 3 },
+            observedAt: 1,
+            admittedAt: 1,
+            status: 'admitted' as const,
+            requiresRevalidation: true as const,
+            initiation: {
+              kind: 'operator' as const,
+              session: 'origin',
+              incarnation: 'origin',
+              turn: 'origin',
+              input: 'origin',
+            },
+            evidence: {
+              policyDigest: 'fixture',
+              mode: 'plan' as const,
+              open: true as const,
+              repositoryReadable: true as const,
+            },
+            fresh: true as const,
+          };
+          state.records.push({
+            id,
+            manualIssue,
+            issueKey: issueKey(manualIssue),
+            sourceThreadId: 'origin',
+            phase: 'routing',
+            createdAt: 1,
+            manifestDigest: 'fixture',
+            threadId: 'foreign-' + index,
+            ...(kind === 'historical' ? { retired: { at: 2, by: 'operator' } } : {}),
+            pullRequestLink: {
+              pullRequestNodeId: pr.item.nodeId,
+              pullRequestNumber: 4,
+            },
+          });
+        }
+        await save();
+      });
+    for (const kind of ['foreign', 'shared', 'historical']) {
+      await seed(kind);
+      const before = await journal.read();
+      for (const target of [url, pr.url, pr.url + '#discussion_r' + comment.databaseId]) {
+        const privateText = 'Independent ' + kind + ' ' + target;
+        const publicText = 'Authorized ' + kind + ' ' + target;
+        assert.equal(
+          (await direct('compose', { target, privateText })).status,
+          'composition-ready',
+        );
+        await direct('candidate', { target, privateText, publicText });
+        const count = writes;
+        lost = hidden = kind === 'shared' && target === pr.url;
+        if (lost) {
+          await assert.rejects(direct('publish', { target, publicText }), /transport lost/);
+          assert.equal(
+            (await direct('compose', { target, privateText })).status,
+            'reply-reconciliation-required',
+          );
+          hidden = false;
+          assert.equal((await direct('reconcile', { target, publicText })).status, 'published');
+        } else assert.equal((await direct('publish', { target, publicText })).status, 'published');
+        lost = false;
+        assert.equal(writes, count + 1);
+        assert.deepEqual(await journal.read(), before);
+      }
+    }
+  }
+
   it('should keep direct codex entry independent of intake activation and use native input and skill discovery', async () => {
     const workspace = join(root, 'workspace'),
       codexHome = join(root, 'codex'),
@@ -1710,6 +1910,11 @@ describe('agent/feedback-reply', () => {
     assert.equal(writes, 2);
     assert.equal(postedNumber, 4);
     assert.ok(posted?.body.includes(':status-update:'));
+    const selected = await selectCodexIntake(pluginData, nativeDeps, { resolvePolicy: false });
+    await independentAdapterComments(
+      direct,
+      new CodexDispatchStore(pluginData, selected.store.location.scope),
+    );
   });
   it('should use bound openclaw user input and skills without activating a coordinator or preparing a worktree', async () => {
     const workspace = await realpath(root);
@@ -1838,5 +2043,10 @@ describe('agent/feedback-reply', () => {
     assert.equal(writes, 2);
     assert.equal(postedNumber, 4);
     assert.ok(posted?.body.includes(':status-update:'));
+    const selected = await intake.select(manifest, workspace, { resolvePolicy: false });
+    await independentAdapterComments(
+      direct,
+      new OpenClawDispatchStore(deps.root, selected.store.location.scope),
+    );
   });
 });

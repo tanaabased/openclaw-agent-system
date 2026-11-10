@@ -87,7 +87,7 @@ export default async function retireOpenClawTask(options: {
         sessionKey: record.threadId,
         worktree: record.worktree,
         instruction:
-          'Retire this exact task now without changing its issue or branch. Cleanup uses existing preservation and native ownership checks. Running work and unfinished cleanup remain pending.',
+          'Retire this exact task now without changing GitHub. Native cleanup may discard dirty files and local-only commits. Active work, shared resources and unfinished native cleanup remain pending; repeat this retirement invocation to reconcile.',
       };
     if (!input.apply && input.digest !== digest) throw new Error('dispatch-recovery-stale');
     const now = (service.dependencies.now ?? Date.now)();
