@@ -15,6 +15,7 @@ import runCodexFeedback from './codex-feedback.ts';
 import codexRuntimeRequest from './codex-runtime-request.ts';
 import contextMaterialTransport from './context-material-transport.ts';
 import runCodexContinuation from './codex-continuation.ts';
+import { codexWorkObservationHandoff } from './codex-dispatch-handoff.ts';
 import runCodexDelivery, { CodexDeliveryFailure } from './codex-delivery.ts';
 import process from 'node:process';
 import assertCodexNodeVersion, { CodexNodeVersionError } from './codex-node-version.ts';
@@ -145,6 +146,11 @@ function summarizePreview(preview: CodexWorkspacePreview): Record<string, unknow
 
 let materialInput: { route: string; input: Record<string, unknown>; argv?: string[] } | undefined;
 function writeJson(value: unknown): void {
+  if (materialInput?.route === 'continuation')
+    value = codexWorkObservationHandoff(value, {
+      argv: [process.execPath, ...process.argv.slice(1)],
+      input: materialInput.input,
+    });
   if (materialInput)
     value = nativeMaterialResponse(value, materialInput.route, materialInput.input);
   process.stdout.write(

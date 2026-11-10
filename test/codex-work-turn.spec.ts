@@ -86,10 +86,7 @@ describe('agent/codex-work-turn', () => {
         'reason' in pending.response && pending.response.reason,
         'native-observation-superseded',
       );
-      assert.deepEqual('request' in pending.response && pending.response.request, {
-        tool: 'read_thread',
-        arguments: { threadId: 'chat', turnLimit: 1, includeOutputs: false },
-      });
+      assert.equal('request' in pending.response, false);
     }
     assert.equal(record.progression, undefined);
     context.observeTurn = async () => ({ status: 'active', receiptId: 'fresh-read' });
