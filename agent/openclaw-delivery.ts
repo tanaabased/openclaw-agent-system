@@ -168,7 +168,6 @@ export default async function openClawDelivery(input: {
     });
     if (result.retained) return result;
     record.work ??= {};
-    if (record.work.delivery) (record.deliveryHistory ??= []).push(record.work.delivery);
     record.adoptedPullRequest = adopted;
     record.pullRequestLink = {
       pullRequestNodeId: adopted.pullRequestNodeId,

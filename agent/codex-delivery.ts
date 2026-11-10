@@ -392,7 +392,6 @@ export default async function runCodexDelivery(
             ),
         });
         if (bindingResult.retained) return { ...bindingResult };
-        if (previous) (record.deliveryHistory ??= []).push(previous);
         record.issueBranch = { attemptId: record.id, name: localBranch, phase: 'ready' };
         record.adoptedPullRequest = adopted;
         record.pullRequestLink = {

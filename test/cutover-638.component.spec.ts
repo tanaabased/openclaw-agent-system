@@ -10,7 +10,10 @@ import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import type { CodexDeliveryState } from '../agent/codex-delivery-state.ts';
 import type DispatchStore from '../agent/dispatch-state.ts';
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
-import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
+import OpenClawDispatchStore, {
+  type OpenClawDispatchRecord,
+} from '../agent/openclaw-dispatch-state.ts';
+import retirementEffects from '../agent/retirement-effects.ts';
 import retainDispatchHistory from '../agent/retain-dispatch-history.ts';
 import IntakeRecordStore, {
   intakeLocation,
@@ -169,6 +172,241 @@ describe('scripts/cutover-638', () => {
       state,
     };
   }
+
+  async function activeFixture(runtime: 'codex' | 'openclaw') {
+    const f = await fixture(runtime);
+    const record = f.state.records[1]!;
+    Object.assign(record, {
+      context: JSON.stringify({
+        source: 'https://github.com/owner/repo/issues/3',
+        body: 'copied issue',
+        comments: ['copied comment'],
+      }),
+      routing: '{}',
+      routingNote: 'selected',
+      nativeInactive: true,
+      feedback: { baseline: {}, events: [] },
+    });
+    if (runtime === 'openclaw')
+      Object.assign(record, {
+        phase: 'created',
+        effective: { status: 'verified' },
+        request: {
+          key: record.threadId,
+          idempotencyKey: 'create',
+          agentId: 'receiver',
+          label: 'issue',
+          category: 'issues',
+          cwd: record.worktree,
+          model: 'fixture',
+          thinkingLevel: 'high',
+        },
+        sessionCreation: {
+          attempted: true,
+          sourceSessionId: 'coordinator',
+          sourceRunId: 'run',
+          sourceToolCallId: 'call',
+          sessionId: 'incarnation',
+          verified: true,
+        },
+      });
+    else
+      Object.assign(record, {
+        phase: 'complete',
+        reservationVersion: 1,
+        project: {
+          id: 'project',
+          path: '/fixture',
+          commonDir: '/fixture/.git',
+          ref: 'main',
+          commit: 'a'.repeat(40),
+        },
+        request: {
+          title: 'issue',
+          prompt: 'original creation',
+          model: 'fixture',
+          thinking: 'high',
+          target: {
+            type: 'project',
+            projectId: 'project',
+            environment: {
+              type: 'worktree',
+              startingState: { type: 'branch', branchName: 'main' },
+            },
+          },
+        },
+      });
+    await writeFile(f.store.path, JSON.stringify(f.state));
+    await f.store.read();
+    return { ...f, record: record as OpenClawDispatchRecord };
+  }
+
+  function feedback(index: number) {
+    return {
+      id: automationHash(index),
+      sourceId: 'comment-' + index,
+      number: 3,
+      nodeId: 'issue',
+      itemType: 'issue' as const,
+      source: JSON.stringify({ databaseId: index, author: { login: 'receiver' } }),
+      revision: 'e'.repeat(64),
+      createdAt: 1,
+      policyDigest: 'a'.repeat(64),
+      native: true as const,
+      phase: 'delivered' as const,
+    };
+  }
+
+  for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should use archive-free storage for fresh and migrated journals in ${runtime}`, async () => {
+      const f = await activeFixture(runtime);
+      const Store = runtime === 'codex' ? CodexDispatchStore : OpenClawDispatchStore;
+      assert.equal((await new Store(join(root, 'fresh'), f.location.scope).read()).version, 2);
+      const report = await cutover638(f.request);
+      const migrated = new Store(
+        join(report.output, runtime === 'codex' ? 'state' : 'dispatch'),
+        f.location.scope,
+      );
+      const initial = await migrated.read();
+      assert.equal(initial.version, 2);
+      assert.equal((await f.store.read()).version, 1);
+      const beforeRegression = await readFile(migrated.path);
+      await assert.rejects(
+        migrated.exclusive(async (state, save) => {
+          state.version = 1;
+          await save();
+        }),
+        /dispatch-storage-version-regression/,
+      );
+      assert.deepEqual(await readFile(migrated.path), beforeRegression);
+      assert.equal(report.requiresCompatibleRuntime, 'dispatch-storage-v2');
+      assert.deepEqual(JSON.parse(initial.records[0]!.context!), {
+        source: 'https://github.com/owner/repo/issues/3',
+      });
+      for (let batch = 0; batch < 2; batch++) {
+        await migrated.exclusive(async (state, save) => {
+          const record = state.records[0]!;
+          record.feedback!.events.push(
+            ...Array.from({ length: 350 }, (_, n) => feedback(batch * 350 + n)),
+          );
+          await save();
+          assert.equal(record.retainedHistory, undefined);
+        });
+      }
+      const after = await migrated.read();
+      assert.equal(after.records[0]!.feedback!.completed!.length, 699);
+      assert.equal(after.records[0]!.feedback!.events.length, 1);
+      assert.equal(after.records[0]!.retainedHistory, undefined);
+      assert.deepEqual(await readdir(migrated.history.directory), []);
+      const repeat = await cutover638({
+        ...f.request,
+        source: report.output,
+        output: join(root, 'repeat'),
+      });
+      const again = await cutover638({
+        ...f.request,
+        source: repeat.output,
+        output: join(root, 'again'),
+      });
+      assert.deepEqual(again.changes, []);
+      await migrated.reset('reset-after-cutover');
+      assert.equal((await migrated.read()).version, 2);
+    });
+  }
+
+  for (const kind of ['push', 'creation', 'content', 'announcement'] as const)
+    it(`should preserve an uncertain ${kind} on delivered native feedback through repeated migration`, async () => {
+      const f = await activeFixture('openclaw');
+      const intake = f.intake.records[1]!;
+      const delivery: NonNullable<NonNullable<OpenClawDispatchRecord['work']>['delivery']> = {
+        id: 'f'.repeat(64),
+        binding: {
+          repositoryId: intake.repository.nodeId,
+          issueId: intake.issue.nodeId,
+          sessionId: 'incarnation',
+          threadId: f.record.threadId!,
+          worktree: f.record.worktree!,
+          branch: 'fixture',
+          base: 'main',
+          head: 'a'.repeat(40),
+          authorId: account.nodeId,
+          policyDigest: 'b'.repeat(64),
+        },
+        title: 'fixture',
+        body: '',
+        creationAttempted: false,
+        reconciled: true,
+        pushedHead: 'a'.repeat(40),
+        pullRequest: { pullRequestNodeId: 'PR_fixture', pullRequestNumber: 10 },
+      };
+      if (kind === 'push')
+        delivery.pendingPush = { previousHead: 'a'.repeat(40), head: 'b'.repeat(40) };
+      if (kind === 'creation') {
+        delivery.creationAttempted = true;
+        delete delivery.pullRequest;
+      }
+      if (kind === 'content') delivery.contentUpdate = { title: 'changed', body: 'changed' };
+      if (kind === 'announcement')
+        delivery.announcement = {
+          publicationId: 'a'.repeat(64),
+          authorId: account.nodeId,
+          attempted: true,
+          snapshot: {
+            pullRequestNodeId: 'PR_fixture',
+            pullRequestNumber: 10,
+            draft: false,
+            head: 'a'.repeat(40),
+            title: 'fixture',
+            body: '',
+          },
+          composition: {
+            version: 1,
+            requestedSkill: 'reply',
+            defaultSkill: true,
+            skill: {
+              name: 'reply',
+              path: '/fixture/reply',
+              scope: 'fixture',
+              digest: 'a'.repeat(64),
+            },
+            observedAt: 1,
+          },
+          publication: JSON.stringify({ exact: 'announcement request' }),
+        };
+      f.record.feedback!.events.push({ ...feedback(1), workDelivery: delivery });
+      await writeFile(f.store.path, JSON.stringify(f.state));
+      const expected = retirementEffects(f.record, intake);
+      assert.equal(expected.length, 1);
+      const report = await cutover638(f.request);
+      assert.equal(report.uncertainEffects, 1);
+      const migrated = new OpenClawDispatchStore(join(report.output, 'dispatch'), f.location.scope);
+      assert.deepEqual(retirementEffects((await migrated.read()).records[0]!, intake), expected);
+      await migrated.exclusive(async (state, save) => {
+        state.records[0]!.feedback!.events.push(
+          ...Array.from({ length: 350 }, (_, n) => feedback(n + 2)),
+        );
+        await save();
+      });
+      assert.deepEqual(retirementEffects((await migrated.read()).records[0]!, intake), expected);
+      const second = await cutover638({
+        ...f.request,
+        source: report.output,
+        output: join(root, 'second'),
+      });
+      assert.equal(second.uncertainEffects, 1);
+      assert.deepEqual(
+        retirementEffects(
+          (
+            await new OpenClawDispatchStore(
+              join(second.output, 'dispatch'),
+              f.location.scope,
+            ).read()
+          ).records[0]!,
+          intake,
+        ),
+        expected,
+      );
+    });
 
   for (const runtime of ['codex', 'openclaw'] as const) {
     it(`should consume old events and remove only completed task copies in ${runtime}`, async () => {

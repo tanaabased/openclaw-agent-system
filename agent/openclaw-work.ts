@@ -190,15 +190,6 @@ export default async function openClawWorkAction(input: {
     throw new Error('implementation-context-missing');
   if (action.implementationResult.outcome === 'clarification-needed')
     return nativeClarification(record.id, implementationPresentation(action.implementationResult));
-  const changed =
-    record.work.result &&
-    record.work.result.outcome !== 'clarification-needed' &&
-    automationHash(record.work.result) !== automationHash(action.implementationResult);
-  if (changed)
-    (record.work.resultHistory ??= []).push({
-      source: record.work.resultSource,
-      result: record.work.result!,
-    });
   record.work.resultSource = resultSource;
   record.work.result = action.implementationResult;
   delete record.work.revisionSource;

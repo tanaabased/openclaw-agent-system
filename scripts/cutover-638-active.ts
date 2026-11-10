@@ -90,7 +90,13 @@ export default function cutover638Active<R extends SharedDispatchRecord>(source:
       delete record.summaryRecovery;
     else pending.push('native-summary');
   }
-  delete record.previousSummaryAttempts;
+  if (record.previousSummaryAttempts) {
+    record.previousSummaryAttempts = record.previousSummaryAttempts.filter(
+      (attempt) => !attempt.ended,
+    );
+    if (record.previousSummaryAttempts.length) pending.push('native-previous-summary');
+    else delete record.previousSummaryAttempts;
+  }
 
   // Keep source/revision fences while dropping settled feedback's copied conversation.
   if (record.feedback && record.nativeInactive) {
@@ -121,4 +127,52 @@ export default function cutover638Active<R extends SharedDispatchRecord>(source:
     }
   }
   return { record: record as unknown as R, pending };
+}
+
+/** remaining compatibility owners must be replaced before their schemas can be deleted. */
+export function cutover638Compatibility(record: SharedDispatchRecord) {
+  const fields = [
+    'directAssessments',
+    'assessment',
+    'result',
+    'stageReceipt',
+    'assessmentRevision',
+    'assessmentHistory',
+    'assessmentSummaries',
+    'resultTurnId',
+    'assessmentCaller',
+    'turnEvidence',
+    'firstTurn',
+    'assessmentTurn',
+    'decisionTurn',
+    'previousDecisionTurns',
+    'previousSummaryTurns',
+    'previousSummaryAttempts',
+    'autoDecision',
+    'summaryRecovery',
+    'continuation',
+    'work.turn',
+    'work.previousTurns',
+    'work.deliveryTurn',
+    'work.assessmentDigest',
+    'work.implementation',
+    'work.publication',
+    'work.result',
+    'work.resultSource',
+    'work.revisionSource',
+    'work.resultHistory',
+    'deliveryHistory',
+    'retainedHistory',
+    'deniedCreations',
+    'unsubmittedCreations',
+    'recoveredDenials',
+  ];
+  return fields.filter((path) => {
+    let value: unknown = record;
+    for (const key of path.split('.')) {
+      if (!value || typeof value !== 'object' || !(key in value)) return false;
+      value = (value as { [key: string]: unknown })[key];
+    }
+    return value !== undefined && (!Array.isArray(value) || value.length > 0);
+  });
 }

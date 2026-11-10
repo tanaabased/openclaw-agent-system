@@ -163,7 +163,7 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
   return Type.Object(
     {
       storageReclaimedBytes: Type.Optional(Type.Integer({ minimum: 0 })),
-      version: Type.Literal(1),
+      version: Type.Union([Type.Literal(1), Type.Literal(2)]),
       scope: hash,
       resetGeneration: Type.Optional(text),
       records: Type.Array(Type.Unsafe<R>(recordSchema)),
@@ -367,7 +367,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
   }
   async read(): Promise<DispatchState<R>> {
     const contents = await this.file.read();
-    let state: unknown = { version: 1, scope: this.scope, resetGeneration: 'initial', records: [] };
+    let state: unknown = { version: 2, scope: this.scope, resetGeneration: 'initial', records: [] };
     if (contents !== undefined) {
       try {
         state = JSON.parse(contents);
@@ -553,6 +553,8 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
           if (current.resetGeneration !== committed.resetGeneration)
             throw new Error('notification-reset-stale-operation');
           if (!isDeepStrictEqual(current, committed)) throw new Error(stateSnapshotConflictCode);
+          if (committed.version === 2 && state.version !== 2)
+            throw new Error('dispatch-storage-version-regression');
           this.validate(state);
           const retained = structuredClone(state);
           const originalBytes = dispatchStorageBytes(retained).contentBytes;
@@ -595,14 +597,18 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
           }
           for (let index = 0; index < retained.records.length; index++) {
             const original = retained.records[index]!;
+            // Version two keeps cleanup with its owner and never creates cold task copies.
+            if (retained.version === 2 && verifiedTerminalCleanup(original)) continue;
             const events = (original as R & { feedback?: { events: unknown[] } }).feedback?.events;
             if (!verifiedTerminalCleanup(original) && !pressure && (events?.length ?? 0) < 350)
               continue;
             const projected = retainDispatchHistory(original);
             if (!projected) continue;
             // preflight the projected size before performing any archive effects.
-            projected.retainedHistory ??= { entries: [] };
-            snapshots.push({ original, projected });
+            if (retained.version === 1) {
+              projected.retainedHistory ??= { entries: [] };
+              snapshots.push({ original, projected });
+            }
             retained.records[index] = projected;
           }
           this.validate(retained);
@@ -667,6 +673,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
         };
         const pressured = dispatchStorageBytes(state).contentBytes > historySoftBytes;
         if (
+          state.version === 1 &&
           state.records.some(
             (record) =>
               !record.retainedHistory?.terminal &&
@@ -686,9 +693,10 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     await this.exclusive(async (state, save) => {
       if (state.resetGeneration === generation) return;
       const pickup = resetIssuePickup(state.projectPickup, state.records);
+      const version = state.version;
       for (const key of Object.keys(state)) delete (state as Record<string, unknown>)[key];
       Object.assign(state, {
-        version: 1,
+        version,
         scope: this.scope,
         resetGeneration: generation,
         records: [],

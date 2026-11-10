@@ -1,6 +1,5 @@
 import nativeClarification from './native-clarification.ts';
 import type { ImplementationSource } from './implementation-revision.ts';
-import { automationHash } from './automation-hash.ts';
 import type { CodexWorkContext } from './codex-continuation-context.ts';
 import type { DispatchNativeThread } from './codex-dispatch-native.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
@@ -30,12 +29,6 @@ export default async function recordCodexWorkResult(
     },
     { stage: 'implementation', authorized: true, binding: work.binding! },
   );
-  if (
-    work.result &&
-    work.result.outcome !== 'clarification-needed' &&
-    automationHash(work.result) !== automationHash(input.result)
-  )
-    (work.resultHistory ??= []).push({ source: work.resultSource, result: work.result });
   if (input.result.outcome === 'done') {
     if ((await git(found.cwd, ['status', '--porcelain=v1'], signal)).trim())
       throw new Error('continuation-uncommitted-work');

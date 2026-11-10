@@ -7024,7 +7024,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(after.worktree, before.worktree);
     assert.deepEqual(after.result, before.result);
     assert.deepEqual(after.work?.result, revised);
-    assert.deepEqual(after.work?.resultHistory?.[0]?.result, done);
+    assert.equal(after.work?.resultHistory, undefined);
     const resumed = await service.run(
       manifest,
       root,

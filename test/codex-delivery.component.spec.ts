@@ -907,9 +907,8 @@ describe('agent/codex-delivery', () => {
     assert.equal(creates, 0);
   });
 
-  it('should retain earlier delivery receipts when explicitly changing prs and stop uncertain publication', async () => {
+  it('should discard settled delivery copies when changing prs and stop uncertain publication', async () => {
     await publish();
-    const previous = (await store.read()).records[0]!.delivery!;
     pr = {
       itemNodeId: 'PR_8',
       number: 8,
@@ -930,10 +929,21 @@ describe('agent/codex-delivery', () => {
       delete state.records[0]!.delivery!.pendingPush;
       await save();
     });
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.delivery!.contentUpdate = { body: 'uncertain update' };
+      state.records[0]!.delivery!.contentUpdateAttempted = true;
+      await save();
+    });
+    await assert.rejects(request('bind', { pullRequest: target }), /publication-pending/);
+    await store.exclusive(async (state, save) => {
+      delete state.records[0]!.delivery!.contentUpdate;
+      delete state.records[0]!.delivery!.contentUpdateAttempted;
+      await save();
+    });
     await request('bind', { pullRequest: target });
     await request('bind', { pullRequest: target });
     const current = (await store.read()).records[0]!;
-    assert.deepEqual(current.deliveryHistory, [previous]);
+    assert.equal(current.deliveryHistory, undefined);
     assert.equal(current.delivery!.pullRequest!.pullRequestNumber, 8);
     assert.equal(current.delivery!.reconciled, false);
     assert.equal(current.delivery!.pushedHead, undefined);

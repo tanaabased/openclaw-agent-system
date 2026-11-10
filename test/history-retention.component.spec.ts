@@ -44,6 +44,12 @@ describe('agent/history retention filesystem', () => {
   let root: string;
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'history-retention-'));
+    for (const runtime of ['codex', 'openclaw'])
+      await writeFile(
+        join(root, runtime + '-dispatch-' + scope + '.json'),
+        JSON.stringify({ version: 1, scope, resetGeneration: 'initial', records: [] }),
+        { mode: 0o600 },
+      );
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });

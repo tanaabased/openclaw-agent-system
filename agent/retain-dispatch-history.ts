@@ -174,12 +174,21 @@ function deliverySettled(delivery: Record['delivery'] | NonNullable<Record['work
 }
 
 export function settledFeedback(event: FeedbackSourceEvent) {
-  if (event.native) return event.phase === 'delivered';
   // a reply alone does not settle implementation, attachment, or an uncertain native turn.
   const turn = event as FeedbackSourceEvent & {
     turn?: { status: string };
     workDelivery?: NonNullable<Record['work']>['delivery'];
   };
+  if (event.native)
+    return (
+      event.phase === 'delivered' &&
+      !event.policyHeld &&
+      !event.code &&
+      (!event.publicationAttempted || Boolean(event.receipt)) &&
+      (!turn.turn || turn.turn.status === 'completed') &&
+      (!event.work || (event.work.result?.outcome === 'done' && Boolean(turn.workDelivery))) &&
+      deliverySettled(turn.workDelivery)
+    );
   return (
     event.phase === 'published' &&
     Boolean(event.receipt && event.reported) &&

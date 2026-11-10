@@ -200,7 +200,6 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     await save();
     if (input.action === 'context') {
       if (record.handoff) {
-        (work.handoffs ??= []).push(record.handoff);
         delete record.handoff;
         await save();
       }

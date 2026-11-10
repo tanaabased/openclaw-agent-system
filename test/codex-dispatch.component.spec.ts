@@ -4877,8 +4877,17 @@ describe('agent/codex-dispatch', () => {
         fullResult: 'Native approval was denied.',
       };
       const before = structuredClone(work);
+      record.previousSummaryAttempts = [
+        structuredClone(work.attempt),
+        structuredClone(work.publicationAttempt),
+      ];
       const migrated = cutover638Active(record);
-      assert.deepEqual(migrated.pending, ['implementation-blocker', 'native-attempt']);
+      assert.deepEqual(migrated.pending, [
+        'implementation-blocker',
+        'native-attempt',
+        'native-previous-summary',
+      ]);
+      assert.deepEqual(migrated.record.previousSummaryAttempts, [before.attempt]);
       assert.equal(migrated.record.continuation!.phase, 'cancelled');
       assert.equal(migrated.record.continuation!.scope, 'local');
       assert.deepEqual(migrated.record.continuation!.attempt, before.attempt);
@@ -5380,7 +5389,7 @@ describe('agent/codex-dispatch', () => {
       const revised = { outcome: 'done', summary: 'Revised.', fullResult: 'New evidence.' };
       assert.equal((await work.run('result', { result: revised }, true)).status, 'recorded');
       const after = (await store.read()).records[0]!;
-      assert.deepEqual(after.continuation!.resultHistory?.[0]?.result, retained);
+      assert.equal(after.continuation!.resultHistory, undefined);
       assert.deepEqual(after.continuation!.resultSource, {
         turnId: 'answer-turn',
         inputId: 'answer',
