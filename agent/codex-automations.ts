@@ -1115,6 +1115,7 @@ export async function prepareCodexAutomation(
   digest: string,
   inputs: CodexAutomationInputs = {},
   dependencies: CodexAutomationDependencies = {},
+  id?: string,
 ) {
   const initial = await snapshot(pluginData, dependencies);
   return withJournal(initial, async () => {
@@ -1129,7 +1130,9 @@ export async function prepareCodexAutomation(
     ) {
       throw new CodexAutomationError('automation-plan-stale-or-blocked');
     }
-    const action = result.actions[0];
+    const action =
+      id === undefined ? result.actions[0] : result.actions.find((item) => item.manifestId === id);
+    if (!action) throw new CodexAutomationError('automation-action-not-found');
     if (action.manifestId === issuePickupAutomationId && action.expected.status === 'ACTIVE')
       await prepareCodexPickupEnrollment(pluginData, {
         ...dependencies.intake,

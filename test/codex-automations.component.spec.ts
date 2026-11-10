@@ -328,6 +328,46 @@ describe('agent/codex-automations', () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  it('should reconcile only the selected automation while leaving earlier changes pending', async () => {
+    await manifest(job() + job().replace('id: review', 'id: selected'));
+    await syncOne(deps(), 'review-native');
+    await syncOne(deps(), 'selected-native');
+    const before = await readCodexAutomations(codexHome);
+    for (const saved of before)
+      await nativeWrite({ ...saved.definition, status: 'PAUSED' }, saved.id);
+    const paused = await readCodexAutomations(codexHome);
+    const plan = await inspect();
+    assert.deepEqual(
+      plan.actions.map((item) => item.manifestId),
+      ['review', 'selected'],
+    );
+    await assert.rejects(
+      prepareCodexAutomation(pluginData, plan.digest, inputs(), deps(), 'unknown'),
+      rejectsCode('automation-action-not-found'),
+    );
+    const prepared = await prepareCodexAutomation(
+      pluginData,
+      plan.digest,
+      inputs(),
+      deps(),
+      'selected',
+    );
+    const action = plan.actions[1]!;
+    assert.deepEqual(prepared.request, { mode: action.mode, id: action.id, ...action.expected });
+    await nativeWrite(action.expected, action.id);
+    await acknowledgeCodexAutomation(pluginData, plan.digest, undefined, deps());
+    const after = await readCodexAutomations(codexHome);
+    assert.deepEqual(
+      after.find((item) => item.id === 'review-native'),
+      paused.find((item) => item.id === 'review-native'),
+    );
+    assert.equal(after.find((item) => item.id === 'selected-native')!.definition.status, 'ACTIVE');
+    assert.deepEqual(
+      (await inspect()).actions.map((item) => item.manifestId),
+      ['review'],
+    );
+  });
+
   it('should rename and remove labels through native updates without replacing jobs', async () => {
     await syncOne();
     const [before] = await readCodexAutomations(codexHome);

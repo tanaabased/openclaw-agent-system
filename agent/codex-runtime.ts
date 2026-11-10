@@ -614,7 +614,11 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     // interface retains its resource/readback inputs; it has no native caller to resolve.
     if (nativeCaller) {
       assertNoNativeInventory(request);
-      if (Object.keys(request).some((key) => key !== 'id' || !['run', 'runs'].includes(action!)))
+      if (
+        Object.keys(request).some(
+          (key) => key !== 'id' || !['run', 'runs', 'prepare'].includes(action!),
+        )
+      )
         throw new Error('automation-model-request-invalid');
     } else if (
       Object.keys(request).some(
@@ -634,6 +638,8 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
         !Value.Check(sidebarReceiptSchema, request.placementReceipt))
     )
       throw new Error('invalid automation request');
+    if (request.id !== undefined && (typeof request.id !== 'string' || !request.id.trim()))
+      throw new Error('expected a manifest automation id');
     if (action === 'run' || action === 'runs') {
       if (typeof request.id !== 'string') throw new Error('expected a manifest automation id');
       writeJson(await codexAutomationRunGap(pluginData, request.id, action));
@@ -663,7 +669,15 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
       if (action === 'threads-sync')
         writeJson(await syncCodexAutomationThreads(pluginData, request.digest, inputs));
       else if (action === 'prepare')
-        writeJson(await prepareCodexAutomation(pluginData, request.digest, inputs));
+        writeJson(
+          await prepareCodexAutomation(
+            pluginData,
+            request.digest,
+            inputs,
+            {},
+            request.id as string | undefined,
+          ),
+        );
       else if (action === 'acknowledge')
         writeJson(await acknowledgeCodexAutomation(pluginData, request.digest, request.receipt));
       else if (action === 'cancel')
@@ -678,7 +692,16 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
       if (typeof prepared.digest !== 'string') throw new Error('automation-native-plan-required');
       if (action === 'threads-sync')
         writeJson(await syncCodexAutomationThreads(pluginData, prepared.digest, inputs));
-      else writeJson(await prepareCodexAutomation(pluginData, prepared.digest, inputs));
+      else
+        writeJson(
+          await prepareCodexAutomation(
+            pluginData,
+            prepared.digest,
+            inputs,
+            {},
+            request.id as string | undefined,
+          ),
+        );
     } else if (action === 'acknowledge' || action === 'cancel') {
       const prepared = await codexNativeRuntimeResult(pluginData, 'automations', [
         'prepare',
