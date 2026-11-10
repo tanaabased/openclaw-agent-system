@@ -1,3 +1,4 @@
+import nativeTaskInstructions from '../agent/native-task-instructions.ts';
 import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
 import summaryFixture from './assessment-summary-fixture.ts';
 import type { AssessmentSummaryRequest } from '../agent/assessment-summary-state.ts';
@@ -1113,6 +1114,7 @@ for (const scenario of [
             status: 'verified',
             runtime: 'openclaw',
             publicationAuthorized: true,
+            instructions: nativeTaskInstructions('openclaw'),
             pendingPublicResponse: {
               kind: 'assessment-summary',
               revision: direct ? 2 : 1,
@@ -1263,6 +1265,7 @@ for (const scenario of [
             status: 'verified',
             runtime: 'openclaw',
             publicationAuthorized: true,
+            instructions: nativeTaskInstructions('openclaw'),
             project: { path: '/tmp/owned' },
             implementation: {
               defaultSkill: mode !== 'custom',
