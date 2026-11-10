@@ -9,7 +9,10 @@ import renderNativeAssessment from '../agent/assessment-render.ts';
 import assessmentEntry, { type AssessmentEntryDependencies } from '../agent/assessment-entry.ts';
 import assessmentSkillSource from '../agent/assessment-skill-source.ts';
 import implementationEntry from '../agent/implementation-entry.ts';
-import { implementationReviewInstructions } from '../agent/native-task-instructions.ts';
+import {
+  implementationReviewInstructions,
+  taskScopeInstructions,
+} from '../agent/native-task-instructions.ts';
 import implementationEntryDelivery from '../agent/implementation-entry-delivery.ts';
 import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
 import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
@@ -208,6 +211,7 @@ describe('agent/implementation-entry', () => {
         (complete.implementation as { requestedSkill: string }).requestedSkill,
         skillName ?? 'agent-system:agent-system-task-implementation',
       );
+      assert.ok(String(complete.instructions).includes(taskScopeInstructions));
       assert.ok(String(complete.instructions).includes(implementationReviewInstructions));
       assert.deepEqual(complete.evidence, { source: target });
       assert.doesNotMatch(JSON.stringify(complete), /old-assessment|OLD SNAPSHOT/);
@@ -318,6 +322,7 @@ describe('agent/implementation-entry', () => {
       const delivered = await hydrateImplementation(first, (read) =>
         implementationEntry(read, deps),
       );
+      assert.ok(String(delivered.instructions).includes(taskScopeInstructions));
       assert.ok(String(delivered.instructions).includes(implementationReviewInstructions));
       assert.deepEqual(selections, [skillName ?? 'agent-system:agent-system-task-implementation']);
       const resumed = await call('context', {});

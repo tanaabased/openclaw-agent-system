@@ -1,3 +1,7 @@
+import implementationMaterial, {
+  type ImplementationMaterialRead,
+} from '../agent/implementation-material.ts';
+import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
 import nativeTaskInstructions from '../agent/native-task-instructions.ts';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -448,14 +452,60 @@ describe('scripts/aimock-tool-search', () => {
       },
     );
     await discover();
-    await step('work-context', 'agent_system_dispatch', {
+    const workContext = {
       status: 'verified',
       runtime: 'openclaw',
       publicationAuthorized: true,
       instructions: nativeTaskInstructions('openclaw'),
       project: { path: '/tmp/owned' },
       implementation: { defaultSkill: true, skill: { path: '/fixture/SKILL.md' } },
-    });
+    };
+    const contextRequest = { action: 'implementation', operation: 'context' };
+    const receipts: unknown[] = [];
+    const materialResponse = (value: unknown, args: Record<string, unknown>) => {
+      const projected = {
+        ...nativeMaterialResponse(value as Record<string, unknown>, 'agent_system_dispatch', args),
+        materialTransport: { tool: 'agent_system_dispatch' },
+      };
+      receipts.unshift(projected);
+      return projected;
+    };
+    await step(
+      'work-context',
+      'agent_system_dispatch',
+      materialResponse(implementationMaterial(workContext, contextRequest), contextRequest),
+    );
+    let pages = 0;
+    for (; pages < 16; pages++) {
+      const response = (await reply(scenario, input)).response;
+      assert.ok('toolCalls' in response && response.toolCalls?.length === 1);
+      const call = response.toolCalls[0]!;
+      assert.ok(call.id);
+      if (!call.id.startsWith('call_material_')) break;
+      const args = JSON.parse(call.arguments);
+      assert.equal(args.id, 'openclaw:agent_system_dispatch');
+      assert.ok(Value.Check(dispatchModelParameters, args.args));
+      assert.ok(Value.Check(normalizedDispatch, args.args));
+      const bound = await bindNativeMaterial(
+        'agent_system_dispatch',
+        args.args,
+        (async function* () {
+          yield* receipts;
+        })(),
+      );
+      const page = implementationMaterial(
+        workContext,
+        contextRequest,
+        bound.material as ImplementationMaterialRead,
+      );
+      append(input, response, {
+        tool: { id: args.id, name: 'agent_system_dispatch', source: 'openclaw' },
+        result: {
+          content: [{ type: 'text', text: JSON.stringify(materialResponse(page, args.args)) }],
+        },
+      });
+    }
+    assert.ok(pages > 1 && pages < 16);
     await step('implementation-skill', 'read', 'Default implementation.');
     for (const stage of ['apply', 'check', 'add', 'commit']) {
       assert.equal(
