@@ -9,6 +9,7 @@ import renderNativeAssessment from '../agent/assessment-render.ts';
 import assessmentEntry, { type AssessmentEntryDependencies } from '../agent/assessment-entry.ts';
 import assessmentSkillSource from '../agent/assessment-skill-source.ts';
 import implementationEntry from '../agent/implementation-entry.ts';
+import { implementationReviewInstructions } from '../agent/native-task-instructions.ts';
 import implementationEntryDelivery from '../agent/implementation-entry-delivery.ts';
 import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
 import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
@@ -162,8 +163,13 @@ describe('agent/implementation-entry', () => {
       await assert.rejects(call(), /native-owner-changed/);
     });
   }
-  for (const runtime of ['codex', 'openclaw'] as const)
-    it(`should refresh delivered ${runtime} context without another managed implementation round`, async () => {
+  for (const [runtime, skillName] of [
+    ['codex', undefined],
+    ['codex', 'current-implementation'],
+    ['openclaw', undefined],
+    ['openclaw', 'current-implementation'],
+  ] as const)
+    it(`should refresh delivered ${runtime} ${skillName ? 'custom' : 'built-in'} context without another managed implementation round`, async () => {
       deps.binding.runtime = runtime;
       const skill = await deps.resolveSkill('old-assessment');
       const ownerId = 'd'.repeat(64);
@@ -177,7 +183,7 @@ describe('agent/implementation-entry', () => {
         owner: { id: ownerId },
         path: root,
         nativeContext,
-        selections: { implementation: { skill: 'current-implementation' } },
+        selections: { implementation: { skill: skillName } },
         selection: {
           version: 1,
           requestedSkill: 'old-assessment',
@@ -200,8 +206,9 @@ describe('agent/implementation-entry', () => {
       assert.equal(complete.status, 'native');
       assert.equal(
         (complete.implementation as { requestedSkill: string }).requestedSkill,
-        'current-implementation',
+        skillName ?? 'agent-system:agent-system-task-implementation',
       );
+      assert.ok(String(complete.instructions).includes(implementationReviewInstructions));
       assert.deepEqual(complete.evidence, { source: target });
       assert.doesNotMatch(JSON.stringify(complete), /old-assessment|OLD SNAPSHOT/);
       assert.equal('resultSubmission' in complete, false);
@@ -287,9 +294,17 @@ describe('agent/implementation-entry', () => {
       );
     });
 
-  for (const runtime of ['codex', 'openclaw'] as const) {
-    it(`should inject the configured ${runtime} implementation once and retain ordinary output unchanged`, async () => {
+  for (const [runtime, skillName] of [
+    ['codex', undefined],
+    ['codex', 'custom:implement'],
+    ['openclaw', undefined],
+    ['openclaw', 'custom:implement'],
+  ] as const) {
+    it(`should inject the ${runtime} ${skillName ? 'custom' : 'built-in'} implementation once and retain ordinary output unchanged`, async () => {
       deps.binding.runtime = runtime;
+      deps.manifest.github = {
+        notifications: { issueAssignment: { implementation: { skill: skillName } } },
+      } as AgentManifest['github'];
       const first = await call();
       assert.ok('implementation' in first && first.implementation);
       assert.equal('plan' in first, false);
@@ -300,6 +315,11 @@ describe('agent/implementation-entry', () => {
       assert.ok('publicationAuthorized' in first);
       assert.equal(first.publicationAuthorized, false);
       assert.equal(first.entry, 'direct');
+      const delivered = await hydrateImplementation(first, (read) =>
+        implementationEntry(read, deps),
+      );
+      assert.ok(String(delivered.instructions).includes(implementationReviewInstructions));
+      assert.deepEqual(selections, [skillName ?? 'agent-system:agent-system-task-implementation']);
       const resumed = await call('context', {});
       assert.ok('implementation' in resumed);
       assert.deepEqual(resumed.implementation, first.implementation);

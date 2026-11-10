@@ -1,3 +1,4 @@
+import { implementationReviewInstructions } from '../agent/native-task-instructions.ts';
 import { runInNewContext } from 'node:vm';
 import openClawConditionCheck from '../agent/openclaw-condition-check.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
@@ -6269,6 +6270,10 @@ describe('agent/openclaw issue dispatch', () => {
         false,
       );
       assert.equal(verified.status, 'verified');
+      const delivered = await hydrateImplementation(verified, (request) =>
+        service.run(manifest, root, assessor(input.id), request as never, false),
+      );
+      assert.ok(String(delivered.instructions).includes(implementationReviewInstructions));
       assert.equal('handoff' in verified, false);
       assert.ok('implementation' in verified);
       const selection = verified.implementation as AssessmentSelection;

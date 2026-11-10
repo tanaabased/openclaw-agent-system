@@ -1,3 +1,4 @@
+import nativeTaskInstructions from '../agent/native-task-instructions.ts';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
@@ -451,6 +452,7 @@ describe('scripts/aimock-tool-search', () => {
       status: 'verified',
       runtime: 'openclaw',
       publicationAuthorized: true,
+      instructions: nativeTaskInstructions('openclaw'),
       project: { path: '/tmp/owned' },
       implementation: { defaultSkill: true, skill: { path: '/fixture/SKILL.md' } },
     });

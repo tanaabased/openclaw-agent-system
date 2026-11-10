@@ -820,6 +820,9 @@ function respond(
           return;
         for (const key of ['resultContract', 'resultSchema', 'recording', 'handoff'])
           assert.equal(key in context, false);
+        assert.match(String(context.instructions), /latest authorized scope/u);
+        assert.match(String(context.instructions), /preserves unrelated behavior/u);
+        assert.match(String(context.instructions), /validation evidence/u);
         const selected = context.implementation as {
           defaultSkill: boolean;
           skill: { path: string };

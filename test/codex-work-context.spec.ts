@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 import codexWorkContext from '../agent/codex-work-context.ts';
+import { implementationReviewInstructions } from '../agent/native-task-instructions.ts';
 import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
 
 // Only the model-facing projection is under test; checkout and provider boundaries are injected.
@@ -52,6 +53,7 @@ describe('agent/codex-work-context', () => {
     );
     assert.deepEqual(output.currentIssue, { source: 'https://github.com/owner/repo/issues/3' });
     assert.deepEqual(output.implementation, implementation);
+    assert.ok(output.instructions.includes(implementationReviewInstructions));
     assert.equal('assessmentSelection' in output, false);
     assert.doesNotMatch(JSON.stringify(output.implementation), /OLD GUIDANCE/);
     assert.deepEqual(output.initialReview.assessment, record.assessment);
