@@ -165,7 +165,7 @@ records. Both runtimes warn at 16 MiB and pause new scheduled or manual tasks at
 32 MiB. Existing tasks can continue within the 64 MiB content ceiling. These fixed
 limits are not configurable recovery settings.
 
-Normal dispatch reconciliation offloads verified retired detail. Retry the reported
+Verified retirement removes the task’s local records and copied history. Retry the reported
 operation in the same chat after reconciliation; admission resumes below 32 MiB
 when there is room for the task. Active work can still exhaust capacity. Do not
 delete state or mark work successful to free space. Offloaded detail expires after

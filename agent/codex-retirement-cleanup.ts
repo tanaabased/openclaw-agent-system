@@ -29,6 +29,7 @@ export default async function codexRetirementCleanup(input: {
   const { record } = input;
   const worktree = record.worktree;
   const retirement = record.retirement!;
+  const discard = input.issueClosed || Boolean(retirement.operatorRequest);
   const threadId = record.threadId ?? record.receiptThreadId;
   const pending = (code: string) => ({ archived: input.archived, worktreeRemoved: false, code });
   if (!threadId || !record.worktree || !record.project)
@@ -81,7 +82,7 @@ export default async function codexRetirementCleanup(input: {
   if (inventory.pinnedThreads.some((entry) => !nativeObject(entry) || typeof entry.id !== 'string'))
     return pending('retirement-native-inventory-required');
   if (
-    !input.issueClosed &&
+    !discard &&
     inventory.pinnedThreads.some((entry) =>
       owners.has(String((entry as Record<string, unknown>).id)),
     )
@@ -97,7 +98,7 @@ export default async function codexRetirementCleanup(input: {
   )
     return pending('retirement-automation-owner');
   const protectedThreads = new Set(
-    input.issueClosed
+    discard
       ? []
       : inventory.pinnedThreads.map((entry) => String((entry as Record<string, unknown>).id)),
   );
@@ -119,11 +120,11 @@ export default async function codexRetirementCleanup(input: {
   const git = input.git ?? dispatchGit;
   await verifyDispatchWorktree(record.project, record.worktree, input.repository, git, 'handoff');
   if (
-    !input.issueClosed &&
+    !discard &&
     (await git(record.worktree, ['status', '--porcelain=v1', '--untracked-files=all']))
   )
     return pending('retirement-worktree-dirty');
-  if (!input.issueClosed) {
+  if (!discard) {
     const head = await git(record.worktree, ['rev-parse', 'HEAD']);
     if (
       !/^[a-f0-9]{40,64}$/u.test(head) ||

@@ -66,6 +66,7 @@ export const openclawWorkStateSchema = Type.Object(
           body: Type.String({ maxLength: 65536 }),
           creationAttempted: Type.Boolean(),
           contentUpdate: Type.Optional(deliveryContentUpdateSchema),
+          contentUpdateAttempted: Type.Optional(Type.Boolean()),
           pushedHead: Type.Optional(text),
           pendingPush: Type.Optional(deliveryPendingPushSchema),
           pullRequest: Type.Optional(deliveryPullRequestSchema),

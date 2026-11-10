@@ -419,25 +419,17 @@ describe('assignment retirement', () => {
           save: async () => {},
         });
       await h.run(h.record.id, reactivate);
-      assert.equal(h.cleanups(), scenario === 'bot' ? 1 : 0);
-      assert.equal(Boolean(h.record.retired), scenario === 'bot');
-      const feedback = (h.record as SharedDispatchRecord & { feedback?: FeedbackSourceState })
-        .feedback;
-      assert.deepEqual(
-        feedback?.events.map((event) => event.sourceId),
-        scenario === 'human' ? ['IC_human'] : [],
+      assert.equal(h.cleanups(), scenario === 'busy' ? 0 : 1);
+      assert.equal(Boolean(h.record.retired), scenario !== 'busy');
+      assert.equal(
+        (h.record as SharedDispatchRecord & { feedback?: FeedbackSourceState }).feedback,
+        undefined,
       );
-      assert.equal(Boolean(h.record.feedbackReactivation), scenario === 'human');
-      if (scenario === 'human') assert.equal(h.record.retirement, undefined);
-      else
-        assert.equal(
-          h.record.retirement?.code,
-          scenario === 'malformed'
-            ? 'github-response-invalid-issue-comment-author-login'
-            : scenario === 'busy'
-              ? 'retirement-native-work-unresolved'
-              : undefined,
-        );
+      assert.equal(h.record.feedbackReactivation, undefined);
+      assert.equal(
+        h.record.retirement?.code,
+        scenario === 'busy' ? 'retirement-native-work-unresolved' : undefined,
+      );
       assert.equal(JSON.stringify(h.record.retirement ?? {}).includes('bad/private-login'), false);
     });
   }
@@ -518,7 +510,7 @@ describe('assignment retirement', () => {
     assert.equal(h.record.retirement?.eligibleAt, baseline);
   });
 
-  it('should preserve a manual request while current cleanup configuration blocks effects', async () => {
+  it('should retire explicitly without depending on unused grace configuration', async () => {
     const h = setup();
     h.record.retirement = assignmentRetirement({
       reason: 'operator-requested',
@@ -531,10 +523,7 @@ describe('assignment retirement', () => {
       code: 'retirement-configuration-invalid',
     };
     await h.run(h.record.id);
-    assert.equal(h.cleanups(), 0);
-    assert.equal(h.record.retirement?.code, 'retirement-configuration-invalid');
-    h.settings.value = parseCleanupConfiguration();
-    await h.run(h.record.id);
+    assert.equal(h.cleanups(), 1);
     assert.ok(h.record.retired);
   });
 
@@ -925,12 +914,12 @@ describe('assignment retirement', () => {
       other.nativeInactive = true;
       h.advance(1);
       await h.run();
-      assert.equal(h.cleanups(), 1);
-      assert.ok(h.record.retired);
+      assert.equal(h.cleanups(), 0);
+      assert.equal(h.record.retired, undefined);
     });
   }
   for (const count of [2, 14]) {
-    it(`should archive ${count} eligible shared owners across bounded passes and reclaim once`, async () => {
+    it(`should preserve a genuinely shared checkout with ${count} eligible owners`, async () => {
       const h = setup();
       h.fixture.item.state = 'closed';
       h.record.worktree = '/managed/shared';
@@ -971,9 +960,9 @@ describe('assignment retirement', () => {
         await run();
         now += 3_600_000;
       }
-      assert.equal(archived.size, count);
-      assert.equal(removals, 1);
-      assert.ok(h.records.every((record) => record.retired));
+      assert.equal(archived.size, 0);
+      assert.equal(removals, 0);
+      assert.ok(h.records.every((record) => !record.retired));
     });
   }
   for (const condition of ['busy', 'unknown', 'grace', 'pending-deadline', 'legacy'] as const) {
@@ -1043,7 +1032,7 @@ describe('assignment retirement', () => {
     assert.equal(h.record.nativeInactive, true);
     assert.equal(h.cleanups(), 0);
   });
-  it('should not clean up a reopened issue or silently restart the old assignment', async () => {
+  it('should cancel cleanup when an issue reopens during grace', async () => {
     const h = setup();
     h.fixture.item.state = 'closed';
     await h.run();
@@ -1051,7 +1040,7 @@ describe('assignment retirement', () => {
     h.advance(60);
     await h.run();
     assert.equal(h.cleanups(), 0);
-    assert.equal(h.record.retirement?.code, 'retirement-awaiting-reactivation');
+    assert.equal(h.record.retirement, undefined);
   });
   for (const closed of [false, true]) {
     it(`should pass fresh closure rather than the archived chat reason when closed is ${closed}`, async () => {

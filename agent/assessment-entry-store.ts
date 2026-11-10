@@ -39,7 +39,9 @@ export class DirectEntryStore<S extends TSchema> {
       path: this.path,
     });
   }
-  async exclusive<T>(run: (entries: Static<S>, save: () => Promise<void>) => Promise<T>) {
+  async exclusive<T>(
+    run: (entries: Static<S>, save: (removeEmpty?: boolean) => Promise<void>) => Promise<T>,
+  ) {
     await ensurePrivateStateDirectories({
       directories: [this.root],
       currentUid: process.getuid?.(),
@@ -62,10 +64,12 @@ export class DirectEntryStore<S extends TSchema> {
           contents === undefined ? { scope: this.scope, entries: [] } : JSON.parse(contents);
         if (!Value.Check(schema, state) || state.scope !== this.scope)
           throw new Error(`${this.kind}-state-invalid`);
-        return run(state.entries, async () => {
+        return run(state.entries, async (removeEmpty = false) => {
           lock.assertHeld();
           if (!Value.Check(schema, state)) throw new Error(`${this.kind}-state-invalid`);
-          await this.file.write(JSON.stringify(state));
+          if (removeEmpty && Array.isArray(state.entries) && state.entries.length === 0)
+            await this.file.remove();
+          else await this.file.write(JSON.stringify(state));
         });
       });
     } finally {

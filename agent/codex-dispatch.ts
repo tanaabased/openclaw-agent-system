@@ -16,6 +16,7 @@ import cleanupConfiguration from './cleanup-configuration.ts';
 import { nativeObject } from './automation-gateway.ts';
 import { codexInstanceStore } from './codex-assignment-claims.ts';
 import reconcileCodexLifecycle from './codex-assignment-lifecycle.ts';
+import reconcileCodexRetirementEffects from './codex-retirement-effects.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import reconcileCodexCapacity from './codex-capacity-reconcile.ts';
 import {
@@ -197,6 +198,8 @@ export async function runCodexDispatch(
       deps,
     );
   validateDispatchRequest(action, input);
+  if (action === 'retire' && input.preview !== true)
+    await reconcileCodexRetirementEffects(pluginData, deps, true);
   if (action === 'retire' && typeof input.native === 'string')
     return retireCodexNative(
       pluginData,
@@ -215,6 +218,7 @@ export async function runCodexDispatch(
     const observation = await executeCodexDispatch(pluginData, 'observe-denials', {}, deps);
     if (!observation || !('status' in observation) || observation.status !== 'ready')
       return observation;
+    await reconcileCodexRetirementEffects(pluginData, deps);
     const feedback = await runCodexFeedback(pluginData, { action: 'next' }, deps);
     if (!['idle', 'disabled'].includes(feedback.status)) return feedback;
     const retirement = await reconcileCodexLifecycle(pluginData, deps, input.threads);

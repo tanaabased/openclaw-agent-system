@@ -375,6 +375,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
     .filter(
       (entry) =>
         entry.request &&
+        !entry.cleanupPending &&
         !entry.supersededBy &&
         !entry.denial &&
         (codexUnresolvedRetirement(entry) || entry.threadId || entry.receiptThreadId),

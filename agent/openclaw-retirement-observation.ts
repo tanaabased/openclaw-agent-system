@@ -34,7 +34,25 @@ export async function observeRetiringSession(
     record.worktree !== intent.cwd
   )
     throw new Error('retirement-session-identity-unresolved');
-  const key = intent.key;
+  return observeRetiringResource(request, {
+    key: intent.key,
+    sessionId: intent.sessionId,
+    agentId,
+    cwd: intent.cwd,
+  });
+}
+
+/** shared native execution evidence for a task and its proven descendants. */
+export async function observeRetiringResource(
+  request: DispatchRequest,
+  intent: {
+    key: string;
+    sessionId: string;
+    agentId: string;
+    cwd: string;
+  },
+) {
+  const { key, agentId } = intent;
   const row = retirementObject(
     retirementObject(await request('sessions.describe', { key }), 'sessions-describe').session,
     'sessions-describe-session',
@@ -43,7 +61,7 @@ export async function observeRetiringSession(
     row.key !== key ||
     row.agentId !== agentId ||
     row.sessionId !== intent.sessionId ||
-    (row.spawnedCwd ?? row.workspaceDir) !== record.worktree
+    (row.spawnedCwd ?? row.spawnedWorkspaceDir ?? row.workspaceDir) !== intent.cwd
   )
     throw new Error('retirement-session-identity-changed');
   const history = retirementObject(
