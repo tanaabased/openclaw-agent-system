@@ -472,6 +472,70 @@ describe('channels/github/intake/records', () => {
     assert.equal((await store.read())!.records.length, 1);
   });
 
+  for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should retain ${runtime} discovery when connection expires before a mutable scan exists`, async () => {
+      const { input, store, client, events } = setup(runtime);
+      const assignments = events.splice(0);
+      await scanAssignments({ ...input, activate: true });
+      events.push(...assignments);
+      const before = await store.read();
+      const caller = new AbortController();
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<typeof client>();
+      const scan = scanAssignments({
+        ...input,
+        budget: new DiscoveryBudget(20000, caller.signal),
+        connect: async () => {
+          entered.resolve();
+          return release.promise;
+        },
+      });
+      await entered.promise;
+      caller.abort();
+      const interrupted = await scan;
+      assert.equal(interrupted.more, true);
+      assert.equal(interrupted.diagnostic?.phase, 'assignment-connection');
+      assert.deepEqual(await store.read(), before);
+      release.resolve(client);
+      await release.promise;
+      assert.deepEqual(await store.read(), before);
+      assert.equal((await scanAssignments({ ...input, now: baseline + 120000 })).admitted, 1);
+      assert.equal((await scanAssignments({ ...input, now: baseline + 180000 })).admitted, 0);
+    });
+  }
+
+  it('should cancel condition lock acquisition without starting a late scan', async () => {
+    const { input, store } = setup('openclaw');
+    await scanAssignments({ ...input, activate: true });
+    const before = await store.read();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const holder = store.exclusive(async () => {
+      entered.resolve();
+      await release.promise;
+    });
+    await entered.promise;
+    const caller = new AbortController();
+    let connected = false;
+    const scan = scanAssignments({
+      ...input,
+      budget: new DiscoveryBudget(20000, caller.signal),
+      connect: async () => {
+        connected = true;
+        return input.connect();
+      },
+    });
+    caller.abort();
+    try {
+      await assert.rejects(scan, (error: unknown) => error === caller.signal.reason);
+    } finally {
+      release.resolve();
+      await holder;
+    }
+    assert.equal(connected, false);
+    assert.deepEqual(await store.read(), before);
+  });
+
   it('should propagate local save failures without inventing a provider outage', async () => {
     const { input, store } = setup();
     await scanAssignments({ ...input, activate: true });

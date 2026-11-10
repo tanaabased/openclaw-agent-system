@@ -1,3 +1,4 @@
+import openClawConditionCheck from '../../agent/openclaw-condition-check.ts';
 import { readOpenClawTurnInput } from '../../agent/openclaw-turn-binding.ts';
 import WorkflowRequestError from '../../agent/workflow-request-error.ts';
 import nativeTaskInstructions from '../../agent/native-task-instructions.ts';
@@ -194,11 +195,21 @@ export default function createDispatchTool(input: {
             const params = contextOnly ? { action: 'context' } : rawParams;
             signal?.throwIfAborted();
             assertDispatchModelRequest(params, 'dispatch-request-invalid');
-            const binding = await loaded(context);
             let result;
             if (params.action === 'check')
-              result = await service.check(binding.manifest, binding.scope.workspaceDir, signal);
+              result = await openClawConditionCheck(async (budget) => {
+                const binding = await budget.read('manifest-binding', () => loaded(context));
+                return service.check(
+                  binding.manifest,
+                  binding.scope.workspaceDir,
+                  signal,
+                  undefined,
+                  undefined,
+                  budget,
+                );
+              }, signal);
             else {
+              const binding = await loaded(context);
               const who = invocations.get(id);
               invocations.delete(id);
               if (!who) throw new Error('dispatch-native-invocation-missing');

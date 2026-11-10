@@ -95,10 +95,13 @@ export default class OpenClawDispatchCoordinator {
     signal?: AbortSignal,
     observation?: IntakeObservation,
     selector?: GitHubNotificationItemSelector,
+    budget = new DiscoveryBudget(20000, signal),
   ) {
-    const budget = new DiscoveryBudget(20000, signal);
+    signal?.throwIfAborted();
     const startedAt = budget.clock();
-    const reporting = await this.context.reportScope(manifest, workspace);
+    const reporting = await budget.read('report-scope', () =>
+      this.context.reportScope(manifest, workspace),
+    );
     const intake =
       observation ??
       (await this.context.dependencies.intake.run(
@@ -112,35 +115,41 @@ export default class OpenClawDispatchCoordinator {
       ));
     const assignmentAt = budget.clock();
     let lifecycleFailure: string | undefined;
+    let diagnostic = intake.diagnostic;
     if (intake.status === 'ready') {
       if (selector) {
         const admitted = (await reporting.store.read())?.records ?? [];
-        await reporting.journal.exclusive(async (state, save) => {
-          let changed = false;
-          for (const record of state.records) {
-            const source = dispatchAdmission(record, admitted);
-            if (!source || record.retired || record.reset) continue;
-            const repository = `${source.repository.owner.login}/${source.repository.name}`;
-            const pr = taskPullRequest(record);
-            const matches =
-              githubNotificationItemMatchesSelector(
-                { itemType: 'issue', number: source.issue.number },
-                repository,
-                selector,
-              ) ||
-              (pr &&
+        await reporting.journal.exclusive(
+          async (state, save) => {
+            let changed = false;
+            for (const record of state.records) {
+              const source = dispatchAdmission(record, admitted);
+              if (!source || record.retired || record.reset) continue;
+              const repository = `${source.repository.owner.login}/${source.repository.name}`;
+              const pr = taskPullRequest(record);
+              const matches =
                 githubNotificationItemMatchesSelector(
-                  { itemType: 'pull-request', number: pr.pullRequestNumber },
+                  { itemType: 'issue', number: source.issue.number },
                   repository,
                   selector,
-                ));
-            if (matches && record.lifecycleCheckedAt !== undefined) {
-              delete record.lifecycleCheckedAt;
-              changed = true;
+                ) ||
+                (pr &&
+                  githubNotificationItemMatchesSelector(
+                    { itemType: 'pull-request', number: pr.pullRequestNumber },
+                    repository,
+                    selector,
+                  ));
+              if (matches && record.lifecycleCheckedAt !== undefined) {
+                delete record.lifecycleCheckedAt;
+                changed = true;
+              }
             }
-          }
-          if (changed) await save();
-        });
+            if (changed) await save();
+          },
+          true,
+          'dispatch-commit',
+          budget.signal,
+        );
       }
       // share the remaining time with feedback rather than letting lifecycle consume it all.
       const lifecycleBudget = budget.fork(budget.remaining / 2);
@@ -156,21 +165,30 @@ export default class OpenClawDispatchCoordinator {
         signal?.throwIfAborted();
         if (!lifecycleBudget.exhausted)
           lifecycleFailure = workflowFailure(error, 'dispatch-lifecycle-observation-failed').code;
+        diagnostic = {
+          phase: lifecycleBudget.operation,
+          elapsedMs: Math.max(0, budget.clock() - startedAt),
+          reason: lifecycleFailure ?? 'discovery-budget-exhausted',
+        };
       }
       signal?.throwIfAborted();
     }
     const lifecycleAt = budget.clock();
-    const state = await reporting.journal.read();
+    const state = await budget.read('dispatch-state', () => reporting.journal.read());
     const report = openclawIntakeReport({
       state,
-      intake: await reporting.store.read(),
+      intake: await budget.read('intake-state', () => reporting.store.read()),
       slots: reporting.selected.policy.maxConcurrentItems,
       observation: intake,
       debug: manifest.debug,
     });
     const intakeFailure = intake.status !== 'ready' ? intake.code : undefined;
-    const current = await this.context.scope(manifest, workspace);
-    const sourceThreadId = await this.context.dependencies.coordinator(manifest, current.workspace);
+    const current = await budget.read('workspace-scope', () =>
+      this.context.scope(manifest, workspace),
+    );
+    const sourceThreadId = await budget.read('coordinator-binding', () =>
+      this.context.dependencies.coordinator(manifest, current.workspace),
+    );
     const cycleAt = state.discoveryCycleAt ?? (this.context.dependencies.now ?? Date.now)();
     const previousCodes = new Map(
       state.records.map((record) => [record.id, record.feedback?.code]),
@@ -188,7 +206,7 @@ export default class OpenClawDispatchCoordinator {
       authority: { signal: budget.signal },
       budget,
       now: (this.context.dependencies.now ?? Date.now)(),
-      checkpoint: (scan) => discoveryCheckpoint(current.journal, scan),
+      checkpoint: (scan) => discoveryCheckpoint(current.journal, scan, undefined, false),
     });
     applyOpenClawFeedbackScans(state.records, scans);
     const feedbackAt = budget.clock();
@@ -204,26 +222,30 @@ export default class OpenClawDispatchCoordinator {
           Object.keys(r.feedback?.discovery ?? {}).length > 0,
       ),
     );
-    await current.journal.exclusive(async (fresh, save) => {
-      fresh.discoveryCheckedAt = Date.now();
-      fresh.discoveryTimings = {
-        assignmentMs: Math.max(0, assignmentAt - startedAt),
-        lifecycleMs: Math.max(0, lifecycleAt - assignmentAt),
-        feedbackMs: Math.max(0, feedbackAt - lifecycleAt),
-      };
-      if (more) fresh.discoveryCycleAt = cycleAt;
-      else delete fresh.discoveryCycleAt;
-      if (more || fresh.discoveryProgress)
-        fresh.discoveryProgress = {
-          pending: more,
-          sources: owners.length,
-          ...(fresh.discoveryProgress?.pending === more
-            ? { reported: fresh.discoveryProgress.reported }
-            : {}),
+    await current.journal.exclusive(
+      async (fresh, save) => {
+        fresh.discoveryCheckedAt = Date.now();
+        fresh.discoveryTimings = {
+          assignmentMs: Math.max(0, assignmentAt - startedAt),
+          lifecycleMs: Math.max(0, lifecycleAt - assignmentAt),
+          feedbackMs: Math.max(0, feedbackAt - lifecycleAt),
         };
-      state.discoveryProgress = fresh.discoveryProgress;
-      await save();
-    });
+        if (more) fresh.discoveryCycleAt = cycleAt;
+        else delete fresh.discoveryCycleAt;
+        if (more || fresh.discoveryProgress)
+          fresh.discoveryProgress = {
+            pending: more,
+            sources: owners.length,
+            ...(fresh.discoveryProgress?.pending === more
+              ? { reported: fresh.discoveryProgress.reported }
+              : {}),
+          };
+        state.discoveryProgress = fresh.discoveryProgress;
+        await save();
+      },
+      false,
+      'dispatch-commit',
+    );
     const feedbackPending = state.records.some(
       (record) =>
         !record.reset &&
@@ -294,6 +316,15 @@ export default class OpenClawDispatchCoordinator {
       intakeFailure;
     return {
       status: 'ready' as const,
+      ...(diagnostic || code || more
+        ? {
+            diagnostic: diagnostic ?? {
+              phase: budget.operation,
+              elapsedMs: Math.max(0, budget.clock() - startedAt),
+              reason: code ?? 'discovery-incomplete',
+            },
+          }
+        : {}),
       more,
       outcome: actionable ? 'actionable' : code ? 'failed' : more ? 'paused' : 'unchanged',
       ...(code ? { code } : {}),

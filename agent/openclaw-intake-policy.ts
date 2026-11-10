@@ -35,13 +35,13 @@ export default function openclawIntakeJobs(manifest: AgentManifest): ResolvedAut
   ].join('\n\n');
   const script = [
     'function unwrap(v){if(typeof v === "string")return unwrap(JSON.parse(v));if(v.output)return unwrap(v.output);if(v.content)return unwrap(v.content.filter(x=>x.type==="text").map(x=>x.text).join("\\n"));return v;}',
-    'let stage="intake";',
+    'let stage="dispatch"; const started=Date.now();',
     'try {',
     'stage="dispatch";',
     'const d=unwrap(await agent_system_dispatch({action:"check"}));',
     'if (!d || d.status!=="ready" || typeof d.changed!=="boolean") throw new Error("dispatch-condition-invalid");',
-    `json({fire:d.changed===true,message:${JSON.stringify(message)},state:{status:d.status,outcome:d.outcome,more:d.more,code:d.code}});`,
-    '} catch (error) { const code=[error?.code,error?.message].find(value=>typeof value==="string" && /^(?:intake|dispatch|feedback|continuation|github|automation|private-state)-[a-z0-9-]{1,100}$/.test(value))??stage+"-condition-failed"; json({fire:true,message:"The "+stage+" condition failed ("+code+"). This pass could not complete. Inspect agent_system_intake and agent_system_dispatch with discovery checks and report the bounded blocker; never treat a failed check as an empty successful scan.",state:{status:code.endsWith("-busy")?"busy":"failed",stage,code}}); }',
+    `json({fire:d.changed===true,message:(d.diagnostic ? "Intake check: "+JSON.stringify(d.diagnostic)+". " : "")+${JSON.stringify(message)},state:{status:d.status,outcome:d.outcome,more:d.more,code:d.code,diagnostic:d.diagnostic}});`,
+    '} catch (error) { const code=[error?.code,error?.message].find(value=>typeof value==="string" && /^(?:intake|dispatch|feedback|continuation|github|automation|private-state)-[a-z0-9-]{1,100}$/.test(value))??stage+"-condition-failed"; json({fire:true,message:"The "+stage+" condition failed ("+code+") after "+Math.max(0,Date.now()-started)+" ms. This pass could not complete. Inspect agent_system_intake and agent_system_dispatch with discovery checks and report the bounded blocker; never treat a failed check as an empty successful scan.",state:{status:code.endsWith("-busy")?"busy":"failed",stage,code,diagnostic:{phase:stage,elapsedMs:Math.max(0,Date.now()-started),reason:["AbortError","TimeoutError","TypeError","SyntaxError"].includes(error?.name)?error.name:code}}}); }',
   ].join('\n');
   return [
     ...jobs,
