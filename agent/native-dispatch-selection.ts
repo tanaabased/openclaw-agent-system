@@ -1,3 +1,4 @@
+import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { automationHash } from './automation-hash.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
@@ -21,7 +22,8 @@ export function nativeDispatchSelection<R extends SharedDispatchRecord>(
     throw new Error('dispatch-target-invalid');
   const matches = records.filter((record) => {
     if (record.sourceThreadId !== caller || record.reset || record.supersededBy) return false;
-    if (!input.target && input.action === 'prepare' && record.phase !== 'routing') return false;
+    if (!input.target && input.action === 'prepare' && dispatchCreationStatus(record) !== 'routing')
+      return false;
     const issue = dispatchAdmission(record, admitted);
     return issue && (!input.target || managedTargetUrl(issue) === input.target);
   });

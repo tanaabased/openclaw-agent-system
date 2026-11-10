@@ -17,7 +17,7 @@ describe('agent/openclaw-intake-report', () => {
     const record = {
       id: 'held',
       request: {},
-      phase: 'complete',
+
       threadId: 'original',
       sessionCreation: { verified: true },
       nativeInactive: true,
@@ -46,12 +46,13 @@ describe('agent/openclaw-intake-report', () => {
       issueKey: 'c'.repeat(64),
       manifestDigest: 'manifest',
       intakeId: 'b'.repeat(64),
-      phase: 'complete',
+
       threadId: 'chat',
       sessionCreation: { verified: true },
       intakeReportedAt: 1,
       pullRequestLink: { pullRequestNodeId: 'PR_8', pullRequestNumber: 8 },
-      work: { delivery: { pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 } } },
+      delivery: { pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 } },
+      work: {},
       feedback: {
         baseline: {},
         events: [],
@@ -83,7 +84,7 @@ describe('agent/openclaw-intake-report', () => {
     const record = {
       id: 'a'.repeat(64),
       intakeId: 'b'.repeat(64),
-      phase: 'complete',
+
       retirement: {
         reason: 'issue-closed',
         at: 1,
@@ -214,7 +215,7 @@ describe('agent/openclaw-intake-report', () => {
       issueKey: 'd'.repeat(64),
       manifestDigest: 'manifest',
       sourceThreadId: 'coordinator',
-      phase: 'created',
+
       createdAt: 1,
       threadId: 'agent:receiver:issue:1',
       sessionCreation: {
@@ -255,7 +256,7 @@ describe('agent/openclaw-intake-report', () => {
       intakeId: 'b'.repeat(64),
       issueKey: 'c'.repeat(64),
       sourceThreadId: 'coordinator',
-      phase: 'waiting',
+
       createdAt: 0,
       manifestDigest: 'digest',
       blocker: 'dispatch-assignment-event-missing',

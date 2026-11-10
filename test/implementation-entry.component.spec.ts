@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { nativeIssueContext } from '../agent/implementation-delivery.ts';
+import { nativeIssueContext } from '../agent/native-issue-context.ts';
 import hydrateImplementation from './implementation-material-fixture.ts';
 
 import assessmentEntry, { type AssessmentEntryDependencies } from '../agent/assessment-entry.ts';
@@ -137,7 +137,7 @@ describe('agent/implementation-entry', () => {
     it(`should preserve delivered ${runtime} implementation facts when skill lookup fails`, async () => {
       deps.binding.runtime = runtime;
       const ownerId = 'd'.repeat(64);
-      const nativeContext = nativeIssueContext({ id: ownerId, phase: 'complete', worktree: root });
+      const nativeContext = nativeIssueContext({ id: ownerId, worktree: root });
       const before = structuredClone(nativeContext);
       deps.managed = async () => ({
         digest: 'c'.repeat(64),
@@ -182,7 +182,6 @@ describe('agent/implementation-entry', () => {
       const nativeContext = nativeIssueContext({
         id: ownerId,
         worktree: root,
-        phase: 'complete',
       });
       deps.managed = async () => ({
         digest: 'c'.repeat(64),

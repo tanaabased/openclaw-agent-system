@@ -34,7 +34,6 @@ describe('agent/issue-pickup-reset', () => {
       assert.ok(Value.Check(issuePickupStateSchema, kept));
       const consumed = resetIssuePickup(original, [
         {
-          phase: 'created',
           issueKey: pickupIssueKey(original, f.item.nodeId),
           projectWork: f.work(),
         },

@@ -1,6 +1,5 @@
 import { issuePullRequestRecipients } from '../channels/github/pull-request-recipients.ts';
 import feedbackPresentation from './feedback-presentation.ts';
-import { hasDeliveredImplementation, nativeIssueContext } from './implementation-delivery.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import {
   dispatchAdmission,
@@ -241,7 +240,7 @@ export default class OpenClawDispatchIssue {
           if (!action || action.operation === 'reconcile') {
             await authorizeFeedback(common);
             delete event.policyHeld;
-            await advanceFeedbackTurn({
+            return advanceFeedbackTurn({
               ...common,
               sourcePresentation: feedbackPresentation(
                 event,
@@ -249,19 +248,6 @@ export default class OpenClawDispatchIssue {
               ),
               authorizeInput: async () => {
                 await authorizeFeedback(common);
-              },
-            });
-            if (event.turn?.status === 'completed') {
-              record.feedback!.lastServedAt = now;
-              await save();
-            }
-            return openClawFeedback({
-              ...common,
-              action: {
-                action: 'feedback',
-                operation: 'reconcile',
-                id: record.id,
-                eventId: event.id,
               },
             });
           }
@@ -364,8 +350,6 @@ export default class OpenClawDispatchIssue {
   ) {
     const { manifest, workspace, caller, authority, current, save, transactionSignal, now } = tx;
     const { client, intake, repo } = verified;
-    if (input.action === 'implementation-context' && hasDeliveredImplementation(record))
-      return nativeIssueContext(record);
     if (
       input.action === 'handoff' ||
       input.action === 'implementation-context' ||
@@ -498,7 +482,7 @@ export default class OpenClawDispatchIssue {
             const configured = (await this.context.validateLocal(manifest, workspace, record, true))
               .manifest.github?.notifications?.issueAssignment?.implementation;
             const selected = input.material
-              ? (record.work!.contextSelection ?? previous!)
+              ? previous!
               : (
                   await selectWorkflowStage({
                     stage: 'implementation',
@@ -530,7 +514,7 @@ export default class OpenClawDispatchIssue {
             });
             if (record.work) {
               record.work.selection ??= selected;
-              if (!input.material) record.work.contextSelection = selected;
+              if (!input.material) record.work.selection = selected;
               await save();
             }
             return {
@@ -648,17 +632,15 @@ export default class OpenClawDispatchIssue {
             const code = openClawDispatchFailureCode(error);
             return {
               status: dispatchFailureStatus({}, code, error),
-              workflowStatus: record.work?.delivery?.pullRequest
+              workflowStatus: record.delivery?.pullRequest
                 ? workflowStatus(record)
                 : dispatchFailureStatus({}, code, error),
               id: record.id,
               ...workflowFailure(error, code),
               code: code === 'dispatch-operation-failed' ? 'delivery-provider-failed' : code,
-              pullRequest: record.work?.delivery?.pullRequest,
+              pullRequest: record.delivery?.pullRequest,
               instructions:
-                code === 'delivery-implementation-incomplete'
-                  ? workflowRecovery(code)!.next
-                  : 'Preserve this operation and all work. Stop on denial or lost authority. For an interrupted publication, use delivery prepare again in this issue chat to reconcile the existing attempt. Never create a replacement PR or discard its retained binding.',
+                'Preserve this operation and all work. Stop on denial or lost authority. For an interrupted publication, use delivery prepare again in this issue chat to reconcile the existing attempt. Never create a replacement PR or discard its retained binding.',
             };
           });
         },

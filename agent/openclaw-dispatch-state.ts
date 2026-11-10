@@ -83,22 +83,12 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
           return Boolean(
             record.sessionCreation &&
             record.worktree === record.request.cwd &&
-            [
-              'creating',
-              'created',
-              'assessing',
-              'complete',
-              'blocked',
-              'waiting',
-              'retrying',
-            ].includes(record.phase) &&
             (!record.sessionCreation.sessionId || record.sessionCreation.attempted) &&
             (!record.sessionCreation.verified ||
               (record.sessionCreation.sessionId &&
                 record.threadId === record.request.key &&
                 record.effective)) &&
-            (!record.effective || record.sessionCreation.verified) &&
-            (record.phase !== 'created' || record.sessionCreation.verified),
+            (!record.effective || record.sessionCreation.verified),
           );
         }
         return Boolean(
@@ -106,8 +96,7 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
           !record.work &&
           !record.sessionCreation &&
           !record.assessmentCaller &&
-          !record.effective &&
-          !['creating', 'created', 'assessing', 'complete'].includes(record.phase),
+          !record.effective,
         );
       },
     });

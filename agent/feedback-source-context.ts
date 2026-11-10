@@ -1,3 +1,4 @@
+import taskPullRequest from './task-pull-request.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import type { GitHubNotificationProviderClient } from '../channels/github/provider/work-event-types.ts';
 import type { GitHubCanonicalWorkItem } from '../channels/github/provider/work-item.ts';
@@ -14,11 +15,7 @@ import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 /** source authority is rechecked before context and every publication effect. */
 export default async function authorizeFeedback(input: {
   conversation?: boolean;
-  record: {
-    work?: {
-      delivery?: { pullRequest?: { pullRequestNodeId: string; pullRequestNumber: number } };
-    };
-  };
+  record: Parameters<typeof taskPullRequest>[0];
   event: Pick<FeedbackSourceEvent, 'number' | 'nodeId' | 'itemType' | 'source' | 'revision'>;
   policy: GitHubNotificationPolicy;
   provider: Pick<
@@ -32,6 +29,7 @@ export default async function authorizeFeedback(input: {
 }) {
   const { record, event, provider, intake } = input;
   await input.assertCurrent();
+  const pullRequest = taskPullRequest(record);
   const owner = intake.repository.owner.login,
     name = intake.repository.name;
   const source = JSON.parse(event.source) as GitHubCanonicalFeedback;
@@ -47,8 +45,8 @@ export default async function authorizeFeedback(input: {
     (event.itemType === 'issue' && event.nodeId !== intake.issue.nodeId) ||
     (!input.conversation &&
       event.itemType === 'pull-request' &&
-      (record.work?.delivery?.pullRequest?.pullRequestNodeId !== event.nodeId ||
-        record.work.delivery.pullRequest.pullRequestNumber !== event.number))
+      (pullRequest?.pullRequestNodeId !== event.nodeId ||
+        pullRequest.pullRequestNumber !== event.number))
   )
     throw new Error('feedback-source-owner-changed');
   if (isReviewFeedback(source) && !provider.reviews)

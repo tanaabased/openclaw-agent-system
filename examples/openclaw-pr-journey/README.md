@@ -160,33 +160,33 @@ for attempt in 1 2 3; do
 done
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$feedback_run" 600000
 jq -es '[.[].records[]] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-delivery.json"
-jq -e --slurp --arg issue_id "$(jq -er .node_id "$TMPDIR/notification-issue.json")" '.[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[1].progression.stage == "implementation" and .[1].progression.via == "operator" and .[1].work.delivery.reconciled == true and .[1].work.delivery.binding.sessionId == .[1].sessionCreation.sessionId and .[1].work.delivery.binding.issueId == $issue_id' "$TMPDIR/notification-dispatch-before.json" "$TMPDIR/notification-delivery.json"
+jq -e --slurp --arg issue_id "$(jq -er .node_id "$TMPDIR/notification-issue.json")" '.[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[1].progression.stage == "implementation" and .[1].progression.via == "operator" and .[1].delivery.reconciled == true and .[1].delivery.binding.sessionId == .[1].sessionCreation.sessionId and .[1].delivery.binding.issueId == $issue_id' "$TMPDIR/notification-dispatch-before.json" "$TMPDIR/notification-delivery.json"
 
 # should answer the initial implementation request with one combined announcement
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
-openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile saved "$TMPDIR/notification-delivery.json" --slurpfile source "$TMPDIR/notification-initial-source.json" '($saved[0].feedback.events[0]) as $event | $saved[0].work.delivery.announcement as $announcement | ($event.source | fromjson).nodeId == $source[0].node_id and ([.[] | select(.id > $source[0].id and .user.login == "tanaabot")] | length == 1 and .[0].node_id == $announcement.receipt.nodeId and (.[0].body | contains($announcement.publicText)) and (.[0].body | contains("@" + $source[0].user.login)))'
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile saved "$TMPDIR/notification-delivery.json" --slurpfile source "$TMPDIR/notification-initial-source.json" '($saved[0].feedback.events[0]) as $event | $saved[0].announcement as $announcement | ($event.source | fromjson).nodeId == $source[0].node_id and ([.[] | select(.id > $source[0].id and .user.login == "tanaabot")] | length == 1 and .[0].node_id == $announcement.receipt.nodeId and (.[0].body | contains($announcement.publicText)) and (.[0].body | contains("@" + $source[0].user.login)))'
 
-# should derive completion from receipts without a separate delivery wakeup
+# should confirm the announcement without a separate delivery wakeup
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
-jq -e '.implementationDelivered == true and .work.delivery.announcement.receipt.nodeId != null' "$TMPDIR/notification-delivery.json"
+jq -e '.announcement.receipt.nodeId != null' "$TMPDIR/notification-delivery.json"
 
 # should verify the explicit closing relationship and pull request recipients
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
-pr=$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
-openclaw agent-system tool gh -- pr view "$pr" --repo tanaabased/big-test-bucket --json number,state,headRefOid,assignees,closingIssuesReferences | tee "$TMPDIR/notification-pr.json" | jq -e --arg head "$(jq -er .work.delivery.binding.head "$TMPDIR/notification-delivery.json")" --argjson issue "$(jq -er .number "$TMPDIR/notification-issue.json")" '.state == "OPEN" and .headRefOid == $head and (.assignees | length) == 1 and .assignees[0].login == "tanaabot" and any(.closingIssuesReferences[]; .number == $issue)'
-openclaw agent-system tool gh -- api graphql -f query='query($id:ID!){node(id:$id){... on PullRequest{closingIssuesReferences(first:100,userLinkedOnly:true){nodes{number}}}}}' -f id="$(jq -er .work.delivery.pullRequest.pullRequestNodeId "$TMPDIR/notification-delivery.json")" --jq '.data.node.closingIssuesReferences.nodes' | jq -e --argjson issue "$(jq -er .number "$TMPDIR/notification-issue.json")" 'any(.[]; .number == $issue)'
+pr=$(jq -er .delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
+openclaw agent-system tool gh -- pr view "$pr" --repo tanaabased/big-test-bucket --json number,state,headRefOid,assignees,closingIssuesReferences | tee "$TMPDIR/notification-pr.json" | jq -e --arg head "$(jq -er .delivery.binding.head "$TMPDIR/notification-delivery.json")" --argjson issue "$(jq -er .number "$TMPDIR/notification-issue.json")" '.state == "OPEN" and .headRefOid == $head and (.assignees | length) == 1 and .assignees[0].login == "tanaabot" and any(.closingIssuesReferences[]; .number == $issue)'
+openclaw agent-system tool gh -- api graphql -f query='query($id:ID!){node(id:$id){... on PullRequest{closingIssuesReferences(first:100,userLinkedOnly:true){nodes{number}}}}}' -f id="$(jq -er .delivery.pullRequest.pullRequestNodeId "$TMPDIR/notification-delivery.json")" --jq '.data.node.closingIssuesReferences.nodes' | jq -e --argjson issue "$(jq -er .number "$TMPDIR/notification-issue.json")" 'any(.[]; .number == $issue)'
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/pulls/$pr/requested_reviewers" | jq -e '(.users | length) == 0 and (.teams | length) == 0'
 conversation=$(jq -er .threadId "$TMPDIR/notification-delivery.json")
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json > "$TMPDIR/notification-published-history.json"
-jq -e '.work.delivery.presentation == null' "$TMPDIR/notification-delivery.json"
-jq -e --arg run "$(jq -er .feedback.events[0].turn.runId "$TMPDIR/notification-delivery.json")" --arg text "$(jq -er .work.delivery.announcement.publicText "$TMPDIR/notification-delivery.json")" 'any(.messages[]; .role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | (gsub("(?m)^> ?"; "") | contains($text))))' "$TMPDIR/notification-published-history.json"
+jq -e '.delivery.presentation == null' "$TMPDIR/notification-delivery.json"
+jq -e --arg run "$(jq -er .feedback.events[0].turn.runId "$TMPDIR/notification-delivery.json")" --arg text "$(jq -er .announcement.publicText "$TMPDIR/notification-delivery.json")" 'any(.messages[]; .role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | (gsub("(?m)^> ?"; "") | contains($text))))' "$TMPDIR/notification-published-history.json"
 
 # should publish one issue announcement with a retained receipt and verified ready state
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-announcements.json"
-jq -e --slurpfile delivery "$TMPDIR/notification-delivery.json" '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:pull-request-handoff:")))] | length == 1 and .[0].node_id == $delivery[0].work.delivery.announcement.receipt.nodeId and (.[0].body | contains($delivery[0].work.delivery.announcement.publicText)) and (.[0].body | contains("Ready for review."))' "$TMPDIR/notification-announcements.json"
+jq -e --slurpfile delivery "$TMPDIR/notification-delivery.json" '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:pull-request-handoff:")))] | length == 1 and .[0].node_id == $delivery[0].announcement.receipt.nodeId and (.[0].body | contains($delivery[0].announcement.publicText)) and (.[0].body | contains("Ready for review."))' "$TMPDIR/notification-announcements.json"
 
 # should implement and publish one ordinary approved pr comment in the owning issue chat
 set -o pipefail
@@ -200,7 +200,7 @@ feedback_diagnostics() {
 trap feedback_diagnostics EXIT
 worktree=$(jq -er .worktree "$TMPDIR/notification-delivery.json")
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/emori"
-number=$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
+number=$(jq -er .delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
 openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/comments" -f 'body=@tanaabot add a note that feedback changes stay on the original PR, check it, and push the change.' > "$TMPDIR/notification-feedback-source.json"
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
@@ -224,15 +224,15 @@ jq -e --slurp '{
   sameIssue:(.[0].id == .[1].id),
   sameChat:(.[0].threadId == .[1].threadId),
   sameWorktree:(.[0].worktree == .[1].worktree),
-  samePullRequest:(.[0].work.delivery.pullRequest == .[1].work.delivery.pullRequest),
-  sameAnnouncement:(.[0].work.delivery.announcement == .[1].work.delivery.announcement),
-  changedHead:(.[0].work.delivery.pushedHead != .[1].work.delivery.pushedHead),
+  samePullRequest:(.[0].delivery.pullRequest == .[1].delivery.pullRequest),
+  sameAnnouncement:(.[0].announcement == .[1].announcement),
+  changedHead:(.[0].delivery.pushedHead != .[1].delivery.pushedHead),
   exactEventCount:((.[1].feedback.events | length) == 2),
   publishedFeedback:all(.[1].feedback.events[1:][]; .itemType == "pull-request")
 } | to_entries | map(select(.value == false)) | if length == 0 then true else error({code:"feedback-continuity-mismatch",failed:map(.key)} | tojson) end' "$TMPDIR/notification-delivery.json" "$TMPDIR/notification-feedback.json"
-openclaw agent-system tool gh -- pr view "$number" --repo tanaabased/big-test-bucket --json headRefOid | jq -e --arg head "$(jq -er .work.delivery.pushedHead "$TMPDIR/notification-feedback.json")" '.headRefOid == $head'
+openclaw agent-system tool gh -- pr view "$number" --repo tanaabased/big-test-bucket --json headRefOid | jq -e --arg head "$(jq -er .delivery.pushedHead "$TMPDIR/notification-feedback.json")" '.headRefOid == $head'
 git -C "$worktree" show HEAD | grep -F 'Keep feedback changes on the original PR.'
-openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$(jq -er .work.delivery.binding.branch "$TMPDIR/notification-feedback.json")" --state all --json number | jq -e --argjson pr "$number" 'length == 1 and .[0].number == $pr'
+openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$(jq -er .delivery.binding.branch "$TMPDIR/notification-feedback.json")" --state all --json number | jq -e --argjson pr "$number" 'length == 1 and .[0].number == $pr'
 
 # should verify the exact response and suppress another reply on a repeat scan
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"

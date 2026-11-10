@@ -287,7 +287,7 @@ describe('agent/issue-launch', () => {
       assert.equal(first.status, 'routing-required');
       const record = (await journal.read()).records[0]!;
       assert.equal(record.adoptedPullRequest?.head, 'a'.repeat(40));
-      assert.equal(record.work?.delivery, undefined);
+      assert.equal(record.delivery, undefined);
       assert.equal(record.threadId, undefined);
       const again = await launch(undefined, {
         pullRequest: 'https://github.com/owner/repo/pull/7',
@@ -474,7 +474,7 @@ describe('agent/issue-launch', () => {
           issueKey: issueKey(manual),
           sourceThreadId: 'scheduled-intake',
           manifestDigest: state.records[0]!.manifestDigest,
-          phase: 'routing',
+
           createdAt: baseline,
         },
       ];

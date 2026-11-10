@@ -1,3 +1,4 @@
+import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { type default as IntakeRecordStore } from '../channels/github/intake/record-store.ts';
 import { githubNotificationMarkdownCode as inlineCode } from '../channels/github/presentation/card.ts';
 import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
@@ -13,7 +14,7 @@ import { type DispatchRecord, type DispatchState } from './codex-dispatch-state.
 import codexHostAccess from './codex-host-access.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
 import dispatchBlocker from './dispatch-blocker.ts';
-import { dispatchFailurePhase, scheduleDispatchRetry } from './dispatch-retry.ts';
+import { scheduleDispatchRetry } from './dispatch-retry.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import {
   dispatchAdmission,
@@ -183,7 +184,7 @@ export function notice(record: DispatchRecord, intake?: IntakeRecord) {
       : undefined;
   return {
     id: record.id,
-    status: record.handoff ? 'handed-off' : record.phase,
+    status: record.handoff ? 'handed-off' : dispatchCreationStatus(record),
     workflowStatus: workflowStatus(record),
     assignmentObservation: record.assignmentObservation,
     assignmentWarning:
@@ -241,11 +242,11 @@ export async function failDispatch(
   if (['dispatch-policy-disabled', 'dispatch-activation-required'].includes(code(error)))
     throw error;
   const previousCode = dispatchBlocker(record);
-  if (codexHostAccess(error) || record.phase === 'complete') throw error;
+  if (codexHostAccess(error)) throw error;
   // Native worktree setup returns a client receipt before the child is readable.
   if (
     code(error) === 'dispatch-creation-unresolved' &&
-    record.phase === 'creating' &&
+    dispatchCreationStatus(record) === 'creating' &&
     record.clientThreadId &&
     !record.threadId &&
     !record.receiptThreadId &&
@@ -264,7 +265,7 @@ export async function failDispatch(
   record.blocker = failure.code;
   record.retryAfter = now + 300000;
   scheduleDispatchRetry(record, code(error), error, now);
-  record.phase = dispatchFailurePhase(record, code(error), error);
+
   const shared = ['authentication', 'missing-credential'].includes(
     workflowFailure(error, 'dispatch-operation-failed').providerDiagnostic?.classification ?? '',
   );

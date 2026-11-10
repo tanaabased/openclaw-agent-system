@@ -113,7 +113,7 @@ describe('agent/codex-feedback', () => {
           admitted.issue.nodeId,
         ]),
         sourceThreadId: 'intake',
-        phase: 'complete',
+
         createdAt: baseline,
         manifestDigest: current.digest,
         threadId: 'child',
@@ -253,7 +253,6 @@ describe('agent/codex-feedback', () => {
       turn = 'feedback';
       await store.exclusive(async (state, save) => {
         state.records[0]!.nativeWork = {
-          policyDigest: 'c'.repeat(64),
           selection: {
             version: 1,
             requestedSkill: 'old-implementation',
@@ -272,9 +271,6 @@ describe('agent/codex-feedback', () => {
             },
           },
         };
-        await save();
-      });
-      await store.exclusive(async (state, save) => {
         await save();
       });
       const before = (await store.read()).records[0]!;
@@ -307,7 +303,7 @@ describe('agent/codex-feedback', () => {
         delete unrelated.threadId;
         delete unrelated.worktree;
         delete unrelated.feedback;
-        unrelated.phase = 'creating';
+
         unrelated.creationAfterItemId = 'exact-create-boundary';
         state.records.push(unrelated);
         // leave the comment admitted but not yet submitted to its chat.
@@ -339,7 +335,7 @@ describe('agent/codex-feedback', () => {
         JSON.stringify(response),
       );
       const held = (await store.read()).records.find((record) => record.id === 'c'.repeat(64))!;
-      assert.equal(held.phase, 'waiting');
+
       assert.equal(held.retry, undefined);
       assert.equal(held.threadId, undefined);
     });
@@ -1007,14 +1003,12 @@ describe('agent/codex-feedback', () => {
           base: 'main',
           head: 'a'.repeat(40),
           authorId: account.nodeId,
-          policyDigest: 'a'.repeat(64),
         },
         creationAttempted: true,
         reconciled: true,
         attached: true,
-        cardAttempts: 1,
-        announcement: announcement.state,
       };
+      record.announcement = announcement.state;
       await save();
     });
     for (const [nodeId, databaseId, body] of [
@@ -1153,13 +1147,11 @@ describe('agent/codex-feedback', () => {
             base: 'main',
             head: 'a'.repeat(40),
             authorId: account.nodeId,
-            policyDigest: 'a'.repeat(64),
           },
           creationAttempted: true,
           pullRequest: { pullRequestNodeId: 'PR_delivery', pullRequestNumber: 45 },
           reconciled: true,
           attached: true,
-          cardAttempts: 1,
         };
         record.feedback = { baseline: { PR_delivery: {} }, events: [] };
         await save();
@@ -1258,10 +1250,6 @@ describe('agent/codex-feedback', () => {
   }
   it('should queue behind its busy owner and use the same slot when that owner finishes', async () => {
     await call('next');
-    await store.exclusive(async (state, save) => {
-      state.records[0]!.phase = 'assessing';
-      await save();
-    });
     comments.push({
       nodeId: 'comment',
       databaseId: 42,
@@ -1281,10 +1269,6 @@ describe('agent/codex-feedback', () => {
     occurrence++;
     assert.equal((await call('next')).status, 'idle');
     assert.equal((await store.read())!.records[0]!.feedback!.events[0]!.phase, 'queued');
-    await store.exclusive(async (state, save) => {
-      state.records[0]!.phase = 'complete';
-      await save();
-    });
     deps.native!.find = async (input) => ({
       ...(await find(input))!,
       status: 'notLoaded',
@@ -1313,7 +1297,7 @@ describe('agent/codex-feedback', () => {
             other.id = digit.repeat(64);
             delete other.issueBranch;
             other.issueKey = digit.repeat(64);
-            other.phase = 'assessing';
+
             delete other.effective;
             delete other.feedback;
             state.records.push(other);
@@ -1366,7 +1350,7 @@ describe('agent/codex-feedback', () => {
         other.id = digit.repeat(64);
         delete other.issueBranch;
         other.issueKey = digit.repeat(64);
-        other.phase = 'assessing';
+
         delete other.effective;
         delete other.feedback;
         state.records.push(other);

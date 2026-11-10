@@ -38,7 +38,7 @@ describe('agent/dispatch-inspection', () => {
       intakeId: admitted.id,
       issueKey: 'e'.repeat(64),
       sourceThreadId: 'coordinator',
-      phase: 'routing',
+
       createdAt: baseline,
       manifestDigest: 'manifest',
       lifecycleCheckedAt: baseline,
@@ -86,7 +86,7 @@ describe('agent/dispatch-inspection', () => {
   });
   it('should select the current pr link instead of a historical delivery receipt', () => {
     const { admitted, records } = fixture();
-    const owner: SharedDispatchRecord & {
+    const owner: Omit<SharedDispatchRecord, 'delivery'> & {
       delivery: { pullRequest: { pullRequestNodeId: string; pullRequestNumber: number } };
     } = {
       ...records[0]!,

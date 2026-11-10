@@ -93,7 +93,6 @@ export default async function implementationEntryDelivery(input: {
     base: repo.defaultBranch,
     head,
     authorId: connection.account.identity.nodeId,
-    policyDigest: automationHash(entry.authorization),
   };
   const previous = entry.delivery;
   const changed =

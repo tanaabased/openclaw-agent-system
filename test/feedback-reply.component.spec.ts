@@ -1652,7 +1652,7 @@ describe('agent/feedback-reply', () => {
             manualIssue,
             issueKey: issueKey(manualIssue),
             sourceThreadId: 'origin',
-            phase: 'routing',
+
             createdAt: 1,
             manifestDigest: 'fixture',
             threadId: 'foreign-' + index,

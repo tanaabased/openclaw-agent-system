@@ -62,6 +62,14 @@ describe('channels/github/intake/records', () => {
       const taskId = 'a'.repeat(64);
       assert.equal(await store.consume(admitted, taskId), taskId);
       assert.equal(await store.consume(admitted, 'b'.repeat(64)), taskId);
+      await store.consume(admitted, taskId, baseline + 180000);
+      await store.consume(admitted, taskId, baseline + 60000);
+      events.push({
+        ...events[0]!,
+        nodeId: 'E_before_retirement',
+        databaseId: 31,
+        createdAt: new Date(baseline + 120000).toISOString(),
+      });
       const restarted = new IntakeRecordStore(store.location);
       await scanAssignments({ ...input, store: restarted, now: baseline + 180000 });
       assert.deepEqual(pendingDispatchAssignments({ records: [] }, (await restarted.read())!), []);
@@ -116,7 +124,7 @@ describe('channels/github/intake/records', () => {
       );
     });
 
-    it(`should read historical ${runtime} scope evidence without re-admission or identity bypass`, async () => {
+    it(`should revalidate ${runtime} identity after routing changes without re-admission`, async () => {
       const { input, client, store, policy, events, repository } = setup(runtime);
       const assigned = events.splice(0);
       await scanAssignments({ ...input, activate: true });
@@ -126,7 +134,7 @@ describe('channels/github/intake/records', () => {
       const record = state.records[0]!;
       record.evidence.ownerPinned = true;
       record.evidence.repositoryScope = {
-        source: 'allowed-repository-owners',
+        source: 'routing',
         decision: 'local',
         reason: 'match',
         index: 0,
@@ -146,9 +154,6 @@ describe('channels/github/intake/records', () => {
         /dispatch-repository-identity-changed/,
       );
       repository.nodeId = originalId;
-      record.evidence.repositoryScope.reason = 'identity-mismatch';
-      await writeFile(store.location.path, JSON.stringify(state));
-      assert.deepEqual((await store.read())!.records, state.records);
       delete record.evidence.repositoryScope;
       await writeFile(store.location.path, JSON.stringify(state));
       assert.deepEqual((await store.read())!.records, state.records);

@@ -129,7 +129,7 @@ for attempt in 1 2 3; do
 done
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$feedback_run" 600000
 jq -es '[.[].records[]] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-delivery.json"
-jq -e --slurp '.[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[1].progression.stage == "implementation" and .[1].progression.via == "operator" and .[1].work.delivery.reconciled == true and .[1].work.delivery.binding.sessionId == .[1].sessionCreation.sessionId and .[1].work.delivery.binding.issueId == .[1].feedback.events[0].nodeId' "$TMPDIR/notification-dispatch-before.json" "$TMPDIR/notification-delivery.json"
+jq -e --slurp '.[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[1].progression.stage == "implementation" and .[1].progression.via == "operator" and .[1].delivery.reconciled == true and .[1].delivery.binding.sessionId == .[1].sessionCreation.sessionId and .[1].delivery.binding.issueId == .[1].feedback.events[0].nodeId' "$TMPDIR/notification-dispatch-before.json" "$TMPDIR/notification-delivery.json"
 ```
 
 ## Testing
@@ -147,8 +147,8 @@ feedback_diagnostics() {
 trap feedback_diagnostics EXIT
 worktree=$(jq -er .worktree "$TMPDIR/notification-delivery.json")
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-collaboration/emori"
-number=$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
-branch=$(jq -er .work.delivery.binding.branch "$TMPDIR/notification-delivery.json")
+number=$(jq -er .delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
+branch=$(jq -er .delivery.binding.branch "$TMPDIR/notification-delivery.json")
 openclaw agent-system tool gh -- api --method PUT "repos/tanaabased/big-test-bucket/contents/collaborator-$number.txt" -f message="preserve disposable collaborator evidence" -f branch="$branch" -f content=Q29sbGFib3JhdG9yIHdvcmsuCg== > "$TMPDIR/notification-collaborator.json"
 openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/comments" -f 'body=@tanaabot add a note that feedback changes stay on the original PR, check it, and push the change.' > "$TMPDIR/notification-feedback-source.json"
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-collaboration/tanaabot"
@@ -173,17 +173,17 @@ jq -e --slurp '{
   sameIssue:(.[0].id == .[1].id),
   sameChat:(.[0].threadId == .[1].threadId),
   sameWorktree:(.[0].worktree == .[1].worktree),
-  samePullRequest:(.[0].work.delivery.pullRequest == .[1].work.delivery.pullRequest),
-  sameAnnouncement:(.[0].work.delivery.announcement == .[1].work.delivery.announcement),
-  changedHead:(.[0].work.delivery.pushedHead != .[1].work.delivery.pushedHead),
+  samePullRequest:(.[0].delivery.pullRequest == .[1].delivery.pullRequest),
+  sameAnnouncement:(.[0].announcement == .[1].announcement),
+  changedHead:(.[0].delivery.pushedHead != .[1].delivery.pushedHead),
   exactEventCount:((.[1].feedback.events | length) == 2),
   publishedFeedback:all(.[1].feedback.events[1:][]; .itemType == "pull-request")
 } | to_entries | map(select(.value == false)) | if length == 0 then true else error({code:"feedback-continuity-mismatch",failed:map(.key)} | tojson) end' "$TMPDIR/notification-delivery.json" "$TMPDIR/notification-feedback.json"
-openclaw agent-system tool gh -- pr view "$number" --repo tanaabased/big-test-bucket --json headRefOid | jq -e --arg head "$(jq -er .work.delivery.pushedHead "$TMPDIR/notification-feedback.json")" '.headRefOid == $head'
+openclaw agent-system tool gh -- pr view "$number" --repo tanaabased/big-test-bucket --json headRefOid | jq -e --arg head "$(jq -er .delivery.pushedHead "$TMPDIR/notification-feedback.json")" '.headRefOid == $head'
 git -C "$worktree" show HEAD | grep -F 'Keep feedback changes on the original PR.'
 git -C "$worktree" merge-base --is-ancestor "$(jq -er .commit.sha "$TMPDIR/notification-collaborator.json")" HEAD
 git -C "$worktree" show "HEAD:collaborator-$number.txt" | grep -F 'Collaborator work.'
-openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$(jq -er .work.delivery.binding.branch "$TMPDIR/notification-feedback.json")" --state all --json number | jq -e --argjson pr "$number" 'length == 1 and .[0].number == $pr'
+openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$(jq -er .delivery.binding.branch "$TMPDIR/notification-feedback.json")" --state all --json number | jq -e --argjson pr "$number" 'length == 1 and .[0].number == $pr'
 
 # should verify the exact response and suppress another reply on a repeat scan
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-collaboration/tanaabot"

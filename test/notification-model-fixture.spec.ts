@@ -1109,13 +1109,12 @@ for (const scenario of [
             worktree: '/checkout',
             request: { key: 'issue', agentId: 'receiver' },
             sessionCreation: { verified: true, sessionId: 'incarnation' },
-            work: {
-              delivery: {
-                reconciled: true,
-                pullRequest: { pullRequestNumber: 7 },
-                binding: { branch: 'retained-branch' },
-              },
+            delivery: {
+              reconciled: true,
+              pullRequest: { pullRequestNumber: 7 },
+              binding: { branch: 'retained-branch' },
             },
+            work: {},
             nativeTurns: [{ role: 'assessment', turn: { runId: 'assessment' } }],
           } as OpenClawDispatchRecord,
           {

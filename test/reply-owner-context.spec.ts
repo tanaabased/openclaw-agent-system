@@ -15,7 +15,7 @@ describe('agent/reply-owner-context', () => {
       intakeId: 'admission',
       issueKey: 'issue',
       sourceThreadId: 'intake',
-      phase: 'complete',
+
       createdAt: 1,
       manifestDigest: 'manifest',
       threadId: 'chat',
@@ -116,8 +116,8 @@ describe('agent/reply-owner-context', () => {
       publicText: 'Both choices implemented. PR ready.',
       receipt: { nodeId: 'C_ready', databaseId: 99 },
     } as DeliveryAnnouncementState;
-    const delivery = { announcement };
-    const owner = replyOwnerContext({ ...input, delivery });
+    input.record.announcement = announcement;
+    const owner = replyOwnerContext(input);
     const destination = 'https://github.com/owner/repo/issues/3';
     const target = { owner: 'owner', name: 'repo', number: 3, destination } as ReplyTarget;
     for (const purpose of [undefined, 'status-update'] as const) {
@@ -143,12 +143,21 @@ describe('agent/reply-owner-context', () => {
       { ...announcement, authorId: 'another-account' },
     ])
       assert.equal(
-        replyOwnerContext({ ...input, delivery: { announcement: changed } }).announcement,
+        replyOwnerContext({ ...input, record: { ...input.record, announcement: changed } })
+          .announcement,
         undefined,
       );
     assert.equal(
-      replyOwnerContext({ ...input, delivery: { announcement, announcementRecovery: {} } })
-        .announcement,
+      replyOwnerContext({
+        ...input,
+        record: {
+          ...input.record,
+          announcement,
+          announcementRecovery: { status: 'needs-attention' } as NonNullable<
+            typeof input.record.announcementRecovery
+          >,
+        },
+      }).announcement,
       undefined,
     );
   });

@@ -308,6 +308,7 @@ export default async function scanAssignments(
           else
             state!.observedAssignments[observedIndex] = {
               ...observation,
+              consumedThrough: state!.observedAssignments[observedIndex]!.consumedThrough,
               ...(state!.observedAssignments[observedIndex]!.consumedBy
                 ? { consumedBy: state!.observedAssignments[observedIndex]!.consumedBy }
                 : {}),

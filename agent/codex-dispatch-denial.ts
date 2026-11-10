@@ -50,13 +50,13 @@ export default async function reconcileIntakeDenial(
     if (dispatchBlocker(record) === 'dispatch-denial-history-unavailable') {
       delete record.blocker;
       delete record.retryAfter;
-      record.phase = record.request ? 'creating' : 'routing';
+
       await tx.save();
     }
     return false;
   }
   record.denial = { ...evidence, observedAt: tx.now };
-  record.phase = 'blocked';
+
   delete record.retry;
   delete record.retryAfter;
   record.blocker = 'native-approval-denied';

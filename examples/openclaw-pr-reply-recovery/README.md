@@ -133,7 +133,7 @@ for attempt in 1 2 3; do
 done
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$feedback_run" 600000
 jq -es '[.[].records[]] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-delivery.json"
-jq -e --slurp '.[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[1].progression.stage == "implementation" and .[1].progression.via == "operator" and .[1].work.delivery.reconciled == true and .[1].work.delivery.binding.sessionId == .[1].sessionCreation.sessionId and .[1].work.delivery.binding.issueId == .[1].feedback.events[0].nodeId' "$TMPDIR/notification-dispatch-before.json" "$TMPDIR/notification-delivery.json"
+jq -e --slurp '.[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[1].progression.stage == "implementation" and .[1].progression.via == "operator" and .[1].delivery.reconciled == true and .[1].delivery.binding.sessionId == .[1].sessionCreation.sessionId and .[1].delivery.binding.issueId == .[1].feedback.events[0].nodeId' "$TMPDIR/notification-dispatch-before.json" "$TMPDIR/notification-delivery.json"
 ```
 
 ## Testing
@@ -153,7 +153,7 @@ feedback_diagnostics() {
 trap feedback_diagnostics EXIT
 worktree=$(jq -er .worktree "$TMPDIR/notification-delivery.json")
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-reply-recovery/emori"
-number=$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
+number=$(jq -er .delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
 node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" comment --number "$number" --body '@tanaabot add a note that feedback changes stay on the original PR, check it, and push the change.' > "$TMPDIR/notification-feedback-source.json"
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-reply-recovery/tanaabot"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
@@ -163,7 +163,7 @@ feedback_run=$(jq -ers --arg source "$(jq -er .node_id "$TMPDIR/notification-fee
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$feedback_run" 600000
 conversation=$(jq -er .threadId "$TMPDIR/notification-delivery.json")
 jq -es '[.[].records[]] | if length == 1 then .[0] else error("one issue owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-feedback-retained.json"
-jq -e '.feedback.events[1].feedback.events[1].feedback.events[1].work == null and .work.delivery.pushedHead == .work.delivery.binding.head' "$TMPDIR/notification-feedback-retained.json"
+jq -e '.feedback.events[1].feedback.events[1].feedback.events[1].work == null and .delivery.pushedHead == .delivery.binding.head' "$TMPDIR/notification-feedback-retained.json"
 jq -es --slurpfile saved "$TMPDIR/notification-feedback-retained.json" '[.[] | . | select(.feedback.eventId == $saved[0].feedback.events[1].id)] | if length == 1 then .[0] else error("one retained reply draft required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-retained-draft.json"
 jq -e '.attempted == null and .receipt == null and (.publicText | length > 0)' "$TMPDIR/notification-retained-draft.json"
 session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-feedback-retained.json")
@@ -176,7 +176,7 @@ feedback_run=notification-feedback-resume
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$feedback_run" 600000
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$feedback_run" '{sessionKey:$key,inputRunIds:[$run],limit:200,maxChars:100000}')" --json | jq --arg run "$feedback_run" '. + {requestedRunId:$run}' > "$TMPDIR/notification-feedback-history.json"
 jq -es '[.[].records[]] | if length == 1 then .[0] else error("one issue owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-feedback.json"
-jq -e --slurpfile before "$TMPDIR/notification-feedback-retained.json" '.feedback.events[1].turn.runId == $before[0].feedback.events[1].turn.runId and .feedback.events[1].work == null and .work.delivery == $before[0].work.delivery' "$TMPDIR/notification-feedback.json"
+jq -e --slurpfile before "$TMPDIR/notification-feedback-retained.json" '.feedback.events[1].turn.runId == $before[0].feedback.events[1].turn.runId and .feedback.events[1].work == null and .delivery == $before[0].delivery' "$TMPDIR/notification-feedback.json"
 jq -e --slurp '
   (.[0].feedback.events[0]) as $before |
   (.[1].feedback.events[0]) as $after |
@@ -190,15 +190,15 @@ jq -e --slurp '{
   sameIssue:(.[0].id == .[1].id),
   sameChat:(.[0].threadId == .[1].threadId),
   sameWorktree:(.[0].worktree == .[1].worktree),
-  samePullRequest:(.[0].work.delivery.pullRequest == .[1].work.delivery.pullRequest),
-  sameAnnouncement:(.[0].work.delivery.announcement == .[1].work.delivery.announcement),
-  changedHead:(.[0].work.delivery.pushedHead != .[1].work.delivery.pushedHead),
+  samePullRequest:(.[0].delivery.pullRequest == .[1].delivery.pullRequest),
+  sameAnnouncement:(.[0].announcement == .[1].announcement),
+  changedHead:(.[0].delivery.pushedHead != .[1].delivery.pushedHead),
   exactEventCount:((.[1].feedback.events | length) == 2),
   publishedFeedback:all(.[1].feedback.events[1:][]; .itemType == "pull-request")
 } | to_entries | map(select(.value == false)) | if length == 0 then true else error({code:"feedback-continuity-mismatch",failed:map(.key)} | tojson) end' "$TMPDIR/notification-delivery.json" "$TMPDIR/notification-feedback.json"
-openclaw agent-system tool gh -- pr view "$number" --repo tanaabased/big-test-bucket --json headRefOid | jq -e --arg head "$(jq -er .work.delivery.pushedHead "$TMPDIR/notification-feedback.json")" '.headRefOid == $head'
+openclaw agent-system tool gh -- pr view "$number" --repo tanaabased/big-test-bucket --json headRefOid | jq -e --arg head "$(jq -er .delivery.pushedHead "$TMPDIR/notification-feedback.json")" '.headRefOid == $head'
 git -C "$worktree" show HEAD | grep -F 'Keep feedback changes on the original PR.'
-openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$(jq -er .work.delivery.binding.branch "$TMPDIR/notification-feedback.json")" --state all --json number | jq -e --argjson pr "$number" 'length == 1 and .[0].number == $pr'
+openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$(jq -er .delivery.binding.branch "$TMPDIR/notification-feedback.json")" --state all --json number | jq -e --argjson pr "$number" 'length == 1 and .[0].number == $pr'
 
 # should verify the exact response and suppress another reply on a repeat scan
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-reply-recovery/tanaabot"

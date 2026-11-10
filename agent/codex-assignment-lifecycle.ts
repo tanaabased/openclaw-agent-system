@@ -110,7 +110,13 @@ export default async function reconcileCodexLifecycle(
         now,
         save,
         prepare: async (record, intake) => {
-          await retirementConsumption(current.store, intake, record.id, now);
+          await retirementConsumption(
+            current.store,
+            intake,
+            record.id,
+            now,
+            record.retirement?.operatorRequest?.at ?? record.retirement?.at ?? now,
+          );
           store.retainRetirementEffects(state, retirementEffects(record, intake));
           pendingRetirement(record);
           await save();
@@ -229,7 +235,7 @@ export default async function reconcileCodexLifecycle(
             comments: async () =>
               (await (deps.feedbackConnect ?? connectCodexFeedback)(current.workspace, signal))
                 .comments,
-            announcement: record.delivery?.announcement,
+            announcement: record.announcement,
             ownReplies: async () => {
               const provider = await (deps.feedbackConnect ?? connectCodexFeedback)(
                 current.workspace,

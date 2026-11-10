@@ -19,7 +19,6 @@ import { verifyDispatchWorktree } from './codex-dispatch-project.ts';
 import { notice } from './codex-dispatch-reporting.ts';
 import { type default as CodexDispatchStore, type DispatchRecord } from './codex-dispatch-state.ts';
 import codexIssueBranch from './codex-issue-branch.ts';
-import { hasDeliveredImplementation, nativeIssueContext } from './implementation-delivery.ts';
 import type { ImplementationMaterialRead } from './implementation-material.ts';
 import issueProgression from './issue-progression.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
@@ -76,7 +75,6 @@ export async function handoffDispatch(
       (await realpath(native.cwd)) !== (await realpath(record.worktree))
     )
       throw new Error('dispatch-native-readback-diverged');
-    if (hasDeliveredImplementation(record)) return nativeIssueContext(record);
     await verifyDispatchWorktree(
       record.project,
       native.cwd,

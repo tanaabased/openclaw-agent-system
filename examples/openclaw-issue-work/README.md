@@ -100,22 +100,22 @@ conversation=$(jq -er .observation.items[0].workflow.conversation "$TMPDIR/notif
 run_id=$(jq -ers --arg key "$conversation" '[.[].records[] | select(.threadId == $key)] | if length == 1 then (.[0] | .nativeTurns | map(select(.role == "assessment")) | last | .turn).runId else error("one conversation required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 jq -es --arg key "$conversation" '[.[].records[] | select(.threadId == $key)] | if length == 1 then .[0] else error("one issue owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-delivery.json"
-jq -e --arg run "$run_id" '.progression.stage == "implementation" and .progression.via == "work" and .work.implementation.runId == $run and .work.delivery.reconciled and .work.delivery.pullRequest.pullRequestNodeId != null and .work.delivery.announcement.receipt.nodeId != null and .pullRequestLink == .work.delivery.pullRequest and (.feedback.events | length) == 0' "$TMPDIR/notification-delivery.json"
+jq -e --arg run "$run_id" '.progression.stage == "implementation" and .progression.via == "work" and .work.implementation.runId == $run and .delivery.reconciled and .delivery.pullRequest.pullRequestNodeId != null and .announcement.receipt.nodeId != null and .pullRequestLink == .delivery.pullRequest and (.feedback.events | length) == 0' "$TMPDIR/notification-delivery.json"
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$run_id" '{sessionKey:$key,inputRunIds:[$run],limit:200,maxChars:100000}')" --json > "$TMPDIR/notification-history.json"
-jq -e --arg run "$run_id" --slurpfile saved "$TMPDIR/notification-delivery.json" 'any(.messages[]; .role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | startswith("> ") and contains("https://github.com/tanaabased/big-test-bucket/pull/" + ($saved[0].work.delivery.pullRequest.pullRequestNumber | tostring)) and (gsub("(?m)^> ?"; "") | contains($saved[0].work.delivery.announcement.publicText))))' "$TMPDIR/notification-history.json"
+jq -e --arg run "$run_id" --slurpfile saved "$TMPDIR/notification-delivery.json" 'any(.messages[]; .role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | startswith("> ") and contains("https://github.com/tanaabased/big-test-bucket/pull/" + ($saved[0].delivery.pullRequest.pullRequestNumber | tostring)) and (gsub("(?m)^> ?"; "") | contains($saved[0].announcement.publicText))))' "$TMPDIR/notification-history.json"
 openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e --slurpfile saved "$TMPDIR/notification-delivery.json" '.session.sessionId == $saved[0].sessionCreation.sessionId and .session.spawnedCwd == $saved[0].worktree and .session.thinkingLevel == $saved[0].request.thinkingLevel'
 
 # should retain the linked pr and exact public receipts without repeating delivery
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-work/tanaabot"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
-pr=$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
+pr=$(jq -er .delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
 openclaw agent-system tool gh -- pr view "$pr" --repo tanaabased/big-test-bucket --json assignees,closingIssuesReferences | jq -e --argjson issue "$number" 'any(.assignees[]; .login == "tanaabot") and any(.closingIssuesReferences[]; .number == $issue)'
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
-branch=$(jq -er .work.delivery.binding.branch "$TMPDIR/notification-delivery.json")
+branch=$(jq -er .delivery.binding.branch "$TMPDIR/notification-delivery.json")
 openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$branch" --state all --json number | jq -e --argjson pr "$pr" 'length == 1 and .[0].number == $pr'
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-comments.json"
-jq -e --slurpfile saved "$TMPDIR/notification-delivery.json" '[.[] | select(.user.login == "tanaabot")] | length == 2 and any(.[]; .body | contains(":status-update:")) and any(.[]; .node_id == $saved[0].work.delivery.announcement.receipt.nodeId)' "$TMPDIR/notification-comments.json"
+jq -e --slurpfile saved "$TMPDIR/notification-delivery.json" '[.[] | select(.user.login == "tanaabot")] | length == 2 and any(.[]; .body | contains(":status-update:")) and any(.[]; .node_id == $saved[0].announcement.receipt.nodeId)' "$TMPDIR/notification-comments.json"
 
 # should answer an ordinary post-delivery question from retained facts without reopening work
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-work/tanaabot"

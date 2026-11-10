@@ -25,21 +25,9 @@ describe('agent/workflow-recovery', () => {
   });
   it('should direct incomplete assessment recovery to native formatting', () => {
     const recovery = workflowRecovery('assessment-result-incomplete')!;
-    assert.match(recovery.summary, /not recorded/);
+    assert.match(recovery.summary, /not formatted/);
     assert.match(recovery.next, /fullAssessment.*assessment render/);
     assert.match(recovery.next, /native context/);
-  });
-  it('should explain unfinished delivery without suggesting publication retries', () => {
-    for (const code of [
-      'delivery-implementation-incomplete',
-      'continuation-implementation-required',
-      'delivery-continuation-stopped',
-    ]) {
-      const recovery = workflowRecovery(code)!;
-      assert.match(recovery.summary, /implementation/);
-      assert.match(recovery.next, /implementation context/);
-      assert.match(recovery.next, /[Dd]o not retry publication/);
-    }
   });
   it('should explain how to recover from a malformed dispatch receipt id', () => {
     const recovery = workflowRecovery('dispatch-receipt-id-invalid')!;
@@ -69,7 +57,6 @@ describe('agent/workflow-recovery', () => {
       'branch',
       'base',
       'account',
-      'policy',
     ]) {
       const recovery = workflowRecovery(`delivery-${field}-changed`)!;
       assert.ok(recovery.summary.includes(field));

@@ -158,7 +158,7 @@ export async function scanOpenClawFeedback(input: {
                 record,
                 intake,
                 client: provider!,
-                announcement: record.work?.delivery?.announcement,
+                announcement: record.announcement,
                 replies: () =>
                   replyOwnPublications({
                     root: service.dependencies.root,

@@ -12,7 +12,7 @@ describe('agent/task-pull-request', () => {
     const original = { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 };
     for (const delivery of [
       { delivery: { pullRequest: original } },
-      { work: { delivery: { pullRequest: original } } },
+      { delivery: { pullRequest: original }, work: {} },
     ]) {
       const record: Parameters<typeof taskPullRequest>[0] = delivery;
       const url = 'https://github.com/owner/repo/pull/7';

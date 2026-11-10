@@ -29,8 +29,7 @@ export const retirementEffectSchema = Type.Object(
 );
 export type RetirementEffect = Static<typeof retirementEffectSchema>;
 type Record = DispatchRecord & OpenClawDispatchRecord;
-type Delivery =
-  NonNullable<Record['delivery']> | NonNullable<NonNullable<Record['work']>['delivery']>;
+type Delivery = NonNullable<Record['delivery']>;
 
 function effect(input: Omit<RetirementEffect, 'id'>): RetirementEffect {
   return { ...input, id: automationHash(input) };
@@ -87,7 +86,17 @@ export function retirementDeliveryEffects(
       }),
     );
   }
-  const announcement = delivery.announcement;
+  return effects;
+}
+
+/** retain only attempted effects whose outcome is unknown, independently of task disposal. */
+export default function retirementEffects(
+  source: SharedDispatchRecord,
+  intake: ManagedIssue,
+): RetirementEffect[] {
+  const record = source as Record;
+  const effects = retirementDeliveryEffects(record.delivery, intake);
+  const announcement = record.announcement;
   if (announcement?.attempted && !announcement.receipt) {
     effects.push(
       effect({
@@ -108,15 +117,4 @@ export function retirementDeliveryEffects(
     );
   }
   return effects;
-}
-
-/** retain only attempted effects whose outcome is unknown, independently of task disposal. */
-export default function retirementEffects(
-  source: SharedDispatchRecord,
-  intake: ManagedIssue,
-): RetirementEffect[] {
-  const record = source as Record;
-  return [record.delivery, record.work?.delivery].flatMap((delivery) =>
-    retirementDeliveryEffects(delivery, intake),
-  );
 }

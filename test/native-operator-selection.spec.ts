@@ -21,7 +21,12 @@ describe('native operator task selection', () => {
   } as SharedDispatchRecord;
   it('should retry the sole current assignment independently of reset history ordering', () => {
     const reset = { ...original, reset: { at: 1, by: 'operator' } };
-    const waiting = { ...original, id: 'waiting', threadId: undefined, phase: 'waiting' as const };
+    const waiting = {
+      ...original,
+      id: 'waiting',
+      threadId: undefined,
+      blocker: 'dispatch-creation-unresolved',
+    };
     for (const records of [[reset, waiting], [waiting, reset], [waiting]])
       assert.equal(
         nativeOperatorSelection({ action: 'retry', target }, records, [issue], 'operator'),
@@ -29,7 +34,12 @@ describe('native operator task selection', () => {
       );
   });
   it('should exclude terminal owners without redirecting an exact retry to a sibling', () => {
-    const waiting = { ...original, id: 'waiting', threadId: undefined, phase: 'waiting' as const };
+    const waiting = {
+      ...original,
+      id: 'waiting',
+      threadId: undefined,
+      blocker: 'dispatch-creation-unresolved',
+    };
     const excluded: SharedDispatchRecord[] = [
       { ...original, reset: { at: 1, by: 'operator' } },
       {

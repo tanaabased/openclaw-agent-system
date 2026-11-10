@@ -664,7 +664,6 @@ describe('agent/issue-pickup', () => {
       f.state.records.push({
         issueKey: pickupIssueKey(f.state.projectPickup!, f.item.nodeId),
         projectWork: f.work(),
-        phase: 'complete',
       });
       await f.run();
       f.state.records.splice(0);
@@ -687,7 +686,6 @@ describe('agent/issue-pickup', () => {
       f.state.records.push({
         issueKey: pickupIssueKey(f.state.projectPickup!, f.item.nodeId),
         projectWork: f.work(),
-        phase: 'complete',
       });
       await f.run();
       f.state.records.splice(0);
@@ -838,7 +836,7 @@ describe('agent/issue-pickup', () => {
       assert.equal(f.effects.writes, 0);
       f.policy.routing = ['owner/*'];
       f.policy.maxConcurrentItems = 1;
-      f.state.records.push({ issueKey: 'busy', phase: 'running', request: {} });
+      f.state.records.push({ issueKey: 'busy', request: {} });
       assert.equal((await f.run()).status, 'at-capacity');
       f.state.records = [];
       f.tx.runId = 'later-scan';
@@ -1057,7 +1055,7 @@ describe('agent/issue-pickup', () => {
     assert.equal(pickupCapacity(pickup, f.item.nodeId), 0);
     f.state.records.push({
       projectWork: f.work(),
-      phase: 'assessing',
+
       issueKey: pickupIssueKey(pickup, f.item.nodeId),
       request: {},
     });
@@ -1187,7 +1185,6 @@ describe('agent/issue-pickup', () => {
     const work = f.work();
     work.pickup = { ...work.pickup!, assignmentNodeId: 'E_old' };
     f.state.records.push({
-      phase: 'complete',
       reset: {},
       projectWork: work,
       issueKey: pickupIssueKey(f.state.projectPickup!, f.item.nodeId),

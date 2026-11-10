@@ -16,7 +16,7 @@ export default async function recoverOpenClawAnnouncement(
   save: () => Promise<void>,
   authority: DispatchAuthority & { caller?: DispatchCaller },
 ) {
-  const delivery = record.work?.delivery;
+  const delivery = record;
   if (!delivery) return;
   const recovery = delivery.announcementRecovery;
   if (!recovery) return;

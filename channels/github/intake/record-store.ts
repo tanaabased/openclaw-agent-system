@@ -22,21 +22,6 @@ const eventIdentity = Type.Object(
   { ...identity.properties, type: text },
   { additionalProperties: false },
 );
-// historical scope decisions are evidence only, never executable admission policy.
-const retainedRepositoryScopeSchema = Type.Union([
-  repositoryScopeDecisionSchema,
-  Type.Object(
-    {
-      ...repositoryScopeDecisionSchema.properties,
-      source: Type.Literal('allowed-repository-owners'),
-      reason: Type.Union([
-        ...repositoryScopeDecisionSchema.properties.reason.anyOf,
-        Type.Literal('identity-mismatch'),
-      ]),
-    },
-    { additionalProperties: false },
-  ),
-]);
 export const intakeRecordSchema = Type.Object(
   {
     version: Type.Literal(1),
@@ -73,7 +58,7 @@ export const intakeRecordSchema = Type.Object(
         assigned: Type.Literal(true),
         repositoryReadable: Type.Literal(true),
         ownerPinned: Type.Boolean(),
-        repositoryScope: Type.Optional(retainedRepositoryScopeSchema),
+        repositoryScope: Type.Optional(repositoryScopeDecisionSchema),
         actorPinned: Type.Literal(true),
         projectWork: Type.Optional(projectWorkSchema),
       },
@@ -91,6 +76,7 @@ export const intakeObservationSchema = Type.Object(
   {
     ...Type.Omit(intakeRecordSchema, ['evidence', 'admittedAt', 'status', 'requiresRevalidation'])
       .properties,
+    consumedThrough: Type.Optional(time),
     consumedBy: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
   },
   { additionalProperties: false },
@@ -339,7 +325,11 @@ export default class IntakeRecordStore {
     }
   }
 
-  async consume(observation: IntakeObservation, taskId: string): Promise<string> {
+  async consume(
+    observation: IntakeObservation,
+    taskId: string,
+    consumedThrough?: number,
+  ): Promise<string> {
     if (
       observation.scope !== this.location.scope ||
       observation.id !==
@@ -373,9 +363,14 @@ export default class IntakeRecordStore {
       };
       state.observedAssignments ??= [];
       const existing = state.observedAssignments.find((entry) => entry.id === observation.id);
-      if (existing?.consumedBy) return existing.consumedBy;
-      if (existing) existing.consumedBy = taskId;
-      else
+      if (existing?.consumedBy && existing.consumedBy !== taskId) return existing.consumedBy;
+      const advancesCutoff =
+        consumedThrough !== undefined && consumedThrough > (existing?.consumedThrough ?? -1);
+      if (existing?.consumedBy && !advancesCutoff) return existing.consumedBy;
+      if (existing) {
+        existing.consumedBy = taskId;
+        if (advancesCutoff) existing.consumedThrough = consumedThrough;
+      } else
         state.observedAssignments.push({
           version: observation.version,
           id: observation.id,
@@ -389,6 +384,7 @@ export default class IntakeRecordStore {
           assignment: observation.assignment,
           observedAt: observation.observedAt,
           consumedBy: taskId,
+          ...(consumedThrough !== undefined ? { consumedThrough } : {}),
         });
       await save(state);
       return taskId;

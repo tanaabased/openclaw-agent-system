@@ -1,3 +1,5 @@
+import taskPullRequest from './task-pull-request.ts';
+import type { SharedDispatchRecord } from './dispatch-state.ts';
 import { Type, type Static } from 'typebox';
 
 import { automationHash } from './automation-hash.ts';
@@ -6,7 +8,7 @@ import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts
 import { managedPullRequest, type ManagedIssue } from './managed-issue.ts';
 import workflowFailure from './workflow-failure.ts';
 import { providerDiagnosticSchema } from '../utils/provider-diagnostic.ts';
-import type { IssueDeliveryInput } from '../channels/github/publication/issue-delivery.ts';
+import type { IssueAnnouncementInput } from '../channels/github/publication/issue-delivery.ts';
 
 const time = Type.Integer({ minimum: 0 });
 export const announcementRecoverySchema = Type.Object(
@@ -34,21 +36,19 @@ export interface AnnouncementDelivery {
   announcementRecovery?: AnnouncementRecovery;
 }
 
-export function announcementBinding(publication: IssueDeliveryInput) {
+export function announcementBinding(publication: IssueAnnouncementInput) {
   return automationHash({
     repository: publication.repositoryNodeId,
     issue: publication.item.itemNodeId,
     pullRequest: publication.expectedPullRequest,
-    branch: publication.branch,
-    head: publication.headSha,
-    adopted: Boolean(publication.adopted || publication.adoptedPullRequest),
+    adopted: Boolean(publication.adoptedPullRequest),
   });
 }
 
 /** failure metadata is separate from the candidate and never changes its preview identity. */
 export function retainAnnouncementFailure(
   delivery: AnnouncementDelivery,
-  publication: IssueDeliveryInput | string,
+  publication: IssueAnnouncementInput | string,
   error: unknown,
   now: number,
   phase: AnnouncementRecovery['phase'],
@@ -126,21 +126,16 @@ export function announcementRecoveryAction(
 
 export function retainedAnnouncementPublication(
   intake: ManagedIssue,
-  delivery: {
-    binding: { repositoryId: string; issueId: string; branch: string; head: string; base: string };
-    pullRequest?: IssueDeliveryInput['expectedPullRequest'];
-    reconciled: boolean;
-    adopted?: IssueDeliveryInput['adopted'];
-  },
+  record: Pick<SharedDispatchRecord, 'announcement' | 'pullRequestLink'> &
+    Parameters<typeof taskPullRequest>[0],
   signal?: AbortSignal,
-): IssueDeliveryInput {
-  if (
-    !delivery.reconciled ||
-    !delivery.pullRequest ||
-    delivery.binding.repositoryId !== intake.repository.nodeId ||
-    delivery.binding.issueId !== intake.issue.nodeId
-  )
-    throw new Error('delivery-announcement-binding-required');
+): IssueAnnouncementInput {
+  // An attempted comment remains bound to its original PR after relinking or unlinking.
+  const expectedPullRequest =
+    record.announcement?.attempted || record.announcement?.receipt
+      ? record.announcement.snapshot
+      : taskPullRequest(record);
+  if (!expectedPullRequest) throw new Error('delivery-announcement-binding-required');
   return {
     item: {
       number: intake.issue.number,
@@ -148,13 +143,9 @@ export function retainedAnnouncementPublication(
       itemNodeId: intake.issue.nodeId,
       repositoryOwner: intake.repository.owner.login,
       repositoryName: intake.repository.name,
-      repositoryDefaultBranch: delivery.binding.base,
     },
     repositoryNodeId: intake.repository.nodeId,
-    branch: delivery.binding.branch,
-    headSha: delivery.binding.head,
-    expectedPullRequest: delivery.pullRequest,
-    adopted: delivery.adopted,
+    expectedPullRequest,
     adoptedPullRequest: managedPullRequest(intake),
     signal,
   };

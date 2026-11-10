@@ -1,3 +1,4 @@
+import dispatchCreationStatus from './dispatch-creation-status.ts';
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
 import IssueDeliveryProvider from '../channels/github/publication/issue-delivery.ts';
@@ -70,7 +71,7 @@ export default async function recoverDispatch(
           record.delivery?.creationAttempted && !record.delivery.pullRequest,
         ),
         uncertainAnnouncement: Boolean(
-          record.delivery?.announcement?.attempted && !record.delivery.announcement.receipt,
+          record.announcement?.attempted && !record.announcement.receipt,
         ),
         pendingFeedback: record.feedback?.events.some(pendingRecoveryFeedback),
         assignmentClaim: Boolean((record.claimId || record.claimAccepted) && !context.claim),
@@ -311,14 +312,14 @@ export default async function recoverDispatch(
 
       delete record.retry;
       delete record.retryAfter;
-      record.phase = 'routing';
+
       await save();
       return { status: 'retry-ready', changed: true, id: record.id };
     }
     if (
       (!record.denial && record.sourceThreadId !== sourceThreadId) ||
       !record.request ||
-      !['creating', 'blocked', 'waiting', 'retrying'].includes(record.phase) ||
+      !['creating', 'blocked', 'waiting', 'retrying'].includes(dispatchCreationStatus(record)) ||
       record.clientThreadId ||
       record.receiptThreadId ||
       record.threadId ||
@@ -376,7 +377,7 @@ export default async function recoverDispatch(
     delete record.blocker;
 
     delete record.retryAfter;
-    record.phase = 'routing';
+
     await save();
     return { status: 'retry-ready', changed: true, id: record.id };
   }

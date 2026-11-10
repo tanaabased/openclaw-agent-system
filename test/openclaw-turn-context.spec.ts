@@ -172,9 +172,8 @@ describe('agent/openclaw-turn-context', () => {
     const delivered = {
       ...structuredClone(record),
       progression: { stage: 'implementation', via: 'work' },
-      work: {
-        delivery: { reconciled: true, pullRequest: { pullRequestNumber: 7 } },
-      },
+      delivery: { reconciled: true, pullRequest: { pullRequestNumber: 7 } },
+      work: {},
     } as OpenClawDispatchRecord;
     const output = openclawTurnContext(delivered, { ...binding, runId: 'human-question' })!;
     assert.doesNotMatch(output.appendContext, /ORIGINAL-PLAN|OUTDATED-IMPLEMENTATION-PLAN/);

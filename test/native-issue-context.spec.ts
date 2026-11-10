@@ -2,49 +2,14 @@ import assert from 'node:assert/strict';
 import type { AssessmentEntryDependencies } from '../agent/assessment-entry.ts';
 import { codexItemOccupied } from '../agent/codex-capacity.ts';
 import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
-import {
-  hasDeliveredImplementation,
-  nativeIssueContext,
-  retainImplementationDelivery,
-} from '../agent/implementation-delivery.ts';
+import { nativeIssueContext } from '../agent/native-issue-context.ts';
 import managedImplementationRoute from '../agent/managed-implementation-route.ts';
 import { openClawItemOccupied } from '../agent/openclaw-capacity.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
-import workflowStatus, { type IssueWorkflowState } from '../agent/workflow-status.ts';
 
-describe('agent/implementation-delivery', () => {
-  for (const runtime of ['codex', 'openclaw'] as const) {
-    it(`should retain ${runtime} publication history without discarding later receipts`, () => {
-      const delivery = {
-        reconciled: true,
-        pushedHead: 'first',
-        pullRequest: { pullRequestNumber: 7 },
-      };
-      const record: IssueWorkflowState = {
-        phase: 'complete',
-        progression: { stage: 'implementation' },
-        ...(runtime === 'codex'
-          ? {
-              delivery,
-            }
-          : { work: { delivery } }),
-      };
-      assert.equal(hasDeliveredImplementation(record), true);
-      retainImplementationDelivery(record);
-      delivery.reconciled = false;
-      delivery.pushedHead = 'second';
-      assert.equal(hasDeliveredImplementation(record), true);
-      assert.equal(delivery.reconciled, false);
-      assert.equal(delivery.pushedHead, 'second');
-      record.reset = {};
-      assert.equal(workflowStatus(record), 'obsolete');
-    });
-  }
-
+describe('agent/native-issue-context', () => {
   it('should release historical execution reservations while retaining current native activity', () => {
     const codex = {
-      phase: 'complete',
-      implementationDelivered: true,
       nativeInactive: true,
       request: {},
       handoff: { at: 1, by: 'owner', turnId: 'old' },
@@ -62,8 +27,6 @@ describe('agent/implementation-delivery', () => {
     assert.equal(codexItemOccupied(codex), true);
 
     const openclaw = {
-      phase: 'complete',
-      implementationDelivered: true,
       nativeInactive: true,
       request: {},
       sessionCreation: { verified: true },
@@ -92,40 +55,13 @@ describe('agent/implementation-delivery', () => {
     assert.equal(openClawItemOccupied(record), true);
   });
 
-  it('should recognize verified pr publication without a saved implementation result', () => {
-    const record: IssueWorkflowState = {
-      phase: 'assessing',
-      delivery: {
-        reconciled: true,
-        pushedHead: 'published',
-        pullRequest: { pullRequestNumber: 7 },
-      },
-    };
-    assert.equal(hasDeliveredImplementation(record), true);
-    retainImplementationDelivery(record);
-    assert.equal(record.phase, 'assessing');
-    assert.equal(record.progression, undefined);
-    assert.equal(record.implementationDelivered, true);
-  });
-
-  it('should not treat an observed existing pr as a new publication', () => {
-    const record: IssueWorkflowState = {
-      phase: 'created',
-      delivery: { adopted: {}, reconciled: true, pullRequest: { pullRequestNumber: 7 } },
-    };
-    assert.equal(hasDeliveredImplementation(record), false);
-    record.delivery!.pushedHead = 'published';
-    assert.equal(hasDeliveredImplementation(record), true);
-  });
-
   it('should refresh native facts without routing a delivered task into an implementation owner', async () => {
     const nativeContext = nativeIssueContext({
       id: 'issue',
-      phase: 'complete',
+
       worktree: '/tmp',
-      work: {
-        delivery: { binding: { branch: 'retained-branch' } },
-      },
+      delivery: { binding: { branch: 'retained-branch' } },
+      work: {},
     });
     assert.equal(nativeContext.branch, 'retained-branch');
     assert.doesNotMatch(JSON.stringify(nativeContext), /OLD-WORK|OLD-PLAN/);

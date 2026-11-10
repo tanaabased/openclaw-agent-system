@@ -48,7 +48,6 @@ if (!size) {
       intakeId: index.toString(16).padStart(64, '0'),
       issueKey: index.toString(16).padStart(64, '0'),
       sourceThreadId: 'synthetic',
-      phase: 'routing',
       createdAt: 1,
       manifestDigest: 'manifest',
       context: 'x'.repeat(length),

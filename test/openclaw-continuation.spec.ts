@@ -6,16 +6,15 @@ import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts
 function delivered() {
   return {
     id: 'issue',
-    phase: 'complete',
+
     request: { key: 'chat', agentId: 'agent' },
     sessionCreation: { verified: true },
     progression: { stage: 'implementation', via: 'work' },
-    work: {
-      delivery: {
-        pullRequest: { pullRequestNumber: 7 },
-        reconciled: true,
-      },
+    delivery: {
+      pullRequest: { pullRequestNumber: 7 },
+      reconciled: true,
     },
+    work: {},
     nativeTurns: [{ role: 'assessment', turn: { status: 'completed' } }],
   } as OpenClawDispatchRecord;
 }
@@ -51,17 +50,17 @@ describe('agent/openclaw-continuation', () => {
 
   it('should not turn missing results or publication into a new request', () => {
     const record = delivered();
-    record.work!.delivery!.reconciled = false;
+    record.delivery!.reconciled = false;
     assert.equal(openClawWorkSlot(record), undefined);
     assert.equal(openClawWorkSlot(record), undefined);
   });
 
   it('should not let an announcement failure hold unfinished initial publication', () => {
     const record = delivered();
-    record.work!.delivery!.reconciled = false;
-    record.work!.delivery!.announcement = { code: 'delivery-announcement-denied' } as NonNullable<
-      NonNullable<typeof record.work>['delivery']
-    >['announcement'];
+    record.delivery!.reconciled = false;
+    record.announcement = { code: 'delivery-announcement-denied' } as NonNullable<
+      typeof record.announcement
+    >;
     assert.equal(openClawWorkSlot(record), undefined);
   });
 

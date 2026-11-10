@@ -1,3 +1,4 @@
+import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { awaitingReassignment } from './assignment-retirement.ts';
 interface Delivery {
   adopted?: unknown;
@@ -11,7 +12,8 @@ interface Delivery {
   pushedHead?: string;
 }
 export interface IssueWorkflowState {
-  phase: string;
+  request?: unknown;
+  effective?: unknown;
   threadId?: string;
   nativeInactive?: boolean;
   capacityObservation?: {
@@ -26,22 +28,21 @@ export interface IssueWorkflowState {
   handoff?: unknown;
   blocker?: string;
   implementationPreparationError?: string;
-  retry?: unknown;
+  retry?: { code: string; attempts: number };
   progression?: {
     stage: string;
   };
-  implementationDelivered?: true;
   delivery?: Delivery;
   feedback?: {
     events: Array<{
       id?: string;
-      phase: string;
-      retry?: unknown;
+      request?: unknown;
+      effective?: unknown;
+      retry?: { code: string; attempts: number };
     }>;
   };
   work?: {
     scope?: 'local' | 'pull-request';
-    delivery?: Delivery;
     code?: string;
     implementation?: unknown;
     caller?: {
@@ -61,7 +62,6 @@ export default function workflowStatus(record: IssueWorkflowState) {
     record.capacityObservation?.code === 'dispatch-capacity-native-active'
   )
     return 'active';
-  if (record.threadId || ['complete', 'assessing'].includes(record.phase))
-    return 'native-unobserved';
-  return record.phase;
+  if (record.threadId) return 'native-unobserved';
+  return dispatchCreationStatus(record);
 }

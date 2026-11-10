@@ -6,12 +6,10 @@ import {
   adoptedIssueDelivery,
 } from './delivery-state.ts';
 import { Type, type Static } from 'typebox';
-import { deliveryAnnouncementStateSchema } from './delivery-announcement-state.ts';
-import { announcementRecoverySchema } from './delivery-announcement-recovery.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
-export const codexDeliveryStateSchema = Type.Object(
+export const issueDeliveryStateSchema = Type.Object(
   {
     id: hash,
     binding: Type.Object(
@@ -19,12 +17,12 @@ export const codexDeliveryStateSchema = Type.Object(
         repositoryId: text,
         issueId: text,
         threadId: text,
+        sessionId: Type.Optional(text),
         worktree: text,
         branch: text,
         base: text,
         head: Type.String({ pattern: '^[a-f0-9]{40,64}$' }),
         authorId: text,
-        policyDigest: hash,
       },
       { additionalProperties: false },
     ),
@@ -39,10 +37,7 @@ export const codexDeliveryStateSchema = Type.Object(
     adopted: Type.Optional(adoptedPullRequestSchema),
     localBranch: Type.Optional(text),
     reconciled: Type.Boolean(),
-    attached: Type.Boolean(),
-    cardAttempts: Type.Integer({ minimum: 0 }),
-    announcement: Type.Optional(deliveryAnnouncementStateSchema),
-    announcementRecovery: Type.Optional(announcementRecoverySchema),
+    attached: Type.Optional(Type.Boolean()),
     notices: Type.Optional(
       Type.Array(
         Type.Union([
@@ -55,10 +50,10 @@ export const codexDeliveryStateSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type CodexDeliveryState = Static<typeof codexDeliveryStateSchema>;
+export type IssueDeliveryState = Static<typeof issueDeliveryStateSchema>;
 
 export function adoptedCodexDelivery(
   input: Parameters<typeof adoptedIssueDelivery>[0],
-): CodexDeliveryState {
-  return { ...adoptedIssueDelivery(input), attached: false, cardAttempts: 0 };
+): IssueDeliveryState {
+  return { ...adoptedIssueDelivery(input), attached: false };
 }

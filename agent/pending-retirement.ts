@@ -7,7 +7,6 @@ const keys = new Set([
   'manualIssue',
   'issueKey',
   'sourceThreadId',
-  'phase',
   'createdAt',
   'manifestDigest',
   'threadId',
@@ -32,16 +31,13 @@ const keys = new Set([
 export default function pendingRetirement(record: SharedDispatchRecord) {
   if (!record.retirement) throw new Error('retirement-intent-required');
   record.cleanupPending = true;
-  record.phase = 'blocked';
+
   for (const key of Object.keys(record))
     if (!keys.has(key)) delete record[key as keyof SharedDispatchRecord];
 }
 
 export function validPendingRetirement(record: SharedDispatchRecord) {
   return Boolean(
-    record.cleanupPending &&
-    record.retirement &&
-    record.phase === 'blocked' &&
-    Object.keys(record).every((key) => keys.has(key)),
+    record.cleanupPending && record.retirement && Object.keys(record).every((key) => keys.has(key)),
   );
 }

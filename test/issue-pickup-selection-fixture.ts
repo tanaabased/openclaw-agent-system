@@ -108,7 +108,6 @@ export default function selectionFixture(runtime: 'codex' | 'openclaw' = 'codex'
       projectWork?: ProjectWork;
       reset?: object;
       issueKey: string;
-      phase: string;
       request?: object;
       progression?: { stage: string };
     }>;

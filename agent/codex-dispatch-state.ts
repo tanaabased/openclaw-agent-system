@@ -1,7 +1,6 @@
 import { Type, type Static } from 'typebox';
 import { codexWorkStateSchema } from './codex-work-state.ts';
 
-import { codexDeliveryStateSchema } from './codex-delivery-state.ts';
 import { codexFeedbackSchema } from './codex-feedback-state.ts';
 import DispatchStore, {
   dispatchRecordProperties,
@@ -159,7 +158,6 @@ export const dispatchRecordSchema = Type.Object(
     creationAfterItemId: Type.Optional(text),
     clientThreadId: Type.Optional(text),
     receiptThreadId: Type.Optional(text),
-    delivery: Type.Optional(codexDeliveryStateSchema),
     feedback: Type.Optional(codexFeedbackSchema),
     renameRequested: Type.Optional(Type.Boolean()),
   },
@@ -176,7 +174,6 @@ export default class CodexDispatchStore extends DispatchStore<DispatchRecord> {
       validRecord: (record) =>
         (!record.issueBranch || record.issueBranch.attemptId === record.id) &&
         (!record.request || Boolean(record.project && record.reservationVersion === 1)) &&
-        (!record.nativeWork?.binding || record.progression?.stage === 'implementation') &&
         (!record.claimAccepted || Boolean(record.claimId && record.effective && record.threadId)),
     });
   }

@@ -10,7 +10,7 @@ function record(id: string): DispatchRecord {
     intakeId: id,
     issueKey: id,
     sourceThreadId: 'intake',
-    phase: 'routing',
+
     createdAt: 1,
     manifestDigest: 'manifest',
   };
@@ -162,10 +162,10 @@ describe('agent/codex-commit', () => {
     }
     const request = before.records[1]!.request;
     delete before.records[1]!.request;
-    before.records[0]!.phase = 'creating';
+
     const proposed = structuredClone(before);
     proposed.records[1]!.request = request;
-    proposed.records[1]!.phase = 'creating';
+
     assert.throws(() => codexCommit(1).validate(before, proposed), /dispatch-at-capacity/);
     assert.doesNotThrow(() => codexCommit(2).validate(before, proposed));
     assert.doesNotThrow(() => codexCommit(1).validate(proposed, structuredClone(proposed)));

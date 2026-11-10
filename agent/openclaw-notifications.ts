@@ -1,3 +1,4 @@
+import dispatchCreationStatus from './dispatch-creation-status.ts';
 import {
   evaluateGitHubNotificationWait,
   type GitHubNotificationItemSelector,
@@ -179,11 +180,12 @@ export default class OpenClawNotifications {
                 record?.blocker ??
                 `github-notification-${phase}`),
           stage: prepared ? 'prepared' : 'admitted',
-          ...(phase === 'awaiting-reassignment' || record?.phase === 'complete'
+          ...(phase === 'awaiting-reassignment'
             ? {}
             : {
                 scheduling:
-                  record && ['blocked', 'waiting', 'retrying'].includes(record.phase)
+                  record &&
+                  ['blocked', 'waiting', 'retrying'].includes(dispatchCreationStatus(record))
                     ? ('waiting' as const)
                     : record?.request
                       ? ('active' as const)

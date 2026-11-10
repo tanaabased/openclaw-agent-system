@@ -2,7 +2,7 @@ import { Type, type Static } from 'typebox';
 
 import { assessmentSelectionSchema } from './assessment-selection.ts';
 import { issueProgressionSchema } from './issue-progression.ts';
-import { openclawWorkStateSchema } from './openclaw-work-state.ts';
+import { issueDeliveryStateSchema } from './issue-delivery-state.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
@@ -21,7 +21,7 @@ export const implementationEntriesSchema = Type.Array(
       selection: Type.Optional(assessmentSelectionSchema),
       progression: Type.Optional(issueProgressionSchema),
       scope: Type.Union([Type.Literal('local'), Type.Literal('pull-request')]),
-      delivery: openclawWorkStateSchema.properties.delivery,
+      delivery: Type.Optional(issueDeliveryStateSchema),
       authorization: source,
       scopeSource: source,
       caller: source,

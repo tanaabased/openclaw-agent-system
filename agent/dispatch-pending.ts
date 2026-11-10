@@ -25,6 +25,15 @@ export default function pendingDispatchAssignments<R extends SharedDispatchRecor
   const latest = new Map<string, IntakeRecord>();
   for (const item of intake.records) if (item.assignment) latest.set(issueKey(item), item);
   return [...latest].flatMap(([key, item]) => {
+    if (
+      intake.observedAssignments?.some(
+        (entry) =>
+          entry.consumedThrough !== undefined &&
+          issueKey(entry) === key &&
+          Date.parse(item.assignment.createdAt) <= entry.consumedThrough,
+      )
+    )
+      return [];
     const consumed = intake.observedAssignments?.find((entry) => entry.id === item.id)?.consumedBy;
     if (consumed) {
       const owner = state.records.find(

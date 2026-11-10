@@ -14,7 +14,6 @@ import issueProgression, { retainedIssueProgression } from './issue-progression.
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import { dispatchAdmission } from './managed-issue.ts';
-import { notificationAuthorityDigest } from './notification-authority.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
 export async function prepareCodexWork(state: DispatchState, context: CodexWorkContext) {
   const { input, deps, current, caller, native, admissions, save } = context;
@@ -56,7 +55,6 @@ export async function prepareCodexWork(state: DispatchState, context: CodexWorkC
         (context.preparedSelections ??= new Set()).add(record.id);
         record.nativeWork = {
           selection: selected.selection,
-          policyDigest: notificationAuthorityDigest(current.manifest.github?.notifications),
         };
         delete record.implementationPreparationError;
         delete record.retry;
@@ -157,7 +155,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       return codexWorkContext(
         record,
         context,
-        { client, repo, admitted, selection: work.contextSelection ?? work.selection },
+        { client, repo, admitted, selection: work.selection },
         true,
       );
     }
@@ -168,7 +166,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       await save();
       return { status: 'cancelled' as const, id: record.id };
     }
-    let selection = work.contextSelection ?? work.selection;
+    let selection = work.selection;
     if (input.action === 'context' && !context.preparedSelections?.has(record.id)) {
       const currentSelection = await selectWorkflowStage({
         stage: 'implementation',

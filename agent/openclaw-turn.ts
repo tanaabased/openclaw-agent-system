@@ -210,6 +210,7 @@ export async function reconcileOpenClawTurn(input: {
       turn.status = 'completed';
       turn.replyEventId = String(sessionObject(reply.__openclaw).id);
       if (executionModel) turn.executionModel = executionModel;
+      delete (turn as { message?: string }).message;
     } else if (info.hasActiveRun !== true && receipt?.queued !== true) {
       throw new Error('dispatch-turn-outcome-unverified');
     }

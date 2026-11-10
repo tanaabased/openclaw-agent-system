@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import codexCapacity from '../agent/codex-capacity.ts';
 import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
 
-const record = () => ({ id: 'issue', request: {}, phase: 'complete' }) as DispatchRecord;
+const record = () => ({ id: 'issue', request: {} }) as DispatchRecord;
 
 describe('agent/codex-capacity', () => {
   it('should reserve unknown native custody and release only observed inactivity', () => {

@@ -31,7 +31,7 @@ describe('agent/codex-dispatch-report', () => {
     const record = {
       id: 'held',
       request: {},
-      phase: 'complete',
+
       threadId: 'original',
       effective: { status: 'verified' },
       dispatchedAt: 1,
@@ -54,7 +54,6 @@ describe('agent/codex-dispatch-report', () => {
   it('should identify a manual launch blocker without an assignment record', () => {
     const record = {
       id: 'manual',
-      phase: 'waiting',
       blocker: 'dispatch-denial-history-unavailable',
       manualIssue: {
         id: 'manual',
@@ -75,7 +74,7 @@ describe('agent/codex-dispatch-report', () => {
     const record = {
       id: 'retiring',
       intakeId: 'assignment',
-      phase: 'complete',
+
       retirement: {
         reason: 'issue-closed',
         at: 1,
@@ -127,7 +126,7 @@ describe('agent/codex-dispatch-report', () => {
     const record = {
       id: 'retiring',
       intakeId: 'assignment',
-      phase: 'complete',
+
       retirement: {
         reason: 'issue-closed',
         at: 1,
@@ -288,7 +287,7 @@ describe('agent/codex-dispatch-report', () => {
     const record = {
       id: 'owner',
       intakeId: 'assignment',
-      phase: 'complete',
+
       request: {},
       effective: {},
       threadId: 'chat',
@@ -297,7 +296,6 @@ describe('agent/codex-dispatch-report', () => {
         events: [
           {
             id: 'sent',
-            phase: 'running',
             attempt: { turnId: 'native-turn' },
           },
           { id: 'unsent', phase: 'queued' },
@@ -325,7 +323,7 @@ describe('agent/codex-dispatch-report', () => {
   it('should keep inactive historical assignments out of feedback intake warnings', () => {
     const record = {
       id: 'historical',
-      phase: 'complete',
+
       feedback: {
         baseline: {},
         events: [],
@@ -344,7 +342,7 @@ describe('agent/codex-dispatch-report', () => {
     const started = {
       id: 'good',
       intakeId: 'good',
-      phase: 'assessing',
+
       effective: { status: 'verified' },
       threadId: 'good-chat',
       dispatchedAt: 1,
@@ -352,7 +350,6 @@ describe('agent/codex-dispatch-report', () => {
     const failed = {
       id: 'bad',
       intakeId: 'bad',
-      phase: 'waiting',
       blocker: 'dispatch-operation-failed',
     } as DispatchRecord;
     const report = prepareDispatchReport({
@@ -394,7 +391,6 @@ describe('agent/codex-dispatch-report', () => {
     }
     const denied = {
       id: 'denied',
-      phase: 'blocked',
       blocker: 'native-approval-denied',
     } as DispatchRecord;
     for (const debug of [undefined, false, true]) {

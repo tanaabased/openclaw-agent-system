@@ -1,3 +1,4 @@
+import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { randomUUID } from 'node:crypto';
 import { workflowFeedbackAccepting } from '../channels/github/feedback-policy.ts';
 import {
@@ -14,11 +15,10 @@ import DiscoveryBudget from './discovery-budget.ts';
 import discoveryCheckpoint from './discovery-checkpoint.ts';
 import dispatchContext from './dispatch-context.ts';
 import pendingAssignments, { issueKey } from './dispatch-pending.ts';
-import { dispatchFailurePhase, dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
+import { dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
 import { dispatchStoragePressure } from './dispatch-storage.ts';
 import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
 import { observeFeedbackPolicy } from './feedback-source.ts';
-import { hasDeliveredImplementation } from './implementation-delivery.ts';
 import intakePassStarted from './intake-pass-started.ts';
 import issuePickupCapacity from './issue-pickup-capacity.ts';
 import liveWorkflowPolicy from './live-workflow-policy.ts';
@@ -258,7 +258,6 @@ export default class OpenClawDispatchCoordinator {
     );
     const recoverable = state.records.some(
       (record) =>
-        !hasDeliveredImplementation(record) &&
         !record.retirement &&
         !record.reset &&
         (continuationStatus(record) ||
@@ -280,10 +279,8 @@ export default class OpenClawDispatchCoordinator {
       );
     const announcementPending = state.records.some(
       (record) =>
-        announcementRecoveryAction(
-          record.work?.delivery,
-          (this.context.dependencies.now ?? Date.now)(),
-        ) === 'check',
+        announcementRecoveryAction(record, (this.context.dependencies.now ?? Date.now)()) ===
+        'check',
     );
     const workPending = state.records.some(
       (record) => !record.reset && !record.supersededBy && openClawWorkSlot(record),
@@ -394,7 +391,6 @@ export default class OpenClawDispatchCoordinator {
     if (policyObserved) await save();
     for (const record of state.records) {
       if (
-        hasDeliveredImplementation(record) ||
         record.retirement ||
         record.reset ||
         record.handoff ||
@@ -403,13 +399,6 @@ export default class OpenClawDispatchCoordinator {
       )
         continue;
       delete record.blocker;
-      record.phase = nativeTurnFor(record, 'assessment')
-        ? 'assessing'
-        : record.sessionCreation?.verified
-          ? 'created'
-          : record.request
-            ? 'creating'
-            : 'routing';
     }
     const signal = authority.signal
       ? AbortSignal.any([authority.signal, transactionSignal])
@@ -431,13 +420,13 @@ export default class OpenClawDispatchCoordinator {
         if (openClawDispatchFailureCode(error) !== 'dispatch-assignment-superseded') {
           record.blocker = openClawDispatchFailureCode(error);
           scheduleDispatchRetry(record, record.blocker, error, now);
-          record.phase = dispatchFailurePhase(record, record.blocker, error);
+
           await save();
           continue;
         }
         // supersession permits observation of the old intent, never another creation.
         record.blocker = 'dispatch-assignment-superseded';
-        record.phase = 'blocked';
+
         try {
           const sessionId = await this.context.dependencies.credential.use(
             { ...authority, signal },
@@ -471,9 +460,7 @@ export default class OpenClawDispatchCoordinator {
       );
     for (const owner of state.records) {
       const receipts = new Set([
-        ...(owner.work?.delivery?.announcement?.receipt
-          ? [owner.work.delivery.announcement.receipt.nodeId]
-          : []),
+        ...(owner.announcement?.receipt ? [owner.announcement.receipt.nodeId] : []),
       ]);
       for (const event of owner.feedback?.events ?? [])
         if (event.phase === 'queued' && !event.policyHeld && receipts.has(event.sourceId)) {
@@ -503,8 +490,9 @@ export default class OpenClawDispatchCoordinator {
       )
       .sort((a, b) => a.at - b.at || a.event.id.localeCompare(b.event.id));
     // conversation delivery is independent of assignment admission and work recovery.
+    let feedbackResult: Awaited<ReturnType<typeof this.issue.feedback>> | undefined;
     for (const { record, event } of queued.slice(0, 12)) {
-      await this.issue.feedback(
+      feedbackResult = await this.issue.feedback(
         manifest,
         current.workspace,
         record,
@@ -516,10 +504,7 @@ export default class OpenClawDispatchCoordinator {
       );
     }
     for (const record of state.records
-      .filter(
-        (entry) =>
-          !entry.retirement && announcementRecoveryAction(entry.work?.delivery, now) === 'check',
-      )
+      .filter((entry) => !entry.retirement && announcementRecoveryAction(entry, now) === 'check')
       .slice(0, 12))
       await recoverOpenClawAnnouncement(this.context, manifest, current.workspace, record, save, {
         ...authority,
@@ -615,6 +600,7 @@ export default class OpenClawDispatchCoordinator {
         continuationStatus(record),
     );
     if (continuing) {
+      if (feedbackResult) return feedbackResult;
       pass.selected.push(continuing.id);
       await save();
       return { status: continuationStatus(continuing)!, id: continuing.id };
@@ -662,7 +648,7 @@ export default class OpenClawDispatchCoordinator {
         : {}),
       issueKey: issueKey(pending.intake),
       sourceThreadId,
-      phase: 'routing',
+
       createdAt: now,
       manifestDigest: current.manifestDigest,
       feedback: {
@@ -679,7 +665,7 @@ export default class OpenClawDispatchCoordinator {
     pass.selected.push(record.id);
     record.intakeId = pending.intake.id;
     record.manifestDigest = current.manifestDigest;
-    record.phase = 'routing';
+
     delete record.blocker;
     delete record.failureStage;
     try {
@@ -746,10 +732,10 @@ export default class OpenClawDispatchCoordinator {
       if (openClawDispatchFailureCode(error) === stateSnapshotConflictCode) throw error;
       record.blocker = openClawDispatchFailureCode(error);
       scheduleDispatchRetry(record, record.blocker, error, now);
-      record.phase = dispatchFailurePhase(record, record.blocker, error);
+
       await save();
       return {
-        status: record.phase,
+        status: dispatchCreationStatus(record),
         id: record.id,
         ...workflowFailure(error, record.blocker),
         workflowStatus: workflowStatus(record),
@@ -772,7 +758,7 @@ function continuationStatus(record: OpenClawDispatchRecord) {
     return;
   // only the accepted receipt gap is automatically recoverable, and never by another send.
   if (
-    ['blocked', 'waiting'].includes(record.phase) &&
+    ['blocked', 'waiting'].includes(dispatchCreationStatus(record)) &&
     record.failureStage === 'first-turn' &&
     record.blocker === 'dispatch-turn-delivery-unverified' &&
     record.sessionCreation.verified &&
@@ -781,7 +767,7 @@ function continuationStatus(record: OpenClawDispatchRecord) {
   )
     return 'reconcile-required';
   if (
-    ['blocked', 'waiting'].includes(record.phase) &&
+    ['blocked', 'waiting'].includes(dispatchCreationStatus(record)) &&
     record.failureStage === 'assessment-turn' &&
     record.blocker === 'dispatch-turn-delivery-unverified' &&
     nativeTurnFor(record, 'assessment') &&
@@ -793,8 +779,8 @@ function continuationStatus(record: OpenClawDispatchRecord) {
     return record.nativeTurns?.some(({ turn }) => turn.status !== 'completed' && !turn.inactive)
       ? 'reconcile-required'
       : undefined;
-  if (record.phase === 'creating') return 'reconcile-required';
-  if (record.phase === 'created')
+  if (dispatchCreationStatus(record) === 'creating') return 'reconcile-required';
+  if (dispatchCreationStatus(record) === 'created')
     return nativeTurnFor(record, 'first') && nativeTurnFor(record, 'first')!.status !== 'completed'
       ? 'reconcile-required'
       : 'assessment-required';

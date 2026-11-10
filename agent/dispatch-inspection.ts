@@ -1,3 +1,4 @@
+import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { Type, type Static } from 'typebox';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { FeedbackSourceState } from './feedback-state.ts';
@@ -17,20 +18,12 @@ type Inspection = {
     (typeof dispatchInspectionProperties)[K]
   >;
 };
-type Inspectable = SharedDispatchRecord & {
+type Inspectable = Omit<SharedDispatchRecord, 'delivery'> & {
   feedback?: FeedbackSourceState;
   delivery?: {
     pullRequest?: {
       pullRequestNodeId: string;
       pullRequestNumber: number;
-    };
-  };
-  work?: {
-    delivery?: {
-      pullRequest?: {
-        pullRequestNodeId: string;
-        pullRequestNumber: number;
-      };
     };
   };
 };
@@ -80,7 +73,7 @@ export function dispatchInspectionSummary(record: Inspectable) {
   return {
     id: record.id,
     intakeId: record.intakeId,
-    phase: record.phase,
+    phase: dispatchCreationStatus(record),
     workflowStatus: workflowStatus(record),
     threadId: record.threadId,
     lifecycleCheckedAt: record.lifecycleCheckedAt,

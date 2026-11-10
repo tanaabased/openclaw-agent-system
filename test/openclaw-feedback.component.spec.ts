@@ -62,7 +62,7 @@ describe('agent/openclaw-feedback', () => {
       intakeId: 'b'.repeat(64),
       issueKey: 'c'.repeat(64),
       sourceThreadId: 'intake',
-      phase: 'complete',
+
       createdAt: 0,
       manifestDigest: 'old-assessment-policy',
       threadId: 'issue-chat',

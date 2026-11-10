@@ -131,7 +131,13 @@ export default async function reconcileOpenClawLifecycle(input: {
       fresh,
       save,
       prepare: async (record, intake) => {
-        await retirementConsumption(current.store, intake, record.id, now);
+        await retirementConsumption(
+          current.store,
+          intake,
+          record.id,
+          now,
+          record.retirement?.operatorRequest?.at ?? record.retirement?.at ?? now,
+        );
         current.journal.retainRetirementEffects(state, retirementEffects(record, intake));
         pendingRetirement(record);
         await save();
@@ -177,7 +183,7 @@ export default async function reconcileOpenClawLifecycle(input: {
             if (!provider) throw new Error('feedback-provider-unavailable');
             return provider;
           },
-          announcement: record.work?.delivery?.announcement,
+          announcement: record.announcement,
           ownReplies: async () => {
             const provider = await service.dependencies.feedbackConnect?.(
               { manifest, workspaceDir: workspace },

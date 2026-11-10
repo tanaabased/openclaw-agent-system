@@ -14,11 +14,7 @@ export interface FeedbackDiscoveryOwner {
   delivery?: {
     pullRequest?: unknown;
   };
-  work?: {
-    delivery?: {
-      pullRequest?: unknown;
-    };
-  };
+
   feedback?: unknown;
 }
 /** only routing, lifecycle and concurrent feedback changes invalidate a discovery snapshot. */
@@ -35,7 +31,7 @@ export default function feedbackDiscoveryOwner(record: FeedbackDiscoveryOwner) {
     pullRequest:
       record.pullRequestLink !== undefined
         ? record.pullRequestLink
-        : (record.delivery?.pullRequest ?? record.work?.delivery?.pullRequest),
+        : (record.delivery?.pullRequest ?? record.delivery?.pullRequest),
     feedback: record.feedback,
   });
 }

@@ -60,7 +60,6 @@ export default async function codexWorkContext(
     effective: record.effective,
     continuationRequest: { action: 'context' as const, id: record.id },
     deliveryPrepareRequest: { action: 'prepare' as const, id: record.id },
-    binding: work.binding,
     instructions: nativeTaskInstructions('codex'),
   };
 }

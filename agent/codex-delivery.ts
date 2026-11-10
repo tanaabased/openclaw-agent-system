@@ -1,3 +1,4 @@
+import { retainedAnnouncementPublication } from './delivery-announcement-recovery.ts';
 import { realpath } from 'node:fs/promises';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
@@ -22,7 +23,7 @@ import { nativeObject } from './automation-gateway.ts';
 import { automationHash } from './automation-hash.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import codexCommit from './codex-commit.ts';
-import { adoptedCodexDelivery, type CodexDeliveryState } from './codex-delivery-state.ts';
+import { adoptedCodexDelivery, type IssueDeliveryState } from './issue-delivery-state.ts';
 import { revalidateDispatchAssignment } from './codex-dispatch-context.ts';
 import dispatchHistory from './codex-dispatch-history.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
@@ -43,13 +44,11 @@ import deliveryAnnouncement, {
 } from './delivery-announcement.ts';
 import deliveryBindingChange from './delivery-binding-change.ts';
 import selectFeedbackStage from './feedback-stage.ts';
-import { retainImplementationDelivery } from './implementation-delivery.ts';
 import bindIssuePullRequest from './issue-pr-binding.ts';
 import issueProgression from './issue-progression.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import { dispatchAdmission, managedPullRequest, managedTargetUrl } from './managed-issue.ts';
-import { notificationAuthorityDigest } from './notification-authority.ts';
 import publishIssueDelivery from './publish-issue-delivery.ts';
 import taskPullRequest, {
   isCurrentTaskPullRequest,
@@ -108,7 +107,7 @@ export class CodexDeliveryFailure extends Error {
     error: unknown,
     readonly code: string,
     readonly notices: Array<ReturnType<typeof codexIssueNotice>>,
-    readonly pullRequest?: CodexDeliveryState['pullRequest'],
+    readonly pullRequest?: IssueDeliveryState['pullRequest'],
   ) {
     super(error instanceof Error ? error.message : code, { cause: error });
   }
@@ -220,9 +219,7 @@ export default async function runCodexDelivery(
         (!['present', 'reconcile'].includes(input.action) && (record.reset || record.retirement))
       )
         throw new Error('delivery-managed-issue-required');
-      retainImplementationDelivery(record);
       const save = async () => {
-        retainImplementationDelivery(record);
         await checkpoint();
       };
       const found = await native.find({
@@ -398,7 +395,6 @@ export default async function runCodexDelivery(
           localBranch,
           adopted,
           head,
-          policyDigest: notificationAuthorityDigest(current.manifest.github?.notifications),
         });
         await save();
         return { ...bindingResult };
@@ -509,8 +505,10 @@ export default async function runCodexDelivery(
           }
         }
         const presentationNotices = notices(previous.attached);
-        const updatedSinceAnnouncement = announcementPrecedesDelivery(previous);
-        previous.cardAttempts++;
+        const updatedSinceAnnouncement = announcementPrecedesDelivery({
+          ...previous,
+          announcement: record.announcement,
+        });
         await save();
         return {
           status: previous.reconciled ? 'linked' : 'publication-incomplete',
@@ -532,10 +530,10 @@ export default async function runCodexDelivery(
               commentFlow,
             }),
             announcementPresentation(
-              previous.announcement,
+              record.announcement,
               managedTargetUrl(intake),
               undefined,
-              previous.announcementRecovery,
+              record.announcementRecovery,
               updatedSinceAnnouncement,
             ),
             ...presentationNotices.map((notice) => notice.message),
@@ -597,208 +595,14 @@ export default async function runCodexDelivery(
         true,
         record,
       );
-      const policyDigest =
-        previous?.binding.policyDigest ??
-        notificationAuthorityDigest(current.manifest.github?.notifications);
-      if (announcementOnly && (!previous?.pullRequest || !previous.reconciled))
-        throw new Error('delivery-reconciliation-required');
-      const adopted = previous?.adopted ?? record.adoptedPullRequest;
-      let localBranch = previous?.localBranch;
-      let branch = previous?.binding.branch ?? '';
-      let head = previous?.binding.head ?? '';
-      if (!announcementOnly) {
-        await verifyDispatchWorktree(record.project, found.cwd, repository, git, 'handoff');
-        branch = (await git(found.cwd, ['branch', '--show-current'], signal)).trim();
-        if (!branch || branch === (adoptedPullRequest?.baseRef ?? checked.repo.defaultBranch))
-          throw new Error('delivery-branch-required');
-        await codexIssueBranch({
-          record,
-          records: state.records,
-          intake,
-          workspace: current.workspace,
-          agentId: current.manifest.agent.id,
-          git,
-          signal,
-          save,
-        });
-        await git(found.cwd, ['check-ref-format', `refs/heads/${branch}`], signal);
-        if (previous?.localBranch && branch !== previous.localBranch)
-          throw new Error('codex-branch-owner-mismatch');
-        localBranch = adopted ? branch : undefined;
-        branch = adopted?.branch ?? branch;
-        if (await git(found.cwd, ['status', '--porcelain=v1'], signal))
-          throw new Error('delivery-uncommitted-work');
-        if (adoptedPullRequest) branch = adoptedPullRequest.headRef;
-        head = (await git(found.cwd, ['rev-parse', '--verify', 'HEAD'], signal)).trim();
-        if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('delivery-head-invalid');
-        const count = Number(
-          await git(
-            found.cwd,
-            [
-              'rev-list',
-              '--count',
-              `refs/remotes/origin/${adoptedPullRequest?.baseRef ?? adopted?.base ?? checked.repo.defaultBranch}..HEAD`,
-            ],
-            signal,
-          ),
-        );
-        if (!Number.isSafeInteger(count) || count < 1)
-          throw new Error('delivery-committed-work-required');
-      }
-      if (!announcementOnly && !adoptedPullRequest && !adopted)
-        await new GitHubIdentityCache(current.store.location).resolve(
-          current.manifest.github?.notifications,
-          connected.client,
-          'delivery',
-        );
-      const recipients =
-        input.eventId && previous?.pullRequest
-          ? []
-          : current.manifest.github?.notifications !== undefined
-            ? issuePullRequestRecipients(
-                current.manifest.github.notifications,
-                Boolean(record.manualIssue),
-              )
-            : undefined;
-      if (!announcementOnly && !adoptedPullRequest && !adopted)
-        resolvePullRequestRecipients(
-          recipients ?? (intake.assignment ? undefined : []),
-          intake.assignment?.actor,
-        );
-      const binding = {
-        repositoryId: intake.repository.nodeId,
-        issueId: intake.issue.nodeId,
-        threadId: record.threadId,
-        worktree: record.worktree,
-        branch,
-        base: adoptedPullRequest?.baseRef ?? adopted?.base ?? checked.repo.defaultBranch,
-        head,
-        authorId: adopted?.authorId ?? connected.account.identity.nodeId,
-        policyDigest,
-      };
-      if (
-        deps.schedule &&
-        !previous?.creationAttempted &&
-        ['prepare', 'publish'].includes(input.action) &&
-        !(input.body ?? previous?.body)?.trim()
-      )
-        throw new Error('delivery-body-required');
-      const bindingChange =
-        previous &&
-        deliveryBindingChange(previous.binding, binding, [
-          'repositoryId',
-          'issueId',
-          'threadId',
-          'worktree',
-          'branch',
-          'base',
-          'authorId',
-        ]);
-      if (bindingChange) throw new Error(bindingChange);
-      const existingContent =
-        adoptedPullRequest &&
-        ((input.title ?? previous?.title) === undefined ||
-          (input.body ?? previous?.body) === undefined)
-          ? await new IssueDeliveryProvider(connected.account, deps.delay).content({
-              repository,
-              number: intake.issue.number,
-              nodeId: intake.issue.nodeId,
-              signal,
-            })
-          : undefined;
-      const delivery: CodexDeliveryState = {
-        id: previous?.id ?? automationHash({ admission: intake.id, threadId: record.threadId }),
-        binding,
-        title: input.title ?? previous?.title ?? existingContent?.title,
-        body: input.body ?? previous?.body ?? existingContent?.body,
-        creationAttempted: previous?.creationAttempted ?? false,
-        ...(adopted
-          ? {
-              adopted,
-              localBranch,
-              pullRequest: {
-                pullRequestNodeId: adopted.pullRequestNodeId,
-                pullRequestNumber: adopted.pullRequestNumber,
-              },
-            }
-          : {}),
-        ...(previous?.pushedHead ? { pushedHead: previous.pushedHead } : {}),
-        ...(previous?.pendingPush ? { pendingPush: previous.pendingPush } : {}),
-        ...(previous?.pullRequest
-          ? { pullRequest: previous.pullRequest }
-          : adoptedPullRequest
-            ? {
-                pullRequest: {
-                  pullRequestNodeId: intake.issue.nodeId,
-                  pullRequestNumber: intake.issue.number,
-                },
-              }
-            : {}),
-        reconciled: false,
-        attached: previous?.attached ?? false,
-        cardAttempts: previous?.cardAttempts ?? 0,
-        ...(previous?.announcement ? { announcement: previous.announcement } : {}),
-        ...(previous?.announcementRecovery
-          ? { announcementRecovery: previous.announcementRecovery }
-          : {}),
-        notices: previous?.notices ?? [],
-      };
-      if (
-        ['prepare', 'publish'].includes(input.action) &&
-        previous?.creationAttempted &&
-        !previous.pullRequest &&
-        (delivery.title !== previous.title || delivery.body !== previous.body)
-      )
-        throw new Error('delivery-content-changed');
-      const contentUpdate = {
-        ...previous?.contentUpdate,
-        ...(previous?.pullRequest && delivery.title !== previous.title
-          ? { title: delivery.title }
-          : {}),
-        ...(previous?.pullRequest && delivery.body !== previous.body
-          ? { body: delivery.body }
-          : {}),
-      };
-      if (Object.keys(contentUpdate).length) {
-        delivery.contentUpdate = contentUpdate;
-        delivery.contentUpdateAttempted = previous?.contentUpdate
-          ? previous.contentUpdateAttempted
-          : false;
-      }
-      if (adopted && head === adopted.head && !previous?.pushedHead && !delivery.contentUpdate)
-        return {
-          status: 'bound',
-          id: input.id,
-          pullRequest: delivery.pullRequest,
-          instruction:
-            'The existing PR is selected, but there is no new work to publish. Adoption alone sends no announcement and does not establish implementation completion.',
-        };
       if (
         input.action === 'compose' ||
         input.action === 'candidate' ||
         input.action === 'announce'
       ) {
-        if (!previous?.pullRequest || !previous.reconciled)
-          throw new Error('delivery-reconciliation-required');
         const policy = current.manifest.github?.notifications;
         if (!policy) throw new Error('delivery-policy-required');
-        const publication: IssueDeliveryInput = {
-          item: {
-            number: intake.issue.number,
-            itemDatabaseId: intake.issue.databaseId,
-            itemNodeId: intake.issue.nodeId,
-            repositoryOwner: intake.repository.owner.login,
-            repositoryName: intake.repository.name,
-            repositoryDefaultBranch: adoptedPullRequest?.baseRef ?? checked.repo.defaultBranch,
-          },
-          branch,
-          headSha: head,
-          repositoryNodeId: intake.repository.nodeId,
-          expectedPullRequest: previous.pullRequest,
-          adoptedPullRequest,
-          adopted,
-          signal,
-        };
+        const publication = retainedAnnouncementPublication(intake, record, signal);
         const announce = await deliveryAnnouncement({
           runtime: 'codex',
           request: { action: 'compose' },
@@ -806,7 +610,7 @@ export default async function runCodexDelivery(
           now: (deps.now ?? Date.now)(),
           operation: input.action,
           publicText: input.publicText,
-          delivery: previous,
+          delivery: record,
           publication,
           provider: new IssueDeliveryProvider(connected.account, deps.delay),
           client: new GitHubIssueCommentClient(
@@ -840,8 +644,172 @@ export default async function runCodexDelivery(
           },
           save,
         });
-        return { ...announce, id: input.id, url: url(previous.pullRequest.pullRequestNumber) };
+        return {
+          ...announce,
+          id: input.id,
+          url: url(publication.expectedPullRequest.pullRequestNumber),
+        };
       }
+      const adopted = previous?.adopted ?? record.adoptedPullRequest;
+      await verifyDispatchWorktree(record.project, found.cwd, repository, git, 'handoff');
+      let branch = (await git(found.cwd, ['branch', '--show-current'], signal)).trim();
+      if (!branch || branch === (adoptedPullRequest?.baseRef ?? checked.repo.defaultBranch))
+        throw new Error('delivery-branch-required');
+      await codexIssueBranch({
+        record,
+        records: state.records,
+        intake,
+        workspace: current.workspace,
+        agentId: current.manifest.agent.id,
+        git,
+        signal,
+        save,
+      });
+      await git(found.cwd, ['check-ref-format', `refs/heads/${branch}`], signal);
+      if (previous?.localBranch && branch !== previous.localBranch)
+        throw new Error('codex-branch-owner-mismatch');
+      const localBranch = adopted ? branch : undefined;
+      branch = adopted?.branch ?? branch;
+      if (await git(found.cwd, ['status', '--porcelain=v1'], signal))
+        throw new Error('delivery-uncommitted-work');
+      if (adoptedPullRequest) branch = adoptedPullRequest.headRef;
+      const head = (await git(found.cwd, ['rev-parse', '--verify', 'HEAD'], signal)).trim();
+      if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('delivery-head-invalid');
+      const count = Number(
+        await git(
+          found.cwd,
+          [
+            'rev-list',
+            '--count',
+            `refs/remotes/origin/${adoptedPullRequest?.baseRef ?? adopted?.base ?? checked.repo.defaultBranch}..HEAD`,
+          ],
+          signal,
+        ),
+      );
+      if (!Number.isSafeInteger(count) || count < 1)
+        throw new Error('delivery-committed-work-required');
+      if (!adoptedPullRequest && !adopted)
+        await new GitHubIdentityCache(current.store.location).resolve(
+          current.manifest.github?.notifications,
+          connected.client,
+          'delivery',
+        );
+      const recipients =
+        input.eventId && previous?.pullRequest
+          ? []
+          : current.manifest.github?.notifications !== undefined
+            ? issuePullRequestRecipients(
+                current.manifest.github.notifications,
+                Boolean(record.manualIssue),
+              )
+            : undefined;
+      if (!adoptedPullRequest && !adopted)
+        resolvePullRequestRecipients(
+          recipients ?? (intake.assignment ? undefined : []),
+          intake.assignment?.actor,
+        );
+      const binding = {
+        repositoryId: intake.repository.nodeId,
+        issueId: intake.issue.nodeId,
+        threadId: record.threadId,
+        worktree: record.worktree,
+        branch,
+        base: adoptedPullRequest?.baseRef ?? adopted?.base ?? checked.repo.defaultBranch,
+        head,
+        authorId: adopted?.authorId ?? connected.account.identity.nodeId,
+      };
+      if (
+        deps.schedule &&
+        !previous?.creationAttempted &&
+        ['prepare', 'publish'].includes(input.action) &&
+        !(input.body ?? previous?.body)?.trim()
+      )
+        throw new Error('delivery-body-required');
+      const bindingChange =
+        previous &&
+        deliveryBindingChange(previous.binding, binding, [
+          'repositoryId',
+          'issueId',
+          'threadId',
+          'worktree',
+          'branch',
+          'base',
+          'authorId',
+        ]);
+      if (bindingChange) throw new Error(bindingChange);
+      const existingContent =
+        adoptedPullRequest &&
+        ((input.title ?? previous?.title) === undefined ||
+          (input.body ?? previous?.body) === undefined)
+          ? await new IssueDeliveryProvider(connected.account, deps.delay).content({
+              repository,
+              number: intake.issue.number,
+              nodeId: intake.issue.nodeId,
+              signal,
+            })
+          : undefined;
+      const delivery: IssueDeliveryState = {
+        id: previous?.id ?? automationHash({ admission: intake.id, threadId: record.threadId }),
+        binding,
+        title: input.title ?? previous?.title ?? existingContent?.title,
+        body: input.body ?? previous?.body ?? existingContent?.body,
+        creationAttempted: previous?.creationAttempted ?? false,
+        ...(adopted
+          ? {
+              adopted,
+              localBranch,
+              pullRequest: {
+                pullRequestNodeId: adopted.pullRequestNodeId,
+                pullRequestNumber: adopted.pullRequestNumber,
+              },
+            }
+          : {}),
+        ...(previous?.pushedHead ? { pushedHead: previous.pushedHead } : {}),
+        ...(previous?.pendingPush ? { pendingPush: previous.pendingPush } : {}),
+        ...(previous?.pullRequest
+          ? { pullRequest: previous.pullRequest }
+          : adoptedPullRequest
+            ? {
+                pullRequest: {
+                  pullRequestNodeId: intake.issue.nodeId,
+                  pullRequestNumber: intake.issue.number,
+                },
+              }
+            : {}),
+        reconciled: false,
+        attached: previous?.attached ?? false,
+        notices: previous?.notices ?? [],
+      };
+      if (
+        ['prepare', 'publish'].includes(input.action) &&
+        previous?.creationAttempted &&
+        !previous.pullRequest &&
+        (delivery.title !== previous.title || delivery.body !== previous.body)
+      )
+        throw new Error('delivery-content-changed');
+      const contentUpdate = {
+        ...previous?.contentUpdate,
+        ...(previous?.pullRequest && delivery.title !== previous.title
+          ? { title: delivery.title }
+          : {}),
+        ...(previous?.pullRequest && delivery.body !== previous.body
+          ? { body: delivery.body }
+          : {}),
+      };
+      if (Object.keys(contentUpdate).length) {
+        delivery.contentUpdate = contentUpdate;
+        delivery.contentUpdateAttempted = previous?.contentUpdate
+          ? previous.contentUpdateAttempted
+          : false;
+      }
+      if (adopted && head === adopted.head && !previous?.pushedHead && !delivery.contentUpdate)
+        return {
+          status: 'bound',
+          id: input.id,
+          pullRequest: delivery.pullRequest,
+          instruction:
+            'The existing PR is selected, but there is no new work to publish. Adoption alone sends no announcement and does not establish implementation completion.',
+        };
       if (input.action === 'prepare')
         return {
           status: 'prepared',
@@ -937,7 +905,7 @@ export default async function runCodexDelivery(
             url: url(delivery.pullRequest!.pullRequestNumber),
             instruction: deliveryCompletionInstructions(
               'codex',
-              delivery,
+              { ...record, attached: delivery.attached },
               Boolean(previous?.reconciled && previous.pullRequest),
             ),
           };

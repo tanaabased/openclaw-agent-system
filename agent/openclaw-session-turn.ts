@@ -123,7 +123,7 @@ export default async function advanceIssueTurn(input: {
     });
     if (turn.status === 'completed') delete currentTurn()!.message;
     await guard();
-    record.phase = input.assessment ? 'assessing' : 'created';
+
     delete record.blocker;
     delete record.failureStage;
     await save();

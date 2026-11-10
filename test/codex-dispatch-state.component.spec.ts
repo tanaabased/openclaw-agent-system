@@ -72,7 +72,7 @@ describe('agent/codex-dispatch-state', () => {
             intakeId: 'b'.repeat(64),
             issueKey: 'b'.repeat(64),
             sourceThreadId: 'owner',
-            phase: 'routing',
+
             createdAt: 1,
             manifestDigest: 'manifest',
             ...fields,
@@ -102,7 +102,7 @@ describe('agent/codex-dispatch-state', () => {
         intakeId: 'b'.repeat(64),
         issueKey: 'b'.repeat(64),
         sourceThreadId: 'intake',
-        phase: 'routing',
+
         createdAt: 1,
         manifestDigest: 'manifest',
         issueBranch: { attemptId: 'b'.repeat(64), name: '42-owned-branch', phase: 'creating' },
@@ -129,7 +129,7 @@ describe('agent/codex-dispatch-state', () => {
         issueKey: 'b'.repeat(64),
         intakeId: 'b'.repeat(64),
         sourceThreadId: 'intake',
-        phase: 'routing',
+
         createdAt: 1,
         manifestDigest: 'manifest',
         context: 'full working context',

@@ -1,7 +1,7 @@
+import { retainedAnnouncementPublication } from './delivery-announcement-recovery.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
 import invalidDeliveryRequest from '../tools/dispatch/delivery-request-error.ts';
 import taskPullRequest, { isCurrentTaskPullRequest } from './task-pull-request.ts';
-import { retainImplementationDelivery } from './implementation-delivery.ts';
 import {
   managedPullRequest,
   managedTargetUrl,
@@ -67,9 +67,7 @@ export default async function openClawDelivery(input: {
   now?: number;
 }) {
   const { record, intake, action, assertCurrent } = input;
-  retainImplementationDelivery(record);
   const save = async () => {
-    retainImplementationDelivery(record);
     await input.save();
   };
   if (action.pullRequest !== undefined && !['bind', 'link'].includes(action.operation))
@@ -81,8 +79,8 @@ export default async function openClawDelivery(input: {
   if (action.operation === 'link') {
     const unchanged = isCurrentTaskPullRequest(record, intake, action.pullRequest);
     if (action.pullRequest === undefined || unchanged) {
-      if (record.pullRequestLink === undefined && record.work?.delivery?.pullRequest)
-        record.pullRequestLink = record.work.delivery.pullRequest;
+      if (record.pullRequestLink === undefined && record.delivery?.pullRequest)
+        record.pullRequestLink = record.delivery.pullRequest;
       await save();
       return { status: 'linked', pullRequest: taskPullRequest(record) };
     }
@@ -159,7 +157,7 @@ export default async function openClawDelivery(input: {
       id: record.id,
       operator: input.source,
       adopted,
-      previous: record.work?.delivery,
+      previous: record.delivery,
       localBranch,
       head,
       git,
@@ -167,13 +165,12 @@ export default async function openClawDelivery(input: {
       assertCurrent,
     });
     if (result.retained) return result;
-    record.work ??= {};
     record.adoptedPullRequest = adopted;
     record.pullRequestLink = {
       pullRequestNodeId: adopted.pullRequestNodeId,
       pullRequestNumber: adopted.pullRequestNumber,
     };
-    record.work.delivery = {
+    record.delivery = {
       ...adoptedIssueDelivery({
         id: record.id,
         repositoryId: intake.repository.nodeId,
@@ -182,7 +179,7 @@ export default async function openClawDelivery(input: {
         worktree: record.worktree!,
         localBranch,
         head,
-        policyDigest: record.manifestDigest,
+
         adopted,
       }),
       binding: {
@@ -195,11 +192,50 @@ export default async function openClawDelivery(input: {
         base: adopted.base,
         head,
         authorId: adopted.authorId,
-        policyDigest: record.manifestDigest,
       },
     };
     await save();
     return result;
+  }
+  if (
+    action.operation === 'compose' ||
+    action.operation === 'candidate' ||
+    action.operation === 'announce'
+  ) {
+    await assertCurrent();
+    await input.reauthorize();
+    const connection = await input.connect();
+    const publication = retainedAnnouncementPublication(intake, record, input.signal);
+    const provider = new IssueDeliveryProvider(connection.account);
+    const repository = `${intake.repository.owner.login}/${intake.repository.name}`;
+    const announcement = await deliveryAnnouncement({
+      runtime: 'openclaw',
+      request: { action: 'delivery', operation: 'compose' },
+      material: action.material,
+      now: input.now,
+      operation: action.operation,
+      publicText: action.publicText,
+      delivery: record,
+      publication,
+      provider,
+      client: new GitHubIssueCommentClient(new GitHubWorkEventApiClient(connection.account), 8000),
+      authorId: connection.account.identity.nodeId,
+      authorLogin: connection.account.identity.login,
+      select: (state) => {
+        if (!input.selectAnnouncement) throw new Error('delivery-announcement-skill-unavailable');
+        return input.selectAnnouncement(state);
+      },
+      authorize: async () => {
+        await assertCurrent();
+        await input.reauthorize();
+      },
+      save,
+    });
+    return {
+      ...announcement,
+      id: record.id,
+      url: `https://github.com/${repository}/pull/${publication.expectedPullRequest.pullRequestNumber}`,
+    };
   }
   if (record.work?.scope === 'local') throw new Error('implementation-publication-not-authorized');
   if (
@@ -218,7 +254,7 @@ export default async function openClawDelivery(input: {
     return (await connection.git(argv)).trim();
   };
   const repository = `${intake.repository.owner.login}/${intake.repository.name}`;
-  if (record.adoptedPullRequest && !work.delivery) {
+  if (record.adoptedPullRequest && !record.delivery) {
     const localBranch = (await git(['branch', '--show-current'])).trim();
     if (!localBranch || localBranch === input.base) throw new Error('delivery-branch-required');
     if (!record.adoptedLocalBranch || record.adoptedLocalBranch !== localBranch)
@@ -231,67 +267,56 @@ export default async function openClawDelivery(input: {
       worktree: record.worktree!,
       localBranch,
       head: record.adoptedPullRequest.head,
-      policyDigest: record.manifestDigest,
+
       adopted: record.adoptedPullRequest,
     });
-    work.delivery = {
+    record.delivery = {
       ...selected,
       binding: { ...selected.binding, sessionId: record.sessionCreation!.sessionId! },
     };
     await save();
   }
-  const previous = work.delivery;
+  const previous = record.delivery;
   const adopted = previous?.adopted;
   const base = adoptedPullRequest?.baseRef ?? adopted?.base ?? input.base;
-  const announcementOnly = ['compose', 'candidate', 'announce'].includes(action.operation);
-  if (announcementOnly && (!previous?.pullRequest || !previous.reconciled))
-    throw new Error('delivery-reconciliation-required');
-  let branch = previous?.binding.branch ?? '';
-  let head = previous?.binding.head ?? '';
-  if (!announcementOnly) {
-    branch = await git(['branch', '--show-current']);
-    if (previous?.localBranch && branch !== previous.localBranch)
-      throw new Error('delivery-branch-diverged');
-    if (!branch || branch === input.base) throw new Error('delivery-branch-required');
-    await git(['check-ref-format', `refs/heads/${branch}`]);
-    branch = adopted?.branch ?? branch;
-    if (
-      (await realpath(await git(['rev-parse', '--show-toplevel']))) !==
-      (await realpath(record.worktree!))
-    )
-      throw new Error('delivery-worktree-diverged');
-    if (
-      ['prepare', 'publish'].includes(action.operation) &&
-      (await git(['status', '--porcelain=v1']))
-    )
-      throw new Error('delivery-uncommitted-work');
-    if (adoptedPullRequest) branch = adoptedPullRequest.headRef;
-    head =
-      action.operation === 'reconcile' && previous
-        ? previous.pushedHead && previous.reconciled
-          ? previous.pushedHead
-          : previous.binding.head
-        : await git(['rev-parse', '--verify', 'HEAD']);
-    if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('delivery-head-invalid');
-    const count = Number(
-      await git(['rev-list', '--count', `refs/remotes/origin/${base}..${head}`]),
+  let branch = await git(['branch', '--show-current']);
+  if (previous?.localBranch && branch !== previous.localBranch)
+    throw new Error('delivery-branch-diverged');
+  if (!branch || branch === input.base) throw new Error('delivery-branch-required');
+  await git(['check-ref-format', `refs/heads/${branch}`]);
+  branch = adopted?.branch ?? branch;
+  if (
+    (await realpath(await git(['rev-parse', '--show-toplevel']))) !==
+    (await realpath(record.worktree!))
+  )
+    throw new Error('delivery-worktree-diverged');
+  if (
+    ['prepare', 'publish'].includes(action.operation) &&
+    (await git(['status', '--porcelain=v1']))
+  )
+    throw new Error('delivery-uncommitted-work');
+  if (adoptedPullRequest) branch = adoptedPullRequest.headRef;
+  const head =
+    action.operation === 'reconcile' && previous
+      ? previous.pushedHead && previous.reconciled
+        ? previous.pushedHead
+        : previous.binding.head
+      : await git(['rev-parse', '--verify', 'HEAD']);
+  if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('delivery-head-invalid');
+  const count = Number(await git(['rev-list', '--count', `refs/remotes/origin/${base}..${head}`]));
+  if (!Number.isSafeInteger(count) || count < 1)
+    throw new Error('delivery-committed-work-required');
+  const remotes = (await git(['remote', 'get-url', '--push', '--all', 'origin'])).split(/\r?\n/u);
+  if (
+    !remotes.length ||
+    remotes.some((remote) => gitRemoteIdentity(remote) !== `github.com/${repository.toLowerCase()}`)
+  )
+    throw new Error('delivery-push-destination-mismatch');
+  if (!adoptedPullRequest && !adopted)
+    resolvePullRequestRecipients(
+      input.recipients ?? (intake.assignment ? undefined : []),
+      intake.assignment?.actor,
     );
-    if (!Number.isSafeInteger(count) || count < 1)
-      throw new Error('delivery-committed-work-required');
-    const remotes = (await git(['remote', 'get-url', '--push', '--all', 'origin'])).split(/\r?\n/u);
-    if (
-      !remotes.length ||
-      remotes.some(
-        (remote) => gitRemoteIdentity(remote) !== `github.com/${repository.toLowerCase()}`,
-      )
-    )
-      throw new Error('delivery-push-destination-mismatch');
-    if (!adoptedPullRequest && !adopted)
-      resolvePullRequestRecipients(
-        input.recipients ?? (intake.assignment ? undefined : []),
-        intake.assignment?.actor,
-      );
-  }
   const binding = {
     repositoryId: intake.repository.nodeId,
     issueId: intake.issue.nodeId,
@@ -302,7 +327,6 @@ export default async function openClawDelivery(input: {
     base,
     head,
     authorId: adopted?.authorId ?? connection.account.identity.nodeId,
-    policyDigest: previous?.binding.policyDigest ?? record.manifestDigest,
   };
   // the commit belongs to this attempt; the issue, session and branch own the delivery.
   const bindingChange =
@@ -344,23 +368,22 @@ export default async function openClawDelivery(input: {
     (title !== previous.title || body !== previous.body)
   )
     throw new Error('delivery-content-changed');
-  const delivery: NonNullable<NonNullable<OpenClawDispatchRecord['work']>['delivery']> =
-    previous ?? {
-      id: automationHash({ admission: intake.id, session: binding.sessionId }),
-      binding,
-      title,
-      body,
-      ...(adoptedPullRequest
-        ? {
-            pullRequest: {
-              pullRequestNodeId: intake.issue.nodeId,
-              pullRequestNumber: intake.issue.number,
-            },
-          }
-        : {}),
-      creationAttempted: false,
-      reconciled: false,
-    };
+  const delivery: NonNullable<OpenClawDispatchRecord['delivery']> = previous ?? {
+    id: automationHash({ admission: intake.id, session: binding.sessionId }),
+    binding,
+    title,
+    body,
+    ...(adoptedPullRequest
+      ? {
+          pullRequest: {
+            pullRequestNodeId: intake.issue.nodeId,
+            pullRequestNumber: intake.issue.number,
+          },
+        }
+      : {}),
+    creationAttempted: false,
+    reconciled: false,
+  };
   const contentUpdate = {
     ...previous?.contentUpdate,
     ...(previous?.pullRequest && title !== previous.title ? { title } : {}),
@@ -432,42 +455,6 @@ export default async function openClawDelivery(input: {
     signal: input.signal,
     expectedPullRequest: delivery.pullRequest,
   };
-  if (
-    action.operation === 'compose' ||
-    action.operation === 'candidate' ||
-    action.operation === 'announce'
-  ) {
-    if (!previous?.pullRequest || !previous.reconciled)
-      throw new Error('delivery-reconciliation-required');
-    const announcement = await deliveryAnnouncement({
-      runtime: 'openclaw',
-      request: { action: 'delivery', operation: 'compose' },
-      material: action.material,
-      now: input.now,
-      operation: action.operation,
-      publicText: action.publicText,
-      delivery: previous,
-      publication,
-      provider,
-      client: new GitHubIssueCommentClient(new GitHubWorkEventApiClient(connection.account), 8000),
-      authorId: connection.account.identity.nodeId,
-      authorLogin: connection.account.identity.login,
-      select: (state) => {
-        if (!input.selectAnnouncement) throw new Error('delivery-announcement-skill-unavailable');
-        return input.selectAnnouncement(state);
-      },
-      authorize: async () => {
-        await assertCurrent();
-        await input.reauthorize();
-      },
-      save,
-    });
-    return {
-      ...announcement,
-      id: record.id,
-      url: `https://github.com/${repository}/pull/${previous.pullRequest.pullRequestNumber}`,
-    };
-  }
   if (action.operation === 'publish') {
     delivery.binding = binding;
     delivery.title = title;
@@ -477,7 +464,7 @@ export default async function openClawDelivery(input: {
       delivery.contentUpdate = contentUpdate;
     }
     delivery.reconciled = false;
-    work.delivery = delivery;
+    record.delivery = delivery;
     await save();
     await publishIssueDelivery({
       delivery,
@@ -537,7 +524,7 @@ export default async function openClawDelivery(input: {
     linkRequest: { action: 'delivery' as const, operation: 'link' as const },
     instructions: deliveryCompletionInstructions(
       'openclaw',
-      delivery,
+      record,
       action.operation === 'publish' && Boolean(previous?.reconciled && previous.pullRequest),
     ),
   };
@@ -549,7 +536,7 @@ export function presentOpenClawDelivery(
   intake: IntakeRecord,
   feedbackEnabled: boolean,
 ) {
-  const delivery = record.work?.delivery;
+  const delivery = record.delivery;
   const receipt = taskPullRequest(record);
   if (!receipt) throw new Error('delivery-reconciliation-required');
   const linkedDelivery =
@@ -558,7 +545,9 @@ export function presentOpenClawDelivery(
   const url = `https://github.com/${repository}/pull/${receipt.pullRequestNumber}`;
 
   const incomplete = linkedDelivery && !linkedDelivery.reconciled;
-  const updatedSinceAnnouncement = announcementPrecedesDelivery(linkedDelivery);
+  const updatedSinceAnnouncement = announcementPrecedesDelivery(
+    linkedDelivery && { ...linkedDelivery, announcement: record.announcement },
+  );
   const notice = incomplete
     ? codexIssueNotice({ event: 'failure', changed: true, code: 'delivery-publication-incomplete' })
     : undefined;
@@ -573,10 +562,10 @@ export function presentOpenClawDelivery(
     }) +
     '\n\n' +
     announcementPresentation(
-      linkedDelivery?.announcement,
+      record.announcement,
       managedTargetUrl(intake),
       undefined,
-      linkedDelivery?.announcementRecovery,
+      record.announcementRecovery,
       updatedSinceAnnouncement,
     ) +
     (notice ? '\n\n' + notice.message : '');

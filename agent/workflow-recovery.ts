@@ -23,22 +23,6 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
       'The dispatch call did not supply a valid saved-project inventory.',
       'Read the saved Codex projects with list_projects, then retry dispatch next without copying the inventory. Preserve the pending assignment; a valid call can retry it without resetting state or registering the repository again.',
     ],
-    'delivery-implementation-incomplete': [
-      'Completed implementation has not been established, so PR delivery was refused before publication.',
-      'Refresh implementation context and inspect the retained outcome. Preserve partial work, explain the missing prerequisite or question and its resume condition, and finish authorized implementation before requesting delivery. Do not retry publication or mark unfinished work done to bypass the guard.',
-    ],
-    'continuation-implementation-required': [
-      'A completed implementation matching the current checkout has not been established for delivery.',
-      'Refresh implementation context and inspect the retained outcome and checkout. Resolve unfinished work or reconcile changed commits before delivery; do not retry publication or relabel partial work as done.',
-    ],
-    'delivery-continuation-stopped': [
-      'The retained implementation is not in a completed delivery state.',
-      'Refresh the owning implementation context and inspect its result and any stop reason. If unfinished, preserve partial work and resolve the prerequisite or question before delivery. Honor cancellation and native denial; do not retry publication as a substitute for resuming implementation.',
-    ],
-    'continuation-handoff-input-unverified': [
-      'This older handoff does not retain the input needed to resume it automatically.',
-      'Continue in the original issue chat with a fresh authorized input and refresh implementation context. Preserve the existing work, scope and receipts; do not create a replacement chat or resend the old request.',
-    ],
     'dispatch-state-capacity': [
       'This save exceeds the 64 MiB working-content or 65 MiB total journal ceiling. The committed state is preserved.',
       'Reduce pressure through supported task retirement, then retry the original operation. Do not delete the journal, reset intake, or manufacture completion flags.',
@@ -322,7 +306,7 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
       next: 'Refresh the same launch or binding target, inspect the current head and destination, and continue within the operator request without supplying receipt IDs or digests. Preserve local work and any existing creation request; never replay an uncertain creation.',
     };
   const field =
-    /^delivery-(repository|issue|session|thread|worktree|branch|base|account|policy)-changed$/.exec(
+    /^delivery-(repository|issue|session|thread|worktree|branch|base|account)-changed$/.exec(
       code,
     )?.[1];
   if (field)

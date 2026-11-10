@@ -5,7 +5,6 @@ import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
 
 function record(): DispatchRecord {
   return {
-    phase: 'blocked',
     request: { prompt: 'request' },
     sourceThreadId: 'intake',
     createdAt: 1,
@@ -142,7 +141,6 @@ describe('agent/codex-capacity-reconcile', () => {
   it('should release native chat capacity only after native terminal proof', async () => {
     const owner = {
       ...record(),
-      phase: 'complete' as const,
       threadId: 'child',
     } as unknown as DispatchRecord;
     assert.equal(codexCapacity([owner], 3).occupied, 1);

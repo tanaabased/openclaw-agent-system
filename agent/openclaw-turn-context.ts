@@ -97,7 +97,7 @@ export default function openclawTurnContext(
             : undefined,
         worktree: record.worktree,
         pullRequest: taskPullRequest(record),
-        branch: record.work?.delivery?.binding?.branch,
+        branch: record.delivery?.binding?.branch,
         ...(task
           ? {
               ...task,

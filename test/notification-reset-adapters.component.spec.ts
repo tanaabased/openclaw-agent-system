@@ -316,7 +316,7 @@ describe('agent/notification reset runtime adapters', () => {
         intakeId: 'e'.repeat(64),
         issueKey: 'f'.repeat(64),
         sourceThreadId: 'coordinator',
-        phase: 'creating',
+
         createdAt: 2,
         manifestDigest: 'manifest',
         context: '{}',
@@ -345,7 +345,7 @@ describe('agent/notification reset runtime adapters', () => {
         intakeId: 'e'.repeat(64),
         issueKey: 'c'.repeat(64),
         sourceThreadId: 'coordinator',
-        phase: 'blocked',
+
         createdAt: 2,
         manifestDigest: 'manifest',
         threadId: 'pending-cleanup-child',
@@ -478,7 +478,7 @@ describe('agent/notification reset runtime adapters', () => {
         intakeId: 'e'.repeat(64),
         issueKey: 'f'.repeat(64),
         sourceThreadId: 'coordinator',
-        phase: 'creating',
+
         createdAt: 2,
         manifestDigest: 'manifest',
         context: '{}',
@@ -642,7 +642,7 @@ describe('agent/notification reset runtime adapters', () => {
           intakeId: 'e'.repeat(64),
           issueKey: 'f'.repeat(64),
           sourceThreadId: 'coordinator',
-          phase: 'creating',
+
           createdAt: 2000,
           manifestDigest: 'manifest',
           reservationVersion: 1,
@@ -890,7 +890,7 @@ describe('agent/notification reset runtime adapters', () => {
         intakeId,
         issueKey: 'e'.repeat(64),
         sourceThreadId: 'coordinator',
-        phase: 'created',
+
         createdAt: 2,
         manifestDigest: 'manifest',
         context: '{}',
@@ -925,7 +925,7 @@ describe('agent/notification reset runtime adapters', () => {
         id: 'f'.repeat(64),
         worktreeAttemptId: undefined,
         issueKey: 'a'.repeat(64),
-        phase: 'creating',
+
         threadId: undefined,
         effective: undefined,
         request: {

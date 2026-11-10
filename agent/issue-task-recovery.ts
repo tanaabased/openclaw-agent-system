@@ -178,7 +178,6 @@ export default async function recoverIssueTask<R extends SharedDispatchRecord>(i
       manualIssue,
       issueKey: record.issueKey,
       sourceThreadId: caller,
-      phase: 'routing',
       createdAt: now,
       manifestDigest,
       context: record.context,

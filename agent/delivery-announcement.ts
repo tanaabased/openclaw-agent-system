@@ -24,7 +24,7 @@ import redactFeedback from './feedback-redaction.ts';
 import type { GitHubNotificationCommentPublicationInput } from '../channels/github/publication/comment-publisher.ts';
 import { githubNotificationPublicationText } from '../channels/github/publication/publication-contract.ts';
 import IssueDeliveryProvider, {
-  type IssueDeliveryInput,
+  type IssueAnnouncementInput,
 } from '../channels/github/publication/issue-delivery.ts';
 import type { GitHubNotificationPublicationClient } from '../channels/github/provider/work-event-client.ts';
 import { githubCommentCard } from '../channels/github/presentation/comment.ts';
@@ -313,7 +313,7 @@ export default async function deliveryAnnouncement(input: {
   now?: number;
   publicText?: string;
   delivery: Delivery;
-  publication: IssueDeliveryInput;
+  publication: IssueAnnouncementInput;
   provider: Pick<IssueDeliveryProvider, 'announcement'>;
   client: CommentClient;
   authorId: string;

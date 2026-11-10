@@ -35,7 +35,7 @@ function setup() {
     intakeId: admitted.id,
     issueKey: issueKey(admitted),
     sourceThreadId: 'intake',
-    phase: 'routing',
+
     createdAt: baseline,
     manifestDigest: 'manifest',
     request: {},
@@ -65,7 +65,11 @@ function setup() {
       records,
       dispose: async (target) => {
         records.splice(records.indexOf(target), 1);
-        observedAssignments.push({ ...admitted, consumedBy: target.id });
+        observedAssignments.push({
+          ...admitted,
+          consumedBy: target.id,
+          consumedThrough: target.retirement?.operatorRequest?.at ?? target.retirement?.at ?? now,
+        });
       },
       admitted: admissions,
       policy: {

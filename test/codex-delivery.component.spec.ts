@@ -193,6 +193,47 @@ describe('agent/codex-delivery', () => {
     });
     return { eventId, source };
   }
+  it('should reconcile the original uncertain announcement after relinking and discarding pr creation state', async () => {
+    await publish();
+    await request('compose');
+    await request('candidate', { publicText: 'The original change is ready.' });
+    announcement.lost = true;
+    assert.equal((await request('announce')).status, 'announcement-blocked');
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.pullRequestLink = { pullRequestNodeId: 'PR_other', pullRequestNumber: 8 };
+      delete record.delivery;
+      await save();
+    });
+    announcement.lost = false;
+    const recovered = await request('announce');
+    assert.equal(recovered.status, 'announced');
+    assert.equal(recovered.url, 'https://github.com/owner/repo/pull/7');
+    assert.equal(announcement.posts, 1);
+    assert.equal(creates, 1);
+  });
+
+  it('should announce a verified linked pr without a creation or implementation record', async () => {
+    await publish();
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.pullRequestLink = record.delivery!.pullRequest;
+      delete record.delivery;
+      delete record.progression;
+      await save();
+    });
+    deps.git = async () => assert.fail('announcement must not inspect or publish local work');
+    const composed = await request('compose');
+    assert.equal(composed.status, 'composition-ready', JSON.stringify(composed));
+    await request('candidate', { publicText: 'The linked change is ready for review.' });
+    assert.equal((await request('announce')).status, 'announced');
+    const saved = (await store.read()).records[0]!;
+    assert.equal(saved.delivery, undefined);
+    assert.ok(saved.announcement?.receipt);
+    assert.equal(announcement.posts, 1);
+    assert.equal(creates, 1);
+  });
+
   it('should commit unrelated progress while delivery native readback is delayed', async () => {
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
@@ -226,9 +267,6 @@ describe('agent/codex-delivery', () => {
   });
 
   it('should reserve one push and pr creation while another delivery and unrelated commit overlap', async () => {
-    await store.exclusive(async (state, save) => {
-      await save();
-    });
     const content = { title: 'Authored title', body: 'Authored body.' };
     await request('prepare', content);
     const entered = Promise.withResolvers<void>();
@@ -343,9 +381,8 @@ describe('agent/codex-delivery', () => {
     assert.equal(creates, 0);
   });
 
-  it('should end initial execution after feedback delivers the first pr and retain native routing after restart', async () => {
+  it('should retain native task context and publication receipts after restart', async () => {
     const { eventId } = await feedbackWorkFixture(true);
-    assert.equal((await store.read()).records[0]!.implementationDelivered, undefined);
     await request('prepare', { eventId });
     assert.equal((await request('publish', { eventId })).status, 'published');
     delete deps.native!.operatorInput;
@@ -363,7 +400,6 @@ describe('agent/codex-delivery', () => {
     const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
     store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     const saved = (await store.read()).records[0]!;
-    assert.equal(saved.implementationDelivered, true);
     assert.equal(saved.nativeWork, undefined);
     assert.equal(saved.handoff, undefined);
     assert.equal(creates, 1);
@@ -374,7 +410,7 @@ describe('agent/codex-delivery', () => {
     });
     const context = await codexEntryContext(
       pluginData,
-      { action: 'implementation', operation: 'context' },
+      { action: 'assessment', operation: 'context' },
       {
         codexHome: deps.codexHome,
         threadId: deps.threadId,
@@ -393,7 +429,6 @@ describe('agent/codex-delivery', () => {
         assert.ok(owner?.nativeContext);
         return owner.nativeContext;
       },
-      async () => assert.fail('continuation must not own delivered work'),
     );
     assert.equal(context.status, 'native');
     assert.deepEqual(context.pullRequest, saved.delivery!.pullRequest);
@@ -493,7 +528,7 @@ describe('agent/codex-delivery', () => {
         intakeId: intake.id,
         issueKey: intake.id,
         sourceThreadId: 'intake',
-        phase: 'assessing',
+
         createdAt: baseline,
         manifestDigest: current.digest,
         reservationVersion: 1,
@@ -656,7 +691,7 @@ describe('agent/codex-delivery', () => {
                   head: remote,
                   branch: pr?.headRef,
                   base: pr?.baseRef,
-                  authorId: 'U_collaborator',
+                  authorId: bindingOverride.authorId ?? account.nodeId,
                   title: pr?.title,
                   body: pr?.body,
                   ...bindingOverride,
@@ -838,7 +873,7 @@ describe('agent/codex-delivery', () => {
     assert.equal(saved.delivery?.binding.authorId, 'U_collaborator');
     assert.equal(saved.delivery?.reconciled, false);
     assert.equal(saved.delivery?.pushedHead, undefined);
-    assert.equal(saved.delivery?.announcement, undefined);
+    assert.equal(saved.announcement, undefined);
     assert.equal(saved.delivery?.attached, false);
     assert.equal(dirty, true);
     assert.equal(creates, 0);
@@ -1109,10 +1144,6 @@ describe('agent/codex-delivery', () => {
   for (const draft of [false, true])
     it(`should reconcile announce and present a delivered ${draft ? 'draft' : 'ready'} pr with uncommitted edits`, async () => {
       await publish();
-      await store.exclusive(async (state, save) => {
-        state.records[0]!.implementationDelivered = true;
-        await save();
-      });
       deps.native!.operatorInput = async () => {
         throw new Error('a retained announcement does not need a new human message');
       };
@@ -1149,8 +1180,8 @@ describe('agent/codex-delivery', () => {
     });
     announcement.lost = true;
     assert.equal((await request('announce', {})).status, 'announcement-blocked');
-    const saved = (await store.read())!.records[0]!.delivery!;
-    assert.equal(saved.reconciled, true);
+    const saved = (await store.read())!.records[0]!;
+    assert.equal(saved.delivery!.reconciled, true);
     assert.equal(saved.announcement!.attempted, true);
     assert.equal(saved.announcement!.receipt, undefined);
     assert.match(String((await request('present')).presentation), /announcement unconfirmed/);
@@ -1174,7 +1205,6 @@ describe('agent/codex-delivery', () => {
     await request('reconcile');
     await store.exclusive(async (state, save) => {
       state.records[0]!.nativeWork = {
-        policyDigest: 'a'.repeat(64),
         selection: {
           version: 1,
           observedAt: 1,
@@ -1865,12 +1895,10 @@ describe('agent/codex-delivery', () => {
           skill: { name: 'implementation', path: '/skill', scope: 'user', digest: 'a'.repeat(64) },
           observedAt: 1,
         },
-        policyDigest: 'a'.repeat(64),
       };
       await save();
     });
     await publish();
-    assert.equal((await store.read()).records[0]!.implementationDelivered, true);
     await store.exclusive(async (state, save) => {
       delete state.records[0]!.handoff;
       state.records[0]!.nativeWork!.code = 'continuation-send-unverified';
@@ -1896,7 +1924,6 @@ describe('agent/codex-delivery', () => {
     assert.equal(remote, head);
     assert.equal(creates, 1);
     assert.deepEqual((await store.read()).records[0]!.nativeWork, initialWork);
-    assert.equal((await store.read()).records[0]!.implementationDelivered, true);
   });
   for (const interruption of ['before', 'after'] as const)
     it(`should recover metadata updates interrupted ${interruption} the provider write`, async () => {
@@ -2017,7 +2044,7 @@ describe('agent/codex-delivery', () => {
       publicText: 'Delivers the requested change.',
     });
     await request('announce', {});
-    const retained = (await store.read()).records[0]!.delivery!;
+    const retainedAnnouncement = (await store.read()).records[0]!.announcement;
     await request('link', { pullRequest: url });
     const initial = await request('present');
     assert.ok('presentation' in initial);
@@ -2029,7 +2056,7 @@ describe('agent/codex-delivery', () => {
     assert.equal(remote, head);
     const updated = (await store.read()).records[0]!.delivery!;
     assert.equal(updated.reconciled, true);
-    assert.deepEqual(updated.announcement, retained.announcement);
+    assert.deepEqual((await store.read()).records[0]!.announcement, retainedAnnouncement);
     const shown = await request('present');
     assert.ok('presentation' in shown);
     assert.match(shown.presentation!, /Pull request updated/);
@@ -2054,6 +2081,7 @@ describe('agent/codex-delivery', () => {
       announcement.lost = lostAnnouncement;
       await request('announce', {});
       const retained = (await store.read()).records[0]!.delivery!;
+      const retainedAnnouncement = (await store.read()).records[0]!.announcement;
       head = 'b'.repeat(40);
       const git = deps.git!;
       deps.git = async (...args) => {
@@ -2069,7 +2097,7 @@ describe('agent/codex-delivery', () => {
       const recovered = (await store.read()).records[0]!.delivery!;
       assert.equal(recovered.id, retained.id);
       assert.deepEqual(recovered.pullRequest, retained.pullRequest);
-      assert.deepEqual(recovered.announcement, retained.announcement);
+      assert.deepEqual((await store.read()).records[0]!.announcement, retainedAnnouncement);
       announcement.lost = false;
       assert.equal((await request('announce')).status, 'announced');
       const shown = await request('present');

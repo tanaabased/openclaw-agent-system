@@ -1,3 +1,4 @@
+import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { workflowFeedbackAccepting } from '../channels/github/feedback-policy.ts';
@@ -12,7 +13,7 @@ import { automationHash } from './automation-hash.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import reconcileCodexCapacity from './codex-capacity-reconcile.ts';
 import codexCapacity from './codex-capacity.ts';
-import { adoptedCodexDelivery } from './codex-delivery-state.ts';
+import { adoptedCodexDelivery } from './issue-delivery-state.ts';
 import { dispatchCheckDigest } from './codex-dispatch-check.ts';
 import {
   code,
@@ -55,7 +56,6 @@ import {
 } from './managed-issue.ts';
 import resolveModelRoutingRequest from './model-routing-request.ts';
 import { assessmentSchema } from './model-routing.ts';
-import { notificationAuthorityDigest } from './notification-authority.ts';
 import routingInstructions, {
   assertRoutingInstructions,
   routingInstructionsDigest,
@@ -130,7 +130,6 @@ export async function recover(
       localBranch,
       head: record.project.commit,
       adopted: record.adoptedPullRequest,
-      policyDigest: notificationAuthorityDigest(current.manifest.github?.notifications),
     });
   }
   if (record.predecessorId && acceptClaim && records) {
@@ -162,8 +161,7 @@ export async function recover(
     } else if (predecessor?.claimId || predecessor?.claimAccepted)
       throw new Error('claim-recovery-owner-unresolved');
   }
-  record.phase = record.phase === 'complete' ? 'complete' : 'assessing';
-  if (record.phase !== 'complete' && dispatchBlocker(record) !== undefined) {
+  if (dispatchBlocker(record) !== undefined) {
     delete record.blocker;
   }
   await save();
@@ -402,8 +400,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
       !record.handoff &&
       record.request &&
       (!record.effective || (deps.claims && record.claimId && !record.claimAccepted)) &&
-      record.phase !== 'complete' &&
-      (record.phase !== 'blocked' ||
+      (dispatchCreationStatus(record) !== 'blocked' ||
         (dispatchBlocker(record) !== undefined &&
           dispatchBlocker(record)! === 'dispatch-assignment-superseded')) &&
       (dispatchBlocker(record) === undefined ||
@@ -487,7 +484,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
             delete pending.blocker;
             delete pending.retryAfter;
             delete pending.preparationTurnId;
-            pending.phase = 'routing';
+
             await save();
             continue;
           }
@@ -513,7 +510,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
         !record?.denial &&
         !record?.request &&
         (!deps.claims || record?.claimPass !== (tx.operatorInput?.turnId ?? state.run!.id)) &&
-        (record?.phase !== 'blocked' || record.intakeId !== intake.id) &&
+        (dispatchCreationStatus(record) !== 'blocked' || record?.intakeId !== intake.id) &&
         (!record ||
           dispatchBlocker(record) === undefined ||
           Boolean(record.retry) ||
@@ -549,7 +546,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
         : {}),
       issueKey: issueKey(intake),
       sourceThreadId: activation.sourceThreadId,
-      phase: 'routing',
+
       createdAt: now,
       feedback: {
         startedAt: now,
@@ -698,7 +695,7 @@ export async function prepareIssueProject(
     record.project = project;
     record.context = JSON.stringify(snapshot);
     record.manifestDigest = current.digest;
-    record.phase = 'routing';
+
     record.routingInstructions = await routingInstructions({
       configuration: current.manifest.models?.routing,
       workspace: current.workspace,
@@ -754,7 +751,7 @@ export async function prepareDispatch(
   if (record.request)
     return { status: 'reconcile-required' as const, changed: false, id: record.id };
   if (
-    record.phase !== 'routing' ||
+    dispatchCreationStatus(record) !== 'routing' ||
     !record.project ||
     !record.context ||
     input.digest !==
@@ -839,7 +836,6 @@ export async function prepareDispatch(
           withNative(current, deps, (host) => host.assessmentSkill(record.project!.path, id)),
       });
       record.nativeWork = {
-        policyDigest: notificationAuthorityDigest(current.manifest.github?.notifications),
         selection: implementation.selection,
       };
     }
@@ -887,7 +883,7 @@ export async function prepareDispatch(
         },
       },
     };
-    record.phase = 'creating';
+
     await fresh();
     await save();
     return {

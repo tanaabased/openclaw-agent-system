@@ -1,4 +1,4 @@
-import { hasDeliveredImplementation, nativeIssueContext } from './implementation-delivery.ts';
+import { nativeIssueContext } from './native-issue-context.ts';
 import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
 
 import { realpath } from 'node:fs/promises';
@@ -29,7 +29,7 @@ export default async function codexEntryContext<T>(
     result?: ImplementationResult,
   ) => Promise<T>,
 ) {
-  const assessmentRead =
+  const nativeRead =
     !!input &&
     typeof input === 'object' &&
     'action' in input &&
@@ -71,10 +71,7 @@ export default async function codexEntryContext<T>(
         throw new Error('assessment-managed-context-invalid');
       return {
         selections: record.manualIssue?.selections,
-        nativeContext:
-          assessmentRead || hasDeliveredImplementation(record)
-            ? nativeIssueContext(record)
-            : undefined,
+        nativeContext: nativeRead ? nativeIssueContext(record) : undefined,
         digest,
         owner: { id: record.id },
         path: await realpath(record.worktree!),
@@ -90,7 +87,7 @@ export default async function codexEntryContext<T>(
     const currentTarget = admission ? managedTargetUrl(admission) : undefined;
     const nativeContextRequest =
       !!records[0] &&
-      (assessmentRead || hasDeliveredImplementation(records[0])) &&
+      nativeRead &&
       !!input &&
       typeof input === 'object' &&
       'operation' in input &&

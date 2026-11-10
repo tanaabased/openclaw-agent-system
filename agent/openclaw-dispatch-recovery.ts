@@ -47,7 +47,7 @@ export default async function recoverOpenClawTask(options: {
         if (!selected) throw new Error('dispatch-recovery-owner-missing');
         const verified = await service.validate(manifest, workspace, selected, true);
         const { intake } = verified;
-        const delivery = record.work?.delivery;
+        const delivery = record.delivery;
         const turns = openClawNativeTurns(record).map(({ turn }) => turn);
         return recoverIssueTask<OpenClawDispatchRecord>({
           record,
@@ -93,7 +93,7 @@ export default async function recoverOpenClawTask(options: {
             pendingPush: Boolean(delivery?.pendingPush),
             uncertainPrCreation: Boolean(delivery?.creationAttempted && !delivery.pullRequest),
             uncertainAnnouncement: Boolean(
-              delivery?.announcement?.attempted && !delivery.announcement.receipt,
+              record.announcement?.attempted && !record.announcement.receipt,
             ),
             pendingFeedback: record.feedback?.events.some(pendingRecoveryFeedback),
             assignmentClaim: Boolean(

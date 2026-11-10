@@ -16,6 +16,7 @@ export function validNativeDispatchRecord(source: SharedDispatchRecord) {
         (turn.status === 'completed' ? turn.message === undefined : Boolean(turn.message)) &&
         ['consumed', 'completed'].includes(turn.status) === Boolean(turn.consumedByEventId) &&
         (!turn.replyEventId || turn.status === 'completed') &&
+        (!turn.executionModel || turn.status === 'completed') &&
         (!turn.failed || turn.status === 'completed') &&
         (turn.status !== 'completed' || turn.failed || Boolean(turn.replyEventId)),
     )

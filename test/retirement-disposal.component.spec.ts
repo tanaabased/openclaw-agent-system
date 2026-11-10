@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { CodexDeliveryState } from '../agent/codex-delivery-state.ts';
+import type { IssueDeliveryState } from '../agent/issue-delivery-state.ts';
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import { DirectEntryStore } from '../agent/direct-entry-store.ts';
 import type DispatchStore from '../agent/dispatch-state.ts';
@@ -23,7 +23,7 @@ const task = (id: string): SharedDispatchRecord => ({
   intakeId: id.repeat(64),
   issueKey: id.repeat(64),
   sourceThreadId: 'intake',
-  phase: 'routing',
+
   createdAt: 1,
   manifestDigest: 'manifest',
   context: 'copied plan',
@@ -192,7 +192,7 @@ describe('agent/retirement disposal', () => {
       issue: fixture.item,
     } as unknown as ManagedIssue;
     const head = 'a'.repeat(40);
-    const delivery: CodexDeliveryState = {
+    const delivery: IssueDeliveryState = {
       id: 'a'.repeat(64),
       binding: {
         repositoryId: fixture.repository.nodeId,
@@ -203,12 +203,10 @@ describe('agent/retirement disposal', () => {
         base: 'main',
         head,
         authorId: account.nodeId,
-        policyDigest: 'b'.repeat(64),
       },
       creationAttempted: false,
       reconciled: false,
       attached: false,
-      cardAttempts: 0,
       pendingPush: { previousHead: '', head },
       pushedHead: head,
       contentUpdate: { title: 'prepared only' },

@@ -1,3 +1,4 @@
+import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
 import renderNativeAssessment, { renderBoundAssessment } from './assessment-render.ts';
 import { nativeObject } from './automation-gateway.ts';
@@ -159,7 +160,7 @@ export async function runCodexDispatch(
       if (
         session &&
         !records.some((record) => record.threadId === session) &&
-        records.some((record) => !record.threadId && record.phase === 'creating')
+        records.some((record) => !record.threadId && dispatchCreationStatus(record) === 'creating')
       ) {
         const owner = await withNative(current, deps, (native) =>
           selectCodexTaskOwner(records, session, native.find),
@@ -259,7 +260,7 @@ async function executeCodexDispatch(
         : records.map((record) => ({
             id: record.id,
             intakeId: record.intakeId,
-            phase: record.phase,
+            phase: dispatchCreationStatus(record),
             threadId: record.threadId,
             clientThreadId: record.clientThreadId,
             worktree: record.worktree,
@@ -518,7 +519,7 @@ async function executeCodexDispatch(
           if (
             action === 'reconcile' &&
             input.receipt === undefined &&
-            record.phase === 'routing' &&
+            dispatchCreationStatus(record) === 'routing' &&
             record.context &&
             record.project &&
             record.routingInstructions &&

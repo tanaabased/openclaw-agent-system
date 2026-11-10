@@ -31,7 +31,7 @@ function fixture() {
     intakeId: 'i',
     issueKey: 'k',
     sourceThreadId: 'owner',
-    phase: 'complete',
+
     createdAt: baseline,
     manifestDigest: 'd',
     retirement: {

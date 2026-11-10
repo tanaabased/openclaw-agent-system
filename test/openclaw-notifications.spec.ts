@@ -137,7 +137,7 @@ function record(): OpenClawDispatchRecord {
     intakeId: 'intake',
     issueKey: 'b'.repeat(64),
     sourceThreadId: 'coordinator',
-    phase: 'routing',
+
     createdAt: baseline,
     manifestDigest: 'digest',
   };
@@ -237,12 +237,13 @@ describe('agent/openclaw-notifications', () => {
     assert.equal(JSON.stringify(result).includes('policyDigest'), false);
   });
 
-  it('should keep saved implementation questions out of native activity status', async () => {
+  it('should report native activity without implementation progress records', async () => {
     const f = fixture();
     const item = {
       ...record(),
+      threadId: 'issue-chat',
       issueKey: issueKey(f.state!.records[0]!),
-      phase: 'complete',
+
       work: {},
     } as OpenClawDispatchRecord;
     f.records.push(item);
@@ -256,8 +257,9 @@ describe('agent/openclaw-notifications', () => {
     const f = fixture();
     const item = {
       ...record(),
+      threadId: 'issue-chat',
       issueKey: issueKey(f.state!.records[0]!),
-      phase: 'complete',
+
       work: {
         implementation: { runId: 'original', inputEventId: 'original-input' },
       },
@@ -305,7 +307,7 @@ describe('agent/openclaw-notifications', () => {
     f.records.push({
       ...record(),
       issueKey: issueKey(f.state!.records[0]!),
-      phase: 'created',
+
       worktree: '/worktree',
       threadId: 'issue-chat',
       sessionCreation: {
@@ -397,14 +399,15 @@ describe('agent/openclaw-notifications', () => {
   it('should distinguish creation uncertainty from verified native preparation', async () => {
     const f = fixture();
     const r = record();
+    r.request = {} as NonNullable<typeof r.request>;
     r.issueKey = issueKey(f.state!.records[0]!);
     f.records.push(r);
-    r.phase = 'creating';
+
     assert.equal(
       (await f.service.inspect(f.manifest, '/workspace')).items[0]?.workflow?.phase,
       'creating',
     );
-    r.phase = 'created';
+
     r.worktree = '/worktree';
     r.threadId = 'issue-chat';
     r.sessionCreation = {
@@ -430,7 +433,7 @@ describe('agent/openclaw-notifications', () => {
     const r: OpenClawDispatchRecord = {
       ...record(),
       issueKey: issueKey(f.state!.records[0]!),
-      phase: 'created',
+
       worktree: '/worktree',
       threadId: 'issue-chat',
       sessionCreation: {
@@ -464,7 +467,7 @@ describe('agent/openclaw-notifications', () => {
     f.records.push({
       ...record(),
       issueKey: issueKey(f.state!.records[0]!),
-      phase: 'blocked',
+
       blocker: 'dispatch-native-session-diverged',
     });
     const blocked = await f.service.wait(f.manifest, '/workspace', {
@@ -551,7 +554,7 @@ describe('agent/openclaw-notifications', () => {
         f.records.push({
           ...record(),
           issueKey: issueKey(f.state!.records[0]!),
-          phase: 'created',
+
           worktree: '/worktree',
           threadId: 'issue-chat',
           sessionCreation: {
@@ -589,7 +592,7 @@ describe('agent/openclaw-notifications', () => {
       f.records.push({
         ...record(),
         issueKey: issueKey(f.state!.records[0]!),
-        phase: 'created',
+
         worktree: '/worktree',
         threadId: 'issue-chat',
         sessionCreation: {

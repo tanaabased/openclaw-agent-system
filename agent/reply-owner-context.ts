@@ -1,5 +1,4 @@
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
-import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
 import type { ReplyOwner } from './reply-owner.ts';
@@ -23,13 +22,11 @@ export default function replyOwnerContext(input: {
       pullRequestNodeId: string;
       pullRequestNumber: number;
     };
-    announcement?: DeliveryAnnouncementState;
-    announcementRecovery?: unknown;
   };
 }): ReplyOwner {
   const { record, intake, delivery } = input;
   const observationOnly = Boolean(delivery?.adopted && !delivery.pushedHead);
-  const announcement = delivery?.announcement;
+  const announcement = record.announcement;
   const destination = intake
     ? `https://github.com/${intake.repository.owner.login}/${intake.repository.name}/${record.manualIssue?.pullRequest ? 'pull' : 'issues'}/${intake.issue.number}`
     : undefined;
@@ -64,7 +61,7 @@ export default function replyOwnerContext(input: {
     announcement.publicText &&
     announcement.authorId === intake?.receiving.nodeId &&
     !announcement.code &&
-    !delivery?.announcementRecovery
+    !record.announcementRecovery
       ? {
           announcement: {
             destination,

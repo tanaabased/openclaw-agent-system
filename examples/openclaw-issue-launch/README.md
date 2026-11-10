@@ -204,9 +204,9 @@ const before = JSON.parse(readFileSync(process.env.TMPDIR + '/manual-pr-launch.j
 const records = readdirSync(root).filter(name => name.startsWith('openclaw-dispatch-') && name.endsWith('.json')).flatMap(name => JSON.parse(readFileSync(root + '/' + name, 'utf8')).records).filter(record => record.manualIssue?.issue.nodeId === before.manualIssue.issue.nodeId);
 assert.equal(records.length, 1);
 for (const field of ['id', 'threadId', 'worktree']) assert.equal(records[0][field], before[field]);
-assert.equal(records[0].work.delivery.pullRequest.pullRequestNodeId, before.manualIssue.issue.nodeId);
-assert.equal(records[0].work.delivery.reconciled, true);
-assert.equal(records[0].work.delivery.creationAttempted, false);
+assert.equal(records[0].delivery.pullRequest.pullRequestNodeId, before.manualIssue.issue.nodeId);
+assert.equal(records[0].delivery.reconciled, true);
+assert.equal(records[0].delivery.creationAttempted, false);
 assert.equal(records[0].work.result.outcome, 'done');
 NODE
 openclaw agent-system automations list --json | jq -e '.status == "aligned" and (.jobs | length) == 0'

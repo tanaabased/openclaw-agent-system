@@ -42,7 +42,7 @@ export async function selectCodexTaskOwner(
       !record.request ||
       record.reset ||
       record.supersededBy ||
-      (record.threadId ? record.threadId !== threadId : record.phase !== 'creating')
+      (record.threadId && record.threadId !== threadId)
     )
       continue;
     let native;
@@ -136,8 +136,7 @@ export async function readCodexTaskOwner(pluginData: string, turn: Turn) {
   const records = (await journal.read()).records;
   if (
     !records.some(
-      (record) =>
-        record.threadId === turn.threadId || (!record.threadId && record.phase === 'creating'),
+      (record) => record.threadId === turn.threadId || (!record.threadId && record.request),
     )
   )
     return;

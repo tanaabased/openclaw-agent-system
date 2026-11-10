@@ -200,7 +200,7 @@ export default async function runCodexContinuation(
       }
       if (input.action === 'next' || input.action === 'reconcile') {
         for (const record of state.records) {
-          if (record.delivery?.announcement?.attempted && !record.delivery.announcement.receipt)
+          if (record.announcement?.attempted && !record.announcement.receipt)
             await recoverCodexAnnouncement(record, context);
         }
         return { status: 'reconciled' as const };

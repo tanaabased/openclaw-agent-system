@@ -15,7 +15,7 @@ function pending(id = 'a'.repeat(64)) {
     intakeId: id,
     issueKey: id,
     sourceThreadId: 'agent:receiver:automation:intake',
-    phase: 'routing',
+
     createdAt: 1,
     manifestDigest: 'manifest',
   } satisfies OpenClawDispatchRecord;
@@ -23,7 +23,7 @@ function pending(id = 'a'.repeat(64)) {
 function prepared(): OpenClawDispatchRecord {
   return {
     ...pending(),
-    phase: 'creating',
+
     context: '{}',
     routing: '{}',
     routingNote: 'selected',
@@ -121,7 +121,7 @@ describe('agent/shared dispatch state', () => {
     });
     const restarted = new OpenClawDispatchStore(root, scope);
     const state = await restarted.read();
-    assert.equal(state.records[0]!.phase, 'creating');
+    assert.deepEqual(state.records[0], prepared());
   });
 
   it('should preserve recorded blockers without repairing workflow state on read', async () => {
@@ -130,7 +130,7 @@ describe('agent/shared dispatch state', () => {
       ...pending(),
       threadId: 'native-chat',
       worktree: '/worktree',
-      phase: 'blocked' as const,
+      blocker: 'native-approval-denied',
       context: '{}',
       routing: '{}',
       routingNote: 'selected',
@@ -165,7 +165,7 @@ describe('agent/shared dispatch state', () => {
     const before = await readFile(store.path, 'utf8');
     const restarted = new CodexDispatchStore(root, scope);
     const recovered = (await restarted.read()).records[0]!;
-    assert.equal(recovered.phase, 'blocked');
+
     assert.deepEqual(recovered.request, original.request);
     assert.equal(recovered.threadId, original.threadId);
     assert.equal(recovered.worktree, original.worktree);
@@ -190,9 +190,6 @@ describe('agent/shared dispatch state', () => {
       },
       (records: OpenClawDispatchRecord[]) => {
         records.push({ ...pending('d'.repeat(64)), issueKey: records[0]!.issueKey });
-      },
-      (records: OpenClawDispatchRecord[]) => {
-        records[0]!.phase = 'creating';
       },
       (records: OpenClawDispatchRecord[]) => {
         records[0] = { ...prepared(), worktree: '/different' };

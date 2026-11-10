@@ -11,7 +11,7 @@ import assessmentOwner from '../agent/assessment-owner.ts';
 import { assessmentResultFormat, type AssessmentSubmission } from '../agent/assessment-result.ts';
 import assessmentSkillSource from '../agent/assessment-skill-source.ts';
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
-import { nativeIssueContext } from '../agent/implementation-delivery.ts';
+import { nativeIssueContext } from '../agent/native-issue-context.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
@@ -144,7 +144,7 @@ describe('agent/assessment-entry', () => {
       deps.binding.runtime = runtime;
       const nativeContext = nativeIssueContext({
         id: 'delivered',
-        phase: 'complete',
+
         worktree: root,
       });
       const before = structuredClone(nativeContext);
@@ -181,9 +181,8 @@ describe('agent/assessment-entry', () => {
       selections = [];
       const nativeContext = nativeIssueContext({
         id: 'delivered',
-        phase: 'complete',
+
         worktree: root,
-        implementationDelivered: true,
       });
       const before = structuredClone(nativeContext);
       deps.managed = async () => ({

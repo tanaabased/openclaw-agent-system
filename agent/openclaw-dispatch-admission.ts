@@ -1,3 +1,4 @@
+import dispatchCreationStatus from './dispatch-creation-status.ts';
 import type { Static } from 'typebox';
 import { assignmentClaimRoute } from './assignment-claim-source.ts';
 import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
@@ -125,7 +126,11 @@ export default class OpenClawDispatchAdmission {
         ).available
       )
         return { status: 'at-capacity' as const, id: record.id };
-      if (record.phase !== 'routing' || input.digest !== digest(record) || !record.context)
+      if (
+        dispatchCreationStatus(record) !== 'routing' ||
+        input.digest !== digest(record) ||
+        !record.context
+      )
         throw new Error('dispatch-preparation-stale');
       setStage('routing');
       const instructions = await openClawRoutingInstructions(this.context, tx);
@@ -206,7 +211,7 @@ export default class OpenClawDispatchAdmission {
         sourceRunId: caller.runId,
         sourceToolCallId: caller.toolCallId,
       };
-      record.phase = 'creating';
+
       setStage('verification');
       await this.context.validateLocal(manifest, workspace, record);
       await save();

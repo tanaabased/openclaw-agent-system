@@ -1,3 +1,4 @@
+import dispatchCreationStatus from './dispatch-creation-status.ts';
 import {
   githubNotificationQuote,
   githubNotificationMarkdownCode as inlineCode,
@@ -62,7 +63,7 @@ export default function prepareDispatchReport(input: {
   const problems = active.filter(
     (record) =>
       !record.effective &&
-      ['blocked', 'waiting', 'retrying'].includes(record.phase) &&
+      ['blocked', 'waiting', 'retrying'].includes(dispatchCreationStatus(record)) &&
       Boolean(dispatchBlocker(record)),
   );
   const observations = [

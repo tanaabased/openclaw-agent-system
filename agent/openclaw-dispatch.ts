@@ -1,3 +1,4 @@
+import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { isDeepStrictEqual } from 'node:util';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
@@ -118,7 +119,6 @@ export default class OpenClawDispatch {
         scheduleDispatchRetry(record, code, error, (this.dependencies.now ?? Date.now)());
         if (stage) record.failureStage = stage;
         status = dispatchFailurePhase(record, code, error);
-        if (record.phase !== 'complete') record.phase = status;
         await save();
       }
     }, true);
@@ -795,7 +795,7 @@ export default class OpenClawDispatch {
               : records.map((record) => ({
                   id: record.id,
                   intakeId: record.intakeId,
-                  phase: record.phase,
+                  phase: dispatchCreationStatus(record),
                   workflowStatus: workflowStatus(record),
                   assignmentObservation: record.assignmentObservation,
                   assignmentWarning:
@@ -845,7 +845,7 @@ export default class OpenClawDispatch {
           if (record.request) throw new Error('dispatch-native-recovery-required');
           record.manifestDigest = current.manifestDigest;
           await this.validate(manifest, workspace, record);
-          record.phase = 'routing';
+
           delete record.blocker;
           delete record.failureStage;
           delete record.context;

@@ -16,7 +16,6 @@ function fixture() {
     nativeWork: {
       scope: 'local',
       selection: { observedAt: 1 },
-      policyDigest: 'policy',
     },
   } as DispatchRecord;
   const receipts: string[] = [];
@@ -78,7 +77,7 @@ describe('agent/codex-work-turn', () => {
     context.observeTurn = async () => ({ status: 'active', receiptId: 'fresh-read' });
     assert.equal((await advance(record, context, verified)).ready, true);
     assert.equal((record as DispatchRecord).progression?.stage, 'implementation');
-    assert.equal(record.nativeWork!.observation.receiptId, 'fresh-read');
+    assert.equal(record.nativeWork!.observation.turnId, 'work');
   });
 
   it('should bind current work to the exact verified feedback receipt', async () => {
@@ -103,13 +102,11 @@ describe('agent/codex-work-turn', () => {
       return { status: 'verified', turnId: 'feedback', ended: false };
     };
     assert.equal((await advance(record, context, verified)).ready, true);
-    assert.equal(record.nativeWork!.binding!.turnId, 'feedback');
   });
 
   it('should enter work without saving a plan or creating a coordinator request', async () => {
     const { record, context, verified } = fixture();
     assert.equal((await advance(record, context, verified)).ready, true);
-    assert.equal(record.nativeWork!.binding!.turnId, 'work');
   });
 
   it('should preserve current native denials without mutating prior receipts', async () => {

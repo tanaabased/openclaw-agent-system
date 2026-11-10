@@ -5,7 +5,7 @@ import { selectCodexTurnTask } from '../agent/codex-turn-task.ts';
 
 const record = {
   id: 'a'.repeat(64),
-  phase: 'creating',
+
   createdAt: 1,
   sourceThreadId: 'intake',
   request: { prompt: '> assignment card' },
@@ -120,7 +120,7 @@ describe('agent/codex-turn-task', () => {
     const feedback = {
       ...structuredClone(record),
       threadId: turn.threadId,
-      phase: 'assessing',
+
       feedback: {
         events: [
           {

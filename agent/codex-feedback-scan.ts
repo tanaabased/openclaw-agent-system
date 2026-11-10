@@ -83,7 +83,7 @@ export async function scanCodexFeedback(input: {
             record,
             intake: admitted,
             client: provider.comments,
-            announcement: record.delivery?.announcement,
+            announcement: record.announcement,
             replies: () =>
               replyOwnPublications({
                 root: current.store.location.root,

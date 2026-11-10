@@ -1,3 +1,6 @@
+import { issueDeliveryStateSchema } from './issue-delivery-state.ts';
+import { deliveryAnnouncementStateSchema } from './delivery-announcement-state.ts';
+import { announcementRecoverySchema } from './delivery-announcement-recovery.ts';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { Type, type Static, type TObject, type TSchema } from 'typebox';
@@ -39,6 +42,9 @@ import { routingInstructionsSchema } from './routing-instructions.ts';
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
 export const dispatchRecordProperties = {
+  delivery: Type.Optional(issueDeliveryStateSchema),
+  announcement: Type.Optional(deliveryAnnouncementStateSchema),
+  announcementRecovery: Type.Optional(announcementRecoverySchema),
   blocker: Type.Optional(text),
   cleanupPending: Type.Optional(Type.Literal(true)),
   projectWork: Type.Optional(projectWorkSchema),
@@ -59,19 +65,8 @@ export const dispatchRecordProperties = {
   ),
   issueKey: hash,
   sourceThreadId: text,
-  phase: Type.Union([
-    Type.Literal('routing'),
-    Type.Literal('creating'),
-    Type.Literal('created'),
-    Type.Literal('assessing'),
-    Type.Literal('complete'),
-    Type.Literal('blocked'),
-    Type.Literal('waiting'),
-    Type.Literal('retrying'),
-  ]),
   createdAt: Type.Integer({ minimum: 0 }),
   progression: Type.Optional(issueProgressionSchema),
-  implementationDelivered: Type.Optional(Type.Literal(true)),
   manifestDigest: text,
   assessment: Type.Optional(assessmentSelectionSchema),
   context: Type.Optional(Type.String({ maxLength: 96000 })),
@@ -302,16 +297,10 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
               issueKey(r.manualIssue) !== r.issueKey)) ||
           (!r.cleanupPending &&
             ((r.request && (!r.context || !r.routing || !r.routingNote)) ||
-              (['creating', 'assessing', 'complete'].includes(r.phase) && !r.request) ||
-              (r.phase === 'created' &&
-                (this.contract.runtime !== 'openclaw' ||
-                  !r.request ||
-                  !r.threadId ||
-                  !r.effective)) ||
               (r.handoff && (!r.request || !r.threadId || !r.worktree)))),
       ) ||
       state.records.some((r) => !r.cleanupPending && !validNativeDispatchRecord(r)) ||
-      state.records.some((r) => r.reset && (r.phase !== 'complete' || !r.threadId)) ||
+      state.records.some((r) => r.reset && !r.threadId) ||
       state.records.some((r) =>
         r.cleanupPending ? !validPendingRetirement(r) : !this.contract.validRecord(r),
       )

@@ -308,7 +308,7 @@ describe('agent/native retirement runtime entries', () => {
         id: 'a'.repeat(64),
         issueKey: 'b'.repeat(64),
         sourceThreadId: caller.sessionKey,
-        phase: 'routing',
+
         intakeId: 'c'.repeat(64),
         createdAt: 1,
         manifestDigest: 'manifest',
@@ -402,7 +402,7 @@ describe('agent/native retirement runtime entries', () => {
         id: 'a'.repeat(64),
         issueKey: 'b'.repeat(64),
         sourceThreadId: 'operator',
-        phase: 'routing',
+
         intakeId: 'c'.repeat(64),
         createdAt: 1,
         manifestDigest: 'manifest',

@@ -1,3 +1,4 @@
+import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { Value } from 'typebox/value';
 import type IntakeRecordStore from '../channels/github/intake/record-store.ts';
 import type { IntakeObservation } from '../channels/github/intake/record-store.ts';
@@ -35,9 +36,7 @@ type ExistingDelivery = {
 export default async function issueLaunch<
   R extends SharedDispatchRecord & {
     delivery?: ExistingDelivery;
-    work?: {
-      delivery?: ExistingDelivery;
-    };
+
     sessionCreation?: {
       verified?: true;
     };
@@ -57,7 +56,6 @@ export default async function issueLaunch<
       | 'manualIssue'
       | 'issueKey'
       | 'sourceThreadId'
-      | 'phase'
       | 'createdAt'
       | 'manifestDigest'
       | 'context'
@@ -216,7 +214,7 @@ export default async function issueLaunch<
         Boolean(
           pullRequest &&
           (record.delivery?.pullRequest?.pullRequestNodeId === item.nodeId ||
-            record.work?.delivery?.pullRequest?.pullRequestNodeId === item.nodeId),
+            record.delivery?.pullRequest?.pullRequestNodeId === item.nodeId),
         ),
     );
     const exact =
@@ -279,7 +277,7 @@ export default async function issueLaunch<
         id: record.id,
         destination: record.threadId,
         sameConversation: record.threadId === context.binding.session,
-        phase: record.phase,
+        phase: dispatchCreationStatus(record),
         pending: launchPending(record),
         instruction:
           'Reuse this managed issue destination and its current stage. Do not create another session or repeat completed setup. If creation or assessment dispatch is pending, call launch reconcile with this target from the original launching conversation.',
@@ -315,7 +313,7 @@ export default async function issueLaunch<
         manualIssue: manual,
         issueKey: key,
         sourceThreadId: context.binding.session,
-        phase: 'routing',
+
         createdAt: context.now,
         manifestDigest: automationHash(context.manifest),
         context: JSON.stringify(evidence),
