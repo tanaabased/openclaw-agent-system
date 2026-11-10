@@ -161,6 +161,45 @@ describe('agent/issue-pickup', () => {
       });
     }
 
+    it(`should not reject an actionable candidate for ordinary implementation uncertainty in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      f.candidates.get(f.item.number)!.body =
+        'The required outcome is clear; implementation details can be resolved during work.';
+      const result = await f.run({ selection: await f.select() });
+      assert.equal(result.status, 'assigned');
+      assert.equal(f.effects.writes, 1);
+    });
+
+    it(`should preserve no-selection when no candidate can proceed without human clarification in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      f.candidates.get(f.item.number)!.body =
+        'Implementation depends on an operator deciding which cleanup policy applies.';
+      const otherNumber = f.item.number + 1;
+      const otherNodeId = 'I_other-clarification';
+      f.items.set(otherNumber, {
+        ...f.item,
+        number: otherNumber,
+        nodeId: otherNodeId,
+        assignees: [],
+      });
+      f.candidates.set(otherNumber, {
+        ...f.candidates.get(f.item.number)!,
+        number: otherNumber,
+        nodeId: otherNodeId,
+        body: 'The expected result is unclear until the operator selects a policy.',
+      });
+      const result = await f.run({
+        selection: {
+          issueNodeId: null,
+          rationale: 'both candidates require an operator decision before work can proceed',
+          shortlist: [f.item.nodeId, otherNodeId],
+        },
+      });
+      assert.equal(result.status, 'empty');
+      assert.equal(f.effects.writes, 0);
+      assert.deepEqual(f.state.projectPickup!.operations, []);
+    });
+
     for (const mode of ['all', 'multiple', 'prefer'] as const) {
       it(`should select ${mode} scope with fresh eligibility in ${runtime}`, async () => {
         const f = fixture(runtime);
