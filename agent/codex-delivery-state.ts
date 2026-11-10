@@ -32,6 +32,7 @@ export const codexDeliveryStateSchema = Type.Object(
     body: Type.Optional(Type.String({ maxLength: 65536 })),
     creationAttempted: Type.Boolean(),
     contentUpdate: Type.Optional(deliveryContentUpdateSchema),
+    contentUpdateAttempted: Type.Optional(Type.Boolean()),
     pushedHead: Type.Optional(Type.String({ pattern: '^[a-f0-9]{40,64}$' })),
     pendingPush: Type.Optional(deliveryPendingPushSchema),
     pullRequest: Type.Optional(deliveryPullRequestSchema),

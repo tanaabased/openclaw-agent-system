@@ -71,6 +71,43 @@ function fixture() {
 }
 
 describe('github delivery head observation', () => {
+  it('should reconcile retired push and content attempts using exact provider reads only', async () => {
+    const f = fixture();
+    const execute = f.provider.client.execute;
+    let remoteHead = f.input.headSha;
+    let repositoryId = 'R_repo';
+    f.provider.client.execute = async (argv) => {
+      assert.ok(!argv.includes('POST') && !argv.includes('PATCH') && !argv.includes('DELETE'));
+      const value = argv.includes('repos/owner/repo')
+        ? { nodeId: repositoryId }
+        : argv.includes('repos/owner/repo/git/ref/heads/task')
+          ? { sha: remoteHead }
+          : argv.includes('{nodeId:.user.node_id}')
+            ? { nodeId: 'U_agent' }
+            : undefined;
+      if (value)
+        return {
+          exitCode: 0,
+          stdout: 'HTTP/2 200 OK\n\n' + JSON.stringify(value),
+          stderr: '',
+          timedOut: false,
+          truncated: false,
+        };
+      return execute(argv);
+    };
+    const pendingPush = { head: f.input.headSha };
+    assert.equal(await f.provider.retirementOutcome(f.input, { pendingPush }), true);
+    remoteHead = 'c'.repeat(40);
+    assert.equal(await f.provider.retirementOutcome(f.input, { pendingPush }), false);
+    const content = { ...f.input, contentUpdate: { title: 'Title', body: '' } };
+    f.observed.state = 'closed';
+    assert.equal(await f.provider.retirementOutcome(content, {}), true);
+    content.contentUpdate.body = 'unobserved content';
+    assert.equal(await f.provider.retirementOutcome(content, {}), false);
+    repositoryId = 'R_other';
+    await assert.rejects(f.provider.retirementOutcome(f.input, {}), /repository-identity-changed/);
+  });
+
   it('should read existing pr content from the provider and reject another identity', async () => {
     const f = fixture();
     const input = { repository: 'owner/repo', number: 7, nodeId: 'PR_7' };

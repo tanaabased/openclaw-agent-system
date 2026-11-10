@@ -4011,7 +4011,7 @@ describe('agent/codex-dispatch', () => {
       assert.equal((await record()).retirement?.code, 'retirement-native-reclamation-pending');
       await rm(moved, { recursive: true });
       await next();
-      assert.ok((await record()).retired);
+      assert.equal(await record(), undefined);
       assert.ok(!gitCalls.some((args) => args.includes('remove')));
     });
   }
@@ -4093,20 +4093,9 @@ describe('agent/codex-dispatch', () => {
       assert.equal((await store.read()).records[0]!.retired, undefined);
       await rm(worktree, { recursive: true });
       await next();
-      const retired = (await store.read()).records[0]!;
-      assert.equal(retired.retired?.at, now);
-      assert.equal(retired.retainedHistory?.outcome?.assessment, result.outcome);
-      assert.equal(retired.result, undefined);
-      if (reason === 'operator request') {
-        assert.equal((await request('retire', { id: prepared.id }, operator)).status, 'retired');
-        await assert.rejects(
-          store.exclusive(async (state, save) => {
-            delete state.records[0]!.retirement!.archivedAt;
-            await save();
-          }),
-          /dispatch-state-invalid/,
-        );
-      }
+      assert.deepEqual((await store.read()).records, []);
+      await next();
+      assert.deepEqual((await store.read()).records, []);
     });
   }
 
@@ -6551,5 +6540,44 @@ describe('agent/codex-dispatch', () => {
       assert.ok('issueStage' in continuation && continuation.issueStage === 'implementation');
       const retirement = await request('retire', { id: first.id }, { threadId: 'operator' });
       assert.equal(retirement.status, 'retire-available', JSON.stringify(retirement));
+      const operator = {
+        threadId: 'operator',
+        activation: async () => {
+          throw new Error('manual retirement must not require intake');
+        },
+      };
+      const pending = await request('retire', { id: first.id, apply: true }, operator);
+      assert.equal(pending.status, 'retirement-pending', JSON.stringify(pending));
+      native!.status = 'idle';
+      native!.turnStatus = 'completed';
+      native!.turnEnded = true;
+      deps.retirementNative = {
+        worktreeUsers: async () => [native!.id],
+        archiveOutcome: async () => 'unverified',
+      };
+      const threads = {
+        schemaVersion: 4,
+        pinnedThreads: [],
+        unavailableHosts: [],
+        unavailableSources: [],
+      };
+      const preparedRetirement = await request(
+        'retire',
+        { id: first.id, apply: true, threads },
+        operator,
+      );
+      assert.equal(
+        preparedRetirement.status,
+        'retirement-prepared',
+        JSON.stringify(preparedRetirement),
+      );
+      native!.archived = true;
+      await rm(native!.cwd, { recursive: true });
+      const finished = await request('retire', { id: first.id, apply: true, threads }, operator);
+      assert.equal(finished.status, 'retired', JSON.stringify(finished));
+      assert.deepEqual(
+        (await new CodexDispatchStore(pluginData, selected.store.location.scope).read()).records,
+        [],
+      );
     });
 });

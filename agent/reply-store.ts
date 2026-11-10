@@ -162,6 +162,18 @@ export default class ReplyStore {
             await this.draftFile(draft.id).write(content);
             saved.set(draft.id, content);
           }
+          const removed = [...saved.keys()].filter(
+            (id) => !drafts.some((draft) => draft.id === id),
+          );
+          if (removed.length) {
+            // Drop the legacy aggregate first; retained operations already have individual files.
+            for (const draft of drafts) await this.draftFile(draft.id).write(JSON.stringify(draft));
+            await this.file.remove();
+            for (const id of removed) {
+              await this.draftFile(id).remove();
+              saved.delete(id);
+            }
+          }
         });
       });
     } finally {

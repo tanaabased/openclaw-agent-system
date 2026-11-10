@@ -149,4 +149,30 @@ export default class ColdHistory {
       await this.file(entry.name).remove();
     }
   }
+
+  /** delete only snapshots of this exact task, including earlier pressure projections. */
+  async removeTask(id: string) {
+    if (!/^[a-f0-9]{64}$/u.test(id)) throw new Error('history-task-invalid');
+    await this.removeTasks((task) => task === id);
+  }
+
+  private async removeTasks(selected: (id: string) => boolean) {
+    for (const name of await readdir(this.directory)) {
+      const match = namePattern.exec(name);
+      if (!match) continue;
+      const file = this.file(name);
+      const contents = await file.read();
+      if (contents === undefined) continue;
+      if (digest(contents) !== match[2]) throw new Error('history-integrity-failed');
+      const snapshot = JSON.parse(contents) as { version?: unknown; value?: { id?: unknown } };
+      const id = snapshot.value?.id;
+      if (
+        snapshot.version === 1 &&
+        typeof id === 'string' &&
+        /^[a-f0-9]{64}$/u.test(id) &&
+        selected(id)
+      )
+        await file.remove();
+    }
+  }
 }
