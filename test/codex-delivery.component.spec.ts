@@ -104,10 +104,12 @@ describe('agent/codex-delivery', () => {
   let failCreate: boolean, failLink: boolean, failRecipient: boolean;
   let assignedRecipients: string[], requestedReviewers: string[];
   let pr: Record<string, unknown> | undefined;
+  let providerLink: boolean | undefined;
+  let lostLink: boolean, wrongIssueLink: boolean;
   let bindingOverride: Record<string, unknown>;
   let gitCalls: string[][];
   let branch: string;
-  let linkReads: number, bodyWrites: number;
+  let linkReads: number, linkWrites: number, bodyWrites: number;
   let failPatch: 'before' | 'after' | false;
   async function request(
     action: string,
@@ -558,9 +560,11 @@ describe('agent/codex-delivery', () => {
     assignedRecipients = [];
     requestedReviewers = [];
     pr = undefined;
+    providerLink = false;
+    lostLink = wrongIssueLink = false;
     bindingOverride = {};
     gitCalls = [];
-    linkReads = bodyWrites = 0;
+    linkReads = linkWrites = bodyWrites = 0;
     failPatch = false;
     deps = {
       delay: async () => {},
@@ -607,8 +611,22 @@ describe('agent/codex-delivery', () => {
             const comment = announcement.execute(argv, stdin);
             if (comment) return comment;
             if (argv.includes('graphql')) {
+              const request = JSON.parse(stdin!);
+              if (request.query.startsWith('mutation')) {
+                assert.deepEqual(request.variables, { issue: 'I_issue', pullRequests: ['PR_7'] });
+                linkWrites++;
+                if (failLink) throw new Error('link unavailable');
+                providerLink = !wrongIssueLink;
+                if (lostLink) throw new Error('link response lost');
+                return result({
+                  id: wrongIssueLink ? 'I_other' : 'I_issue',
+                });
+              }
               linkReads++;
-              throw new Error('derived linkage index unavailable');
+              return result({
+                id: 'PR_7',
+                closingIssuesReferences: { nodes: providerLink ? [{ id: 'I_issue' }] : [] },
+              });
             }
             const endpoint = argv.find(
               (arg) => arg.startsWith('repos/') || arg.startsWith('users/'),
@@ -673,7 +691,6 @@ describe('agent/codex-delivery', () => {
                 });
               if (argv.includes('PATCH')) {
                 bodyWrites++;
-                if (failLink) throw new Error('link unavailable');
                 if (failPatch === 'before') throw new Error('update interrupted');
                 pr = { ...pr, ...(JSON.parse(stdin!) as object) };
                 if (failPatch === 'after') throw new Error('update interrupted');
@@ -1153,10 +1170,12 @@ describe('agent/codex-delivery', () => {
     assert.equal(announcement.posts, 1);
     assert.equal(creates, 1);
   });
-  it('should block announcement when the retained closing reference has disappeared', async () => {
+  it('should compose after successful delivery without rechecking linkage', async () => {
     await publish();
-    pr!.body = 'Mentions #3 but does not close it.';
-    assert.equal((await request('compose')).status, 'announcement-blocked');
+    const reads = linkReads;
+    providerLink = false;
+    assert.equal((await request('compose')).status, 'composition-ready');
+    assert.equal(linkReads, reads);
     assert.equal(announcement.posts, 0);
     assert.equal((await store.read())!.records[0]!.delivery!.reconciled, true);
   });
@@ -1258,7 +1277,7 @@ describe('agent/codex-delivery', () => {
     assert.equal(initialLink.status, 'linked');
     assert.equal(initialLink.attached, false);
     assert.equal(pr!.title, 'Authored title');
-    assert.equal(pr!.body, 'Authored body.\n\nCloses https://github.com/owner/repo/issues/3');
+    assert.equal(pr!.body, 'Authored body.');
     assert.deepEqual(
       gitCalls.find((argv) => argv.includes('push')),
       [
@@ -1380,7 +1399,7 @@ describe('agent/codex-delivery', () => {
     assert.equal(creates, 0);
     assert.ok(!gitCalls.some((args) => args.includes('push')));
   });
-  it('should resume a failed closing-reference write or recipient phase on the checkpointed pr', async () => {
+  it('should resume a failed link or recipient phase on the checkpointed pr', async () => {
     failLink = true;
     await assert.rejects(publish(), (error: unknown) => {
       assert.ok(error instanceof CodexDeliveryFailure);
@@ -1406,7 +1425,7 @@ describe('agent/codex-delivery', () => {
     assert.equal((await publish()).status, 'published');
     assert.equal(creates, 1);
   });
-  it('should reconcile an older confirmed push before publishing a newer commit after a reference failure', async () => {
+  it('should reconcile an older confirmed push before publishing a newer commit after a link failure', async () => {
     failLink = true;
     await assert.rejects(publish(), /link unavailable/);
     head = 'b'.repeat(40);
@@ -1420,6 +1439,14 @@ describe('agent/codex-delivery', () => {
     assert.equal(delivery.pushedHead, head);
     assert.equal(creates, 1);
     assert.equal(gitCalls.filter((argv) => argv.includes('push')).length, 2);
+  });
+  it('should recover a lost link response from the retained pr without another mutation', async () => {
+    lostLink = true;
+    await assert.rejects(publish(), /link response lost/);
+    assert.equal((await store.read()).records[0]!.delivery!.reconciled, false);
+    assert.equal((await publish()).status, 'published');
+    assert.equal(linkWrites, 1);
+    assert.equal(creates, 1);
   });
   it('should retain uncertain creation intent instead of issuing another create', async () => {
     failCreate = true;
@@ -1536,40 +1563,38 @@ describe('agent/codex-delivery', () => {
     );
     assert.equal(creates, 1);
   });
-  it('should publish and prepare announcement from retained closing references without the derived index', async () => {
-    assert.equal((await publish()).status, 'published');
-    assert.notEqual((await request('compose')).status, 'announcement-blocked');
-    assert.match(String(pr!.body), /Closes https:\/\/github.com\/owner\/repo\/issues\/3/);
+  it('should verify the provider issue link instead of trusting closing prose', async () => {
+    wrongIssueLink = true;
+    await assert.rejects(publish(), /linkage-unverified/);
+    assert.equal((await store.read()).records[0]!.delivery!.pullRequest!.pullRequestNumber, 7);
     assert.equal(linkReads, 0);
+    assert.equal(linkWrites, 1);
+    const retained = await request('present');
+    assert.equal(retained.workflowStatus, 'native-unobserved');
+    assert.match(String(retained.presentation), /pull\/7/);
+    wrongIssueLink = false;
+    await publish();
     assert.equal(creates, 1);
   });
-  it('should retain shorthand closing prose without writes or index recovery notices', async () => {
+  it('should link directly without waiting for closing prose to be parsed', async () => {
     const body = 'Authored body.\n\nCloses #3.';
     await request('prepare', { body });
-    const published = await request('publish', { body });
-    assert.equal(published.status, 'published');
+    assert.equal((await request('publish', { body })).status, 'published');
     assert.equal(pr!.body, body);
     assert.equal(bodyWrites, 0);
     assert.equal(linkReads, 0);
-    assert.ok(
-      !(await store.read()).records[0]!.delivery!.notices?.includes('delivery-linkage-retried'),
-    );
+    assert.equal(linkWrites, 1);
+    await publish({ title: 'Authored title', body });
+    assert.equal(linkWrites, 1);
     assert.equal(creates, 1);
   });
-  it('should recognize equivalent closing references without confusing other issues or repositories', async () => {
+  it('should preserve authored content without requiring closing prose', async () => {
     await publish();
-    for (const [body, added] of [
-      ['CLOSES: #3.', 0],
-      ['Fixed OWNER/REPO#3.', 0],
-      ['Resolves https://github.com/owner/repo/issues/3.', 0],
-      ['Closes #30.', 1],
-      ['Closes other/repo#3.', 1],
-    ] as const) {
-      pr!.body = body;
-      const before = bodyWrites;
-      await publish();
-      assert.equal(bodyWrites - before, added, body);
-    }
+    assert.equal(pr!.body, 'Authored body.');
+    assert.equal(bodyWrites, 0);
+    await publish({ title: 'Updated title', body: 'Updated body without a closing reference.' });
+    assert.equal(pr!.body, 'Updated body without a closing reference.');
+    assert.equal(linkWrites, 1);
     assert.equal(creates, 1);
   });
   it('should present the published pr with a warning when native attachment inspection fails', async () => {
@@ -1765,6 +1790,7 @@ describe('agent/codex-delivery', () => {
       );
       assert.equal((await store.read()).records[0]!.delivery!.pullRequest, undefined);
       assert.equal(pr!.body, 'Authored body.');
+      assert.equal(linkWrites, 0);
     }
     assert.equal(creates, 1);
   });
@@ -1898,7 +1924,7 @@ describe('agent/codex-delivery', () => {
       failPatch = false;
       await publish(content);
       assert.equal(pr!.title, content.title);
-      assert.equal(pr!.body, content.body + '\n\nCloses https://github.com/owner/repo/issues/3');
+      assert.equal(pr!.body, content.body);
       assert.equal(bodyWrites, interruption === 'before' ? 2 : 1);
       assert.equal(creates, 1);
       assert.equal((await store.read()).records[0]!.delivery!.reconciled, true);

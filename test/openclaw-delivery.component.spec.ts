@@ -31,7 +31,8 @@ const response = (value: unknown) => ({
 describe('agent/openclaw-delivery', () => {
   let announcement: ReturnType<typeof announcementFixture>;
   let root: string, record: OpenClawDispatchRecord;
-  let creates: number, pushes: number, saves: number;
+  let creates: number, pushes: number, saves: number, linkWrites: number;
+  let linked: boolean, lostLink: boolean;
   let head: string;
   let ancestor: boolean;
   let patches: number, failPatch: 'before' | 'after' | false;
@@ -39,7 +40,7 @@ describe('agent/openclaw-delivery', () => {
     dirty: boolean,
     lost: boolean,
     missing: boolean,
-    failReference: boolean,
+    failLink: boolean,
     revoked: boolean;
   let pr: Record<string, unknown> | undefined;
   let input: Omit<Parameters<typeof openClawDelivery>[0], 'action'>;
@@ -50,13 +51,14 @@ describe('agent/openclaw-delivery', () => {
     adopted = false;
     root = await realpath(await mkdtemp(join(tmpdir(), 'openclaw-delivery-')));
     announcement = announcementFixture({ login: 'agent', nodeId: 'U_agent', type: 'User' });
-    creates = pushes = saves = 0;
+    creates = pushes = saves = linkWrites = 0;
+    linked = lostLink = false;
     head = 'a'.repeat(40);
     ancestor = true;
     patches = 0;
     failPatch = false;
     remote = '';
-    dirty = lost = missing = failReference = revoked = false;
+    dirty = lost = missing = failLink = revoked = false;
     pr = undefined;
     const result = {
       version: 1 as const,
@@ -155,7 +157,24 @@ describe('agent/openclaw-delivery', () => {
             async execute(argv, stdin) {
               const comment = announcement.execute(argv, stdin);
               if (comment) return comment;
-              if (argv.includes('graphql')) throw new Error('derived linkage index unavailable');
+              if (argv.includes('graphql')) {
+                const request = JSON.parse(stdin!);
+                if (request.query.startsWith('mutation')) {
+                  assert.deepEqual(request.variables, { issue: 'I_issue', pullRequests: ['PR_7'] });
+                  linkWrites++;
+                  if (failLink) throw new Error('link write failed');
+                  linked = true;
+                  if (lostLink) throw new Error('link response lost');
+                  return response({
+                    id: 'I_issue',
+                  });
+                }
+                if (failLink) throw new Error('link read failed');
+                return response({
+                  id: 'PR_7',
+                  closingIssuesReferences: { nodes: linked ? [{ id: 'I_issue' }] : [] },
+                });
+              }
               const endpoint = argv.find((arg) => arg.startsWith('repos/'));
               if (
                 endpoint === 'repos/owner/repo/pulls/7' &&
@@ -220,7 +239,6 @@ describe('agent/openclaw-delivery', () => {
                 });
               if (endpoint === 'repos/owner/repo/pulls/7' && argv.includes('PATCH')) {
                 patches++;
-                if (failReference) throw new Error('reference write failed');
                 if (failPatch === 'before') throw new Error('update interrupted');
                 pr = { ...pr, ...JSON.parse(stdin!) };
                 if (failPatch === 'after') throw new Error('update interrupted');
@@ -856,10 +874,10 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(creates, 1);
   });
   it('should resume incomplete provider effects without another push after restart', async () => {
-    failReference = true;
+    failLink = true;
     await assert.rejects(publish({ title: 'Fix issue', body: 'Authored body.' }));
     input.record = record = JSON.parse(JSON.stringify(record));
-    failReference = false;
+    failLink = false;
     assert.equal((await request('reconcile')).status, 'ready');
     assert.equal(record.work!.delivery!.reconciled, true);
     assert.equal(pushes, 1);
@@ -998,7 +1016,7 @@ describe('agent/openclaw-delivery', () => {
       failPatch = false;
       await publish(content);
       assert.equal(pr!.title, content.title);
-      assert.equal(pr!.body, content.body + '\n\nCloses https://github.com/owner/repo/issues/3');
+      assert.equal(pr!.body, content.body);
       assert.equal(patches, interruption === 'before' ? 2 : 1);
       assert.equal(creates, 1);
       assert.equal(pushes, 1);
@@ -1145,29 +1163,33 @@ describe('agent/openclaw-delivery', () => {
     await assert.rejects(publish(), /delivery-creation-uncertain/);
     assert.equal(creates, 1);
   });
-  it('should publish and prepare announcement without the derived issue-link index', async () => {
-    assert.equal((await publish()).status, 'published');
-    assert.notEqual((await request('compose')).status, 'announcement-blocked');
-    assert.equal(pr!.body, 'Closes #3');
-    assert.equal(record.work!.delivery!.reconciled, true);
-    assert.equal(pushes, 1);
-    assert.equal(creates, 1);
-  });
-  it('should resume a closing-reference write on the checkpointed pr without creating another', async () => {
-    failReference = true;
-    await assert.rejects(publish({ title: 'Fix issue', body: 'Authored body.' }));
+  it('should recover a lost link response by reading the same pr without another mutation', async () => {
+    lostLink = true;
+    await assert.rejects(publish(), /link response lost/);
     assert.equal(record.work!.delivery!.pullRequest?.pullRequestNumber, 7);
     assert.equal(record.work!.delivery!.reconciled, false);
-    failReference = false;
+    input.record = record = JSON.parse(JSON.stringify(record));
+    await publish();
+    assert.equal(record.work!.delivery!.reconciled, true);
+    assert.equal(linkWrites, 1);
+    assert.equal(creates, 1);
+    assert.equal(pushes, 1);
+  });
+  it('should resume linkage on the checkpointed pr without creating another', async () => {
+    failLink = true;
+    await assert.rejects(publish());
+    assert.equal(record.work!.delivery!.pullRequest?.pullRequestNumber, 7);
+    assert.equal(record.work!.delivery!.reconciled, false);
+    failLink = false;
     await publish();
     assert.equal(creates, 1);
   });
-  it('should reconcile an older confirmed push before publishing a newer commit after a reference failure', async () => {
-    failReference = true;
+  it('should reconcile an older confirmed push before publishing a newer commit after a link failure', async () => {
+    failLink = true;
     await assert.rejects(publish({ title: 'Fix issue', body: 'Authored body.' }));
     input.record = record = JSON.parse(JSON.stringify(record));
     head = 'b'.repeat(40);
-    failReference = false;
+    failLink = false;
     assert.equal(
       (await publish({ title: 'Fix issue', body: 'Updated body.' })).status,
       'published',
@@ -1275,6 +1297,6 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(record.work!.delivery!.pendingPush, undefined);
     assert.equal(creates, 1);
     assert.equal(pushes, 2);
-    assert.equal(patches, 2);
+    assert.equal(patches, 1);
   });
 });

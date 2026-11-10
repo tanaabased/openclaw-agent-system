@@ -82,108 +82,35 @@ describe('github delivery head observation', () => {
     await assert.rejects(f.provider.content(input), /delivery-content-identity-mismatch/);
   });
 
-  for (const body of [
-    'Closes #3',
-    'Fixes owner/repo#3.',
-    'Resolves https://github.com/owner/repo/issues/3',
-    'Mentions #3',
-    'Closes #30',
-    'Closes other/repo#3',
-  ])
-    it(`should verify the provider-retained closing reference ${body.toLowerCase()} without an index read or write`, async () => {
-      const f = fixture();
-      f.observed.headSha = f.input.headSha;
-      const execute = f.provider.client.execute;
-      f.provider.client.execute = async (argv) => {
-        assert.ok(!argv.includes('POST') && !argv.includes('PATCH') && !argv.includes('graphql'));
-        let value: unknown;
-        if (argv.includes('repos/owner/repo/issues/3'))
-          value = { databaseId: 3, nodeId: 'I_issue', number: 3, title: 'Issue' };
-        else if (argv.includes('repos/owner/repo/pulls'))
-          value = [
-            {
-              baseRef: 'main',
-              body: 'Closes #3',
-              headRef: 'task',
-              headRepository: 'owner/repo',
-              itemNodeId: 'PR_7',
-              number: 7,
+  it('should inspect the announced pr without requiring closing prose or another linkage read', async () => {
+    const f = fixture();
+    f.observed.headSha = f.input.headSha;
+    const execute = f.provider.client.execute;
+    f.provider.client.execute = async (argv) => {
+      assert.ok(!argv.includes('graphql') && !argv.includes('POST') && !argv.includes('PATCH'));
+      const value = argv.includes('repos/owner/repo/issues/3')
+        ? { databaseId: 3, nodeId: 'I_issue', number: 3, title: 'Issue' }
+        : argv.some((arg) => arg.includes('draft,state'))
+          ? {
+              nodeId: 'PR_7',
+              draft: false,
               state: 'open',
+              head: f.input.headSha,
               title: 'Title',
-            },
-          ];
-        else if (argv.some((arg) => arg.includes('draft,state')))
-          value = {
-            nodeId: 'PR_7',
-            draft: false,
-            state: 'open',
-            head: f.input.headSha,
-            title: 'Title',
-            body,
-          };
-        else return execute(argv);
-        return {
-          exitCode: 0,
-          stdout: 'HTTP/2 200 OK\n\n' + JSON.stringify(value),
-          stderr: '',
-          timedOut: false,
-          truncated: false,
-        };
+              body: '',
+            }
+          : undefined;
+      if (!value) return execute(argv);
+      return {
+        exitCode: 0,
+        stdout: 'HTTP/2 200 OK\n\n' + JSON.stringify(value),
+        stderr: '',
+        timedOut: false,
+        truncated: false,
       };
-      if (body.startsWith('Mentions') || body.includes('#30') || body.includes('other/repo'))
-        await assert.rejects(f.provider.announcement(f.input), {
-          message: 'github-delivery-closing-reference-missing',
-        });
-      else assert.equal((await f.provider.announcement(f.input)).body, body);
-    });
-
-  for (const variant of ['retained', 'dropped', 'rebound'] as const)
-    it(`should require the closing-reference write to retain its exact body and pr identity when ${variant}`, async () => {
-      const f = fixture();
-      f.observed.headSha = f.input.headSha;
-      const execute = f.provider.client.execute;
-      const pr = {
-        baseRef: 'main',
-        body: 'Authored body.',
-        headRef: 'task',
-        headRepository: 'owner/repo',
-        itemNodeId: 'PR_7',
-        number: 7,
-        state: 'open',
-        title: 'Title',
-      };
-      let writes = 0;
-      f.provider.client.execute = async (argv, stdin) => {
-        assert.ok(!argv.includes('graphql') && !argv.includes('POST'));
-        let value: unknown;
-        if (argv.includes('repos/owner/repo/issues/3'))
-          value = { databaseId: 3, nodeId: 'I_issue', number: 3, title: 'Issue' };
-        else if (argv.includes('repos/owner/repo/pulls')) value = [pr];
-        else if (argv.includes('PATCH')) {
-          writes++;
-          value = {
-            ...pr,
-            ...(variant === 'dropped' ? {} : JSON.parse(stdin!)),
-            ...(variant === 'rebound' ? { itemNodeId: 'PR_other' } : {}),
-          };
-        } else return execute(argv);
-        return {
-          exitCode: 0,
-          stdout: 'HTTP/2 200 OK\n\n' + JSON.stringify(value),
-          stderr: '',
-          timedOut: false,
-          truncated: false,
-        };
-      };
-      const publish = () => f.provider.publish({ ...f.input, linkIssue: true, recipients: [] });
-      if (variant === 'retained') assert.deepEqual(await publish(), f.input.expectedPullRequest);
-      else
-        await assert.rejects(publish(), (error) =>
-          /(?:unverified|binding-node-id-changed)/.test(openClawDispatchFailureCode(error)),
-        );
-      assert.equal(writes, 1);
-      assert.deepEqual(f.delays, []);
-    });
+    };
+    assert.equal((await f.provider.announcement(f.input)).pullRequestNumber, 7);
+  });
   it('should conditionally revalidate delivery reads and still reject a changed remote head', async () => {
     const f = fixture();
     f.observed.headSha = f.input.headSha;
@@ -379,4 +306,135 @@ describe('shared delivery push recovery', () => {
     assert.equal(f.pushes(), 1);
     assert.equal(f.input.delivery.reconciled, false);
   });
+});
+
+describe('github delivery explicit issue link', () => {
+  function linkFixture() {
+    const f = fixture();
+    f.observed.headSha = f.input.headSha;
+    const execute = f.provider.client.execute;
+    let linked = false;
+    let returnedIssue = 'I_issue';
+    let failure: 'denied' | 'lost' | undefined;
+    let writes = 0;
+    let reads = 0;
+    let authorized = false;
+    const input = {
+      ...f.input,
+      linkIssue: true,
+      recipients: [],
+      async beforeLink() {
+        authorized = true;
+      },
+    };
+    f.provider.client.execute = async (argv, stdin) => {
+      let value: unknown;
+      if (argv.includes('graphql')) {
+        const request = JSON.parse(stdin!);
+        if (request.query.startsWith('mutation')) {
+          assert.equal(authorized, true);
+          assert.deepEqual(request.variables, { issue: 'I_issue', pullRequests: ['PR_7'] });
+          writes++;
+          if (failure === 'denied')
+            return {
+              exitCode: 1,
+              stdout: 'HTTP/2 403 Forbidden\n\n{}',
+              stderr: 'gh: Resource not accessible by integration (HTTP 403)',
+              timedOut: false,
+              truncated: false,
+            };
+          linked = true;
+          if (failure === 'lost') throw new Error('link response lost');
+          value = {
+            id: returnedIssue,
+          };
+        } else {
+          reads++;
+          value = {
+            id: 'PR_7',
+            closingIssuesReferences: { nodes: linked ? [{ id: 'I_issue' }] : [] },
+          };
+        }
+      } else if (argv.includes('repos/owner/repo/issues/3')) {
+        value = { databaseId: 3, nodeId: 'I_issue', number: 3, title: 'Title' };
+      } else if (argv.includes('{nodeId:.user.node_id}')) value = { nodeId: 'U_agent' };
+      else return execute(argv);
+      return {
+        exitCode: 0,
+        stdout: 'HTTP/2 200 OK\n\n' + JSON.stringify(value),
+        stderr: '',
+        timedOut: false,
+        truncated: false,
+      };
+    };
+    return {
+      ...f,
+      input,
+      writes: () => writes,
+      reads: () => reads,
+      link: () => {
+        linked = true;
+      },
+      fail: (mode: typeof failure) => {
+        failure = mode;
+      },
+      returned: (issue: string) => {
+        returnedIssue = issue;
+      },
+    };
+  }
+
+  it('should set the exact closing association without body writes or timed polling', async () => {
+    const f = linkFixture();
+    await f.provider.publish(f.input);
+    assert.equal(f.writes(), 1);
+    assert.equal(f.reads(), 1);
+    assert.deepEqual(f.delays, []);
+    await f.provider.publish(f.input);
+    assert.equal(f.writes(), 1);
+  });
+
+  it('should preserve an existing association without writing', async () => {
+    const f = linkFixture();
+    f.link();
+    await f.provider.publish(f.input);
+    assert.equal(f.writes(), 0);
+  });
+
+  it('should stop on revoked authority before linking', async () => {
+    const f = linkFixture();
+    f.input.beforeLink = async () => {
+      throw new Error('revoked');
+    };
+    await assert.rejects(f.provider.publish(f.input), /revoked/);
+    assert.equal(f.writes(), 0);
+  });
+
+  it('should surface a rejected write without polling or retrying it', async () => {
+    const f = linkFixture();
+    f.fail('denied');
+    await assert.rejects(f.provider.publish(f.input), /could not reconcile issue delivery/);
+    assert.equal(f.writes(), 1);
+    assert.equal(f.reads(), 1);
+    assert.deepEqual(f.delays, []);
+  });
+
+  it('should reconcile a lost response by reading the existing association', async () => {
+    const f = linkFixture();
+    f.fail('lost');
+    await assert.rejects(f.provider.publish(f.input), /link response lost/);
+    await f.provider.publish(f.input);
+    assert.equal(f.writes(), 1);
+    assert.equal(f.reads(), 2);
+    assert.deepEqual(f.delays, []);
+  });
+
+  for (const issue of ['I_other', ''])
+    it(`should reject a mutation response with ${issue ? 'another issue' : 'no issue identity'}`, async () => {
+      const f = linkFixture();
+      f.returned(issue);
+      await assert.rejects(f.provider.publish(f.input), /linkage-unverified/);
+      assert.equal(f.writes(), 1);
+      assert.deepEqual(f.delays, []);
+    });
 });
