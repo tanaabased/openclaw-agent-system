@@ -543,6 +543,23 @@ describe('tools/dispatch/tool', () => {
     }
     assert.equal(f.hooks.has('agent_end'), false);
   });
+  it('should require native factory owner evidence for retry without trusting hook ownership alone', async () => {
+    const f = fixture();
+    const values: boolean[] = [];
+    f.adapter.service.runModel = async (_manifest, _workspace, _who, _input, owner) => {
+      values.push(owner === true);
+      return { status: 'idle' };
+    };
+    const request = { ...event, params: { action: 'retry' } };
+    for (const senderIsOwner of [true, false, undefined]) {
+      await f.hook(request, { ...coordinator, requester: { senderIsOwner: true } });
+      await f
+        .build({ ...coordinator, workspaceDir: '/workspaces/receiver', senderIsOwner })
+        .execute(request.toolCallId, request.params);
+    }
+    assert.deepEqual(values, [true, false, false]);
+  });
+
   for (const action of ['handoff', 'retire'] as const)
     it(`should require both native requester and factory owner evidence for ${action}`, async () => {
       const f = fixture();

@@ -12,6 +12,11 @@ export default function nativeOperatorSelection<R extends SharedDispatchRecord>(
 ) {
   assertNativeContextInput(input);
   const matches = records.filter((record) => {
+    if (
+      input.action === 'retry' &&
+      (record.retired || record.retirement || record.reset || record.supersededBy)
+    )
+      return false;
     if (input.chat && record.threadId !== input.chat) return false;
     if (input.chat && !input.target) return true;
     if (!input.target) return record.threadId === caller;
