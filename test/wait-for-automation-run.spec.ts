@@ -264,6 +264,7 @@ describe('scripts/wait-for-automation-run', () => {
       summary: 'model output must not be included',
     };
     reportAutomationFailure('native-job', 'requested-run', {
+      evidence: ['condition observation: sensitive-value'],
       run(command: string, args: string[], input?: string) {
         calls.push({ command, args });
         let stdout;
@@ -284,6 +285,7 @@ describe('scripts/wait-for-automation-run', () => {
           assert.equal(command, process.execPath);
           assert.deepEqual(args, ['/ci/helpers/lib/redact-stream.mjs']);
           assert.ok(input?.includes('command failed: sensitive-value'));
+          assert.ok(input?.includes('condition observation: sensitive-value'));
           assert.ok(input?.includes('gateway command failure: sensitive-value'));
           assert.ok(input?.includes('code=automation-lifecycle-begin sensitive-value'));
           assert.ok(!input?.includes(entry.summary));
@@ -295,6 +297,7 @@ describe('scripts/wait-for-automation-run', () => {
     });
     assert.equal(calls.filter(({ command }) => command === 'openclaw').length, 1);
     assert.ok(output.join('').includes('command failed: [REDACTED]'));
+    assert.ok(output.join('').includes('condition observation: [REDACTED]'));
     assert.ok(output.join('').includes('gateway command failure: [REDACTED]'));
     assert.ok(!output.join('').includes('sensitive-value'));
   });

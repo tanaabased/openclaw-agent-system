@@ -19,6 +19,7 @@ Verify that its ID, routing, channel readiness, and dispatch enrollment are pres
 ## Notes
 
 - Direct installed commands need one GitHub identity and native dispatch enrollment, without creating issues, PRs, worktrees, SSH registrations, or model turns.
+- Repository routing denies all assignments so concurrent CI fixtures cannot become work for this scheduling-only agent.
 - Setup, first Install, and scheduling assertions share one fail-fast block. Failed installation retains its output and automation inspection, then stops before dependent checks. CI enables bounded, redacted native rejection evidence for that first attempt.
 - All scheduler and Gateway state belongs to the ephemeral runner.
 - The final check waits for the native schedule, not a forced payload run. Controlled delayed-read and checkpoint/resumption coverage lives in the source component tests; this example verifies the installed condition and native quiet outcome.
