@@ -34,42 +34,19 @@ export interface ReplyOwner {
   publisherLogin?: string;
 }
 
-/** matching work must return to its real owner, including completed or invalid work. */
+/** caller custody and exact retained replies are protected, not exclusive destinations. */
 export default function replyOwner(
   owners: ReplyOwner[],
   session: string,
   incarnation: string,
   target: ReplyTarget,
   purpose?: 'status-update',
+  privateText?: string,
 ) {
   const repository = `${target.owner}/${target.name}`.toLowerCase();
   const callers = owners.filter((owner) => owner.threadId === session);
-  const callerIssue =
-    callers.length === 1 &&
-    callers[0]!.repository?.toLowerCase() === repository &&
-    callers[0]!.pullRequestNumber === target.number
-      ? callers[0]!.number
-      : undefined;
-  const ownership = managedOwner(
-    owners,
-    session,
-    (owner) =>
-      owner.repository?.toLowerCase() === repository &&
-      (target.number === owner.number ||
-        (target.number === owner.pullRequestNumber &&
-          (callerIssue === undefined || owner.number === callerIssue)) ||
-        Boolean(
-          target.source &&
-          (owner.sourceReceipts ?? owner.events)?.some(
-            (event) =>
-              event.native &&
-              event.nodeId === target.nodeId &&
-              event.sourceId === target.source!.nodeId,
-          ),
-        )),
-  );
-  if (ownership.status === 'ambiguous') throw new Error('reply-managed-owner-ambiguous');
-  const { owner, caller } = ownership;
+  if (callers.length > 1) throw new Error('reply-managed-owner-ambiguous');
+  const caller = callers[0];
   if (
     caller &&
     (caller.inactive ||
@@ -78,6 +55,44 @@ export default function replyOwner(
       (caller.incarnation && caller.incarnation !== incarnation))
   )
     throw new Error('reply-managed-context-invalid');
+  const retained = owners.filter((owner) => retainedReply(owner.events, target, privateText));
+  if (!purpose && !retained.length) {
+    return caller &&
+      caller.repository?.toLowerCase() === repository &&
+      (caller.number === target.number ||
+        caller.pullRequestNumber === target.number ||
+        caller.sourceReceipts?.some(
+          (event) =>
+            event.native &&
+            event.nodeId === target.nodeId &&
+            event.sourceId === target.source?.nodeId,
+        ))
+      ? manualContext(caller, target)
+      : undefined;
+  }
+  const callerIssue =
+    caller?.repository?.toLowerCase() === repository && caller.pullRequestNumber === target.number
+      ? caller.number
+      : undefined;
+  const ownership = managedOwner(owners, session, (owner) =>
+    purpose
+      ? owner.repository?.toLowerCase() === repository &&
+        (target.number === owner.number ||
+          (target.number === owner.pullRequestNumber &&
+            (callerIssue === undefined || owner.number === callerIssue)) ||
+          Boolean(
+            target.source &&
+            (owner.sourceReceipts ?? owner.events)?.some(
+              (event) =>
+                event.native &&
+                event.nodeId === target.nodeId &&
+                event.sourceId === target.source!.nodeId,
+            ),
+          ))
+      : retained.includes(owner),
+  );
+  if (ownership.status === 'ambiguous') throw new Error('reply-managed-owner-ambiguous');
+  const { owner } = ownership;
   if (!owner) {
     if (ownership.status === 'historical' || (purpose && caller))
       throw new Error('reply-managed-owner-required');
@@ -101,9 +116,7 @@ export default function replyOwner(
       },
     };
   if (target.source) {
-    const matching = owner.events?.filter(
-      (event) => event.nodeId === target.nodeId && event.sourceId === target.source!.nodeId,
-    );
+    const matching = owner.events?.filter((event) => retainedReply([event], target, privateText));
     const event = matching?.at(-1);
     if (!event) return manualContext(owner, target);
     if (event.native || (!event.publicationAttempted && !event.receipt))
@@ -161,7 +174,26 @@ export default function replyOwner(
   return manualContext(owner, target);
 }
 
-/** A new requested comment is independent of earlier summary and delivery effects. */
+/** legacy attempts retain their exact source; destination records alone own no new publication. */
+export function retainedReply(
+  events: ReplyOwner['events'],
+  target: ReplyTarget,
+  privateText?: string,
+) {
+  return Boolean(
+    target.source &&
+    events?.some(
+      (event) =>
+        !event.native &&
+        (privateText === undefined || !event.result || event.result.privateText === privateText) &&
+        (event.publicationAttempted || event.receipt) &&
+        event.nodeId === target.nodeId &&
+        event.sourceId === target.source!.nodeId,
+    ),
+  );
+}
+
+/** a caller's own outcomes may inform composition without granting publication authority. */
 function manualContext(owner: ReplyOwner, target: ReplyTarget) {
   return {
     status: 'manual-reply-context' as const,

@@ -20,6 +20,7 @@ operator-requested status update and confirm that an already-current issue needs
 - Strict AIMock reuses the issue protocol for model text and tool selection. Provider reads, native chat execution, and retained results remain real; this does not prove genuine model judgment.
 - Install enrolls the native Gateway device credential with both notification schedules paused. Only one unassigned disposable issue is created; no production agent receives an assignment or review request.
 - The paused workflow declaration enrolls the native device credential required by the direct tool. This case needs neither an SSH key nor a managed checkout.
+- Native acceptance extension (not executed by the blocks below): request an independent comment while another task tracks the same issue, PR conversation, or supported review thread. Verify one authorized post without transferring or changing that task, then reconcile a lost send response without another post. The deterministic component suite covers both runtime adapters and destination-ownership variants; it does not establish installed native execution.
 
 ## Setup
 
