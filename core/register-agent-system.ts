@@ -23,6 +23,7 @@ import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
 import instanceIdentity from '../agent/instance-identity.ts';
 import executeOpenClawDeliveryGit from './openclaw-delivery-git.ts';
 import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
+import IssueDeliveryProvider from '../channels/github/publication/issue-delivery.ts';
 import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
 import GitHubWorkItemClient from '../channels/github/provider/work-item-client.ts';
 import { join, resolve } from 'node:path';
@@ -395,6 +396,13 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       if (connection instanceof GitHubWorkEventClient) return connection;
       const connected = await githubCapability.accountClient.connect(input, 'service', signal);
       return new GitHubWorkEventClient(connected);
+    },
+    async retirementDelivery(input, signal, connection) {
+      const account =
+        connection instanceof GitHubWorkEventClient
+          ? connection.account
+          : await githubCapability.accountClient.connect(input, 'service', signal);
+      return new IssueDeliveryProvider(account);
     },
     async delivery({ manifest, workspaceDir, worktree, caller, signal, connection }) {
       const account =

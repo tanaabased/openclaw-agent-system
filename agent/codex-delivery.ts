@@ -771,7 +771,12 @@ export default async function runCodexDelivery(
           ? { body: delivery.body }
           : {}),
       };
-      if (Object.keys(contentUpdate).length) delivery.contentUpdate = contentUpdate;
+      if (Object.keys(contentUpdate).length) {
+        delivery.contentUpdate = contentUpdate;
+        delivery.contentUpdateAttempted = previous?.contentUpdate
+          ? previous.contentUpdateAttempted
+          : false;
+      }
       if (adopted && head === adopted.head && !previous?.pushedHead && !delivery.contentUpdate)
         return {
           status: 'bound',

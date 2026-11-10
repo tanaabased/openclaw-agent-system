@@ -533,7 +533,8 @@ export default class OpenClawDispatchCoordinator {
           .filter(
             (event) =>
               event.phase === 'queued' &&
-              (event.native || (!record.retired && !record.retirement)) &&
+              !record.retired &&
+              !record.retirement &&
               !event.policyHeld &&
               (!event.retry || dispatchRetryDue(event, now)),
           )
@@ -560,7 +561,12 @@ export default class OpenClawDispatchCoordinator {
       );
     }
     for (const record of state.records
-      .filter((entry) => announcementRecoveryAction(entry.work?.delivery, now) === 'check')
+      .filter(
+        (entry) =>
+          !entry.retirement &&
+          !entry.retired &&
+          announcementRecoveryAction(entry.work?.delivery, now) === 'check',
+      )
       .slice(0, 12))
       await recoverOpenClawAnnouncement(this.context, manifest, current.workspace, record, save, {
         ...authority,
@@ -572,6 +578,8 @@ export default class OpenClawDispatchCoordinator {
       .filter(
         (entry) =>
           !entry.reset &&
+          !entry.retirement &&
+          !entry.retired &&
           !entry.supersededBy &&
           [
             entry.decisionTurn?.inactive ? undefined : entry.decisionTurn,
@@ -590,7 +598,11 @@ export default class OpenClawDispatchCoordinator {
     // Capacity follows native activity even when feedback scanning is disabled or unavailable.
     for (const record of state.records.filter(
       (entry) =>
-        entry.sessionCreation?.verified && entry.threadId && !entry.reset && !entry.supersededBy,
+        entry.sessionCreation?.verified &&
+        entry.threadId &&
+        !entry.reset &&
+        !entry.supersededBy &&
+        !entry.cleanupPending,
     )) {
       try {
         const activity = await this.context.dependencies.credential.use(

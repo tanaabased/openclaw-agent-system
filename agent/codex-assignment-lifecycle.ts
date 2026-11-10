@@ -1,4 +1,8 @@
 import taskPullRequest from './task-pull-request.ts';
+import pendingRetirement from './pending-retirement.ts';
+import retirementEffects from './retirement-effects.ts';
+import retirementConsumption from './retirement-consumption.ts';
+import retirementLocalData from './retirement-local-data.ts';
 import replyOwnPublications from './reply-own-publications.ts';
 import { dispatchAdmission, managedIssueState } from './managed-issue.ts';
 import { verifyDispatchWorktree } from './codex-dispatch-project.ts';
@@ -99,6 +103,32 @@ export default async function reconcileCodexLifecycle(
         targetId: manual?.id,
         now,
         save,
+        prepare: async (record, intake) => {
+          await retirementConsumption(current.store, intake, record.id, now);
+          store.retainRetirementEffects(state, retirementEffects(record, intake));
+          pendingRetirement(record);
+          await save();
+        },
+        dispose: async (record, intake) => {
+          if (record.threadId)
+            await retirementLocalData({
+              root: current.store.location.root,
+              binding: {
+                runtime: 'codex',
+                agentId: current.agentId,
+                workspace: current.workspace,
+                namespace: current.codexHome,
+                session: record.threadId,
+                incarnation: record.threadId,
+              },
+              intake,
+              retain: async (effects) => {
+                store.retainRetirementEffects(state, effects);
+                await save();
+              },
+            });
+          await store.dispose(state, record);
+        },
         fresh: async () => {
           if (manual && (await native.operatorInput(caller)).turnId !== occurrence.id)
             throw new Error('dispatch-native-caller-changed');

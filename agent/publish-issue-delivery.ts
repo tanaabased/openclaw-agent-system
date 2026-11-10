@@ -8,6 +8,7 @@ interface DeliveryState {
   pendingPush?: { previousHead: string; head: string };
   pullRequest?: IssueDeliveryInput['expectedPullRequest'];
   contentUpdate?: IssueDeliveryInput['contentUpdate'];
+  contentUpdateAttempted?: boolean;
   reconciled: boolean;
 }
 
@@ -40,6 +41,16 @@ export default async function publishIssueDelivery(input: {
     ...publication,
     expectedPullRequest: delivery.pullRequest,
     contentUpdate: delivery.contentUpdate,
+    async beforeUpdate(content) {
+      await authorize();
+      delivery.contentUpdate = content;
+      delivery.contentUpdateAttempted = true;
+      await save();
+    },
+    async onUpdateRejected() {
+      delivery.contentUpdateAttempted = false;
+      await save();
+    },
     async beforeCreate() {
       await authorize();
       await input.beforeCreate?.();
@@ -96,6 +107,7 @@ export default async function publishIssueDelivery(input: {
   await provider.publish(operation);
   delete delivery.pendingPush;
   delete delivery.contentUpdate;
+  delete delivery.contentUpdateAttempted;
   delivery.reconciled = true;
   await save();
 }

@@ -198,38 +198,24 @@ recovery or renewed authorization.
 
 ## Task Retirement
 
-Closing an issue, archiving its agent chat, or having an approved assignment actor
-unassign the agent makes the task eligible for retirement. New workflow turns stop,
-and cleanup waits for the agent to be idle and the
-[cleanup grace period](../../CONFIG.md#cleanup), which defaults to
-**60 minutes**. Both runtimes use the shared
-`plugins.entries.agent-system.config.cleanup.graceMinutes` setting.
-Active work can defer cleanup; cosmetic activity and terminal input history do not
-restart a closed task's deadline. A restart does not reset the deadline.
+Closing an issue starts the [cleanup grace period](../../CONFIG.md#cleanup), which
+defaults to **60 minutes** in both runtimes. Reopening during grace cancels cleanup.
+Unassignment leaves open work dormant; it does not discard the checkout.
 
-Retirement archives the chat and removes its owned checkout while preserving
-branches and GitHub content. Unverified unassignment leaves the resources intact
-and reports a warning. Before cleanup begins, verified reassignment or approved
-feedback can reactivate an unarchived chat; reopening the issue alone does not.
+Use [Task Retirement](../../skills/task-retirement/SKILL.md) to retire one exact task
+immediately, including an open issue. It skips grace without closing or unassigning
+the issue. Active execution must finish first. Cleanup archives the native chat and
+removes its dedicated checkout; shared resources and native denials remain protected.
 
 > [!WARNING]
-> For a verified closed issue, cleanup can discard modified or untracked checkout
-> files and local-only work without a preserving ref, even if pinned or the branch
-> name changed. Save work you need before closing
-> the issue. Other retirement triggers require a clean checkout and the expected branch.
+> Closure-driven or explicit retirement can discard dirty files and local-only
+> commits, including pinned task work. Save anything you need before retiring it.
 
-Codex uses native desktop archival and worktree preservation. If desktop settings
-retain the checkout, retirement remains pending. Both runtimes protect active or
-shared users and hold the affected cleanup effect when ownership or execution
-cannot be verified. Pins alone do not protect closed-task resources. Actual native
-archive restrictions remain pending without blocking independently supported
-checkout cleanup; Codex desktop may couple those effects. Nonterminal retirement
-still requires preservation of unreferenced commits.
-
-To retire one task explicitly, use [Task Retirement](../../skills/task-retirement/SKILL.md).
-It skips the scheduled eligibility and grace period but keeps ownership, activity,
-and nonterminal preservation checks. It does not close or unassign the GitHub issue. A task
-cannot archive its own active turn; intake can finish the pending cleanup later.
+After verified cleanup, Agent System deletes the task record and its copied local
+plans, feedback and history. Native chat history and GitHub content remain.
+Codex desktop owns checkout removal; settings that retain it leave retirement pending.
+Interrupted cleanup resumes through existing intake or the next explicit retirement
+invocation when no schedule exists.
 
 ## Further Reading
 

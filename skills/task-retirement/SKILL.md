@@ -19,8 +19,7 @@ metadata:
 ## Overview
 
 Put away one managed task or explicitly selected unmanaged native chat. Managed
-retirement protects work; unmanaged cleanup intentionally uses normal native
-disposal. Neither changes GitHub issue or assignment state. This is a direct
+retirement discards the task’s owned local work through native cleanup. Neither changes GitHub issue or assignment state. This is a direct
 native operation, not an assessment, reply-composition or implementation stage.
 
 ## When to Use
@@ -62,9 +61,10 @@ recover through its owner or fail, never fall back to unmanaged cleanup.
 
 A native preview identifies the task and its session/worktree. Applying it records
 retire-now intent and attempts existing safe cleanup immediately without scheduled
-eligibility or grace. Assessments, history, task identity and duplicate prevention
-remain; the GitHub issue and branch are unchanged. Only native verified completion
-is `retired`; protected or asynchronous resources remain pending.
+eligibility or grace, including for an open issue. Dirty files and local-only commits
+may be discarded. After verified archival and checkout removal, Agent System removes
+the task record and its copied plans, feedback and history. Native chat history and
+GitHub content remain. Only verified completion is `retired`.
 
 For unmanaged cleanup, `archived` verifies native conversation archival, not disk
 reclamation. `checkout.disposition: native-owned` delegates checkout effects to the
@@ -73,11 +73,11 @@ native denial is `failed`. No intake or assignment is created.
 
 ## Failure Handling
 
-Report the exact diagnostic. For managed tasks, running work, pins, shared ownership, unpreserved
-changes, unavailable native inventory and invalid OpenClaw cleanup settings
-remain protected. Do not force archive or remove files. An active task cannot
-archive itself during its current turn. Pending requests continue through normal
-intake reconciliation; the operator can also repeat this exact operation.
+Report the exact diagnostic. Active execution must finish before cleanup. Shared or
+unrelated resources, uncertain ownership and native denial remain protected. Do not
+force archive or remove files. Pending cleanup resumes through existing intake, or
+on the next explicit retirement invocation when no schedule exists. Do not create
+a scheduler or promise unattended completion after the current chat stops.
 
 Reconcile uncertain effects through the same request. Never reset task records or
 repeat an archive independently. A stale preview requires a new preview of the same

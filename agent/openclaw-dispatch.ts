@@ -207,6 +207,14 @@ export default class OpenClawDispatch {
       request = { ...authored, id: record.id, apply: !input.preview };
     }
     if (input.action === 'retire') {
+      if (!operator) throw new Error('dispatch-operator-required');
+      await authority.assertCurrent?.();
+      if (!input.preview)
+        await reconcileOpenClawRetirementEffects({
+          dependencies: this.dependencies,
+          manifest,
+          workspace,
+        });
       const authored = { ...input };
       delete authored.target;
       delete authored.preview;
@@ -950,3 +958,4 @@ export default class OpenClawDispatch {
       });
   }
 }
+import reconcileOpenClawRetirementEffects from './openclaw-retirement-effects.ts';

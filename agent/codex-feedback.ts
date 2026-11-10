@@ -368,7 +368,7 @@ export default async function runCodexFeedback(
               };
             const owner = admitted.repository.owner.login,
               name = admitted.repository.name;
-            if (!event || (!event.native && (record.retired || record.retirement))) continue;
+            if (!event || record.retired || record.retirement) continue;
             const reconcilingPublication =
               ['next', 'reconcile'].includes(input.action) && event.publicationAttempted === true;
             if (!nativeContext) {
