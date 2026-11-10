@@ -105,7 +105,7 @@ openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversat
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-auto-work/tanaabot"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 pr=$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
-openclaw agent-system tool gh -- pr view "$pr" --repo tanaabased/big-test-bucket --json assignees,body | jq -e --argjson issue "$number" 'any(.assignees[]; .login == "tanaabot") and (.body | contains("Closes https://github.com/tanaabased/big-test-bucket/issues/" + ($issue | tostring)))'
+openclaw agent-system tool gh -- pr view "$pr" --repo tanaabased/big-test-bucket --json assignees,closingIssuesReferences | jq -e --argjson issue "$number" 'any(.assignees[]; .login == "tanaabot") and any(.closingIssuesReferences[]; .number == $issue)'
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 branch=$(jq -er .work.delivery.binding.branch "$TMPDIR/notification-delivery.json")
