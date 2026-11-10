@@ -865,6 +865,7 @@ export default class OpenClawDispatch {
         const feedback = await this.issue.routeFeedback(input, record, tx, operator);
         if (feedback !== undefined) return feedback;
         if (input.action === 'retry') {
+          if (record.retirement) throw new Error('dispatch-issue-inactive');
           if (record.request) throw new Error('dispatch-native-recovery-required');
           record.manifestDigest = current.manifestDigest;
           await this.validate(manifest, workspace, record);

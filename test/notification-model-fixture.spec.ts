@@ -496,6 +496,22 @@ for (const scenario of [
 
   describe(`examples/${scenario.id} model fixture`, () => {
     if (scenario.id === 'openclaw-notifications-retirement')
+      it('should retry the selected waiting assignment without internal identifiers', async () => {
+        const input = request(`Retry waiting assignment ${source}`);
+        const next = await response(input);
+        assert.ok('toolCalls' in next && next.toolCalls?.length === 1);
+        const call = next.toolCalls[0]!;
+        assert.deepEqual(JSON.parse(call.arguments), { action: 'retry', target: source });
+        input.messages.push({
+          role: 'tool',
+          tool_call_id: call.id,
+          content: JSON.stringify({ status: 'routing-required' }),
+        });
+        assert.deepEqual(await response(input), {
+          content: 'Waiting assignment retry accepted; coordinator must obtain fresh evidence.',
+        });
+      });
+    if (scenario.id === 'openclaw-notifications-retirement')
       it('should retire the current task across native runtime context', async () => {
         const input = request(`Retire this managed task now ${'b'.repeat(64)}`);
         input.messages.push(

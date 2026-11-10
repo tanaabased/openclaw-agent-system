@@ -7,7 +7,7 @@ Retire a second task whose completed session is missing, preserving its saved ev
 ## What Belongs Here
 
 - Closed-issue retirement observing external cleanup and archiving the retained native owner without losing its assessment.
-- A fresh assignment creating a distinct owner/branch from the repository base while preserving the retired branch's local commit.
+- A fresh assignment retrying pre-chat preparation by issue URL despite retired history, then creating a distinct owner/branch from the repository base while preserving the retired branch's local commit.
 - Closed-issue archival of the task and its helper, followed by automatic removal of that fresh checkout despite terminal input history, a changed branch, and modified/untracked files, preserving its branches and assessment.
 - Explicit retirement from an active turn remaining pending, followed by verified missing-session reconciliation and safe checkout removal without invented archival.
 - Offloading verified retirement immediately, including legacy stale consumed turns below 2 MiB, through an installed normal save, then retaining the terminal owner after loss of its cold copy.
@@ -25,6 +25,7 @@ Retire a second task whose completed session is missing, preserving its saved ev
 - Strict AIMock reuses assessment judgment and uses caller-bound retirement with an optional preview. Real native execution must leave the request pending while its own turn is active.
 - The retention check restores an archived fixture and seeds stale consumed-turn bookkeeping only while the Gateway is stopped. It exercises the packed runtime after restart; it neither fabricates cleanup receipts nor runs a performance benchmark.
 - The two native cases share a job but select their exact retained owners. No reset empties the journal between them; earlier retired attempts remain as independent history.
+- The fresh assignment temporarily lacks its SSH key, producing a real pre-chat preparation failure. Restoring the key and requesting operator retry adds one mocked native turn; no dispatch record is edited. Selector permutations remain in unit/component tests.
 - The fresh attempt is closed and retired before the missing-session case. Three 61-second waits preserve the existing lifecycle observation coverage with zero OpenClaw cleanup grace.
 - CI owns two disposable issues, their workspaces/state, and SSH registration. Only Tanaabot is assigned. Scoped refreshes and a 24-hour schedule bound discovery; cleanup stops the Gateway before external changes.
 
@@ -141,18 +142,34 @@ worktree=$(jq -er .worktree "$TMPDIR/notification-retired.json")
 test ! -e "$worktree"
 openclaw agent-system tool worktree -- list | jq -e --arg path "$worktree" 'all(.[]; .path != $path)'
 
-# should prepare a fresh assignment from the base while preserving the retired branch
+# should retain a fresh chatless assignment after preparation fails
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/emori"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=open | jq -e '.state == "open"'
 openclaw agent-system tool gh -- api --method DELETE "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot'
 node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" assign --number "$number" | jq -e 'any(.assignees[]; .login == "tanaabot")'
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/tanaabot"
+mv keys/id_ed25519 "$TMPDIR/notification-retry-key"
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
+jq -es --slurpfile old "$TMPDIR/notification-retired.json" '[.[].records[] | select(.issueKey == $old[0].issueKey and .retired == null)] | if length == 1 then .[0] else error("one waiting assignment required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-waiting.json"
+jq -e '.phase == "waiting" and .failureStage == "worktree" and .threadId == null and .request == null' "$TMPDIR/notification-waiting.json"
+mv "$TMPDIR/notification-retry-key" keys/id_ed25519
+
+# should retry only the current assignment through its issue url
+number=$(jq -er .number "$TMPDIR/notification-issue.json")
+target="https://github.com/tanaabased/big-test-bucket/issues/$number"
+openclaw gateway call chat.send --params "$(jq -nc --arg target "$target" '{sessionKey:"agent:retirement-tanaabot:retry",message:("Retry waiting assignment " + $target),deliver:false,idempotencyKey:"retirement-retry-waiting"}')" --json | jq -e '.runId == "retirement-retry-waiting"'
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" retirement-retry-waiting 600000
+jq -es --slurpfile waiting "$TMPDIR/notification-waiting.json" '[.[].records[] | select(.id == $waiting[0].id)] | length == 1 and .[0].phase == "routing" and .[0].blocker == null and .[0].threadId == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+
+# should prepare the retried assignment from the base while preserving the retired branch
+number=$(jq -er .number "$TMPDIR/notification-issue.json")
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for worktree-ready --timeout 600 --json | jq -e '.status == "completed"'
 jq -es --slurpfile old "$TMPDIR/notification-retired.json" '[.[].records[] | select(.issueKey == $old[0].issueKey)] | if length == 2 then map(select(.retired == null))[0] else error("exactly two attempts required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-fresh.json"
-jq -e --slurpfile old "$TMPDIR/notification-retired.json" '.id != $old[0].id and .worktreeAttemptId == .id and .threadId != $old[0].threadId and .sessionCreation.verified == true and .result == null and .stageReceipt == null' "$TMPDIR/notification-fresh.json"
+jq -e --slurpfile old "$TMPDIR/notification-retired.json" --slurpfile waiting "$TMPDIR/notification-waiting.json" '.id == $waiting[0].id and .id != $old[0].id and .worktreeAttemptId == .id and .threadId != $old[0].threadId and .sessionCreation.verified == true and .result == null and .stageReceipt == null' "$TMPDIR/notification-fresh.json"
 conversation=$(jq -er .threadId "$TMPDIR/notification-fresh.json")
 openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e --slurpfile before "$TMPDIR/notification-dispatch-before.json" '.session.displayName == $before[0].request.label and .session.label == null'
 worktree=$(jq -er .worktree "$TMPDIR/notification-fresh.json")

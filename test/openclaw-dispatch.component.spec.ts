@@ -751,6 +751,85 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(creates().length, 1);
   });
 
+  it('should retry a chatless waiting assignment by issue url despite retired predecessor history', async () => {
+    const selected = await next();
+    const current = await service.scope(manifest, root);
+    await current.journal.exclusive(async (state, save) => {
+      const waiting = state.records[0]!;
+      waiting.phase = 'waiting';
+      waiting.blocker = 'git-worktree-path-occupied';
+      waiting.failureStage = 'worktree';
+      delete waiting.context;
+      const retired = structuredClone(waiting);
+      retired.id = 'f'.repeat(64);
+      retired.intakeId = 'e'.repeat(64);
+      retired.manualIssue = undefined;
+      retired.threadId = 'archived-predecessor';
+      retired.retired = { at: baseline, by: 'operator' };
+      state.records.unshift(retired);
+      await save();
+    });
+    const target = 'https://github.com/owner/repo/issues/3';
+    // retain historical admission so both attempts genuinely match the issue url.
+    const admission = current.admitted.records[0]!;
+    const originalScope = service.scope.bind(service);
+    service.scope = async (...args) => {
+      const scope = await originalScope(...args);
+      scope.admitted.records.unshift({ ...admission, id: 'e'.repeat(64) });
+      return scope;
+    };
+    const retry = () =>
+      service.runModel(manifest, root, coordinator, { action: 'retry', target }, true);
+    await assert.rejects(
+      service.runModel(manifest, root, coordinator, { action: 'retry', target }),
+      /dispatch-operator-required/,
+    );
+    fixture.item.state = 'closed';
+    await assert.rejects(retry(), /dispatch-issue-closed/);
+    fixture.item.state = 'open';
+    const allowed = manifest.github!.notifications!.issueAssignment!.allowed;
+    manifest.github!.notifications!.issueAssignment!.allowed = [];
+    assert.equal((await retry()).status, 'policy-held');
+    manifest.github!.notifications!.issueAssignment!.allowed = allowed;
+    assert.equal((await retry()).status, 'routing-required');
+    assert.equal(
+      (await current.journal.read()).records.find((entry) => !entry.retired)!.id,
+      selected.id,
+    );
+    assert.equal(creates().length, 0);
+    coordinator.runId = 'fresh-evidence-after-operator-retry';
+    const fresh = await next();
+    assert.equal(fresh.id, selected.id);
+    assert.equal((await prepare(fresh)).status, 'session-created');
+    await assert.rejects(retry(), /dispatch-native-recovery-required/);
+    assert.equal(creates().length, 1);
+    const history = (await current.journal.read()).records.find(
+      (entry) => entry.id === 'f'.repeat(64),
+    )!;
+    assert.equal(history.threadId, 'archived-predecessor');
+    assert.deepEqual(history.retired, { at: baseline, by: 'operator' });
+  });
+
+  it('should refuse retry when retirement starts after target selection', async () => {
+    const selected = await next();
+    const current = await service.scope(manifest, root);
+    await current.journal.exclusive(async (state, save) => {
+      state.records[0]!.retirement = {
+        reason: 'assignment-removed',
+        at: baseline,
+        intakeId: state.records[0]!.intakeId!,
+        checkedAt: baseline,
+        eligibleAt: baseline,
+      };
+      await save();
+    });
+    await assert.rejects(
+      service.run(manifest, root, coordinator, { action: 'retry', id: selected.id }, true),
+      /dispatch-issue-inactive/,
+    );
+    assert.equal(creates().length, 0);
+  });
+
   it('should retain a bounded worktree conflict without creating a session', async () => {
     const selected = await next();
     service.dependencies.worktrees.prepareGitHub = async () => {
