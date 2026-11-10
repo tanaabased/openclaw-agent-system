@@ -176,6 +176,38 @@ const helperCompleted: Fixture = {
   },
   response: { content: 'Retirement checkout helper completed.' },
 };
+const retryCall = 'call_retirement_retry';
+const retryAssignment: Fixture = {
+  match: {
+    model: issueExampleScenario.model.match,
+    systemMessage: ['Name: Notification Tanaabot'],
+    predicate: (request) => helperPrompt(request).includes('Retry waiting assignment '),
+  },
+  response: (request) => {
+    const target = /Retry waiting assignment ([^\n]+)/u.exec(helperPrompt(request))?.[1]?.trim();
+    assert.ok(target);
+    assert.match(
+      target,
+      /^https:\/\/github\.com\/tanaabased\/big-test-bucket\/issues\/[1-9][0-9]*$/u,
+    );
+    const text = openClawAIMockToolResultText(request.messages, retryCall);
+    if (text === undefined)
+      return {
+        toolCalls: [
+          {
+            id: retryCall,
+            name: 'agent_system_dispatch',
+            arguments: JSON.stringify({ action: 'retry', target }),
+          },
+        ],
+      };
+    const result = JSON.parse(text);
+    assert.equal(result.status, 'routing-required');
+    return {
+      content: 'Waiting assignment retry accepted; coordinator must obtain fresh evidence.',
+    };
+  },
+};
 export const retirementExampleScenario: OpenClawAIMockScenario = {
   ...issueExampleScenario,
   id: 'openclaw-notifications-retirement',
@@ -185,10 +217,12 @@ export const retirementExampleScenario: OpenClawAIMockScenario = {
     queueHold,
     helperSpawn,
     helperCompleted,
+    retryAssignment,
   ],
   toolCalls: [
     ...issueExampleScenario.toolCalls,
     { id: helperCall, name: 'sessions_spawn' },
+    { id: retryCall, name: 'agent_system_dispatch' },
     ...stages.flatMap((stage) =>
       [0, 1, 2, 3].map((attempt) => ({
         id: prefix + stage + '_' + attempt,
@@ -197,6 +231,7 @@ export const retirementExampleScenario: OpenClawAIMockScenario = {
     ),
   ],
   fixtures: [
+    retryAssignment,
     helperCompleted,
     helperSpawn,
     queueHold,

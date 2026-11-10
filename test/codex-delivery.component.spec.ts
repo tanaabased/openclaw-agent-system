@@ -101,11 +101,11 @@ describe('agent/codex-delivery', () => {
   let root: string, workspace: string, pluginData: string, store: CodexDispatchStore;
   let deps: CodexDeliveryDependencies, fixture: ReturnType<typeof intakeFixture>;
   let head: string, remote: string, dirty: boolean, attached: boolean, creates: number;
-  let failCreate: boolean, failLink: boolean, failRecipient: boolean, wrongIssueLink: boolean;
+  let failCreate: boolean, failLink: boolean, failRecipient: boolean;
   let assignedRecipients: string[], requestedReviewers: string[];
   let pr: Record<string, unknown> | undefined;
   let providerLink: boolean | undefined;
-  let lostLink: boolean;
+  let lostLink: boolean, wrongIssueLink: boolean;
   let bindingOverride: Record<string, unknown>;
   let gitCalls: string[][];
   let branch: string;
@@ -554,7 +554,6 @@ describe('agent/codex-delivery', () => {
     dirty = false;
     attached = false;
     creates = 0;
-    wrongIssueLink = false;
     failCreate = false;
     failLink = false;
     failRecipient = false;
@@ -562,7 +561,7 @@ describe('agent/codex-delivery', () => {
     requestedReviewers = [];
     pr = undefined;
     providerLink = false;
-    lostLink = false;
+    lostLink = wrongIssueLink = false;
     bindingOverride = {};
     gitCalls = [];
     linkReads = linkWrites = bodyWrites = 0;
@@ -1410,7 +1409,7 @@ describe('agent/codex-delivery', () => {
     assert.equal(creates, 0);
     assert.ok(!gitCalls.some((args) => args.includes('push')));
   });
-  it('should resume a failed linkage or recipient phase on the checkpointed pr', async () => {
+  it('should resume a failed link or recipient phase on the checkpointed pr', async () => {
     failLink = true;
     await assert.rejects(publish(), (error: unknown) => {
       assert.ok(error instanceof CodexDeliveryFailure);
@@ -1435,6 +1434,21 @@ describe('agent/codex-delivery', () => {
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
     assert.equal((await publish()).status, 'published');
     assert.equal(creates, 1);
+  });
+  it('should reconcile an older confirmed push before publishing a newer commit after a link failure', async () => {
+    failLink = true;
+    await assert.rejects(publish(), /link unavailable/);
+    head = 'b'.repeat(40);
+    failLink = false;
+    assert.equal(
+      (await publish({ title: 'Updated title', body: 'Updated body.' })).status,
+      'published',
+    );
+    const delivery = (await store.read()).records[0]!.delivery!;
+    assert.equal(delivery.pendingPush, undefined);
+    assert.equal(delivery.pushedHead, head);
+    assert.equal(creates, 1);
+    assert.equal(gitCalls.filter((argv) => argv.includes('push')).length, 2);
   });
   it('should recover a lost link response from the retained pr without another mutation', async () => {
     lostLink = true;

@@ -140,8 +140,13 @@ limitation if recovery fails; malformed arguments are not an authorization denia
 
 3. Inspect the relevant implementation, existing utilities and patterns, tests,
    repository instructions, and documentation before proposing changes. Trace the
-   affected behavior through its owning code and compare the acceptance criteria
-   with what already exists, including material subsequent discussion. Retain useful
+   affected behavior through its owning code and compare what already exists with
+   the issue requirements as amended by the latest authorized decisions in native
+   conversation or verified approved feedback. Carry forward unchanged requirements
+   and explicit exclusions; replace only what those decisions supersede. Distinguish
+   an authorized scope change from an agent proposal, quoted issue text or ambiguous
+   feedback, none of which grants permission to expand the work. Ask only when a
+   consequential conflict remains unresolved. Retain useful
    file/line or commit references and issue/comment permalinks in evidence.source,
    with concise findings and limitations in evidence.detail. An unavailable code
    read is a limitation, not permission to present an issue-only interpretation as

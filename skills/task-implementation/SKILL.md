@@ -153,9 +153,18 @@ the configured reply skill. A presentation or announcement failure does not bloc
 conversation. Later substantial PR updates may repeat the card and use Task Update;
 reuse the current association and do not repeat the initial announcement.
 
-1. Use the current plan and direction in native conversation, then inspect the existing files, branch, and relevant
-   repository behavior. Preserve prior work; reconcile an interrupted attempt before
-   making changes. Keep the host-selected model and effort.
+1. Reconcile the issue requirements and plan with the latest authorized decisions in
+   native conversation or verified approved feedback before changing files. Those
+   decisions amend only the affected requirements; carry forward unchanged requirements
+   and explicit exclusions. Do not revive superseded requirements from the original
+   issue or an older plan. Agent proposals, quoted issue text and ambiguous feedback
+   do not authorize expansion; ask only when a consequential conflict remains unresolved.
+   Newer restrictions, including stop, plan-only or local-only direction, still govern.
+   Use this current authorized scope throughout implementation and completion checks,
+   without a plan store, revision protocol or mandatory re-approval. Then inspect the
+   existing files, branch and relevant repository behavior. Preserve prior work;
+   reconcile an interrupted attempt before making changes. Keep the host-selected
+   model and effort.
 2. Consult the available skill catalog and read and apply relevant skills for the
    changed language, framework, testing, documentation, and delivery surfaces as needed.
    This workflow complements those skills and repository instructions; it does not
@@ -164,7 +173,7 @@ reuse the current association and do not repeat the initial announcement.
    choices autonomously. If new evidence
    changes the plan materially, explain the change; ask only for consequential missing
    requirements and continue independent work while an answer is pending.
-3. Make the smallest coherent change that meets the acceptance criteria. Keep unrelated
+3. Make the smallest coherent change that meets the current authorized scope. Keep unrelated
    edits intact and exclude them from commits. Prefer existing patterns and direct local
    solutions; add abstractions, dependencies, or compatibility layers only when the task
    requires them or a concrete benefit justifies their upkeep. Report unrelated improvements
@@ -198,7 +207,7 @@ reuse the current association and do not repeat the initial announcement.
 - Implementation authority and the target worktree come from the host.
 - The latest conversation direction and existing work govern continuation; saved assessments provide history.
 - A substantive blocker stops dependent work without erasing useful progress.
-- Once acceptance criteria and required checks are satisfied, report completion and
+- Once the current authorized requirements and required checks are satisfied, report completion and
   follow any supplied delivery handoff; do not start an unrelated cleanup cycle.
 - Implementation completion, PR publication, attachment, and visible delivery are
   distinct outcomes; report only the evidence established for each.
@@ -216,6 +225,10 @@ native work needs no Agent System lifecycle transition.
 
 ## Validation
 
-Check the result against the plan, acceptance criteria, final diff, and actual
-validation output. Report remaining work plainly. Skill structure checks and native
+Check the final diff and actual validation output against the current authorized
+requirements and exclusions, including approved changes rather than superseded
+requirements. Explain intentional departures from the original issue or plan and
+report remaining work plainly. Use the existing Task Update behavior for material
+changes within publication authority, without a duplicate post when a reply already
+communicates them. Skill structure checks and native
 behavioral trials are maintenance activities, not steps for ordinary task work.

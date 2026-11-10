@@ -1,5 +1,3 @@
-import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
-import { GitHubIssueDeliveryError } from '../channels/github/publication/issue-delivery.ts';
 import { authorizeFeedback, type OpenClawFeedbackProvider } from '../agent/openclaw-feedback.ts';
 import { feedbackRevision } from '../agent/feedback-source.ts';
 import { recoverRetainedAnnouncement } from '../agent/delivery-announcement.ts';
@@ -764,14 +762,15 @@ describe('agent/openclaw-delivery', () => {
       const connection = await connect();
       const execute = connection.account.execute;
       connection.account.execute = async (...args) => {
-        if (args[0].includes('repos/owner/repo/pulls')) {
+        if (args[0].some((value) => value.includes('draft,state'))) {
           checks++;
           if (!available)
-            throw new GitHubIssueDeliveryError(
-              'github-request',
-              'provider unavailable',
-              providerDiagnostic('github', 'api-request', 'transport', { httpStatus: 503 }),
-            );
+            return {
+              ...response({ message: 'Service unavailable' }),
+              exitCode: 1,
+              stdout: 'HTTP/2 503 Service Unavailable\n\n{}',
+              stderr: 'gh: Service unavailable (HTTP 503)',
+            };
         }
         return execute(...args);
       };
@@ -795,9 +794,12 @@ describe('agent/openclaw-delivery', () => {
         save: input.save,
       });
     assert.equal(await check(first - 1), false);
-    assert.equal(checks, 1);
+    const before = checks;
+    assert.ok(before > 0);
+    assert.equal(await check(first - 1), false);
+    assert.equal(checks, before);
     assert.equal(await check(first), false);
-    assert.equal(checks, 2);
+    assert.ok(checks > before);
     assert.equal(openClawWorkSlot(record), undefined);
     available = true;
     assert.equal(await check(delivery.announcementRecovery!.retryAfter!), true);
@@ -873,7 +875,7 @@ describe('agent/openclaw-delivery', () => {
   });
   it('should resume incomplete provider effects without another push after restart', async () => {
     failLink = true;
-    await assert.rejects(publish());
+    await assert.rejects(publish({ title: 'Fix issue', body: 'Authored body.' }));
     input.record = record = JSON.parse(JSON.stringify(record));
     failLink = false;
     assert.equal((await request('reconcile')).status, 'ready');
@@ -1182,6 +1184,21 @@ describe('agent/openclaw-delivery', () => {
     failLink = false;
     await publish();
     assert.equal(creates, 1);
+  });
+  it('should reconcile an older confirmed push before publishing a newer commit after a link failure', async () => {
+    failLink = true;
+    await assert.rejects(publish({ title: 'Fix issue', body: 'Authored body.' }));
+    input.record = record = JSON.parse(JSON.stringify(record));
+    head = 'b'.repeat(40);
+    failLink = false;
+    assert.equal(
+      (await publish({ title: 'Fix issue', body: 'Updated body.' })).status,
+      'published',
+    );
+    assert.equal(record.work!.delivery!.pendingPush, undefined);
+    assert.equal(record.work!.delivery!.pushedHead, head);
+    assert.equal(creates, 1);
+    assert.equal(pushes, 2);
   });
   it('should allow current authorized delivery despite an older unfinished result', async () => {
     record.progression = { stage: 'implementation', via: 'work' };

@@ -172,7 +172,7 @@ openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$n
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
 jq -e '.implementationDelivered == true and .work.result.outcome == "done" and .work.deliveryTurn == null and .work.delivery.announcement.receipt.nodeId != null' "$TMPDIR/notification-delivery.json"
 
-# should verify the actual pull request issue link and recipients
+# should verify the explicit closing relationship and pull request recipients
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
 pr=$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
 openclaw agent-system tool gh -- pr view "$pr" --repo tanaabased/big-test-bucket --json number,state,headRefOid,assignees,closingIssuesReferences | tee "$TMPDIR/notification-pr.json" | jq -e --arg head "$(jq -er .work.delivery.binding.head "$TMPDIR/notification-delivery.json")" --argjson issue "$(jq -er .number "$TMPDIR/notification-issue.json")" '.state == "OPEN" and .headRefOid == $head and (.assignees | length) == 1 and .assignees[0].login == "tanaabot" and any(.closingIssuesReferences[]; .number == $issue)'

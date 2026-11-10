@@ -75,6 +75,12 @@ export default async function publishIssueDelivery(input: {
     previousHeadSha:
       delivery.pendingPush?.head === remoteHead ? delivery.pendingPush.previousHead : undefined,
   });
+  // reconcile the original attempt only after both remote and pr identity/head agree.
+  // a later publication failure must not make this confirmed push block newer work.
+  if (delivery.pendingPush?.head === remoteHead) {
+    delete delivery.pendingPush;
+    await save();
+  }
   const remotes = (await git(['remote', 'get-url', '--push', '--all', 'origin']))
     .trim()
     .split(/\r?\n/u);

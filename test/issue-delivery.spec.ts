@@ -286,6 +286,26 @@ describe('shared delivery push recovery', () => {
     assert.equal(f.input.delivery.pendingPush?.head, f.input.publication.headSha);
   });
 
+  it('should reconcile a confirmed prior push before publishing newer work after a provider failure', async () => {
+    const f = publicationFixture();
+    f.input.provider.publish = async () => {
+      throw new Error('recipient unavailable');
+    };
+    await assert.rejects(publishIssueDelivery(f.input), /recipient unavailable/);
+    f.restore();
+    const priorHead = f.input.publication.headSha;
+    f.observed.headSha = priorHead;
+    f.input.publication.headSha = 'c'.repeat(40);
+    f.input.provider.publish = async (value) => {
+      assert.equal(value.previousHeadSha, priorHead);
+      return f.input.publication.expectedPullRequest!;
+    };
+    await publishIssueDelivery(f.input);
+    assert.equal(f.pushes(), 2);
+    assert.equal(f.input.delivery.pendingPush, undefined);
+    assert.equal(f.input.delivery.reconciled, true);
+  });
+
   it('should retain the exact pre-push head across restart and reconcile without pushing twice', async () => {
     const f = publicationFixture();
     const pending = (error: unknown) =>
