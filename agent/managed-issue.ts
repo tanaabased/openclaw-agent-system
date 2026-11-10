@@ -26,6 +26,16 @@ export const operatorIssueSchema = Type.Object(
       { additionalProperties: false },
     ),
     fresh: Type.Optional(Type.Literal(true)),
+    assignmentAttempt: Type.Optional(
+      Type.Object(
+        {
+          attempted: Type.Boolean(),
+          code: Type.Optional(text),
+          event: Type.Optional(intakeRecordSchema.properties.assignment),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     evidence: Type.Object(
       {
         policyDigest: text,

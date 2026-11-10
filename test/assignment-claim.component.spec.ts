@@ -6,6 +6,7 @@ import { join } from 'node:path';
 
 import {
   acceptAssignmentClaim,
+  claimManualAssignment,
   selectAssignmentClaim,
   claimAssignment,
   type ClaimClient,
@@ -82,6 +83,49 @@ describe('agent/assignment-claim', () => {
       hasCapacity: true,
       mode: 'local',
     });
+
+  it('should consume manual work immediately through the existing claim and leave other installations waiting', async () => {
+    const first = await claimManualAssignment({
+      store: stores[0]!,
+      client,
+      source,
+      requestId: 'manual',
+    });
+    assert.equal(first.status, 'handled');
+    assert.equal(writes, 1);
+    assert.equal((await pass(1, 'automatic')).status, 'other-owner');
+    await claimManualAssignment({ store: stores[0]!, client, source, requestId: 'second-manual' });
+    assert.equal(writes, 1);
+  });
+
+  it('should preserve an automatic claimant when an operator launches elsewhere', async () => {
+    await pass(1, 'automatic');
+    const before = structuredClone(comments);
+    const result = await claimManualAssignment({
+      store: stores[0]!,
+      client,
+      source,
+      requestId: 'manual',
+    });
+    assert.equal(result.status, 'handled');
+    assert.deepEqual(comments, before);
+    assert.equal(writes, 1);
+  });
+
+  it('should reconcile a lost manual claim response from provider evidence without another post', async () => {
+    responseLost = true;
+    await assert.rejects(
+      claimManualAssignment({ store: stores[0]!, client, source, requestId: 'manual' }),
+      /lost-response/,
+    );
+    responseLost = false;
+    assert.equal(
+      (await claimManualAssignment({ store: stores[0]!, client, source, requestId: 'manual' }))
+        .status,
+      'handled',
+    );
+    assert.equal(writes, 1);
+  });
 
   it('should keep unclaimed local work free of election writes and installation state', async () => {
     assert.equal((await local()).status, 'local');

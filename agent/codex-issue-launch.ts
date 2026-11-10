@@ -36,6 +36,10 @@ export default async function codexIssueLaunch(
       context,
       journal,
       scope: current.store.location.scope,
+      intakeStore: current.store,
+      ...(deps.claims?.manual
+        ? { claim: (event, id) => deps.claims!.manual!(event, client, id) }
+        : {}),
       client,
       create: (record) => record,
       verifyExisting: async (record) => {

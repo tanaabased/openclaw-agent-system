@@ -126,7 +126,7 @@ git -C "$worktree" rev-parse HEAD > "$TMPDIR/notification-retired-tip"
 git -C "$worktree" rev-parse --path-format=absolute --git-common-dir > "$TMPDIR/notification-git-dir"
 git -C "$worktree" branch --show-current > "$TMPDIR/notification-retired-branch"
 repository_id=$(openclaw agent-system tool worktree -- list | jq -er --arg path "$worktree" '.[] | select(.path == $path) | .repositoryId')
-work_id="issue-$(jq -er .id "$TMPDIR/notification-issue.json")"
+work_id="issue-$(jq -er .id "$TMPDIR/notification-issue.json")-$(jq -er .worktreeAttemptId "$TMPDIR/notification-dispatch-before.json")"
 openclaw agent-system tool worktree -- remove "$repository_id" "$work_id"
 # allow the bounded lifecycle observation interval to elapse; this fixture has zero cleanup grace.
 sleep 61

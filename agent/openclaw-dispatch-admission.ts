@@ -115,6 +115,7 @@ export default class OpenClawDispatchAdmission {
         throw new Error('dispatch-pass-selection-required');
       if (record.request) return { status: 'reconcile-required' as const, id: record.id };
       if (
+        !record.manualIssue &&
         !dispatchCapacity(
           state.records,
           current.policy.policy.maxConcurrentItems,
@@ -153,12 +154,14 @@ export default class OpenClawDispatchAdmission {
       if (!record.worktree && !record.worktreeAttemptId) {
         // Save before Git runs so a lost preparation result still retries the same attempt.
         record.worktreeAttemptId = record.id;
+        record.separateCheckout = true;
         await save();
       }
       const worktree = await this.context.dependencies.worktrees.prepareGitHub({
         ...worktreeInput,
         ...(record.adoptedPullRequest ? { startingCommit: record.adoptedPullRequest.head } : {}),
         attemptId: record.worktreeAttemptId,
+        separateCheckout: record.separateCheckout ?? worktreeInput.separateCheckout,
         title: input.title,
       });
       record.worktree = worktree.path;

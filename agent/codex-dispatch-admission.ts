@@ -200,6 +200,8 @@ async function selectClaim(
   tx: CodexDispatchTransaction,
 ) {
   if ('initiation' in intake) return;
+  if ((await tx.current.store.consume(intake, record.id)) !== record.id)
+    throw new Error('dispatch-assignment-consumed');
   const { state, deps, current, save } = tx;
   const route = assignmentClaimRoute(current.policy!.policy, intake);
   if (!deps.claims) {
@@ -587,7 +589,10 @@ export async function prepareIssueProject(
   const fail = (record: DispatchRecord, error: unknown) => failDispatch(record, error, tx);
   assertDispatchProjectInventory(input.projects);
   try {
-    if (!record.manualIssue) record.intakeId = intake.id;
+    if (!record.manualIssue && !('initiation' in intake)) {
+      record.intakeId = intake.id;
+      await save();
+    }
     const { client, repo } = await revalidateDispatchAssignment(current, intake, deps, signal);
     const waiting = await selectClaim(record, intake, client, tx);
     if (waiting) return waiting;
@@ -756,16 +761,6 @@ export async function prepareDispatch(
 ) {
   const { pluginData, current, deps, state, now, signal, save, fresh } = tx;
   const fail = (record: DispatchRecord, error: unknown) => failDispatch(record, error, tx);
-  if (
-    record.manualIssue &&
-    !record.request &&
-    !codexCapacity(
-      state.records,
-      current.policy?.policy.maxConcurrentItems ?? 3,
-      state.projectPickup,
-    ).available
-  )
-    throw new Error('dispatch-at-capacity');
   if (record.denial) throw new Error('dispatch-denial-held');
   if (record.request)
     return { status: 'reconcile-required' as const, changed: false, id: record.id };

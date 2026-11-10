@@ -12,7 +12,7 @@ export const launchRequestSchema = Type.Object(
     fresh: Type.Optional(
       Type.Boolean({
         description:
-          'Only an explicit operator request through Task Launch may create an additional task; automatic intake never selects this.',
+          'Legacy accepted field. New operator issue-launch requests already create independent tasks; retries retain the original attempt.',
       }),
     ),
     pullRequest: Type.Optional(

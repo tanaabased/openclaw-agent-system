@@ -1,7 +1,7 @@
 import type { ManagedIssue } from './managed-issue.ts';
 import { automationHash } from './automation-hash.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
-import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
+import type { IntakeObservation, IntakeRecord } from '../channels/github/intake/record-store.ts';
 
 export function issueKey(
   record: Pick<IntakeRecord, 'scope' | 'receiving' | 'repository' | 'issue'>,
@@ -17,7 +17,7 @@ export function issueKey(
 /** count and select the same pending issues, not their historical assignment events. */
 export default function pendingDispatchAssignments<R extends SharedDispatchRecord>(
   state: { records: R[] },
-  intake: { records: ManagedIssue[] },
+  intake: { records: ManagedIssue[]; observedAssignments?: IntakeObservation[] },
   unresolvedRetirement: (record: R) => boolean = () => false,
 ) {
   const latest = new Map<string, IntakeRecord>();
@@ -25,7 +25,31 @@ export default function pendingDispatchAssignments<R extends SharedDispatchRecor
   return [...latest].flatMap(([key, item]) => {
     if (state.records.some((record) => record.issueKey === key && unresolvedRetirement(record)))
       return [];
-    const matching = state.records.filter((record) => record.issueKey === key);
+    const consumed = intake.observedAssignments?.find((entry) => entry.id === item.id)?.consumedBy;
+    if (consumed) {
+      const owner = state.records.find(
+        (entry) => entry.id === consumed && entry.intakeId === item.id,
+      );
+      return owner &&
+        !owner.retired &&
+        !owner.retirement &&
+        !owner.reset &&
+        !owner.supersededBy &&
+        !owner.handoff &&
+        !owner.effective
+        ? [{ intake: item, record: owner }]
+        : [];
+    }
+    const matching = state.records.filter(
+      (record) =>
+        record.issueKey === key &&
+        (!record.manualIssue ||
+          record.intakeId === item.id ||
+          record.retired ||
+          record.retirement ||
+          record.reset ||
+          (record.manualIssue && !record.manualIssue.assignmentAttempt?.event)),
+    );
     const previous = matching.findLast((record) => !record.manualIssue?.fresh) ?? matching.at(-1);
     if (previous?.manualIssue && !previous.retired && !previous.retirement && !previous.reset)
       return [];

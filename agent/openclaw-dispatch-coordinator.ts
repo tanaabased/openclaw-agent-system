@@ -691,6 +691,9 @@ export default class OpenClawDispatchCoordinator {
     delete record.blocker;
     delete record.failureStage;
     try {
+      await save();
+      if ((await current.store.consume(pending.intake, record.id)) !== record.id)
+        throw new Error('dispatch-assignment-consumed');
       const { client, repo, intake } = await this.context.validate(manifest, workspace, record);
       if ('initiation' in intake) throw new Error('dispatch-assignment-required');
       const route = assignmentClaimRoute(current.policy.policy, intake);

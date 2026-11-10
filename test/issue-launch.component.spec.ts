@@ -1,3 +1,6 @@
+import IntakeRecordStore, {
+  type IntakeObservation,
+} from '../channels/github/intake/record-store.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 
@@ -17,10 +20,14 @@ describe('agent/issue-launch', () => {
   let fixture: ReturnType<typeof intakeFixture>;
   let context: AssessmentEntryDependencies;
   let journal: OpenClawDispatchStore;
+  let store: IntakeRecordStore;
+  let claim: ((event: IntakeObservation, id: string) => Promise<unknown>) | undefined;
   beforeEach(async () => {
     root = await mkdtemp('/tmp/issue-launch-');
     fixture = intakeFixture();
     journal = new OpenClawDispatchStore(root, 'a'.repeat(64));
+    store = new IntakeRecordStore({ root, scope: journal.scope, path: root + '/intake.json' });
+    claim = undefined;
     context = {
       operator: true,
       root,
@@ -68,6 +75,8 @@ describe('agent/issue-launch', () => {
       context,
       journal,
       scope: journal.scope,
+      intakeStore: store,
+      claim,
       client: client(),
       create: (record) => record,
       verifyExisting: async () => {},
@@ -97,6 +106,87 @@ describe('agent/issue-launch', () => {
       );
       assert.deepEqual(await journal.read(), before);
     });
+
+  for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should assign and consume one ${runtime} event before setup, retaining other assignees`, async () => {
+      context.binding.runtime = runtime;
+      const other = { login: 'other', nodeId: 'U_other', type: 'User' };
+      fixture.item.assignees = [other];
+      let assignments = 0;
+      fixture.client.assignProjectIssue = async () => {
+        assert.equal((await journal.read()).records.length, 1);
+        assignments++;
+        fixture.item.assignees.push(fixture.client.identity);
+      };
+      const first = await launch();
+      assert.ok('id' in first);
+      assert.equal(assignments, 1);
+      assert.deepEqual(fixture.item.assignees, [other, fixture.client.identity]);
+      assert.equal((await store.read())?.observedAssignments?.[0]?.consumedBy, first.id);
+      assert.equal((await store.read())?.manualOnly, true);
+      await launch(undefined, { operation: 'prepare' });
+      assert.equal(assignments, 1);
+      context.inputId = 'second-manual-input';
+      const second = await launch();
+      assert.ok('id' in second && second.id !== first.id);
+      assert.equal((await store.read())?.observedAssignments?.[0]?.consumedBy, first.id);
+    });
+
+    it(`should continue ${runtime} manual launch after assignment denial without retrying the write`, async () => {
+      context.binding.runtime = runtime;
+      fixture.item.assignees = [];
+      let attempts = 0;
+      fixture.client.assignProjectIssue = async () => {
+        attempts++;
+        throw new Error('github-permission-denied');
+      };
+      const first = await launch();
+      assert.equal(first.status, 'routing-required');
+      assert.ok('notice' in first && first.notice?.code === 'github-permission-denied');
+      await launch();
+      assert.equal(attempts, 1);
+      assert.equal(await store.read(), undefined);
+    });
+
+    it(`should reconcile a lost ${runtime} assignment response without repeating assignment`, async () => {
+      context.binding.runtime = runtime;
+      fixture.item.assignees = [];
+      let attempts = 0;
+      fixture.client.assignProjectIssue = async () => {
+        attempts++;
+        fixture.item.assignees = [fixture.client.identity];
+        throw new Error('response-lost');
+      };
+      await launch();
+      await launch();
+      assert.equal(attempts, 1);
+      assert.ok((await store.read())?.observedAssignments?.[0]?.consumedBy);
+    });
+
+    it(`should use configured ${runtime} claims without making placement a launch gate`, async () => {
+      context.binding.runtime = runtime;
+      context.manifest.github = {
+        notifications: {
+          ...fixture.policy,
+          routing: [{ 'owner/*': ['11111111-1111-1111-1111-111111111111'] }],
+        },
+      };
+      let calls = 0;
+      claim = async (event) => {
+        calls++;
+        assert.equal(event.assignment.nodeId, fixture.events[0]!.nodeId);
+        return { status: 'handled', winnerId: 7 };
+      };
+      assert.equal((await launch()).status, 'routing-required');
+      assert.equal(calls, 1);
+      context.inputId = 'another-manual-launch';
+      claim = async () => {
+        throw new Error('claim-publication-unconfirmed');
+      };
+      assert.equal((await launch()).status, 'routing-required');
+      assert.equal((await journal.read()).records.length, 2);
+    });
+  }
 
   it('should retain an unassigned draft pr, refresh its unsubmitted head and reuse its native destination', async () => {
     const pr = fixturePullRequest(fixture);
@@ -206,14 +296,15 @@ describe('agent/issue-launch', () => {
       assert.equal((await journal.read()).records.length, 1);
     });
 
-  it('should create an explicitly additional task once while ordinary launch reuses the primary', async () => {
+  it('should create independent tasks for distinct operator inputs and recover the exact request', async () => {
     const primary = await launch();
     assert.ok('id' in primary);
     await journal.exclusive(async (state, save) => {
       state.records[0]!.threadId = 'primary-chat';
       await save();
     });
-    const fresh = await launch(undefined, { fresh: true });
+    context.inputId = 'second-operator-input';
+    const fresh = await launch();
     assert.ok('id' in fresh);
     assert.notEqual(fresh.id, primary.id);
     assert.equal(fresh.status, 'routing-required');
@@ -222,7 +313,7 @@ describe('agent/issue-launch', () => {
     assert.equal(retry.id, fresh.id);
     const reused = await launch();
     assert.ok('id' in reused);
-    assert.equal(reused.id, primary.id);
+    assert.equal(reused.id, fresh.id);
     await journal.exclusive(async (state, save) => {
       state.records[1]!.threadId = 'additional-chat';
       await save();
@@ -232,13 +323,13 @@ describe('agent/issue-launch', () => {
     assert.equal(state.records[1]!.manualIssue?.fresh, true);
     for (const record of state.records)
       assert.equal(managedOwner(state.records, record.threadId!, () => true).owner?.id, record.id);
-    assert.equal(managedOwner(state.records, 'operator-chat', () => true).owner?.id, primary.id);
+    assert.equal(managedOwner(state.records, 'operator-chat', () => true).status, 'ambiguous');
     const conflicting = structuredClone(state.records[0]!);
     conflicting.id = 'f'.repeat(64);
     conflicting.threadId = 'unexpected-owner';
     assert.equal(
-      managedOwner([...state.records, conflicting], 'primary-chat', () => true).status,
-      'ambiguous',
+      managedOwner([...state.records, conflicting], 'primary-chat', () => true).owner?.id,
+      primary.id,
     );
     context.inputId = 'another-explicit-launch';
     const another = await launch(undefined, { fresh: true });
@@ -253,7 +344,8 @@ describe('agent/issue-launch', () => {
       state.records[0]!.retired = { at: baseline, by: 'operator' };
       await save();
     });
-    const next = await launch(undefined, { fresh: true });
+    context.inputId = 'new-launch-after-retirement';
+    const next = await launch();
     assert.equal(next.status, 'routing-required');
     assert.equal((await journal.read()).records[0]!.retired?.by, 'operator');
   });
@@ -372,6 +464,54 @@ describe('agent/issue-launch', () => {
     assert.deepEqual(fixture.item.assignees, []);
   });
 
+  it('should preserve later unassignment when retrying an already consumed manual request', async () => {
+    await launch();
+    fixture.item.assignees = [];
+    fixture.client.assignProjectIssue = async () =>
+      assert.fail('retry must not restore a removed assignment');
+    const retry = await launch(undefined, { operation: 'prepare' });
+    assert.equal(retry.status, 'routing-required');
+    assert.deepEqual(fixture.item.assignees, []);
+    assert.equal((await store.read())!.observedAssignments!.length, 1);
+  });
+
+  it('should keep a prior automatic reservation as the assignment owner while launching independently', async () => {
+    const { automationHash } = await import('../agent/automation-hash.ts');
+    const { issueKey } = await import('../agent/dispatch-pending.ts');
+    const intakeId = automationHash([
+      journal.scope,
+      fixture.repository.nodeId,
+      fixture.item.nodeId,
+      fixture.events[0]!.nodeId,
+    ]);
+    await launch();
+    await journal.exclusive(async (state, save) => {
+      const manual = state.records[0]!.manualIssue!;
+      state.records = [
+        {
+          id: 'f'.repeat(64),
+          intakeId,
+          issueKey: issueKey(manual),
+          sourceThreadId: 'scheduled-intake',
+          manifestDigest: state.records[0]!.manifestDigest,
+          phase: 'routing',
+          createdAt: baseline,
+        },
+      ];
+      await save();
+    });
+    // emulate an automatic reservation that predates manual assignment consumption.
+    await store.exclusive(async (state, save) => {
+      delete state!.observedAssignments;
+      await save(state!);
+    });
+    context.inputId = 'manual-beside-automatic';
+    const launched = await launch();
+    assert.equal(launched.status, 'routing-required');
+    assert.equal((await journal.read()).records.length, 2);
+    assert.equal((await store.read())!.observedAssignments![0]!.consumedBy, 'f'.repeat(64));
+  });
+
   it('should retain operator-origin custody and return its existing issue destination', async () => {
     await launch();
     await journal.exclusive(async (state, save) => {
@@ -393,7 +533,7 @@ describe('agent/issue-launch', () => {
     );
   });
 
-  it('should reuse current work beside retired history and refuse the retired caller', async () => {
+  it('should recover the same request beside history and allow a new operator request', async () => {
     await launch();
     await journal.exclusive(async (state, save) => {
       const record = state.records[0]!;
@@ -409,9 +549,13 @@ describe('agent/issue-launch', () => {
     const before = await journal.read();
     const result = await launch();
     assert.ok('destination' in result && result.destination === 'current-chat');
-    context.binding.session = 'old-chat';
-    await assert.rejects(launch(), /launch-owner-inactive/);
-    assert.deepEqual(await journal.read(), before);
+    context.inputId = 'another-launch';
+    const next = await launch();
+    assert.equal(next.status, 'routing-required');
+    assert.deepEqual(
+      (await journal.read()).records.slice(0, before.records.length),
+      before.records,
+    );
   });
 
   it('should retain historical-only attempts without creating a replacement', async () => {
