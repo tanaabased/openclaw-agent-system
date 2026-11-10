@@ -17,14 +17,18 @@ function runCommand(command, args, input, timeoutMs = 30_000) {
  * collect ci-only failure evidence without changing the failed run's outcome.
  * @param {string} nativeId
  * @param {string | undefined} runId
- * @param {{run?: (command: string, args: string[], input?: string) => {status: number | null, stdout: string}, write?: (text: string) => void}} options
+ * @param {{run?: (command: string, args: string[], input?: string) => {status: number | null, stdout: string}, write?: (text: string) => void, evidence?: string[]}} options
  */
 export function reportAutomationFailure(
   nativeId,
   runId,
-  { run = runCommand, write = (text) => process.stderr.write(text) } = {},
+  {
+    run = runCommand,
+    write = (text) => process.stderr.write(text),
+    evidence: additional = [],
+  } = {},
 ) {
-  const evidence = [];
+  const evidence = [...additional];
   try {
     assert.ok(typeof nativeId === 'string' && nativeId.trim());
     assert.ok(typeof runId === 'string' && runId.trim());

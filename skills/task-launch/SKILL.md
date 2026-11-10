@@ -1,6 +1,6 @@
 ---
 name: agent-system-task-launch
-description: 'Start or resume work from a GitHub issue or existing same-repository pull request in Codex or OpenClaw. Use for "work on task", "work on issue", "continue this PR", or "start task" requests that launch managed work, without assigning it or enabling scheduled intake.'
+description: 'Start or resume work from a GitHub issue or existing same-repository pull request in Codex or OpenClaw. Use for "work on task", "work on issue", "continue this PR", or "start task" requests that launch managed work, with immediate dispatch and no scheduled-intake activation.'
 license: MIT
 metadata:
   type: workflow
@@ -18,7 +18,7 @@ metadata:
 
 ## Overview
 
-Start the existing managed task workflow from an explicit operator request instead of a GitHub assignment. Reuse its task chat, contained checkout, assessment, Plan/Work/Auto progression, and normal PR delivery.
+Start an independent task from an explicit operator request through normal dispatch, assessment, Plan/Work/Auto progression, and PR delivery. Issue launch attempts additive self-assignment; existing PR continuation retains its original destination.
 
 ## Required Reading
 
@@ -41,21 +41,21 @@ Start the existing managed task workflow from an explicit operator request inste
 
 ## Preconditions
 
-Use the trusted invoking agent and host context. An issue need not be assigned, but the request grants no additional repository access or work eligibility. Never assign the issue or enable intake to make launch succeed.
+Use the trusted invoking agent and host context. An issue need not be assigned. The runtime attempts self-assignment without removing other assignees, then dispatches regardless of automatic routing, instance-pool eligibility, capacity, existing tasks or claims. Repository access and native authorization still apply. Do not assign separately or enable scheduled intake.
 
 ## Workflow
 
 1. Resolve the requested issue or PR URL, owner/repo#number, repository plus number, or number with verified repository context. Use the current managed target or independently verified project remotes when unambiguous. Ask for missing repository context instead of guessing from a group name or provider prose. PR continuation starts at its verified current head and retains that PR as the update destination; forks, closed PRs and conflicting targets are unsupported.
 2. In OpenClaw call agent_system_dispatch with action launch, operation context, and target; include repository only when needed. In standalone Codex use dispatchRuntime from the newest trusted context, followed by launch context before its exact --plugin-data argument, sending JSON on stdin. Never infer executable or credential paths.
 3. Supply supported explicit mode, routing model/effort, and assessment/implementation stages only when requested. Omitted fields inherit current agent.yaml defaults independently. Preserve the original launch attempt; do not silently replace invalid explicit selections.
-   Only an explicit operator request for another task permits `fresh: true`. Keep that choice inside Task Launch; automatic intake never selects it. The original task stays active. In either runtime, include an explicitly selected same-repository `pullRequest` URL to start from its verified fetched head and later update that PR. Otherwise fresh launch does not select another task's PR. Keep the same target and fresh choice for subsequent preparation/reconciliation; the runtime resolves the original native-owned attempt. A retry is not another launch.
+   Each new operator issue-launch request starts an independent task; a retry recovers the same attempt. No `fresh` flag is needed. In either runtime, include an explicitly selected same-repository `pullRequest` URL to start from its verified fetched head and later update that PR. Otherwise the new task does not inherit another task's PR. Keep the same target for preparation/reconciliation; the runtime resolves the original native-owned attempt. Existing PR continuation reuses its verified owner.
 4. For an existing destination, open or report it and continue its current stage through its owning context when this is that conversation. If dispatch is pending, reconcile the original launch as instructed; do not repeat completed setup or assessment. Invalid, inactive, wrong-target or ambiguous ownership never implicitly authorizes a fresh launch. When several intentional tasks for the same target remain ambiguous, continue from the intended task’s native conversation; never choose the latest task.
 5. For routing-required, inspect the returned current profiles and assess the bounded context. If only the configured default profile exists, select it explicitly with fallback: default; do not invent a tier or use a fallback after an invalid explicit choice. Call launch prepare with the same target, assessment and concise title. In Codex, call native `list_projects` first; the runtime reads its completed result without a copied inventory. project preparation may return another routing-required result with refreshed project context. Use that response rather than repeating completed preparation.
 6. In OpenClaw prepare creates/reconciles the native task session and starts its ordinary assessment turn. For an uncertain result, call launch reconcile with the same target. In Codex a prepared result returns the existing native create_thread request: execute it unchanged once, then launch reconcile. Never repeat uncertain creation; reconcile the original attempt without a receipt when its outcome is unknown.
 7. Report the verified destination and actual ready/pending/setup state. Missing Codex project registration names the exact folder to register. Missing OpenClaw session enrollment requires an explicitly approved Install with manualSessionDispatch: true (CLI: --manual-session-dispatch), not automatic enrollment or a notification declaration. Keep partial resources and retry their original receipt after setup.
 8. The task conversation owns the remaining assessment and configured Plan/Work/Auto journey. Follow current native conversation direction and use the configured assessment, implementation and independent PR-delivery operations. The launching conversation must not run a parallel implementation or claim that requested native settings were verified when readback is unavailable.
 
-For an explicit replacement request, use `agent_system_dispatch` in OpenClaw or `dispatchRuntime` in standalone Codex with action `recover` from a separate operator chat with the issue `target` (or exact native `chat` when ambiguous) and `pullRequest` URL. Use `preview:true` for optional inspection; omit it to apply within the operator's request. Never supply task IDs or digests. Continue the returned successor `launch` request through the ordinary steps above. Recovery preserves old work and assessment, supersedes only that installation's predecessor, and refuses active or uncertain effects. Retrying uses the same successor; it never disables an unreachable computer. An exact accepted local assignment claim follows the successor through its owning claim adapter; external or uncertain claims block replacement. Collaboration needs fresh launch plus PR selection, not replacement.
+For an explicit replacement request, use `agent_system_dispatch` in OpenClaw or `dispatchRuntime` in standalone Codex with action `recover` from a separate operator chat with the issue `target` (or exact native `chat` when ambiguous) and `pullRequest` URL. Use `preview:true` for optional inspection; omit it to apply within the operator's request. Never supply task IDs or digests. Continue the returned successor `launch` request through the ordinary steps above. Recovery preserves old work and assessment, supersedes only that installation's predecessor, and refuses active or uncertain effects. Retrying uses the same successor; it never disables an unreachable computer. An exact accepted local assignment claim follows the successor through its owning claim adapter; external or uncertain claims block replacement. Collaboration uses a new issue launch plus explicit PR selection.
 
 ## Checkpoints
 
@@ -76,4 +76,4 @@ Return the existing or newly verified task chat, or an actionable pending/setup 
 
 ## Validation
 
-Check the requested target, unchanged assignment/scheduling, destination identity, retained attempt and truthful native status. Installed acceptance, skill validation and packaging checks are maintenance work, not routine launch steps.
+Check the requested target, assignment or claim notices, unchanged scheduling, destination identity, retained attempt and truthful native status. Installed acceptance, skill validation and packaging checks are maintenance work, not routine launch steps.

@@ -3,6 +3,24 @@ import assert from 'node:assert/strict';
 import DiscoveryBudget, { DiscoveryPaused } from '../agent/discovery-budget.ts';
 
 describe('agent/discovery-budget', () => {
+  it('should abandon a cancelled read even when its provider ignores cancellation', async () => {
+    const caller = new AbortController();
+    const budget = new DiscoveryBudget(20000, caller.signal);
+    const deferred = Promise.withResolvers<string>();
+    const read = budget.read('provider-connection', () => deferred.promise);
+    await Promise.resolve();
+    caller.abort();
+    deferred.resolve('late result');
+    await assert.rejects(read, DiscoveryPaused);
+    assert.equal(budget.operation, 'provider-connection');
+  });
+
+  it('should retain the innermost operation across phase budgets', async () => {
+    const budget = new DiscoveryBudget();
+    await budget.fork(7000).read('automation-readiness', async () => 'ready');
+    assert.equal(budget.operation, 'automation-readiness');
+  });
+
   it('should reserve time for sibling phases without extending the occurrence', () => {
     let clock = 0;
     const occurrence = new DiscoveryBudget(20_000, undefined, () => clock);

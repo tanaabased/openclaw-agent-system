@@ -1,3 +1,5 @@
+import { nativeObject } from './automation-gateway.ts';
+
 interface CodexRuntimeIdentity {
   entrypoint: string;
   pluginData: string;
@@ -94,4 +96,63 @@ store(${key}, null);
 
 
 text({id: prepared.id, ${route === 'feedback' ? 'eventId: prepared.eventId, ' : ''}native: await tools.mcp__codex_app__${tool}(prepared.request)});`;
+}
+
+/** one desktop observation, then the original context invocation through normal native approval. */
+export function codexWorkObservationHandoff(
+  value: unknown,
+  invocation: { argv: string[]; input: Record<string, unknown> },
+) {
+  if (
+    !nativeObject(value) ||
+    value.status !== 'observation-required' ||
+    value.code !== 'continuation-turn-state-unresolved' ||
+    value.reason !== undefined ||
+    !nativeObject(value.request) ||
+    value.request.tool !== 'read_thread' ||
+    !nativeObject(value.request.arguments) ||
+    invocation.input.action !== 'context'
+  )
+    return value;
+  const quote = (part: string) => "'" + part.replaceAll("'", "'\\''") + "'";
+  const command =
+    invocation.argv.map(quote).join(' ') +
+    " <<'AGENT_SYSTEM_INPUT'\n" +
+    JSON.stringify(invocation.input) +
+    '\nAGENT_SYSTEM_INPUT';
+  return {
+    ...value,
+    instruction:
+      'Execute nativeHandoff once in functions.exec. It reads the same desktop turn and retries this exact authorized context command. Inspect its completed output; if evidence remains incomplete, stop with that explanation. Do not repeat the handoff, poll for agreement, or send a replacement turn.',
+    nativeHandoff: `async function observeAndContinue() {
+  if (typeof tools.mcp__codex_app__read_thread !== 'function') {
+    text({status: 'unresolved', code: 'continuation-native-observation-unavailable', instruction: 'Supported Codex desktop read_thread is unavailable. Restore the native desktop tool connection, then retry the original context command; do not send a replacement turn.'});
+    return;
+  }
+  const native = await tools.mcp__codex_app__read_thread(${JSON.stringify(value.request.arguments)});
+  text({native});
+  if (native?.isError === true) {
+    text({status: 'unresolved', code: 'continuation-native-observation-failed', instruction: 'The desktop read failed. Resolve its native diagnostic before retrying context; do not repeat the handoff or send a replacement turn.'});
+    return;
+  }
+  let result = await tools.exec_command({
+    cmd: ${JSON.stringify(command)},
+    sandbox_permissions: 'require_escalated',
+    justification: 'Allow the original authorized work transition to recheck native desktop evidence, task ownership and live policy? Native denials stop the operation.',
+    prefix_rule: ${JSON.stringify(invocation.argv)},
+    max_output_tokens: 32000
+  });
+  let output = result.output;
+  while (result.session_id !== undefined) {
+    result = await tools.write_stdin({session_id: result.session_id, chars: '', max_output_tokens: 32000});
+    output += result.output;
+  }
+  text({...result, output});
+  let response;
+  try { response = JSON.parse(output); } catch { return; }
+  if (response?.status === 'observation-required')
+    text({status: 'unresolved', code: response.code, reason: response.reason ?? 'native-observation-receipt-unavailable', instruction: 'The one-shot desktop observation did not establish current turn custody. Stop and report this recoverable limitation; do not repeat the handoff or poll for agreement.'});
+}
+await observeAndContinue();`,
+  };
 }

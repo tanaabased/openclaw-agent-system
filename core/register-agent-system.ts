@@ -275,8 +275,8 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     namespace: api.runtime.state.resolveStateDir(),
     manifestService: lifecycleManifestService,
     // tool registrations need not share the service-start closure; use enrolled read authority.
-    readiness: (manifest, workspace, automationId, expectedNativeId) =>
-      sessionDispatch.use({ signal: AbortSignal.timeout(25000) }, (request) =>
+    readiness: (manifest, workspace, automationId, expectedNativeId, signal) =>
+      sessionDispatch.use({ signal: signal ?? AbortSignal.timeout(25000) }, (request) =>
         notificationAutomationReadiness(
           automationService,
           manifest,

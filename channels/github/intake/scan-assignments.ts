@@ -53,6 +53,7 @@ interface AssignmentScanResult {
   baselineAt?: number;
   checkpoint?: number;
   more?: boolean;
+  diagnostic?: { phase: string; elapsedMs: number; reason: string };
   deferred?: number;
   repositoryScope?: Array<RepositoryScopeDecision & { count: number }>;
 }
@@ -73,7 +74,8 @@ export default async function scanAssignments(
         throw error;
       }
     };
-    if (!input.activate && !previous) throw new IntakeError('intake-activation-required');
+    if (!input.activate && (!previous || previous.manualOnly))
+      throw new IntakeError('intake-activation-required');
     if (
       !input.activate &&
       previous?.blocker &&
@@ -90,6 +92,7 @@ export default async function scanAssignments(
       return result;
     }
     const budget = input.budget ?? new DiscoveryBudget(20000);
+    const started = budget.clock();
     let state: IntakeState | undefined;
     let admitted = 0;
     let next: IntakeState;
@@ -97,9 +100,13 @@ export default async function scanAssignments(
     const scopeCounts = new Map<string, RepositoryScopeDecision & { count: number }>();
     try {
       budget.check();
-      const client = await input.connect(AbortSignal.any([signal, budget.signal]));
+      const client = await budget.read('assignment-connection', () =>
+        input.connect(AbortSignal.any([signal, budget.signal])),
+      );
       const identities = new GitHubIdentityCache(input.store.location);
-      await identities.resolve(input.policy, client, 'assignment', true);
+      await budget.read('assignment-identities', () =>
+        identities.resolve(input.policy, client, 'assignment', true),
+      );
       const account: GitHubIdentity = client.identity;
       if (previous && !identityMatches(previous.account, account))
         throw new IntakeError('intake-account-changed');
@@ -115,6 +122,10 @@ export default async function scanAssignments(
             baselineAt: input.now,
             records: [],
           };
+      if (input.activate && state.manualOnly) {
+        state.baselineAt = input.now;
+        delete state.manualOnly;
+      }
       // repeat from the baseline: search indexing delays must not strand an eligible assignment.
       const discovery = input.selector
         ? {
@@ -139,10 +150,12 @@ export default async function scanAssignments(
               truncated: false,
               nextPage: state.discovery.nextPage,
             }
-          : await client.discoverAssigned(
-              new Date(state.baselineAt).toISOString(),
-              ['issue'],
-              state.discovery?.page ?? 1,
+          : await budget.read('assignment-search', () =>
+              client.discoverAssigned(
+                new Date(state!.baselineAt).toISOString(),
+                ['issue'],
+                state!.discovery?.page ?? 1,
+              ),
             );
       if (discovery.truncated || discovery.incomplete)
         throw new IntakeError('intake-search-incomplete');
@@ -178,7 +191,7 @@ export default async function scanAssignments(
         budget.check();
         if (progress.observations[key] !== undefined)
           return JSON.parse(progress.observations[key]!) as T;
-        const value = await read();
+        const value = await budget.read('assignment-' + key, read);
         progress.observations[key] = JSON.stringify(value);
         await input.assertCurrent();
         await save(state!);
@@ -186,8 +199,10 @@ export default async function scanAssignments(
       }
       for (const candidate of candidates) {
         if (input.readPolicy) {
-          const live = await input.readPolicy();
-          await identities.resolve(live.policy, client, 'assignment');
+          const live = await budget.read('assignment-policy', () => input.readPolicy!());
+          await budget.read('assignment-identities', () =>
+            identities.resolve(live.policy, client, 'assignment'),
+          );
           input = { ...input, policy: live.policy, policyDigest: live.digest };
         }
         budget.check();
@@ -196,7 +211,9 @@ export default async function scanAssignments(
           if (candidate.itemType !== 'issue') return;
           const coordinates = githubRepositoryPath(candidate.repositoryPath);
           // search paths and saved observations may predate a rename or transfer.
-          const repository = await client.getRepository(coordinates.owner, coordinates.name);
+          const repository = await budget.read('assignment-repository', () =>
+            client.getRepository(coordinates.owner, coordinates.name),
+          );
           const scope = repositoryScope(input.policy, repository, 'issue-assignment');
           const scopeKey = JSON.stringify(scope);
           scopeCounts.set(scopeKey, {
@@ -288,10 +305,22 @@ export default async function scanAssignments(
           state!.observedAssignments ??= [];
           const observedIndex = state!.observedAssignments.findIndex((entry) => entry.id === id);
           if (observedIndex < 0) state!.observedAssignments.push(observation);
-          else state!.observedAssignments[observedIndex] = observation;
-          if (seen.has(id)) return;
+          else
+            state!.observedAssignments[observedIndex] = {
+              ...observation,
+              ...(state!.observedAssignments[observedIndex]!.consumedBy
+                ? { consumedBy: state!.observedAssignments[observedIndex]!.consumedBy }
+                : {}),
+            };
+          if (
+            seen.has(id) ||
+            state!.observedAssignments.find((entry) => entry.id === id)?.consumedBy
+          )
+            return;
           // the attempt is persisted before github can expose the event; read it after observing that event.
-          const pickup = input.readIssuePickup ? await input.readIssuePickup() : input.issuePickup;
+          const pickup = input.readIssuePickup
+            ? await budget.read('assignment-pickup', () => input.readIssuePickup!())
+            : input.issuePickup;
           if (
             pickup?.withheldAssignments?.some(
               (hold) =>
@@ -301,19 +330,21 @@ export default async function scanAssignments(
           )
             return;
           const projectWork = pickup
-            ? await authorizeProjectAssignment({
-                authority: pickup,
-                runtime: input.runtime,
-                scope: state!.scope,
-                workspaceDir: input.workspaceDir,
-                agentId: input.agentId,
-                policy: input.policy,
-                client,
-                repository,
-                item,
-                event,
-                now: input.now,
-              })
+            ? await budget.read('assignment-project-authority', () =>
+                authorizeProjectAssignment({
+                  authority: pickup,
+                  runtime: input.runtime,
+                  scope: state!.scope,
+                  workspaceDir: input.workspaceDir,
+                  agentId: input.agentId,
+                  policy: input.policy,
+                  client,
+                  repository,
+                  item,
+                  event,
+                  now: input.now,
+                }),
+              )
             : undefined;
           if (
             pickup?.receipts.some(
@@ -402,10 +433,21 @@ export default async function scanAssignments(
     } catch (error) {
       if (error === persistenceError) throw error;
       if (error instanceof DiscoveryPaused || budget.exhausted) {
-        if (!state) throw error;
-        state.lastAttemptAt = input.now;
-        await save(state);
-        return { status: 'ready', changed: admitted > 0, admitted, more: true };
+        if (state) {
+          state.lastAttemptAt = input.now;
+          await save(state);
+        } else if (!previous) throw error;
+        return {
+          status: 'ready',
+          changed: admitted > 0,
+          admitted,
+          more: true,
+          diagnostic: {
+            phase: budget.operation,
+            elapsedMs: Math.max(0, budget.clock() - started),
+            reason: 'discovery-budget-exhausted',
+          },
+        };
       }
       if (state) previous = state;
       if (isFilesystemAccessError(error)) throw error;
@@ -439,11 +481,20 @@ export default async function scanAssignments(
             providerDiagnostic: diagnostic,
           },
         };
-        result = { status: 'blocked' as const, code, changed };
+        result = {
+          status: 'blocked' as const,
+          code,
+          changed,
+          diagnostic: {
+            phase: budget.operation,
+            elapsedMs: Math.max(0, budget.clock() - started),
+            reason: code,
+          },
+        };
       } else throw new IntakeError(code);
     }
     // local persistence failures must not be mistaken for provider failures.
     await save(next);
     return result;
-  });
+  }, input.budget?.signal);
 }

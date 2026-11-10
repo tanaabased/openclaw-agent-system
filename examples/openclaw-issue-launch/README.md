@@ -2,13 +2,13 @@
 
 Launch an unassigned issue from an ordinary chat without enabling notification intake.
 Create its checkout and issue chat through the enrolled session service, save a Plan
-assessment, and reuse the same chat after a Gateway restart. Continue one existing
+assessment, and launch an independent attempt after a Gateway restart. Continue one existing
 same-repository draft PR through an authorized update to that original PR.
 
 ## What Belongs Here
 
-- Manual-only enrollment and launch without assignment or schedules.
-- Native checkout/settings, retained assessment and duplicate-safe destination reuse.
+- Manual-only enrollment, additive self-assignment and immediate launch without schedules.
+- Native checkout/settings, retained assessment and independent task checkouts.
 - PR-head startup, original-PR updates and preserved metadata for a PR by another author.
 
 ## What Does Not Belong Here
@@ -59,13 +59,13 @@ openclaw agent-system automations list --json | jq -e '.status == "aligned" and 
 
 # should create one unassigned manual-launch target
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-launch/emori"
-node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" create --title "agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT- Agent System openclaw-issue-launch $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --body 'Disposable manual launch target; notification-hidden-initial-fact. Document closing disposable issues after evidence capture; do not assign.' | tee "$TMPDIR/manual-issue.json" | jq -e '.state == "open" and (.assignees | length) == 0'
+node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" create --title "agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT- Agent System openclaw-issue-launch $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --body 'Disposable manual launch target; notification-hidden-initial-fact. Document closing disposable issues after evidence capture; manual launch attempts self-assignment.' | tee "$TMPDIR/manual-issue.json" | jq -e '.state == "open" and (.assignees | length) == 0'
 ```
 
 ## Testing
 
 ```bash
-# should create normal managed issue work without assignment or intake
+# should self-assign and create normal managed issue work without scheduled intake
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-launch/tanaabot"
 target=$(jq -er .html_url "$TMPDIR/manual-issue.json")
 params=$(jq -nc --arg target "$target" '{sessionKey:"agent:issue-launch-tanaabot:manual-launch",agentId:"issue-launch-tanaabot",message:("Manual issue launch target: " + $target),deliver:false,idempotencyKey:"manual-launch-first"}')
@@ -104,25 +104,29 @@ writeFileSync(process.env.TMPDIR + '/manual-launch-evidence.json', JSON.stringif
 NODE
 number=$(jq -er .number "$TMPDIR/manual-issue.json")
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-launch/emori"
-openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number" | jq -e '(.assignees | length) == 0'
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number" | jq -e 'any(.assignees[]; .login == "tanaabot")'
 
-# should reuse the verified native destination after gateway restart
+# should launch an independent task after gateway restart
 openclaw-gateway stop --timeout 340
 OPENCLAW_LOG_LEVEL=info openclaw-gateway start
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-launch/tanaabot"
 target=$(jq -er .html_url "$TMPDIR/manual-issue.json")
-params=$(jq -nc --arg target "$target" '{sessionKey:"agent:issue-launch-tanaabot:manual-launch",agentId:"issue-launch-tanaabot",message:("Manual issue launch target: " + $target),deliver:false,idempotencyKey:"manual-launch-reuse"}')
-node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "manual-launch-reuse"'
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" manual-launch-reuse 600000
+params=$(jq -nc --arg target "$target" '{sessionKey:"agent:issue-launch-tanaabot:manual-launch",agentId:"issue-launch-tanaabot",message:("Manual issue launch target: " + $target),deliver:false,idempotencyKey:"manual-launch-second"}')
+node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "manual-launch-second"'
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" manual-launch-second 600000
 node --input-type=module <<'NODE'
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 const root = process.env.XDG_CONFIG_HOME + '/tanaab/agent-system/agent-system-dispatch-v2';
 const records = readdirSync(root).filter(name => name.startsWith('openclaw-dispatch-') && name.endsWith('.json')).flatMap(name => JSON.parse(readFileSync(root + '/' + name, 'utf8')).records);
 const previous = JSON.parse(readFileSync(process.env.TMPDIR + '/manual-launch-evidence.json', 'utf8'));
-assert.equal(records.length, 1);
-for (const field of ['id', 'threadId', 'worktree', 'resultTurnId']) assert.equal(records[0][field], previous[field]);
-assert.deepEqual(records[0].result, previous.result);
+assert.equal(records.length, 2);
+const original = records.find(record => record.id === previous.id);
+const next = records.find(record => record.id !== previous.id);
+assert.deepEqual(original, previous);
+for (const field of ['id', 'threadId', 'worktree']) assert.notEqual(next[field], previous[field]);
+assert.ok(next.sessionCreation?.sessionId);
+assert.equal(next.manualIssue.assignmentAttempt.event.nodeId, previous.manualIssue.assignmentAttempt.event.nodeId);
 NODE
 openclaw agent-system automations list --json | jq -e '.status == "aligned" and (.jobs | length) == 0'
 ```

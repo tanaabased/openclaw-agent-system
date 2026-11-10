@@ -53,6 +53,7 @@ export interface OpenClawIntakeDependencies {
     workspace: string,
     automationId?: string,
     expectedNativeId?: string,
+    signal?: AbortSignal,
   ): Promise<string | undefined>;
   readinessFailure?(error: unknown): void;
 }
@@ -86,6 +87,7 @@ export default class OpenClawIntake {
     workspace: string,
     automationId?: string,
     expectedNativeId?: string,
+    signal?: AbortSignal,
   ) {
     try {
       return await this.dependencies.readiness?.(
@@ -93,8 +95,10 @@ export default class OpenClawIntake {
         workspace,
         automationId,
         expectedNativeId,
+        signal,
       );
     } catch (error) {
+      signal?.throwIfAborted();
       this.dependencies.readinessFailure?.(error);
       return 'automation-observation-unavailable';
     }
@@ -335,16 +339,18 @@ export default class OpenClawIntake {
     selector?: GitHubNotificationItemSelector,
     budget = new DiscoveryBudget(20000, signal),
   ) {
+    const started = budget.clock();
     signal?.throwIfAborted();
     const deadline = AbortSignal.timeout(action === 'check' ? 25000 : 120000);
-    const { selected, store, workspace } = await this.select(manifest, workspaceDir);
+    const { selected, store, workspace } = await budget.read('intake-scope', () =>
+      this.select(manifest, workspaceDir),
+    );
     if (!selected) throw new IntakeError('intake-policy-disabled');
     const assertCurrent = async () => {
       signal?.throwIfAborted();
       deadline.throwIfAborted();
-      const fresh = await this.dependencies.manifestService.loadForAgentId(
-        manifest.agent.id,
-        'service',
+      const fresh = await budget.read('intake-manifest', () =>
+        this.dependencies.manifestService.loadForAgentId(manifest.agent.id, 'service'),
       );
       if (fresh.status !== 'loaded') throw new IntakeError('intake-manifest-unavailable');
       if (
@@ -355,8 +361,20 @@ export default class OpenClawIntake {
     };
     await assertCurrent();
     if (action !== 'activate') {
-      const code = await this.readiness(manifest, workspace);
-      if (code) return { status: 'blocked' as const, code, changed: true };
+      const code = await budget.read('automation-readiness', () =>
+        this.readiness(manifest, workspace, undefined, undefined, budget.signal),
+      );
+      if (code)
+        return {
+          status: 'blocked' as const,
+          code,
+          changed: true,
+          diagnostic: {
+            phase: 'automation-readiness',
+            elapsedMs: Math.max(0, budget.clock() - started),
+            reason: code,
+          },
+        };
     }
     const target = store;
     return scanAssignments({
@@ -389,14 +407,14 @@ export default class OpenClawIntake {
       },
       connect: async (lockSignal) => {
         await assertCurrent();
-        const client = await this.dependencies.connect(
-          { manifest, workspaceDir: workspace },
-          AbortSignal.any([lockSignal, deadline, budget.signal, ...(signal ? [signal] : [])]),
+        const client = await budget.read('assignment-connection', () =>
+          this.dependencies.connect(
+            { manifest, workspaceDir: workspace },
+            AbortSignal.any([lockSignal, deadline, budget.signal, ...(signal ? [signal] : [])]),
+          ),
         );
-        await new GitHubIdentityCache(store.location).resolve(
-          selected.policy,
-          client,
-          'assignment',
+        await budget.read('assignment-identities', () =>
+          new GitHubIdentityCache(store.location).resolve(selected.policy, client, 'assignment'),
         );
         const pin = selected.policy.issueAssignment?.allowed.find(
           (a) => a.login.toLowerCase() === selected.username.toLowerCase(),

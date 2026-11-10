@@ -87,6 +87,16 @@ export const intakeRecordSchema = Type.Object(
   { additionalProperties: false },
 );
 export type IntakeRecord = Static<typeof intakeRecordSchema>;
+export const intakeObservationSchema = Type.Object(
+  {
+    ...Type.Omit(intakeRecordSchema, ['evidence', 'admittedAt', 'status', 'requiresRevalidation'])
+      .properties,
+    consumedBy: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
+  },
+  { additionalProperties: false },
+);
+export type IntakeObservation = Static<typeof intakeObservationSchema>;
+
 const stateSchema = Type.Object(
   {
     version: Type.Literal(1),
@@ -96,6 +106,7 @@ const stateSchema = Type.Object(
     account: identity,
     policyDigest: text,
     baselineAt: time,
+    manualOnly: Type.Optional(Type.Literal(true)),
     checkpoint: Type.Optional(time),
     discovery: Type.Optional(
       Type.Object(
@@ -135,11 +146,7 @@ const stateSchema = Type.Object(
         { additionalProperties: false },
       ),
     ),
-    observedAssignments: Type.Optional(
-      Type.Array(
-        Type.Omit(intakeRecordSchema, ['evidence', 'admittedAt', 'status', 'requiresRevalidation']),
-      ),
-    ),
+    observedAssignments: Type.Optional(Type.Array(intakeObservationSchema)),
     records: Type.Array(intakeRecordSchema),
   },
   { additionalProperties: false },
@@ -234,6 +241,20 @@ export default class IntakeRecordStore {
         !Value.Check(stateSchema, value) ||
         value.scope !== this.location.scope ||
         new Set(value.records.map((r) => r.id)).size !== value.records.length ||
+        (value.observedAssignments ?? []).some(
+          (r) =>
+            r.scope !== value.scope ||
+            r.receiving.nodeId !== value.account.nodeId ||
+            r.workspaceDir !== value.workspaceDir ||
+            r.agentId !== value.agentId ||
+            r.id !==
+              automationHash([
+                value.scope,
+                r.repository.nodeId,
+                r.issue.nodeId,
+                r.assignment.nodeId,
+              ]),
+        ) ||
         value.records.some(
           (r) =>
             r.scope !== value.scope ||
@@ -263,6 +284,7 @@ export default class IntakeRecordStore {
       save: (state: IntakeState) => Promise<void>,
       signal: AbortSignal,
     ) => Promise<T>,
+    signal?: AbortSignal,
   ): Promise<T> {
     await ensurePrivateStateDirectories({
       directories: [this.location.root],
@@ -274,6 +296,7 @@ export default class IntakeRecordStore {
       contention: {
         category: 'intake',
         operation: 'intake-commit',
+        signal,
         timeoutMs: 10_000,
         retryMs: 250,
       },
@@ -299,7 +322,7 @@ export default class IntakeRecordStore {
             if (Buffer.byteLength(JSON.stringify(retained)) > historySoftBytes) {
               const admitted = new Set(retained.records.map((record) => record.id));
               retained.observedAssignments = retained.observedAssignments?.filter(
-                (record) => !admitted.has(record.id),
+                (record) => record.consumedBy || !admitted.has(record.id),
               );
             }
             const contents = JSON.stringify(retained);
@@ -314,6 +337,62 @@ export default class IntakeRecordStore {
     } finally {
       await lock.release();
     }
+  }
+
+  async consume(observation: IntakeObservation, taskId: string): Promise<string> {
+    if (
+      observation.scope !== this.location.scope ||
+      observation.id !==
+        automationHash([
+          this.location.scope,
+          observation.repository.nodeId,
+          observation.issue.nodeId,
+          observation.assignment.nodeId,
+        ]) ||
+      !/^[a-f0-9]{64}$/.test(taskId)
+    )
+      throw new IntakeError('intake-state-invalid');
+    return this.exclusive(async (previous, save) => {
+      if (
+        previous &&
+        (previous.account.nodeId !== observation.receiving.nodeId ||
+          previous.agentId !== observation.agentId ||
+          previous.workspaceDir !== observation.workspaceDir)
+      )
+        throw new IntakeError('intake-account-changed');
+      const state: IntakeState = previous ?? {
+        version: 1,
+        scope: this.location.scope,
+        workspaceDir: observation.workspaceDir,
+        agentId: observation.agentId,
+        account: observation.receiving,
+        policyDigest: 'manual',
+        baselineAt: observation.observedAt,
+        manualOnly: true,
+        records: [],
+      };
+      state.observedAssignments ??= [];
+      const existing = state.observedAssignments.find((entry) => entry.id === observation.id);
+      if (existing?.consumedBy) return existing.consumedBy;
+      if (existing) existing.consumedBy = taskId;
+      else
+        state.observedAssignments.push({
+          version: observation.version,
+          id: observation.id,
+          scope: observation.scope,
+          receiving: observation.receiving,
+          workspaceDir: observation.workspaceDir,
+          agentId: observation.agentId,
+          host: observation.host,
+          repository: observation.repository,
+          issue: observation.issue,
+          assignment: observation.assignment,
+          observedAt: observation.observedAt,
+          consumedBy: taskId,
+        });
+      await save(state);
+      return taskId;
+    });
   }
 
   async reset(baselineAt: number): Promise<void> {

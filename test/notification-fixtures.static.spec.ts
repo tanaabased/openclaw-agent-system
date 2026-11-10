@@ -1,7 +1,24 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
+import repositoryScope from '../channels/github/repository-scope.ts';
 import parseAgentManifest from '../manifest/parse.ts';
+
+describe('examples/openclaw-notifications-scheduling fixture isolation', () => {
+  it('should exclude assignments from concurrent ci scenarios', async () => {
+    const source = (
+      await readFile('examples/openclaw-notifications-scheduling/tanaabot/agent.yaml', 'utf8')
+    ).replaceAll('__RECEIVER_NODE_ID__', 'U_receiver');
+    const parsed = parseAgentManifest(source);
+    assert.equal(parsed.status, 'valid', JSON.stringify(parsed.diagnostics));
+    const decision = repositoryScope(
+      parsed.manifest!.github!.notifications!,
+      { name: 'big-test-bucket', owner: { login: 'tanaabased', nodeId: 'O_tanaab' } },
+      'issue-assignment',
+    );
+    assert.equal(decision.decision, 'deny');
+  });
+});
 
 for (const id of [
   'openclaw-issue-journey',

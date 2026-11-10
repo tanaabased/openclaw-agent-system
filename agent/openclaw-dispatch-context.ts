@@ -196,6 +196,12 @@ export default class OpenClawDispatchContext {
     if (record.reset) throw new Error('dispatch-reset-pending');
     const intake = dispatchAdmission(record, current.admitted.records ?? []);
     if (!intake) throw new Error('dispatch-admission-missing');
+    if (!('initiation' in intake) && !record.sessionCreation?.attempted) {
+      const consumed = current.admitted.observedAssignments?.find(
+        (entry) => entry.id === intake.id,
+      )?.consumedBy;
+      if (consumed && consumed !== record.id) throw new Error('dispatch-assignment-consumed');
+    }
     if (
       'initiation' in intake &&
       (intake.agentId !== manifest.agent.id ||
@@ -305,7 +311,9 @@ export default class OpenClawDispatchContext {
     const worktreeInput = {
       agentId: manifest.agent.id,
       attemptId: record.worktreeAttemptId,
-      separateCheckout: Boolean(record.manualIssue?.fresh || record.predecessorId),
+      separateCheckout: Boolean(
+        record.separateCheckout || record.manualIssue?.fresh || record.predecessorId,
+      ),
       cloneUrl: repo.cloneUrl,
       defaultBranch: repo.defaultBranch,
       itemDatabaseId: intake.issue.databaseId,

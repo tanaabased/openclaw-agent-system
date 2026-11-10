@@ -1,3 +1,6 @@
+import { runInNewContext } from 'node:vm';
+import openClawConditionCheck from '../agent/openclaw-condition-check.ts';
+import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
 import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
 import { feedbackTarget } from '../agent/reply-target.ts';
@@ -730,6 +733,7 @@ describe('agent/openclaw issue dispatch', () => {
     let interrupted = true;
     service.dependencies.worktrees.prepareGitHub = async (input) => {
       assert.equal(input.attemptId, id);
+      assert.equal(input.separateCheckout, true);
       assert.equal((await record()).worktreeAttemptId, id);
       attempts.push(input.attemptId!);
       const prepared = await original(input);
@@ -853,6 +857,7 @@ describe('agent/openclaw issue dispatch', () => {
     const original = service.dependencies.worktrees.prepareGitHub;
     service.dependencies.worktrees.prepareGitHub = async (input) => {
       assert.equal(input.attemptId, undefined);
+      assert.equal(input.separateCheckout, false);
       return original(input);
     };
     assert.equal((await prepare(selected)).status, 'session-created');
@@ -8471,6 +8476,70 @@ describe('agent/openclaw issue dispatch', () => {
     assert.ok('records' in missing);
     assert.deepEqual(missing.records, []);
   });
+  it('should return from a delayed scheduled readiness read and resume without losing or duplicating assignments', async () => {
+    const intake = service.dependencies.intake;
+    const current = await service.scope(manifest, root);
+    const before = await current.store.read();
+    const waiting = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<string | undefined>();
+    const deadline = new AbortController();
+    let clock = 0;
+    let readSignal: AbortSignal | undefined;
+    intake.dependencies.readiness = async (_manifest, _workspace, _id, _expected, signal) => {
+      readSignal = signal;
+      waiting.resolve();
+      return release.promise;
+    };
+    const budget = new DiscoveryBudget(20000, deadline.signal, () => clock);
+    const script = openclawIntakeJobs(manifest).find((job) => job.id === 'github-issue-assignment')!
+      .internalOpenClaw!.trigger!.script;
+    let output:
+      | {
+          fire: boolean;
+          state: {
+            outcome: string;
+            more: boolean;
+            diagnostic: { phase: string; elapsedMs: number };
+          };
+        }
+      | undefined;
+    const occurrence = runInNewContext('(async()=>{' + script + '})()', {
+      agent_system_dispatch: () =>
+        openClawConditionCheck(
+          (budget) => service.check(manifest, root, undefined, undefined, undefined, budget),
+          undefined,
+          budget,
+        ),
+      json: (value: typeof output) => {
+        output = value;
+      },
+    });
+    await waiting.promise;
+    clock = 20000;
+    deadline.abort();
+    await occurrence;
+    assert.equal(readSignal?.aborted, true);
+    assert.equal(output!.fire, true);
+    assert.equal(output!.state.outcome, 'failed');
+    assert.equal(output!.state.more, true);
+    assert.equal(output!.state.diagnostic.phase, 'automation-readiness');
+    assert.equal(output!.state.diagnostic.elapsedMs, 20000);
+    assert.deepEqual(await current.store.read(), before);
+    release.resolve(undefined);
+    await release.promise;
+    assert.deepEqual(await current.store.read(), before);
+    intake.dependencies.readiness = async () => undefined;
+    await service.check(manifest, root);
+    const complete = await current.store.read();
+    assert.equal(complete!.records.length, 1);
+    await service.check(manifest, root);
+    assert.deepEqual((await current.store.read())!.records, complete!.records);
+    assert.equal(
+      calls.some((call) => call.method === 'sessions.create' || call.method === 'chat.send'),
+      false,
+    );
+  });
+
   it('should stop all discovery phases on caller cancellation', async () => {
     await feedbackOwner();
     const before = await record();
@@ -10019,17 +10088,32 @@ describe('agent/openclaw issue dispatch', () => {
       );
       assert.equal(reused.status, 'existing');
       assert.equal(calls.filter((call) => call.method === 'sessions.create').length, 1);
+      if (kind === 'pull-request') return;
+      who.runId = 'second-manual-turn';
+      histories.get(who.sessionKey)!.messages.push({
+        role: 'user',
+        content: 'Launch this issue again',
+        __openclaw: {
+          id: 'second-manual-input',
+          runId: who.runId,
+          idempotencyKey: 'second-manual-turn:user',
+          senderIsOwner: true,
+        },
+      });
+      manifest.github!.notifications = { ...fixture.policy, routing: [], maxConcurrentItems: 1 };
       const additional = await service.run(
         manifest,
         root,
         who,
-        { action: 'launch', operation: 'context', target, fresh: true },
+        { action: 'launch', operation: 'context', target },
         true,
       );
       assert.ok('id' in additional && typeof additional.id === 'string');
       assert.ok('digest' in additional && typeof additional.digest === 'string');
       const originalPrepare = service.dependencies.worktrees.prepareGitHub;
       service.dependencies.worktrees.prepareGitHub = async (request) => {
+        assert.equal(request.separateCheckout, true);
+        assert.equal(request.attemptId, additional.id);
         const result = await originalPrepare(request);
         const path = join(root, 'additional-worktree');
         await mkdir(path, { recursive: true });

@@ -7,7 +7,9 @@ export function assignmentClaimRoute(policy: GitHubNotificationPolicy, intake: M
   return repositoryScope(policy, intake.repository, 'issue-assignment');
 }
 
-export default function assignmentClaimSource(intake: IntakeRecord) {
+export default function assignmentClaimSource(
+  intake: Pick<IntakeRecord, 'repository' | 'issue' | 'receiving' | 'assignment'>,
+) {
   return {
     owner: intake.repository.owner.login,
     repository: intake.repository.name,

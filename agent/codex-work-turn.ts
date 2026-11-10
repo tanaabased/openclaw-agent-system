@@ -84,7 +84,7 @@ export default async function advanceCodexWorkTurn(
               ? 'continuation-native-approval-denied'
               : 'continuation-turn-state-unresolved',
           ...(observed?.status === 'unresolved' ? { reason: observed.reason } : {}),
-          ...(observed?.status !== 'denied'
+          ...(observed?.status === 'required' || observed === undefined
             ? {
                 request: {
                   tool: 'read_thread',
@@ -93,7 +93,10 @@ export default async function advanceCodexWorkTurn(
                 instruction:
                   'Read this native turn once with the exact request, then refresh context. Do not send a replacement turn.',
               }
-            : {}),
+            : {
+                instruction:
+                  'Native desktop evidence could not verify current turn custody. Resolve the reported observation reason before retrying context. Preserve native denials; do not poll for agreement or send a replacement turn.',
+              }),
         },
       };
     work.observation.receiptId = observed.receiptId;

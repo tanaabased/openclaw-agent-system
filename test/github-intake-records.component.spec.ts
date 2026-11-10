@@ -10,9 +10,12 @@ import { omit } from 'lodash-es';
 import IntakeRecordStore, {
   IntakeError,
   intakeLocation,
+  type IntakeObservation,
 } from '../channels/github/intake/record-store.ts';
 import scanAssignments from '../channels/github/intake/scan-assignments.ts';
 import { inspectAdmittedIssue } from '../agent/dispatch-assignment.ts';
+import { automationHash } from '../agent/automation-hash.ts';
+import pendingDispatchAssignments from '../agent/dispatch-pending.ts';
 import { baseline, intakeFixture } from './github-intake-fixture.ts';
 
 describe('channels/github/intake/records', () => {
@@ -49,6 +52,70 @@ describe('channels/github/intake/records', () => {
     };
   }
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should retain consumed ${runtime} assignments after task disposal and admit reassignment`, async () => {
+      const { input, store, events } = setup(runtime);
+      const assigned = events.splice(0);
+      await scanAssignments({ ...input, activate: true });
+      events.push(...assigned);
+      await scanAssignments({ ...input, now: baseline + 120000 });
+      const admitted = (await store.read())!.records[0]!;
+      const taskId = 'a'.repeat(64);
+      assert.equal(await store.consume(admitted, taskId), taskId);
+      assert.equal(await store.consume(admitted, 'b'.repeat(64)), taskId);
+      const restarted = new IntakeRecordStore(store.location);
+      await scanAssignments({ ...input, store: restarted, now: baseline + 180000 });
+      assert.deepEqual(pendingDispatchAssignments({ records: [] }, (await restarted.read())!), []);
+      events.push({
+        ...events[0]!,
+        nodeId: 'E_reassigned',
+        databaseId: 32,
+        createdAt: '2026-10-07T10:04:00Z',
+      });
+      await scanAssignments({ ...input, store: restarted, now: baseline + 300000 });
+      const pending = pendingDispatchAssignments({ records: [] }, (await restarted.read())!);
+      assert.equal(pending.length, 1);
+      assert.equal(pending[0]!.intake.assignment.nodeId, 'E_reassigned');
+    });
+
+    it(`should consume manual ${runtime} observations without activating intake`, async () => {
+      const { input, store, client, repository, item, events } = setup(runtime);
+      const observation: IntakeObservation = {
+        version: 1,
+        scope: store.location.scope,
+        id: automationHash([
+          store.location.scope,
+          repository.nodeId,
+          item.nodeId,
+          events[0]!.nodeId,
+        ]),
+        receiving: { login: client.identity.login, nodeId: client.identity.nodeId },
+        workspaceDir: '/workspace',
+        agentId: 'receiver',
+        host: 'github.com',
+        repository: {
+          nodeId: repository.nodeId,
+          databaseId: repository.databaseId,
+          owner: { login: repository.owner.login, nodeId: repository.owner.nodeId },
+          name: repository.name,
+        },
+        issue: { nodeId: item.nodeId, databaseId: item.databaseId, number: item.number },
+        assignment: { ...events[0]!, event: 'assigned' },
+        observedAt: baseline,
+      };
+      await store.consume(observation, 'a'.repeat(64));
+      await assert.rejects(scanAssignments(input), /intake-activation-required/);
+      await scanAssignments({ ...input, activate: true, now: baseline + 120000 });
+      const state = (await store.read())!;
+      assert.equal(state.manualOnly, undefined);
+      assert.equal(state.baselineAt, baseline + 120000);
+      assert.equal(state.records.length, 0);
+      assert.equal(state.observedAssignments![0]!.consumedBy, 'a'.repeat(64));
+      await assert.rejects(
+        store.consume({ ...observation, scope: 'foreign' }, 'b'.repeat(64)),
+        /intake-state-invalid/,
+      );
+    });
+
     it(`should read historical ${runtime} scope evidence without re-admission or identity bypass`, async () => {
       const { input, client, store, policy, events, repository } = setup(runtime);
       const assigned = events.splice(0);
@@ -171,7 +238,16 @@ describe('channels/github/intake/records', () => {
       await scanAssignments({ ...input, now: baseline + 120000 });
       const admitted = (await store.read())!.records[0]!;
       const observed = omit(admitted, ['evidence', 'admittedAt', 'status', 'requiresRevalidation']);
-      const unevaluated = { ...observed, id: 'unadmitted-assignment' };
+      const unevaluated = {
+        ...observed,
+        assignment: { ...observed.assignment, nodeId: 'E_unadmitted' },
+        id: automationHash([
+          store.location.scope,
+          observed.repository.nodeId,
+          observed.issue.nodeId,
+          'E_unadmitted',
+        ]),
+      };
       await store.exclusive(async (state, save) => {
         state!.observedAssignments = [
           ...Array.from(
@@ -394,6 +470,70 @@ describe('channels/github/intake/records', () => {
     assert.equal(reads, 2);
     assert.equal(itemReads, 1);
     assert.equal((await store.read())!.records.length, 1);
+  });
+
+  for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should retain ${runtime} discovery when connection expires before a mutable scan exists`, async () => {
+      const { input, store, client, events } = setup(runtime);
+      const assignments = events.splice(0);
+      await scanAssignments({ ...input, activate: true });
+      events.push(...assignments);
+      const before = await store.read();
+      const caller = new AbortController();
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<typeof client>();
+      const scan = scanAssignments({
+        ...input,
+        budget: new DiscoveryBudget(20000, caller.signal),
+        connect: async () => {
+          entered.resolve();
+          return release.promise;
+        },
+      });
+      await entered.promise;
+      caller.abort();
+      const interrupted = await scan;
+      assert.equal(interrupted.more, true);
+      assert.equal(interrupted.diagnostic?.phase, 'assignment-connection');
+      assert.deepEqual(await store.read(), before);
+      release.resolve(client);
+      await release.promise;
+      assert.deepEqual(await store.read(), before);
+      assert.equal((await scanAssignments({ ...input, now: baseline + 120000 })).admitted, 1);
+      assert.equal((await scanAssignments({ ...input, now: baseline + 180000 })).admitted, 0);
+    });
+  }
+
+  it('should cancel condition lock acquisition without starting a late scan', async () => {
+    const { input, store } = setup('openclaw');
+    await scanAssignments({ ...input, activate: true });
+    const before = await store.read();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const holder = store.exclusive(async () => {
+      entered.resolve();
+      await release.promise;
+    });
+    await entered.promise;
+    const caller = new AbortController();
+    let connected = false;
+    const scan = scanAssignments({
+      ...input,
+      budget: new DiscoveryBudget(20000, caller.signal),
+      connect: async () => {
+        connected = true;
+        return input.connect();
+      },
+    });
+    caller.abort();
+    try {
+      await assert.rejects(scan, (error: unknown) => error === caller.signal.reason);
+    } finally {
+      release.resolve();
+      await holder;
+    }
+    assert.equal(connected, false);
+    assert.deepEqual(await store.read(), before);
   });
 
   it('should propagate local save failures without inventing a provider outage', async () => {
