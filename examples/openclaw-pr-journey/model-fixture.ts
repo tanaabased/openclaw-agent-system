@@ -117,7 +117,7 @@ function isTransientDelivery(result: Record<string, unknown>) {
 function isPendingDelivery(result: Record<string, unknown>) {
   return (
     isTransientDelivery(result) ||
-    (result.status === 'waiting' &&
+    (['waiting', 'needs-attention'].includes(String(result.status)) &&
       ['github-delivery-linkage-unverified', 'github-delivery-head-not-observed'].includes(
         String(result.code),
       ))

@@ -101,14 +101,13 @@ describe('agent/codex-delivery', () => {
   let root: string, workspace: string, pluginData: string, store: CodexDispatchStore;
   let deps: CodexDeliveryDependencies, fixture: ReturnType<typeof intakeFixture>;
   let head: string, remote: string, dirty: boolean, attached: boolean, creates: number;
-  let failCreate: boolean, failLink: boolean, failRecipient: boolean, wrongIssueLink: boolean;
+  let failCreate: boolean, failLink: boolean, failRecipient: boolean;
   let assignedRecipients: string[], requestedReviewers: string[];
   let pr: Record<string, unknown> | undefined;
-  let providerLink: boolean | undefined;
   let bindingOverride: Record<string, unknown>;
   let gitCalls: string[][];
   let branch: string;
-  let linkReads: number, delayedLinkReads: number, bodyWrites: number;
+  let linkReads: number, bodyWrites: number;
   let failPatch: 'before' | 'after' | false;
   async function request(
     action: string,
@@ -553,17 +552,15 @@ describe('agent/codex-delivery', () => {
     dirty = false;
     attached = false;
     creates = 0;
-    wrongIssueLink = false;
     failCreate = false;
     failLink = false;
     failRecipient = false;
     assignedRecipients = [];
     requestedReviewers = [];
     pr = undefined;
-    providerLink = undefined;
     bindingOverride = {};
     gitCalls = [];
-    linkReads = delayedLinkReads = bodyWrites = 0;
+    linkReads = bodyWrites = 0;
     failPatch = false;
     deps = {
       delay: async () => {},
@@ -611,19 +608,7 @@ describe('agent/codex-delivery', () => {
             if (comment) return comment;
             if (argv.includes('graphql')) {
               linkReads++;
-              return result({
-                id: 'PR_7',
-                closingIssuesReferences: {
-                  nodes:
-                    linkReads > delayedLinkReads &&
-                    (providerLink ??
-                      /Closes (?:#3|https:\/\/github.com\/owner\/repo\/issues\/3)/iu.test(
-                        String(pr?.body),
-                      ))
-                      ? [{ id: wrongIssueLink ? 'I_other' : 'I_issue' }]
-                      : [],
-                },
-              });
+              throw new Error('derived linkage index unavailable');
             }
             const endpoint = argv.find(
               (arg) => arg.startsWith('repos/') || arg.startsWith('users/'),
@@ -1088,7 +1073,6 @@ describe('agent/codex-delivery', () => {
 
   it('should display the retained pr and reconcile only attachment after head and authority change', async () => {
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify({ ...manifest, debug: true }));
-    delayedLinkReads = 2;
     await publish();
     head = 'b'.repeat(40);
     fixture.item.assignees = [];
@@ -1169,9 +1153,9 @@ describe('agent/codex-delivery', () => {
     assert.equal(announcement.posts, 1);
     assert.equal(creates, 1);
   });
-  it('should block announcement when provider closing linkage has disappeared', async () => {
+  it('should block announcement when the retained closing reference has disappeared', async () => {
     await publish();
-    providerLink = false;
+    pr!.body = 'Mentions #3 but does not close it.';
     assert.equal((await request('compose')).status, 'announcement-blocked');
     assert.equal(announcement.posts, 0);
     assert.equal((await store.read())!.records[0]!.delivery!.reconciled, true);
@@ -1396,7 +1380,7 @@ describe('agent/codex-delivery', () => {
     assert.equal(creates, 0);
     assert.ok(!gitCalls.some((args) => args.includes('push')));
   });
-  it('should resume a failed linkage or recipient phase on the checkpointed pr', async () => {
+  it('should resume a failed closing-reference write or recipient phase on the checkpointed pr', async () => {
     failLink = true;
     await assert.rejects(publish(), (error: unknown) => {
       assert.ok(error instanceof CodexDeliveryFailure);
@@ -1421,6 +1405,21 @@ describe('agent/codex-delivery', () => {
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
     assert.equal((await publish()).status, 'published');
     assert.equal(creates, 1);
+  });
+  it('should reconcile an older confirmed push before publishing a newer commit after a reference failure', async () => {
+    failLink = true;
+    await assert.rejects(publish(), /link unavailable/);
+    head = 'b'.repeat(40);
+    failLink = false;
+    assert.equal(
+      (await publish({ title: 'Updated title', body: 'Updated body.' })).status,
+      'published',
+    );
+    const delivery = (await store.read()).records[0]!.delivery!;
+    assert.equal(delivery.pendingPush, undefined);
+    assert.equal(delivery.pushedHead, head);
+    assert.equal(creates, 1);
+    assert.equal(gitCalls.filter((argv) => argv.includes('push')).length, 2);
   });
   it('should retain uncertain creation intent instead of issuing another create', async () => {
     failCreate = true;
@@ -1537,51 +1536,28 @@ describe('agent/codex-delivery', () => {
     );
     assert.equal(creates, 1);
   });
-  it('should verify the provider issue link instead of trusting closing prose', async () => {
-    wrongIssueLink = true;
-    await assert.rejects(publish(), /linkage-unverified/);
-    assert.equal((await store.read()).records[0]!.delivery!.pullRequest!.pullRequestNumber, 7);
-    assert.equal(linkReads, 5);
-    const retained = await request('present');
-    assert.equal(retained.workflowStatus, 'native-unobserved');
-    assert.match(String(retained.presentation), /pull\/7/);
-    wrongIssueLink = false;
-    await publish();
+  it('should publish and prepare announcement from retained closing references without the derived index', async () => {
+    assert.equal((await publish()).status, 'published');
+    assert.notEqual((await request('compose')).status, 'announcement-blocked');
+    assert.match(String(pr!.body), /Closes https:\/\/github.com\/owner\/repo\/issues\/3/);
+    assert.equal(linkReads, 0);
     assert.equal(creates, 1);
   });
-  it('should retain shorthand closing prose while waiting for provider linkage and deduplicate recovery notices', async () => {
-    delayedLinkReads = 2;
+  it('should retain shorthand closing prose without writes or index recovery notices', async () => {
     const body = 'Authored body.\n\nCloses #3.';
     await request('prepare', { body });
     const published = await request('publish', { body });
     assert.equal(published.status, 'published');
     assert.equal(pr!.body, body);
     assert.equal(bodyWrites, 0);
-    assert.equal(linkReads, 3);
-    assert.equal(
-      (await store.read()).records[0]!.delivery!.notices!.filter(
-        (code) => code === 'delivery-linkage-retried',
-      ).length,
-      1,
+    assert.equal(linkReads, 0);
+    assert.ok(
+      !(await store.read()).records[0]!.delivery!.notices?.includes('delivery-linkage-retried'),
     );
-    const presented = await request('present');
-    assert.doesNotMatch(String(presented.presentation), /Issue link verified after retry/);
-    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify({ ...manifest, debug: true }));
-    assert.match(
-      String((await request('present')).presentation),
-      /🔬 Debug[\s\S]*Delivery recovery[\s\S]*Issue link verified after retry/,
-    );
-    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify({ ...manifest, debug: false }));
-    assert.doesNotMatch(
-      String((await request('present')).presentation),
-      /🔬 Debug|Issue link verified after retry/,
-    );
-    assert.match(String(presented.presentation), /PR attachment needs a check/);
     assert.equal(creates, 1);
   });
   it('should recognize equivalent closing references without confusing other issues or repositories', async () => {
     await publish();
-    providerLink = true;
     for (const [body, added] of [
       ['CLOSES: #3.', 0],
       ['Fixed OWNER/REPO#3.', 0],
@@ -1590,7 +1566,6 @@ describe('agent/codex-delivery', () => {
       ['Closes other/repo#3.', 1],
     ] as const) {
       pr!.body = body;
-      delayedLinkReads = linkReads + 2;
       const before = bodyWrites;
       await publish();
       assert.equal(bodyWrites - before, added, body);
@@ -2024,7 +1999,6 @@ describe('agent/codex-delivery', () => {
       assert.equal(creates, 1);
     });
   it('should publish a new head after announcement with the provider closing reference retained', async () => {
-    delayedLinkReads = 2;
     attached = true;
     await publish();
     await request('compose');

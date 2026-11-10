@@ -1329,7 +1329,7 @@ for (const scenario of [
           assert.match(String(stopped.content), /delivery-git-operation-failed/u);
           assert.match(String(stopped.content), /authentication/u);
           append(input, 'delivery-publish', {
-            status: 'waiting',
+            status: mode === 'work' ? 'waiting' : 'needs-attention',
             code: 'github-delivery-linkage-unverified',
             pullRequest: { pullRequestNodeId: 'PR_owned', pullRequestNumber: 456 },
           });
@@ -1827,8 +1827,8 @@ for (const scenario of [
             }
             if (initial) {
               append(input, 'feedback-delivery-publish', {
-                status: 'waiting',
-                code: 'github-delivery-linkage-unverified',
+                status: 'needs-attention',
+                code: 'github-delivery-head-not-observed',
                 nextAction: 'next',
               });
               const recovery = await runAction(input, 'delivery');

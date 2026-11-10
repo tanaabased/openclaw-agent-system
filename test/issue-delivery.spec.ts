@@ -82,24 +82,28 @@ describe('github delivery head observation', () => {
     await assert.rejects(f.provider.content(input), /delivery-content-identity-mismatch/);
   });
 
-  for (const variant of ['missing', 'unobserved', 'malformed'] as const)
-    it(`should distinguish ${variant} closing association without writing a link`, async () => {
+  for (const body of [
+    'Closes #3',
+    'Fixes owner/repo#3.',
+    'Resolves https://github.com/owner/repo/issues/3',
+    'Mentions #3',
+    'Closes #30',
+    'Closes other/repo#3',
+  ])
+    it(`should verify the provider-retained closing reference ${body.toLowerCase()} without an index read or write`, async () => {
       const f = fixture();
       f.observed.headSha = f.input.headSha;
       const execute = f.provider.client.execute;
       f.provider.client.execute = async (argv) => {
-        assert.ok(!argv.includes('POST') && !argv.includes('PATCH'));
+        assert.ok(!argv.includes('POST') && !argv.includes('PATCH') && !argv.includes('graphql'));
         let value: unknown;
-        if (argv.includes('graphql'))
-          value =
-            variant === 'malformed' ? null : { id: 'PR_7', closingIssuesReferences: { nodes: [] } };
-        else if (argv.includes('repos/owner/repo/issues/3'))
+        if (argv.includes('repos/owner/repo/issues/3'))
           value = { databaseId: 3, nodeId: 'I_issue', number: 3, title: 'Issue' };
         else if (argv.includes('repos/owner/repo/pulls'))
           value = [
             {
               baseRef: 'main',
-              body: variant === 'missing' ? 'Mentions #3' : 'Closes #3',
+              body: 'Closes #3',
               headRef: 'task',
               headRepository: 'owner/repo',
               itemNodeId: 'PR_7',
@@ -108,6 +112,15 @@ describe('github delivery head observation', () => {
               title: 'Title',
             },
           ];
+        else if (argv.some((arg) => arg.includes('draft,state')))
+          value = {
+            nodeId: 'PR_7',
+            draft: false,
+            state: 'open',
+            head: f.input.headSha,
+            title: 'Title',
+            body,
+          };
         else return execute(argv);
         return {
           exitCode: 0,
@@ -117,14 +130,59 @@ describe('github delivery head observation', () => {
           truncated: false,
         };
       };
-      await assert.rejects(f.provider.announcement(f.input), {
-        message:
-          variant === 'missing'
-            ? 'github-delivery-closing-reference-missing'
-            : variant === 'unobserved'
-              ? 'github-delivery-linkage-unverified'
-              : 'github-delivery-linkage-observation-invalid',
-      });
+      if (body.startsWith('Mentions') || body.includes('#30') || body.includes('other/repo'))
+        await assert.rejects(f.provider.announcement(f.input), {
+          message: 'github-delivery-closing-reference-missing',
+        });
+      else assert.equal((await f.provider.announcement(f.input)).body, body);
+    });
+
+  for (const variant of ['retained', 'dropped', 'rebound'] as const)
+    it(`should require the closing-reference write to retain its exact body and pr identity when ${variant}`, async () => {
+      const f = fixture();
+      f.observed.headSha = f.input.headSha;
+      const execute = f.provider.client.execute;
+      const pr = {
+        baseRef: 'main',
+        body: 'Authored body.',
+        headRef: 'task',
+        headRepository: 'owner/repo',
+        itemNodeId: 'PR_7',
+        number: 7,
+        state: 'open',
+        title: 'Title',
+      };
+      let writes = 0;
+      f.provider.client.execute = async (argv, stdin) => {
+        assert.ok(!argv.includes('graphql') && !argv.includes('POST'));
+        let value: unknown;
+        if (argv.includes('repos/owner/repo/issues/3'))
+          value = { databaseId: 3, nodeId: 'I_issue', number: 3, title: 'Issue' };
+        else if (argv.includes('repos/owner/repo/pulls')) value = [pr];
+        else if (argv.includes('PATCH')) {
+          writes++;
+          value = {
+            ...pr,
+            ...(variant === 'dropped' ? {} : JSON.parse(stdin!)),
+            ...(variant === 'rebound' ? { itemNodeId: 'PR_other' } : {}),
+          };
+        } else return execute(argv);
+        return {
+          exitCode: 0,
+          stdout: 'HTTP/2 200 OK\n\n' + JSON.stringify(value),
+          stderr: '',
+          timedOut: false,
+          truncated: false,
+        };
+      };
+      const publish = () => f.provider.publish({ ...f.input, linkIssue: true, recipients: [] });
+      if (variant === 'retained') assert.deepEqual(await publish(), f.input.expectedPullRequest);
+      else
+        await assert.rejects(publish(), (error) =>
+          /(?:unverified|binding-node-id-changed)/.test(openClawDispatchFailureCode(error)),
+        );
+      assert.equal(writes, 1);
+      assert.deepEqual(f.delays, []);
     });
   it('should conditionally revalidate delivery reads and still reject a changed remote head', async () => {
     const f = fixture();
@@ -262,6 +320,26 @@ describe('shared delivery push recovery', () => {
     await assert.rejects(publishIssueDelivery(f.input), /delivery-push-uncertain/);
     assert.equal(attempts, 1);
     assert.equal(f.input.delivery.pendingPush?.head, f.input.publication.headSha);
+  });
+
+  it('should reconcile a confirmed prior push before publishing newer work after a provider failure', async () => {
+    const f = publicationFixture();
+    f.input.provider.publish = async () => {
+      throw new Error('recipient unavailable');
+    };
+    await assert.rejects(publishIssueDelivery(f.input), /recipient unavailable/);
+    f.restore();
+    const priorHead = f.input.publication.headSha;
+    f.observed.headSha = priorHead;
+    f.input.publication.headSha = 'c'.repeat(40);
+    f.input.provider.publish = async (value) => {
+      assert.equal(value.previousHeadSha, priorHead);
+      return f.input.publication.expectedPullRequest!;
+    };
+    await publishIssueDelivery(f.input);
+    assert.equal(f.pushes(), 2);
+    assert.equal(f.input.delivery.pendingPush, undefined);
+    assert.equal(f.input.delivery.reconciled, true);
   });
 
   it('should retain the exact pre-push head across restart and reconcile without pushing twice', async () => {

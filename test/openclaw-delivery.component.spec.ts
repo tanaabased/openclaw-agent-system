@@ -39,7 +39,7 @@ describe('agent/openclaw-delivery', () => {
     dirty: boolean,
     lost: boolean,
     missing: boolean,
-    failLink: boolean,
+    failReference: boolean,
     revoked: boolean;
   let pr: Record<string, unknown> | undefined;
   let input: Omit<Parameters<typeof openClawDelivery>[0], 'action'>;
@@ -56,7 +56,7 @@ describe('agent/openclaw-delivery', () => {
     patches = 0;
     failPatch = false;
     remote = '';
-    dirty = lost = missing = failLink = revoked = false;
+    dirty = lost = missing = failReference = revoked = false;
     pr = undefined;
     const result = {
       version: 1 as const,
@@ -155,13 +155,7 @@ describe('agent/openclaw-delivery', () => {
             async execute(argv, stdin) {
               const comment = announcement.execute(argv, stdin);
               if (comment) return comment;
-              if (argv.includes('graphql')) {
-                if (failLink) throw new Error('link read failed');
-                return response({
-                  id: 'PR_7',
-                  closingIssuesReferences: { nodes: [{ id: 'I_issue' }] },
-                });
-              }
+              if (argv.includes('graphql')) throw new Error('derived linkage index unavailable');
               const endpoint = argv.find((arg) => arg.startsWith('repos/'));
               if (
                 endpoint === 'repos/owner/repo/pulls/7' &&
@@ -226,6 +220,7 @@ describe('agent/openclaw-delivery', () => {
                 });
               if (endpoint === 'repos/owner/repo/pulls/7' && argv.includes('PATCH')) {
                 patches++;
+                if (failReference) throw new Error('reference write failed');
                 if (failPatch === 'before') throw new Error('update interrupted');
                 pr = { ...pr, ...JSON.parse(stdin!) };
                 if (failPatch === 'after') throw new Error('update interrupted');
@@ -741,7 +736,7 @@ describe('agent/openclaw-delivery', () => {
 
   it('should recheck the published pr without waking delivery after announcement recovery', async () => {
     await publish();
-    let linked = false,
+    let available = false,
       checks = 0;
     const connect = input.connect;
     input.now = 100;
@@ -749,12 +744,15 @@ describe('agent/openclaw-delivery', () => {
       const connection = await connect();
       const execute = connection.account.execute;
       connection.account.execute = async (...args) => {
-        if (args[0].includes('graphql')) {
+        if (args[0].some((value) => value.includes('draft,state'))) {
           checks++;
-          return response({
-            id: 'PR_7',
-            closingIssuesReferences: { nodes: linked ? [{ id: 'I_issue' }] : [] },
-          });
+          if (!available)
+            return {
+              ...response({ message: 'Service unavailable' }),
+              exitCode: 1,
+              stdout: 'HTTP/2 503 Service Unavailable\n\n{}',
+              stderr: 'gh: Service unavailable (HTTP 503)',
+            };
         }
         return execute(...args);
       };
@@ -778,11 +776,14 @@ describe('agent/openclaw-delivery', () => {
         save: input.save,
       });
     assert.equal(await check(first - 1), false);
-    assert.equal(checks, 1);
+    const before = checks;
+    assert.ok(before > 0);
+    assert.equal(await check(first - 1), false);
+    assert.equal(checks, before);
     assert.equal(await check(first), false);
-    assert.equal(checks, 2);
+    assert.ok(checks > before);
     assert.equal(openClawWorkSlot(record), undefined);
-    linked = true;
+    available = true;
     assert.equal(await check(delivery.announcementRecovery!.retryAfter!), true);
     assert.equal(openClawWorkSlot(record), undefined);
     await request('compose');
@@ -855,10 +856,10 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(creates, 1);
   });
   it('should resume incomplete provider effects without another push after restart', async () => {
-    failLink = true;
-    await assert.rejects(publish());
+    failReference = true;
+    await assert.rejects(publish({ title: 'Fix issue', body: 'Authored body.' }));
     input.record = record = JSON.parse(JSON.stringify(record));
-    failLink = false;
+    failReference = false;
     assert.equal((await request('reconcile')).status, 'ready');
     assert.equal(record.work!.delivery!.reconciled, true);
     assert.equal(pushes, 1);
@@ -1144,14 +1145,37 @@ describe('agent/openclaw-delivery', () => {
     await assert.rejects(publish(), /delivery-creation-uncertain/);
     assert.equal(creates, 1);
   });
-  it('should resume linkage on the checkpointed pr without creating another', async () => {
-    failLink = true;
-    await assert.rejects(publish());
+  it('should publish and prepare announcement without the derived issue-link index', async () => {
+    assert.equal((await publish()).status, 'published');
+    assert.notEqual((await request('compose')).status, 'announcement-blocked');
+    assert.equal(pr!.body, 'Closes #3');
+    assert.equal(record.work!.delivery!.reconciled, true);
+    assert.equal(pushes, 1);
+    assert.equal(creates, 1);
+  });
+  it('should resume a closing-reference write on the checkpointed pr without creating another', async () => {
+    failReference = true;
+    await assert.rejects(publish({ title: 'Fix issue', body: 'Authored body.' }));
     assert.equal(record.work!.delivery!.pullRequest?.pullRequestNumber, 7);
     assert.equal(record.work!.delivery!.reconciled, false);
-    failLink = false;
+    failReference = false;
     await publish();
     assert.equal(creates, 1);
+  });
+  it('should reconcile an older confirmed push before publishing a newer commit after a reference failure', async () => {
+    failReference = true;
+    await assert.rejects(publish({ title: 'Fix issue', body: 'Authored body.' }));
+    input.record = record = JSON.parse(JSON.stringify(record));
+    head = 'b'.repeat(40);
+    failReference = false;
+    assert.equal(
+      (await publish({ title: 'Fix issue', body: 'Updated body.' })).status,
+      'published',
+    );
+    assert.equal(record.work!.delivery!.pendingPush, undefined);
+    assert.equal(record.work!.delivery!.pushedHead, head);
+    assert.equal(creates, 1);
+    assert.equal(pushes, 2);
   });
   it('should allow current authorized delivery despite an older unfinished result', async () => {
     record.progression = { stage: 'implementation', via: 'work' };
@@ -1251,6 +1275,6 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(record.work!.delivery!.pendingPush, undefined);
     assert.equal(creates, 1);
     assert.equal(pushes, 2);
-    assert.equal(patches, 1);
+    assert.equal(patches, 2);
   });
 });
