@@ -74,7 +74,7 @@ export interface IssueDeliveryInput {
   contentUpdate?: { title?: string; body?: string };
   beforeCreate?: () => Promise<void>;
   onCreateRejected?: () => Promise<void>;
-  onLinkageRetry?: () => Promise<void>;
+  beforeLink?: () => Promise<void>;
   checkpoint?: (receipt: GitHubNotificationIssueDeliveryReceipt) => Promise<void>;
 }
 
@@ -183,17 +183,6 @@ function pullRequestProjection() {
   return '{baseRef:.base.ref,body,headRef:.head.ref,headRepository:(.head.repo.full_name//""),itemNodeId:.node_id,number,state,title}';
 }
 
-function hasClosingReference(body: string, repository: string, number: number): boolean {
-  const references = new Set([
-    `#${number}`,
-    `${repository}#${number}`.toLowerCase(),
-    `https://github.com/${repository}/issues/${number}`.toLowerCase(),
-  ]);
-  const pattern =
-    /\b(?:close[sd]?|fix(?:es|ed)?|resolve[sd]?):?\s+(https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/\d+|(?:[\w.-]+\/[\w.-]+)?#\d+)(?=$|[\s.,;:!?])/giu;
-  return [...body.matchAll(pattern)].some((match) => references.has(match[1]!.toLowerCase()));
-}
-
 /** provider operations shared by runtime-owned delivery wrappers. */
 export default class IssueDeliveryProvider {
   constructor(
@@ -298,7 +287,7 @@ export default class IssueDeliveryProvider {
     return { pullRequestNodeId: pullRequest.itemNodeId, pullRequestNumber: pullRequest.number };
   }
 
-  /** read the provider state and closing association before an issue announcement. */
+  /** verify the exact published PR before an issue announcement. */
   async announcement(input: IssueDeliveryInput) {
     if (!input.expectedPullRequest || !input.headSha || !input.repositoryNodeId)
       throw new Error('delivery-announcement-binding-required');
@@ -318,20 +307,6 @@ export default class IssueDeliveryProvider {
           input.signal,
         ),
         input.item,
-      );
-    if (
-      !input.adoptedPullRequest &&
-      !input.adopted &&
-      !(await this.#linkedIssue(input, pullRequest))
-    )
-      throw new Error(
-        hasClosingReference(
-          pullRequest.body,
-          `${input.item.repositoryOwner}/${input.item.repositoryName}`,
-          input.item.number,
-        )
-          ? 'github-delivery-linkage-unverified'
-          : 'github-delivery-closing-reference-missing',
       );
     const observed = record(
       await this.#github(
@@ -605,10 +580,7 @@ export default class IssueDeliveryProvider {
     });
     if (existing && input.contentUpdate && !normalize) {
       const title = input.contentUpdate.title ?? pullRequest.title;
-      let body = input.contentUpdate.body ?? pullRequest.body;
-      if (input.linkIssue && !hasClosingReference(body, repository, input.item.number))
-        body =
-          `${body.trimEnd()}\n\nCloses https://github.com/${repository}/issues/${input.item.number}`.trim();
+      const body = input.contentUpdate.body ?? pullRequest.body;
       if (body.length > 65_536) throw new Error('github-delivery-body-too-large');
       if (pullRequest.title !== title || pullRequest.body !== body) {
         pullRequest = parsePullRequest(
@@ -638,36 +610,20 @@ export default class IssueDeliveryProvider {
           throw new Error('github-delivery-content-unverified');
       }
     }
-    if (input.linkIssue && !(await this.#linkedIssue(input, pullRequest))) {
-      const reference = `Closes https://github.com/${repository}/issues/${input.item.number}`;
-      let linked = false;
-      if (!hasClosingReference(pullRequest.body, repository, input.item.number)) {
-        const linkedBody = `${pullRequest.body.trimEnd()}\n\n${reference}`.trim();
-        if (linkedBody.length > 65_536) throw new Error('github-delivery-body-too-large');
-        await this.#github(
-          github,
-          [
-            'api',
-            '--method',
-            'PATCH',
-            `repos/${repository}/pulls/${pullRequest.number}`,
-            '--input',
-            '-',
-            '--jq',
-            pullRequestProjection(),
-          ],
-          input.signal,
-          JSON.stringify({ body: linkedBody }),
-        );
-        linked = await this.#linkedIssue(input, pullRequest);
-      }
-      for (const milliseconds of [250, 750, 1500]) {
-        if (linked) break;
-        await this.delay(milliseconds, input.signal);
-        linked = await this.#linkedIssue(input, pullRequest);
-        if (linked) await input.onLinkageRetry?.();
-      }
-      if (!linked) throw new Error('github-delivery-linkage-unverified');
+    if (input.linkIssue && (!existing || !(await this.#linkedIssue(input, pullRequest)))) {
+      await input.beforeLink?.();
+      const linked = await this.#github(
+        github,
+        ['api', 'graphql', '--input', '-', '--jq', '.data.addCloseIssueReferences.issue'],
+        input.signal,
+        JSON.stringify({
+          query:
+            'mutation($issue:ID!,$pullRequests:[ID!]!){addCloseIssueReferences(input:{issueId:$issue,pullRequestIds:$pullRequests}){issue{id}}}',
+          variables: { issue: input.item.itemNodeId, pullRequests: [pullRequest.itemNodeId] },
+        }),
+      );
+      if (record(linked, 'linked issue').id !== input.item.itemNodeId)
+        throw new Error('github-delivery-linkage-unverified');
     }
     if (
       normalize &&
@@ -728,7 +684,7 @@ export default class IssueDeliveryProvider {
       input.signal,
       JSON.stringify({
         query:
-          'query($id:ID!){node(id:$id){... on PullRequest{id closingIssuesReferences(first:100){nodes{id}}}}}',
+          'query($id:ID!){node(id:$id){... on PullRequest{id closingIssuesReferences(first:100,userLinkedOnly:true){nodes{id}}}}}',
         variables: { id: pullRequest.itemNodeId },
       }),
     );

@@ -40,6 +40,7 @@ export default async function publishIssueDelivery(input: {
     ...publication,
     expectedPullRequest: delivery.pullRequest,
     contentUpdate: delivery.contentUpdate,
+    beforeLink: authorize,
     async beforeCreate() {
       await authorize();
       await input.beforeCreate?.();
