@@ -34,7 +34,10 @@ import type {
   GitHubNotificationItemContextClient,
 } from '../channels/github/provider/work-event-types.ts';
 import { GitHubNotificationCommentPublisherError } from '../channels/github/publication/comment-publisher.ts';
-import { GitHubIssueDeliveryError } from '../channels/github/publication/issue-delivery.ts';
+import {
+  GitHubIssueDeliveryError,
+  type default as IssueDeliveryProvider,
+} from '../channels/github/publication/issue-delivery.ts';
 import { GitHubNotificationPublicationError } from '../channels/github/publication/publication-contract.ts';
 import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import { stateSnapshotConflictCode } from '../core/merge-state-snapshot.ts';
@@ -104,6 +107,11 @@ export interface OpenClawDispatchDependencies {
     signal: AbortSignal,
     connection?: GitHubNotificationIntakeClient & GitHubNotificationItemContextClient,
   ): Promise<OpenClawFeedbackProvider>;
+  retirementDelivery?(
+    input: { manifest: AgentManifest; workspaceDir: string },
+    signal: AbortSignal,
+    connection: GitHubNotificationIntakeClient,
+  ): Promise<IssueDeliveryProvider>;
   delivery?(input: {
     manifest: AgentManifest;
     workspaceDir: string;

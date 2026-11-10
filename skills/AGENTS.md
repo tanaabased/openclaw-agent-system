@@ -11,7 +11,7 @@
 - use **GitHub issue** for the provider object: its URL, number, assignment, comments, or open/closed state. introduce the relationship as a task tracked by a GitHub issue when needed. preserve exact provider terms in API fields, configuration keys, commands, diagnostics, and examples.
 - use **chat** for the operator-facing conversation. use **session** or **thread** for exact runtime concepts and APIs. opening a new Codex chat does not create or select a new task.
 - keep **assessment**, **implementation**, and **delivery** distinct. a recorded plan, completed implementation, and published PR establish different outcomes. preserve direct-entry restrictions and managed host handoffs.
-- **retirement** ends managed task work and attempts eligible native cleanup; it does not mean closing or unassigning the GitHub issue, deleting its branch, or erasing retained task history.
+- **retirement** ends managed task work and attempts eligible native cleanup; it does not mean closing or unassigning the GitHub issue, deleting its branch, or erasing native chat history. verified retirement removes Agent System-owned task records and copied history.
 - retain Git, GitHub, Google, Codex, OpenClaw, pull request, repository, worktree, and other concrete product or technical terms where they identify the actual surface. do not replace every occurrence of issue with task.
 
 ## Names and Metadata

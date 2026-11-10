@@ -677,7 +677,7 @@ describe('agent/openclaw-feedback', () => {
         },
         account: {
           identity: account,
-          execute: async (argv) => {
+          execute: async (argv, stdin) => {
             const endpoint = argv.find((arg) => arg.startsWith('repos/'));
             let data: unknown;
             if (argv.includes('POST')) {
@@ -685,7 +685,9 @@ describe('agent/openclaw-feedback', () => {
               assert.ok(firstDelivery);
               data = pr;
             } else if (argv.includes('graphql'))
-              data = { id: 'PR', closingIssuesReferences: { nodes: [{ id: 'I_issue' }] } };
+              data = JSON.parse(stdin!).query.startsWith('mutation')
+                ? { id: 'I_issue' }
+                : { id: 'PR', closingIssuesReferences: { nodes: [{ id: 'I_issue' }] } };
             else if (endpoint === 'repos/owner/repo/issues/3')
               data = { databaseId: 20, nodeId: 'I_issue', number: 3, title: 'issue' };
             else if (endpoint === 'repos/owner/repo/pulls')

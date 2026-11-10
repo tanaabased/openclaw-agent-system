@@ -62,7 +62,7 @@ describe('codex retirement native evidence', () => {
       'owner',
       'independent',
     ]);
-    assert.deepEqual(inspected, ['nested', 'helper', 'independent']);
+    assert.deepEqual(inspected, ['nested', 'helper', 'independent', 'other']);
   });
   it('should resolve a completed guardian parent from native reads when the list omits it', async () => {
     const reader = nativeRetirement(async (method) => {
@@ -101,6 +101,37 @@ describe('codex retirement native evidence', () => {
     assert.deepEqual(await reader.worktreeUsers('/worktree', new Set(['owner'])), []);
     rows.push(helper('independent', 'other'));
     assert.deepEqual(await reader.worktreeUsers('/worktree', new Set(['owner'])), ['independent']);
+  });
+  it('should resolve an omitted completed helper between a task and its inactive guardian', async () => {
+    const parent = { ...helper('helper'), forkedFromId: 'owner' };
+    const guardian = {
+      id: 'guardian',
+      cwd: '/worktree',
+      parentThreadId: 'helper',
+      forkedFromId: null,
+      source: { subAgent: { other: 'guardian' } },
+      threadSource: 'guardian_review',
+      status: { type: 'notLoaded' },
+    };
+    const reads: string[] = [];
+    const reader = nativeRetirement(async (method, params) => {
+      if (method === 'thread/list') return { data: [guardian] };
+      if (method === 'thread/read') {
+        reads.push(String(params.threadId));
+        return { thread: params.threadId === 'helper' ? parent : guardian };
+      }
+      return {
+        data: params.threadId === 'helper' ? [{ status: 'completed', completedAt: 10 }] : [],
+        nextCursor: null,
+      };
+    });
+    assert.deepEqual(await reader.worktreeUsers('/worktree', new Set(['owner'])), []);
+    assert.deepEqual(reads, ['guardian', 'helper']);
+    parent.forkedFromId = 'unrelated';
+    assert.deepEqual(await reader.worktreeUsers('/worktree', new Set(['owner'])), ['guardian']);
+    parent.forkedFromId = 'owner';
+    parent.status.type = 'active';
+    assert.deepEqual(await reader.worktreeUsers('/worktree', new Set(['owner'])), ['guardian']);
   });
   it('should release only verified inactive guardian descendants with an empty complete history', async () => {
     const guardian = {
@@ -167,7 +198,7 @@ describe('codex retirement native evidence', () => {
               ...(kind === 'active' ? { status: { type: 'active' } } : {}),
               ...(kind === 'reparented' ? { parentThreadId: 'other' } : {}),
               ...(kind === 'moved' ? { cwd: '/elsewhere' } : {}),
-              ...(kind === 'fork' ? { forkedFromId: 'owner' } : {}),
+              ...(kind === 'fork' ? { forkedFromId: 'independent' } : {}),
             },
           };
         return {

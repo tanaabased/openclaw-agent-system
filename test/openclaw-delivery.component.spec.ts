@@ -31,7 +31,8 @@ const response = (value: unknown) => ({
 describe('agent/openclaw-delivery', () => {
   let announcement: ReturnType<typeof announcementFixture>;
   let root: string, record: OpenClawDispatchRecord;
-  let creates: number, pushes: number, saves: number;
+  let creates: number, pushes: number, saves: number, linkWrites: number;
+  let linked: boolean, lostLink: boolean;
   let head: string;
   let ancestor: boolean;
   let patches: number, failPatch: 'before' | 'after' | false;
@@ -50,7 +51,8 @@ describe('agent/openclaw-delivery', () => {
     adopted = false;
     root = await realpath(await mkdtemp(join(tmpdir(), 'openclaw-delivery-')));
     announcement = announcementFixture({ login: 'agent', nodeId: 'U_agent', type: 'User' });
-    creates = pushes = saves = 0;
+    creates = pushes = saves = linkWrites = 0;
+    linked = lostLink = false;
     head = 'a'.repeat(40);
     ancestor = true;
     patches = 0;
@@ -156,10 +158,21 @@ describe('agent/openclaw-delivery', () => {
               const comment = announcement.execute(argv, stdin);
               if (comment) return comment;
               if (argv.includes('graphql')) {
+                const request = JSON.parse(stdin!);
+                if (request.query.startsWith('mutation')) {
+                  assert.deepEqual(request.variables, { issue: 'I_issue', pullRequests: ['PR_7'] });
+                  linkWrites++;
+                  if (failLink) throw new Error('link write failed');
+                  linked = true;
+                  if (lostLink) throw new Error('link response lost');
+                  return response({
+                    id: 'I_issue',
+                  });
+                }
                 if (failLink) throw new Error('link read failed');
                 return response({
                   id: 'PR_7',
-                  closingIssuesReferences: { nodes: [{ id: 'I_issue' }] },
+                  closingIssuesReferences: { nodes: linked ? [{ id: 'I_issue' }] : [] },
                 });
               }
               const endpoint = argv.find((arg) => arg.startsWith('repos/'));
@@ -741,7 +754,7 @@ describe('agent/openclaw-delivery', () => {
 
   it('should recheck the published pr without waking delivery after announcement recovery', async () => {
     await publish();
-    let linked = false,
+    let available = false,
       checks = 0;
     const connect = input.connect;
     input.now = 100;
@@ -749,12 +762,15 @@ describe('agent/openclaw-delivery', () => {
       const connection = await connect();
       const execute = connection.account.execute;
       connection.account.execute = async (...args) => {
-        if (args[0].includes('graphql')) {
+        if (args[0].some((value) => value.includes('draft,state'))) {
           checks++;
-          return response({
-            id: 'PR_7',
-            closingIssuesReferences: { nodes: linked ? [{ id: 'I_issue' }] : [] },
-          });
+          if (!available)
+            return {
+              ...response({ message: 'Service unavailable' }),
+              exitCode: 1,
+              stdout: 'HTTP/2 503 Service Unavailable\n\n{}',
+              stderr: 'gh: Service unavailable (HTTP 503)',
+            };
         }
         return execute(...args);
       };
@@ -778,11 +794,14 @@ describe('agent/openclaw-delivery', () => {
         save: input.save,
       });
     assert.equal(await check(first - 1), false);
-    assert.equal(checks, 1);
+    const before = checks;
+    assert.ok(before > 0);
+    assert.equal(await check(first - 1), false);
+    assert.equal(checks, before);
     assert.equal(await check(first), false);
-    assert.equal(checks, 2);
+    assert.ok(checks > before);
     assert.equal(openClawWorkSlot(record), undefined);
-    linked = true;
+    available = true;
     assert.equal(await check(delivery.announcementRecovery!.retryAfter!), true);
     assert.equal(openClawWorkSlot(record), undefined);
     await request('compose');
@@ -856,7 +875,7 @@ describe('agent/openclaw-delivery', () => {
   });
   it('should resume incomplete provider effects without another push after restart', async () => {
     failLink = true;
-    await assert.rejects(publish());
+    await assert.rejects(publish({ title: 'Fix issue', body: 'Authored body.' }));
     input.record = record = JSON.parse(JSON.stringify(record));
     failLink = false;
     assert.equal((await request('reconcile')).status, 'ready');
@@ -997,7 +1016,7 @@ describe('agent/openclaw-delivery', () => {
       failPatch = false;
       await publish(content);
       assert.equal(pr!.title, content.title);
-      assert.equal(pr!.body, content.body + '\n\nCloses https://github.com/owner/repo/issues/3');
+      assert.equal(pr!.body, content.body);
       assert.equal(patches, interruption === 'before' ? 2 : 1);
       assert.equal(creates, 1);
       assert.equal(pushes, 1);
@@ -1066,7 +1085,8 @@ describe('agent/openclaw-delivery', () => {
     const content = { title: 'Revised title', body: 'Closes #3' };
     await assert.rejects(publish(content), /github-delivery-content-unverified/);
     assert.equal(record.work!.delivery!.reconciled, false);
-    assert.deepEqual(record.work!.delivery!.contentUpdate, { title: content.title });
+    assert.deepEqual(record.work!.delivery!.contentUpdate, content);
+    assert.equal(record.work!.delivery!.contentUpdateAttempted, true);
     input.connect = connect;
     await publish(content);
     assert.equal(pr!.title, content.title);
@@ -1144,6 +1164,18 @@ describe('agent/openclaw-delivery', () => {
     await assert.rejects(publish(), /delivery-creation-uncertain/);
     assert.equal(creates, 1);
   });
+  it('should recover a lost link response by reading the same pr without another mutation', async () => {
+    lostLink = true;
+    await assert.rejects(publish(), /link response lost/);
+    assert.equal(record.work!.delivery!.pullRequest?.pullRequestNumber, 7);
+    assert.equal(record.work!.delivery!.reconciled, false);
+    input.record = record = JSON.parse(JSON.stringify(record));
+    await publish();
+    assert.equal(record.work!.delivery!.reconciled, true);
+    assert.equal(linkWrites, 1);
+    assert.equal(creates, 1);
+    assert.equal(pushes, 1);
+  });
   it('should resume linkage on the checkpointed pr without creating another', async () => {
     failLink = true;
     await assert.rejects(publish());
@@ -1152,6 +1184,21 @@ describe('agent/openclaw-delivery', () => {
     failLink = false;
     await publish();
     assert.equal(creates, 1);
+  });
+  it('should reconcile an older confirmed push before publishing a newer commit after a link failure', async () => {
+    failLink = true;
+    await assert.rejects(publish({ title: 'Fix issue', body: 'Authored body.' }));
+    input.record = record = JSON.parse(JSON.stringify(record));
+    head = 'b'.repeat(40);
+    failLink = false;
+    assert.equal(
+      (await publish({ title: 'Fix issue', body: 'Updated body.' })).status,
+      'published',
+    );
+    assert.equal(record.work!.delivery!.pendingPush, undefined);
+    assert.equal(record.work!.delivery!.pushedHead, head);
+    assert.equal(creates, 1);
+    assert.equal(pushes, 2);
   });
   it('should allow current authorized delivery despite an older unfinished result', async () => {
     record.progression = { stage: 'implementation', via: 'work' };

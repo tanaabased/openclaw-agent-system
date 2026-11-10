@@ -17,7 +17,7 @@ function helperParent(thread: Record<string, unknown>): string | undefined {
   return nativeObject(spawn) &&
     typeof spawn.parent_thread_id === 'string' &&
     thread.parentThreadId === spawn.parent_thread_id &&
-    thread.forkedFromId == null
+    (thread.forkedFromId == null || thread.forkedFromId === spawn.parent_thread_id)
     ? spawn.parent_thread_id
     : undefined;
 }
@@ -77,9 +77,11 @@ export default function codexRetirementNative(request: CodexThreadRequest) {
       );
       // list metadata can omit guardian parentage; read each candidate before classifying ownership.
       const parents = new Map<string, string>();
-      for (const row of helpers) {
-        const id = String(row.id);
-        if (protectedThreads.has(id)) continue;
+      const pending = helpers.map((row) => String(row.id));
+      const inspected = new Set<string>();
+      for (const id of pending) {
+        if (inspected.has(id) || retiringOwners.has(id) || protectedThreads.has(id)) continue;
+        inspected.add(id);
         const { thread } = await request('thread/read', { threadId: id, includeTurns: false });
         if (
           !nativeObject(thread) ||
@@ -116,6 +118,8 @@ export default function codexRetirementNative(request: CodexThreadRequest) {
         )
           continue;
         parents.set(id, parent);
+        // native listing can omit an intermediate spawned helper; verify its ancestry by id.
+        if (!retiringOwners.has(parent) && !inspected.has(parent)) pending.push(parent);
       }
       // only settled descendants of retiring owners can share their parent's cleanup.
       let changed = true;

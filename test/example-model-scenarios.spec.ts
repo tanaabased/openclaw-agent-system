@@ -261,6 +261,49 @@ describe('scripts/example-model-scenarios', () => {
     });
   });
 
+  for (const prefix of ['', '[Tue 2026-11-10 03:05 UTC] ']) {
+    it(`should retry the exact waiting assignment with ${prefix ? 'timestamp-prefixed' : 'bare'} native input`, async () => {
+      const scenario = resolveExampleModelScenario('openclaw-notifications-retirement');
+      const target = 'https://github.com/tanaabased/big-test-bucket/issues/123';
+      const prompt = `${prefix}Retry waiting assignment ${target}`;
+      const input = request('retirement-tanaabot', prompt, ['agent_system_dispatch']);
+      input.messages[0]!.content = 'Name: Notification Tanaabot';
+      const respond = matchFixture([...scenario.fixtures], input)?.response;
+      assert.ok(typeof respond === 'function');
+      const response = await respond(input);
+      assert.ok('toolCalls' in response);
+      const call = response.toolCalls?.[0];
+      assert.ok(call && typeof call.id === 'string');
+      assert.equal(call.name, 'agent_system_dispatch');
+      assert.deepEqual(JSON.parse(call.arguments), {
+        action: 'retry',
+        target,
+      });
+      const completed = request('retirement-tanaabot', prompt, ['agent_system_dispatch'], {
+        callId: call.id,
+        content: JSON.stringify({ status: 'routing-required' }),
+      });
+      completed.messages[0]!.content = 'Name: Notification Tanaabot';
+      const result = await respond(completed);
+      assert.ok('content' in result);
+      completed.messages.at(-1)!.content = JSON.stringify({ status: 'failed' });
+      await assert.rejects(async () => respond(completed));
+    });
+  }
+
+  it('should reject a waiting assignment retry outside the disposable fixture repository', async () => {
+    const scenario = resolveExampleModelScenario('openclaw-notifications-retirement');
+    const input = request(
+      'retirement-tanaabot',
+      '[Tue 2026-11-10 03:05 UTC] Retry waiting assignment https://github.com/other/repo/issues/123',
+      ['agent_system_dispatch'],
+    );
+    input.messages[0]!.content = 'Name: Notification Tanaabot';
+    const respond = matchFixture([...scenario.fixtures], input)?.response;
+    assert.ok(typeof respond === 'function');
+    await assert.rejects(async () => respond(input));
+  });
+
   it('should resolve the deterministic example scenarios', () => {
     assert.equal(new Set(exampleModelScenarioIds).size, exampleModelScenarioIds.length);
     for (const id of exampleModelScenarioIds) assert.equal(resolveExampleModelScenario(id).id, id);
