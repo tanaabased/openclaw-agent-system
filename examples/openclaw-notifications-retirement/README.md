@@ -149,7 +149,7 @@ mv keys/id_ed25519 "$TMPDIR/notification-retry-key"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 jq -es --slurpfile old "$TMPDIR/notification-dispatch-before.json" '[.[].records[] | select(.issueKey == $old[0].issueKey)] | if length == 1 then .[0] else error("one waiting assignment required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-waiting.json"
-jq -e '.phase == "waiting" and .failureStage == "worktree" and .threadId == null and .request == null' "$TMPDIR/notification-waiting.json"
+jq -e '(.blocker | type == "string" and length > 0) and .failureStage == "worktree" and .threadId == null and .request == null' "$TMPDIR/notification-waiting.json"
 mv "$TMPDIR/notification-retry-key" keys/id_ed25519
 
 # should retry only the current assignment through its issue url
@@ -157,7 +157,7 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/tanaabot"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 target="https://github.com/tanaabased/big-test-bucket/issues/$number"
 openclaw agent --agent retirement-tanaabot --session-key agent:retirement-tanaabot:retry --message "Retry waiting assignment $target"
-jq -es --slurpfile waiting "$TMPDIR/notification-waiting.json" '[.[].records[] | select(.id == $waiting[0].id)] | length == 1 and .[0].phase == "routing" and .[0].blocker == null and .[0].threadId == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+jq -es --slurpfile waiting "$TMPDIR/notification-waiting.json" '[.[].records[] | select(.id == $waiting[0].id)] | length == 1 and .[0].blocker == null and .[0].request == null and .[0].threadId == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 
 # should prepare the retried assignment from the base while preserving the retired branch
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/tanaabot"

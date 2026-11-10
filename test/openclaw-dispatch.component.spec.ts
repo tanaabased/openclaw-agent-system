@@ -4903,7 +4903,6 @@ describe('agent/openclaw issue dispatch', () => {
             source: '{}',
             revision: 'b'.repeat(64),
             createdAt: 1,
-            policyDigest: 'c'.repeat(64),
             phase: 'delivered',
           },
         ],

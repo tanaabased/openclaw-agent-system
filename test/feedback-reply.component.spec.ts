@@ -789,7 +789,6 @@ describe('agent/feedback-reply', () => {
           source: '{}',
           revision: 'b'.repeat(64),
           createdAt: index,
-          policyDigest: 'c'.repeat(64),
           phase: 'delivered' as const,
         })),
       },
@@ -797,32 +796,14 @@ describe('agent/feedback-reply', () => {
     const reply = await updateCandidate();
     const store = new ReplyStore(deps.root, deps.binding);
     const stored = () => store.exclusive(async (drafts) => structuredClone(drafts[0]!));
-    assert.deepEqual(JSON.parse((await stored()).ownerContext), {
-      ownerId: owners[0]!.id,
-      workflow: 'issue-assignment',
-    });
+    assert.equal((await stored()).ownerId, owners[0]!.id);
     await store.exclusive(async (drafts, save) => {
-      drafts[0]!.ownerContext = JSON.stringify({
-        status: 'status-update-context',
-        ownerId: owners[0]!.id,
-        workflow: 'issue-assignment',
-        verifiedOutcome: { feedback: [] },
-      });
       drafts[0]!.update!.observation = 'f'.repeat(64);
       await save();
     });
     assert.deepEqual(await updateCandidate(), reply);
     lost = true;
     assert.equal((await call('publish', { ...reply })).status, 'uncertain');
-    await store.exclusive(async (drafts, save) => {
-      drafts[0]!.ownerContext = JSON.stringify({
-        status: 'status-update-context',
-        ownerId: owners[0]!.id,
-        workflow: 'issue-assignment',
-        verifiedOutcome: { feedback: [] },
-      });
-      await save();
-    });
     const attempted = await stored();
     owners[0]!.events!.push({ ...owners[0]!.events![0]!, id: 'd'.repeat(64) });
     const pending = await call('context', { purpose: 'status-update', target: url });
@@ -840,7 +821,7 @@ describe('agent/feedback-reply', () => {
     assert.equal(refused.status, 'reply-reconciliation-required');
     assert.deepEqual(await stored(), attempted);
     assert.equal((await call('reconcile', { ...reply })).status, 'published');
-    assert.equal((await stored()).ownerContext, attempted.ownerContext);
+    assert.equal((await stored()).ownerId, attempted.ownerId);
     assert.equal((await stored()).publicText, attempted.publicText);
     assert.equal(writes, 1);
   });

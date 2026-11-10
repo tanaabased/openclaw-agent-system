@@ -56,7 +56,6 @@ export const preparationObservationSchema = Type.Object(
     runtime: Type.Object(
       {
         nodeExecutable: text,
-        nodeVersion: Type.Optional(text),
         nodeCommand: Type.Optional(Type.Literal('node')),
         entrypoint: text,
         pluginData: text,
@@ -107,7 +106,6 @@ export const dispatchRecordSchema = Type.Object(
     ),
     nativeWork: Type.Optional(codexWorkStateSchema),
     preparationObservation: Type.Optional(preparationObservationSchema),
-    implementationPreparationError: Type.Optional(text),
     denial: Type.Optional(intakeDenialSchema),
     claimId: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
     claimPass: Type.Optional(text),
@@ -159,7 +157,6 @@ export const dispatchRecordSchema = Type.Object(
     clientThreadId: Type.Optional(text),
     receiptThreadId: Type.Optional(text),
     feedback: Type.Optional(codexFeedbackSchema),
-    renameRequested: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );

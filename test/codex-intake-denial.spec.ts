@@ -100,10 +100,10 @@ describe('agent/codex-intake-denial', () => {
     assert.equal(result?.callId, 'refusal');
     assert.equal(page, 23);
   });
-  it('should bind path launches without replacing historical executable evidence', async () => {
+  it('should match the retained path command without substituting the resolved executable', async () => {
     const pathAnchor: PreparationObservation = {
       ...anchor,
-      runtime: { ...anchor.runtime, nodeCommand: 'node', nodeVersion: '99.0.0' },
+      runtime: { ...anchor.runtime, nodeCommand: 'node' },
     };
     const pathCommand = command.replace("'/node'", "'node'");
     assert.equal(matchesDeniedPreparation(pathCommand, receiptId, pathAnchor), true);

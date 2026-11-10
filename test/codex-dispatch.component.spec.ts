@@ -1528,7 +1528,6 @@ describe('agent/codex-dispatch', () => {
       const record = state.records.find((item) => item.id === prepared.id)!;
       record.feedback = feedback;
       record.intakeReportedAt = now + 1;
-      record.renameRequested = true;
       await save();
     });
     assert.equal(
@@ -4031,7 +4030,6 @@ describe('agent/codex-dispatch', () => {
             source: JSON.stringify(source),
             revision: feedbackRevision(source),
             createdAt: now,
-            policyDigest: 'c'.repeat(64),
             phase: 'running',
             attempt,
           },
@@ -4963,7 +4961,6 @@ describe('agent/codex-dispatch', () => {
             source: '{}',
             revision: 'b'.repeat(64),
             createdAt: 1,
-            policyDigest: 'c'.repeat(64),
             phase: 'delivered',
           },
         ],

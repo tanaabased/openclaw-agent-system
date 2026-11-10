@@ -191,9 +191,7 @@ export default async function codexReply(
         const record = state.records.find(
           (entry) => entry.id === source.ownerId && entry.threadId === caller,
         );
-        const retained =
-          record?.feedback?.events.find((entry) => entry.id === source.eventId) ??
-          record?.feedback?.completed?.find((entry) => entry.id === source.eventId);
+        const retained = record?.feedback?.events.find((entry) => entry.id === source.eventId);
         const event = source;
         const fresh = await selectCodexIntake(pluginData, deps);
         const admitted =

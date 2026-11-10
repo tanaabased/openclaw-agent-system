@@ -37,7 +37,7 @@ describe('agent/codex-turn-task', () => {
     assert.equal(output?.stage, 'assessment');
     assert.equal(output?.worktree, native.cwd);
     assert.deepEqual(output?.contextRequest, { action: 'context' });
-    assert.doesNotMatch(JSON.stringify(output), /PRIVATE-PROVIDER-PROSE|OLD-PLAN/);
+    assert.doesNotMatch(JSON.stringify(output), /PRIVATE-PROVIDER-PROSE/);
     assert.deepEqual(record, before);
   });
   it('should resolve the current native turn for delegated input without trusting a supplied turn id', async () => {
@@ -227,7 +227,7 @@ describe('agent/codex-turn-task', () => {
       'source',
     );
   });
-  it('should retain implementation on ordinary resumed turns without reinjecting an old plan', async () => {
+  it('should retain implementation permission on ordinary resumed turns', async () => {
     const working = {
       ...record,
       threadId: turn.threadId,
@@ -236,6 +236,5 @@ describe('agent/codex-turn-task', () => {
     const output = await selectCodexTurnTask([working], turn, lookup);
     assert.equal(output?.stage, 'implementation');
     assert.equal(output?.contextRuntime, 'continuationRuntime');
-    assert.doesNotMatch(JSON.stringify(output), /OLD-PLAN/);
   });
 });

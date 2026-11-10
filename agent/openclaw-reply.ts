@@ -172,9 +172,7 @@ export default async function openClawReply(input: {
         const record = state.records.find(
           (entry) => entry.id === source.ownerId && entry.threadId === caller.sessionKey,
         );
-        const retained =
-          record?.feedback?.events.find((entry) => entry.id === source.eventId) ??
-          record?.feedback?.completed?.find((entry) => entry.id === source.eventId);
+        const retained = record?.feedback?.events.find((entry) => entry.id === source.eventId);
         const event = source;
         const admitted =
           record && dispatchAdmission(record, (await current.store.read())?.records ?? []);

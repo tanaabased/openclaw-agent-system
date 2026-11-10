@@ -140,27 +140,19 @@ describe('agent/codex-feedback-source', () => {
       });
     await scan();
     const original = state.events[0]!;
-    state.completed = [
-      {
-        id: original.id,
-        sourceId: original.sourceId,
-        revision: original.revision,
-        nodeId: original.nodeId,
-      },
-    ];
-    state.events = [];
+    original.phase = 'delivered';
     state.baseline = {};
     comments.push(comment('own-reply'));
     await scan();
-    assert.equal(state.events.length, 0);
+    assert.equal(state.events.length, 1);
     comments = [
       { ...comment('source', '@receiver revised question'), updatedAt: '2026-10-13T02:00:00Z' },
     ];
     await scan();
-    assert.equal(state.events.length, 1);
-    assert.notEqual(state.events[0]!.id, original.id);
+    assert.equal(state.events.length, 2);
+    assert.notEqual(state.events[1]!.id, original.id);
     await scan();
-    assert.equal(state.events.length, 1);
+    assert.equal(state.events.length, 2);
   });
 
   it('should discover pause-time feedback after resume without a cutoff or duplicate admission', async () => {

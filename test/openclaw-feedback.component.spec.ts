@@ -514,7 +514,7 @@ describe('agent/openclaw-feedback', () => {
     });
     const operator = structuredClone(record);
     operator.id = 'd'.repeat(64);
-    operator.feedback = { baseline: {}, events: [], activity: { busy: true, observedAt: 1 } };
+    operator.feedback = { baseline: {}, events: [] };
     const idle = structuredClone(record);
     idle.id = 'e'.repeat(64);
     idle.feedback = { baseline: {}, events: [] };

@@ -1,16 +1,5 @@
 import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { awaitingReassignment } from './assignment-retirement.ts';
-interface Delivery {
-  adopted?: unknown;
-  binding?: {
-    branch: string;
-  };
-  pullRequest?: {
-    pullRequestNumber: number;
-  };
-  reconciled?: boolean;
-  pushedHead?: string;
-}
 export interface IssueWorkflowState {
   request?: unknown;
   effective?: unknown;
@@ -25,30 +14,8 @@ export interface IssueWorkflowState {
   };
   reset?: unknown;
   supersededBy?: string;
-  handoff?: unknown;
   blocker?: string;
-  implementationPreparationError?: string;
   retry?: { code: string; attempts: number };
-  progression?: {
-    stage: string;
-  };
-  delivery?: Delivery;
-  feedback?: {
-    events: Array<{
-      id?: string;
-      request?: unknown;
-      effective?: unknown;
-      retry?: { code: string; attempts: number };
-    }>;
-  };
-  work?: {
-    scope?: 'local' | 'pull-request';
-    code?: string;
-    implementation?: unknown;
-    caller?: {
-      runId: string;
-    };
-  };
 }
 /** report native activity and resource custody; old results never select a conversation phase. */
 export default function workflowStatus(record: IssueWorkflowState) {

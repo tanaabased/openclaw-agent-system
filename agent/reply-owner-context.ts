@@ -8,7 +8,6 @@ export default function replyOwnerContext(input: {
   record: SharedDispatchRecord & {
     feedback?: {
       events: FeedbackSourceEvent[];
-      completed?: Array<Pick<FeedbackSourceEvent, 'sourceId' | 'nodeId'>>;
     };
   };
   intake?: Pick<IntakeRecord, 'repository' | 'issue' | 'receiving'>;
@@ -51,10 +50,6 @@ export default function replyOwnerContext(input: {
         ? record.pullRequestLink?.pullRequestNumber
         : delivery?.pullRequest?.pullRequestNumber,
     events: record.feedback?.events,
-    sourceReceipts: record.feedback && [
-      ...(record.feedback.completed ?? []),
-      ...record.feedback.events,
-    ],
     deliveredPullRequest: observationOnly ? undefined : delivery?.pullRequest,
     ...(destination &&
     announcement?.receipt &&

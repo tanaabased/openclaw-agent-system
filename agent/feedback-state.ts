@@ -14,7 +14,6 @@ export const feedbackSourceEventSchema = Type.Object(
     source: Type.String({ minLength: 1 }),
     revision: hash,
     createdAt: Type.Integer({ minimum: 0 }),
-    policyDigest: hash,
     policyHeld: Type.Optional(text),
     phase: Type.Union([
       Type.Literal('queued'),
@@ -29,19 +28,6 @@ export const feedbackSourceEventSchema = Type.Object(
 );
 export const feedbackSourceStateSchema = Type.Object(
   {
-    completed: Type.Optional(
-      Type.Array(
-        Type.Object(
-          {
-            id: hash,
-            sourceId: text,
-            revision: hash,
-            nodeId: text,
-          },
-          { additionalProperties: false },
-        ),
-      ),
-    ),
     evaluatedPolicyDigests: Type.Optional(Type.Record(text, hash)),
     admission: Type.Optional(
       Type.Object(

@@ -15,7 +15,6 @@ export interface ReplyOwner {
   number?: number;
   pullRequestNumber?: number;
   events?: FeedbackSourceEvent[];
-  sourceReceipts?: Array<Pick<FeedbackSourceEvent, 'sourceId' | 'nodeId'>>;
   deliveredPullRequest?: unknown;
   announcement?: {
     destination: string;
@@ -46,7 +45,7 @@ export default function replyOwner(
       caller.repository?.toLowerCase() === repository &&
       (caller.number === target.number ||
         caller.pullRequestNumber === target.number ||
-        caller.sourceReceipts?.some(
+        caller.events?.some(
           (event) => event.nodeId === target.nodeId && event.sourceId === target.source?.nodeId,
         ))
       ? manualContext(caller, target)
@@ -66,7 +65,7 @@ export default function replyOwner(
           (callerIssue === undefined || owner.number === callerIssue)) ||
         Boolean(
           target.source &&
-          (owner.sourceReceipts ?? owner.events)?.some(
+          owner.events?.some(
             (event) => event.nodeId === target.nodeId && event.sourceId === target.source!.nodeId,
           ),
         )),

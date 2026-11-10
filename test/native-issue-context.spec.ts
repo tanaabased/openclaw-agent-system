@@ -30,12 +30,10 @@ describe('agent/native-issue-context', () => {
       nativeInactive: true,
       request: {},
       sessionCreation: { verified: true },
-      work: {},
-      feedback: { events: [], activity: { busy: false } },
+      feedback: { events: [] },
     } as unknown as OpenClawDispatchRecord;
     assert.equal(openClawItemOccupied(openclaw), false);
     openclaw.nativeInactive = false;
-    openclaw.feedback!.activity!.busy = true;
     assert.equal(openClawItemOccupied(openclaw), true);
   });
 
@@ -44,27 +42,24 @@ describe('agent/native-issue-context', () => {
       request: {},
       nativeInactive: true,
       sessionCreation: { verified: true },
-      feedback: { events: [], activity: { busy: true } },
+      feedback: { events: [] },
       nativeTurns: [{ role: 'first', turn: { status: 'attempted' } }],
     } as unknown as OpenClawDispatchRecord;
     assert.equal(openClawItemOccupied(record), true);
     record.nativeTurns!.findLast(({ role }) => role === 'first')!.turn.status = 'completed';
     assert.equal(openClawItemOccupied(record), false);
     record.nativeInactive = false;
-    record.feedback!.activity!.busy = false;
     assert.equal(openClawItemOccupied(record), true);
   });
 
-  it('should refresh native facts without routing a delivered task into an implementation owner', async () => {
+  it('should refresh native context without invoking implementation', async () => {
     const nativeContext = nativeIssueContext({
       id: 'issue',
 
       worktree: '/tmp',
       delivery: { binding: { branch: 'retained-branch' } },
-      work: {},
     });
     assert.equal(nativeContext.branch, 'retained-branch');
-    assert.doesNotMatch(JSON.stringify(nativeContext), /OLD-WORK|OLD-PLAN/);
     const owner = {
       owner: { id: 'issue' },
       path: '/tmp',
@@ -77,7 +72,7 @@ describe('agent/native-issue-context', () => {
         target: 'https://github.com/owner/repo/issues/7',
       },
       managed: async () => owner,
-      route: async () => assert.fail('continuation must not own delivered work'),
+      route: async () => assert.fail('context refresh must not invoke implementation'),
     });
     assert.equal(result, undefined, 'context refresh belongs to the readonly collector');
     assert.equal('resultContract' in nativeContext, false);

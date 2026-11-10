@@ -111,7 +111,6 @@ export async function handoffDispatch(
         ...record,
         feedback: undefined,
         intakeReportedAt: undefined,
-        renameRequested: undefined,
         nativeInactive: undefined,
         capacityObservation: undefined,
         reservationVersion: undefined,

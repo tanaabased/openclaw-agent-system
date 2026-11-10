@@ -216,11 +216,11 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
     timezone: tx.timezone,
     now: tx.now(),
   });
-  const applies = (charge: NonNullable<IssuePickupState['windowAssignment']>) =>
+  const applies = (charge: NonNullable<IssuePickupState['charges']>[number]) =>
     window &&
     ((tx.now() >= charge.window.opensAt && tx.now() < charge.window.closesAt) ||
       (charge.assignedAt >= window.opensAt && charge.assignedAt < window.closesAt));
-  const expired = (charge: NonNullable<IssuePickupState['windowAssignment']>) =>
+  const expired = (charge: NonNullable<IssuePickupState['charges']>[number]) =>
     tx.now() >= Math.max(charge.window.closesAt, charge.assignedAt + maximumPickupWindowMs);
   const charges = (journal.charges ?? []).filter(
     (charge) =>
@@ -228,25 +228,6 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
       (charge.reconciled && tx.now() < charge.reconciled.at + maximumPickupWindowMs),
   );
   journal.charges = charges;
-  // an old marker can outlive its receipt and may predate a target edit.
-  const legacy = journal.windowAssignment;
-  if (legacy) {
-    const original = journal.operations.find(
-      (entry) =>
-        entry.receipt?.window.id === legacy.window.id && entry.attemptedAt === legacy.assignedAt,
-    );
-    if (!expired(legacy) && original?.enrollment) {
-      charges.push({
-        ...legacy,
-        repository: original.repository,
-        repositoryNodeId: original.enrollment.repositoryNodeId,
-        runId: original.runId,
-      });
-      delete journal.windowAssignment;
-    } else if (expired(legacy)) {
-      delete journal.windowAssignment;
-    }
-  }
   const used = (repositoryNodeId: string) =>
     charges.filter((charge) => charge.repositoryNodeId === repositoryNodeId && applies(charge))
       .length;
@@ -379,13 +360,6 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
   const repositories = new Map<string, Awaited<ReturnType<IssuePickupClient['getRepository']>>>();
   if (!op) {
     if (!window) return idle('idle');
-    if (journal.windowAssignment && applies(journal.windowAssignment)) {
-      for (const allowance of allowances) {
-        delete allowance.used;
-        allowance.code = 'issue-pickup-legacy-allowance-used';
-      }
-      return idle('allowance-reached');
-    }
     if (pickup.paused) return idle('paused');
     const digest = scanDigest(policy);
     const active = journal.operations.filter(

@@ -56,7 +56,6 @@ export async function prepareCodexWork(state: DispatchState, context: CodexWorkC
         record.nativeWork = {
           selection: selected.selection,
         };
-        delete record.implementationPreparationError;
         delete record.retry;
         delete record.retryAfter;
       }

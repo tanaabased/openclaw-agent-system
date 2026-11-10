@@ -22,12 +22,6 @@ export const openclawFeedbackSchema = Type.Object(
         { additionalProperties: false },
       ),
     ),
-    activity: Type.Optional(
-      Type.Object(
-        { busy: Type.Boolean(), observedAt: Type.Integer({ minimum: 0 }) },
-        { additionalProperties: false },
-      ),
-    ),
     events: Type.Array(openclawFeedbackEventSchema, { maxItems: 400 }),
   },
   { additionalProperties: false },

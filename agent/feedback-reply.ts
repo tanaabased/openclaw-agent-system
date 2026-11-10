@@ -63,17 +63,12 @@ export interface FeedbackReplyDependencies {
   ): Promise<ReturnType<typeof replyOwner>>;
 }
 
-function replyOwnerContext(
+function replyOwnerId(
   owner: ReturnType<typeof replyOwner>,
   purpose?: 'status-update',
   feedback = false,
 ) {
-  if (!purpose && !feedback) return 'null';
-  return JSON.stringify(
-    (purpose || feedback) && owner && 'ownerId' in owner
-      ? { ownerId: owner.ownerId, workflow: owner.workflow }
-      : (owner ?? null),
-  );
+  return (purpose || feedback) && owner && 'ownerId' in owner ? owner.ownerId : undefined;
 }
 
 /** direct entry prepares the ordinary composition contract; native owners keep all effects. */
@@ -190,7 +185,7 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
       owner?.status === 'manual-reply-context' || owner?.status === 'status-update-context'
         ? owner
         : undefined;
-    const ownerContext = replyOwnerContext(managed, purpose, Boolean(feedback));
+    const ownerId = replyOwnerId(managed, purpose, Boolean(feedback));
     const workflowUpdate =
       purpose === 'status-update' && managed?.status === 'status-update-context';
     const related = (entry: ReplyDraft) => {
@@ -206,8 +201,7 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
       const prior = JSON.parse(entry.target) as ReplyTarget;
       return (
         prior.repositoryNodeId === target.repositoryNodeId &&
-        (sameDestination(prior, target) ||
-          (managed && replyOwnerContext(JSON.parse(entry.ownerContext), purpose) === ownerContext))
+        (sameDestination(prior, target) || (managed && entry.ownerId === ownerId))
       );
     };
     const pendingUpdates = purpose
@@ -226,7 +220,7 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
       );
     const publicContext =
       purpose && !draft?.attempted && !draft?.receipt ? await readUpdate() : undefined;
-    const observation = purpose ? statusUpdateObservation(publicContext, ownerContext) : undefined;
+    const observation = purpose ? statusUpdateObservation(publicContext, ownerId) : undefined;
     if (authored.update)
       input.update = {
         observation: observation!,
@@ -364,11 +358,7 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
         throw new Error('reply-account-changed');
       if (!record.attempted && !record.receipt) {
         await authorizeFeedback();
-        if (
-          replyOwnerContext(JSON.parse(record.ownerContext), purpose, Boolean(feedback)) !==
-          ownerContext
-        )
-          throw new Error('reply-managed-context-changed');
+        if (record.ownerId !== ownerId) throw new Error('reply-managed-context-changed');
         const live = (await deps.readManifest?.()) ?? deps.manifest;
         const liveConfiguration =
           live.github?.notifications?.[
@@ -459,7 +449,7 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
                 ownerId: managed?.ownerId,
                 facts: statusUpdateIdentity(input.update),
               })
-            : automationHash({ scope: store.scope, target, ownerContext, privateText, outcome }));
+            : automationHash({ scope: store.scope, target, ownerId, privateText, outcome }));
       draft ??= drafts.find((entry) => entry.id === id);
       if (draft?.attempted || draft?.receipt) {
         await validate(draft);
@@ -516,7 +506,7 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
         turnId: deps.turnId,
         inputId: deps.inputId,
         target: JSON.stringify(target),
-        ownerContext,
+        ownerId,
         privateText,
         ...(outcome ? { outcome } : {}),
         ...(input.update ? { update: input.update } : {}),
@@ -623,8 +613,7 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
       if (
         !record.attempted &&
         !record.receipt &&
-        replyOwnerContext(freshOwner, purpose, Boolean(feedback)) !==
-          replyOwnerContext(JSON.parse(record.ownerContext), purpose, Boolean(feedback))
+        replyOwnerId(freshOwner, purpose, Boolean(feedback)) !== record.ownerId
       )
         throw new Error('reply-managed-context-changed');
       if (
@@ -633,7 +622,7 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
         !record.receipt &&
         statusUpdateObservation(
           await readUpdate(),
-          replyOwnerContext(freshOwner, purpose, Boolean(feedback)),
+          replyOwnerId(freshOwner, purpose, Boolean(feedback)),
         ) !== record.update.observation
       )
         throw new Error('status-update-observation-changed');

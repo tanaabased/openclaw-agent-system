@@ -282,7 +282,6 @@ async function executeCodexDispatch(
               turnId: record.denial.turnId,
             },
             code: dispatchBlocker(record),
-            implementationPreparationError: record.implementationPreparationError,
             feedback: record.feedback && {
               events: record.feedback.events.map(({ id, phase, code }) => ({ id, phase, code })),
             },

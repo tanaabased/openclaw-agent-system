@@ -203,9 +203,7 @@ export async function discoverFeedback(input: {
       throw new Error('feedback-source-incomplete');
     revisions.set(source.nodeId, revision);
     const id = automationHash([input.nodeId, source.nodeId, revision]);
-    if (!isReviewFeedback(source) && state.completed?.some((event) => event.id === id))
-      delete next[source.nodeId];
-    else next[source.nodeId] = JSON.stringify(source);
+    next[source.nodeId] = JSON.stringify(source);
     if (
       ((!baseline || discovery) &&
         !previous &&
@@ -230,11 +228,7 @@ export async function discoverFeedback(input: {
       if (!observedReviewEdit && (!Number.isFinite(updatedAt) || updatedAt <= after)) continue;
     }
     if (admitFeedback(input.policy, client.identity, source).disposition !== 'approved') continue;
-    if (
-      state.events.some((event) => event.id === id) ||
-      state.completed?.some((event) => event.id === id) ||
-      pending.some((event) => event.id === id)
-    )
+    if (state.events.some((event) => event.id === id) || pending.some((event) => event.id === id))
       continue;
     pending.push({
       id,
@@ -248,7 +242,6 @@ export async function discoverFeedback(input: {
         !changedReviewBodies.has(source.nodeId) && Number.isFinite(Date.parse(source.updatedAt))
           ? Math.max(0, Math.min(input.now, Date.parse(source.updatedAt)))
           : input.now,
-      policyDigest,
       phase: 'queued',
     });
   }

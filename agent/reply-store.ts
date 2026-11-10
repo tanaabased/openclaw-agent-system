@@ -41,7 +41,7 @@ const draftSchema = Type.Object(
     selection: assessmentSelectionSchema,
     authorLogin: text,
     authorNodeId: text,
-    ownerContext: Type.String({ maxLength: 256000 }),
+    ownerId: Type.Optional(hash),
     publicText: Type.Optional(Type.String({ maxLength: 32000 })),
     publication: Type.Optional(Type.String({ minLength: 1, maxLength: 65536 })),
     attempted: Type.Optional(Type.Boolean()),

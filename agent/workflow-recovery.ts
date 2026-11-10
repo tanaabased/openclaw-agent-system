@@ -91,10 +91,6 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
       'An explicit delivery recipient requires an assignment actor, but this work was requested manually.',
       'Replace that explicit recipient requirement with a named recipient or omit it, then retry the same launch. Do not invent an assigner or assign the issue as a workaround.',
     ],
-    'launch-receipt-mismatch': [
-      'The launch receipt does not match this issue owner.',
-      'Use the original target and receipt together; inspect existing work before requesting another launch.',
-    ],
     'codex-branch-owner-required': [
       'This assignment has no verified ownership record for its current branch.',
       'Preserve all files and commits. In standalone Codex, an operator may explicitly select a verified existing PR through delivery bind. Otherwise resume the retained starting checkout through implementation context or reconcile the original delivery receipt. A branch name or historical comment alone cannot establish ownership.',
@@ -139,10 +135,6 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
       'The issue checkout path is occupied without matching managed Git ownership.',
       'Inspect and preserve the existing directory, reconcile its ownership, then retry this assignment through the operator retry action.',
     ],
-    'notification-state-reset-required': [
-      'Restored notification tracking predates the required reset; no workflow was resumed.',
-      'Preserve the original file. Restore backups into staging and use the compatible reset-capable release to complete an explicit notification reset before upgrading. Do not delete journals or recreate assignments to bypass this boundary.',
-    ],
     'instance-install-required': [
       'This installation has no saved identity.',
       'Run Install to create its persistent UUID and readable name before claiming assignments.',
@@ -179,10 +171,6 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
       'The claim publication has no confirmed provider receipt.',
       'Reconcile the original comment when GitHub is readable; do not post another claim for this attempt.',
     ],
-    'dispatch-capacity-observation-required': [
-      'The retained creation has no native inactivity observation.',
-      'The next owning intake run will inspect native receipts. Its `action:reconcile` can also observe this creation receipt. Preserve the request; do not create another chat for this issue.',
-    ],
     'dispatch-capacity-creation-unresolved': [
       'No native child or proof of non-submission was found.',
       'Inspect the original intake preparation turn and its `create_thread` receipt. The owning intake can retry `action:reconcile` with this id after native history is readable. Missing history cannot establish that creation never happened.',
@@ -211,33 +199,9 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
       'GitHub returned a different repository identity.',
       'Verify the repository ID and destination against the retained assignment before continuing.',
     ],
-    'dispatch-repository-owner-changed': [
-      'The repository owner changed.',
-      'Verify the transfer and configured repository owner before reconciling the retained assignment.',
-    ],
-    'dispatch-repository-name-changed': [
-      'The repository name changed.',
-      'Verify the rename and checkout origin, then reconcile the retained assignment with its current repository destination.',
-    ],
-    'dispatch-repository-owner-not-allowed': [
-      'The repository owner is outside the configured intake scope.',
-      'Review the repository owner scope in `agent.yaml`, then retry the retained assignment. Live policy changes apply without Install.',
-    ],
-    'dispatch-repository-archived': [
-      'The repository is archived.',
-      'Leave this assignment stopped while archived. Resume its retained work only after the repository is reopened.',
-    ],
-    'dispatch-repository-disabled': [
-      'GitHub has disabled the repository.',
-      'Resolve the repository restriction with GitHub before retrying this assignment.',
-    ],
     'dispatch-issue-identity-changed': [
       'The returned issue differs from the retained issue identity.',
       'Verify the issue number and provider ID against the retained assignment before continuing.',
-    ],
-    'dispatch-issue-type-changed': [
-      'The returned item is not an issue.',
-      'Verify the retained issue destination; do not apply an issue workflow to a different item type.',
     ],
     'dispatch-issue-closed': [
       'The assigned issue is closed.',
@@ -250,14 +214,6 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     'dispatch-assignment-event-missing': [
       'GitHub returned no assignment event for the receiving account.',
       'Retry the bounded assignment-history read on a later check. Preserve existing requests and receipts; missing evidence does not justify another chat creation.',
-    ],
-    'dispatch-assignment-actor-type-changed': [
-      'The assignment actor is not an eligible user.',
-      'Check the actual assignment event and configured assigners before resuming the retained work.',
-    ],
-    'dispatch-assignment-actor-not-allowed': [
-      'The assignment actor is outside the configured assigners.',
-      'Review the assigner policy in `agent.yaml` or await an eligible assignment, then retry. Live policy changes apply without Install.',
     ],
     'assignment-removal-unapproved': [
       'GitHub assignment is missing; its removal actor is not approved. Prior admitted work remains eligible in its existing mode and stage unless another lifecycle or native stop applies.',

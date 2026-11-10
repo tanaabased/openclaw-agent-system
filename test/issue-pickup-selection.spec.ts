@@ -1000,20 +1000,6 @@ describe('agent/issue-pickup', () => {
     assert.equal(f.effects.writes, 1);
   });
 
-  it('should preserve an unattributable legacy assignment fence through the open window', async () => {
-    const f = fixture();
-    await f.run();
-    const state = f.state.projectPickup!;
-    state.windowAssignment = { window: state.operations[0]!.window, assignedAt: f.clock.now };
-    state.operations = [];
-    f.policy.issuePickup!.projects[0]!.limit = 3;
-    assert.equal((await f.run()).status, 'allowance-reached');
-    assert.equal(f.effects.writes, 0);
-    f.clock.now += 86_400_000;
-    f.tx.runId = 'tomorrow';
-    assert.equal((await f.run()).status, 'selection-required');
-  });
-
   it('should preserve provider eligibility when recovering an uncertain assignment', async () => {
     for (const reason of ['closed', 'archived', 'disabled'] as const) {
       const f = fixture();

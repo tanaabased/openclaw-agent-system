@@ -719,7 +719,6 @@ export async function prepareIssueProject(
         }),
         runtime: {
           nodeExecutable: process.execPath,
-          nodeVersion: process.versions.node,
           ...(process.argv0 === 'node' ? { nodeCommand: 'node' as const } : {}),
           entrypoint: resolve(process.argv[1]!),
           pluginData: tx.pluginData,

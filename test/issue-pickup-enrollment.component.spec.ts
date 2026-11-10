@@ -100,7 +100,15 @@ describe('issue pickup installation enrollment', () => {
         projectPickup: {
           enrollment: first.enrollment,
           timezone: 'UTC',
-          windowAssignment: { window: receipt.window, assignedAt: f.clock.now },
+          charges: [
+            {
+              window: receipt.window,
+              assignedAt: f.clock.now,
+              repository: 'owner/repo',
+              repositoryNodeId: first.enrollment.repositoryNodeId,
+              runId: 'pickup-run',
+            },
+          ],
           operations: [
             {
               id: 'delivered',
@@ -153,10 +161,15 @@ describe('issue pickup installation enrollment', () => {
       assert.equal(updated.enrollment.milestoneNodeId, 'MI_new');
       assert.equal(updated.enrollment.startedAt, first.enrollment.startedAt);
       assert.equal(updated.nativeId, 'native-job');
-      assert.deepEqual(state.projectPickup!.windowAssignment, {
-        window: receipt.window,
-        assignedAt: f.clock.now,
-      });
+      assert.deepEqual(state.projectPickup!.charges, [
+        {
+          window: receipt.window,
+          assignedAt: f.clock.now,
+          repository: 'owner/repo',
+          repositoryNodeId: first.enrollment.repositoryNodeId,
+          runId: 'pickup-run',
+        },
+      ]);
       assert.deepEqual(state.projectPickup!.operations[0]!.receipt, receipt);
       assert.equal(state.projectPickup!.operations[0]!.enrollment!.milestoneNodeId, 'MI_pilot');
       assert.equal(state.projectPickup!.operations[1]!.phase, 'attempted');

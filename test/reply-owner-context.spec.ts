@@ -65,7 +65,7 @@ describe('agent/reply-owner-context', () => {
     );
     for (const record of [
       { ...input.record, reset: { at: 1, by: 'operator' } },
-      { ...input.record, reset: { at: 1, by: 'operator' } },
+      { ...input.record, supersededBy: 'successor' },
     ])
       assert.equal(replyOwnerContext({ ...input, record }).inactive, true);
   });
@@ -80,7 +80,6 @@ describe('agent/reply-owner-context', () => {
       const response = replyOwner([owner], 'chat', 'chat', target, purpose);
       assert.ok(response && 'verifiedOutcome' in response);
       assert.deepEqual(response.verifiedOutcome, { delivery: owner.deliveredPullRequest });
-      assert.doesNotMatch(JSON.stringify(response), /OLD-WORK|OLD-PLAN|OLD-FEEDBACK/);
     }
   });
   it('should keep source-bound reply ownership after clearing the current pr association', () => {
@@ -92,8 +91,19 @@ describe('agent/reply-owner-context', () => {
         ...input.record,
         pullRequestLink: null,
         feedback: {
-          events: [],
-          completed: [{ sourceId: 'comment', nodeId: 'old-pr' }],
+          events: [
+            {
+              id: 'c'.repeat(64),
+              sourceId: 'comment',
+              nodeId: 'old-pr',
+              number: 7,
+              itemType: 'pull-request',
+              source: '{}',
+              revision: 'd'.repeat(64),
+              createdAt: 1,
+              phase: 'delivered',
+            },
+          ],
         },
       },
     });

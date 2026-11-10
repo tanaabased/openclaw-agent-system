@@ -1,13 +1,10 @@
-import type { IssueWorkflowState } from './workflow-status.ts';
-
-export function nativeIssueContext(
-  record: IssueWorkflowState & {
-    id: string;
-    worktree?: string;
-    issueBranch?: { name: string };
-    pullRequestLink?: { pullRequestNodeId: string; pullRequestNumber: number } | null;
-  },
-) {
+export function nativeIssueContext(record: {
+  id: string;
+  worktree?: string;
+  delivery?: { binding?: { branch: string }; pullRequest?: { pullRequestNumber: number } };
+  issueBranch?: { name: string };
+  pullRequestLink?: { pullRequestNodeId: string; pullRequestNumber: number } | null;
+}) {
   return {
     status: 'native' as const,
     id: record.id,

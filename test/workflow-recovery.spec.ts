@@ -35,12 +35,7 @@ describe('agent/workflow-recovery', () => {
     assert.match(recovery.next, /without a receipt ID/);
     assert.match(recovery.next, /Do not guess/);
   });
-  it('should explain pre-reset restoration without authorizing replay or deletion', () => {
-    const recovery = workflowRecovery('notification-state-reset-required')!;
-    assert.match(recovery.summary, /no workflow was resumed/);
-    assert.match(recovery.next, /Preserve the original file/);
-    assert.match(recovery.next, /explicit notification reset/);
-  });
+
   it('should direct assignment recovery at the actual failed predicate', () => {
     assert.match(workflowRecovery('dispatch-issue-closed')!.next, /reopened/);
     assert.match(workflowRecovery('dispatch-assignment-removed')!.next, /new eligible assignment/);

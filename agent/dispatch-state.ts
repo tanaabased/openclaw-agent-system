@@ -97,8 +97,6 @@ export const dispatchRecordProperties = {
       {
         eventId: hash,
         assignmentEventId: text,
-        policyDigest: hash,
-        at: Type.Integer({ minimum: 0 }),
       },
       { additionalProperties: false },
     ),

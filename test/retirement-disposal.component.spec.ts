@@ -237,7 +237,6 @@ describe('agent/retirement disposal', () => {
       target: '{}',
       privateText: 'private plan copy',
       configuration: 'b'.repeat(64),
-      ownerContext: 'task context',
       authorLogin: account.login,
       authorNodeId: account.nodeId,
       selection: {
