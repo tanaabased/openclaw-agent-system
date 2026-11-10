@@ -1,4 +1,5 @@
 import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
+import cutover638Active from '../scripts/cutover-638-active.ts';
 import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
 import codexDirectInput from '../agent/codex-direct-input.ts';
 import { selectCodexTurnTask } from '../agent/codex-turn-task.ts';
@@ -4815,6 +4816,79 @@ describe('agent/codex-dispatch', () => {
       },
     };
   }
+
+  it('should continue a migrated completed task without its obsolete assessment copy', async () => {
+    const work = await workIssue();
+    const store = await workStore();
+    const before = (await store.read()).records[0]!;
+    assert.equal(before.phase, 'complete');
+    assert.ok(before.result);
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.continuation!.resultHistory = [
+        {
+          result: {
+            outcome: 'done',
+            summary: 'Old result.',
+            fullResult: 'Old copied implementation.',
+          },
+        },
+      ];
+      state.records[0] = cutover638Active(state.records[0]!).record;
+      await save();
+    });
+    work.receive();
+    const context = await work.run('context', {}, true);
+    assert.equal(context.status, 'verified', JSON.stringify(context));
+    const after = (await store.read()).records[0]!;
+    assert.equal(after.result, undefined);
+    assert.equal(after.stageReceipt, undefined);
+    assert.equal(after.continuation?.resultHistory, undefined);
+    assert.equal(after.id, before.id);
+    assert.equal(after.threadId, before.threadId);
+    assert.equal(after.worktree, before.worktree);
+    assert.deepEqual(after.request, before.request);
+    assert.equal(after.progression?.stage, 'implementation');
+  });
+
+  it('should preserve cancelled scope and exact unfinished requests during active cutover', async () => {
+    await workIssue();
+    const store = await workStore();
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.progression = { stage: 'implementation', via: 'operator' };
+      const work = record.continuation!;
+      work.phase = 'cancelled';
+      work.scope = 'local';
+      work.attempt = {
+        id: 'a'.repeat(64),
+        sourceThreadId: 'intake-thread',
+        sourceTurnId: 'original-turn',
+        beforeTurnId: 'prior-turn',
+        request: { threadId: record.threadId!, prompt: 'Exact pending native input.' },
+      };
+      work.publicationAttempt = {
+        ...structuredClone(work.attempt),
+        id: 'b'.repeat(64),
+        ended: true,
+      };
+      work.result = {
+        outcome: 'blocked',
+        summary: 'Held.',
+        fullResult: 'Native approval was denied.',
+      };
+      const before = structuredClone(work);
+      const migrated = cutover638Active(record);
+      assert.deepEqual(migrated.pending, ['implementation-blocker', 'native-attempt']);
+      assert.equal(migrated.record.continuation!.phase, 'cancelled');
+      assert.equal(migrated.record.continuation!.scope, 'local');
+      assert.deepEqual(migrated.record.continuation!.attempt, before.attempt);
+      assert.deepEqual(migrated.record.continuation!.result, before.result);
+      assert.equal(migrated.record.continuation!.publicationAttempt, undefined);
+      state.records[0] = migrated.record;
+      await save();
+    });
+    assert.equal((await store.read()).records[0]!.continuation!.scope, 'local');
+  });
 
   it('should enter issue work from a verified native answer to the original clarification', async () => {
     const question = {

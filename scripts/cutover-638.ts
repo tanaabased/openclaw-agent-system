@@ -17,9 +17,10 @@ import retainDispatchHistory, {
   verifiedTerminalCleanup,
 } from '../agent/retain-dispatch-history.ts';
 import retirementConsumption from '../agent/retirement-consumption.ts';
-import retirementEffects from '../agent/retirement-effects.ts';
+import retirementEffects, { retirementDeliveryEffects } from '../agent/retirement-effects.ts';
 import retirementLocalData from '../agent/retirement-local-data.ts';
 import IntakeRecordStore, { intakeLocation } from '../channels/github/intake/record-store.ts';
+import cutover638Active from './cutover-638-active.ts';
 
 const text = Type.String({ minLength: 1 });
 const requestSchema = Type.Object(
@@ -186,6 +187,8 @@ export default async function cutover638(input: unknown) {
     const state = structuredClone(original);
     const removed: string[] = [];
     const pending: string[] = [];
+    const transformed: string[] = [];
+    const pendingOperations: { id: string; reasons: string[] }[] = [];
     // consume exact historical events before disposing any task. existing consumers win.
     for (const { record, intake } of selected)
       await retirementConsumption(intakeStore, intake, record.id, intake.observedAt);
@@ -201,7 +204,26 @@ export default async function cutover638(input: unknown) {
           cleanup.archivedAt !== undefined ||
           cleanup.worktreeRemovalAttemptedAt !== undefined ||
           cleanup.worktreeRemovedAt !== undefined);
-      if (!complete && !started) continue;
+      if (!complete && !started) {
+        const projected = cutover638Active(record);
+        if (projected.pending.length)
+          pendingOperations.push({ id: record.id, reasons: projected.pending });
+        const history = projected.record as typeof record & {
+          deliveryHistory?: Parameters<typeof retirementDeliveryEffects>[0][];
+        };
+        for (const delivery of history.deliveryHistory ?? [])
+          store.retainRetirementEffects(state, retirementDeliveryEffects(delivery, intake));
+        delete history.deliveryHistory;
+        if (projected.record.threadId && projected.record.worktree && projected.record.request) {
+          delete projected.record.retainedHistory;
+          await store.history.exclusive(() => store.history.removeTask(record.id));
+        }
+        if (!isDeepStrictEqual(projected.record, record)) {
+          state.records[state.records.indexOf(record)] = projected.record;
+          transformed.push(record.id);
+        }
+        continue;
+      }
       const originalEffectSource = await effectSource(store, record);
       store.retainRetirementEffects(state, retirementEffects(originalEffectSource, intake));
       if (!complete) {
@@ -247,12 +269,15 @@ export default async function cutover638(input: unknown) {
       .filter((path) => before[path] !== after[path])
       .map((path) => ({ path, before: before[path] ?? null, after: after[path] ?? null }));
     return {
-      artifact: 'cutover-638-v1',
+      artifact: 'cutover-638-v2',
+      requiresCompatibleRuntime: 'completed-native-task-without-saved-assessment',
       runtime: input.runtime,
       scope: original.scope,
       output,
       removed,
       pending,
+      transformed,
+      pendingOperations,
       retained: state.records.length,
       uncertainEffects: state.retirementEffects?.length ?? 0,
       changes,

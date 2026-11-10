@@ -352,7 +352,6 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
                   !r.request ||
                   !r.threadId ||
                   !r.effective)) ||
-              (r.phase === 'complete' && !r.result) ||
               (r.handoff && (!r.request || !r.threadId || !r.worktree)))),
       ) ||
       state.records.some((r) => r.reset && (r.phase !== 'complete' || !r.threadId)) ||

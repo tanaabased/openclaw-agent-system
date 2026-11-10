@@ -1,4 +1,5 @@
 import { runInNewContext } from 'node:vm';
+import cutover638Active from '../scripts/cutover-638-active.ts';
 import openClawConditionCheck from '../agent/openclaw-condition-check.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
@@ -4411,6 +4412,34 @@ describe('agent/openclaw issue dispatch', () => {
     });
   }
 
+  it('should continue a migrated completed task without its obsolete assessment copy', async () => {
+    await readyWork('work');
+    const before = await record();
+    assert.equal(before.phase, 'complete');
+    assert.ok(before.result);
+    const { journal } = await service.scope(manifest, root);
+    await journal.exclusive(async (state, save) => {
+      state.records[0] = cutover638Active(state.records[0]!).record;
+      await save();
+    });
+    service = new OpenClawDispatch(service.dependencies);
+    const context = await service.run(manifest, root, assessor(before.id), {
+      action: 'implementation-context',
+      id: before.id,
+    });
+    assert.equal(context.status, 'verified', JSON.stringify(context));
+    const after = await record();
+    assert.equal(after.result, undefined);
+    assert.equal(after.stageReceipt, undefined);
+    assert.equal(after.id, before.id);
+    assert.equal(after.threadId, before.threadId);
+    assert.equal(after.worktree, before.worktree);
+    assert.deepEqual(after.sessionCreation, before.sessionCreation);
+    assert.equal(after.progression?.stage, 'implementation');
+    assert.equal(creates().length, 1);
+    assert.equal(sends().length, 1);
+  });
+
   it('should retain an uncertain old implementation request without creating another send', async () => {
     await readyWork('work');
     const scope = await service.scope(manifest, root);
@@ -4424,6 +4453,11 @@ describe('agent/openclaw issue dispatch', () => {
           status: 'attempted',
         },
       };
+      const original = structuredClone(state.records[0]!.work);
+      const migrated = cutover638Active(state.records[0]!);
+      assert.ok(migrated.pending.includes('native-turn'));
+      assert.deepEqual(migrated.record.work, original);
+      state.records[0] = migrated.record;
       await save();
     });
     await workPass('observe-uncertain');
