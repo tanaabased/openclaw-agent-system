@@ -1901,7 +1901,6 @@ describe('agent/codex-delivery', () => {
     await publish();
     await store.exclusive(async (state, save) => {
       delete state.records[0]!.handoff;
-      state.records[0]!.nativeWork!.code = 'continuation-send-unverified';
       await save();
     });
     const initialWork = structuredClone((await store.read()).records[0]!.nativeWork);

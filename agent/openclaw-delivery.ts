@@ -245,7 +245,6 @@ export default async function openClawDelivery(input: {
     !record.work?.publication
   )
     throw new Error('delivery-implementation-not-authorized');
-  const work = (record.work ??= {});
   await assertCurrent();
   const connection = await input.connect();
   const git = async (argv: string[]) => {
@@ -480,8 +479,6 @@ export default async function openClawDelivery(input: {
       },
       save,
     });
-    if (work.code === 'implementation-delivery-incomplete') delete work.code;
-    await save();
   } else {
     if (!previous) throw new Error('delivery-reconciliation-required');
     if (previous.reconciled) await provider.inspect(publication);
@@ -508,8 +505,6 @@ export default async function openClawDelivery(input: {
         },
         save,
       });
-      if (work.code === 'implementation-delivery-incomplete') delete work.code;
-      await save();
     }
   }
   const receipt = delivery.pullRequest!;

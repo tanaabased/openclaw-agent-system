@@ -260,21 +260,14 @@ describe('github issue pickup policy', () => {
       assert.equal(issueWorkflowMode(f.policy, record), 'work');
       assert.equal(feedbackConversationMode(record, f.policy), 'work');
       assert.equal(
-        issueProgression(record, { mode: issueWorkflowMode(f.policy, record), now: f.input.now })
-          .status,
+        issueProgression(record, { mode: issueWorkflowMode(f.policy, record) }).status,
         'ready',
       );
       assert.equal(
-        issueProgression(
-          { ...record, nativeWork: { cancelled: true } },
-          { mode: 'work', now: f.input.now },
-        ).status,
+        issueProgression({ ...record, nativeWork: { cancelled: true } }, { mode: 'work' }).status,
         'stopped',
       );
-      assert.equal(
-        issueProgression({ ...record, reset: {} }, { mode: 'work', now: f.input.now }).status,
-        'stopped',
-      );
+      assert.equal(issueProgression({ ...record, reset: {} }, { mode: 'work' }).status, 'stopped');
       assert.deepEqual(f.policy.issueAssignment, before);
       assert.deepEqual(
         feedbackIdentities(f.policy.issueAssignment!.allowed, f.policy.issueAssignment!.feedback),

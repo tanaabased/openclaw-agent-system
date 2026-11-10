@@ -55,7 +55,6 @@ describe('agent/dispatch-retry', () => {
       'delivery-branch-changed',
       'feedback-source-author-changed',
       'dispatch-turn-cancelled',
-      'dispatch-assignment-authority-revoked',
     ])
       assert.equal(dispatchFailurePhase(record, code), 'blocked');
     for (const code of [

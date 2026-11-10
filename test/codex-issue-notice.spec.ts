@@ -190,7 +190,6 @@ describe('agent/codex-issue-notice', () => {
       ['intake-github-transport', 'warning'],
       ['intake-github-permission', 'warning'],
       ['intake-github-auth-unavailable', 'warning'],
-      ['dispatch-assignment-authority-revoked', 'warning'],
       ['intake-github-identity-mismatch', 'error'],
       ['dispatch-native-readback-diverged', 'error'],
       ['dispatch-native-model-diverged', 'error'],

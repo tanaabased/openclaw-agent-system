@@ -71,14 +71,14 @@ describe('agent/codex-capacity-reconcile', () => {
       owner,
       {
         find: async () => {
-          throw new Error('dispatch-native-history-incomplete');
+          throw new Error('dispatch-native-history-changed');
         },
         unsubmittedCreation: async () => undefined,
       },
       'current',
       20,
     );
-    assert.equal(owner.capacityObservation?.code, 'dispatch-native-history-incomplete');
+    assert.equal(owner.capacityObservation?.code, 'dispatch-native-history-changed');
     assert.equal(codexCapacity([owner], 3).occupied, 1);
   });
   it('should reconcile unknown creation only from complete non-submission evidence', async () => {
@@ -125,7 +125,7 @@ describe('agent/codex-capacity-reconcile', () => {
       {
         find: async (input) => {
           assert.equal(input.threadId, 'discovered');
-          throw new Error('dispatch-native-history-incomplete');
+          throw new Error('dispatch-native-history-changed');
         },
         unsubmittedCreation: async () => {
           assert.fail();

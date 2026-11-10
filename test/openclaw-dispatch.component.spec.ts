@@ -3820,7 +3820,6 @@ describe('agent/openclaw issue dispatch', () => {
     service.dependencies.now = () => clock;
     await current.journal.exclusive(async (state, save) => {
       const record = state.records[0]!;
-      record.work!.code = 'dispatch-turn-cancelled';
       record.delivery = {
         id,
         binding: {
@@ -3870,7 +3869,6 @@ describe('agent/openclaw issue dispatch', () => {
     clock += 86400000;
     await workPass('after-exhaustion');
     assert.equal((await record()).announcementRecovery!.status, 'exhausted');
-    assert.equal((await record()).work!.code, 'dispatch-turn-cancelled');
     assert.equal(checks, 4);
     assert.equal(sends().length, sent);
     assert.equal(creates().length, 1);
@@ -5209,7 +5207,6 @@ describe('agent/openclaw issue dispatch', () => {
     service = new OpenClawDispatch(service.dependencies);
     assert.equal((await setup.present()).status, 'presented');
     const retained = await record();
-    assert.deepEqual(retained.work!.operatorInput, before.work!.operatorInput);
     assert.deepEqual(retained.work!.publication, before.work!.publication);
     assert.equal(retained.work!.caller, undefined);
   });
@@ -5931,12 +5928,6 @@ describe('agent/openclaw issue dispatch', () => {
   it('should read native task context without expired implementation input receipts', async () => {
     const { id, who } = await operatorFollowup();
     await service.run(manifest, root, who, { action: 'implementation-context', id }, true);
-    const { journal } = await service.scope(manifest, root);
-    await journal.exclusive(async (state, save) => {
-      const current = state.records[0]!;
-      current.work!.code = 'dispatch-turn-failed';
-      await save();
-    });
     const before = await record();
     messages.length = 0; // expired original native evidence must not gate ordinary conversation.
     const nativeCaller = { ...who, runId: 'human-follow-up' };

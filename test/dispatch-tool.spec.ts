@@ -368,7 +368,7 @@ describe('tools/dispatch/tool', () => {
   it('should supply ordinary workflow failure cards without provider diagnostics', async () => {
     for (const [code, severity, emoji] of [
       ['assessment-render-request-invalid', 'error', '❌'],
-      ['reply-draft-unavailable', 'error', '❌'],
+      ['reply-request-invalid', 'error', '❌'],
       ['dispatch-project-registration-unavailable', 'warning', '⚠️'],
     ]) {
       const f = fixture();

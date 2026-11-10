@@ -7,8 +7,6 @@ export const codexWorkStateSchema = Type.Object(
     scope: Type.Optional(Type.Union([Type.Literal('local'), Type.Literal('pull-request')])),
     cancelled: Type.Optional(Type.Literal(true)),
     selection: assessmentSelectionSchema,
-    code: Type.Optional(text),
-    policyHeld: Type.Optional(text),
     observation: Type.Optional(
       Type.Object(
         {

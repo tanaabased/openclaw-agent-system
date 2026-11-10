@@ -5,14 +5,12 @@ import type { DispatchNativeThread } from './codex-dispatch-native.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
 import codexWorkState from './codex-work-state.ts';
 import type issueProgression from './issue-progression.ts';
-import type { ManagedIssue } from './managed-issue.ts';
 
-/** Bind optional result recording to the current native turn, without advancing a controller. */
+/** Verify native turn custody before returning implementation context or formatting a result. */
 export default async function advanceCodexWorkTurn(
   record: DispatchRecord,
   context: CodexWorkContext,
   verified: {
-    admitted: ManagedIssue;
     selection: AssessmentSelection;
     found: DispatchNativeThread & { turnId: string };
     transition: ReturnType<typeof issueProgression>;
@@ -102,5 +100,5 @@ export default async function advanceCodexWorkTurn(
     work.selection = selection;
     await context.save();
   }
-  return { ready: true as const, selection, revisionInput };
+  return { ready: true as const, selection };
 }

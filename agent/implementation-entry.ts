@@ -165,7 +165,6 @@ export default async function implementationEntry(
         const transition = issueProgression(entry, {
           mode: 'plan',
           operator: true,
-          now: deps.now,
         });
         if (transition.status !== 'ready') throw new Error(transition.reason);
         await save();

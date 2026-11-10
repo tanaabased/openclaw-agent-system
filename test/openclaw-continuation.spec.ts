@@ -52,7 +52,6 @@ describe('agent/openclaw-continuation', () => {
     const record = delivered();
     record.delivery!.reconciled = false;
     assert.equal(openClawWorkSlot(record), undefined);
-    assert.equal(openClawWorkSlot(record), undefined);
   });
 
   it('should not let an announcement failure hold unfinished initial publication', () => {
@@ -64,9 +63,12 @@ describe('agent/openclaw-continuation', () => {
     assert.equal(openClawWorkSlot(record), undefined);
   });
 
-  it('should preserve native cancellation as a stop', () => {
+  it('should leave inactive native turns stopped', () => {
     const record = delivered();
-    record.work!.code = 'dispatch-turn-cancelled';
+    record.nativeTurns!.push({
+      role: 'assessment',
+      turn: { status: 'accepted', runId: 'stopped', message: 'Assess.', inactive: true },
+    });
     assert.equal(openClawWorkSlot(record), undefined);
   });
 });

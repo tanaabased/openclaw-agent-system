@@ -4,7 +4,6 @@ export const issueProgressionSchema = Type.Object(
   {
     stage: Type.Literal('implementation'),
     via: Type.Union([Type.Literal('work'), Type.Literal('auto'), Type.Literal('operator')]),
-    enteredAt: Type.Optional(Type.Integer({ minimum: 0 })),
   },
   { additionalProperties: false },
 );
@@ -22,15 +21,11 @@ export const implementationDecisionSchema = Type.Object(
 interface Issue {
   implementationDecision?: Static<typeof implementationDecisionSchema>;
   progression?: IssueProgression;
-  createdAt?: number;
   retirement?: unknown;
   reset?: unknown;
   handoff?: unknown;
   nativeWork?: {
     cancelled?: true;
-  };
-  work?: {
-    implementation?: unknown;
   };
 }
 /** current workflows retain their explicit implementation transition. */
@@ -42,7 +37,6 @@ export default function issueProgression(
   issue: Issue,
   input: {
     mode: 'plan' | 'work' | 'auto';
-    now: number;
     operator?: boolean;
     decision?: Static<typeof implementationDecisionSchema>;
   },
@@ -78,7 +72,6 @@ export default function issueProgression(
     progression: {
       stage: 'implementation',
       via: input.operator ? 'operator' : input.mode === 'work' ? 'work' : 'auto',
-      enteredAt: input.now,
     },
   };
 }

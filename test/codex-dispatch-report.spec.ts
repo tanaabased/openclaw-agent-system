@@ -327,15 +327,15 @@ describe('agent/codex-dispatch-report', () => {
       feedback: {
         baseline: {},
         events: [],
-        code: 'dispatch-assignment-authority-revoked',
+        code: 'dispatch-assignment-removed',
       },
     } as unknown as DispatchRecord;
     const quiet = prepareDispatchReport({ ...input, state: { ...state, records: [record] } });
     assert.match(quiet.response, /DONT_NOTIFY/);
-    assert.doesNotMatch(quiet.response, /authority-revoked/);
+    assert.doesNotMatch(quiet.response, /assignment-removed/);
     record.feedback!.events.push({ id: 'waiting', phase: 'queued' } as never);
     const pending = prepareDispatchReport({ ...input, state: { ...state, records: [record] } });
-    assert.match(pending.response, /authority-revoked/);
+    assert.match(pending.response, /assignment-removed/);
     assert.notEqual(pending.health, '');
   });
   it('should scope an item failure while preserving a successful start', () => {

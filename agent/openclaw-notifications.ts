@@ -175,10 +175,7 @@ export default class OpenClawNotifications {
           reasonCode:
             phase === 'awaiting-reassignment'
               ? 'github-notification-awaiting-reassignment'
-              : (feedbackFailure ??
-                record?.work?.code ??
-                record?.blocker ??
-                `github-notification-${phase}`),
+              : (feedbackFailure ?? record?.blocker ?? `github-notification-${phase}`),
           stage: prepared ? 'prepared' : 'admitted',
           ...(phase === 'awaiting-reassignment'
             ? {}

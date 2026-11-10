@@ -211,11 +211,7 @@ export default async function issueLaunch<
       context.binding.session,
       (record) =>
         record.issueKey === key ||
-        Boolean(
-          pullRequest &&
-          (record.delivery?.pullRequest?.pullRequestNodeId === item.nodeId ||
-            record.delivery?.pullRequest?.pullRequestNodeId === item.nodeId),
-        ),
+        Boolean(pullRequest && record.delivery?.pullRequest?.pullRequestNodeId === item.nodeId),
     );
     const exact =
       state.records.find((entry) => entry.id === manual.id) ??

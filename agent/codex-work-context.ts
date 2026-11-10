@@ -10,7 +10,7 @@ import type { DispatchRecord } from './codex-dispatch-state.ts';
 import type { ManagedIssue } from './managed-issue.ts';
 import workflowRecovery from './workflow-recovery.ts';
 
-/** Prepare the issue branch and skill context under the controller's verified native binding. */
+/** Prepare the issue branch and skill context under the verified native task binding. */
 export default async function codexWorkContext(
   record: DispatchRecord,
   context: Pick<

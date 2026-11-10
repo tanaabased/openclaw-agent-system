@@ -34,8 +34,7 @@ function fixture() {
     },
     save: async () => {},
   } as unknown as CodexWorkContext;
-  const verified = {
-    admitted: { id: 'admitted', repository: { nodeId: 'repo' }, issue: { nodeId: 'issue' } },
+  const verified: Parameters<typeof advance>[2] = {
     selection: record.nativeWork!.selection,
     found: {
       id: 'chat',
@@ -46,11 +45,8 @@ function fixture() {
       turnEnded: false,
       followUpUserTurn: true,
     },
-    transition: { status: 'ready', progression: record.progression },
-    liveMode: 'work',
-    authorizeLive: async () => {},
-    resumeBlocked: false,
-  } as unknown as Parameters<typeof advance>[2];
+    transition: { status: 'ready', progression: record.progression! },
+  };
   return { record, context, verified, source, receipts };
 }
 

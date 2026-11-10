@@ -16,7 +16,7 @@ describe('agent/feedback-conversation-mode', () => {
     );
     assert.equal(
       feedbackConversationMode(
-        { ...record, progression: { stage: 'implementation', via: 'operator', enteredAt: 1 } },
+        { ...record, progression: { stage: 'implementation', via: 'operator' } },
         policy,
       ),
       'work',

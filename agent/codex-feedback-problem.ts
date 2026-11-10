@@ -6,7 +6,6 @@ export default function codexFeedbackProblem(record: DispatchRecord) {
   if (!feedback?.code) return false;
   if (
     ![
-      'dispatch-assignment-authority-revoked',
       'dispatch-issue-closed',
       'dispatch-assignment-removed',
       'dispatch-assignment-superseded',

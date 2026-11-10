@@ -29,9 +29,7 @@ export default function feedbackDiscoveryOwner(record: FeedbackDiscoveryOwner) {
     reset: record.reset,
     supersededBy: record.supersededBy,
     pullRequest:
-      record.pullRequestLink !== undefined
-        ? record.pullRequestLink
-        : (record.delivery?.pullRequest ?? record.delivery?.pullRequest),
+      record.pullRequestLink !== undefined ? record.pullRequestLink : record.delivery?.pullRequest,
     feedback: record.feedback,
   });
 }

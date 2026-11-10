@@ -568,7 +568,6 @@ export default async function runCodexDelivery(
       if (!announcementOnly) {
         const transition = issueProgression(record, {
           mode: issueWorkflowMode(current.manifest.github?.notifications, record),
-          now: (deps.now ?? Date.now)(),
         });
         if (
           transition.status === 'stopped' &&

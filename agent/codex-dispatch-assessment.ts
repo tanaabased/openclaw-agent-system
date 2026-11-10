@@ -98,7 +98,6 @@ export async function handoffDispatch(
       throw new Error('dispatch-native-readback-diverged');
     const transition = issueProgression(record, {
       mode: issueWorkflowMode(current.manifest.github?.notifications, record),
-      now: (deps.now ?? Date.now)(),
       operator: Boolean(operatorInput),
     });
     if (!native.turnId || (!native.followUpUserTurn && transition.status !== 'ready'))

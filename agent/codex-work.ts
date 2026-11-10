@@ -110,7 +110,6 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       return live;
     };
     if (!['reconcile', 'cancel', 'result'].includes(input.action)) await authorizeLive();
-    if (!input.material) delete work.policyHeld;
     const found = await native.find({
       sourceThreadId: record.sourceThreadId,
       prompt: record.request.prompt,
@@ -126,7 +125,6 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       throw new Error('continuation-native-binding-mismatch');
     const transition = issueProgression(record, {
       mode: liveMode ?? 'auto',
-      now: (deps.now ?? Date.now)(),
       operator: Boolean(direction),
       decision: input.decision,
     });
@@ -181,7 +179,6 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     }
     if (input.action !== 'reconcile' && input.action !== 'result') await authorizeLive();
     const turn = await advanceCodexWorkTurn(record, context, {
-      admitted,
       found: { ...found, turnId: found.turnId },
       transition,
       selection,
@@ -189,7 +186,6 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     if (!turn.ready) return turn.response;
     if (input.action === 'context' && input.decision)
       record.implementationDecision = input.decision;
-    delete work.code;
     await save();
     if (input.action === 'context') {
       if (record.handoff) {
@@ -210,8 +206,6 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     }
   } catch (error) {
     if (error instanceof WorkflowPolicyHeld && codexWorkState(record)) {
-      codexWorkState(record)!.policyHeld = error.reason;
-      await save();
       return {
         status: 'policy-held' as const,
         id: record.id,

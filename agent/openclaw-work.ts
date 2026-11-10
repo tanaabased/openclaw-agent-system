@@ -55,7 +55,6 @@ export async function verifyOpenClawWork(input: {
     );
   const automatic = issueProgression(record, {
     mode: input.mode,
-    now: input.now,
     decision: input.decision,
   });
   const transition =
@@ -63,13 +62,11 @@ export async function verifyOpenClawWork(input: {
       ? automatic
       : issueProgression(record, {
           mode: input.mode,
-          now: input.now,
           operator: operator || Boolean(input.feedback),
           decision: input.decision,
         });
   if (transition.status !== 'ready') throw new WorkflowPolicyHeld(transition.reason);
   const retained = [
-    record.work?.operatorInput,
     record.work?.caller,
     record.work?.implementation,
     record.work?.publication,

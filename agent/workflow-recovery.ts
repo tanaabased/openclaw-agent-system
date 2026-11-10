@@ -35,10 +35,6 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
       'Native history discovery could not finish; missing evidence has not been proved absent.',
       'Reconcile this same task when native reads can complete. Preserve its receipts; do not recreate the chat, resend input, or repeat publication.',
     ],
-    'dispatch-native-history-incomplete': [
-      'Native history discovery exceeded the read budget before reaching the required evidence boundary.',
-      'Retry read-only reconciliation of the same task when history is readable. Preserve the original operation receipts; do not repeat uncertain effects.',
-    ],
     'dispatch-native-history-missing': [
       'Native history was exhausted without finding the retained turn that bounds this operation.',
       'Restore access to the original task history before reconciling. Keep its receipts and do not repeat an uncertain send or publication.',

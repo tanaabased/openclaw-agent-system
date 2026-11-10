@@ -6,12 +6,10 @@ const input = Type.Object({ runId: text, inputEventId: text }, { additionalPrope
 export const openclawWorkStateSchema = Type.Object(
   {
     scope: Type.Optional(Type.Union([Type.Literal('local'), Type.Literal('pull-request')])),
-    code: Type.Optional(text),
     selection: Type.Optional(assessmentSelectionSchema),
     implementation: Type.Optional(input),
     publication: Type.Optional(input),
     caller: Type.Optional(input),
-    operatorInput: Type.Optional(input),
   },
   { additionalProperties: false },
 );
