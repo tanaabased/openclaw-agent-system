@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
 import { parseCleanupConfiguration } from '../agent/cleanup-configuration.ts';
 import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
 import { runCodexDispatch, type CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
@@ -691,6 +692,118 @@ describe('agent/codex-feedback', () => {
     assert.ok(!prompt.includes(result.eventId));
     return { id, eventId: result.eventId };
   }
+
+  function senderHistory(items: Record<string, unknown>[] = []) {
+    deps.nativeRequest = async (method, params) => {
+      assert.equal(params.threadId, 'intake');
+      if (method === 'thread/turns/list')
+        return {
+          data: Array.from({ length: occurrence + 1 }, (_, index) => {
+            const id = occurrence - index;
+            return {
+              id: String(id),
+              startedAt: 100 + id * 10,
+              completedAt: id === occurrence ? null : 105 + id * 10,
+              status: id === occurrence ? 'inProgress' : 'completed',
+            };
+          }).slice(0, params.limit === 1 ? 1 : undefined),
+          nextCursor: null,
+        };
+      assert.equal(method, 'thread/items/list');
+      return {
+        data: [
+          { id: 'command', type: 'commandExecution', status: 'completed' },
+          ...(params.turnId === '1' ? items : []),
+        ].map((item) => ({ turnId: params.turnId, item })),
+        nextCursor: null,
+      };
+    };
+  }
+
+  it('should recover preparation lost before send and deliver the exact retained comment once', async () => {
+    const ref = await prepare(
+      commenter,
+      '@receiver implement option 1.\nKeep `quoted` text and $variables.',
+    );
+    const original = (await store.read()).records[0]!.feedback!.events[0]!.attempt!;
+    senderHistory();
+    // The first coordinator turn ends without executing the send or saving transient JS state.
+    occurrence++;
+    const recovered = await call('next');
+    assert.equal(recovered.status, 'feedback-prepared');
+    assert.ok('nativeHandoff' in recovered);
+    assert.ok('request' in recovered);
+    assert.deepEqual(recovered.request, original.request);
+    assert.equal(recovered.eventId, ref.eventId);
+    assert.equal(
+      (await store.read()).records[0]!.feedback!.events[0]!.attempt!.sourceTurnId,
+      String(occurrence),
+    );
+    const deliveries: unknown[] = [];
+    await runInNewContext('(async () => {' + recovered.nativeHandoff + '})()', {
+      text: () => {},
+      tools: {
+        mcp__codex_app__send_message_to_thread: async (request: unknown) => {
+          deliveries.push(JSON.parse(JSON.stringify(request)));
+          sent = true;
+          turn = 'feedback';
+          // Simulate an accepted native send whose response is lost before reconciliation.
+          throw new Error('response lost');
+        },
+      },
+    }).catch((error: Error) => assert.match(error.message, /response lost/));
+    assert.deepEqual(deliveries, [original.request]);
+    await call('reconcile', ref);
+    assert.equal((await store.read()).records[0]!.feedback!.events[0]!.phase, 'delivered');
+    occurrence++;
+    assert.equal((await call('next')).status, 'idle');
+    assert.equal(deliveries.length, 1);
+  });
+
+  for (const outcome of ['possible-send', 'denied', 'missing-history'] as const) {
+    it(`should retain ${outcome} feedback without preparing a duplicate`, async () => {
+      const ref = await prepare();
+      const original = (await store.read()).records[0]!.feedback!.events[0]!.attempt!;
+      if (outcome === 'possible-send')
+        senderHistory([
+          {
+            id: 'send',
+            type: 'mcpToolCall',
+            server: 'codex_app',
+            tool: 'send_message_to_thread',
+            status: 'failed',
+            arguments: original.request,
+          },
+        ]);
+      if (outcome === 'denied') {
+        receiptStatus = 'blocked';
+        senderHistory();
+      }
+      occurrence++;
+      assert.equal((await call('next')).status, 'idle');
+      const event = (await store.read()).records[0]!.feedback!.events[0]!;
+      assert.deepEqual(event.attempt!.request, original.request);
+      assert.equal(event.attempt!.id, original.id);
+      assert.equal(
+        event.code,
+        outcome === 'denied' ? 'continuation-native-approval-denied' : 'feedback-send-unresolved',
+      );
+      if (outcome !== 'denied') assert.equal((await call('reconcile', ref)).status, 'uncertain');
+    });
+  }
+
+  it('should reauthorize an unsent comment before recovering its native send', async () => {
+    await prepare();
+    senderHistory();
+    comments[0]!.body = '@receiver changed direction';
+    comments[0]!.updatedAt = '2026-10-13T02:00:00Z';
+    occurrence++;
+    await call('next');
+    const event = (await store.read()).records[0]!.feedback!.events[0]!;
+    assert.equal(event.attempt, undefined);
+    assert.equal(event.phase, 'blocked');
+    assert.equal(event.code, 'feedback-source-changed');
+  });
   it('should deliver native conversation once without a feedback result or a reply gate', async () => {
     const before = (await store.read()).records[0]!;
     const ref = await prepare(commenter, '@receiver why this approach?');

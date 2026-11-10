@@ -73,17 +73,12 @@ if (runtimeRoute === 'intake' && runtimeInput.action === 'scan' && response?.sta
 /** consume the exact request once, separately from host-access preparation. */
 export function codexNativeHandoff(
   pluginData: string,
-  route: 'dispatch' | 'continuation' | 'retirement' | 'feedback',
+  route: 'dispatch' | 'continuation' | 'retirement',
 ) {
   const key = JSON.stringify(
-    `agent-system:${['retirement', 'feedback'].includes(route) ? 'dispatch' : route}:${pluginData}`,
+    `agent-system:${route === 'retirement' ? 'dispatch' : route}:${pluginData}`,
   );
-  const status =
-    route === 'retirement'
-      ? 'retirement-prepared'
-      : route === 'feedback'
-        ? 'feedback-prepared'
-        : 'prepared';
+  const status = route === 'retirement' ? 'retirement-prepared' : 'prepared';
   const tool =
     route === 'retirement'
       ? 'set_thread_archived'
@@ -95,7 +90,12 @@ if (!prepared || prepared.status !== '${status}') throw new Error('${route}-prep
 store(${key}, null);
 
 
-text({id: prepared.id, ${route === 'feedback' ? 'eventId: prepared.eventId, ' : ''}native: await tools.mcp__codex_app__${tool}(prepared.request)});`;
+text({id: prepared.id, native: await tools.mcp__codex_app__${tool}(prepared.request)});`;
+}
+
+/** carry the exact prepared input without depending on a separate ephemeral store write. */
+export function codexFeedbackHandoff(request: { threadId: string; prompt: string }) {
+  return `text(await tools.mcp__codex_app__send_message_to_thread(${JSON.stringify(request)}));`;
 }
 
 /** one desktop observation, then the original context invocation through normal native approval. */

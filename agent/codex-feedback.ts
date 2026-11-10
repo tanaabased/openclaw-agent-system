@@ -9,6 +9,8 @@ import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import codexContinuationNative from './codex-continuation-native.ts';
 import type { CodexDispatchDependencies } from './codex-dispatch-context.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
+import unsubmittedNativeRequest from './codex-dispatch-unsubmitted.ts';
+import { codexFeedbackHandoff } from './codex-dispatch-handoff.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
 import authorizeCodexFeedback from './codex-feedback-authority.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';
@@ -47,6 +49,7 @@ export interface CodexFeedbackDependencies extends CodexDispatchDependencies {
   replyProvider?: (workspace: string, signal: AbortSignal) => Promise<OpenClawFeedbackProvider>;
   feedbackConnect?: typeof connectCodexFeedback;
   continuationNative?: ReturnType<typeof codexContinuationNative>;
+  nativeRequest?: Parameters<typeof unsubmittedNativeRequest>[0];
 }
 /** the existing intake owns sends; feedback has no independent scheduler or work authority. */
 export default async function runCodexFeedback(
@@ -97,18 +100,19 @@ export default async function runCodexFeedback(
     caller !== activation!.sourceThreadId
   )
     throw new Error('feedback-schedule-caller-required');
-  const connection = deps.native
+  const nativeConnection = deps.native
     ? undefined
     : await connectCodexThreads(current.workspace, current.codexHome);
-  const native = deps.native ?? codexDispatchNative(connection!.request);
+  const native = deps.native ?? codexDispatchNative(nativeConnection!.request);
   const receiptFor: ReturnType<typeof codexContinuationNative> =
     deps.continuationNative ??
     (async (...args) => {
-      const host = connection ?? (await connectCodexThreads(current.workspace, current.codexHome));
+      const host =
+        nativeConnection ?? (await connectCodexThreads(current.workspace, current.codexHome));
       try {
         return await codexContinuationNative(host.request)(...args);
       } finally {
-        if (!connection) await host.close();
+        if (!nativeConnection) await host.close();
       }
     });
   try {
@@ -268,8 +272,41 @@ export default async function runCodexFeedback(
                 delete event.retry;
                 delete event.retryAfter;
                 await save();
+                continue;
               }
-              continue;
+              // Recover only a completed sender turn with complete native proof that no
+              // send was invoked. Missing acknowledgments and actual refusals never replay.
+              const sender = event.attempt.sourceThreadId ?? record.sourceThreadId;
+              const historyRequest = nativeConnection?.request ?? deps.nativeRequest;
+              const unsubmitted =
+                input.action === 'next' &&
+                historyRequest &&
+                (await unsubmittedNativeRequest(
+                  historyRequest,
+                  sender,
+                  {
+                    turnId: event.attempt.sourceTurnId,
+                    threadId: event.attempt.request.threadId,
+                  },
+                  sender === caller ? occurrence?.id : undefined,
+                  'send_message_to_thread',
+                ));
+              if (!unsubmitted) {
+                event.code = 'feedback-send-unresolved';
+                await save();
+                if (input.action === 'reconcile')
+                  return {
+                    status: 'uncertain',
+                    code: event.code,
+                    id: record.id,
+                    eventId: event.id,
+                  };
+                continue;
+              }
+              delete event.attempt;
+              delete event.code;
+              event.phase = 'queued';
+              await save();
             }
             const provider = await providerFor();
             const admitted = dispatchAdmission(record, intake.records ?? []);
@@ -386,6 +423,7 @@ export default async function runCodexFeedback(
                 id: record.id,
                 eventId: event.id,
                 request: event.attempt.request,
+                nativeHandoff: codexFeedbackHandoff(event.attempt.request),
               };
             }
             {
@@ -480,6 +518,6 @@ export default async function runCodexFeedback(
       };
     throw error;
   } finally {
-    await connection?.close();
+    await nativeConnection?.close();
   }
 }

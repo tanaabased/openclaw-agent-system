@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { runInNewContext } from 'node:vm';
 
-import codexDispatchHandoff, { codexNativeHandoff } from '../agent/codex-dispatch-handoff.ts';
+import codexDispatchHandoff, {
+  codexNativeHandoff,
+  codexFeedbackHandoff,
+} from '../agent/codex-dispatch-handoff.ts';
 
 const runtime = {
   nodeExecutable: '/node',
@@ -71,12 +74,17 @@ function fixture(results: (Record<string, unknown> | Error)[], failCreation = fa
     context.runtimeInput = input;
     return runInNewContext('(async () => {' + codexDispatchHandoff(runtime) + '})()', context);
   };
-  const send = (route: 'dispatch' | 'continuation' | 'retirement' | 'feedback' = 'dispatch') =>
+  const send = (route: 'dispatch' | 'continuation' | 'retirement' = 'dispatch') =>
     runInNewContext(
       '(async () => {' + codexNativeHandoff(runtime.pluginData, route) + '})()',
       context,
     );
-  return { execute, send, commands, polls, creations, output };
+  const feedback = (request: { threadId: string; prompt: string }) =>
+    runInNewContext('(async () => {' + codexFeedbackHandoff(request) + '})()', {
+      tools: context.tools,
+      text: context.text,
+    });
+  return { execute, send, feedback, commands, polls, creations, output };
 }
 
 describe('agent/codex-dispatch-handoff', () => {
@@ -119,8 +127,12 @@ describe('agent/codex-dispatch-handoff', () => {
     assert.equal(denied.creations.length, 0);
   });
 
-  it('should send complete issue and pr feedback once and reconcile its retained source', async () => {
-    for (const item of ['issues', 'pull']) {
+  it('should send exact issue, pr and inline feedback without a preceding store write', async () => {
+    for (const item of [
+      'issues/42#issuecomment-1',
+      'pull/42#issuecomment-1',
+      'pull/42#discussion_r1',
+    ]) {
       for (const fail of [false, true]) {
         const feedback = {
           status: 'feedback-prepared',
@@ -129,26 +141,24 @@ describe('agent/codex-dispatch-handoff', () => {
           request: {
             threadId: 'existing-issue-chat',
             prompt:
-              `> @pirog plan only; do not push.\n[Comment ↗](https://github.com/org/repo/${item}/42#issuecomment-1)` +
-              '\n\nCall feedback context with the retained eventId. Receipt: exact-source',
+              `> @pirog plan only; do not push.\n[Comment ↗](https://github.com/org/repo/${item})` +
+              '\n> `quoted` "text" $literal \n> line two',
           },
         };
-        const test = fixture([success(feedback), success({ status: 'delivered' })], fail);
-        await test.execute();
-        if (fail) await assert.rejects(test.send('feedback'), /native rejection/);
-        else await test.send('feedback');
+        const test = fixture([success({ status: 'delivered' })], fail);
+        if (fail) await assert.rejects(test.feedback(feedback.request), /native rejection/);
+        else await test.feedback(feedback.request);
         assert.deepEqual(JSON.parse(JSON.stringify(test.creations)), [feedback.request]);
-        await assert.rejects(test.send('feedback'), /feedback-prepared-request-unavailable/);
         await test.execute(
-          { action: 'reconcile', source: `https://github.com/org/repo/${item}/42#issuecomment-1` },
+          { action: 'reconcile', source: `https://github.com/org/repo/${item}` },
           'feedback',
         );
         const input = JSON.parse(String(test.commands.at(-1)!.cmd).split('\n')[1]!);
         assert.deepEqual(input, {
           action: 'reconcile',
-          source: `https://github.com/org/repo/${item}/42#issuecomment-1`,
+          source: `https://github.com/org/repo/${item}`,
         });
-        assert.equal(test.commands.length, 2);
+        assert.equal(test.commands.length, 1);
       }
     }
   });

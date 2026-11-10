@@ -31,6 +31,14 @@ const events: Record<Exclude<IssueNoticeEvent, 'failure'>, NoticeCopy> = {
 };
 
 function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
+  if (code === 'feedback-send-unresolved')
+    return {
+      severity: 'warning',
+      title: 'Comment delivery is unresolved',
+      summary:
+        'The comment is retained, but native evidence has not confirmed delivery or that no send was attempted.',
+      next: 'Reconcile the original native send. A later assignment scan can recover it only after verifying that no send occurred; do not send a duplicate manually.',
+    };
   if (code === 'assessment-render-request-invalid')
     return {
       severity: 'error',

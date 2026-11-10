@@ -37,6 +37,111 @@ describe('agent/codex-dispatch-unsubmitted', () => {
       'current',
     );
 
+  const proveSend = (request = fixture()) =>
+    unsubmittedCreation(
+      request,
+      'intake',
+      { turnId: 'prepared', threadId: 'child' },
+      'current',
+      'send_message_to_thread',
+    );
+
+  it('should recover an unsent feedback request by its exact native preparation turn', async () => {
+    assert.deepEqual(await proveSend(), { turnId: 'prepared' });
+    assert.equal(await proveSend(fixture([command], [current])), undefined);
+    assert.equal(await proveSend(fixture([command], [{ ...current, id: 'prepared' }])), undefined);
+    assert.equal(
+      await proveSend(fixture([command], [current, { ...oldTurn, status: 'inProgress' }])),
+      undefined,
+    );
+    assert.equal(
+      await proveSend(fixture([command], [current, { ...oldTurn, status: 'interrupted' }])),
+      undefined,
+    );
+  });
+
+  it('should never replay a possible send even with altered content or a failed receipt', async () => {
+    for (const status of ['completed', 'failed', 'inProgress']) {
+      for (const args of [undefined, {}, { threadId: 'child', prompt: 'altered content' }]) {
+        assert.equal(
+          await proveSend(
+            fixture([
+              {
+                id: 'send',
+                type: 'mcpToolCall',
+                server: 'codex_app',
+                tool: 'send_message_to_thread',
+                status,
+                arguments: args,
+              },
+            ]),
+          ),
+          undefined,
+        );
+      }
+    }
+    assert.deepEqual(
+      await proveSend(
+        fixture([
+          {
+            id: 'other',
+            type: 'mcpToolCall',
+            server: 'codex_app',
+            tool: 'send_message_to_thread',
+            status: 'completed',
+            arguments: { threadId: 'another-child' },
+          },
+        ]),
+      ),
+      { turnId: 'prepared' },
+    );
+  });
+
+  it('should preserve uncertain feedback when history is incomplete, unavailable or changed', async () => {
+    const base = fixture();
+    await assert.rejects(
+      proveSend(async () => {
+        throw new Error('unavailable');
+      }),
+      /unavailable/,
+    );
+    assert.equal(await proveSend(fixture([])), undefined);
+    assert.equal(
+      await proveSend(async (method, params) => {
+        if (method === 'thread/turns/list' && params.limit === 1)
+          return { data: [{ id: 'new-turn' }] };
+        return base(method, params);
+      }),
+      undefined,
+    );
+    assert.equal(
+      await proveSend(async (method, params) => {
+        if (method === 'thread/items/list' && params.turnId === 'prepared') {
+          return params.cursor
+            ? {
+                data: [
+                  {
+                    turnId: 'prepared',
+                    item: {
+                      id: 'send',
+                      type: 'mcpToolCall',
+                      server: 'codex_app',
+                      tool: 'send_message_to_thread',
+                      status: 'completed',
+                      arguments: { threadId: 'child' },
+                    },
+                  },
+                ],
+                nextCursor: null,
+              }
+            : { data: [{ turnId: 'prepared', item: command }], nextCursor: 'next' };
+        }
+        return base(method, params);
+      }),
+      undefined,
+    );
+  });
+
   it('should prove a completed preparation without trusting assistant prose', async () => {
     assert.deepEqual(await prove(), { turnId: 'prepared' });
     assert.deepEqual(await prove(fixture([command, { ...message, text: 'a chat exists' }])), {

@@ -55,7 +55,9 @@ export default function prepareDispatchReport(input: {
   const feedback = active.flatMap((record) =>
     (record.feedback?.events ?? []).map((event) => ({ record, event })),
   );
-  const queuedFeedback = feedback.filter(({ event }) => event.phase === 'queued');
+  const queuedFeedback = feedback.filter(({ event }) =>
+    ['queued', 'prepared', 'running'].includes(event.phase),
+  );
   const feedbackProblems = active.filter(codexFeedbackProblem);
   const started = managing
     .filter((record) => record.dispatchedAt !== undefined && record.intakeReportedAt === undefined)
@@ -96,6 +98,13 @@ export default function prepareDispatchReport(input: {
       code: record.feedback!.code!,
       operation: 'feedback',
     })),
+    ...feedback
+      .filter(({ event }) => event.code && event.phase !== 'delivered')
+      .map(({ record, event }) => ({
+        id: record.id + ':' + event.id,
+        code: event.code!,
+        operation: 'feedback delivery',
+      })),
     ...retirementProblems.map((record) => ({
       id: record.id,
       code: record.retirement!.code!,

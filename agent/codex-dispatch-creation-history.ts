@@ -6,7 +6,7 @@ import type { CodexThreadRequest } from './codex-thread-client.ts';
 export default async function creationHistory(
   request: CodexThreadRequest,
   threadId: string,
-  prepared: { createdAt: number; turnId?: string },
+  prepared: { createdAt?: number; turnId?: string },
   currentTurnId?: string,
 ) {
   const turns: Record<string, unknown>[] = [];
@@ -34,7 +34,7 @@ export default async function creationHistory(
       newerStart = turn.startedAt;
       turns.push(turn);
       if (turn.id === currentTurnId) {
-        if (turn.startedAt * 1000 <= prepared.createdAt) return;
+        if (prepared.createdAt !== undefined && turn.startedAt * 1000 <= prepared.createdAt) return;
         continue;
       }
       if (
@@ -45,10 +45,15 @@ export default async function creationHistory(
         turn.completedAt > nextStartedAt
       )
         return;
-      if (turn.startedAt * 1000 <= prepared.createdAt) {
+      if (
+        prepared.createdAt === undefined
+          ? turn.id === prepared.turnId
+          : turn.startedAt * 1000 <= prepared.createdAt
+      ) {
         // native turn times are seconds; the retained preparation time is milliseconds.
         if (
-          prepared.createdAt >= (turn.completedAt + 1) * 1000 ||
+          (prepared.createdAt !== undefined &&
+            prepared.createdAt >= (turn.completedAt + 1) * 1000) ||
           (prepared.turnId !== undefined && prepared.turnId !== turn.id)
         )
           return;

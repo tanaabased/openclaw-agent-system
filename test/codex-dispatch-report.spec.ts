@@ -299,6 +299,8 @@ describe('agent/codex-dispatch-report', () => {
             attempt: { turnId: 'native-turn' },
           },
           { id: 'unsent', phase: 'queued' },
+          { id: 'prepared', phase: 'prepared', code: 'feedback-send-unresolved' },
+          { id: 'running', phase: 'running' },
         ],
       },
     } as DispatchRecord;
@@ -308,7 +310,10 @@ describe('agent/codex-dispatch-report', () => {
       state: { ...state, records: [record] },
     });
     assert.doesNotMatch(first.response, /feedback item delivered to chats/);
-    assert.match(first.response, /Queued feedback:\*\* 1 item across 1 issue/);
+    assert.match(first.response, /Queued feedback:\*\* 3 items across 1 issue/);
+    assert.match(first.response, /feedback-send-unresolved/);
+    assert.match(first.response, /NOTIFY/);
+    assert.notEqual(first.health, '');
     assert.match(first.response, /Slots:\*\* 1\/3 occupied/);
     assert.doesNotMatch(first.response, /PRIVATE|PUBLIC/);
   });
