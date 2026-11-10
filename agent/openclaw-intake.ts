@@ -1,40 +1,40 @@
-import IssuePickupFailure from './issue-pickup-failure.ts';
 import { omit } from 'lodash-es';
-import reconcileIssuePickup from './issue-pickup-reconcile.ts';
-import issuePickupReport from './issue-pickup-report.ts';
-import openClawCapacity, { openClawItemOccupied } from './openclaw-capacity.ts';
+import { realpath } from 'node:fs/promises';
+import GitHubIdentityCache from '../channels/github/identity-cache.ts';
+import type { IssuePickupClient } from '../channels/github/provider/issue-pickup-client.ts';
+import AssignmentClaimStore from './assignment-claim-store.ts';
+import DiscoveryBudget from './discovery-budget.ts';
+import { assertDispatchStorage, dispatchStorageNotice } from './dispatch-storage.ts';
+import type { IssuePickupAuthority } from './issue-pickup-authority.ts';
 import type IssuePickupEnrollmentStore from './issue-pickup-enrollment.ts';
+import IssuePickupFailure from './issue-pickup-failure.ts';
 import {
   issuePickupAutomationId,
   issuePickupConfigurationCode,
   issuePickupErrorCode,
 } from './issue-pickup-jobs.ts';
-import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
-import AssignmentClaimStore from './assignment-claim-store.ts';
+import reconcileIssuePickup from './issue-pickup-reconcile.ts';
+import issuePickupReport from './issue-pickup-report.ts';
 import issuePickup, { pickupAuthority, type PickupInput } from './issue-pickup.ts';
-import type { IssuePickupClient } from '../channels/github/provider/issue-pickup-client.ts';
-import { assertDispatchStorage, dispatchStorageNotice } from './dispatch-storage.ts';
-import GitHubIdentityCache from '../channels/github/identity-cache.ts';
-import type { IssuePickupAuthority } from './issue-pickup-authority.ts';
-import DiscoveryBudget from './discovery-budget.ts';
-import { realpath } from 'node:fs/promises';
+import openClawCapacity, { openClawItemOccupied } from './openclaw-capacity.ts';
+import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
 
-import { cliDiagnosticContext } from '../core/cli-diagnostic-context.ts';
-import assignmentIntakePolicy from './assignment-intake-policy.ts';
-import {
-  githubNotificationRuntimeBlocker,
-  githubNotificationRuntimeDiagnostics,
-} from '../channels/github/notification-policy.ts';
 import IntakeRecordStore, {
   IntakeError,
   intakeLocation,
 } from '../channels/github/intake/record-store.ts';
 import scanAssignments from '../channels/github/intake/scan-assignments.ts';
+import {
+  githubNotificationRuntimeBlocker,
+  githubNotificationRuntimeDiagnostics,
+} from '../channels/github/notification-policy.ts';
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
-import type { AgentSystemLifecycleContribution } from '../core/lifecycle-registry.ts';
-import type { AgentManifest } from '../manifest/types.ts';
-import type AgentManifestService from '../manifest/service.ts';
 import type { GitHubNotificationItemSelector } from '../channels/github/provider/work-item.ts';
+import { cliDiagnosticContext } from '../core/cli-diagnostic-context.ts';
+import type { AgentSystemLifecycleContribution } from '../core/lifecycle-registry.ts';
+import type AgentManifestService from '../manifest/service.ts';
+import type { AgentManifest } from '../manifest/types.ts';
+import assignmentIntakePolicy from './assignment-intake-policy.ts';
 
 export interface OpenClawIntakeDependencies {
   issuePickup?: IssuePickupAuthority;
@@ -474,7 +474,7 @@ export default class OpenClawIntake {
                   code: 'dispatch-storage-' + result.storage.level,
                   message: result.storage.message,
                   remediation:
-                    'Reconcile verified retired history; keep existing work in its owning chat.',
+                    'Complete pending native cleanup; keep existing work in its owning chat.',
                 },
               ]
             : []),

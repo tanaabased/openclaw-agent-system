@@ -1,9 +1,3 @@
-import { feedbackAuthorityDigest } from './notification-authority.ts';
-import feedbackDiscovery from './feedback-discovery.ts';
-import type DiscoveryBudget from './discovery-budget.ts';
-import { automationHash } from './automation-hash.ts';
-import type { FeedbackSourceState, FeedbackSourceEvent } from './feedback-state.ts';
-import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import {
   feedbackIdentities,
   workflowFeedbackAccepting,
@@ -15,13 +9,19 @@ import {
 import {
   admitReviewFeedback,
   isReviewFeedback,
-  reviewFeedbackRevision,
   reviewFeedback,
+  reviewFeedbackRevision,
   reviewReplyFeedback,
   type GitHubCanonicalFeedback,
 } from '../channels/github/provider/review-feedback.ts';
 import type { GitHubNotificationCommentClient } from '../channels/github/provider/work-event-types.ts';
 import type { GitHubIdentity } from '../channels/github/provider/work-item.ts';
+import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
+import { automationHash } from './automation-hash.ts';
+import type DiscoveryBudget from './discovery-budget.ts';
+import feedbackDiscovery from './feedback-discovery.ts';
+import type { FeedbackSourceEvent, FeedbackSourceState } from './feedback-state.ts';
+import { feedbackAuthorityDigest } from './notification-authority.ts';
 
 export function feedbackRevision(source: GitHubCanonicalFeedback) {
   return isReviewFeedback(source)
@@ -70,7 +70,7 @@ export function observeFeedbackPolicy(
   if (accepting && state.admission?.enabled === false) {
     state.admission = {
       enabled: true,
-      after: state.admission.observedAt ?? state.scannedTime ?? now,
+      after: state.admission.observedAt,
       observedAt: now,
     };
     // fresh reads baseline the new window instead of resuming disabled-period pages.
@@ -110,7 +110,6 @@ export async function discoverFeedback(input: {
       if (!sources.some((source) => source.nodeId === saved.nodeId)) sources.push(saved);
     }
   for (const event of state.events) {
-    if (event.phase === 'published' || event.receipt) continue;
     const source = JSON.parse(event.source) as GitHubCanonicalFeedback;
     event.policyHeld =
       accepting && admitFeedback(input.policy, client.identity, source).disposition === 'approved'
@@ -221,12 +220,7 @@ export async function discoverFeedback(input: {
     )
       continue;
     // provider receipts, not copied markers or account identity, identify our own replies.
-    if (
-      ownCommentIds?.includes(source.nodeId) ||
-      state.events.some((event) => event.receipt?.nodeId === source.nodeId) ||
-      state.completed?.some((event) => event.receipt?.nodeId === source.nodeId)
-    )
-      continue;
+    if (ownCommentIds?.includes(source.nodeId)) continue;
     if (!accepting) continue;
     const after = state.admission?.after;
     if (after !== undefined) {
@@ -243,7 +237,6 @@ export async function discoverFeedback(input: {
     )
       continue;
     pending.push({
-      native: true,
       id,
       sourceId: source.nodeId,
       number,

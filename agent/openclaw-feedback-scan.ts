@@ -1,21 +1,20 @@
-import feedbackSources from './feedback-sources.ts';
-import replyOwnPublications from './reply-own-publications.ts';
 import { workflowFeedbackAvailable } from '../channels/github/feedback-policy.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import feedbackDiscoveryOwner from './feedback-discovery-owner.ts';
 import DiscoveryBudget, { DiscoveryPaused } from './discovery-budget.ts';
+import feedbackDiscoveryOwner from './feedback-discovery-owner.ts';
 import feedbackOwnPublications from './feedback-own-publications.ts';
 import { discoverFeedback } from './feedback-source.ts';
+import feedbackSources from './feedback-sources.ts';
 import {
   type default as OpenClawDispatchContext,
   openClawDispatchFailureCode,
 } from './openclaw-dispatch-context.ts';
 import type { OpenClawDispatchRecord, OpenClawDispatchState } from './openclaw-dispatch-state.ts';
-
+import replyOwnPublications from './reply-own-publications.ts';
 export function openClawFeedbackEnabled(manifest: AgentManifest) {
   return workflowFeedbackAvailable(manifest.github?.notifications, 'issue-assignment');
 }
@@ -24,7 +23,6 @@ export interface OpenClawFeedbackScan {
   before: string;
   feedback: NonNullable<OpenClawDispatchRecord['feedback']>;
 }
-
 /** provider reads stay outside the journal lock; only unchanged owners accept the snapshot. */
 export async function scanOpenClawFeedback(input: {
   service: Pick<OpenClawDispatchContext, 'scope' | 'dependencies' | 'validate'>;
@@ -44,7 +42,6 @@ export async function scanOpenClawFeedback(input: {
     .filter(
       (record) =>
         !record.supersededBy &&
-        !record.retired &&
         !record.retirement &&
         !record.reset &&
         record.sessionCreation?.verified &&
@@ -189,7 +186,7 @@ export async function scanOpenClawFeedback(input: {
           for (const event of feedback.events)
             if (
               event.nodeId === nodeId &&
-              !['published', 'blocked'].includes(event.phase) &&
+              event.phase !== 'blocked' &&
               revisions.has(event.sourceId) &&
               revisions.get(event.sourceId) !== event.revision
             ) {
@@ -270,5 +267,4 @@ export async function scanOpenClawFeedback(input: {
   }
   return scans;
 }
-
 export { default as applyOpenClawFeedbackScans } from './apply-feedback-scans.ts';

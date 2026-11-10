@@ -1,34 +1,36 @@
-import taskPullRequest from './task-pull-request.ts';
-import pendingRetirement from './pending-retirement.ts';
-import retirementEffects from './retirement-effects.ts';
-import retirementConsumption from './retirement-consumption.ts';
-import retirementLocalData from './retirement-local-data.ts';
-import replyOwnPublications from './reply-own-publications.ts';
-import { dispatchAdmission, managedIssueState } from './managed-issue.ts';
-import { verifyDispatchWorktree } from './codex-dispatch-project.ts';
+import reactivateAssignmentFeedback from './assignment-feedback-reactivation.ts';
 import cleanupConfiguration from './cleanup-configuration.ts';
-import retainedIntakePolicy from './retained-intake-policy.ts';
-import DiscoveryBudget from './discovery-budget.ts';
-import codexRetirementNative from './codex-retirement-native.ts';
+import { inspectCodexDispatchActivation } from './codex-automations.ts';
+import type { CodexDispatchDependencies } from './codex-dispatch-context.ts';
+import { codexDispatchNative } from './codex-dispatch-native.ts';
+import { verifyDispatchWorktree } from './codex-dispatch-project.ts';
+import CodexDispatchStore from './codex-dispatch-state.ts';
+import connectCodexFeedback from './codex-feedback-client.ts';
+import { connectCodexGitHub, selectCodexIntake } from './codex-intake.ts';
 import codexRetirementCleanup, {
   type RetirementArchiveRequest,
 } from './codex-retirement-cleanup.ts';
-import reactivateAssignmentFeedback from './assignment-feedback-reactivation.ts';
-import connectCodexFeedback from './codex-feedback-client.ts';
-import { inspectCodexDispatchActivation } from './codex-automations.ts';
-import { codexDispatchNative } from './codex-dispatch-native.ts';
-import type { CodexDispatchDependencies } from './codex-dispatch-context.ts';
-import CodexDispatchStore from './codex-dispatch-state.ts';
-import { connectCodexGitHub, selectCodexIntake } from './codex-intake.ts';
+import codexRetirementNative from './codex-retirement-native.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
+import DiscoveryBudget from './discovery-budget.ts';
+import { dispatchAdmission, managedIssueState } from './managed-issue.ts';
+import pendingRetirement from './pending-retirement.ts';
 import reconcileAssignmentLifecycle from './reconcile-assignment-lifecycle.ts';
-
+import replyOwnPublications from './reply-own-publications.ts';
+import retainedIntakePolicy from './retained-intake-policy.ts';
+import retirementConsumption from './retirement-consumption.ts';
+import retirementEffects from './retirement-effects.ts';
+import retirementLocalData from './retirement-local-data.ts';
+import taskPullRequest from './task-pull-request.ts';
 /** lifecycle reconciliation belongs to the existing native intake occurrence, before feedback selection. */
 export default async function reconcileCodexLifecycle(
   pluginData: string,
   deps: CodexDispatchDependencies,
   inventory?: unknown,
-  manual?: { id: string; caller: string },
+  manual?: {
+    id: string;
+    caller: string;
+  },
 ) {
   const current = await selectCodexIntake(pluginData, deps);
   const readConfiguration = deps.readCleanupConfiguration ?? cleanupConfiguration;
@@ -46,10 +48,9 @@ export default async function reconcileCodexLifecycle(
     !snapshot.records.some(
       (record) =>
         !record.supersededBy &&
-        !record.retired &&
         !record.reset &&
         (manual?.id === record.id ||
-          (record.lifecycleCheckedAt ?? -Infinity) + 60_000 <= now ||
+          (record.lifecycleCheckedAt ?? -Infinity) + 60000 <= now ||
           record.retirement?.archiveAttempt ||
           record.retirement?.code === 'retirement-native-inventory-required'),
     )
@@ -89,7 +90,12 @@ export default async function reconcileCodexLifecycle(
           target.retirement?.operatorRequest?.targetId !== target.id)
       )
         throw new Error('dispatch-retire-target-mismatch');
-      let prepared: { id: string; request: RetirementArchiveRequest } | undefined;
+      let prepared:
+        | {
+            id: string;
+            request: RetirementArchiveRequest;
+          }
+        | undefined;
       let needsInventory = false;
       const client = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
       await reconcileAssignmentLifecycle({
@@ -302,7 +308,11 @@ export default async function reconcileCodexLifecycle(
         };
       if (target)
         return {
-          status: target.retired ? 'retired' : target.retirement ? 'retirement-pending' : 'active',
+          status: !state.records.some((record) => record.id === target.id)
+            ? 'retired'
+            : target.retirement
+              ? 'retirement-pending'
+              : 'active',
           id: target.id,
           retirement: target.retirement,
         };

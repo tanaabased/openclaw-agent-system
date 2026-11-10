@@ -1,8 +1,8 @@
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import retirementSessionIdentity from './openclaw-retirement-identity.ts';
 import observeUnavailableRetirementSession from './openclaw-retirement-unavailable.ts';
 import workflowFailure from './workflow-failure.ts';
-import retirementSessionIdentity from './openclaw-retirement-identity.ts';
 
 export function retirementObject(value: unknown, field: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -25,7 +25,7 @@ export async function observeRetiringSession(
   record: OpenClawDispatchRecord,
   agentId: string,
 ) {
-  const intent = retirementSessionIdentity(record, agentId);
+  const intent = retirementSessionIdentity(record);
   if (!intent) return undefined;
   if (
     !intent.sessionId ||

@@ -1,25 +1,25 @@
-import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
-import { feedbackRevision } from '../agent/feedback-source.ts';
-import replyOwnPublications from '../agent/reply-own-publications.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { feedbackRevision } from '../agent/feedback-source.ts';
+import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
+import replyOwnPublications from '../agent/reply-own-publications.ts';
 
 import assessmentSkillSource from '../agent/assessment-skill-source.ts';
+import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
+import runCodexFeedback from '../agent/codex-feedback.ts';
+import { selectCodexIntake } from '../agent/codex-intake.ts';
+import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
+import { issueKey } from '../agent/dispatch-pending.ts';
 import feedbackReply, { type FeedbackReplyDependencies } from '../agent/feedback-reply.ts';
+import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
+import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
 import type { OpenClawFeedbackProvider } from '../agent/openclaw-feedback.ts';
+import OpenClawIntake from '../agent/openclaw-intake.ts';
 import replyOwner, { type ReplyOwner } from '../agent/reply-owner.ts';
 import ReplyStore from '../agent/reply-store.ts';
-import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
-import runCodexFeedback from '../agent/codex-feedback.ts';
-import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
-import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
-import { selectCodexIntake } from '../agent/codex-intake.ts';
-import { issueKey } from '../agent/dispatch-pending.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
-import OpenClawIntake from '../agent/openclaw-intake.ts';
 import { account, intakeFixture } from './github-intake-fixture.ts';
 import {
   reviewClientFixture,
@@ -96,15 +96,8 @@ describe('agent/feedback-reply', () => {
         selections++;
         return assessmentSkillSource({ name, path: join(root, 'SKILL.md'), scope: 'user' });
       },
-      managed: async (target, purpose, privateText) =>
-        replyOwner(
-          owners,
-          deps.binding.session,
-          deps.binding.incarnation,
-          target,
-          purpose,
-          privateText,
-        ),
+      managed: async (target, purpose) =>
+        replyOwner(owners, deps.binding.session, deps.binding.incarnation, target, purpose),
     };
   });
   afterEach(async () => {
@@ -328,25 +321,19 @@ describe('agent/feedback-reply', () => {
       assert.equal(writes, 1);
     });
   }
-  it('should preserve legacy drafts while writing each new operation independently', async () => {
-    const first = await candidate();
+  it('should reject an aggregate reply journal without migrating or changing it', async () => {
+    await candidate();
     const store = new ReplyStore(deps.root, deps.binding);
     const drafts = await store.read();
     const firstPath = join(deps.root, `github-reply-${store.scope}-${drafts[0]!.id}.json`);
-    await writeFile(store.path, JSON.stringify({ scope: store.scope, drafts }), { mode: 0o600 });
-    await rm(firstPath);
-    deps.inputId = 'later-input';
-    const second = await candidate(`${url}#issuecomment-5`);
-    assert.notDeepEqual(second, first);
-    assert.equal((await store.read()).length, 2);
-    const oldContents = await readFile(store.path, 'utf8');
-    await call('publish', { ...first });
-    const readback = await new ReplyStore(deps.root, deps.binding).read();
-    assert.ok(readback.find((draft) => matches(draft, first))?.receipt);
-    assert.ok(readback.find((draft) => matches(draft, second)));
-    assert.equal(await readFile(store.path, 'utf8'), oldContents);
+    const aggregate = JSON.stringify({ scope: store.scope, drafts });
+    await writeFile(store.path, aggregate, { mode: 0o600 });
+    const before = await readFile(firstPath, 'utf8');
+    await assert.rejects(store.read(), /reply-clean-start-required/);
+    assert.equal(await readFile(store.path, 'utf8'), aggregate);
+    assert.equal(await readFile(firstPath, 'utf8'), before);
+    assert.equal(writes, 0);
   });
-
   it('should reconcile a sent reply after its source comment disappears', async () => {
     const reply = await candidate(`${url}#issuecomment-4`);
     lost = hidden = true;
@@ -803,8 +790,7 @@ describe('agent/feedback-reply', () => {
           revision: 'b'.repeat(64),
           createdAt: index,
           policyDigest: 'c'.repeat(64),
-          phase: 'responded' as const,
-          result: { privateText: 'retained history '.repeat(1800) },
+          phase: 'delivered' as const,
         })),
       },
     ];
@@ -1019,7 +1005,6 @@ describe('agent/feedback-reply', () => {
           inactive: false,
           repository: 'owner/repo',
           number: 3,
-          result: { outcome: 'blocked', summary: 'continuation-turn-state-unresolved' } as never,
         },
       ];
       const before = structuredClone(owners);
@@ -1094,11 +1079,9 @@ describe('agent/feedback-reply', () => {
         inactive: false,
         repository: 'owner/repo',
         number: 3,
-        result: { outcome: 'plan-ready', summary: 'Old plan.' } as never,
       },
     ];
     const reply = await candidate(target);
-    owners[0]!.result = { outcome: 'clarification-needed', summary: 'Changed plan.' } as never;
     assert.equal((await call('publish', { ...reply })).status, 'published');
     const repeated = await call('compose', {
       target,
@@ -1403,15 +1386,6 @@ describe('agent/feedback-reply', () => {
         incarnation: 'session',
         inactive: false,
         ...{ summary: { receipt: { nodeId: 'existing' } } },
-        result: {
-          version: 1,
-          outcome: 'plan-ready',
-          summary: 'Retained assessment.',
-          assessment: 'Assessment.',
-          plan: 'Plan.',
-          evidence: [],
-          progress: { completed: [], remaining: [] },
-        },
       },
     ];
     const before = structuredClone(owners);
@@ -1436,7 +1410,7 @@ describe('agent/feedback-reply', () => {
         number: 3,
         threadId: ownership === 'current' ? 'chat' : 'other-chat',
         inactive: ownership === 'historical',
-        retired: ownership === 'historical',
+        reset: ownership === 'historical',
       };
       owners =
         ownership === 'absent'
@@ -1528,86 +1502,6 @@ describe('agent/feedback-reply', () => {
     assert.equal(rootId, 71);
     assert.equal(writes, 1);
   });
-  it('should present the exact completed managed reply without resuming or selecting another composer', async () => {
-    const source = await provider.getIssueComment('owner', 'repo', 3, 42);
-    const selection = {
-      version: 1 as const,
-      requestedSkill: 'custom:reply',
-      defaultSkill: false,
-      observedAt: 1,
-      skill: await assessmentSkillSource({
-        name: 'custom:reply',
-        path: join(root, 'SKILL.md'),
-        scope: 'user',
-      }),
-    };
-    owners = [
-      {
-        id: 'a'.repeat(64),
-        repository: 'owner/repo',
-        number: 3,
-        threadId: 'chat',
-        incarnation: 'session',
-        inactive: false,
-        publisherLogin: 'receiver',
-        events: [
-          {
-            id: 'b'.repeat(64),
-            sourceId: source.nodeId,
-            number: 3,
-            nodeId: 'I_issue',
-            itemType: 'issue',
-            source: JSON.stringify(source),
-            revision: 'c'.repeat(64),
-            createdAt: 1,
-            policyDigest: 'd'.repeat(64),
-            phase: 'published',
-            composition: selection,
-            result: {
-              privateText: 'The complete private explanation.',
-              publicText: 'A retained public answer.',
-            },
-            receipt: { nodeId: 'C_confirmed', databaseId: 9 },
-          },
-        ],
-      },
-    ];
-    const before = structuredClone(owners);
-    const result = await call('compose', { target: `${url}#issuecomment-42` });
-    assert.equal(result.status, 'managed-reply-retained');
-    assert.ok(
-      'presentation' in result &&
-        result.presentation?.includes('The complete private explanation.'),
-    );
-    assert.ok('url' in result && result.url === `${url}#issuecomment-9`);
-    assert.deepEqual('selection' in result && result.selection, selection);
-    assert.deepEqual(owners, before);
-    assert.equal(selections, 0);
-    assert.equal(writes, 0);
-    const independentText = 'A separate explicitly requested reply.';
-    owners[0]!.threadId = 'another-chat';
-    assert.equal(
-      (await call('compose', { target: `${url}#issuecomment-42`, privateText: independentText }))
-        .status,
-      'composition-ready',
-    );
-    await call('candidate', {
-      target: `${url}#issuecomment-42`,
-      privateText: independentText,
-      publicText: 'An independent answer.',
-    });
-    await call('publish', { target: `${url}#issuecomment-42`, privateText: independentText });
-    assert.equal(writes, 1);
-    owners[0]!.threadId = 'chat';
-    owners[0]!.events![0]!.phase = 'blocked';
-    await assert.rejects(
-      call('compose', {
-        target: `${url}#issuecomment-42`,
-        privateText: 'The complete private explanation.',
-      }),
-      /reply-managed-response-required/,
-    );
-  });
   it('should ask for missing inputs and reject incomplete sources before selecting a composer', async () => {
     assert.equal((await call('compose')).status, 'clarification-needed');
     assert.equal((await call('compose', { target: url })).status, 'clarification-needed');
@@ -1636,15 +1530,6 @@ describe('agent/feedback-reply', () => {
         threadId: 'chat',
         incarnation: 'session',
         inactive: false,
-        result: {
-          version: 1,
-          outcome: 'plan-ready',
-          summary: 'Retained plan.',
-          assessment: 'Evidence.',
-          plan: 'Plan.',
-          evidence: [],
-          progress: { completed: [], remaining: [] },
-        },
       },
     ];
     provider.getItem = async () => ({
@@ -1705,7 +1590,7 @@ describe('agent/feedback-reply', () => {
     direct: (
       operation: 'compose' | 'candidate' | 'publish' | 'reconcile',
       extra: object,
-    ) => Promise<{ status: string }>,
+    ) => Promise<{ status?: string }>,
     journal: CodexDispatchStore | OpenClawDispatchStore,
   ) {
     const pr = linkedPullRequest();
@@ -1771,7 +1656,7 @@ describe('agent/feedback-reply', () => {
             createdAt: 1,
             manifestDigest: 'fixture',
             threadId: 'foreign-' + index,
-            ...(kind === 'historical' ? { retired: { at: 2, by: 'operator' } } : {}),
+            ...(kind === 'superseded' ? { supersededBy: 'b'.repeat(64) } : {}),
             pullRequestLink: {
               pullRequestNodeId: pr.item.nodeId,
               pullRequestNumber: 4,
@@ -1780,7 +1665,7 @@ describe('agent/feedback-reply', () => {
         }
         await save();
       });
-    for (const kind of ['foreign', 'shared', 'historical']) {
+    for (const kind of ['foreign', 'shared', 'superseded']) {
       await seed(kind);
       const before = await journal.read();
       for (const target of [url, pr.url, pr.url + '#discussion_r' + comment.databaseId]) {

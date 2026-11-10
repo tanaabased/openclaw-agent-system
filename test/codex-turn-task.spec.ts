@@ -10,7 +10,6 @@ const record = {
   sourceThreadId: 'intake',
   request: { prompt: '> assignment card' },
   context: 'PRIVATE-PROVIDER-PROSE',
-  result: { plan: 'OLD-PLAN' },
 } as DispatchRecord;
 const turn = { threadId: 'native-chat', turnId: 'native-turn' };
 const native = { id: turn.threadId, turnId: turn.turnId, cwd: '/task', status: 'active' };
@@ -56,11 +55,11 @@ describe('agent/codex-turn-task', () => {
       /turn-context-native-turn-unavailable/,
     );
   });
-  it('should ignore unrelated, stale and retired native owners', async () => {
+  it('should ignore unrelated, stale and reset native owners', async () => {
     for (const changed of [
       { threadId: 'other' },
       { supersededBy: 'other' },
-      { retired: {} },
+      { reset: {} },
       { reset: {} },
     ]) {
       assert.equal(
@@ -126,7 +125,6 @@ describe('agent/codex-turn-task', () => {
         events: [
           {
             id: 'source',
-            native: true,
             source: 'PRIVATE-COMMENT',
             attempt: { request: { threadId: turn.threadId, prompt: '> comment card' } },
           },
@@ -164,7 +162,6 @@ describe('agent/codex-turn-task', () => {
         events: [
           {
             id: 'source',
-            native: true,
             attempt: { request: { threadId: turn.threadId, prompt: '> comment' } },
           },
         ],
@@ -196,7 +193,6 @@ describe('agent/codex-turn-task', () => {
         events: [
           {
             id: 'source',
-            native: true,
             attempt: { request: { threadId: turn.threadId, prompt: '> comment card' } },
           },
         ],
@@ -213,8 +209,8 @@ describe('agent/codex-turn-task', () => {
       assert.equal(output?.stage, 'feedback');
     }
   });
-  it('should leave verified legacy feedback on its original context path', async () => {
-    const legacy = {
+  it('should select the exact feedback source verified by its native send receipt', async () => {
+    const feedback = {
       ...record,
       threadId: turn.threadId,
       feedback: {
@@ -227,7 +223,7 @@ describe('agent/codex-turn-task', () => {
       },
     } as DispatchRecord;
     assert.equal(
-      (await selectCodexTurnTask([legacy], turn, lookup))?.feedbackContextRequest?.eventId,
+      (await selectCodexTurnTask([feedback], turn, lookup))?.feedbackContextRequest?.eventId,
       'source',
     );
   });

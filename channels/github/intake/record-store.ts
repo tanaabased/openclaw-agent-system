@@ -1,18 +1,18 @@
+import { join, resolve } from 'node:path';
+import { projectWorkMatches, projectWorkSchema } from '../../../agent/issue-pickup-authority.ts';
+import { assertNotificationManagement } from '../../../agent/notification-reset-state.ts';
+import { refreshStateSnapshot } from '../../../core/merge-state-snapshot.ts';
 import { providerDiagnosticSchema } from '../../../utils/provider-diagnostic.ts';
 import { repositoryScopeDecisionSchema } from '../repository-scope.ts';
-import { projectWorkSchema, projectWorkMatches } from '../../../agent/issue-pickup-authority.ts';
-import { historySoftBytes } from '../../../agent/history-state.ts';
-import { refreshStateSnapshot } from '../../../core/merge-state-snapshot.ts';
-import { assertNotificationManagement } from '../../../agent/notification-reset-state.ts';
-import { join, resolve } from 'node:path';
+const intakeCleanupBytes = 2 * 1024 * 1024;
 
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { automationHash } from '../../../agent/automation-hash.ts';
 import ensurePrivateStateDirectories from '../../../core/ensure-private-state-directories.ts';
-import PrivateStateFile from '../../../core/private-state-file.ts';
 import acquirePrivateStateFileLock from '../../../core/private-state-file-lock.ts';
+import PrivateStateFile from '../../../core/private-state-file.ts';
 import { withPrivateStateLock } from '../../../core/private-state-lock-context.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
@@ -319,7 +319,7 @@ export default class IntakeRecordStore {
             if (!Value.Check(stateSchema, state) || state.scope !== this.location.scope)
               throw new IntakeError('intake-state-invalid');
             const retained = structuredClone(state);
-            if (Buffer.byteLength(JSON.stringify(retained)) > historySoftBytes) {
+            if (Buffer.byteLength(JSON.stringify(retained)) > intakeCleanupBytes) {
               const admitted = new Set(retained.records.map((record) => record.id));
               retained.observedAssignments = retained.observedAssignments?.filter(
                 (record) => record.consumedBy || !admitted.has(record.id),

@@ -108,13 +108,13 @@ describe('channels/github/presentation/feedback', () => {
       );
       assert.ok(!draft.includes(url));
     }
-    const legacy = githubCommentCard({
+    const missingAuthor = githubCommentCard({
       body: 'Original text.',
       label: 'Plan assessment',
       connector: 'by',
       publication: { url },
     });
-    assert.ok(legacy.includes('by author unavailable*'));
+    assert.ok(missingAuthor.includes('by author unavailable*'));
   });
 
   it('should keep all provider line endings inside the comment quote', () => {

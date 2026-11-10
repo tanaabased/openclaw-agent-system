@@ -1,12 +1,12 @@
-import { nativeTurnFor } from './openclaw-native-turns.ts';
+import type { Static } from 'typebox';
 import { assignmentClaimRoute } from './assignment-claim-source.ts';
+import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
 import issueChatTitle from './issue-chat-title.ts';
-import { dispatchAdmission, managedPullRequest } from './managed-issue.ts';
 import verifyIssuePullRequest from './issue-pr-selection.ts';
+import { dispatchAdmission, managedPullRequest } from './managed-issue.ts';
+import { nativeTurnFor } from './openclaw-native-turns.ts';
 import openClawRoutingInstructions from './openclaw-routing-instructions.ts';
 import { assertRoutingInstructions, routingInstructionsDigest } from './routing-instructions.ts';
-import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
-import type { Static } from 'typebox';
 
 import type { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import { automationHash } from './automation-hash.ts';
@@ -20,11 +20,11 @@ import {
   type OpenClawDispatchValidation,
 } from './openclaw-dispatch-context.ts';
 
+import managedGroupName from '../utils/managed-group-name.ts';
 import { type OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import { sameIntakeRun } from './openclaw-intake-pass.ts';
 import createIssueSession from './openclaw-session-create.ts';
 import advanceIssueTurn from './openclaw-session-turn.ts';
-import managedGroupName from '../utils/managed-group-name.ts';
 
 function digest(record: OpenClawDispatchRecord) {
   return automationHash({
@@ -152,7 +152,7 @@ export default class OpenClawDispatchAdmission {
       if (!('candidate' in routing) || routing.candidate?.status !== 'mapped')
         throw new Error('dispatch-routing-unresolved');
       setStage('worktree');
-      if (!record.worktree && !record.worktreeAttemptId) {
+      if (!record.worktreeAttemptId) {
         // Save before Git runs so a lost preparation result still retries the same attempt.
         record.worktreeAttemptId = record.id;
         record.separateCheckout = true;

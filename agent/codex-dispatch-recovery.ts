@@ -1,16 +1,16 @@
-import { dispatchGit, type DispatchGit } from './codex-dispatch-project.ts';
-import taskRecoveryCaller from './task-recovery-caller.ts';
-import recoverIssueTask, { pendingRecoveryFeedback } from './issue-task-recovery.ts';
-import { type CleanupConfiguration } from './cleanup-configuration.ts';
-import { automationHash } from './automation-hash.ts';
-import assignmentRetirement from './assignment-retirement.ts';
-import type { codexDispatchNative } from './codex-dispatch-native.ts';
-import type { DispatchState, DispatchRecord } from './codex-dispatch-state.ts';
-import { managedPullRequest, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
-import connectCodexGitHubAccount from './codex-github-client.ts';
 import IssueDeliveryProvider from '../channels/github/publication/issue-delivery.ts';
+import assignmentRetirement from './assignment-retirement.ts';
+import { automationHash } from './automation-hash.ts';
+import { type CleanupConfiguration } from './cleanup-configuration.ts';
+import type { codexDispatchNative } from './codex-dispatch-native.ts';
+import { dispatchGit, type DispatchGit } from './codex-dispatch-project.ts';
+import type { DispatchRecord, DispatchState } from './codex-dispatch-state.ts';
+import connectCodexGitHubAccount from './codex-github-client.ts';
+import recoverIssueTask, { pendingRecoveryFeedback } from './issue-task-recovery.ts';
+import { managedPullRequest, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
+import taskRecoveryCaller from './task-recovery-caller.ts';
 
 type Native = ReturnType<typeof codexDispatchNative>;
 
@@ -55,7 +55,6 @@ export default async function recoverDispatch(
   if (action === 'recover') {
     if (taskRecoveryCaller(record, caller)) throw new Error('dispatch-operator-caller-required');
     const operatorInput = () => withNative((host) => host.operatorInput(caller));
-    const execution = record;
     return recoverIssueTask({
       ...context,
       operator: await operatorInput(),
@@ -72,14 +71,6 @@ export default async function recoverDispatch(
         ),
         uncertainAnnouncement: Boolean(
           record.delivery?.announcement?.attempted && !record.delivery.announcement.receipt,
-        ),
-        pendingSummaryTurn: Boolean(execution?.summaryRecovery && !execution.summaryRecovery.ended),
-        pendingAutoDecision: Boolean(execution?.autoDecision && !execution.autoDecision.ended),
-        unfinishedImplementation: Boolean(
-          execution?.nativeRequests?.length ||
-          (execution?.continuation?.attempt && !execution.continuation.attempt.ended) ||
-          (execution?.continuation?.publicationAttempt &&
-            !execution.continuation.publicationAttempt.ended),
         ),
         pendingFeedback: record.feedback?.events.some(pendingRecoveryFeedback),
         assignmentClaim: Boolean((record.claimId || record.claimAccepted) && !context.claim),
@@ -226,8 +217,7 @@ export default async function recoverDispatch(
     if (input.apply || input.digest !== undefined)
       await withNative((host) => host.operatorInput(caller));
     if (taskRecoveryCaller(record, caller)) throw new Error('dispatch-operator-caller-required');
-    if (record.phase !== 'complete' || !record.result || !record.request || !record.threadId)
-      throw new Error('dispatch-reset-unavailable');
+    if (!record.request || !record.threadId) throw new Error('dispatch-reset-unavailable');
     const native = await withNative((client) =>
       client.find({
         sourceThreadId: record.sourceThreadId,
@@ -238,8 +228,8 @@ export default async function recoverDispatch(
     );
     if (
       !native ||
-      !record.resultTurnId ||
-      native.turnId !== record.resultTurnId ||
+      !native.turnId ||
+      !native.turnEnded ||
       !['idle', 'notLoaded'].includes(native.status) ||
       native.turnStatus !== 'completed'
     )
@@ -253,9 +243,8 @@ export default async function recoverDispatch(
         digest,
         issue: issueUrl,
         threadId: record.threadId,
-        outcome: record.result.outcome,
         instruction:
-          'Reset preserves this assessment and worktree. Only a new assignment event after reset permits one fresh assessment through normal intake. No implementation is authorized.',
+          'Reset preserves this native chat and worktree. A new assignment event is required before normal intake can admit this issue again.',
       };
     if (!input.apply && input.digest !== digest) throw new Error('dispatch-recovery-stale');
     record.reset = { at: now, by: caller };
@@ -280,10 +269,7 @@ export default async function recoverDispatch(
         record.threadId ||
         record.worktree ||
         record.clientThreadId ||
-        record.receiptThreadId ||
-        record.nativeRequests?.length ||
-        record.continuation?.attempt ||
-        record.continuation?.publicationAttempt
+        record.receiptThreadId
       )
         throw new Error('dispatch-denial-unverified');
       await revalidate();
@@ -313,17 +299,16 @@ export default async function recoverDispatch(
       if (!input.apply && input.digest === undefined)
         return { status: 'retry-available', id: record.id, digest, denial: record.denial };
       if (!input.apply && input.digest !== digest) throw new Error('dispatch-recovery-stale');
-      (record.recoveredDenials ??= []).push({
-        denial: record.denial,
-        observation: record.preparationObservation,
-        recoveredAt: now,
-        approvedBy: caller,
-      });
+      record.creationRecovery = {
+        ...record.creationRecovery,
+        attempts: record.creationRecovery?.attempts ?? 0,
+        denialRecovered: true,
+      };
       delete record.denial;
       delete record.preparationObservation;
-      delete record.result;
+
       delete record.blocker;
-      delete record.stageReceipt;
+
       delete record.retry;
       delete record.retryAfter;
       record.phase = 'routing';
@@ -337,10 +322,7 @@ export default async function recoverDispatch(
       record.clientThreadId ||
       record.receiptThreadId ||
       record.threadId ||
-      record.worktree ||
-      record.nativeRequests?.length ||
-      record.continuation?.attempt ||
-      record.continuation?.publicationAttempt
+      record.worktree
     )
       throw new Error('dispatch-denial-unverified');
     await revalidate();
@@ -370,34 +352,29 @@ export default async function recoverDispatch(
     if (!input.apply && input.digest === undefined)
       return { status: 'retry-available', id: record.id, digest, denial };
     if (!input.apply && input.digest !== digest) throw new Error('dispatch-recovery-stale');
-    record.deniedCreations = [
-      ...(record.deniedCreations ?? []),
-      {
-        request: record.request,
+    record.creationRecovery = {
+      attempts: (record.creationRecovery?.attempts ?? 0) + 1,
+      denialRecovered:
+        Boolean(record.denial || record.creationRecovery?.denialRecovered) || undefined,
+      latest: {
+        kind: 'denied',
+        turnId: denial.turnId,
+        callId: denial.callId,
         createdAt: record.createdAt,
         recoveredAt: now,
-        ...(record.continuation ? { continuation: record.continuation } : {}),
-        ...denial,
         ...(input.renewAuthorization || input.approvedCallId ? { approvedBy: caller } : {}),
       },
-    ];
-    if (record.denial) {
-      (record.recoveredDenials ??= []).push({
-        denial: record.denial,
-        recoveredAt: now,
-        approvedBy: caller,
-      });
-      delete record.denial;
-    }
+    };
+    delete record.denial;
     delete record.creationAfterItemId;
     delete record.preparationObservation;
-    delete record.continuation;
+
     delete record.nativeWork;
     delete record.preparationTurnId;
     delete record.request;
-    delete record.result;
+
     delete record.blocker;
-    delete record.stageReceipt;
+
     delete record.retryAfter;
     record.phase = 'routing';
     await save();

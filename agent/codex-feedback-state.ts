@@ -1,6 +1,5 @@
 import { Type, type Static } from 'typebox';
 import { feedbackSourceEventSchema, feedbackSourceStateSchema } from './feedback-state.ts';
-export { feedbackResultSchema } from './feedback-state.ts';
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
 export const feedbackEventSchema = Type.Object(
@@ -24,12 +23,6 @@ export const feedbackEventSchema = Type.Object(
             { additionalProperties: false },
           ),
         },
-        { additionalProperties: false },
-      ),
-    ),
-    publicationApproval: Type.Optional(
-      Type.Object(
-        { by: text, at: Type.Integer({ minimum: 0 }), digest: hash },
         { additionalProperties: false },
       ),
     ),

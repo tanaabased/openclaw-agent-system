@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
-import publicResponse, { type PublicResponseReceipt } from '../agent/public-response.ts';
 import publicResponseState from '../agent/public-response-state.ts';
+import publicResponse, { type PublicResponseReceipt } from '../agent/public-response.ts';
 import publicResponsePresentation from '../channels/github/presentation/public-response.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 
@@ -15,7 +15,7 @@ function fixture() {
   let connects = 0;
   let failReceipt = false;
   const publication = {
-    intent: 'assessment-summary' as const,
+    intent: 'status-update' as const,
     publicationId: 'stable-source',
     text: 'Public proposal.',
     item: {

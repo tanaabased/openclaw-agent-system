@@ -1,17 +1,13 @@
-import compactImplementationEntry from './compact-implementation-entry.ts';
-import type { ImplementationEntry } from './implementation-entry-state.ts';
 import { join } from 'node:path';
-import { Type, type TSchema, type Static } from 'typebox';
+import { Type, type Static, type TSchema } from 'typebox';
 import { Value } from 'typebox/value';
-
-import { assessmentEntriesSchema } from './assessment-entry-state.ts';
-import { automationHash } from './automation-hash.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
-import PrivateStateFile from '../core/private-state-file.ts';
 import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
+import PrivateStateFile from '../core/private-state-file.ts';
 import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
+import { automationHash } from './automation-hash.ts';
 
-export interface AssessmentEntryBinding {
+export interface DirectEntryBinding {
   runtime: 'codex' | 'openclaw';
   agentId: string;
   workspace: string;
@@ -20,16 +16,16 @@ export interface AssessmentEntryBinding {
   incarnation: string;
 }
 
-/** assessment custody uses existing private-file and lease primitives, never an intake event. */
+/** direct operation custody uses existing private-file and lease primitives, never an intake event. */
 export class DirectEntryStore<S extends TSchema> {
   readonly scope: string;
   readonly path: string;
   private readonly file: PrivateStateFile;
   constructor(
     private readonly root: string,
-    binding: AssessmentEntryBinding,
+    binding: DirectEntryBinding,
     private readonly entriesSchema: S,
-    private readonly kind: 'assessment' | 'implementation' | 'native-retirement',
+    private readonly kind: 'implementation' | 'native-retirement',
   ) {
     this.scope = automationHash(binding);
     this.path = join(root, `github-${kind}-${this.scope}.json`);
@@ -68,9 +64,6 @@ export class DirectEntryStore<S extends TSchema> {
           throw new Error(`${this.kind}-state-invalid`);
         return run(state.entries, async (removeEmpty = false) => {
           lock.assertHeld();
-          if (this.kind === 'implementation')
-            for (const entry of state.entries as ImplementationEntry[])
-              compactImplementationEntry(entry);
           if (!Value.Check(schema, state)) throw new Error(`${this.kind}-state-invalid`);
           if (removeEmpty && Array.isArray(state.entries) && state.entries.length === 0)
             await this.file.remove();
@@ -80,11 +73,5 @@ export class DirectEntryStore<S extends TSchema> {
     } finally {
       await lock.release();
     }
-  }
-}
-
-export default class AssessmentEntryStore extends DirectEntryStore<typeof assessmentEntriesSchema> {
-  constructor(root: string, binding: AssessmentEntryBinding) {
-    super(root, binding, assessmentEntriesSchema, 'assessment');
   }
 }

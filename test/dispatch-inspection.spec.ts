@@ -106,10 +106,10 @@ describe('agent/dispatch-inspection', () => {
   it('should page retained owners while preserving the unfiltered inspection contract', () => {
     const { admitted, records } = fixture();
     const before = structuredClone(records);
-    const legacy = dispatchInspection(records, [admitted], {});
-    assert.deepEqual(legacy.records, records);
-    assert.equal(legacy.summary, false);
-    assert.equal(legacy.nextOffset, undefined);
+    const unfiltered = dispatchInspection(records, [admitted], {});
+    assert.deepEqual(unfiltered.records, records);
+    assert.equal(unfiltered.summary, false);
+    assert.equal(unfiltered.nextOffset, undefined);
     const first = dispatchInspection(records, [admitted], { limit: 2 });
     assert.equal(first.summary, true);
     assert.equal(first.total, 3);

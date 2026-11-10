@@ -1,23 +1,21 @@
 import { assessmentDecisionMode, type AssessmentResult } from '../../../agent/assessment-result.ts';
-import modelRoutingCard from './model-routing.ts';
 import redactCodexFeedback from '../../../agent/codex-feedback-redaction.ts';
 import type { RoutingDecision } from '../../../agent/model-routing.ts';
 import type { RoutingInstructions } from '../../../agent/routing-instructions.ts';
-import {
-  workflowConfigurationCard,
-  type WorkflowInstructionsSelection,
-  type WorkflowInstructionsPresentation,
-} from './workflow-instructions.ts';
 import githubNotificationCard, {
   githubNotificationMarkdownCode,
   githubNotificationMarkdownText,
   githubNotificationQuote,
 } from './card.ts';
+import modelRoutingCard from './model-routing.ts';
+import {
+  workflowConfigurationCard,
+  type WorkflowInstructionsPresentation,
+  type WorkflowInstructionsSelection,
+} from './workflow-instructions.ts';
 
 export interface AssessmentPresentationContext extends WorkflowInstructionsPresentation {
   cards?: string[];
-  includeDetails?: boolean;
-  retained?: boolean;
   issue: { label: string; url: string; kind?: 'Issue' | 'Pull request' };
   assessmentOnly?: boolean;
   routing?: Pick<RoutingDecision, 'complexity' | 'profile' | 'reason' | 'source'> & {
@@ -69,17 +67,10 @@ export default function renderAssessmentResult(
         : []),
     ].join('\n\n'),
   );
-  // omit only verbatim duplicates; never infer dispensable content from prose or skill identity.
-  const source = result.fullAssessment ?? (result.outcome === 'plan-ready' ? result.plan : '');
-  const reviewOnly = !!result.reviewSummary && !!result.fullAssessment && !context.includeDetails;
-  const needsSection = (value: string) => value !== result.summary && !source.includes(value);
   const cards = context.cards ?? assessmentContextCards(context);
   const isDebugCard = (card: string) => card.startsWith('> ## 🔬 Debug\n');
   const content = [
     outcomeCard,
-    ...(!reviewOnly && 'assessment' in result && needsSection(result.assessment)
-      ? ['## Assessment', result.assessment]
-      : []),
     ...cards.filter((card) => !isDebugCard(card)),
     ...(result.decision && !context.assessmentOnly
       ? [
@@ -108,59 +99,14 @@ export default function renderAssessmentResult(
           }),
         ]
       : []),
-    ...(reviewOnly && result.reviewSummary!.trim() !== result.summary.trim()
-      ? ['## Proposed change', result.reviewSummary!]
+    ...(result.reviewSummary && result.reviewSummary.trim() !== result.summary.trim()
+      ? ['## Proposed change', result.reviewSummary]
       : []),
-    ...(!reviewOnly && result.outcome === 'plan-ready'
-      ? [
-          ...(result.planSummary && needsSection(result.planSummary)
-            ? ['## Plan summary', result.planSummary]
-            : []),
-          ...(!result.fullAssessment ? ['## Full plan', result.plan] : []),
-        ]
-      : result.outcome === 'clarification-needed'
-        ? ['## Question', result.questions.map(item).join('\n\n')]
-        : []),
-    ...(!reviewOnly && result.fullAssessment ? ['## Full assessment', result.fullAssessment] : []),
-    ...(!reviewOnly &&
-    result.outcome === 'plan-ready' &&
-    result.fullAssessment &&
-    !source.includes(result.plan)
-      ? ['## Full plan', result.plan]
+    ...(result.outcome === 'clarification-needed'
+      ? ['## Question', result.questions.map(item).join('\n\n')]
       : []),
     ...cards.filter(isDebugCard),
   ];
-  if (reviewOnly && context.retained !== false)
-    content.push(
-      'The full assessment and engineering plan are saved for implementation. Ask for the full assessment to inspect them.',
-    );
-  if (!context.includeDetails) return content.join('\n\n');
-  const hasInvestigation = result.progress.completed.length || result.progress.remaining.length;
-  if (result.evidence.length || hasInvestigation) {
-    content.push(
-      '## Reference material',
-      'Optional supporting detail: sources and investigation notes.',
-    );
-  }
-  if (result.evidence.length) {
-    content.push(
-      '### Evidence',
-      result.evidence
-        .map(({ source, status, detail }) =>
-          item('**' + status + ':** ' + source + '\n\n' + detail),
-        )
-        .join('\n\n'),
-    );
-  }
-  if (hasInvestigation) {
-    content.push('### Investigation');
-    for (const [label, entries] of [
-      ['Completed', result.progress.completed],
-      ['Remaining', result.progress.remaining],
-    ] as const) {
-      if (entries.length) content.push('#### ' + label, entries.map(item).join('\n\n'));
-    }
-  }
   return content.join('\n\n');
 }
 

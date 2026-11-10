@@ -42,7 +42,7 @@ mode and current user direction; new assessments stay in native tool context wit
 
 - An operator explicitly selects a GitHub issue and an existing checkout for assessment in the current chat, without assignment or intake activation.
 - Requests such as "assess this issue" or "plan this task here" call for investigation in this chat.
-- A native task chat has an Agent System assessment receipt and trusted runtime
+- A native task chat has a verified Agent System owner and trusted runtime
   context: dispatchRuntime in Codex, or the bound agent_system_dispatch tool in OpenClaw.
 - The requested outcome is an actionable plan, focused clarification, or a precise
   setup blocker with retained investigation.
@@ -62,7 +62,7 @@ Use workflow steps 2–8 for both native and direct planning: develop the comple
 standardized assessment, prepare its human review, and format it into the native
 tool exchange. Show only the concise presentation. Do not save plans, summaries,
 plan files or assessment revisions in Agent System. Native conversation owns
-subsequent decisions; historical records are available only by explicit readback.
+subsequent decisions.
 
 Questions and answers stay in native chat for every entry path, including direct
 tracked assessments. Ask blocking questions here without submitting a
@@ -96,8 +96,7 @@ For an explicit tracked assessment request without supplied execution context:
 3. With `status: verified`, invoke the selected assessment body once with its
    context and guidance. If it is this skill, continue with steps 2–8 below.
 4. Format through `assessment render` using `presentationRequest` plus `result`
-   matching `resultFormat`. This route saves no assessment or summary. Historical
-   `assessment present` reads history in the current native conversation; select an issue URL when several targets have history. It remains an explicit read only.
+   matching `resultFormat`. This route saves no assessment or summary.
 
 Direct assessment authorizes neither implementation nor publication, including
 with Work/Auto defaults. Invalid managed ownership must recover through its owner
@@ -255,8 +254,6 @@ limitation if recovery fails; malformed arguments are not an authorization denia
    Do not automatically reload or reinject the original assessment or summary.
    Native compaction may summarize the context; it does not guarantee permanent
    verbatim retention. Use current evidence when details are no longer available.
-   Explicit requests for older saved assessments may use historical `present`
-   with `includeDetails: true`; this read supplies no new authority.
 
 Publish the concise assessment and consequential questions through
 [Task Update](../task-update/SKILL.md) within existing publication authority.
@@ -302,7 +299,6 @@ and the initial update to the originating issue are independent operations. Foll
   assessment and plan remain in native context, subject to native compaction.
 - The opening came from a separate editor with only the factual brief; its claims were
   checked against the unchanged technical plan before recording.
-- Runtime acknowledgment, not a heading or model self-report, establishes a recorded result.
 - The complete assessment is retained for every outcome; derived fields preserve its
   consequential conditions, uncertainty, and blocking decisions.
 - The host records implementation from live policy or verified direction; a plan

@@ -1,41 +1,34 @@
-import { notificationAuthorityDigest } from './notification-authority.ts';
+import { mkdir, readdir, realpath, rmdir } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { workflowFeedbackAvailable } from '../channels/github/feedback-policy.ts';
+import { codexInstanceStore } from './codex-assignment-claims.ts';
 import codexAutomationSchedule from './codex-automation-schedule.ts';
+import IssuePickupEnrollmentStore from './issue-pickup-enrollment.ts';
 import {
   issuePickupAutomationId,
   issuePickupConfigurationCode,
   issuePickupErrorCode,
 } from './issue-pickup-jobs.ts';
-import IssuePickupEnrollmentStore from './issue-pickup-enrollment.ts';
-import { codexInstanceStore } from './codex-assignment-claims.ts';
-import { workflowFeedbackAvailable } from '../channels/github/feedback-policy.ts';
-import { mkdir, readdir, realpath, rmdir } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { notificationAuthorityDigest } from './notification-authority.ts';
 
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { AutomationError } from './automation-gateway.ts';
-import AutomationThreads, {
-  AutomationThreadSettingsHandoff,
-  AutomationThreadSettingsError,
-  type AutomationThreadModelObservation,
-  automationThreadSelection,
-  type AutomationThreadAdapter,
-} from './automation-threads.ts';
-import { codexThreadAdapter, connectCodexThreads } from './codex-thread-client.ts';
-import { codexIntakeJobs, intakeAutomationId } from './codex-intake-policy.ts';
 import { IntakeError } from '../channels/github/intake/record-store.ts';
-import {
-  prepareCodexPickupEnrollment,
-  inspectCodexPickup,
-  preflightCodexIntake,
-  runCodexIntake,
-  type CodexIntakeDependencies,
-} from './codex-intake.ts';
+import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
+import PrivateStateFile from '../core/private-state-file.ts';
 import type { ResolvedAutomation } from '../manifest/automation-schema.ts';
 import type { AgentManifest } from '../manifest/types.ts';
+import { AutomationError } from './automation-gateway.ts';
 import { automationHash } from './automation-hash.ts';
+import AutomationThreads, {
+  AutomationThreadSettingsError,
+  AutomationThreadSettingsHandoff,
+  automationThreadSelection,
+  type AutomationThreadAdapter,
+  type AutomationThreadModelObservation,
+} from './automation-threads.ts';
 import planCodexAutomations, {
   automationRecordSchema,
   codexAutomationMarker,
@@ -49,16 +42,23 @@ import {
   CodexAutomationError,
   nativeAutomationSchema,
   parseAutomationReceipt,
+  readCodexAutomationDefaults,
   readCodexAutomationSelection,
   readCodexAutomations,
-  readCodexAutomationDefaults,
   type SavedAutomation,
 } from './codex-automation-state.ts';
-import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
-import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
-import PrivateStateFile from '../core/private-state-file.ts';
+import { codexIntakeJobs, intakeAutomationId } from './codex-intake-policy.ts';
+import {
+  inspectCodexPickup,
+  preflightCodexIntake,
+  prepareCodexPickupEnrollment,
+  runCodexIntake,
+  type CodexIntakeDependencies,
+} from './codex-intake.ts';
 import CodexSidebarJournal, { type SidebarEffect } from './codex-sidebar-journal.ts';
 import { sidebarSections } from './codex-sidebar-placement.ts';
+import { codexThreadAdapter, connectCodexThreads } from './codex-thread-client.ts';
+import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
 
 class SidebarPending extends AutomationError {
   constructor(readonly effect: Exclude<SidebarEffect, { status: 'done' }>) {
@@ -648,8 +648,7 @@ export async function inspectCodexDispatchActivation(
     | 'implementation'
     | 'review'
     | 'publication'
-    | 'feedback'
-    | 'assessment-summary' = 'assessment',
+    | 'feedback' = 'assessment',
 ) {
   const selected = await snapshot(pluginData, dependencies);
   const job = selected.jobs.find((entry) => entry.id === intakeAutomationId);
@@ -712,8 +711,7 @@ export async function inspectCodexDispatchActivation(
               selected.loaded.manifest.github.notifications,
               'issue-assignment',
             )
-          : capability !== 'assessment-summary' &&
-            !['work', 'auto'].includes(
+          : !['work', 'auto'].includes(
               selected.loaded.manifest.github.notifications.issueAssignment?.mode ?? '',
             )) ||
         !job ||
@@ -737,12 +735,10 @@ export async function inspectCodexDispatchActivation(
       saved: {
         ...authority,
         version: 1 as const,
-        capabilities: (capability === 'assessment-summary'
-          ? ['assessment-summary']
-          : capability === 'feedback'
-            ? ['feedback', 'publication']
-            : ['assessment', 'implementation', 'publication']) as Array<
-          'assessment' | 'implementation' | 'publication' | 'feedback' | 'assessment-summary'
+        capabilities: (capability === 'feedback'
+          ? ['feedback', 'publication']
+          : ['assessment', 'implementation', 'publication']) as Array<
+          'assessment' | 'implementation' | 'publication' | 'feedback'
         >,
       },
     },

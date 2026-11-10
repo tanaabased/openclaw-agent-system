@@ -1,11 +1,11 @@
 import type { dispatchStorageNotice } from '../../../agent/dispatch-storage.ts';
-import type { GitHubNotificationRuntimeDiagnostic } from '../notification-policy.ts';
-import type { RepositoryScopeDecision } from '../repository-scope.ts';
 import type { IntakeRecord } from '../intake/record-store.ts';
+import type { GitHubNotificationRuntimeDiagnostic } from '../notification-policy.ts';
 import {
   githubNotificationItemMatchesSelector,
   type GitHubNotificationItemSelector,
 } from '../provider/work-item.ts';
+import type { RepositoryScopeDecision } from '../repository-scope.ts';
 
 export type GitHubNotificationItemDisposition = 'approved' | 'baseline' | 'rejected' | 'retired';
 
@@ -14,17 +14,11 @@ export type GitHubNotificationIntakeStage = 'admitted' | 'prepared' | 'retired';
 export type { GitHubNotificationItemSelector } from '../provider/work-item.ts';
 
 export type GitHubNotificationWaitTarget =
-  | 'assignment-rejected'
-  | 'baseline-ready'
-  | 'plan-ready'
-  | 'prepared'
-  | 'retired'
-  | 'worktree-ready';
+  'assignment-rejected' | 'baseline-ready' | 'prepared' | 'retired' | 'worktree-ready';
 
 export const githubNotificationWaitTargets = new Set<GitHubNotificationWaitTarget>([
   'assignment-rejected',
   'baseline-ready',
-  'plan-ready',
   'prepared',
   'retired',
   'worktree-ready',
@@ -33,7 +27,6 @@ export const githubNotificationWaitTargets = new Set<GitHubNotificationWaitTarge
 export interface GitHubNotificationStatusItem {
   repositoryScope?: IntakeRecord['evidence']['repositoryScope'];
   workflow?: { phase: string; conversation?: string };
-  assessmentOutcome?: string;
   feedback?: { queued: number; active: number; blocked: number };
   disposition: GitHubNotificationItemDisposition;
   failureCode?: string;
@@ -102,14 +95,12 @@ export function evaluateGitHubNotificationWait(
       ? item.disposition === 'rejected'
       : target === 'retired'
         ? item.stage === 'retired'
-        : target === 'plan-ready'
-          ? item.assessmentOutcome === 'plan-ready'
-          : target === 'prepared'
-            ? item.stage === 'prepared'
-            : item.worktree === 'ready' && ['prepared', 'retired'].includes(item.stage ?? '');
+        : target === 'prepared'
+          ? item.stage === 'prepared'
+          : item.worktree === 'ready' && ['prepared', 'retired'].includes(item.stage ?? '');
   if (reached) return { code: `github-notification-${target}`, status: 'reached' };
   // Only a failure before native creation can block an intake wait. Later effects
-  // and optional historical assessments do not control chat or worktree readiness.
+  // do not control chat or worktree readiness.
   if (item.stage === 'admitted' && item.failureCode)
     return { code: item.failureCode, status: 'failed' };
   return { code: 'github-notification-wait-pending', status: 'pending' };

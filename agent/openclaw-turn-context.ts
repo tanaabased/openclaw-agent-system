@@ -1,16 +1,15 @@
-import { nativeTurnFor } from './openclaw-native-turns.ts';
-import { feedbackTarget } from './reply-target.ts';
-import { selectedOpenClawFeedback } from './openclaw-feedback-input.ts';
 import {
   isReviewFeedback,
   type GitHubCanonicalFeedback,
 } from '../channels/github/provider/review-feedback.ts';
-import taskPullRequest from './task-pull-request.ts';
-import nativeTaskInstructions from './native-task-instructions.ts';
 import { retainedIssueProgression } from './issue-progression.ts';
+import nativeTaskInstructions from './native-task-instructions.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import { selectedOpenClawFeedback } from './openclaw-feedback-input.ts';
+import { nativeTurnFor } from './openclaw-native-turns.ts';
+import { feedbackTarget } from './reply-target.ts';
+import taskPullRequest from './task-pull-request.ts';
 import type taskTurnContext from './task-turn-context.ts';
-
 /** native session/incarnation/run identities select retained facts; explicit tools verify authority. */
 export default function openclawTurnContext(
   record: OpenClawDispatchRecord,
@@ -33,7 +32,6 @@ export default function openclawTurnContext(
     record.threadId !== binding.sessionKey ||
     !record.sessionCreation?.verified ||
     record.sessionCreation.sessionId !== binding.sessionId ||
-    record.retired ||
     record.supersededBy ||
     record.reset
   )
@@ -42,7 +40,7 @@ export default function openclawTurnContext(
   const implementation = Boolean(retainedIssueProgression(record));
   const source = selected && !selected.turn?.cancelled ? selected : undefined;
   const available = (record.feedback?.events ?? []).filter(
-    (event) => event.native && event.turn && !event.turn.cancelled,
+    (event) => event.turn && !event.turn.cancelled,
   );
   const assessment =
     !source &&

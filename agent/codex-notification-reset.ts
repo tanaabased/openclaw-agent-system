@@ -1,33 +1,32 @@
-import notificationResetPickup from './notification-reset-pickup.ts';
-import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
-import { managedIssueState, dispatchAdmission } from './managed-issue.ts';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
+import { defaultManagedGroup } from '../utils/managed-group-name.ts';
 import { nativeObject } from './automation-gateway.ts';
-import {
-  agentCommandAuthorityEnvironmentName,
-  agentCommandCapabilityEnvironmentName,
-} from './command-authority.ts';
 import { automationHash } from './automation-hash.ts';
-import { selectCodexIntake, type CodexIntakeDependencies } from './codex-intake.ts';
+import { readCodexAutomations, type SavedAutomation } from './codex-automation-state.ts';
 import {
   codexNotificationResetAutomation,
   codexNotificationResetPickupAutomation,
   replaceCodexNotificationCoordinator,
 } from './codex-automations.ts';
-import { readCodexAutomations, type SavedAutomation } from './codex-automation-state.ts';
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
+import { selectCodexIntake, type CodexIntakeDependencies } from './codex-intake.ts';
 import observeResetThread from './codex-reset-observation.ts';
-import codexResetRemoved from './codex-reset-removed.ts';
-import CodexSidebarJournal, { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
-import { defaultManagedGroup } from '../utils/managed-group-name.ts';
-import { connectCodexThreads, codexThreadAdapter } from './codex-thread-client.ts';
 import codexRetirementNative from './codex-retirement-native.ts';
+import CodexSidebarJournal, { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
+import { codexThreadAdapter, connectCodexThreads } from './codex-thread-client.ts';
 import waitForCodexWorktreeRemoval from './codex-worktree-removal.ts';
+import {
+  agentCommandAuthorityEnvironmentName,
+  agentCommandCapabilityEnvironmentName,
+} from './command-authority.ts';
+import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
+import { dispatchAdmission, managedIssueState } from './managed-issue.ts';
+import { notificationResetResources, type ResetInventory } from './notification-reset-inventory.ts';
+import notificationResetPickup from './notification-reset-pickup.ts';
 import NotificationResetStore, {
   type NotificationResetRecord,
 } from './notification-reset-state.ts';
-import { notificationResetResources, type ResetInventory } from './notification-reset-inventory.ts';
 import resetNotifications, {
   previewNotificationReset,
   type NotificationResetAdapter,
@@ -132,14 +131,7 @@ export default async function runCodexNotificationReset(
           return false;
       }
       for (const entry of parse(record).records) {
-        let thread;
-        try {
-          thread = await observeResetThread(request, entry);
-        } catch (error) {
-          if (await codexResetRemoved(request, entry, error)) continue;
-          throw error;
-        }
-        if (!thread && (await codexResetRemoved(request, entry))) continue;
+        const thread = await observeResetThread(request, entry);
         if (!entry.threadId && !entry.worktree && !entry.receiptThreadId && !thread) continue;
         if (!entry.threadId || !entry.worktree)
           throw new Error('notification-reset-native-creation-unresolved');
@@ -337,14 +329,7 @@ export default async function runCodexNotificationReset(
         };
       }
       return withNative(async ({ request }) => {
-        let thread;
-        try {
-          thread = await observeResetThread(request, entry);
-        } catch (error) {
-          if (await codexResetRemoved(request, entry, error)) return { status: 'done' };
-          throw error;
-        }
-        if (!thread && (await codexResetRemoved(request, entry))) return { status: 'done' };
+        const thread = await observeResetThread(request, entry);
         if (!thread) throw new Error('notification-reset-native-identity-changed');
         if (thread.archived) return { status: 'done' };
         if (!(await observe(record)))

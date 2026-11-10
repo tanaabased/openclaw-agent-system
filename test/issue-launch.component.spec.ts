@@ -1,19 +1,19 @@
+import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
 import IntakeRecordStore, {
   type IntakeObservation,
 } from '../channels/github/intake/record-store.ts';
-import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
 
-import issueLaunch from '../agent/issue-launch.ts';
-import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
 import type { AssessmentEntryDependencies } from '../agent/assessment-entry.ts';
-import { inspectAdmittedIssue, inspectContinuedIssue } from '../agent/dispatch-assignment.ts';
-import { dispatchAdmission } from '../agent/managed-issue.ts';
 import assessmentOwner from '../agent/assessment-owner.ts';
+import { inspectAdmittedIssue, inspectContinuedIssue } from '../agent/dispatch-assignment.ts';
 import pendingDispatchAssignments from '../agent/dispatch-pending.ts';
-import { baseline, intakeFixture, fixturePullRequest } from './github-intake-fixture.ts';
+import issueLaunch from '../agent/issue-launch.ts';
+import { dispatchAdmission } from '../agent/managed-issue.ts';
 import managedOwner from '../agent/managed-owner.ts';
+import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
 import type { LaunchRequest } from '../tools/dispatch/launch-schema.ts';
+import { baseline, fixturePullRequest, intakeFixture } from './github-intake-fixture.ts';
 
 describe('agent/issue-launch', () => {
   let root: string;
@@ -338,38 +338,18 @@ describe('agent/issue-launch', () => {
     assert.equal((await journal.read()).records.length, 3);
   });
 
-  it('should allow explicit fresh work beside preserved history without reviving that history', async () => {
-    await launch();
-    await journal.exclusive(async (state, save) => {
-      state.records[0]!.retired = { at: baseline, by: 'operator' };
-      await save();
-    });
-    context.inputId = 'new-launch-after-retirement';
-    const next = await launch();
-    assert.equal(next.status, 'routing-required');
-    assert.equal((await journal.read()).records[0]!.retired?.by, 'operator');
-  });
-
-  it('should keep legacy routing prose as history without returning it on launch retry', async () => {
-    await launch();
-    await journal.exclusive(async (state, save) => {
-      const record = state.records[0]!;
-      record.context = JSON.stringify({
-        ...JSON.parse(record.context!),
-        body: 'Old requirements.',
-        comments: [{ body: 'Old discussion.' }],
-        files: [{ filename: 'old.ts' }],
-        truncated: true,
-      });
-      await save();
-    });
+  it('should retain routing metadata and source references without copying provider prose', async () => {
+    const first = await launch();
+    const before = await journal.read();
     const retried = await launch();
     assert.ok('context' in retried && retried.context);
     assert.equal('body' in retried.context, false);
     assert.equal('comments' in retried.context, false);
     assert.equal('files' in retried.context, false);
     assert.match(String(retried.context.source), /github.com/);
-    assert.equal(JSON.parse((await journal.read()).records[0]!.context!).body, 'Old requirements.');
+    assert.deepEqual(retried, first);
+    assert.deepEqual(JSON.parse(before.records[0]!.context!), retried.context);
+    assert.deepEqual((await journal.read()).records, before.records);
   });
 
   it('should refresh unconsumed routing instructions in the same manual owner', async () => {
@@ -533,7 +513,7 @@ describe('agent/issue-launch', () => {
     );
   });
 
-  it('should recover the same request beside history and allow a new operator request', async () => {
+  it('should recover the active request beside a superseded attempt and allow a new operator request', async () => {
     await launch();
     await journal.exclusive(async (state, save) => {
       const record = state.records[0]!;
@@ -542,7 +522,8 @@ describe('agent/issue-launch', () => {
       previous.id = 'b'.repeat(64);
       previous.manualIssue!.id = previous.id;
       previous.threadId = 'old-chat';
-      previous.retired = { at: baseline, by: 'operator' };
+      previous.supersededBy = record.id;
+      record.predecessorId = previous.id;
       state.records.unshift(previous);
       await save();
     });
@@ -558,10 +539,10 @@ describe('agent/issue-launch', () => {
     );
   });
 
-  it('should retain historical-only attempts without creating a replacement', async () => {
+  it('should reject a superseded launch request without creating another replacement', async () => {
     await launch();
     await journal.exclusive(async (state, save) => {
-      state.records[0]!.retired = { at: baseline, by: 'operator' };
+      state.records[0]!.supersededBy = 'b'.repeat(64);
       await save();
     });
     const before = await journal.read();

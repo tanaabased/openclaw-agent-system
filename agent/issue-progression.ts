@@ -1,14 +1,9 @@
 import { Type, type Static } from 'typebox';
-
 import { assessmentDecisionMode } from './assessment-result.ts';
-
 export const issueProgressionSchema = Type.Object(
   {
     stage: Type.Literal('implementation'),
     via: Type.Union([Type.Literal('work'), Type.Literal('auto'), Type.Literal('operator')]),
-    workOwner: Type.Optional(
-      Type.Union([Type.Literal('issue'), Type.String({ pattern: '^[a-f0-9]{64}$' })]),
-    ),
     enteredAt: Type.Optional(Type.Integer({ minimum: 0 })),
   },
   { additionalProperties: false },
@@ -28,30 +23,20 @@ interface Issue {
   implementationDecision?: Static<typeof implementationDecisionSchema>;
   progression?: IssueProgression;
   createdAt?: number;
-  retired?: unknown;
   retirement?: unknown;
   reset?: unknown;
   handoff?: unknown;
-  result?: {
-    outcome: string;
-    decision?: { mode: 'plan' | 'work' };
+  nativeWork?: {
+    cancelled?: true;
   };
-  nativeWork?: { cancelled?: true };
-  continuation?: {
-    phase?: string;
-    runId?: string;
-    attempt?: unknown;
-    binding?: unknown;
-    result?: unknown;
+  work?: {
+    implementation?: unknown;
   };
-  work?: { implementation?: unknown };
 }
-
 /** current workflows retain their explicit implementation transition. */
 export function retainedIssueProgression(issue: Issue): IssueProgression | undefined {
   return issue.progression;
 }
-
 /** mode governs entry once; lifecycle stops remain independent of the retained stage. */
 export default function issueProgression(
   issue: Issue,
@@ -62,16 +47,20 @@ export default function issueProgression(
     decision?: Static<typeof implementationDecisionSchema>;
   },
 ):
-  | { status: 'ready'; progression: IssueProgression }
-  | { status: 'held'; reason: string }
-  | { status: 'stopped'; reason: string } {
-  if (issue.retired || issue.retirement || issue.reset)
-    return { status: 'stopped', reason: 'issue-inactive' };
-  if (
-    (issue.nativeWork?.cancelled || issue.continuation?.phase === 'cancelled') &&
-    !issue.handoff &&
-    !input.operator
-  )
+  | {
+      status: 'ready';
+      progression: IssueProgression;
+    }
+  | {
+      status: 'held';
+      reason: string;
+    }
+  | {
+      status: 'stopped';
+      reason: string;
+    } {
+  if (issue.retirement || issue.reset) return { status: 'stopped', reason: 'issue-inactive' };
+  if (issue.nativeWork?.cancelled && !issue.handoff && !input.operator)
     return { status: 'stopped', reason: 'implementation-cancelled' };
   const retained = retainedIssueProgression(issue);
   if (retained) return { status: 'ready', progression: retained };

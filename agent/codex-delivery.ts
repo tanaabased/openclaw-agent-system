@@ -1,68 +1,63 @@
-import resolveGitProtocol from '../tools/git/protocol.ts';
-import invalidDeliveryRequest from '../tools/dispatch/delivery-request-error.ts';
-import { cardCopyInstructions } from '../channels/github/presentation/card.ts';
-import { implementationMaterialSchema } from '../tools/dispatch/implementation-material-schema.ts';
-import taskPullRequest, {
-  isCurrentTaskPullRequest,
-  setTaskPullRequestLink,
-} from './task-pull-request.ts';
-import { retainImplementationDelivery } from './implementation-delivery.ts';
-import codexCommit from './codex-commit.ts';
-import issueWorkflowMode from './issue-workflow-mode.ts';
-import { managedPullRequest, managedTargetUrl, dispatchAdmission } from './managed-issue.ts';
-
-import bindIssuePullRequest from './issue-pr-binding.ts';
-import GitHubIdentityCache from '../channels/github/identity-cache.ts';
-import authorizeCodexFeedback from './codex-feedback-authority.ts';
-import connectCodexFeedback from './codex-feedback-client.ts';
-import issueProgression from './issue-progression.ts';
-import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
-import { notificationAuthorityDigest } from './notification-authority.ts';
-import workflowStatus from './workflow-status.ts';
-import deliveryBindingChange from './delivery-binding-change.ts';
-import publishIssueDelivery from './publish-issue-delivery.ts';
-import codexIssueBranch from './codex-issue-branch.ts';
-import workflowFailure from './workflow-failure.ts';
-import deliveryAnnouncement, {
-  announcementPrecedesDelivery,
-  announcementPresentation,
-  deliveryCompletionInstructions,
-} from './delivery-announcement.ts';
-import selectFeedbackStage from './feedback-stage.ts';
-import GitHubIssueCommentClient from '../channels/github/provider/issue-comment-client.ts';
-import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
 import { realpath } from 'node:fs/promises';
-
-import { githubWorktreeRemote } from '../tools/git/worktree-remote.ts';
-import type abortableDelay from '../utils/abortable-delay.ts';
-
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
-
-import { automationHash } from './automation-hash.ts';
-import { inspectCodexDispatchActivation } from './codex-automations.ts';
-import { nativeObject } from './automation-gateway.ts';
-import codexIssueNotice from './codex-issue-notice.ts';
-import dispatchHistory from './codex-dispatch-history.ts';
-import { codexDispatchNative } from './codex-dispatch-native.ts';
-import { dispatchGit, verifyDispatchWorktree, type DispatchGit } from './codex-dispatch-project.ts';
-import CodexDispatchStore from './codex-dispatch-state.ts';
-import { revalidateDispatchAssignment } from './codex-dispatch-context.ts';
-import { adoptedCodexDelivery, type CodexDeliveryState } from './codex-delivery-state.ts';
-import connectCodexGitHubAccount from './codex-github-client.ts';
-import codexHostAccess from './codex-host-access.ts';
-import { selectCodexIntake, type CodexIntakeDependencies } from './codex-intake.ts';
-import { connectCodexThreads, type CodexThreadRequest } from './codex-thread-client.ts';
-import { requireWorkflowSchedule, type WorkflowScheduleAuthority } from './workflow-result.ts';
-import { githubNotificationPullRequestOpenedCard } from '../channels/github/presentation/pull-request-opened.ts';
 import { workflowFeedbackAvailable } from '../channels/github/feedback-policy.ts';
+import GitHubIdentityCache from '../channels/github/identity-cache.ts';
+import { cardCopyInstructions } from '../channels/github/presentation/card.ts';
+import { githubNotificationPullRequestOpenedCard } from '../channels/github/presentation/pull-request-opened.ts';
+import GitHubIssueCommentClient from '../channels/github/provider/issue-comment-client.ts';
+import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
 import IssueDeliveryProvider, {
   type IssueDeliveryInput,
 } from '../channels/github/publication/issue-delivery.ts';
 import resolvePullRequestRecipients, {
   issuePullRequestRecipients,
 } from '../channels/github/pull-request-recipients.ts';
-
+import invalidDeliveryRequest from '../tools/dispatch/delivery-request-error.ts';
+import { implementationMaterialSchema } from '../tools/dispatch/implementation-material-schema.ts';
+import resolveGitProtocol from '../tools/git/protocol.ts';
+import { githubWorktreeRemote } from '../tools/git/worktree-remote.ts';
+import type abortableDelay from '../utils/abortable-delay.ts';
+import { nativeObject } from './automation-gateway.ts';
+import { automationHash } from './automation-hash.ts';
+import { inspectCodexDispatchActivation } from './codex-automations.ts';
+import codexCommit from './codex-commit.ts';
+import { adoptedCodexDelivery, type CodexDeliveryState } from './codex-delivery-state.ts';
+import { revalidateDispatchAssignment } from './codex-dispatch-context.ts';
+import dispatchHistory from './codex-dispatch-history.ts';
+import { codexDispatchNative } from './codex-dispatch-native.ts';
+import { dispatchGit, verifyDispatchWorktree, type DispatchGit } from './codex-dispatch-project.ts';
+import CodexDispatchStore from './codex-dispatch-state.ts';
+import authorizeCodexFeedback from './codex-feedback-authority.ts';
+import connectCodexFeedback from './codex-feedback-client.ts';
+import connectCodexGitHubAccount from './codex-github-client.ts';
+import codexHostAccess from './codex-host-access.ts';
+import { selectCodexIntake, type CodexIntakeDependencies } from './codex-intake.ts';
+import codexIssueBranch from './codex-issue-branch.ts';
+import codexIssueNotice from './codex-issue-notice.ts';
+import { connectCodexThreads, type CodexThreadRequest } from './codex-thread-client.ts';
+import deliveryAnnouncement, {
+  announcementPrecedesDelivery,
+  announcementPresentation,
+  deliveryCompletionInstructions,
+} from './delivery-announcement.ts';
+import deliveryBindingChange from './delivery-binding-change.ts';
+import selectFeedbackStage from './feedback-stage.ts';
+import { retainImplementationDelivery } from './implementation-delivery.ts';
+import bindIssuePullRequest from './issue-pr-binding.ts';
+import issueProgression from './issue-progression.ts';
+import issueWorkflowMode from './issue-workflow-mode.ts';
+import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
+import { dispatchAdmission, managedPullRequest, managedTargetUrl } from './managed-issue.ts';
+import { notificationAuthorityDigest } from './notification-authority.ts';
+import publishIssueDelivery from './publish-issue-delivery.ts';
+import taskPullRequest, {
+  isCurrentTaskPullRequest,
+  setTaskPullRequestLink,
+} from './task-pull-request.ts';
+import workflowFailure from './workflow-failure.ts';
+import { requireWorkflowSchedule, type WorkflowScheduleAuthority } from './workflow-schedule.ts';
+import workflowStatus from './workflow-status.ts';
 const requestSchema = Type.Object(
   {
     action: Type.Union(
@@ -108,7 +103,6 @@ export interface CodexDeliveryDependencies extends Omit<CodexIntakeDependencies,
     current: Omit<WorkflowScheduleAuthority, 'version' | 'capabilities'>;
   };
 }
-
 export class CodexDeliveryFailure extends Error {
   constructor(
     error: unknown,
@@ -119,7 +113,6 @@ export class CodexDeliveryFailure extends Error {
     super(error instanceof Error ? error.message : code, { cause: error });
   }
 }
-
 /** only successful native inventory readback in the owning turn establishes attachment. */
 export async function codexDeliveryAttachment(
   request: CodexThreadRequest,
@@ -160,7 +153,6 @@ export async function codexDeliveryAttachment(
       (entry.identityKey === url || (nativeObject(entry.payload) && entry.payload.url === url)),
   );
 }
-
 /** publication runs only through an explicitly approved native command; preparation is read-only. */
 export default async function runCodexDelivery(
   pluginData: string,
@@ -225,8 +217,7 @@ export default async function runCodexDelivery(
         !record.threadId ||
         record.threadId !== caller ||
         (record.supersededBy && input.action !== 'present') ||
-        (!['present', 'reconcile'].includes(input.action) &&
-          (record.reset || record.retired || record.retirement))
+        (!['present', 'reconcile'].includes(input.action) && (record.reset || record.retirement))
       )
         throw new Error('delivery-managed-issue-required');
       retainImplementationDelivery(record);
@@ -554,8 +545,6 @@ export default async function runCodexDelivery(
       const feedbackEvent = record.feedback?.events.find(
         (event) => event.attempt?.turnId === found.turnId,
       );
-      if (feedbackEvent && !feedbackEvent.native && input.eventId !== feedbackEvent.id)
-        throw new Error('feedback-event-required');
       if (input.eventId && feedbackEvent?.id !== input.eventId)
         throw new Error('feedback-owner-caller-required');
       const announcementOnly = ['compose', 'candidate', 'announce'].includes(input.action);
@@ -784,7 +773,6 @@ export default async function runCodexDelivery(
           instruction:
             'The existing PR is selected, but there is no new work to publish. Adoption alone sends no announcement and does not establish implementation completion.',
         };
-
       if (
         input.action === 'compose' ||
         input.action === 'candidate' ||
@@ -937,10 +925,6 @@ export default async function runCodexDelivery(
               );
             },
             authorize: authorizePublication,
-            beforeCreate: async () => {
-              if (feedbackEvent?.work?.pullRequest)
-                throw new Error('feedback-delivery-owner-changed');
-            },
             save,
           });
           return {

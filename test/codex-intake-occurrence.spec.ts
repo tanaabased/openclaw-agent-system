@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import acceptOccurrence from '../agent/codex-intake-occurrence.ts';
 import type CodexDispatchStore from '../agent/codex-dispatch-state.ts';
+import acceptOccurrence from '../agent/codex-intake-occurrence.ts';
 
 describe('codex intake occurrence', () => {
   it('should retain an accepted occurrence and verify the next occurrence before replacing it', async () => {
     const state: Awaited<ReturnType<CodexDispatchStore['read']>> = {
-      version: 1,
+      version: 4,
       scope: 'a'.repeat(64),
       records: [],
     };

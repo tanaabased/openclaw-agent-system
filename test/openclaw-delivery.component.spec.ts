@@ -1,21 +1,20 @@
-import { authorizeFeedback, type OpenClawFeedbackProvider } from '../agent/openclaw-feedback.ts';
-import { feedbackRevision } from '../agent/feedback-source.ts';
-import { recoverRetainedAnnouncement } from '../agent/delivery-announcement.ts';
-import { openClawWorkSlot } from '../agent/openclaw-continuation.ts';
-import manualPullRequest from '../agent/manual-pull-request.ts';
-import { account, fixturePullRequest, intakeFixture } from './github-intake-fixture.ts';
-import { hasDeliveredImplementation } from '../agent/implementation-delivery.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { recoverRetainedAnnouncement } from '../agent/delivery-announcement.ts';
+import { feedbackRevision } from '../agent/feedback-source.ts';
+import { hasDeliveredImplementation } from '../agent/implementation-delivery.ts';
+import manualPullRequest from '../agent/manual-pull-request.ts';
+import { openClawWorkSlot } from '../agent/openclaw-continuation.ts';
+import { authorizeFeedback, type OpenClawFeedbackProvider } from '../agent/openclaw-feedback.ts';
+import { account, fixturePullRequest, intakeFixture } from './github-intake-fixture.ts';
 
 import announcementFixture from './delivery-announcement-fixture.ts';
 
-import openClawSkill from '../agent/openclaw-skill.ts';
 import selectFeedbackStage from '../agent/feedback-stage.ts';
+import openClawSkill from '../agent/openclaw-skill.ts';
 
-import { automationHash } from '../agent/automation-hash.ts';
 import openClawDelivery from '../agent/openclaw-delivery.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
@@ -60,16 +59,6 @@ describe('agent/openclaw-delivery', () => {
     remote = '';
     dirty = lost = missing = failLink = revoked = false;
     pr = undefined;
-    const result = {
-      version: 1 as const,
-      outcome: 'plan-ready' as const,
-      summary: 'Plan',
-      assessment: 'Plan',
-      plan: 'Plan',
-      fullAssessment: 'Complete plan',
-      evidence: [],
-      progress: { completed: [], remaining: [] },
-    };
     const source = { runId: 'operator-run', inputEventId: 'operator-input' };
     record = {
       id: 'd'.repeat(64),
@@ -89,9 +78,8 @@ describe('agent/openclaw-delivery', () => {
         sourceRunId: 'run',
         sourceToolCallId: 'call',
       },
-      result,
       handoff: { at: 2, by: 'issue-chat', turnId: 'operator-run' },
-      work: { assessmentDigest: automationHash(result), publication: source },
+      work: { publication: source },
     };
     input = {
       record,
@@ -662,7 +650,6 @@ describe('agent/openclaw-delivery', () => {
       if (variant.includes('file'))
         assert.equal(composed.selection.guidance?.path, retainedSelection.guidance?.path);
       assert.ok(announcement.comments[0]!.body.includes('Live transport remains untested.'));
-      assert.equal(record.result!.fullAssessment, 'Complete plan');
       await request('announce', {});
       assert.equal(announcement.posts, 1);
       assert.equal(creates, 1);
@@ -670,12 +657,6 @@ describe('agent/openclaw-delivery', () => {
   }
 
   it('should finish a new implementation through the same pr after earlier delivery completed', async () => {
-    record.work!.result = {
-      outcome: 'done',
-      summary: 'First pass.',
-      fullResult: 'First pass checked.',
-    };
-    record.work!.resultSource = { turnId: 'first-run', inputId: 'first-input' };
     await publish();
     await request('compose');
     await request('candidate', {
@@ -684,7 +665,6 @@ describe('agent/openclaw-delivery', () => {
     await request('announce', {});
     assert.equal(hasDeliveredImplementation(record), true);
     const receipt = structuredClone(record.work!.delivery!.pullRequest);
-    const initialResult = structuredClone(record.work!.result);
     assert.equal(record.implementationDelivered, true);
     head = 'b'.repeat(40); // ordinary native edits; no managed context/result round.
     assert.equal(hasDeliveredImplementation(record), true);
@@ -694,7 +674,6 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(creates, 1);
     assert.equal(announcement.posts, 1);
     assert.equal(record.work!.delivery!.pushedHead, head);
-    assert.deepEqual(record.work!.result, initialResult);
   });
 
   it('should retry pr creation after a definite provider rejection', async () => {
@@ -778,8 +757,6 @@ describe('agent/openclaw-delivery', () => {
     };
     assert.equal((await request('compose')).status, 'announcement-blocked');
     input.record = record = JSON.parse(JSON.stringify(record));
-    record.work!.turn = { runId: 'implementation', message: 'done', status: 'completed' };
-    record.work!.result = { outcome: 'done', summary: 'Done.', fullResult: 'Checked.' };
     const delivery = record.work!.delivery!;
     const first = delivery.announcementRecovery!.retryAfter!;
     assert.equal(openClawWorkSlot(record), undefined);
@@ -909,7 +886,6 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(pushes, 1);
   });
   it('should update the delivered pr without the original implementation stage', async () => {
-    record.work!.result = { outcome: 'done', summary: 'Done.', fullResult: 'Implemented.' };
     await publish();
     assert.equal(record.implementationDelivered, true);
     delete record.progression;
@@ -1200,29 +1176,17 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(creates, 1);
     assert.equal(pushes, 2);
   });
-  it('should allow current authorized delivery despite an older unfinished result', async () => {
+  it('should publish current authorized work without a saved result', async () => {
     record.progression = { stage: 'implementation', via: 'work' };
-    for (const outcome of ['blocked', 'clarification-needed'] as const) {
-      record.work!.result =
-        outcome === 'blocked'
-          ? { outcome, summary: 'Missing shared interface.', fullResult: 'Partial work retained.' }
-          : {
-              outcome,
-              summary: 'Need an answer.',
-              fullResult: 'Partial work retained.',
-              questions: ['Which interface?'],
-            };
-      await publish();
-      assert.equal(creates, 1);
-      assert.equal(pushes, 1);
-    }
+    await publish();
+    assert.equal(creates, 1);
+    assert.equal(pushes, 1);
   });
   it('should publish completed implementation without a publication-only grant', async () => {
     delete record.handoff;
     delete record.work!.publication;
     record.progression = { stage: 'implementation', via: 'work' };
     record.work!.implementation = input.source;
-    record.work!.result = { outcome: 'done', summary: 'Done', fullResult: 'Done and tested.' };
     await publish();
     assert.equal(creates, 1);
     assert.equal(record.work!.delivery!.reconciled, true);

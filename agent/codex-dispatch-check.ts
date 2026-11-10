@@ -1,7 +1,6 @@
 import { automationHash } from './automation-hash.ts';
 import type { DispatchState } from './codex-dispatch-state.ts';
 import type { ManagedIssueState as IntakeState } from './managed-issue.ts';
-
 /** Reporting and delivery do not change which assignments the last dispatch check covered. */
 export function dispatchCheckDigest(state: DispatchState, intake: IntakeState) {
   return automationHash({
@@ -18,7 +17,6 @@ export function dispatchCheckDigest(state: DispatchState, intake: IntakeState) {
       receiptThreadId: record.receiptThreadId,
       worktree: record.worktree,
       effective: record.effective,
-      retired: record.retired,
       retirement: record.retirement,
       reset: record.reset,
       supersededBy: record.supersededBy,
@@ -29,7 +27,6 @@ export function dispatchCheckDigest(state: DispatchState, intake: IntakeState) {
     policy: intake.policyDigest,
   });
 }
-
 export default function requireDispatchCheck(
   state: DispatchState,
   intake: IntakeState,

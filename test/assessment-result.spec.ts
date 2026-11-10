@@ -5,12 +5,11 @@ import AssessmentValidationError from '../agent/assessment-validation.ts';
 import workflowFailure from '../agent/workflow-failure.ts';
 
 import {
-  assessmentResultContextSchema,
-  assessmentResultSchema,
-  assessmentSubmissionSchema,
-  parseAssessmentSubmission,
   assessmentDecisionMode,
+  assessmentResultContextSchema,
+  assessmentSubmissionSchema,
   parseAssessmentResult,
+  parseAssessmentSubmission,
 } from '../agent/assessment-result.ts';
 
 describe('agent/assessment-result', () => {
@@ -219,7 +218,7 @@ describe('agent/assessment-result', () => {
       assert.deepEqual(parseAssessmentResult(input), input);
     }
   });
-  it('should require full source for every new outcome while retaining legacy read compatibility', () => {
+  it('should require full source for every outcome', () => {
     for (const outcome of [
       { outcome: 'plan-ready', assessment: 'Observed.', plan: 'Complete plan.' },
       { outcome: 'clarification-needed', assessment: 'Unknown.', questions: ['Which option?'] },
@@ -239,10 +238,6 @@ describe('agent/assessment-result', () => {
           /assessment-result-(incomplete|invalid)/,
         );
       }
-      const legacy: Record<string, unknown> = { ...complete };
-      delete legacy.fullAssessment;
-      assert.equal(Value.Check(assessmentResultSchema, legacy), true);
-      assert.deepEqual(parseAssessmentResult(legacy), legacy);
     }
   });
 });

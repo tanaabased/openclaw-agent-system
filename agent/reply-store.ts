@@ -1,16 +1,16 @@
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import nodeErrorCode from '../utils/node-error-code.ts';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
+import nodeErrorCode from '../utils/node-error-code.ts';
 
-import { assessmentSelectionSchema } from './assessment-selection.ts';
-import { statusUpdateSchema } from '../tools/dispatch/reply-schema.ts';
-import { automationHash } from './automation-hash.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
-import PrivateStateFile from '../core/private-state-file.ts';
 import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
+import PrivateStateFile from '../core/private-state-file.ts';
 import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
+import { statusUpdateSchema } from '../tools/dispatch/reply-schema.ts';
+import { assessmentSelectionSchema } from './assessment-selection.ts';
+import { automationHash } from './automation-hash.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
@@ -109,14 +109,8 @@ export default class ReplyStore {
     });
   }
   async read(): Promise<ReplyDraft[]> {
-    // Older journals remain readable. New writes are bounded per operation, not
-    // by the lifetime volume of an otherwise valid conversation.
-    const contents = await this.file.read();
-    const state: unknown =
-      contents === undefined ? { scope: this.scope, drafts: [] } : JSON.parse(contents);
-    if (!Value.Check(schema, state) || state.scope !== this.scope)
-      throw new Error('reply-state-invalid');
-    const drafts = new Map(state.drafts.map((draft) => [draft.id, draft]));
+    if ((await this.file.read()) !== undefined) throw new Error('reply-clean-start-required');
+    const drafts = new Map<string, ReplyDraft>();
     let names: string[];
     try {
       names = await readdir(this.root);
@@ -166,9 +160,6 @@ export default class ReplyStore {
             (id) => !drafts.some((draft) => draft.id === id),
           );
           if (removed.length) {
-            // Drop the legacy aggregate first; retained operations already have individual files.
-            for (const draft of drafts) await this.draftFile(draft.id).write(JSON.stringify(draft));
-            await this.file.remove();
             for (const id of removed) {
               await this.draftFile(id).remove();
               saved.delete(id);

@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 
-import codexContinuationNative from '../agent/codex-continuation-native.ts';
-import type { CodexContinuationState } from '../agent/codex-continuation-state.ts';
+import codexContinuationNative, {
+  type CodexNativeAttempt,
+} from '../agent/codex-continuation-native.ts';
 
 // constructed protocol cases; the authorized desktop pilot owns live native evidence.
 describe('agent/codex-continuation-native', () => {
-  const attempt: NonNullable<CodexContinuationState['attempt']> = {
+  const attempt: CodexNativeAttempt = {
     id: 'a'.repeat(64),
     sourceTurnId: 'scan',
     beforeTurnId: 'assessment',

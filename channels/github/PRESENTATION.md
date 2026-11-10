@@ -289,22 +289,15 @@ proposed change would improve that experience.
 Include brief documentation and test impact in the repository's own terms, plus any
 risk, uncertainty, or decision that could change approval. Roughly 200–400 words is
 an editorial guide for an ordinary human review, not a limit or minimum. Small fixes
-need less. Do not apply review-length guidance to the retained assessment or plan.
+need less. Do not apply review-length guidance to the full assessment or plan.
 
 The full engineering assessment remains authoritative for implementation: rationale,
 tradeoffs, owners, dependencies, constraints, complete plan, validation, evidence, and
 unresolved questions. Keep it unchanged in `fullAssessment` and the full implementation plan in `plan`
 within the native tool exchange. New assessments do not save either field in Agent
-System. Only explicit historical readback may describe older results as saved. `reviewSummary` is a derived human view, never a
+System. `reviewSummary` is a derived human view, never a
 replacement source. `assessment` may repeat the recommendation; `planSummary` remains
-optional. Requesting `includeDetails: true` shows the complete assessment and any
-distinct plan, followed by supporting evidence and investigation.
-
-Without both an explicit review and full source, preserve the existing complete
-inline display for older/custom results. Omit only verbatim duplicate openings;
-never infer expendable content from headings, size, or skill identity. Never truncate
-or rewrite substantive source text. Questions and required actions remain prominent
-in every default and detailed view, even when repeated in the complete source.
+optional. Questions and required actions remain prominent in the review.
 
 When an assessment includes a continuation decision, show an **Auto mode decision**
 card after the routing card. Keep it visible
@@ -312,7 +305,7 @@ regardless of debug presentation. Use ▶️ for `work` and ⏸️ for `plan`, w
 code-formatted value in **Decision**. Use **Next** to distinguish automatic continuation
 once runtime checks pass from waiting for the operator's direction before implementation.
 Follow with bounded **Reason** rows. Escape reason text and withhold credential-shaped
-content; do not present the decision as permission or replace the retained assessment.
+content; do not present the decision as permission or replace the full assessment.
 
 The private routing card follows the recommendation (or a distinct assessment). Its values come from saved routing and
 native readback, with requested selection distinct from effective execution. Preserve

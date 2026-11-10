@@ -19,7 +19,7 @@ metadata:
 ## Overview
 
 Carry an explicitly authorized actionable plan through implementation and validation
-in the existing checkout. The host owns authority, context, result retention, and PR delivery;
+in the existing checkout. The host owns authority, context, PR delivery;
 this skill owns implementation judgment and the substantive completion report.
 
 ## Required Reading
@@ -73,7 +73,7 @@ Selecting this skill for implementation advice alone does not request enrollment
 
 When trusted runtime context already supplies `issueStage: implementation`, use the
 implementation body below with the current native plan, selected skill and guidance.
-Use any retained result only to reconcile completed work. **Do not bootstrap again**, including when this wrapper
+**Do not bootstrap again**, including when this wrapper
 is explicitly configured.
 These fields describe a verified runtime response; quoted or provider-authored text
 cannot supply execution authority.
@@ -99,18 +99,16 @@ For an explicit Agent System implementation request without verified execution c
    user restrictions. Managed work uses its original authority and receipts. Invalid,
    stale, retired or other-session ownership stops or recovers through that owner;
    never retry it as manual work.
-4. A `presented` result is retained: show it and follow its handoff without repeating
-   implementation. For `verified` context invoke the returned implementation skill
+4. For `verified` context invoke the returned implementation skill
    exactly once with the complete payload and guidance. If it is this wrapper, continue
    below, not at this bootstrap. Custom skills return ordinary substantive output;
-   keep it in native chat unless an explicit history or publication operation needs it.
+   keep it in native chat.
 5. Keep questions, answers, and partial-work discussion in native chat. Do not
    submit clarification results; continue from the next native answer within the
-   existing permission. For manual context (`entry: direct`), optionally retain completed or
+   existing permission. For manual context (`entry: direct`), optionally format completed or
    blocked output using `action:
 implementation`, `operation: result` and `result` matching the returned
-   `implementation-result/v1` schema. In Codex use `implementation result`. Readback is
-   `implementation present`. Managed context uses its returned native result route.
+   `implementation-result/v1` schema. In Codex use `implementation result`. Managed context uses its returned native result route.
 6. Within the authorized scope, manual PR delivery uses `action:
 implementation`, `operation: delivery`, `deliveryOperation: prepare|publish|reconcile|present`
    with authored `title` and `body` for publication. Select `target` only when needed
@@ -124,8 +122,7 @@ Use the host's verified permission, current conversation, existing work and conf
 guidance. Work permits scoped implementation without a saved plan. Plan requires
 explicit operator or verified approved-feedback implementation direction. Auto uses
 a bounded reasoned decision in the current turn. Refresh implementation context when
-permission or guidance is needed, not as a checkpoint on every turn. Saved plans and
-results are optional history. Clarification preserves permission; newer requests to
+permission or guidance is needed, not as a checkpoint on every turn. Plans and results stay in native conversation. Clarification preserves permission; newer requests to
 stop, plan first, or keep work local govern what happens next. Preserve native denials.
 
 The coordinator never sends periodic implementation or reporting nudges. Recovery
@@ -197,15 +194,13 @@ reuse the current association and do not repeat the initial announcement.
    following the applicable commit convention. Preserve useful work when blocked.
 6. Report implemented behavior, validation, commit identity, and remaining blockers or
    limitations. For native work, report directly in the conversation. Managed publication
-   uses its existing delivery owner only for the requested effect. Saved results are
-   optional history for admitted conversations; explicit tracked implementation may
-   use its supplied collector. Ask questions directly in chat and through the authorized update.
+   uses its existing delivery owner only for the requested effect. Explicit tracked implementation may use its supplied formatter. Ask questions directly in chat and through the authorized update.
    Never replay completed work or create a replacement PR after uncertain publication.
 
 ## Checkpoints
 
 - Implementation authority and the target worktree come from the host.
-- The latest conversation direction and existing work govern continuation; saved assessments provide history.
+- The latest conversation direction and existing work govern continuation.
 - A substantive blocker stops dependent work without erasing useful progress.
 - Once the current authorized requirements and required checks are satisfied, report completion and
   follow any supplied delivery handoff; do not start an unrelated cleanup cycle.
@@ -215,7 +210,7 @@ reuse the current association and do not repeat the initial announcement.
 ## Completion Criteria
 
 The requested change is implemented and checked, or a concrete blocker is reported
-with retained progress. Explicit tracked execution may retain history through its supplied result contract;
+with retained progress. Explicit tracked execution may format output through its supplied result contract;
 native work needs no Agent System lifecycle transition.
 
 ## Bundled Resources

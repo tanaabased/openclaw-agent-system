@@ -9,9 +9,6 @@ const actions: Record<string, readonly string[]> = {
     'prepare',
     'reconcile',
     'context',
-    'present',
-    'result',
-    'summary',
     'handoff',
     'report',
     'retry-denied',
@@ -40,19 +37,7 @@ const actions: Record<string, readonly string[]> = {
     'announce',
     'present',
   ],
-  feedback: [
-    'reply',
-    'implementation-context',
-    'implementation-result',
-    'next',
-    'context',
-    'result',
-    'compose',
-    'candidate',
-    'publish',
-    'publish-approved',
-    'reconcile',
-  ],
+  feedback: ['reply', 'next', 'context', 'reconcile'],
 };
 
 /** expose the effect in argv without allowing stdin to substitute another operation. */
@@ -136,8 +121,7 @@ export default function codexRuntimeRequest(route: string, args: string[], input
   } else if (operation) {
     if (
       !(
-        (route === 'dispatch' &&
-          ['summary', 'assessment', 'implementation', 'launch'].includes(action)) ||
+        (route === 'dispatch' && ['assessment', 'implementation', 'launch'].includes(action)) ||
         (route === 'feedback' && action === 'reply')
       ) ||
       !(
@@ -145,8 +129,8 @@ export default function codexRuntimeRequest(route: string, args: string[], input
           ? action === 'launch'
             ? ['context', 'prepare', 'reconcile']
             : action === 'assessment'
-              ? ['context', 'render', 'result', 'present']
-              : ['context', 'result', 'present']
+              ? ['context', 'render']
+              : ['context', 'result']
           : action === 'reply'
             ? ['context', 'compose', 'candidate', 'publish', 'reconcile']
             : ['compose', 'candidate', 'publish', 'reconcile']
@@ -157,8 +141,7 @@ export default function codexRuntimeRequest(route: string, args: string[], input
       throw new Error('workflow-command-action-mismatch');
     request.operation = operation;
   } else if (
-    (route === 'dispatch' &&
-      ['summary', 'assessment', 'implementation', 'launch'].includes(action)) ||
+    (route === 'dispatch' && ['assessment', 'implementation', 'launch'].includes(action)) ||
     (route === 'feedback' && action === 'reply')
   ) {
     throw new Error('workflow-command-operation-required');

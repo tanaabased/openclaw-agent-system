@@ -4,7 +4,6 @@ export const issueTurnSchema = Type.Object(
   {
     runId: text,
     executionRunId: Type.Optional(text),
-    origin: Type.Optional(Type.Union([Type.Literal('assessment'), Type.Literal('input')])),
     message: Type.String({ minLength: 1, maxLength: 128000 }),
     status: Type.Union([
       Type.Literal('attempted'),

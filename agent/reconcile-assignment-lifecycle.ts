@@ -1,25 +1,24 @@
+import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
+import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
+import type assignmentIntakePolicy from './assignment-intake-policy.ts';
+import assignmentRetirement, {
+  awaitingReassignment,
+  type Retirement,
+} from './assignment-retirement.ts';
+import {
+  cleanupConfigurationDiagnostic,
+  type CleanupConfiguration,
+} from './cleanup-configuration.ts';
+import type DiscoveryBudget from './discovery-budget.ts';
+import { inspectAdmittedIssue, inspectAssignmentRemoval } from './dispatch-assignment.ts';
+import { issueKey } from './dispatch-pending.ts';
+import type { SharedDispatchRecord } from './dispatch-state.ts';
 import {
   dispatchAdmission,
   managedPullRequest,
   type ManagedIssue as IntakeRecord,
 } from './managed-issue.ts';
-import {
-  cleanupConfigurationDiagnostic,
-  type CleanupConfiguration,
-} from './cleanup-configuration.ts';
-import assignmentRetirement, {
-  awaitingReassignment,
-  type Retirement,
-} from './assignment-retirement.ts';
-import { inspectAdmittedIssue, inspectAssignmentRemoval } from './dispatch-assignment.ts';
-import { issueKey } from './dispatch-pending.ts';
-import type { SharedDispatchRecord } from './dispatch-state.ts';
-import type assignmentIntakePolicy from './assignment-intake-policy.ts';
-import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
-import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
 import workflowFailure from './workflow-failure.ts';
-import type DiscoveryBudget from './discovery-budget.ts';
-
 export interface RetirementNativeObservation {
   archived: boolean;
   idle: boolean;
@@ -32,7 +31,6 @@ export interface RetirementCleanupResult {
   unavailableSession?: NonNullable<Retirement['sessionUnavailableObserved']>['session'];
   code?: string;
 }
-
 /** one bounded pass owns membership; native adapters own preservation and resource effects. */
 export default async function reconcileAssignmentLifecycle<R extends SharedDispatchRecord>(input: {
   records: R[];
@@ -56,7 +54,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
   ): Promise<RetirementCleanupResult>;
   reactivate?(record: R, intake: IntakeRecord): Promise<boolean>;
   prepare?(record: R, intake: IntakeRecord): Promise<void>;
-  dispose?(record: R, intake: IntakeRecord): Promise<void>;
+  dispose(record: R, intake: IntakeRecord): Promise<void>;
   fresh(): Promise<void>;
   save(): Promise<void>;
 }) {
@@ -68,17 +66,13 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
   const latest = new Map(input.admitted.map((item) => [issueKey(item), item]));
   const selected = input.records
     .filter(
-      (record) =>
-        !record.supersededBy &&
-        !record.reset &&
-        !record.retired &&
-        record.sourceThreadId === input.owner,
+      (record) => !record.supersededBy && !record.reset && record.sourceThreadId === input.owner,
     )
     .filter((record) => !input.targetId || record.id === input.targetId)
     .filter(
       (record) =>
         input.targetId === record.id ||
-        (record.lifecycleCheckedAt ?? -Infinity) + 60_000 <= now ||
+        (record.lifecycleCheckedAt ?? -Infinity) + 60000 <= now ||
         record.retirement?.code === 'retirement-native-inventory-required' ||
         record.retirement?.archiveAttempt,
     )
@@ -187,7 +181,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         record.retirement!.removalEventId !== record.assignmentObservation?.event?.nodeId
       ) {
         if (graceMinutes === undefined) record.retirement!.deadlinePending = true;
-        else record.retirement!.eligibleAt = now + graceMinutes * 60_000;
+        else record.retirement!.eligibleAt = now + graceMinutes * 60000;
       }
       // provider closure or approved removal can stop scheduling without a native observation.
       if (reason)
@@ -221,7 +215,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         native?.idle
       ) {
         if (graceMinutes === undefined) record.retirement.deadlinePending = true;
-        else record.retirement.eligibleAt = now + graceMinutes * 60_000;
+        else record.retirement.eligibleAt = now + graceMinutes * 60000;
       }
       // an unavailable session supersedes an earlier activity observation, not proof of idleness.
       if (native?.unavailableSession) delete record.nativeInactive;
@@ -387,7 +381,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         record,
         admitted,
         fresh,
-        shared.filter((other) => !other.retired),
+        shared,
         native,
         reason === 'issue-closed',
       );
@@ -399,8 +393,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         result.worktreeRemoved &&
         !result.code
       ) {
-        await input.dispose?.(record, admitted);
-        record.retired = { at: now, by: input.owner };
+        await input.dispose(record, admitted);
       }
     } catch (error) {
       if (input.budget?.exhausted) {

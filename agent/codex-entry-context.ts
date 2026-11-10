@@ -1,10 +1,10 @@
-import { managedTargetUrl, dispatchAdmission } from './managed-issue.ts';
 import { hasDeliveredImplementation, nativeIssueContext } from './implementation-delivery.ts';
+import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
 
+import { realpath } from 'node:fs/promises';
+import connectCodexGitHubAccount from './codex-github-client.ts';
 import type { ImplementationResult } from './implementation-result.ts';
 import managedImplementationRoute from './managed-implementation-route.ts';
-import connectCodexGitHubAccount from './codex-github-client.ts';
-import { realpath } from 'node:fs/promises';
 
 import type { AssessmentEntryDependencies } from './assessment-entry.ts';
 import assessmentOwner from './assessment-owner.ts';
@@ -69,37 +69,17 @@ export default async function codexEntryContext<T>(
         (await realpath(native.cwd)) !== (await realpath(record.worktree!))
       )
         throw new Error('assessment-managed-context-invalid');
-      const eventId = record.feedback?.events.find(
-        (event) => !event.native && event.attempt?.turnId === native.turnId,
-      )?.id;
-      const feedback = eventId && record.feedback?.events.find((event) => event.id === eventId);
       return {
         selections: record.manualIssue?.selections,
         nativeContext:
-          !feedback && (assessmentRead || hasDeliveredImplementation(record))
+          assessmentRead || hasDeliveredImplementation(record)
             ? nativeIssueContext(record)
             : undefined,
-        implementationResult: feedback ? feedback.work?.result : record.continuation?.result,
         digest,
-        owner: { id: record.id, ...(eventId ? { eventId } : {}) },
+        owner: { id: record.id },
         path: await realpath(record.worktree!),
-        selection: record.stageReceipt?.selection ?? record.assessment,
+        selection: record.assessment,
         evidence: record.context,
-        result: record.result,
-        receipt: record.stageReceipt,
-        entries: async (run) =>
-          journal.exclusive(async (fresh, save) => {
-            const found = assessmentOwner(
-              fresh.records,
-              (await current.store.read())?.records ?? [],
-              caller,
-              target,
-            );
-            if (!found || found.digest !== digest)
-              throw new Error('assessment-managed-context-changed');
-            found.record.directAssessments ??= [];
-            return run(found.record.directAssessments, save);
-          }),
       };
     };
     const records = (await journal.read()).records.filter((record) => record.threadId === caller);

@@ -28,7 +28,6 @@ and personable, with room for wit when it suits the exchange.
   GitHub comment, review, or response with an exact issue/PR destination.
 - Compose a public reply to admitted issue comments or review feedback from the
   private response and context supplied by the host.
-- Compose a separate public summary of a retained assessment when the host supplies an assessment event.
 - Compose a short change description from an explicit host-supplied PR delivery event.
 - Apply the agent’s voice and configured reply guidance to that public candidate.
 - "Draft a reply to this comment" or "summarize this plan for GitHub" when the source response or verified outcome is already supplied.

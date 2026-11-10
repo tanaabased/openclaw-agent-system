@@ -1,16 +1,15 @@
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
+import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
 import type { ReplyOwner } from './reply-owner.ts';
-import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
-
 /** project common reply obligations; native adapters supply only custody and lifecycle evidence. */
 export default function replyOwnerContext(input: {
   conversation?: boolean;
   record: SharedDispatchRecord & {
     feedback?: {
       events: FeedbackSourceEvent[];
-      completed?: Array<Pick<FeedbackSourceEvent, 'sourceId' | 'nodeId' | 'native'>>;
+      completed?: Array<Pick<FeedbackSourceEvent, 'sourceId' | 'nodeId'>>;
     };
   };
   intake?: Pick<IntakeRecord, 'repository' | 'issue' | 'receiving'>;
@@ -20,7 +19,10 @@ export default function replyOwnerContext(input: {
   delivery?: {
     adopted?: unknown;
     pushedHead?: string;
-    pullRequest?: { pullRequestNodeId: string; pullRequestNumber: number };
+    pullRequest?: {
+      pullRequestNodeId: string;
+      pullRequestNumber: number;
+    };
     announcement?: DeliveryAnnouncementState;
     announcementRecovery?: unknown;
   };
@@ -36,12 +38,10 @@ export default function replyOwnerContext(input: {
     id: record.id,
     threadId: record.threadId,
     ...(input.incarnation ? { incarnation: input.incarnation } : {}),
-    retired: Boolean(record.retired),
     reset: Boolean(record.reset),
     supersededBy: record.supersededBy,
     manualIssue: record.manualIssue?.fresh ? { fresh: true } : undefined,
     inactive: Boolean(
-      record.retired ||
       record.supersededBy ||
       record.retirement ||
       record.reset ||
@@ -52,8 +52,7 @@ export default function replyOwnerContext(input: {
     pullRequestNumber:
       record.pullRequestLink !== undefined
         ? record.pullRequestLink?.pullRequestNumber
-        : (delivery?.pullRequest?.pullRequestNumber ??
-          record.retainedHistory?.pullRequest?.pullRequestNumber),
+        : delivery?.pullRequest?.pullRequestNumber,
     events: record.feedback?.events,
     sourceReceipts: record.feedback && [
       ...(record.feedback.completed ?? []),

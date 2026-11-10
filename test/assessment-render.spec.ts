@@ -1,24 +1,24 @@
-import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
 
 import renderNativeAssessment, {
   assessmentPresentationRequest,
   renderBoundAssessment,
 } from '../agent/assessment-render.ts';
+import type { AssessmentSubmission } from '../agent/assessment-result.ts';
 import assessmentReviewContext from '../agent/assessment-review-context.ts';
+import AssessmentValidationError from '../agent/assessment-validation.ts';
+import { runCodexDispatch } from '../agent/codex-dispatch.ts';
+import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
 import implementationMaterial, {
   type ImplementationMaterialRead,
 } from '../agent/implementation-material.ts';
-import { runCodexDispatch } from '../agent/codex-dispatch.ts';
-import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
 import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
-import type { AssessmentSubmission } from '../agent/assessment-result.ts';
-import hydrateImplementation from './implementation-material-fixture.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import AssessmentValidationError from '../agent/assessment-validation.ts';
+import hydrateImplementation from './implementation-material-fixture.ts';
 
 const target = 'https://github.com/owner/repo/issues/3';
 const result: AssessmentSubmission = {
@@ -109,7 +109,7 @@ describe('agent/assessment-render', () => {
           await assert.rejects(
             renderBoundAssessment(request, {
               ...renderContext,
-              records: [{ ...owner, retired: {} } as SharedDispatchRecord],
+              records: [{ ...owner, reset: {} } as SharedDispatchRecord],
             }),
             /assessment-managed-context-invalid/,
           );
@@ -271,7 +271,6 @@ describe('agent/assessment-render', () => {
           /assessment-render-request-invalid/,
         );
         for (const changed of [
-          { retired: { at: 1 } },
           { reset: { at: 1 } },
           { supersededBy: 'another-task' },
           { retirement: { at: 1 } },
@@ -510,7 +509,7 @@ describe('agent/assessment-render', () => {
     for (const [input, field] of [
       [{ ...request, target: undefined }, 'request.target'],
       [{ ...request, operation: 'PRIVATE-OPERATION' }, 'request.operation'],
-      [{ ...request, includeDetails: true }, 'request.includeDetails'],
+      [{ ...request, includeDetails: true }, 'request'],
       [{ ...request, id: 'PRIVATE-ID' }, 'request'],
     ] as const)
       assert.throws(

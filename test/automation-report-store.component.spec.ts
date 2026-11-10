@@ -2,14 +2,14 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 
-import AutomationReportStore, {
-  type AutomationReportRecord,
-} from '../agent/automation-report-store.ts';
 import deliverAutomationReport, {
   reconcileAutomationReport,
 } from '../agent/automation-report-delivery.ts';
+import AutomationReportStore, {
+  reportLifetimeMs,
+  type AutomationReportRecord,
+} from '../agent/automation-report-store.ts';
 import { prepareAutomationReport } from '../agent/automation-report.ts';
-import { historyLifetimeMs } from '../agent/history-state.ts';
 
 describe('agent/automation-report-store', () => {
   let root: string;
@@ -115,7 +115,7 @@ describe('agent/automation-report-store', () => {
     await save(complete);
     await save(uncertain);
     await store.prune();
-    now += historyLifetimeMs + 1;
+    now += reportLifetimeMs + 1;
     await store.prune();
     assert.deepEqual(await store.recoveryIds(), [uncertain.executionId]);
     assert.equal(await store.read(complete.executionId), undefined);
@@ -187,7 +187,7 @@ describe('agent/automation-report-store', () => {
     });
     assert.deepEqual(await store.recoveryIds(), []);
     assert.equal(await store.file(complete.executionId).read(), undefined);
-    now += historyLifetimeMs + 1;
+    now += reportLifetimeMs + 1;
     await store.prune();
     assert.deepEqual(await store.recoveryIds(), []);
     assert.deepEqual(await store.ids(), []);

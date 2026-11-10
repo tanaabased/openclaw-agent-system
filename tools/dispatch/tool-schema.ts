@@ -1,31 +1,27 @@
+import { Type, type Static, type TProperties } from 'typebox';
+import { Value } from 'typebox/value';
+import { dispatchInspectionProperties } from '../../agent/dispatch-inspection.ts';
+import { implementationResultSchema } from '../../agent/implementation-result.ts';
+import { issueChatTitleGuidance } from '../../agent/issue-chat-title.ts';
+import { implementationDecisionSchema } from '../../agent/issue-progression.ts';
+import { assessmentSchema } from '../../agent/model-routing.ts';
 import WorkflowRequestError from '../../agent/workflow-request-error.ts';
+import discriminatedSchema from '../../utils/discriminated-schema.ts';
+import { directAssessmentRequestSchema } from './assessment-schema.ts';
 import invalidDeliveryRequest from './delivery-request-error.ts';
 import {
   implementationMaterialSchema,
   modelMaterialParameters,
   type modelMaterialSchema,
 } from './implementation-material-schema.ts';
-import { implementationDecisionSchema } from '../../agent/issue-progression.ts';
-import { dispatchInspectionProperties } from '../../agent/dispatch-inspection.ts';
-import { issueChatTitleGuidance } from '../../agent/issue-chat-title.ts';
-import { launchRequestSchema } from './launch-schema.ts';
-import { operatorTargetProperties } from './recovery-schema.ts';
-import { retirementRequestSchema, retirementModelSchema } from './retirement-schema.ts';
 import {
   directImplementationRequestSchema,
   invalidImplementationRequest,
 } from './implementation-schema.ts';
-import { directAssessmentRequestSchema } from './assessment-schema.ts';
-import { feedbackDecisionSchema } from '../../agent/feedback-work.ts';
-import { Type, type Static, type TProperties } from 'typebox';
-import { assessmentSummaryRequestProperties } from '../../agent/assessment-summary-state.ts';
-import { assessmentSubmissionSchema } from '../../agent/assessment-result.ts';
-import { assessmentSchema } from '../../agent/model-routing.ts';
-import { feedbackResultSchema } from '../../agent/feedback-state.ts';
-import { implementationResultSchema } from '../../agent/implementation-result.ts';
-import { replyExecutionSchema, invalidReplyRequest } from './reply-schema.ts';
-import { Value } from 'typebox/value';
-import discriminatedSchema from '../../utils/discriminated-schema.ts';
+import { launchRequestSchema } from './launch-schema.ts';
+import { operatorTargetProperties } from './recovery-schema.ts';
+import { invalidReplyRequest, replyExecutionSchema } from './reply-schema.ts';
+import { retirementModelSchema, retirementRequestSchema } from './retirement-schema.ts';
 
 const id = Type.String({ pattern: '^[a-f0-9]{64}$' });
 const object = <P extends TProperties>(properties: P) =>
@@ -77,8 +73,6 @@ const dispatchRequestVariants = Type.Union([
     id,
     material: Type.Optional(implementationMaterialSchema),
   }),
-  object({ action: Type.Literal('present'), id, includeDetails: Type.Optional(Type.Boolean()) }),
-  object({ action: Type.Literal('summary'), id, ...assessmentSummaryRequestProperties }),
   object({
     action: Type.Literal('handoff'),
     id,
@@ -127,47 +121,11 @@ const dispatchRequestVariants = Type.Union([
     body: Type.Optional(Type.String({ minLength: 1, maxLength: 65536, pattern: '\\S' })),
   }),
   object({
-    action: Type.Literal('result'),
-    id,
-    result: assessmentSubmissionSchema,
-    previousResultDigest: Type.Optional(id),
-  }),
-  object({
     action: Type.Literal('feedback'),
     id,
     eventId: id,
     material: Type.Optional(implementationMaterialSchema),
-    resume: Type.Optional(Type.Boolean()),
-    operation: Type.Union([
-      Type.Literal('context'),
-      Type.Literal('implementation-context'),
-      Type.Literal('implementation-result'),
-      Type.Literal('delivery'),
-      Type.Literal('result'),
-      Type.Literal('compose'),
-      Type.Literal('candidate'),
-      Type.Literal('publish'),
-      Type.Literal('reconcile'),
-    ]),
-    decision: Type.Optional(feedbackDecisionSchema),
-    implementationResult: Type.Optional(implementationResultSchema),
-    deliveryOperation: Type.Optional(
-      Type.Union([
-        Type.Literal('prepare'),
-        Type.Literal('publish'),
-        Type.Literal('reconcile'),
-        Type.Literal('present'),
-        Type.Literal('compose'),
-        Type.Literal('candidate'),
-        Type.Literal('announce'),
-      ]),
-    ),
-    title: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
-    body: Type.Optional(Type.String({ maxLength: 65536 })),
-    digest: Type.Optional(id),
-    privateText: Type.Optional(feedbackResultSchema.properties.privateText),
-    publicText: Type.Optional(feedbackResultSchema.properties.publicText),
-    reply: Type.Optional(Type.Boolean()),
+    operation: Type.Union([Type.Literal('context'), Type.Literal('reconcile')]),
   }),
   object({ action: Type.Literal('retry'), id }),
 ]);
@@ -175,17 +133,9 @@ export const dispatchParameters = discriminatedSchema('action', dispatchRequestV
 
 // current-task reads have no model-facing owner selector.
 type ModelDispatchInput<T = Static<typeof dispatchParameters>> = T extends {
-  action:
-    | 'context'
-    | 'present'
-    | 'summary'
-    | 'handoff'
-    | 'result'
-    | 'implementation-context'
-    | 'implementation-result'
-    | 'delivery';
+  action: 'context' | 'handoff' | 'implementation-context' | 'implementation-result' | 'delivery';
 }
-  ? Omit<T, 'id' | 'previousResultDigest' | 'digest' | 'apply'>
+  ? Omit<T, 'id' | 'digest' | 'apply'>
   : T extends { action: 'feedback' }
     ? Omit<T, 'id' | 'eventId' | 'digest'> & { source?: string }
     : T extends { action: 'retry' }
@@ -208,15 +158,12 @@ export const dispatchModelParameters = Type.Unsafe<ModelMaterialInput<ModelDispa
         .map((variant) =>
           [
             'context',
-            'present',
-            'summary',
             'handoff',
-            'result',
             'implementation-context',
             'implementation-result',
             'delivery',
           ].includes(String(variant.properties.action.const))
-            ? Type.Omit(variant, ['id', 'previousResultDigest', 'digest', 'apply'], {
+            ? Type.Omit(variant, ['id', 'digest', 'apply'], {
                 additionalProperties: false,
               })
             : variant.properties.action.const === 'feedback'

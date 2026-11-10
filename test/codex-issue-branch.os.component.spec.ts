@@ -5,10 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
-import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
-import codexIssueBranch from '../agent/codex-issue-branch.ts';
 import type { DispatchGit } from '../agent/codex-dispatch-project.ts';
 import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
+import codexIssueBranch from '../agent/codex-issue-branch.ts';
+import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 
 const execute = promisify(execFile);
 // exercise local git mechanics, not the host's managed launcher or credential configuration.
@@ -82,15 +82,15 @@ describe('agent/codex-issue-branch', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  it('should isolate a fresh attempt from preserved retired commits and retry on the same branch', async () => {
+  it('should isolate a fresh attempt from preserved reset commits and retry on the same branch', async () => {
     const old = await prepare();
-    await writeFile(join(root, 'work.txt'), 'retired work');
+    await writeFile(join(root, 'work.txt'), 'reset work');
     await git('commit', '-am', 'old work');
     const oldHead = await git('rev-parse', 'HEAD');
-    record.retired = { at: 1, by: 'operator' };
+    record.reset = { at: 1, by: 'operator' };
     await git('switch', '--detach', base);
     const previous = record;
-    record = { ...record, id: 'b'.repeat(64), issueBranch: undefined, retired: undefined };
+    record = { ...record, id: 'b'.repeat(64), issueBranch: undefined, reset: undefined };
     records = [previous, record];
     const fresh = await prepare();
     assert.notEqual(fresh, old);
@@ -244,7 +244,7 @@ describe('agent/codex-issue-branch', () => {
     assert.equal(await git('rev-parse', 'HEAD'), head);
   });
 
-  it('should retain only an exact legacy delivery owner and reject conflicting retired ownership', async () => {
+  it('should retain only an exact legacy delivery owner and reject conflicting reset ownership', async () => {
     await git('switch', '-c', 'legacy-delivery');
     record.delivery = {
       binding: {
@@ -264,7 +264,7 @@ describe('agent/codex-issue-branch', () => {
       ...record,
       id: 'b'.repeat(64),
       issueBranch: { attemptId: 'b'.repeat(64), name: 'legacy-delivery', phase: 'ready' },
-      retired: { at: 1, by: 'operator' },
+      reset: { at: 1, by: 'operator' },
     });
     await assert.rejects(prepare(), /codex-branch-owner-mismatch/);
   });

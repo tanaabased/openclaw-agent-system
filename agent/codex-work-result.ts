@@ -1,88 +1,23 @@
-import codexWorkState from './codex-work-state.ts';
-import nativeClarification from './native-clarification.ts';
-import type { ImplementationSource } from './implementation-revision.ts';
 import type { CodexWorkContext } from './codex-continuation-context.ts';
-import type { DispatchNativeThread } from './codex-dispatch-native.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
+import codexWorkState from './codex-work-state.ts';
 import implementationHandoff from './implementation-handoff.ts';
 import { implementationPresentation } from './implementation-result.ts';
-import { validateWorkflowResult } from './workflow-result.ts';
+import nativeClarification from './native-clarification.ts';
 
-/** Record implementation output after the controller verifies the current native owner. */
-export default async function recordCodexWorkResult(
+/** Format current implementation output without persisting conversation state. */
+export default function renderCodexWorkResult(
   record: DispatchRecord,
-  context: Pick<CodexWorkContext, 'input' | 'git' | 'signal' | 'save'>,
-  found: Pick<DispatchNativeThread, 'cwd'> & { turnId: string },
-  revisionInput?: ImplementationSource,
+  { input }: Pick<CodexWorkContext, 'input'>,
 ) {
-  const { input, git, signal, save } = context;
   const work = codexWorkState(record)!;
   if (!input.result) throw new Error('continuation-result-required');
   if (input.result.outcome === 'clarification-needed')
     return nativeClarification(record.id, implementationPresentation(input.result));
-  validateWorkflowResult(
-    {
-      version: 1,
-      stage: 'implementation',
-      resultContract: 'implementation-result/v1',
-      binding: work.binding!,
-      result: { outcome: input.result.outcome, summary: input.result.summary },
-    },
-    { stage: 'implementation', authorized: true, binding: work.binding! },
-  );
-  if (input.result.outcome === 'done') {
-    if ((await git(found.cwd, ['status', '--porcelain=v1'], signal)).trim())
-      throw new Error('continuation-uncommitted-work');
-    const head = (await git(found.cwd, ['rev-parse', '--verify', 'HEAD'], signal)).trim();
-    if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('continuation-head-invalid');
-    if (!record.nativeRecord) work.head = head;
-  }
-  if (record.nativeRecord) {
-    if (input.result.outcome === 'blocked') {
-      work.blockedTurnId = found.turnId;
-      work.blocked = true;
-    } else {
-      delete work.blockedTurnId;
-      delete work.blocked;
-    }
-    delete work.code;
-    await save();
-    return {
-      status: 'native' as const,
-      id: record.id,
-      outcome: input.result.outcome,
-      handoff: implementationHandoff(
-        input.result.outcome,
-        'codex',
-        work.scope === 'local' ? { publication: false } : undefined,
-        Boolean(record.adoptedPullRequest),
-      ),
-      presentation: implementationPresentation(input.result),
-    };
-  }
-  work.resultSource = work.revisionSource ??
-    revisionInput ?? {
-      turnId: found.turnId,
-      inputId: work.attempt?.inputId ?? found.turnId,
-    };
-  work.result = input.result;
-  delete work.revisionSource;
-  delete work.code;
-  if (input.result.outcome === 'blocked') work.blockedTurnId = found.turnId;
-  else delete work.blockedTurnId;
-  work.phase =
-    input.result.outcome === 'done'
-      ? work.scope === 'local'
-        ? 'complete'
-        : 'delivery'
-      : 'blocked';
-  delete work.clarificationTurnId;
-  await save();
   return {
-    status: 'recorded' as const,
+    status: 'native' as const,
     id: record.id,
     outcome: input.result.outcome,
-    next: work.phase,
     handoff: implementationHandoff(
       input.result.outcome,
       'codex',

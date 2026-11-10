@@ -30,7 +30,6 @@ describe('agent/feedback-sources', () => {
           createdAt: 1,
           policyDigest: 'e'.repeat(64),
           phase: 'prepared',
-          publicationAttempted: true,
         },
       ],
       completed: [
@@ -39,7 +38,6 @@ describe('agent/feedback-sources', () => {
           sourceId: 'comment',
           revision: 'b'.repeat(64),
           nodeId: 'old',
-          receipt: { nodeId: 'reply', databaseId: 10 },
         },
       ],
       discovery: { old: checkpoint, current: checkpoint, issue: checkpoint },

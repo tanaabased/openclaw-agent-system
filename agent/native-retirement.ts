@@ -1,7 +1,7 @@
 import { Type } from 'typebox';
 
-import { DirectEntryStore, type AssessmentEntryBinding } from './assessment-entry-store.ts';
 import { automationHash } from './automation-hash.ts';
+import { DirectEntryStore, type DirectEntryBinding } from './direct-entry-store.ts';
 import workflowFailure from './workflow-failure.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
@@ -45,7 +45,7 @@ export interface NativeRetirementResult {
 /** explicit disposal receipts are separate from assignment custody and preservation policy. */
 export default async function nativeRetirement(input: {
   root: string;
-  binding: AssessmentEntryBinding;
+  binding: DirectEntryBinding;
   target: string;
   digest?: string;
   apply?: boolean;

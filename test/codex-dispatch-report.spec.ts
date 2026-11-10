@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
 import prepareDispatchReport from '../agent/codex-dispatch-report.ts';
-import type { DispatchState, DispatchRecord } from '../agent/codex-dispatch-state.ts';
+import type { DispatchRecord, DispatchState } from '../agent/codex-dispatch-state.ts';
 import { issueKey } from '../agent/dispatch-pending.ts';
-import type { IntakeState, IntakeRecord } from '../channels/github/intake/record-store.ts';
+import type { IntakeRecord, IntakeState } from '../channels/github/intake/record-store.ts';
 
-const state: DispatchState = { version: 1, scope: 'scope', records: [], intakeHealthVersion: 1 };
+const state: DispatchState = {
+  version: 4,
+  scope: 'scope',
+  records: [],
+};
 const intake: IntakeState = {
   version: 1,
   scope: 'scope',
@@ -51,15 +55,11 @@ describe('agent/codex-dispatch-report', () => {
     const record = {
       id: 'manual',
       phase: 'waiting',
+      blocker: 'dispatch-denial-history-unavailable',
       manualIssue: {
         id: 'manual',
         repository: { owner: { login: 'owner' }, name: 'repo' },
         issue: { number: 123 },
-      },
-      result: {
-        outcome: 'operator-setup-blocker',
-        code: 'dispatch-denial-history-unavailable',
-        remediation: 'Inspect the original launch.',
       },
     } as DispatchRecord;
     const report = prepareDispatchReport({
@@ -115,7 +115,7 @@ describe('agent/codex-dispatch-report', () => {
 
     record.retirement!.archivedAt = 4;
     record.retirement!.worktreeRemovedAt = 4;
-    record.retired = { at: 4, by: 'operator' };
+    current.state.records.splice(current.state.records.indexOf(record), 1);
     const completed = prepareDispatchReport(current);
     assert.equal(completed.health, '');
     assert.match(completed.response, /DONT_NOTIFY/);
@@ -179,7 +179,7 @@ describe('agent/codex-dispatch-report', () => {
     }
     record.retirement!.archivedAt = 4;
     record.retirement!.worktreeRemovedAt = 4;
-    record.retired = { at: 4, by: 'operator' };
+    current.state.records.splice(current.state.records.indexOf(record), 1);
     const recovered = prepareDispatchReport({
       ...current,
       state: { ...current.state, intakeHealth: first.health },
@@ -284,7 +284,7 @@ describe('agent/codex-dispatch-report', () => {
     assert.match(recovered.response, /Intake resumed/);
     assert.equal(recovered.health, '');
   });
-  it('should report only verified feedback sends and keep response contents out of intake', () => {
+  it('should report queued feedback counts without a delivery lifecycle feed', () => {
     const record = {
       id: 'owner',
       intakeId: 'assignment',
@@ -299,7 +299,6 @@ describe('agent/codex-dispatch-report', () => {
             id: 'sent',
             phase: 'running',
             attempt: { turnId: 'native-turn' },
-            result: { privateText: 'PRIVATE', publicText: 'PUBLIC' },
           },
           { id: 'unsent', phase: 'queued' },
         ],
@@ -310,21 +309,10 @@ describe('agent/codex-dispatch-report', () => {
       slots: 3,
       state: { ...state, records: [record] },
     });
-    assert.deepEqual(first.sent, ['sent']);
-    assert.match(first.response, /1 feedback item delivered to chats/);
+    assert.doesNotMatch(first.response, /feedback item delivered to chats/);
     assert.match(first.response, /Queued feedback:\*\* 1 item across 1 issue/);
     assert.match(first.response, /Slots:\*\* 1\/3 occupied/);
     assert.doesNotMatch(first.response, /PRIVATE|PUBLIC/);
-    record.feedback!.events.push({ ...record.feedback!.events[0]!, id: 'second' });
-    const grouped = prepareDispatchReport({ ...input, state: { ...state, records: [record] } });
-    assert.deepEqual(grouped.sent, ['sent', 'second']);
-    assert.equal(grouped.response.match(/codex:\/\/threads\/chat/g)?.length, 1);
-    assert.match(grouped.response, /2 items/);
-    record.feedback!.events[2]!.reported = true;
-    record.feedback!.events[0]!.reported = true;
-    const repeated = prepareDispatchReport({ ...input, state: { ...state, records: [record] } });
-    assert.match(repeated.response, /DONT_NOTIFY/);
-    assert.deepEqual(repeated.sent, []);
   });
   it('should distinguish failed intake state from a temporary provider warning', () => {
     const report = prepareDispatchReport({
@@ -365,11 +353,7 @@ describe('agent/codex-dispatch-report', () => {
       id: 'bad',
       intakeId: 'bad',
       phase: 'waiting',
-      result: {
-        outcome: 'operator-setup-blocker',
-        code: 'dispatch-operation-failed',
-        remediation: 'Inspect the retained request.',
-      },
+      blocker: 'dispatch-operation-failed',
     } as DispatchRecord;
     const report = prepareDispatchReport({
       ...input,
@@ -381,94 +365,7 @@ describe('agent/codex-dispatch-report', () => {
     assert.match(report.response, /dispatch-operation-failed/);
     assert.doesNotMatch(report.response, /Intake could not finish/);
   });
-  it('should keep closed historical feedback quiet but retain unresolved execution and publication diagnostics', () => {
-    const record = {
-      id: 'owner',
-      phase: 'complete',
-      feedback: { baseline: {}, code: 'dispatch-issue-closed', events: [] },
-    } as unknown as DispatchRecord;
-    const report = () =>
-      prepareDispatchReport({ ...input, state: { ...state, records: [record] } });
-    assert.match(report().response, /DONT_NOTIFY/);
-    record.feedback!.events.push({ phase: 'blocked', publicationAttempted: true } as never);
-    assert.match(report().response, /dispatch-issue-closed/);
-    record.feedback!.events = [
-      { phase: 'blocked', reported: true, attempt: { turnId: 'run' } } as never,
-    ];
-    assert.match(report().response, /dispatch-issue-closed/);
-    record.nativeInactive = true;
-    assert.match(report().response, /DONT_NOTIFY/);
-    record.feedback!.events = [{ phase: 'queued' } as never];
-    assert.match(report().response, /dispatch-issue-closed/);
-  });
-  it('should retain unresolved native reservations regardless of debug visibility', () => {
-    const successor = {
-      id: 'new',
-      scope: 'scope',
-      receiving: { nodeId: 'user' },
-      repository: { nodeId: 'repo', owner: { login: 'owner' }, name: 'repo' },
-      issue: { nodeId: 'issue', number: 1 },
-      assignment: { createdAt: new Date(3).toISOString() },
-    } as IntakeRecord;
-    const record = {
-      id: 'retired',
-      issueKey: issueKey(successor),
-      intakeId: 'old',
-      phase: 'blocked',
-      request: {},
-      retired: { at: 1 },
-      capacityObservation: { at: 2, code: 'dispatch-capacity-creation-unresolved' },
-    } as DispatchRecord;
-    for (const debug of [undefined, false, true]) {
-      const current = {
-        ...input,
-        debug,
-        intake: { ...intake, records: [successor] },
-        state: { ...state, records: [record] },
-      };
-      const report = prepareDispatchReport(current);
-      assert.notEqual(report.health, '');
-      assert.match(report.response, /Slots:\*\* 1\/2/);
-      assert.match(report.response, /Historical reservations:\*\* 1 unresolved/);
-      assert.match(report.response, /dispatch-capacity-creation-unresolved/);
-      assert.match(report.response, /same issue remains fenced/);
-      assert.equal(report.response.includes('🔬 Debug'), debug === true);
-      assert.match(
-        prepareDispatchReport({
-          ...current,
-          state: { ...current.state, intakeHealth: report.health },
-        }).response,
-        /DONT_NOTIFY/,
-      );
-      const resolved = prepareDispatchReport({
-        ...current,
-        state: { ...state, records: [{ ...record, nativeInactive: true }] },
-      });
-      assert.equal(resolved.health, '');
-      assert.match(resolved.response, /Slots:\*\* 0\/2/);
-      assert.doesNotMatch(resolved.response, /Historical reservations/);
-    }
-  });
-  it('should gate historical diagnostics without changing health, decisions, or resource evidence', () => {
-    const legacy = {
-      id: 'old',
-      intakeId: 'old',
-      retired: { at: 1 },
-      threadId: 'old-chat',
-    } as DispatchRecord;
-    const records = [legacy];
-    const before = structuredClone(records);
-    for (const debug of [undefined, false, true, false, true]) {
-      const report = prepareDispatchReport({ ...input, debug, state: { ...state, records } });
-      assert.equal(report.health, '');
-      assert.match(report.response, /<decision>DONT_NOTIFY<\/decision>/);
-      assert.equal(report.response.includes('> ## 🔬 Debug'), debug === true);
-      assert.equal(report.response.includes('retirement-legacy-unverified'), debug === true);
-      assert.doesNotMatch(report.response, /⚠️|Intake resumed|problem has cleared/);
-      if (debug)
-        assert.match(report.response, /neither remaining live resources nor successful cleanup/);
-    }
-    assert.deepEqual(records, before);
+  it('should report current retirement and native denial obstacles regardless of debug visibility', () => {
     for (const code of [
       'retirement-worktree-dirty',
       'retirement-worktree-shared',
@@ -480,17 +377,16 @@ describe('agent/codex-dispatch-report', () => {
         const report = prepareDispatchReport({
           ...input,
           debug,
-          state: { ...state, records: [legacy, blocked] },
+          state: { ...state, records: [blocked] },
         });
         assert.notEqual(report.health, '');
         assert.match(report.response, /<decision>NOTIFY<\/decision>/);
         assert.ok(report.response.includes(code));
-        assert.equal(report.response.includes('🔬 Debug'), debug === true);
         assert.match(
           prepareDispatchReport({
             ...input,
             debug,
-            state: { ...state, records: [legacy, blocked], intakeHealth: report.health },
+            state: { ...state, records: [blocked], intakeHealth: report.health },
           }).response,
           /DONT_NOTIFY/,
         );
@@ -499,33 +395,17 @@ describe('agent/codex-dispatch-report', () => {
     const denied = {
       id: 'denied',
       phase: 'blocked',
-      result: {
-        outcome: 'operator-setup-blocker',
-        code: 'native-approval-denied',
-        remediation: 'Native approval denied chat creation.',
-      },
+      blocker: 'native-approval-denied',
     } as DispatchRecord;
     for (const debug of [undefined, false, true]) {
       const report = prepareDispatchReport({
         ...input,
         debug,
-        state: { ...state, records: [legacy, denied] },
+        state: { ...state, records: [denied] },
       });
       assert.notEqual(report.health, '');
       assert.match(report.response, /<decision>NOTIFY<\/decision>/);
       assert.match(report.response, /native-approval-denied/);
-      assert.equal(report.response.includes('🔬 Debug'), debug === true);
     }
-  });
-  it('should establish an operational baseline without inventing recovery from an opaque old hash', () => {
-    const old = {
-      ...state,
-      intakeHealth: 'unknown-mixed-legacy-health',
-      intakeHealthVersion: undefined,
-    };
-    const report = prepareDispatchReport({ ...input, state: old, debug: true });
-    assert.equal(report.health, '');
-    assert.match(report.response, /DONT_NOTIFY/);
-    assert.doesNotMatch(report.response, /Intake resumed|problem has cleared|🔬 Debug/);
   });
 });

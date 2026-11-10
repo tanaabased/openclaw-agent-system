@@ -6,8 +6,8 @@ import feedbackDiscoveryOwner from '../agent/feedback-discovery-owner.ts';
 describe('agent/apply-feedback-scans', () => {
   const owner = () => ({
     id: 'owner',
+    publication: { receipt: 'saved' },
     feedback: { events: ['retained'] },
-    result: { receipt: 'saved' },
   });
   it('should apply discovery only to the unchanged owner and preserve other results', () => {
     const record = owner();
@@ -15,20 +15,20 @@ describe('agent/apply-feedback-scans', () => {
     const scan = { id: record.id, before: feedbackDiscoveryOwner(record), feedback };
     assert.equal(applyFeedbackScans([record], [scan]), true);
     assert.deepEqual(record.feedback, feedback);
-    assert.deepEqual(record.result, { receipt: 'saved' });
+    assert.deepEqual(record.publication, { receipt: 'saved' });
     assert.equal(applyFeedbackScans([record], [scan]), false);
   });
-  it('should merge discovery while preserving independently advanced issue results', () => {
+  it('should merge discovery while preserving independently advanced publication receipts', () => {
     const record = owner();
     const scan = {
       id: record.id,
       before: feedbackDiscoveryOwner(record),
       feedback: { events: ['stale'] },
     };
-    record.result.receipt = 'newly-published';
+    record.publication.receipt = 'newly-published';
     assert.equal(applyFeedbackScans([record], [scan]), true);
     assert.deepEqual(record.feedback.events, ['stale']);
-    assert.equal(record.result.receipt, 'newly-published');
+    assert.equal(record.publication.receipt, 'newly-published');
   });
   it('should reject a concurrent feedback change or a changed chat binding', () => {
     for (const field of ['feedback', 'threadId'] as const) {
@@ -44,7 +44,7 @@ describe('agent/apply-feedback-scans', () => {
       assert.ok(!record.feedback.events.includes('stale'));
     }
   });
-  for (const flag of ['retired', 'retirement', 'reset', 'supersededBy'])
+  for (const flag of ['retirement', 'reset', 'supersededBy'])
     it(`should not apply discovery to a ${flag} owner even when its snapshot matches`, () => {
       const record = { ...owner(), [flag]: { at: 1 } };
       assert.equal(

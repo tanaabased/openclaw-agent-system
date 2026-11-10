@@ -148,7 +148,7 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/tanaabot"
 mv keys/id_ed25519 "$TMPDIR/notification-retry-key"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
-jq -es --slurpfile old "$TMPDIR/notification-dispatch-before.json" '[.[].records[] | select(.issueKey == $old[0].issueKey and .retired == null)] | if length == 1 then .[0] else error("one waiting assignment required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-waiting.json"
+jq -es --slurpfile old "$TMPDIR/notification-dispatch-before.json" '[.[].records[] | select(.issueKey == $old[0].issueKey)] | if length == 1 then .[0] else error("one waiting assignment required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-waiting.json"
 jq -e '.phase == "waiting" and .failureStage == "worktree" and .threadId == null and .request == null' "$TMPDIR/notification-waiting.json"
 mv "$TMPDIR/notification-retry-key" keys/id_ed25519
 
@@ -166,7 +166,7 @@ run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" 
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for worktree-ready --timeout 600 --json | jq -e '.status == "completed"'
 jq -es --slurpfile old "$TMPDIR/notification-dispatch-before.json" '[.[].records[] | select(.issueKey == $old[0].issueKey)] | if length == 1 then .[0] else error("one fresh attempt required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-fresh.json"
-jq -e --slurpfile old "$TMPDIR/notification-dispatch-before.json" --slurpfile waiting "$TMPDIR/notification-waiting.json" '.id == $waiting[0].id and .id != $old[0].id and .worktreeAttemptId == .id and .threadId != $old[0].threadId and .sessionCreation.verified == true and .result == null and .stageReceipt == null' "$TMPDIR/notification-fresh.json"
+jq -e --slurpfile old "$TMPDIR/notification-dispatch-before.json" --slurpfile waiting "$TMPDIR/notification-waiting.json" '.id == $waiting[0].id and .id != $old[0].id and .worktreeAttemptId == .id and .threadId != $old[0].threadId and .sessionCreation.verified == true' "$TMPDIR/notification-fresh.json"
 conversation=$(jq -er .threadId "$TMPDIR/notification-fresh.json")
 openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e --slurpfile before "$TMPDIR/notification-dispatch-before.json" '.session.displayName == $before[0].request.label and .session.label == null'
 worktree=$(jq -er .worktree "$TMPDIR/notification-fresh.json")
@@ -215,7 +215,7 @@ openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-b
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/tanaabot"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
-jq -es --slurpfile before "$TMPDIR/notification-fresh.json" '[.[].records[] | select(.id == $before[0].id)] | length == 1 and .[0].retirement.code == "retirement-native-work-unresolved" and .[0].retired == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+jq -es --slurpfile before "$TMPDIR/notification-fresh.json" '[.[].records[] | select(.id == $before[0].id)] | length == 1 and .[0].retirement.code == "retirement-native-work-unresolved"' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 touch "$TMPDIR/retirement-queue-release"
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" retirement-queue-hold 600000
 sleep 61
@@ -250,7 +250,7 @@ leaf=$(openclaw gateway call chat.history --params "$(jq -nc --arg key "$convers
 params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg receipt "$receipt" '{sessionKey:$key,agentId:"retirement-tanaabot",sessionId:$session,message:("Retire this managed task now " + $receipt),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"notification-manual-retire"}')"
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; const result = await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"}); console.log(JSON.stringify(result));' "$params" | jq -e '.runId == "notification-manual-retire"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-manual-retire 600000
-jq -es --arg id "$receipt" '[.[].records[] | select(.id == $id)] | length == 1 and (.[0] | .retirement.reason == "operator-requested" and .retirement.eligibleAt == .retirement.operatorRequest.at and .retirement.code == "retirement-native-work-unresolved" and .retired == null and .retirement.archivedAt == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+jq -es --arg id "$receipt" '[.[].records[] | select(.id == $id)] | length == 1 and (.[0] | .retirement.reason == "operator-requested" and .retirement.eligibleAt == .retirement.operatorRequest.at and .retirement.code == "retirement-native-work-unresolved" and .retirement.archivedAt == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$(jq -er .number "$TMPDIR/notification-unavailable-issue.json")" | jq -e '.state == "open" and any(.assignees[]; .login == "tanaabot")'
 
 # should leave a dirty managed checkout after deleting its exact completed session

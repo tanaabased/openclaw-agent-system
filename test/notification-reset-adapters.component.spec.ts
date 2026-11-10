@@ -2,16 +2,16 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import OpenClawNotificationReset from '../agent/openclaw-notification-reset.ts';
+import { automationHash } from '../agent/automation-hash.ts';
+import type { SavedAutomation } from '../agent/codex-automation-state.ts';
+import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
+import { selectCodexIntake } from '../agent/codex-intake.ts';
 import runCodexNotificationReset from '../agent/codex-notification-reset.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
-import { selectCodexIntake } from '../agent/codex-intake.ts';
-import type { SavedAutomation } from '../agent/codex-automation-state.ts';
-import IntakeRecordStore from '../channels/github/intake/record-store.ts';
 import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
-import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
-import { automationHash } from '../agent/automation-hash.ts';
-import { intakeFixture, account } from './github-intake-fixture.ts';
+import OpenClawNotificationReset from '../agent/openclaw-notification-reset.ts';
+import IntakeRecordStore from '../channels/github/intake/record-store.ts';
+import { account, intakeFixture } from './github-intake-fixture.ts';
 
 describe('agent/notification reset runtime adapters', () => {
   let root: string;
@@ -345,12 +345,21 @@ describe('agent/notification reset runtime adapters', () => {
         intakeId: 'e'.repeat(64),
         issueKey: 'c'.repeat(64),
         sourceThreadId: 'coordinator',
-        phase: 'complete',
+        phase: 'blocked',
         createdAt: 2,
         manifestDigest: 'manifest',
-        threadId: 'retired-child',
+        threadId: 'pending-cleanup-child',
         worktree: root,
-        retired: { at: 4, by: 'coordinator' },
+        request: {
+          key: 'pending-cleanup-child',
+          idempotencyKey: 'pending-cleanup',
+          agentId: 'receiver',
+          label: 'issue',
+          category: 'issues',
+          cwd: root,
+          model: 'fixture',
+          thinkingLevel: 'low',
+        },
         retirement: {
           reason: 'issue-closed',
           at: 3,
@@ -360,7 +369,15 @@ describe('agent/notification reset runtime adapters', () => {
           archivedAt: 4,
           worktreeRemovedAt: 4,
         },
-        retainedHistory: { terminal: true, entries: [], sessionId: 'retired-session' },
+        cleanupPending: true,
+        sessionCreation: {
+          attempted: true,
+          sourceSessionId: 'coordinator',
+          sourceRunId: 'run',
+          sourceToolCallId: 'call',
+          verified: true,
+          sessionId: 'retired-session',
+        },
       });
       await save();
     });
@@ -394,11 +411,11 @@ describe('agent/notification reset runtime adapters', () => {
           run(async (method, params) => {
             if (method === 'sessions.resolve' && params.key === 'agent:receiver:issue:missing')
               return missingSession;
-            if (params.key === 'retired-child' && method === 'sessions.describe') {
+            if (params.key === 'pending-cleanup-child' && method === 'sessions.describe') {
               terminalReads++;
               return {
                 session: {
-                  key: 'retired-child',
+                  key: 'pending-cleanup-child',
                   agentId: 'receiver',
                   sessionId: 'retired-session',
                   spawnedCwd: root,
@@ -406,7 +423,7 @@ describe('agent/notification reset runtime adapters', () => {
                 },
               };
             }
-            if (params.sessionKey === 'retired-child' && method === 'chat.history')
+            if (params.sessionKey === 'pending-cleanup-child' && method === 'chat.history')
               return {
                 sessionId: 'retired-session',
                 messages: [],
@@ -619,7 +636,7 @@ describe('agent/notification reset runtime adapters', () => {
     };
     const journal = new CodexDispatchStore(pluginData, current.store.location.scope);
     await journal.exclusive(async (state, save) => {
-      for (const [index, retired] of [false, true].entries())
+      for (const index of [0])
         state.records.push({
           id: String(index + 1).repeat(64),
           intakeId: 'e'.repeat(64),
@@ -639,7 +656,6 @@ describe('agent/notification reset runtime adapters', () => {
             ref: 'main',
             commit: 'a'.repeat(40),
           },
-          ...(retired ? { retired: { at: 3000, by: 'operator' } } : {}),
           request: {
             title: 'issue',
             prompt: 'fixture issue',
@@ -924,7 +940,6 @@ describe('agent/notification reset runtime adapters', () => {
         },
       });
       if (missing) {
-        original.retired = { at: 4, by: 'coordinator' };
         original.retirement = {
           reason: 'issue-closed',
           at: 3,
@@ -937,7 +952,7 @@ describe('agent/notification reset runtime adapters', () => {
       }
       await save();
     });
-    if (missing) assert.equal((await journal.read()).records[0]!.request, undefined);
+    if (missing) assert.ok((await journal.read()).records[0]!.request);
     const native = coordinator();
     native.missing();
     let pinned = !missing;

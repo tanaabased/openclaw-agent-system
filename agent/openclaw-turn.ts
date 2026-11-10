@@ -1,22 +1,20 @@
-import issueInputEvent, { issueInputEventId } from './openclaw-session-input.ts';
-import openClawTurnReply from './openclaw-turn-evidence.ts';
+import type { DispatchRequest } from '../credentials/session-dispatch.ts';
+import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import {
   completeOpenClawMessage,
   openClawHistoryPages,
   type HistoryScope,
 } from './openclaw-history.ts';
 import { sessionObject } from './openclaw-session-create.ts';
+import issueInputEvent from './openclaw-session-input.ts';
+import openClawTurnReply from './openclaw-turn-evidence.ts';
 import type { OpenClawTurn } from './openclaw-turn-state.ts';
-import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
-import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 
-type FeedbackReselection = { runId: string; inputEventId: string };
 /** ordinary consumed inputs leave the pending table; verify their exact transcript identity. */
 export function consumedInputEvent(
   messages: unknown[],
   turn: OpenClawTurn,
   allowExecutionRunId = false,
-  reselection?: FeedbackReselection,
 ) {
   const key = `${turn.runId}:user`;
   const inputs = messages.map(sessionObject).filter((entry) => {
@@ -37,24 +35,12 @@ export function consumedInputEvent(
       ? meta.runId
       : (turn.executionRunId ?? turn.runId)
     : turn.runId;
-  const eventId =
-    turn.origin === 'assessment' || turn.origin === 'input'
-      ? issueInputEventId(entry, turn.runId)
-      : issueInputEvent(entry, turn, executionRunId);
+  const eventId = issueInputEvent(entry, turn, executionRunId);
   if (!eventId || (turn.consumedByEventId && turn.consumedByEventId !== eventId))
     throw new Error('dispatch-turn-input-mismatch');
-  // older feedback selection copied the responder into this consumption hint.
-  // repair only that exact selection, after native source and input verification.
-  const responderHint =
-    allowExecutionRunId &&
-    typeof meta.runId === 'string' &&
-    reselection?.runId === turn.executionRunId &&
-    reselection?.inputEventId === turn.consumedByEventId &&
-    reselection?.inputEventId === eventId;
-  if (turn.executionRunId && turn.executionRunId !== executionRunId && !responderHint)
+  if (turn.executionRunId && turn.executionRunId !== executionRunId)
     throw new Error('dispatch-turn-run-mismatch');
   if (executionRunId !== turn.runId) turn.executionRunId = executionRunId;
-  else if (responderHint) delete turn.executionRunId;
   return eventId;
 }
 
@@ -65,7 +51,6 @@ export async function openClawConsumedInput(
   turn: OpenClawTurn,
   first: Record<string, unknown>,
   allowExecutionRunId = false,
-  reselection?: FeedbackReselection,
 ) {
   const receipts =
     allowExecutionRunId && Array.isArray(first.inputReceipts)
@@ -95,7 +80,7 @@ export async function openClawConsumedInput(
       .filter((entry) => sessionObject(entry.__openclaw).id === anchor);
     if (matches.length !== 1) throw new Error('dispatch-turn-input-mismatch');
     const complete = await completeOpenClawMessage(request, scope, matches[0]!);
-    const inputId = consumedInputEvent([complete], turn, allowExecutionRunId, reselection);
+    const inputId = consumedInputEvent([complete], turn, allowExecutionRunId);
     if (inputId !== anchor) throw new Error('dispatch-turn-input-mismatch');
     return inputId;
   }
@@ -113,10 +98,10 @@ export async function openClawConsumedInput(
       const complete = await Promise.all(
         candidates.map((entry) => completeOpenClawMessage(request, scope, entry)),
       );
-      return consumedInputEvent(complete, turn, allowExecutionRunId, reselection);
+      return consumedInputEvent(complete, turn, allowExecutionRunId);
     }
   }
-  return consumedInputEvent([], turn, allowExecutionRunId, reselection);
+  return consumedInputEvent([], turn, allowExecutionRunId);
 }
 
 /** reconcile exact native custody without sending another input. */
@@ -127,7 +112,6 @@ export async function reconcileOpenClawTurn(input: {
   turn: OpenClawTurn;
   allowExecutionRunId?: boolean;
   deliveryOnly?: boolean;
-  reselection?: FeedbackReselection;
   record?: Pick<OpenClawDispatchRecord, 'nativeInactive'>;
   save(): Promise<void>;
 }) {
@@ -170,14 +154,7 @@ export async function reconcileOpenClawTurn(input: {
     }
     const consumedByEventId =
       !receipt || (input.allowExecutionRunId && receipt.state === 'consumed')
-        ? await openClawConsumedInput(
-            request,
-            input,
-            turn,
-            history,
-            input.allowExecutionRunId,
-            input.reselection,
-          )
+        ? await openClawConsumedInput(request, input, turn, history, input.allowExecutionRunId)
         : receipt.state === 'consumed' &&
             typeof receipt.consumedByEventId === 'string' &&
             receipt.consumedByEventId
@@ -211,6 +188,7 @@ export async function reconcileOpenClawTurn(input: {
         throw new Error('dispatch-turn-outcome-unverified');
       turn.status = 'completed';
       turn.failed = true;
+      if (!input.deliveryOnly) delete (turn as { message?: string }).message;
       await save();
       return;
     }

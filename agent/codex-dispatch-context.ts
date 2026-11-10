@@ -1,18 +1,18 @@
+import GitHubIdentityCache from '../channels/github/identity-cache.ts';
+import type AssignmentClaimStore from './assignment-claim-store.ts';
+import type { CleanupConfiguration } from './cleanup-configuration.ts';
+import type connectCodexGitHubAccount from './codex-github-client.ts';
 import {
   managedTargetUrl,
   type ManagedIssue as IntakeRecord,
   type ManagedIssueState as IntakeState,
 } from './managed-issue.ts';
-import GitHubIdentityCache from '../channels/github/identity-cache.ts';
-import type { CleanupConfiguration } from './cleanup-configuration.ts';
-import type connectCodexGitHubAccount from './codex-github-client.ts';
-import type AssignmentClaimStore from './assignment-claim-store.ts';
 
-import type CodexAssignmentClaims from './codex-assignment-claims.ts';
 import type {
   GitHubNotificationIntakeClient,
   GitHubNotificationItemContextClient,
 } from '../channels/github/provider/work-event-types.ts';
+import type CodexAssignmentClaims from './codex-assignment-claims.ts';
 import type { inspectCodexDispatchActivation } from './codex-automations.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
 import { type DispatchGit } from './codex-dispatch-project.ts';
@@ -21,14 +21,14 @@ import type { DispatchRecord, DispatchState } from './codex-dispatch-state.ts';
 import type connectCodexFeedback from './codex-feedback-client.ts';
 import codexHostAccess from './codex-host-access.ts';
 import {
-  type selectCodexIntake,
   connectCodexGitHub,
   type CodexIntakeDependencies,
+  type selectCodexIntake,
 } from './codex-intake.ts';
 
 import type codexRetirementNative from './codex-retirement-native.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
-import { inspectContinuedIssue, inspectAdmittedIssue } from './dispatch-assignment.ts';
+import { inspectAdmittedIssue, inspectContinuedIssue } from './dispatch-assignment.ts';
 import workflowFailure from './workflow-failure.ts';
 
 type Client = GitHubNotificationIntakeClient & GitHubNotificationItemContextClient;
@@ -45,7 +45,6 @@ export interface CodexDispatchDependencies extends Omit<CodexIntakeDependencies,
   git?: DispatchGit;
   feedbackConnect?: typeof connectCodexFeedback;
   deliveryConnect?: typeof connectCodexGitHubAccount;
-  summaryAuthority?: (threadId: string, turnId: string) => Promise<void>;
   prepareRepository?: typeof prepareDispatchRepository;
   replyConnection?: typeof connectCodexThreads;
   retirementNative?: ReturnType<typeof codexRetirementNative>;

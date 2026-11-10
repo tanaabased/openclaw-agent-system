@@ -16,7 +16,7 @@ describe('core/register-hooks', () => {
       context: '{"body":"PRIVATE-GITHUB-FACT"}',
       request: { key: 'agent:data:dashboard:issue', agentId: 'data' },
       sessionCreation: { verified: true, sessionId: 'one' },
-      assessmentTurn: { runId: 'assessment' },
+      nativeTurns: [{ role: 'assessment', turn: { runId: 'assessment' } }],
     } as OpenClawDispatchRecord;
     registerAgentSystemHooks(
       {
@@ -59,7 +59,6 @@ describe('core/register-hooks', () => {
       if (currentUserMessageId) assert.match(output.appendContext, /native-input/);
       else assert.doesNotMatch(output.appendContext, /inputId/);
     }
-    record.result = { outcome: 'plan-ready', plan: 'RETAINED-PLAN' } as never;
     const later = (await hook(event, { ...binding, runId: 'later' })) as {
       appendContext: string;
     };
@@ -68,7 +67,7 @@ describe('core/register-hooks', () => {
     const visible = structuredClone(event);
     record.feedback = {
       baseline: {},
-      events: [{ id: 'comment', native: true, turn: { runId: 'feedback' } }],
+      events: [{ id: 'comment', turn: { runId: 'feedback' } }],
     } as OpenClawDispatchRecord['feedback'];
     const feedback = (await hook(event, { ...binding, runId: 'feedback' })) as {
       appendContext: string;

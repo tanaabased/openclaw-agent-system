@@ -21,11 +21,7 @@ for (const scenario of [
         id: 'initial',
         source: 'exact source',
         revision: 'exact revision',
-        native: true,
         phase: 'running',
-        receipt: { nodeId: 'reply' },
-        result: { privateText: 'Private answer.', publicText: 'Public answer.' },
-        work: { head: 'original head' },
         turn: {
           runId: 'initial-run',
           message: 'exact input',
@@ -57,9 +53,6 @@ for (const scenario of [
       for (const changed of [
         { ...after, source: 'edited source' },
         { ...after, revision: 'different revision' },
-        { ...after, receipt: { nodeId: 'different reply' } },
-        { ...after, result: { ...after.result, publicText: 'changed answer' } },
-        { ...after, work: { head: 'changed head' } },
         { ...after, turn: { ...after.turn, runId: 'replacement-run' } },
         { ...after, turn: { ...after.turn, consumedByEventId: 'different input' } },
         { ...after, turn: { ...after.turn, failed: true } },
@@ -118,9 +111,7 @@ for (const [scenario, itemType] of [
                 id: 'event',
                 itemType,
                 source: JSON.stringify({ nodeId: 'source' }),
-                receipt: { nodeId: 'reply' },
                 turn: { runId: 'current' },
-                result: { privateText: 'Private explanation.', publicText: 'Public answer.' },
               },
             ],
           },
@@ -129,9 +120,9 @@ for (const [scenario, itemType] of [
           ...summaries.map((nodeId) => ({ update: { facts: [] }, receipt: { nodeId } })),
           {
             feedback: { eventId: 'event' },
-            receipt: { nodeId: 'reply' },
             privateText: 'Private explanation.',
             publicText: 'Public answer.',
+            receipt: { nodeId: 'reply' },
           },
         ]);
         await write('feedback-source', { node_id: 'source' });

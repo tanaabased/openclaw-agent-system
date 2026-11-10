@@ -1,11 +1,14 @@
-import codexTurnApprovalDenied from './codex-turn-approval.ts';
-import codexSummaryDenial from './codex-summary-denial.ts';
-import type { AssessmentSummary } from './assessment-summary-state.ts';
 import { nativeObject } from './automation-gateway.ts';
 import { automationHash } from './automation-hash.ts';
-import type { CodexContinuationState } from './codex-continuation-state.ts';
 import dispatchHistory, { dispatchHistoryPages, dispatchTurn } from './codex-dispatch-history.ts';
+import type { FeedbackEvent } from './codex-feedback-state.ts';
 import type { CodexThreadRequest } from './codex-thread-client.ts';
+import codexTurnApprovalDenied from './codex-turn-approval.ts';
+
+export type CodexNativeAttempt = NonNullable<FeedbackEvent['attempt']> & {
+  origin?: 'input' | 'assessment';
+  inputId?: string;
+};
 
 /** an explicit local host selects the same native destination as an omitted host. */
 function localSendArguments(value: unknown) {
@@ -17,11 +20,7 @@ function localSendArguments(value: unknown) {
 
 /** verify the native assessment turn or exact recovery send, never a model claim. */
 export default function codexContinuationNative(request: CodexThreadRequest) {
-  return async (
-    sourceThreadId: string,
-    attempt: NonNullable<CodexContinuationState['attempt']>,
-    summaries?: AssessmentSummary[],
-  ) => {
+  return async (sourceThreadId: string, attempt: CodexNativeAttempt) => {
     if (attempt.origin === 'input') {
       if (
         !attempt.inputId ||
@@ -37,11 +36,7 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
         typeof turn.completedAt === 'number' &&
         Number.isFinite(turn.completedAt) &&
         turn.completedAt > 0;
-      if (
-        codexTurnApprovalDenied(
-          codexSummaryDenial(items, attempt.request.threadId, attempt.sourceTurnId, summaries),
-        )
-      )
+      if (codexTurnApprovalDenied(items))
         return {
           status: 'blocked' as const,
           code: 'continuation-native-approval-denied',
@@ -81,11 +76,7 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
         typeof turn.completedAt === 'number' &&
         Number.isFinite(turn.completedAt) &&
         turn.completedAt > 0;
-      if (
-        codexTurnApprovalDenied(
-          codexSummaryDenial(turn.items, attempt.request.threadId, attempt.turnId!, summaries),
-        )
-      )
+      if (codexTurnApprovalDenied(turn.items))
         return {
           status: 'blocked' as const,
           code: 'continuation-native-approval-denied',

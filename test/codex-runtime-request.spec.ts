@@ -96,9 +96,6 @@ describe('agent/codex-runtime-request', () => {
       ['dispatch', 'context'],
       ['dispatch', 'observe-denials'],
       ['continuation', 'result'],
-      ['feedback', 'publish'],
-      ['feedback', 'implementation-context'],
-      ['feedback', 'implementation-result'],
       ['delivery', 'link'],
       ['delivery', 'prepare'],
       ['delivery', 'publish'],
@@ -116,7 +113,7 @@ describe('agent/codex-runtime-request', () => {
       );
     }
   });
-  it('should expose nested publication and summary operations', () => {
+  it('should expose nested publication operations', () => {
     for (const operation of ['context', 'compose', 'candidate', 'publish', 'reconcile']) {
       assert.deepEqual(
         parse('feedback', ['reply', operation, '--plugin-data', '/private/plugin'], {
@@ -135,12 +132,6 @@ describe('agent/codex-runtime-request', () => {
         action: 'delivery',
         delivery: { action: 'publish', digest: 'digest' },
       },
-    );
-    assert.deepEqual(
-      parse('dispatch', ['summary', 'compose', '--plugin-data', '/private/plugin'], {
-        id: 'receipt',
-      }).request,
-      { id: 'receipt', action: 'summary', operation: 'compose' },
     );
   });
   it('should reject hidden action substitution before runtime or credential access', () => {
@@ -162,11 +153,6 @@ describe('agent/codex-runtime-request', () => {
         ['delivery', 'prepare', '--plugin-data', '/private/plugin'],
         { delivery: { action: 'publish' } },
       ],
-      [
-        'dispatch',
-        ['summary', 'compose', '--plugin-data', '/private/plugin'],
-        { operation: 'publish' },
-      ],
     ] as const)
       assert.throws(() => parse(route, [...args], request), /workflow-command-action-mismatch/);
   });
@@ -181,7 +167,7 @@ describe('agent/codex-runtime-request', () => {
       assert.throws(() => parse(route, [...args], {}), /workflow-command-/);
   });
   it('should expose direct assessment operations and reject hidden or substituted operations', () => {
-    for (const operation of ['context', 'result', 'present']) {
+    for (const operation of ['context', 'render']) {
       assert.equal(
         parse('dispatch', ['assessment', operation, '--plugin-data', '/private/plugin'], {}).request
           .operation,
@@ -209,7 +195,7 @@ describe('agent/codex-runtime-request', () => {
     );
   });
   it('should expose direct implementation and publication without hidden effect substitution', () => {
-    for (const operation of ['context', 'result', 'present'])
+    for (const operation of ['context', 'result'])
       assert.equal(
         parse('dispatch', ['implementation', operation, '--plugin-data', '/private/plugin'], {})
           .request.operation,

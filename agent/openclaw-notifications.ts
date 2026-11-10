@@ -1,28 +1,26 @@
-import type { IssuePickupState } from './issue-pickup-state.ts';
-import { dispatchStorageNotice } from './dispatch-storage.ts';
-import { type default as assignmentIntakePolicy } from './assignment-intake-policy.ts';
-import {
-  githubNotificationRuntimeBlocker,
-  githubNotificationRuntimeDiagnostics,
-} from '../channels/github/notification-policy.ts';
-import dispatchCapacity from './openclaw-capacity.ts';
-import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
-import OpenClawDispatchStore, { type OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import {
   evaluateGitHubNotificationWait,
   type GitHubNotificationItemSelector,
   type GitHubNotificationRefreshResult,
   type GitHubNotificationStatusResult,
-  type GitHubNotificationWaitTarget,
   type GitHubNotificationWaitResult,
+  type GitHubNotificationWaitTarget,
 } from '../channels/github/cli/contracts.ts';
-import type { ManagedIssueState as IntakeState } from './managed-issue.ts';
+import {
+  githubNotificationRuntimeBlocker,
+  githubNotificationRuntimeDiagnostics,
+} from '../channels/github/notification-policy.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import workflowStatus from './workflow-status.ts';
 import abortableDelay from '../utils/abortable-delay.ts';
-
+import { type default as assignmentIntakePolicy } from './assignment-intake-policy.ts';
+import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
+import { dispatchStorageNotice } from './dispatch-storage.ts';
+import type { IssuePickupState } from './issue-pickup-state.ts';
+import type { ManagedIssueState as IntakeState } from './managed-issue.ts';
+import dispatchCapacity from './openclaw-capacity.ts';
+import OpenClawDispatchStore, { type OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import workflowStatus from './workflow-status.ts';
 export type NotificationRefreshResult = GitHubNotificationRefreshResult;
-
 interface Dependencies {
   root: string;
   intake: {
@@ -32,7 +30,12 @@ interface Dependencies {
       workspace: string,
     ): Promise<{
       selected: ReturnType<typeof assignmentIntakePolicy>;
-      store: { location: { scope: string }; read(): Promise<IntakeState | undefined> };
+      store: {
+        location: {
+          scope: string;
+        };
+        read(): Promise<IntakeState | undefined>;
+      };
     }>;
   };
   requestRun(
@@ -61,19 +64,22 @@ interface Dependencies {
     runId: string,
     signal: AbortSignal,
   ): Promise<'pending' | 'completed' | 'failed'>;
-  readDispatch?(
-    scope: string,
-  ): Promise<{ records: OpenClawDispatchRecord[]; projectPickup?: IssuePickupState }>;
+  readDispatch?(scope: string): Promise<{
+    records: OpenClawDispatchRecord[];
+    projectPickup?: IssuePickupState;
+  }>;
   now?(): number;
   sleep?: typeof abortableDelay;
 }
-
 function diagnostic(error: unknown): string {
-  const code = (error as { code?: unknown })?.code;
+  const code = (
+    error as {
+      code?: unknown;
+    }
+  )?.code;
   if (typeof code === 'string' && /^[a-z][a-z0-9-]{0,127}$/u.test(code)) return code;
   return 'github-notification-native-state-unavailable';
 }
-
 function boundedRequest<T>(signal: AbortSignal, request: () => Promise<T>): Promise<T> {
   signal.throwIfAborted();
   return new Promise<T>((resolve, reject) => {
@@ -85,11 +91,9 @@ function boundedRequest<T>(signal: AbortSignal, request: () => Promise<T>): Prom
       .finally(() => signal.removeEventListener('abort', abort));
   });
 }
-
 /** cli observations share native ownership; only refresh requests the installed automation. */
 export default class OpenClawNotifications {
   constructor(readonly dependencies: Dependencies) {}
-
   async inspect(
     manifest: AgentManifest,
     workspace: string,
@@ -166,18 +170,16 @@ export default class OpenClawNotifications {
             ? { repositoryScope: item.evidence.repositoryScope }
             : {}),
           number: item.issue.number,
-          disposition: record?.retired ? 'retired' : 'approved',
+          disposition: 'approved',
           reasonCode:
             phase === 'awaiting-reassignment'
               ? 'github-notification-awaiting-reassignment'
               : (feedbackFailure ??
                 record?.work?.code ??
                 record?.blocker ??
-                (record?.result?.outcome === 'operator-setup-blocker'
-                  ? record.result.code
-                  : `github-notification-${phase}`)),
-          stage: record?.retired ? 'retired' : prepared ? 'prepared' : 'admitted',
-          ...(phase === 'awaiting-reassignment' || record?.phase === 'complete' || record?.retired
+                `github-notification-${phase}`),
+          stage: prepared ? 'prepared' : 'admitted',
+          ...(phase === 'awaiting-reassignment' || record?.phase === 'complete'
             ? {}
             : {
                 scheduling:
@@ -187,7 +189,6 @@ export default class OpenClawNotifications {
                       ? ('active' as const)
                       : ('queued' as const),
               }),
-          ...(record?.result ? { assessmentOutcome: record.result.outcome } : {}),
           worktree: record?.worktree ? 'ready' : 'pending',
           ...(feedback
             ? {
@@ -206,7 +207,7 @@ export default class OpenClawNotifications {
         };
       });
       const storage = dispatchStorageNotice({
-        version: 1,
+        version: 4,
         scope: store.location.scope,
         ...journal,
       });
@@ -261,11 +262,13 @@ export default class OpenClawNotifications {
       return blocked(diagnostic(error));
     }
   }
-
   async refresh(
     manifest: AgentManifest,
     workspace: string,
-    options: { selector?: GitHubNotificationItemSelector; signal: AbortSignal },
+    options: {
+      selector?: GitHubNotificationItemSelector;
+      signal: AbortSignal;
+    },
   ): Promise<NotificationRefreshResult> {
     const fail = (code: string): NotificationRefreshResult => ({
       agentId: manifest.agent.id,
@@ -322,7 +325,6 @@ export default class OpenClawNotifications {
       );
     }
   }
-
   async wait(
     manifest: AgentManifest,
     workspace: string,

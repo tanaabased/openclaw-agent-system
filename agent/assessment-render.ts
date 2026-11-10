@@ -1,28 +1,27 @@
+import { Type } from 'typebox';
+import { Value } from 'typebox/value';
 import { cardCopyInstructions } from '../channels/github/presentation/card.ts';
 import implementationMaterial from './implementation-material.ts';
-import { Value } from 'typebox/value';
-import { Type } from 'typebox';
 
-import type { WorkflowInstructionsPresentation } from '../channels/github/presentation/workflow-instructions.ts';
 import renderAssessmentResult, {
   assessmentContextCards,
   type AssessmentPresentationContext,
 } from '../channels/github/presentation/assessment-result.ts';
+import type { WorkflowInstructionsPresentation } from '../channels/github/presentation/workflow-instructions.ts';
 import { directAssessmentRequestSchema } from '../tools/dispatch/assessment-schema.ts';
-import { parseAssessmentSubmission } from './assessment-result.ts';
-import { replyLocator } from './reply-target.ts';
 import assessmentOwner from './assessment-owner.ts';
-import { dispatchAdmission, managedTargetUrl, type ManagedIssue } from './managed-issue.ts';
+import { parseAssessmentSubmission } from './assessment-result.ts';
+import AssessmentValidationError from './assessment-validation.ts';
 import { dispatchAssessmentContext } from './dispatch-presentation.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
-import AssessmentValidationError from './assessment-validation.ts';
+import { dispatchAdmission, managedTargetUrl, type ManagedIssue } from './managed-issue.ts';
+import { replyLocator } from './reply-target.ts';
 
 const renderRequestSchema = Type.Object(
   {
     ...directAssessmentRequestSchema.properties,
     ...Type.Required(Type.Pick(directAssessmentRequestSchema, ['target'])).properties,
     operation: Type.Literal('render'),
-    includeDetails: Type.Optional(Type.Literal(false)),
   },
   { additionalProperties: false },
 );
@@ -69,7 +68,7 @@ export async function renderBoundAssessment(
     context.runtime,
     record
       ? dispatchAssessmentContext(
-          { ...record, assessment: undefined, stageReceipt: undefined },
+          { ...record, assessment: undefined },
           context.workspace,
           presentation,
         )
@@ -94,15 +93,11 @@ export default function renderNativeAssessment(
   if (target.kind) throw new Error('assessment-render-target-invalid');
   const submitted = parseAssessmentSubmission(input.result);
   // Complete questions already carry their own concise review; formatting must not hide them.
-  // Older paged results also derive a review from their retained source.
   const assessment =
-    !submitted.reviewSummary && (input.material || submitted.outcome === 'clarification-needed')
+    !submitted.reviewSummary && submitted.outcome === 'clarification-needed'
       ? {
           ...submitted,
-          reviewSummary: [
-            submitted.summary,
-            ...(submitted.outcome === 'operator-setup-blocker' ? [submitted.remediation] : []),
-          ].join('\n\n'),
+          reviewSummary: submitted.summary,
         }
       : submitted;
   if (!assessment.reviewSummary?.trim()) throw new Error('assessment-review-summary-required');
@@ -117,7 +112,6 @@ export default function renderNativeAssessment(
           url: input.target,
           kind: target.itemType === 'pull-request' ? 'Pull request' : 'Issue',
         },
-        retained: false,
         cards: context ? assessmentContextCards(context) : undefined,
         assessmentOnly: input.assessmentOnly,
       }),

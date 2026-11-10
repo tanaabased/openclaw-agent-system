@@ -26,7 +26,6 @@ const keys = new Set([
   'lifecyclePending',
   'assignmentObservation',
   'cleanupPending',
-  'retired',
 ]);
 
 /** once cleanup is committed, its original custody evidence is the only remaining task data. */

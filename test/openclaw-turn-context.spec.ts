@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
-import openclawTurnContext from '../agent/openclaw-turn-context.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
+import openclawTurnContext from '../agent/openclaw-turn-context.ts';
 
 const record = {
   id: 'a'.repeat(64),
@@ -9,7 +9,7 @@ const record = {
   context: '{"body":"PRIVATE-GITHUB-FACT"}',
   request: { key: 'issue', agentId: 'receiver' },
   sessionCreation: { verified: true, sessionId: 'incarnation' },
-  assessmentTurn: { runId: 'assessment' },
+  nativeTurns: [{ role: 'assessment', turn: { runId: 'assessment' } }],
 } as OpenClawDispatchRecord;
 const binding = {
   agentId: 'receiver',
@@ -35,23 +35,14 @@ describe('agent/openclaw-turn-context', () => {
     });
     assert.match(output.appendSystemContext, /agent_system_context/);
   });
-  it('should retain the initial assessment stage after migration while other feedback is queued', () => {
-    const migrated = {
+  it('should keep the initial native turn distinct from queued feedback', () => {
+    const withFeedback = {
       ...record,
-      assessmentTurn: undefined,
-      nativeRecord: true,
-      nativeTurns: [
-        {
-          role: 'assessment',
-          turn: { runId: binding.runId, status: 'accepted', message: 'input' },
-        },
-      ],
       feedback: {
         baseline: {},
         events: [
           {
             id: 'other',
-            native: true,
             itemType: 'issue',
             number: 3,
             source: JSON.stringify({ databaseId: 42 }),
@@ -60,7 +51,7 @@ describe('agent/openclaw-turn-context', () => {
         ],
       },
     } as OpenClawDispatchRecord;
-    const output = openclawTurnContext(migrated, binding)!;
+    const output = openclawTurnContext(withFeedback, binding)!;
     assert.equal(JSON.parse(output.appendContext.split('\n')[1]!).stage, 'assessment');
   });
   it('should bind native runs without inventing an optional input id', () => {
@@ -72,13 +63,11 @@ describe('agent/openclaw-turn-context', () => {
   it('should supply a read-only feedback lookup with private instructions and no source prose', () => {
     const feedback = {
       ...structuredClone(record),
-      result: { outcome: 'plan-ready', plan: 'RETAINED-PLAN' },
       feedback: {
         baseline: {},
         events: [
           {
             id: 'comment',
-            native: true,
             source: JSON.stringify({ databaseId: 42, body: 'PRIVATE-COMMENT' }),
             number: 3,
             itemType: 'issue',
@@ -112,7 +101,6 @@ describe('agent/openclaw-turn-context', () => {
   it('should expose explicit source choices without inventing a current-run mapping', () => {
     const events = ['a', 'b'].map((id, index) => ({
       id,
-      native: true,
       number: 3,
       itemType: 'issue',
       source: JSON.stringify({ databaseId: index + 42, body: 'PRIVATE-COMMENT' }),
@@ -156,35 +144,23 @@ describe('agent/openclaw-turn-context', () => {
       undefined,
     );
   });
-  it('should leave legacy feedback on its existing explicit context path', () => {
-    const legacy = {
-      ...record,
-      feedback: { baseline: {}, events: [{ turn: { runId: 'legacy' } }] },
-    } as OpenClawDispatchRecord;
-    assert.ok(openclawTurnContext(legacy, { ...binding, runId: 'legacy' }));
-  });
   it('should route an automatic implementation and its later answer through implementation context', () => {
     const working = {
       ...structuredClone(record),
-      result: { outcome: 'plan-ready', plan: 'RETAINED-PLAN' },
       progression: { stage: 'implementation', via: 'work' },
       handoff: { at: 1, by: 'intake', turnId: 'implementation' },
-      work: {
-        assessmentDigest: 'b'.repeat(64),
-        turn: { runId: 'implementation', status: 'attempted', message: 'Continue.' },
-      },
+      work: { implementation: { runId: 'implementation', inputEventId: 'input' } },
     } as OpenClawDispatchRecord;
     for (const runId of ['implementation', 'answer']) {
       const output = openclawTurnContext(working, { ...binding, runId })!;
       assert.match(output.appendSystemContext, /implementation-context/);
       assert.match(output.appendContext, /"stage":"implementation"/);
-      assert.equal(working.work!.implementation, undefined);
+      assert.equal(working.work!.implementation?.runId, 'implementation');
     }
   });
   it('should route native answers after feedback entered implementation without an issue work record', () => {
     const working = {
       ...structuredClone(record),
-      result: { outcome: 'clarification-needed', questions: ['Which approach?'] },
       progression: { stage: 'implementation', via: 'work' },
     } as unknown as OpenClawDispatchRecord;
     const output = openclawTurnContext(working, { ...binding, runId: 'answer' })!;
@@ -195,16 +171,13 @@ describe('agent/openclaw-turn-context', () => {
   it('should retain delivered task facts without gating ordinary human conversation', () => {
     const delivered = {
       ...structuredClone(record),
-      result: { outcome: 'plan-ready', plan: 'ORIGINAL-PLAN' },
       progression: { stage: 'implementation', via: 'work' },
       work: {
-        result: { outcome: 'done', summary: 'Done.', fullResult: 'OUTDATED-IMPLEMENTATION-PLAN' },
         delivery: { reconciled: true, pullRequest: { pullRequestNumber: 7 } },
       },
     } as OpenClawDispatchRecord;
     const output = openclawTurnContext(delivered, { ...binding, runId: 'human-question' })!;
     assert.doesNotMatch(output.appendContext, /ORIGINAL-PLAN|OUTDATED-IMPLEMENTATION-PLAN/);
-    assert.equal(delivered.work?.result?.outcome, 'done');
   });
 
   it('should refuse wrong agent, session, incarnation, and missing run', () => {
@@ -215,21 +188,5 @@ describe('agent/openclaw-turn-context', () => {
       { runId: undefined },
     ])
       assert.equal(openclawTurnContext(record, { ...binding, ...change }), undefined);
-  });
-  it('should retain a fresh input binding without reinjecting the prior assessment', () => {
-    const later = {
-      ...structuredClone(record),
-      result: { outcome: 'plan-ready', plan: 'FULL-RETAINED-PLAN' },
-    } as OpenClawDispatchRecord;
-    const output = openclawTurnContext(later, {
-      ...binding,
-      runId: 'later',
-      inputId: 'later-input',
-    })!;
-    assert.doesNotMatch(output.appendContext, /FULL-RETAINED-PLAN/);
-    assert.match(output.appendContext, /later-input/);
-    assert.doesNotMatch(output.appendContext, /previousResultDigest/);
-    assert.equal(later.progression, undefined);
-    assert.match(output.appendContext, /"runId":"later"/);
   });
 });

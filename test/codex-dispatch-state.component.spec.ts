@@ -18,7 +18,7 @@ describe('agent/codex-dispatch-state', () => {
 
   it('should initialize absent state and report malformed evidence without replacing it', async () => {
     assert.deepEqual(await store.read(), {
-      version: 3,
+      version: 4,
       scope: store.scope,
       resetGeneration: 'initial',
       records: [],
@@ -27,8 +27,11 @@ describe('agent/codex-dispatch-state', () => {
       '{"version":',
       '',
       'null',
-      '{"version":2}',
-      JSON.stringify({ version: 1, scope: 'b'.repeat(64), records: [] }),
+      JSON.stringify({
+        version: 4,
+        scope: 'b'.repeat(64),
+        records: [],
+      }),
     ]) {
       await store.file.write(contents);
       await assert.rejects(store.read(), { message: 'dispatch-state-invalid' });
@@ -44,15 +47,13 @@ describe('agent/codex-dispatch-state', () => {
     const contents = JSON.stringify({
       version: 1,
       scope: store.scope,
-      records: [
-        { retired: { at: 1, by: 'old-owner' }, result: { decision: { action: 'proceed' } } },
-      ],
+      records: [{ retired: { at: 1, by: 'old-owner' } }],
     });
     await store.file.write(contents);
-    await assert.rejects(store.read(), /notification-state-reset-required/);
+    await assert.rejects(store.read(), /dispatch-clean-start-required/);
     await assert.rejects(
       store.exclusive(async () => assert.fail('old workflows reached execution')),
-      /notification-state-reset-required/,
+      /dispatch-clean-start-required/,
     );
     assert.equal(await readFile(store.path, 'utf8'), contents);
   });

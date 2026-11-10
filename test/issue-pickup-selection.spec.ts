@@ -661,13 +661,13 @@ describe('agent/issue-pickup', () => {
     it(`should enforce one assignment per window after intake and completion in ${runtime}`, async () => {
       const f = fixture(runtime);
       await f.run({ selection: await f.select() });
-      const work = f.work();
       f.state.records.push({
         issueKey: pickupIssueKey(f.state.projectPickup!, f.item.nodeId),
-        projectWork: work,
+        projectWork: f.work(),
         phase: 'complete',
-        retired: {},
       });
+      await f.run();
+      f.state.records.splice(0);
       f.item.assignees = [];
       f.client.discoverProject = async () => {
         throw new Error('allowance is already consumed');
@@ -688,8 +688,9 @@ describe('agent/issue-pickup', () => {
         issueKey: pickupIssueKey(f.state.projectPickup!, f.item.nodeId),
         projectWork: f.work(),
         phase: 'complete',
-        retired: {},
       });
+      await f.run();
+      f.state.records.splice(0);
       f.item.assignees = [];
       f.clock.now += 86400000;
       f.tx.runId = 'tomorrow';
@@ -1063,7 +1064,6 @@ describe('agent/issue-pickup', () => {
     assert.equal(pickupCapacity(pickup), 0);
     assert.equal((await f.run()).status, 'allowance-reached');
     delete f.state.records[0]!.request;
-    f.state.records[0]!.result = { outcome: 'clarification-needed' };
     assert.equal(pickupCapacity(pickup), 0);
     f.clock.now += 86400000;
     f.tx.runId = `scan-${f.clock.now}`;
@@ -1181,14 +1181,14 @@ describe('agent/issue-pickup', () => {
     }
   });
 
-  it('should not transfer a new pickup into an older retired assignment of the same issue', async () => {
+  it('should not transfer a new pickup into an older reset assignment of the same issue', async () => {
     const f = fixture();
     await f.run({ selection: await f.select() });
     const work = f.work();
     work.pickup = { ...work.pickup!, assignmentNodeId: 'E_old' };
     f.state.records.push({
       phase: 'complete',
-      retired: {},
+      reset: {},
       projectWork: work,
       issueKey: pickupIssueKey(f.state.projectPickup!, f.item.nodeId),
     });

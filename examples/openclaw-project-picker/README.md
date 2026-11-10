@@ -144,7 +144,7 @@ for runtime in codex openclaw; do
   run_id=$(jq -er '(.nativeTurns | map(select(.role == "assessment")) | last | .turn).runId' "$TMPDIR/pickup-$runtime-before.json")
   node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
   jq -es --arg issue "$(jq -er .node_id "$TMPDIR/pickup-$runtime-selected.json")" '[.[].records[] | select(.projectWork.pickup.issueNodeId == $issue)] | if length == 1 then .[0] else error("one pickup intake owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/pickup-$runtime-before.json"
-  jq -e '.sessionCreation.verified == true and (.threadId | length > 0) and (.worktree | length > 0) and .result == null and .work.delivery == null' "$TMPDIR/pickup-$runtime-before.json"
+  jq -e '.sessionCreation.verified == true and (.threadId | length > 0) and (.worktree | length > 0) and .work.delivery == null' "$TMPDIR/pickup-$runtime-before.json"
   conversation=$(jq -er .threadId "$TMPDIR/pickup-$runtime-before.json")
   openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json | jq -e 'any(.messages[]; .role == "assistant" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | contains("Should disposable issues close after evidence capture?")))'
   openclaw agent-system tool worktree -- list | jq -e --arg path "$(jq -er .worktree "$TMPDIR/pickup-$runtime-before.json")" '[.[] | select(.path == $path)] | length == 1'

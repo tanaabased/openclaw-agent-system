@@ -1,19 +1,13 @@
 import { Type, type Static } from 'typebox';
+import type { IssueDeliveryInput } from '../channels/github/publication/issue-delivery.ts';
 import { automationHash } from './automation-hash.ts';
-import { assessmentSummaryPublication } from './assessment-summary.ts';
-import { announcementPublication } from './delivery-announcement.ts';
-import { managedPullRequest, type ManagedIssue } from './managed-issue.ts';
-import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
+import { announcementPublication } from './delivery-announcement.ts';
+import type { SharedDispatchRecord } from './dispatch-state.ts';
+import { managedPullRequest, type ManagedIssue } from './managed-issue.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import type { ReplyDraft } from './reply-store.ts';
 import type { ReplyTarget } from './reply-target.ts';
-import {
-  isReviewFeedback,
-  type GitHubCanonicalFeedback,
-} from '../channels/github/provider/review-feedback.ts';
-import type { GitHubNotificationCommentPublicationInput } from '../channels/github/publication/comment-publisher.ts';
-import type { IssueDeliveryInput } from '../channels/github/publication/issue-delivery.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 65536 });
 export const retirementEffectSchema = Type.Object(
@@ -122,55 +116,7 @@ export default function retirementEffects(
   intake: ManagedIssue,
 ): RetirementEffect[] {
   const record = source as Record;
-  const effects: RetirementEffect[] = [];
-  for (const summary of record.assessmentSummaries ?? []) {
-    if (!summary.attempt || summary.receipt || summary.nativeDenial) continue;
-    effects.push(
-      effect({
-        kind: 'comment',
-        accountId: intake.receiving.nodeId,
-        publication:
-          summary.publication ??
-          JSON.stringify(assessmentSummaryPublication(record, intake, summary)),
-      }),
-    );
-  }
-  for (const event of record.feedback?.events ?? []) {
-    if (!event.publicationAttempted || event.receipt || !event.result?.publicText) continue;
-    const source = JSON.parse(event.source) as GitHubCanonicalFeedback;
-    const publication: GitHubNotificationCommentPublicationInput = {
-      intent: 'github-reply',
-      item: {
-        lifecycleId: 'issue',
-        number: event.number,
-        repositoryName: intake.repository.name,
-        repositoryOwner: intake.repository.owner.login,
-        repositoryNodeId: intake.repository.nodeId,
-      },
-      source: { commentDatabaseId: source.databaseId, revisionId: event.revision },
-      text: event.result.publicText,
-    };
-    const review = isReviewFeedback(source) && source.feedback.receipt.kind === 'review-comment';
-    const reviewRoot = review ? source.feedback.comments[0]?.replyToId : undefined;
-    if (review && !reviewRoot) throw new Error('retirement-review-thread-unresolved');
-    effects.push(
-      effect({
-        kind: 'comment',
-        accountId: intake.receiving.nodeId,
-        publication: JSON.stringify(publication),
-        commenterLogin: source.author?.login,
-        reviewRoot,
-      }),
-    );
-  }
-  for (const delivery of [
-    record.delivery,
-    record.work?.delivery,
-    ...(record.deliveryHistory ?? []),
-    ...(record.feedback?.events ?? []).map(
-      (event) => (event as { workDelivery?: Delivery }).workDelivery,
-    ),
-  ])
-    effects.push(...retirementDeliveryEffects(delivery, intake));
-  return effects;
+  return [record.delivery, record.work?.delivery].flatMap((delivery) =>
+    retirementDeliveryEffects(delivery, intake),
+  );
 }

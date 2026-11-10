@@ -1,12 +1,10 @@
-import taskPullRequest from './task-pull-request.ts';
 import { Type, type Static } from 'typebox';
-
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { FeedbackSourceState } from './feedback-state.ts';
 import issueLaunchTarget from './issue-launch-target.ts';
 import { dispatchAdmission, managedPullRequest, type ManagedIssue } from './managed-issue.ts';
+import taskPullRequest from './task-pull-request.ts';
 import workflowStatus from './workflow-status.ts';
-
 export const dispatchInspectionProperties = {
   id: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
   target: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
@@ -21,10 +19,21 @@ type Inspection = {
 };
 type Inspectable = SharedDispatchRecord & {
   feedback?: FeedbackSourceState;
-  delivery?: { pullRequest?: { pullRequestNodeId: string; pullRequestNumber: number } };
-  work?: { delivery?: { pullRequest?: { pullRequestNodeId: string; pullRequestNumber: number } } };
+  delivery?: {
+    pullRequest?: {
+      pullRequestNodeId: string;
+      pullRequestNumber: number;
+    };
+  };
+  work?: {
+    delivery?: {
+      pullRequest?: {
+        pullRequestNodeId: string;
+        pullRequestNumber: number;
+      };
+    };
+  };
 };
-
 /** inspect saved observations only; selection never reads providers or changes lifecycle state. */
 export default function dispatchInspection<R extends Inspectable>(
   records: readonly R[],
@@ -66,7 +75,6 @@ export default function dispatchInspection<R extends Inspectable>(
       : {}),
   };
 }
-
 export function dispatchInspectionSummary(record: Inspectable) {
   const feedback = record.feedback;
   return {
@@ -81,7 +89,6 @@ export function dispatchInspectionSummary(record: Inspectable) {
       reason: record.retirement.reason,
       code: record.retirement.code,
     },
-    retired: record.retired,
     feedback: feedback && {
       scannedTime: feedback.scannedTime,
       discoveryPending: feedback.discoveryPending,

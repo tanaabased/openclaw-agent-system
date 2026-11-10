@@ -1,4 +1,4 @@
-import { Type, type Static, type TSchema } from 'typebox';
+import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import discriminatedSchema from '../utils/discriminated-schema.ts';
@@ -47,18 +47,17 @@ const common = {
   summary: text,
   evidence,
   progress,
-  // explicit human review; absent on older results, whose complete display is preserved.
   reviewSummary: Type.Optional(text),
   decision: Type.Optional(assessmentDecisionSchema),
 };
 
 /** shared issue assessment contract owned by #249; lifecycle identity stays runtime-owned. */
-function resultVariants<S extends TSchema>(fullAssessment: S) {
+function resultVariants() {
   return Type.Union([
     Type.Object(
       {
         ...common,
-        fullAssessment,
+        fullAssessment: text,
         outcome: Type.Literal('plan-ready'),
         assessment: text,
         // optional when the recommendation and complete source already explain the proposal.
@@ -70,7 +69,7 @@ function resultVariants<S extends TSchema>(fullAssessment: S) {
     Type.Object(
       {
         ...common,
-        fullAssessment,
+        fullAssessment: text,
         outcome: Type.Literal('clarification-needed'),
         assessment: text,
         questions: Type.Array(text, { minItems: 1, maxItems: 10 }),
@@ -80,7 +79,7 @@ function resultVariants<S extends TSchema>(fullAssessment: S) {
     Type.Object(
       {
         ...common,
-        fullAssessment,
+        fullAssessment: text,
         outcome: Type.Literal('operator-setup-blocker'),
         code: Type.String({ pattern: '^[a-z][a-z0-9-]{0,127}$' }),
         remediation: text,
@@ -89,13 +88,11 @@ function resultVariants<S extends TSchema>(fullAssessment: S) {
     ),
   ]);
 }
-const assessmentResultVariants = resultVariants(Type.Optional(text));
+const assessmentResultVariants = resultVariants();
 export const assessmentResultSchema = discriminatedSchema('outcome', assessmentResultVariants);
-const submissionVariants = resultVariants(text);
-// saved results retain the legacy shape; new submissions must supply their summary source.
-export const assessmentSubmissionSchema = discriminatedSchema('outcome', submissionVariants);
+export const assessmentSubmissionSchema = assessmentResultSchema;
 const presentationVariants = Type.Union(
-  submissionVariants.anyOf.map((variant) =>
+  assessmentResultVariants.anyOf.map((variant) =>
     Type.Object(
       {
         ...variant.properties,

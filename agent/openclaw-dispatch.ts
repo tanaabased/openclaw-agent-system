@@ -1,15 +1,28 @@
-import openClawNativeMaterial from './openclaw-native-material.ts';
-import { nativeMaterialResponse } from './native-material.ts';
-import nativeOperatorSelection from './native-operator-selection.ts';
-import nativeFeedbackReconciliation from './native-feedback-reconciliation.ts';
+import { isDeepStrictEqual } from 'node:util';
+import type { Static } from 'typebox';
+import { Value } from 'typebox/value';
+import { stateSnapshotConflictCode } from '../core/merge-state-snapshot.ts';
+import { privateStateFileLockBusyErrorCode } from '../core/private-state-file-lock.ts';
+import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
+import type { AgentManifest } from '../manifest/types.ts';
+import { launchRequestSchema } from '../tools/dispatch/launch-schema.ts';
 import {
-  isNativeDispatchSelection,
-  nativeDispatchDigest,
-  nativeDispatchSelection,
-  nativeDispatchResponse,
-} from './native-dispatch-selection.ts';
-import nativeFeedbackSource from './native-feedback-source.ts';
-import { resolveOpenClawTurnFeedback } from './openclaw-feedback-input.ts';
+  assertDispatchModelRequest,
+  type dispatchParameters,
+} from '../tools/dispatch/tool-schema.ts';
+import assessmentMaterial from './assessment-material.ts';
+import renderNativeAssessment, { renderBoundAssessment } from './assessment-render.ts';
+import discoveryCheckpoint from './discovery-checkpoint.ts';
+import discoveryNotice from './discovery-notice.ts';
+import dispatchInspection, { dispatchInspectionSummary } from './dispatch-inspection.ts';
+import { dispatchFailurePhase, scheduleDispatchRetry } from './dispatch-retry.ts';
+import feedbackContextMaterial from './feedback-context-material.ts';
+import implementationMaterial, {
+  type ImplementationMaterialRead,
+} from './implementation-material.ts';
+import issueLaunch from './issue-launch.ts';
+import launchPending from './launch-pending.ts';
+import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import { dispatchAdmission } from './managed-issue.ts';
 import {
   assertNativeContextInput,
@@ -18,58 +31,43 @@ import {
   nativeContextRequest,
   nativeContextResponse,
 } from './native-context-request.ts';
-import launchPending from './launch-pending.ts';
-import renderNativeAssessment, { renderBoundAssessment } from './assessment-render.ts';
-import feedbackContextMaterial from './feedback-context-material.ts';
-import dispatchInspection, { dispatchInspectionSummary } from './dispatch-inspection.ts';
-import { isDeepStrictEqual } from 'node:util';
-
-import assessmentMaterial from './assessment-material.ts';
-import implementationMaterial, {
-  type ImplementationMaterialRead,
-} from './implementation-material.ts';
-import recoverOpenClawTask from './openclaw-dispatch-recovery.ts';
-import issueLaunch from './issue-launch.ts';
-import openClawEntryContext from './openclaw-entry-context.ts';
-import { Value } from 'typebox/value';
-import { launchRequestSchema } from '../tools/dispatch/launch-schema.ts';
-import openClawImplementationEntry from './openclaw-implementation-entry.ts';
-import openClawAssessmentEntry from './openclaw-assessment-entry.ts';
-import retireOpenClawTask from './openclaw-dispatch-retirement.ts';
-import retireOpenClawNative from './openclaw-native-retirement.ts';
-import pendingPublicResponse from './pending-public-response.ts';
-import openClawReply from './openclaw-reply.ts';
-import type { Static } from 'typebox';
-
-import { stateSnapshotConflictCode } from '../core/merge-state-snapshot.ts';
-import { privateStateFileLockBusyErrorCode } from '../core/private-state-file-lock.ts';
-import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
-import type { AgentManifest } from '../manifest/types.ts';
 import {
-  assertDispatchModelRequest,
-  type dispatchParameters,
-} from '../tools/dispatch/tool-schema.ts';
-import discoveryCheckpoint from './discovery-checkpoint.ts';
-import discoveryNotice from './discovery-notice.ts';
-import { dispatchFailurePhase, scheduleDispatchRetry } from './dispatch-retry.ts';
-import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
+  isNativeDispatchSelection,
+  nativeDispatchDigest,
+  nativeDispatchResponse,
+  nativeDispatchSelection,
+} from './native-dispatch-selection.ts';
+import nativeFeedbackReconciliation from './native-feedback-reconciliation.ts';
+import nativeFeedbackSource from './native-feedback-source.ts';
+import { nativeMaterialResponse } from './native-material.ts';
+import nativeOperatorSelection from './native-operator-selection.ts';
+import openClawAssessmentEntry from './openclaw-assessment-entry.ts';
 import reconcileOpenClawLifecycle from './openclaw-assignment-lifecycle.ts';
 import dispatchCapacity from './openclaw-capacity.ts';
 import OpenClawDispatchAdmission from './openclaw-dispatch-admission.ts';
 import OpenClawDispatchContext, {
-  type OpenClawDispatchDependencies,
   openClawDispatchFailureCode,
+  type OpenClawDispatchDependencies,
   type OpenClawDispatchTransaction,
 } from './openclaw-dispatch-context.ts';
-
 import OpenClawDispatchCoordinator from './openclaw-dispatch-coordinator.ts';
 import OpenClawDispatchIssue from './openclaw-dispatch-issue.ts';
+import recoverOpenClawTask from './openclaw-dispatch-recovery.ts';
+import retireOpenClawTask from './openclaw-dispatch-retirement.ts';
 import OpenClawDispatchStore, {
   preserveOpenClawProgress,
   type OpenClawDispatchRecord,
 } from './openclaw-dispatch-state.ts';
+import openClawEntryContext from './openclaw-entry-context.ts';
+import { resolveOpenClawTurnFeedback } from './openclaw-feedback-input.ts';
 import { applyOpenClawFeedbackScans, scanOpenClawFeedback } from './openclaw-feedback-scan.ts';
+import openClawImplementationEntry from './openclaw-implementation-entry.ts';
 import { sameIntakeRun } from './openclaw-intake-pass.ts';
+import openClawNativeMaterial from './openclaw-native-material.ts';
+import retireOpenClawNative from './openclaw-native-retirement.ts';
+import { nativeTurnFor } from './openclaw-native-turns.ts';
+import openClawReply from './openclaw-reply.ts';
+import reconcileOpenClawRetirementEffects from './openclaw-retirement-effects.ts';
 import {
   describeIssueSession,
   IssueSessionMismatchError,
@@ -78,7 +76,6 @@ import {
 import workflowFailure from './workflow-failure.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import workflowStatus from './workflow-status.ts';
-
 export { openClawDispatchFailureCode } from './openclaw-dispatch-context.ts';
 export type { OpenClawDispatchDependencies } from './openclaw-dispatch-context.ts';
 export default class OpenClawDispatch {
@@ -134,7 +131,6 @@ export default class OpenClawDispatch {
       ...(error instanceof IssueSessionMismatchError ? { mismatchedField: error.field } : {}),
     };
   }
-
   async runModel(
     manifest: AgentManifest,
     workspace: string,
@@ -319,7 +315,6 @@ export default class OpenClawDispatch {
       modelInput,
     );
   }
-
   async run(
     manifest: AgentManifest,
     workspace: string,
@@ -334,13 +329,7 @@ export default class OpenClawDispatch {
       !(
         input.action === 'context' ||
         (input.action === 'implementation-context' && !input.scope) ||
-        (input.action === 'summary' &&
-          input.operation === 'compose' &&
-          !input.publicText &&
-          !input.diagnostic) ||
-        (input.action === 'feedback' &&
-          ['context', 'implementation-context', 'compose'].includes(input.operation) &&
-          !input.decision) ||
+        (input.action === 'feedback' && input.operation === 'context') ||
         (input.action === 'assessment' && ['context', 'render'].includes(input.operation)) ||
         (input.action === 'delivery' &&
           input.operation === 'compose' &&
@@ -361,8 +350,7 @@ export default class OpenClawDispatch {
       : this.execute(manifest, workspace, caller, input, operator, authority));
     if (
       input.action === 'implementation-context' ||
-      (input.action === 'implementation' && input.operation === 'context') ||
-      (input.action === 'feedback' && input.operation === 'implementation-context')
+      (input.action === 'implementation' && input.operation === 'context')
     ) {
       if (response.status === 'verified' && 'implementation' in response) {
         const request =
@@ -372,14 +360,7 @@ export default class OpenClawDispatch {
                 operation: 'context',
                 ...(input.target ? { target: input.target } : {}),
               }
-            : input.action === 'feedback'
-              ? {
-                  action: 'feedback',
-                  operation: 'implementation-context',
-                  id: input.id,
-                  eventId: input.eventId,
-                }
-              : { action: 'implementation-context', id: input.id };
+            : { action: 'implementation-context', id: input.id };
         return implementationMaterial(response, request, input.material);
       }
     }
@@ -405,7 +386,12 @@ export default class OpenClawDispatch {
     manifest: AgentManifest,
     workspace: string,
     caller: DispatchCaller,
-    input: Extract<Static<typeof dispatchParameters>, { action: 'launch' }>,
+    input: Extract<
+      Static<typeof dispatchParameters>,
+      {
+        action: 'launch';
+      }
+    >,
     operator: boolean,
     authority: DispatchAuthority,
   ) {
@@ -509,7 +495,12 @@ export default class OpenClawDispatch {
     manifest: AgentManifest,
     workspace: string,
     caller: DispatchCaller,
-    input: Exclude<Static<typeof dispatchParameters>, { action: 'launch' }>,
+    input: Exclude<
+      Static<typeof dispatchParameters>,
+      {
+        action: 'launch';
+      }
+    >,
     operator = false,
     authority: DispatchAuthority = {},
   ) {
@@ -632,10 +623,7 @@ export default class OpenClawDispatch {
             };
           throw error;
         });
-    if (
-      input.action === 'present' ||
-      (input.action === 'delivery' && input.operation === 'present')
-    ) {
+    if (input.action === 'delivery' && input.operation === 'present') {
       const selected = await this.dependencies.intake.select(manifest, workspace);
       const admitted = (await this.context.scope(manifest, workspace)).admitted;
       if (!admitted) throw new Error('dispatch-intake-record-missing');
@@ -654,12 +642,7 @@ export default class OpenClawDispatch {
       input.action === 'implementation-result' ||
       input.action === 'delivery';
     const feedbackChild = input.action === 'feedback' && input.operation !== 'reconcile';
-    const childAction =
-      input.action === 'context' ||
-      input.action === 'result' ||
-      input.action === 'summary' ||
-      workAction ||
-      feedbackChild;
+    const childAction = input.action === 'context' || workAction || feedbackChild;
     const current = await this.scope(manifest, workspace);
     const retained =
       'id' in input
@@ -713,7 +696,6 @@ export default class OpenClawDispatch {
         snapshot.records.some(
           (record) =>
             !record.supersededBy &&
-            !record.retired &&
             !record.retirement &&
             !record.reset &&
             (record.feedback?.discoveryPending ||
@@ -764,7 +746,6 @@ export default class OpenClawDispatch {
           .filter(
             (record) =>
               !record.supersededBy &&
-              !record.retired &&
               !record.retirement &&
               !record.reset &&
               !record.manualIssue?.fresh,
@@ -832,36 +813,9 @@ export default class OpenClawDispatch {
                     cancelled: turn.cancelled,
                     failed: turn.failed,
                   })),
-                  firstTurn: record.firstTurn
-                    ? {
-                        status: record.firstTurn.status,
-                        runId: record.firstTurn.runId,
-                        consumedByEventId: record.firstTurn.consumedByEventId,
-                        replyEventId: record.firstTurn.replyEventId,
-                        executionModel: record.firstTurn.executionModel,
-                        executionEffort: 'unverified',
-                      }
-                    : undefined,
-                  assessmentTurn: record.assessmentTurn && {
-                    status: record.assessmentTurn.status,
-                    runId: record.assessmentTurn.runId,
-                    consumedByEventId: record.assessmentTurn.consumedByEventId,
-                    replyEventId: record.assessmentTurn.replyEventId,
-                    executionModel: record.assessmentTurn.executionModel,
-                    executionEffort: 'unverified',
-                  },
                   blocker: record.blocker,
                   failureStage: record.failureStage,
-                  outcome: record.result?.outcome,
-                  pendingPublicResponse: pendingPublicResponse(record),
-                  summaryRecovery: record.summaryRecovery && {
-                    revision: record.summaryRecovery.revision,
-                    runId: record.summaryRecovery.turn.runId,
-                    status: record.summaryRecovery.turn.status,
-                    code: record.summaryRecovery.code,
-                  },
                   retirement: record.retirement,
-                  retired: record.retired,
                   lifecycleCheckedAt: record.lifecycleCheckedAt,
                   lifecyclePending: record.lifecyclePending,
                   feedback: record.feedback,
@@ -906,14 +860,14 @@ export default class OpenClawDispatch {
           childAction &&
           (caller.sessionKey !== record.threadId ||
             caller.sessionId !== record.sessionCreation?.sessionId ||
-            (!record.assessmentTurn && !record.nativeRecord))
+            !nativeTurnFor(record, 'assessment'))
         )
           throw new Error('dispatch-assessment-caller-mismatch');
         const verified = await this.validate(
           manifest,
           workspace,
           record,
-          workAction || input.action === 'summary',
+          workAction,
           false,
           undefined,
           authority.signal
@@ -968,4 +922,3 @@ export default class OpenClawDispatch {
       });
   }
 }
-import reconcileOpenClawRetirementEffects from './openclaw-retirement-effects.ts';

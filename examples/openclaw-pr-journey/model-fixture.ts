@@ -21,10 +21,6 @@ const dispatchStages = [
   'native-plan-render',
   'context',
   'result',
-  'recovery-present',
-  'summary-compose',
-  'summary-candidate',
-  'summary-publish',
   'report',
   'discovery-inspect',
   'binding-verify',
@@ -43,12 +39,10 @@ const dispatchStages = [
   'delivery-announce',
   'delivery-repeat',
   'delivery-present',
-  'assessment-present',
   'feedback-context',
   'feedback-resume-context',
   'feedback-resume-context-repeat',
   'feedback-work-context',
-  'feedback-work-result',
   'feedback-delivery-prepare',
   'feedback-delivery-publish',
   ...Array.from({ length: 3 }, (_, index) => [
@@ -60,7 +54,6 @@ const dispatchStages = [
   'feedback-delivery-candidate',
   'feedback-delivery-announce',
   'feedback-delivery-present',
-  'feedback-result',
   'feedback-compose',
   'feedback-candidate',
   'feedback-publish',
@@ -234,7 +227,7 @@ export function nativePlanResponse(
     });
   assert.equal(composed.status, 'composition-ready');
   const skill = (composed.selection as { skill: { path: string } }).skill;
-  if (!skillRead) return call('summary-skill', 'read', { path: skill.path });
+  if (!skillRead) return call('plan-reply-skill', 'read', { path: skill.path });
   const candidate = result('native-plan-candidate');
   if (!candidate)
     return dispatch('native-plan-candidate', {
@@ -314,54 +307,15 @@ function respond(
     if (retained.status !== 'reported' || typeof retained.response !== 'string') return;
     return { content: retained.response || 'notification-intake-unchanged' };
   };
-  const summary = (id: string, presentation?: string): FixtureResponse | undefined => {
-    if (!presentation) {
-      const shown = result('recovery-present');
-      if (!shown) return dispatch('recovery-present', { action: 'present' });
-      if (shown.status !== 'presented' || typeof shown.presentation !== 'string') return;
-      presentation = shown.presentation;
-    }
-    const args = { action: 'summary' };
-    const composed = result('summary-compose');
-    if (!composed)
-      return {
-        ...dispatch('summary-compose', { ...args, operation: 'compose' }),
-        content: presentation,
-      };
-    const skill = (composed.selection as { skill?: { path?: string } } | undefined)?.skill;
-    if (composed.status !== 'composition-ready' || !skill?.path) return;
-    if (openClawAIMockToolResultText(messages, prefix + 'summary-skill') === undefined)
-      return call('summary-skill', 'read', { path: skill.path });
-    const candidate = result('summary-candidate');
-    if (!candidate)
-      return dispatch('summary-candidate', {
-        ...args,
-        operation: 'candidate',
-        publicText: publicText(
-          composed,
-          'The plan is to document closing disposable test issues after capturing their evidence. The retained plan is ready for the configured workflow to continue.',
-        ),
-      });
-    if (candidate.status !== 'candidate-recorded') return;
-    const published = result('summary-publish');
-    if (!published) return dispatch('summary-publish', { ...args, operation: 'publish' });
-    if (published.status !== 'published' || typeof published.presentation !== 'string') return;
-    return { content: published.presentation };
-  };
   const nativePlan = (context: Record<string, unknown>) =>
     nativePlanResponse(
       context,
       result,
       dispatch,
       call,
-      Boolean(openClawAIMockToolResultText(messages, prefix + 'summary-skill')),
+      Boolean(openClawAIMockToolResultText(messages, prefix + 'plan-reply-skill')),
       options.initialQuestion,
     );
-  const recoveryId =
-    /recover only the pending public assessment summary[\s\S]*?id ([a-f0-9]{64})/u.exec(
-      prompt,
-    )?.[1];
-  if (recoveryId) return summary(recoveryId);
   const manual = prompt.includes('Advance previously admitted issue or feedback work.');
   if (manual || prompt.includes('Fill initially available intake slots in one bounded pass.')) {
     if (!manual && !prompt.includes('Consume saved discoveries')) {
@@ -551,21 +505,6 @@ function respond(
           });
         if (executed.exitCode !== 0 || executed.truncated !== false) return;
       }
-      const completed = result('feedback-work-result');
-      if (initial && !completed)
-        return dispatch('feedback-work-result', {
-          action: 'implementation-result',
-          implementationResult: {
-            outcome: 'done',
-            summary: initial
-              ? 'Implemented the cleanup note.'
-              : 'Added the feedback continuity note.',
-            fullResult: initial
-              ? 'Created the cleanup note, checked the diff, and committed the requested implementation.'
-              : 'Updated the original note, checked the diff, and committed the feedback change.',
-          },
-        });
-      if (initial && completed?.status !== 'recorded') return;
       const title = 'Document disposable notification fixture cleanup';
       const body = 'Document closing disposable test issues after their evidence is captured.';
       const delivery = result('feedback-delivery-prepare');
@@ -782,7 +721,9 @@ function respond(
     const update =
       secondUpdate ||
       prompt.includes('Add a follow-up commit and update the existing PR title and body.');
-    const retry = prompt.includes('Show the saved plan and existing PR card again.');
+    const retry = prompt.includes(
+      'Show the plan from this conversation and existing PR card again.',
+    );
     const title = update
       ? 'Document disposable notification fixture cleanup and verification'
       : 'Document disposable notification fixture cleanup';
@@ -1036,7 +977,7 @@ export function createPRExampleScenario(
       { id: prefix + 'feedback-skill', name: 'read' },
       { id: prefix + 'feedback-implementation-skill', name: 'read' },
       { id: prefix + 'delivery-skill', name: 'read' },
-      { id: prefix + 'summary-skill', name: 'read' },
+      { id: prefix + 'plan-reply-skill', name: 'read' },
       { id: prefix + 'assessment-skill', name: 'read' },
       { id: prefix + 'implementation-skill', name: 'read' },
       { id: prefix + 'implementation-guidance', name: 'read' },

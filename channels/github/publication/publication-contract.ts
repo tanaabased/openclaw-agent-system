@@ -10,7 +10,6 @@ const markerPrefix = 'agent-system-github-publication';
 export const githubNotificationCommenterToken = '{{commenter}}';
 
 export type GitHubNotificationPublicationIntent =
-  | 'assessment-summary'
   | 'assignment-response'
   | 'github-reply'
   | 'initial-acknowledgment'
@@ -22,7 +21,6 @@ export type GitHubNotificationPublicationSafetyCategory =
   'credential-prefix' | 'environment-assignment' | 'redaction';
 
 const publicationIntents = new Set<GitHubNotificationPublicationIntent>([
-  'assessment-summary',
   'assignment-response',
   'github-reply',
   'initial-acknowledgment',
@@ -180,7 +178,6 @@ type GitHubNotificationPublicationTargetInput = GitHubNotificationPublicationCon
       }
     | {
         intent:
-          | 'assessment-summary'
           | 'assignment-response'
           | 'initial-acknowledgment'
           | 'manual-response'

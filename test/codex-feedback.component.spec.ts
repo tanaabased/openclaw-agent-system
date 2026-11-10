@@ -1,29 +1,28 @@
-import cutover638Active from '../scripts/cutover-638-active.ts';
-import discoveryCheckpoint from '../agent/discovery-checkpoint.ts';
-import hydrateImplementation, { type Field } from './implementation-material-fixture.ts';
-import commentProviderFixture from './github-comment-provider-fixture.ts';
-import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
-import { scanCodexFeedback } from '../agent/codex-feedback-scan.ts';
-import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
-import { runCodexDispatch, type CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
-import { parseCleanupConfiguration } from '../agent/cleanup-configuration.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { parseCleanupConfiguration } from '../agent/cleanup-configuration.ts';
+import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
+import { runCodexDispatch, type CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
+import { scanCodexFeedback } from '../agent/codex-feedback-scan.ts';
+import discoveryCheckpoint from '../agent/discovery-checkpoint.ts';
+import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
+import commentProviderFixture from './github-comment-provider-fixture.ts';
+import hydrateImplementation, { type Field } from './implementation-material-fixture.ts';
 
 import { attemptedAnnouncement } from './delivery-announcement-fixture.ts';
 
 import { automationHash } from '../agent/automation-hash.ts';
-import runCodexFeedback, { type CodexFeedbackDependencies } from '../agent/codex-feedback.ts';
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
+import runCodexFeedback, { type CodexFeedbackDependencies } from '../agent/codex-feedback.ts';
 import { runCodexIntake, selectCodexIntake } from '../agent/codex-intake.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import { account, baseline, intakeFixture } from './github-intake-fixture.ts';
 import {
-  reviewFixture,
-  reviewCommentFixture,
   reviewClientFixture,
+  reviewCommentFixture,
+  reviewFixture,
 } from './github-review-fixtures.ts';
 
 const id = 'd'.repeat(64);
@@ -100,21 +99,11 @@ describe('agent/codex-feedback', () => {
     const current = await selectCodexIntake(pluginData, { codexHome });
     const admitted = (await current.store.read())!.records[0]!;
     store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
-    await store.file.write(JSON.stringify({ ...(await store.read()), version: 2 }));
     await store.exclusive(async (state, save) => {
       state.records.push({
         context: JSON.stringify({ source: 'https://github.com/owner/repo/issues/3' }),
         routing: 'routing',
         routingNote: 'note',
-        result: {
-          version: 1,
-          outcome: 'plan-ready',
-          summary: 'summary',
-          assessment: 'assessment',
-          plan: 'plan',
-          evidence: [],
-          progress: { completed: [], remaining: [] },
-        },
         id,
         intakeId: admitted.id,
         issueKey: automationHash([
@@ -263,8 +252,7 @@ describe('agent/codex-feedback', () => {
       sent = true;
       turn = 'feedback';
       await store.exclusive(async (state, save) => {
-        state.records[0]!.continuation = {
-          phase: 'waiting',
+        state.records[0]!.nativeWork = {
           policyDigest: 'c'.repeat(64),
           selection: {
             version: 1,
@@ -287,12 +275,10 @@ describe('agent/codex-feedback', () => {
         await save();
       });
       await store.exclusive(async (state, save) => {
-        state.records = state.records.map((record) => cutover638Active(record).record);
-        state.version = 3;
         await save();
       });
       const before = (await store.read()).records[0]!;
-      for (const action of ['context', 'implementation-context', 'implementation-result']) {
+      for (const action of ['context']) {
         const context = await call(action, ref, true);
         assert.equal(context.status, 'verified');
         assert.equal('mode' in context && context.mode, mode);
@@ -308,9 +294,6 @@ describe('agent/codex-feedback', () => {
         );
       }
       const after = (await store.read()).records[0]!;
-      assert.equal(after.feedback!.events[0]!.work, undefined);
-      assert.equal(after.feedback!.events[0]!.result, undefined);
-      assert.deepEqual(after.result, before.result);
       assert.deepEqual(after.progression, before.progression);
     });
   for (const code of ['dispatch-denial-execution-unresolved', 'dispatch-denial-scope-unresolved'])
@@ -356,7 +339,6 @@ describe('agent/codex-feedback', () => {
         JSON.stringify(response),
       );
       const held = (await store.read()).records.find((record) => record.id === 'c'.repeat(64))!;
-      assert.equal(held.result?.outcome === 'operator-setup-blocker' && held.result.code, code);
       assert.equal(held.phase, 'waiting');
       assert.equal(held.retry, undefined);
       assert.equal(held.threadId, undefined);
@@ -713,45 +695,6 @@ describe('agent/codex-feedback', () => {
     assert.ok(!prompt.includes(result.eventId));
     return { id, eventId: result.eventId };
   }
-  it('should recover retained feedback from an unrelated managed operator chat only', async () => {
-    const ref = await prepare();
-    sent = ended = true;
-    turn = 'feedback';
-    await store.exclusive(async (state, save) => {
-      const event = state.records[0]!.feedback!.events[0]!;
-      event.attempt!.turnId = turn;
-      event.phase = 'responded';
-      delete event.native;
-      event.publicationAttempted = true;
-      event.result = { privateText: 'Verified result.', publicText: 'Retained answer.' };
-      const other = structuredClone(state.records[0]!);
-      other.id = 'b'.repeat(64);
-      other.issueKey = 'c'.repeat(64);
-      other.issueBranch!.attemptId = other.id;
-      other.threadId = 'operator';
-      delete other.feedback;
-      state.records.push(other);
-      await save();
-    });
-    const unrelated = (await store.read()).records[1]!;
-    const run = (threadId: string, extra = {}) =>
-      runCodexFeedback(
-        pluginData,
-        { action: 'publish-approved', ...ref, ...extra },
-        { ...deps, threadId },
-      );
-    for (const caller of ['intake', 'child']) {
-      const denied = await run(caller);
-      assert.equal('code' in denied && denied.code, 'feedback-operator-caller-required');
-    }
-    const preview = await run('operator');
-    assert.equal(preview.status, 'publication-approval-required', JSON.stringify(preview));
-    assert.equal(creates, 0);
-    const stale = await run('operator', { apply: true, publicText: 'Different answer.' });
-    assert.equal('code' in stale && stale.code, 'feedback-publication-approval-stale');
-    assert.equal(creates, 0);
-    assert.deepEqual((await store.read()).records[1], unrelated);
-  });
   it('should deliver native conversation once without a feedback result or a reply gate', async () => {
     const before = (await store.read()).records[0]!;
     const ref = await prepare(commenter, '@receiver why this approach?');
@@ -767,16 +710,12 @@ describe('agent/codex-feedback', () => {
     const during = (await store.read()).records[0]!;
     assert.equal(during.feedback!.events[0]!.phase, 'delivered');
     assert.notEqual(during.nativeInactive, true);
-    assert.equal(during.feedback!.events[0]!.work, undefined);
-    assert.equal(during.feedback!.events[0]!.result, undefined);
-    assert.deepEqual(during.result, before.result);
     assert.deepEqual(during.progression, before.progression);
     ended = true;
     occurrence++;
     await call('next');
     const after = (await store.read()).records[0]!;
     assert.equal(after.feedback!.events[0]!.phase, 'delivered');
-    assert.equal(after.feedback!.events[0]!.resumed, undefined);
     assert.equal((await call('next')).status, 'idle');
     assert.equal(creates, 0);
   });
@@ -798,7 +737,6 @@ describe('agent/codex-feedback', () => {
     assert.equal(event.attempt!.turnId, 'feedback');
     assert.equal(event.code, undefined);
     assert.notEqual(record.nativeInactive, true);
-    assert.equal(event.result, undefined);
     assert.equal(creates, 0);
     deps.continuationNative = async () => {
       throw new Error('settled delivery must not be polled');
@@ -816,7 +754,6 @@ describe('agent/codex-feedback', () => {
     sent = true;
     turn = 'feedback';
     assert.equal((await call('context', ref, true)).status, 'verified');
-    assert.equal((await store.read()).records[0]!.feedback!.events[0]!.work, undefined);
   });
   it('should reselect delivered feedback in a later turn and publish one source-bound reply', async () => {
     const ref = await prepare(commenter, '@receiver please explain.');
@@ -911,7 +848,6 @@ describe('agent/codex-feedback', () => {
     await call('reply', { operation: 'candidate', publicText: 'The answer.' }, true);
     assert.equal((await call('reply', { operation: 'publish' }, true)).status, 'published');
     assert.equal(creates, 1);
-    assert.equal((await store.read()).records[0]!.feedback!.events[0]!.result, undefined);
     receiptStatus = 'uncertain';
     await assert.rejects(
       call(
@@ -942,7 +878,7 @@ describe('agent/codex-feedback', () => {
       tuned = setting === 'model' ? 'third-model' : 'medium';
       assert.equal((await call('context', ref, true)).status, 'verified');
       await feedbackMode('work');
-      assert.equal((await call('implementation-context', ref, true)).status, 'verified');
+      assert.equal((await call('context', ref, true)).status, 'verified');
       const after = (await store.read()).records[0]!;
       assert.deepEqual(after.request, before.request);
       assert.equal(after.routing, before.routing);
@@ -1091,11 +1027,19 @@ describe('agent/codex-feedback', () => {
         body,
         author: account,
         bodyTruncated: false,
-        createdAt: '2026-10-13T01:00:00Z',
-        updatedAt: '2026-10-13T01:00:00Z',
+        createdAt: new Date(baseline + 70001).toISOString(),
+        updatedAt: new Date(baseline + 70001).toISOString(),
       });
     occurrence++;
-    assert.equal((await call('next')).status, 'feedback-prepared');
+    const response = await call('next');
+    assert.equal(
+      response.status,
+      'feedback-prepared',
+      JSON.stringify({
+        response,
+        feedback: (await store.read()).records[0]!.feedback,
+      }),
+    );
     assert.deepEqual(
       (await store.read()).records[0]!.feedback!.events.map((event) => event.sourceId),
       ['human'],
@@ -1125,7 +1069,6 @@ describe('agent/codex-feedback', () => {
     assert.ok('presentation' in context && typeof context.presentation === 'string');
     assert.ok(attempt.request.prompt.startsWith(context.presentation));
     assert.ok(context.presentation.includes('from [@receiver]'));
-    assert.equal((await store.read()).records[0]!.feedback!.events[0]!.result, undefined);
     assert.equal(creates, 0);
   });
   for (const kind of ['inline', 'group'] as const)
@@ -1354,72 +1297,6 @@ describe('agent/codex-feedback', () => {
     assert.equal(queued.attempt, undefined);
     deps.native!.find = find;
     assert.equal((await call('next')).status, 'feedback-prepared');
-  });
-  it('should project legacy reply facts without forwarding saved work machinery', async () => {
-    const ref = await prepare();
-    const { default: assessmentSkillSource } = await import('../agent/assessment-skill-source.ts');
-    await writeFile(join(root, 'SKILL.md'), '# retained reply composer');
-    deps.native!.assessmentSkill = async (_cwd, name) =>
-      assessmentSkillSource({ name, path: join(root, 'SKILL.md'), scope: 'user' });
-    sent = true;
-    turn = 'feedback';
-    await call('context', ref, true);
-    await store.exclusive(async (state, save) => {
-      const event = state.records[0]!.feedback!.events[0]!;
-      delete event.native;
-      event.result = { privateText: 'The fix is ready; hosted checks remain pending.' };
-      event.replyRequested = true;
-      event.publicationAttempted = true;
-      await save();
-    });
-    const selected = await call('compose', ref, true);
-    assert.ok('selection' in selected && selected.selection, JSON.stringify(selected));
-    const work = {
-      selection: selected.selection,
-      result: {
-        outcome: 'done' as const,
-        summary: 'Fixed the handler.',
-        fullResult: 'Saved transcript. '.repeat(2000),
-      },
-      head: 'b'.repeat(40),
-      pullRequest: { pullRequestNodeId: 'PR_update', pullRequestNumber: 7 },
-    };
-    await store.exclusive(async (state, save) => {
-      state.records[0]!.feedback!.events[0]!.work = work;
-      await save();
-    });
-    const composed = await call('compose', ref, true);
-    assert.ok('verifiedOutcome' in composed && 'privateResponse' in composed);
-    assert.deepEqual(composed.verifiedOutcome, {
-      implementation: { outcome: 'done', summary: 'Fixed the handler.' },
-      head: work.head,
-      delivery: work.pullRequest,
-    });
-    assert.equal(composed.privateResponse, 'The fix is ready; hosted checks remain pending.');
-    assert.deepEqual((await store.read()).records[0]!.feedback!.events[0]!.work, work);
-    assert.equal(creates, 0);
-  });
-  it('should retain a completed legacy input without replaying it for an unfinished reply', async () => {
-    const ref = await prepare();
-    sent = true;
-    turn = 'feedback';
-    await call('context', ref, true);
-    await store.exclusive(async (state, save) => {
-      const event = state.records[0]!.feedback!.events[0]!;
-      delete event.native;
-      event.result = { privateText: 'Saved before interruption.' };
-      await save();
-    });
-    ended = true;
-    occurrence++;
-    await call('next');
-    const event = (await store.read()).records[0]!.feedback!.events[0]!;
-    assert.equal(event.phase, 'delivered');
-    assert.equal(event.attempt!.turnId, 'feedback');
-    assert.equal(event.previousTurnIds, undefined);
-    assert.equal((await call('next')).status, 'idle');
-    assert.equal(event.result!.privateText, 'Saved before interruption.');
-    assert.equal(creates, 0);
   });
   for (const outcome of ['ended', 'uncertain', 'capacity'] as const) {
     it(`should revisit queued feedback after an ended turn while respecting ${outcome}`, async () => {

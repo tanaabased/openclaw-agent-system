@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 
 import codexCapacity, { codexItemOccupied } from '../agent/codex-capacity.ts';
 import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
+import { pickupIssueKey } from '../agent/issue-pickup-capacity.ts';
 import openClawCapacity, { openClawItemOccupied } from '../agent/openclaw-capacity.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
-import { pickupIssueKey } from '../agent/issue-pickup-capacity.ts';
 import fixture from './issue-pickup-selection-fixture.ts';
 
 describe('issue pickup capacity handoff', () => {
@@ -69,11 +69,10 @@ describe('issue pickup capacity handoff', () => {
         phase: 'complete',
         request: {},
         nativeInactive: true,
-        continuation: {
-          phase: 'clarification-needed',
+        nativeWork: {
           result: { outcome: 'clarification-needed' },
         },
-        work: { result: { outcome: 'clarification-needed' } },
+        work: {},
       };
       const capacity = () =>
         runtime === 'codex'
@@ -118,7 +117,6 @@ describe('issue pickup capacity handoff', () => {
         'assigned',
       );
       assert.equal(f.effects.writes, 2);
-      assert.equal(owner.continuation.phase, 'clarification-needed');
       assert.deepEqual(capacity(), { occupied: 0, available: 1 });
     });
   }

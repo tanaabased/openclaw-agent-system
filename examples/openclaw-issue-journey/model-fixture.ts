@@ -132,7 +132,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       result,
       dispatch,
       call,
-      Boolean(openClawAIMockToolResultText(messages, prefix + 'summary-skill')),
+      Boolean(openClawAIMockToolResultText(messages, prefix + 'plan-reply-skill')),
       false,
       {
         fullAssessment:
@@ -590,7 +590,7 @@ export const issueExampleScenario: OpenClawAIMockScenario = {
     { id: prefix + 'direct-assessment-skill', name: 'read' },
     { id: prefix + 'direct-assessment-invalid', name: 'agent_system_dispatch' },
     { id: prefix + 'feedback-skill', name: 'read' },
-    { id: prefix + 'summary-skill', name: 'read' },
+    { id: prefix + 'plan-reply-skill', name: 'read' },
     { id: prefix + 'update-skill', name: 'read' },
     ...dispatchStages.flatMap((stage) =>
       [0, 1, 2, 3].map((attempt) => ({

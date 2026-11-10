@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import issueProgression, { retainedIssueProgression } from '../agent/issue-progression.ts';
 
-const planning = { createdAt: 10, result: { outcome: 'plan-ready' } };
+const planning = { createdAt: 10 };
 
 describe('agent/issue-progression', () => {
   it('should use live mode only to select the planning-to-implementation transition', () => {
@@ -18,22 +18,11 @@ describe('agent/issue-progression', () => {
       status: 'held',
       reason: 'auto-decision-required',
     });
-    for (const mode of ['plan', 'work'] as const) {
-      const issue = { ...planning, result: { ...planning.result, decision: { mode } } };
-      assert.deepEqual(issueProgression(issue, { mode: 'auto', now: 20 }), {
-        status: 'held',
-        reason: 'auto-decision-required',
-      });
-      assert.equal(issueProgression(issue, { mode: 'plan', now: 20 }).status, 'held');
-    }
   });
 
-  it('should permit work without a saved assessment or after an outdated assessment blocker', () => {
-    for (const issue of [
-      {},
-      { result: { outcome: 'operator-setup-blocker' } },
-      { result: { outcome: 'clarification-needed' } },
-    ]) {
+  it('should permit work without a saved assessment', () => {
+    {
+      const issue = {};
       assert.equal(issueProgression(issue, { mode: 'work', now: 20 }).status, 'ready');
       assert.equal(issueProgression(issue, { mode: 'plan', now: 20 }).status, 'held');
       assert.equal(
@@ -61,14 +50,10 @@ describe('agent/issue-progression', () => {
     );
   });
 
-  it('should use explicit saved permission instead of a conflicting historical assessment', () => {
+  it('should retain the explicit native auto decision', () => {
     for (const mode of ['plan', 'work'] as const) {
       const issue = {
         implementationDecision: { mode, reasons: ['Current native decision.'] },
-        result: {
-          outcome: 'plan-ready',
-          decision: { mode: mode === 'plan' ? ('work' as const) : ('plan' as const) },
-        },
       };
       assert.equal(
         issueProgression(issue, { mode: 'auto', now: 20 }).status,
@@ -88,9 +73,6 @@ describe('agent/issue-progression', () => {
 
   it('should require an explicit stage instead of inferring it from execution receipts', () => {
     for (const execution of [
-      { continuation: { attempt: { id: 'request' }, phase: 'prepared' } },
-      { continuation: { binding: { turnId: 'native' }, phase: 'running' } },
-      { continuation: { result: { outcome: 'done' }, phase: 'delivery' } },
       { work: { implementation: { runId: 'owner', inputEventId: 'event' } } },
     ]) {
       const issue = { ...planning, ...execution };
@@ -99,7 +81,7 @@ describe('agent/issue-progression', () => {
     }
     for (const issue of [
       planning,
-      { ...planning, continuation: { phase: 'waiting' } },
+      { ...planning, nativeWork: { cancelled: true as const } },
       { ...planning, work: {} },
     ])
       assert.equal(retainedIssueProgression(issue), undefined);
@@ -109,13 +91,13 @@ describe('agent/issue-progression', () => {
     const progression = { stage: 'implementation' as const, via: 'work' as const, enteredAt: 20 };
     assert.equal(
       issueProgression(
-        { ...planning, progression, handoff: {}, continuation: { phase: 'cancelled' } },
+        { ...planning, progression, handoff: {}, nativeWork: { cancelled: true as const } },
         { mode: 'plan', now: 99 },
       ).status,
       'ready',
     );
     for (const stop of [
-      { retired: { at: 30 } },
+      { reset: { at: 30 } },
       { retirement: { reason: 'unassigned' } },
       { reset: { at: 30 } },
     ])
@@ -132,7 +114,9 @@ describe('agent/issue-progression', () => {
       );
   });
   it('should preserve cancellation until new explicit direction arrives', () => {
-    const issue = { continuation: { phase: 'cancelled' } };
+    const issue = {
+      nativeWork: { cancelled: true as const },
+    };
     assert.equal(issueProgression(issue, { mode: 'work', now: 99 }).status, 'stopped');
     assert.equal(
       issueProgression(issue, { mode: 'plan', now: 99, operator: true }).status,

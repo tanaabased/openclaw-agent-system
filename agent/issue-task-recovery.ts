@@ -1,47 +1,37 @@
 import { automationHash } from './automation-hash.ts';
-import taskRecoveryCaller from './task-recovery-caller.ts';
+import type { AdoptedPullRequest } from './delivery-state.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { ManagedIssue } from './managed-issue.ts';
-import type { AdoptedPullRequest } from './delivery-state.ts';
 import type { OpenClawFeedbackEvent } from './openclaw-feedback-state.ts';
-
+import taskRecoveryCaller from './task-recovery-caller.ts';
 /** Replacement must preserve input and uncertain effects, not old reporting checkpoints. */
 export function pendingRecoveryFeedback(event: OpenClawFeedbackEvent) {
-  if (event.native) return event.phase !== 'delivered';
-  const delivery = event.workDelivery;
-  return Boolean(
-    ['queued', 'prepared', 'running'].includes(event.phase) ||
-    (event.turn && event.turn.status !== 'completed' && !event.turn.inactive) ||
-    (event.publicationAttempted && !event.receipt) ||
-    delivery?.pendingPush ||
-    (delivery?.creationAttempted && !delivery.pullRequest) ||
-    (delivery?.announcement?.attempted && !delivery.announcement.receipt),
-  );
+  return event.phase !== 'delivered';
 }
-
 function recoveryBlockers(
   record: SharedDispatchRecord,
   effects: Record<string, boolean | undefined>,
 ) {
   return Object.entries({
     nativeTaskMissing: !record.threadId || !record.worktree || !record.request,
-    inactiveLifecycle: Boolean(record.reset || record.retired || record.retirement),
-    uncertainAssessmentSummary: record.assessmentSummaries?.some(
-      (summary) => summary.attempt && !summary.receipt,
-    ),
+    inactiveLifecycle: Boolean(record.reset || record.retirement),
     ...effects,
   })
     .filter(([, blocked]) => blocked)
     .map(([name]) => name);
 }
-
 /** the caller holds its native dispatch lock; adapters supply authority and effect observations. */
 export default async function recoverIssueTask<R extends SharedDispatchRecord>(input: {
   record: R;
-  state: { records: R[] };
+  state: {
+    records: R[];
+  };
   intake: ManagedIssue;
   caller: string;
-  operator: { turnId: string; inputId: string };
+  operator: {
+    turnId: string;
+    inputId: string;
+  };
   manifestDigest: string;
   issueUrl: string;
   now: number;
@@ -53,7 +43,10 @@ export default async function recoverIssueTask<R extends SharedDispatchRecord>(i
   fresh(): Promise<void>;
   save(): Promise<void>;
   observe(): Promise<unknown>;
-  operatorInput(): Promise<{ turnId: string; inputId: string }>;
+  operatorInput(): Promise<{
+    turnId: string;
+    inputId: string;
+  }>;
   adopt(): Promise<AdoptedPullRequest>;
   claim?(operation: 'preview' | 'reserve'): Promise<unknown>;
   create(record: Omit<SharedDispatchRecord, 'request'>): R;
@@ -84,7 +77,6 @@ export default async function recoverIssueTask<R extends SharedDispatchRecord>(i
         entry.issueKey === record.issueKey &&
         !entry.supersededBy &&
         !entry.reset &&
-        !entry.retired &&
         entry.predecessorId !== record.id,
     )
   )

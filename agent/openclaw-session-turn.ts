@@ -1,20 +1,20 @@
+import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
+import { assessmentTurnMessage } from './openclaw-assessment.ts';
 import { nativeTurnFor } from './openclaw-native-turns.ts';
 import type { OpenClawTurn } from './openclaw-turn-state.ts';
-import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import { reconcileOpenClawTurn } from './openclaw-turn.ts';
-import { assessmentTurnMessage } from './openclaw-assessment.ts';
 
-import sendOpenClawTurn from './openclaw-send-turn.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
+import sendOpenClawTurn from './openclaw-send-turn.ts';
 
+import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
+import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
+import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import {
   describeIssueSession,
   sessionObject,
   verifyEmptyIssueSession,
 } from './openclaw-session-create.ts';
-import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
-import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
-import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 
 function firstTurnMessage(record: OpenClawDispatchRecord) {
   return [
@@ -43,7 +43,6 @@ export default async function advanceIssueTurn(input: {
   };
 }) {
   const { record, save, authority } = input;
-  const slot = input.assessment ? 'assessmentTurn' : 'firstTurn';
   const role = input.assessment ? 'assessment' : 'first';
   const currentTurn = () => nativeTurnFor(record, role);
   const expected = record.request;
@@ -104,8 +103,7 @@ export default async function advanceIssueTurn(input: {
         assertCurrent: guard,
         recordAttempt() {
           const turn: OpenClawTurn = { runId, message, status: 'attempted' };
-          if (record.nativeRecord) (record.nativeTurns ??= []).push({ role, turn });
-          else record[slot] = turn;
+          (record.nativeTurns ??= []).push({ role, turn });
         },
         recordAcceptance() {
           currentTurn()!.status = 'accepted';
@@ -123,8 +121,9 @@ export default async function advanceIssueTurn(input: {
       turn,
       save,
     });
+    if (turn.status === 'completed') delete currentTurn()!.message;
     await guard();
-    record.phase = record.result ? 'complete' : input.assessment ? 'assessing' : 'created';
+    record.phase = input.assessment ? 'assessing' : 'created';
     delete record.blocker;
     delete record.failureStage;
     await save();
@@ -146,8 +145,6 @@ export default async function advanceIssueTurn(input: {
       executionEffort: 'unverified',
       configuredModel: record.effective?.model,
       configuredEffort: record.effective?.effort,
-      assessmentComplete: Boolean(record.result),
-      outcome: record.result?.outcome,
     };
   });
 }

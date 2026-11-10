@@ -1,8 +1,8 @@
-import codexCommit from '../agent/codex-commit.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import codexCommit from '../agent/codex-commit.ts';
 
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import OpenClawDispatchStore, {
@@ -16,7 +16,6 @@ function pending(id = 'a'.repeat(64)) {
     issueKey: id,
     sourceThreadId: 'agent:receiver:automation:intake',
     phase: 'routing',
-    nativeRecord: true,
     createdAt: 1,
     manifestDigest: 'manifest',
   } satisfies OpenClawDispatchRecord;
@@ -132,15 +131,6 @@ describe('agent/shared dispatch state', () => {
       threadId: 'native-chat',
       worktree: '/worktree',
       phase: 'blocked' as const,
-      result: {
-        version: 1 as const,
-        outcome: 'operator-setup-blocker' as const,
-        code: 'dispatch-policy-changed',
-        summary: 'Configuration changed.',
-        remediation: 'Old repair.',
-        evidence: [],
-        progress: { completed: [], remaining: [] },
-      },
       context: '{}',
       routing: '{}',
       routingNote: 'selected',
@@ -176,7 +166,6 @@ describe('agent/shared dispatch state', () => {
     const restarted = new CodexDispatchStore(root, scope);
     const recovered = (await restarted.read()).records[0]!;
     assert.equal(recovered.phase, 'blocked');
-    assert.deepEqual(recovered.result, original.result);
     assert.deepEqual(recovered.request, original.request);
     assert.equal(recovered.threadId, original.threadId);
     assert.equal(recovered.worktree, original.worktree);
@@ -188,7 +177,7 @@ describe('agent/shared dispatch state', () => {
     assert.equal(await readFile(store.path, 'utf8'), before);
   });
 
-  it('should reject duplicate identities and invalid transitions before replacing valid evidence', async () => {
+  it('should reject duplicate task identities and unverified creation bindings without replacing evidence', async () => {
     const store = new OpenClawDispatchStore(root, scope);
     await store.exclusive(async (state, save) => {
       state.records.push(pending());
@@ -209,7 +198,8 @@ describe('agent/shared dispatch state', () => {
         records[0] = { ...prepared(), worktree: '/different' };
       },
       (records: OpenClawDispatchRecord[]) => {
-        records[0] = { ...prepared(), phase: 'assessing' };
+        records[0] = prepared();
+        records[0].sessionCreation!.verified = true;
       },
     ]) {
       await assert.rejects(
@@ -226,15 +216,19 @@ describe('agent/shared dispatch state', () => {
   it('should reject foreign schemas and scope rather than reset their evidence', async () => {
     const store = new OpenClawDispatchStore(root, scope);
     for (const value of [
-      { version: 1, scope: 'c'.repeat(64), records: [] },
       {
-        version: 1,
+        version: 4,
+        scope: 'c'.repeat(64),
+        records: [],
+      },
+      {
+        version: 4,
         scope,
         resetGeneration: 'current',
         records: [{ ...pending(), clientThreadId: 'codex' }],
       },
       {
-        version: 1,
+        version: 4,
         scope,
         resetGeneration: 'current',
         records: [{ ...prepared(), native: { sessionKey: 'different' } }],

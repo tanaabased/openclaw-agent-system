@@ -1,10 +1,8 @@
-import { assessmentSummaryOwnPublications } from './assessment-summary.ts';
-import { reconcileAnnouncement } from './delivery-announcement.ts';
-import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
-import type { SharedDispatchRecord } from './dispatch-state.ts';
-import redactFeedback from './feedback-redaction.ts';
-import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import type { GitHubNotificationPublicationClient } from '../channels/github/provider/work-event-client.ts';
+import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
+import { reconcileAnnouncement } from './delivery-announcement.ts';
+import type { SharedDispatchRecord } from './dispatch-state.ts';
+import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 
 /** identify retained public output without publishing or authorizing another reply. */
 export default async function feedbackOwnPublications(input: {
@@ -14,8 +12,8 @@ export default async function feedbackOwnPublications(input: {
   announcement?: DeliveryAnnouncementState;
   replies?: () => Promise<string[]>;
 }) {
-  const { record, intake, client, announcement } = input;
-  const ids = await assessmentSummaryOwnPublications(record, intake, { client }, redactFeedback);
+  const { intake, client, announcement } = input;
+  const ids: string[] = [];
   if (input.replies) ids.push(...(await input.replies()));
   if (announcement?.receipt) ids.push(announcement.receipt.nodeId);
   else if (announcement?.attempted) {

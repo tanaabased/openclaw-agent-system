@@ -1,6 +1,6 @@
-import { implementationMaterialSchema } from './implementation-material-schema.ts';
-import { Value } from 'typebox/value';
 import { Type } from 'typebox';
+import { Value } from 'typebox/value';
+import { implementationMaterialSchema } from './implementation-material-schema.ts';
 
 import { implementationResultSchema } from '../../agent/implementation-result.ts';
 import WorkflowRequestError from '../../agent/workflow-request-error.ts';
@@ -12,7 +12,6 @@ export const directImplementationRequestSchema = Type.Object(
     operation: Type.Union([
       Type.Literal('context'),
       Type.Literal('result'),
-      Type.Literal('present'),
       Type.Literal('delivery'),
     ]),
     material: Type.Optional(implementationMaterialSchema),
@@ -59,11 +58,9 @@ export function invalidImplementationRequest(input: unknown) {
     operation === 'context'
       ? 'use target and path for an explicit implementation context request, or omit the target when the native conversation has one verified owner. issue, checkout and worktree are not request fields. if verified implementation context is already supplied, use its implementation body without bootstrapping again.'
       : operation === 'result'
-        ? 'put outcome, summary and fullResult inside result, not at the request root. outcome must be done, blocked or clarification-needed; clarification-needed also requires questions inside result. Result recording is optional history, not a prerequisite for PR delivery.'
+        ? 'put outcome, summary and fullResult inside result, not at the request root. outcome must be done, blocked or clarification-needed; clarification-needed also requires questions inside result. Result formatting stays in native context and is not a prerequisite for PR delivery.'
         : operation === 'delivery'
           ? 'supply deliveryOperation as prepare, publish, reconcile or present. Authored title and body belong at the request root. Do not include plan, scope or result.'
-          : operation === 'present'
-            ? 'use operation present with an optional target issue URL to read historical results. Do not include plan, scope, result or delivery fields.'
-            : 'use action implementation with operation context, result, present or delivery.';
+          : 'use action implementation with operation context, result or delivery.';
   return new WorkflowRequestError('implementation-request-invalid', guidance);
 }

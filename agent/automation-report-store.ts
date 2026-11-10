@@ -3,12 +3,12 @@ import { join } from 'node:path';
 
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
-
-import { historyLifetimeMs } from './history-state.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
-import PrivateStateFile from '../core/private-state-file.ts';
 import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
+import PrivateStateFile from '../core/private-state-file.ts';
 import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
+
+export const reportLifetimeMs = 30 * 24 * 60 * 60 * 1000;
 
 const text = Type.String();
 const stream = Type.Object(
@@ -188,7 +188,7 @@ export default class AutomationReportStore {
   }
   expired(startedAt: string) {
     const started = Date.parse(startedAt);
-    return !Number.isFinite(started) || started <= this.now() - historyLifetimeMs;
+    return !Number.isFinite(started) || started <= this.now() - reportLifetimeMs;
   }
   /** Terminal records live separately; legacy records move when recovery reconciles them. */
   async recoveryIds() {

@@ -15,8 +15,7 @@ export default function codexFeedbackProblem(record: DispatchRecord) {
     return true;
   return feedback.events.some(
     (event) =>
-      ['queued', 'prepared', 'running', 'responded'].includes(event.phase) ||
-      (event.publicationAttempted && !event.receipt) ||
+      ['queued', 'prepared', 'running'].includes(event.phase) ||
       (event.phase === 'blocked' && event.attempt && !record.nativeInactive),
   );
 }

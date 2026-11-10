@@ -1,9 +1,9 @@
-import codexWorkState from './codex-work-state.ts';
-import { automationHash } from './automation-hash.ts';
 import type { AssessmentSelection } from './assessment-selection.ts';
+import { automationHash } from './automation-hash.ts';
 import type { CodexWorkContext } from './codex-continuation-context.ts';
 import type { DispatchNativeThread } from './codex-dispatch-native.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
+import codexWorkState from './codex-work-state.ts';
 import type issueProgression from './issue-progression.ts';
 import type { ManagedIssue } from './managed-issue.ts';
 
@@ -46,11 +46,7 @@ export default async function advanceCodexWorkTurn(
     turnId: found.turnId,
     request: { threadId: record.threadId!, prompt: 'Read current native input custody.' },
   };
-  const receipt = await context.continuationNative(
-    record.sourceThreadId,
-    currentAttempt,
-    record.assessmentSummaries,
-  );
+  const receipt = await context.continuationNative(record.sourceThreadId, currentAttempt);
   if (receipt.status !== 'verified' || receipt.turnId !== found.turnId || receipt.ended)
     return {
       ready: false as const,
@@ -72,7 +68,6 @@ export default async function advanceCodexWorkTurn(
       threadId: record.threadId!,
       turnId: found.turnId,
       afterItemId: work.observation.afterItemId,
-      summaries: record.assessmentSummaries,
     });
     if (observed?.status !== 'active')
       return {
@@ -103,7 +98,7 @@ export default async function advanceCodexWorkTurn(
     work.observation.receiptId = observed.receiptId;
   }
   if (context.input.action === 'context' && transition.status === 'ready') {
-    record.progression = { ...transition.progression, workOwner: 'issue' };
+    record.progression = { ...transition.progression };
     if (direction) delete work.cancelled;
     work.activeTurnId = found.turnId;
     work.contextSelection = selection;

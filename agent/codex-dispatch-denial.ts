@@ -1,6 +1,6 @@
-import dispatchBlocker from './dispatch-blocker.ts';
 import { withNative, type CodexDispatchTransaction } from './codex-dispatch-context.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
+import dispatchBlocker from './dispatch-blocker.ts';
 
 export const denialRecovery =
   'Ask an operator chat to retry this issue through `dispatch retry-denied`: select its issue target URL, using preview:true for inspection if needed. Explicitly renewed operator authorization uses renewAuthorization:true; the runtime resolves the exact denied call. Waiting, reassignment, or restarting does not clear this hold.';
@@ -18,10 +18,7 @@ export default async function reconcileIntakeDenial(
     record.context &&
     !record.preparationObservation &&
     !record.creationRecovery?.attempts &&
-    !record.creationRecovery?.denialRecovered &&
-    !record.recoveredDenials?.length &&
-    !record.deniedCreations?.length &&
-    !record.unsubmittedCreations?.length
+    !record.creationRecovery?.denialRecovered
   )
     throw new Error('dispatch-denial-history-unavailable');
   const anchored = Boolean(record.preparationObservation || record.creationAfterItemId);
@@ -51,7 +48,6 @@ export default async function reconcileIntakeDenial(
     : undefined;
   if (!evidence) {
     if (dispatchBlocker(record) === 'dispatch-denial-history-unavailable') {
-      delete record.result;
       delete record.blocker;
       delete record.retryAfter;
       record.phase = record.request ? 'creating' : 'routing';
@@ -63,24 +59,7 @@ export default async function reconcileIntakeDenial(
   record.phase = 'blocked';
   delete record.retry;
   delete record.retryAfter;
-  record.result = {
-    version: 1,
-    outcome: 'operator-setup-blocker',
-    code: 'native-approval-denied',
-    summary: 'This issue has a retained native approval denial.',
-    remediation: denialRecovery,
-    evidence: [
-      {
-        source: 'Native approval',
-        status: 'observed',
-        detail: 'Verified non-execution of ' + evidence.operation + '.',
-      },
-    ],
-    progress: {
-      completed: [],
-      remaining: ['Recover the exact denied action before retrying this issue.'],
-    },
-  };
+  record.blocker = 'native-approval-denied';
   await tx.save();
   return true;
 }

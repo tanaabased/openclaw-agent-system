@@ -1,27 +1,24 @@
-import selectReplyDraft from './reply-selection.ts';
-import codexFeedbackInput from './codex-feedback-input.ts';
+import { parseReplyRequest } from '../tools/dispatch/reply-schema.ts';
+import codexAssessmentSkill from './codex-assessment-skill.ts';
 import codexContinuationNative from './codex-continuation-native.ts';
-import authorizeCodexFeedback from './codex-feedback-authority.ts';
-import ReplyStore, { type ReplyDraft } from './reply-store.ts';
-import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
-import { feedbackTarget } from './reply-target.ts';
-
 import codexReplyInput from './codex-direct-input.ts';
-import CodexDispatchStore from './codex-dispatch-state.ts';
 import { withNative } from './codex-dispatch-context.ts';
+import CodexDispatchStore from './codex-dispatch-state.ts';
+import authorizeCodexFeedback from './codex-feedback-authority.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';
+import codexFeedbackInput from './codex-feedback-input.ts';
 import type { CodexFeedbackDependencies } from './codex-feedback.ts';
 import { selectCodexIntake } from './codex-intake.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
-import codexAssessmentSkill from './codex-assessment-skill.ts';
 import feedbackReply from './feedback-reply.ts';
-import replyOwner, { retainedReply } from './reply-owner.ts';
-import replyOwnerContext from './reply-owner-context.ts';
+import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
 import type { OpenClawFeedbackProvider } from './openclaw-feedback.ts';
-import { parseReplyRequest } from '../tools/dispatch/reply-schema.ts';
-
+import replyOwnerContext from './reply-owner-context.ts';
+import replyOwner from './reply-owner.ts';
+import selectReplyDraft from './reply-selection.ts';
+import ReplyStore, { type ReplyDraft } from './reply-store.ts';
+import { feedbackTarget } from './reply-target.ts';
 export { default as codexReplyInput } from './codex-direct-input.ts';
-
 /** standalone execution uses the portable binding and native GitHub account, never OpenClaw secrets. */
 export default async function codexReply(
   pluginData: string,
@@ -68,7 +65,6 @@ export default async function codexReply(
             return issue
               ? (record.feedback?.events ?? []).filter(
                   (event) =>
-                    event.native &&
                     feedbackTarget(
                       `${issue.repository.owner.login}/${issue.repository.name}`,
                       event,
@@ -95,7 +91,7 @@ export default async function codexReply(
           if (!record?.request || !record.worktree) return;
           const admission = dispatchAdmission(record, (await current.store.read())?.records ?? []);
           defaultTarget = admission && managedTargetUrl(admission);
-          if (record.reset || record.supersededBy || record.retired || record.retirement)
+          if (record.reset || record.supersededBy || record.retirement)
             throw new Error('reply-managed-context-invalid');
           const inputItem = items.findLast(
             (item) =>
@@ -204,7 +200,7 @@ export default async function codexReply(
           record && dispatchAdmission(record, (await fresh.store.read())?.records ?? []);
         if (
           !record ||
-          !retained?.native ||
+          !retained ||
           !admitted ||
           retained.revision !== source.revision ||
           retained.sourceId !== target.source?.nodeId ||
@@ -232,7 +228,7 @@ export default async function codexReply(
         if (fresh.turnId !== turn.turnId || fresh.inputId !== turn.inputId)
           throw new Error('reply-native-input-changed');
       },
-      managed: async (target, purpose, privateText) => {
+      managed: async (target, purpose) => {
         const state = await journal.read();
         const admitted = await current.store.read();
         if (purpose || feedback) {
@@ -255,12 +251,7 @@ export default async function codexReply(
         }
         return replyOwner(
           state.records
-            .filter(
-              (record) =>
-                purpose ||
-                record.threadId === caller ||
-                retainedReply(record.feedback?.events, target, privateText),
-            )
+            .filter((record) => purpose || record.threadId === caller)
             .map((record) =>
               replyOwnerContext({
                 record,
@@ -275,7 +266,6 @@ export default async function codexReply(
           caller,
           target,
           purpose,
-          privateText,
         );
       },
     });

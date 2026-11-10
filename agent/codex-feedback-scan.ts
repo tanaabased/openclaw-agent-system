@@ -1,28 +1,25 @@
-import feedbackSources from './feedback-sources.ts';
-import replyOwnPublications from './reply-own-publications.ts';
-import { dispatchAdmission } from './managed-issue.ts';
-
-import workflowFailure from './workflow-failure.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
-import feedbackOwnPublications from './feedback-own-publications.ts';
-import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
-import DiscoveryBudget, { DiscoveryPaused } from './discovery-budget.ts';
-import feedbackDiscoveryOwner from './feedback-discovery-owner.ts';
+import { GitHubAccountClientError } from '../core/github-account-client.ts';
+import { revalidateFeedbackAssignment } from './assignment-feedback-reactivation.ts';
 import type { DispatchState } from './codex-dispatch-state.ts';
 import type connectCodexFeedback from './codex-feedback-client.ts';
 import { discoverCodexFeedback } from './codex-feedback-source.ts';
 import type { CodexFeedback } from './codex-feedback-state.ts';
 import codexHostAccess from './codex-host-access.ts';
-import { revalidateFeedbackAssignment } from './assignment-feedback-reactivation.ts';
 import type { selectCodexIntake } from './codex-intake.ts';
-
+import DiscoveryBudget, { DiscoveryPaused } from './discovery-budget.ts';
+import feedbackDiscoveryOwner from './feedback-discovery-owner.ts';
+import feedbackOwnPublications from './feedback-own-publications.ts';
+import feedbackSources from './feedback-sources.ts';
+import { dispatchAdmission } from './managed-issue.ts';
+import replyOwnPublications from './reply-own-publications.ts';
+import workflowFailure from './workflow-failure.ts';
 export interface FeedbackScan {
   id: string;
   before: string;
   feedback: CodexFeedback;
 }
-
 /** provider discovery runs without the journal lock; changed owners discard stale snapshots. */
 export async function scanCodexFeedback(input: {
   state: DispatchState;
@@ -49,7 +46,6 @@ export async function scanCodexFeedback(input: {
   const records = input.state.records
     .filter(
       (record) =>
-        !record.retired &&
         !record.retirement &&
         !record.reset &&
         record.threadId &&
@@ -159,5 +155,4 @@ export async function scanCodexFeedback(input: {
   }
   return scans;
 }
-
 export { default as applyFeedbackScans } from './apply-feedback-scans.ts';

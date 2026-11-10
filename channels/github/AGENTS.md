@@ -76,7 +76,7 @@ OpenClaw, including owners outside this directory.
   its first implementation transition. Preserve an entered implementation stage while the issue remains
   active; feedback still requires its current approved source.
 - Native chat owns planning, questions, implementation and subsequent conversation from
-  admission onward. Saved assessments and results are optional history. Work permits
+  admission onward. Assessments and implementation results stay in native conversation. Work permits
   scoped implementation without a saved plan; Plan requires explicit operator or
   verified approved-feedback direction; Auto uses a bounded reasoned decision in the
   current turn. Permission survives clarification, but never overrides newer user
@@ -95,12 +95,8 @@ OpenClaw, including owners outside this directory.
   The association is mutable metadata; explicit relinking or unlinking must preserve
   pending effects at their original destinations. Later substantial updates may
   repeat the card and use Task Update without repeating initial linkage or announcement.
-- Retain legacy records as readable history and actual pending effect receipts.
-  They do not require a migration message, reassessment or generic resume before
-  existing chats can accept ordinary native direction. Defer bulk migration and
-  schema removal to their owning cutover work.
 - Preserve actual execution facts: selected native model/effort, consumed stage
-  inputs, assessment results, source revisions, cancellations, and submission
+  inputs, source revisions, cancellations, and submission
   receipts. Live policy does not undo completed work or automatically terminate
   a running native turn. Choose current skills/guidance for the next unsubmitted
   stage or refreshed context; never silently rewrite an already-submitted request.

@@ -1,20 +1,20 @@
 import assert from 'node:assert/strict';
 
+import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import AutomationLifecycleAuthority, {
   verifyAutomationLifecycleRun,
   type AutomationLifecycleRun,
 } from '../agent/automation-lifecycle-authority.ts';
-import type { NotificationScheduler } from '../agent/automation-readiness.ts';
 import {
   effectiveAutomation,
   nativeAutomationHash,
   projectAutomation,
 } from '../agent/automation-projection.ts';
+import type { NotificationScheduler } from '../agent/automation-readiness.ts';
 import AutomationStore, { type AutomationRecord } from '../agent/automation-store.ts';
+import registerAutomationLifecycleHooks from '../core/automation-lifecycle-hook.ts';
 import normalizeAutomations, { type ResolvedAutomation } from '../manifest/automation-schema.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
-import registerAutomationLifecycleHooks from '../core/automation-lifecycle-hook.ts';
 
 function fixture(options: { messages?: string[] } = {}) {
   const controller = new AbortController();
@@ -126,7 +126,11 @@ describe('agent/automation-lifecycle-authority', () => {
       ReturnType<NotificationScheduler['list']>
     >[number] & { agentId: string; payload: Record<string, unknown> };
     record.nativeHash = nativeAutomationHash(native);
-    store.read = async () => ({ version: 1, scope: store.scope, records: [record] });
+    store.read = async () => ({
+      version: 1,
+      scope: store.scope,
+      records: [record],
+    });
     const service = {
       async scope() {
         return { context, store };

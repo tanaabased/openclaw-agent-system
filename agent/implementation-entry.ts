@@ -1,22 +1,22 @@
+import { realpath } from 'node:fs/promises';
+import implementationMaterial from './implementation-material.ts';
+import nativeClarification from './native-clarification.ts';
 import nativeTaskContext from './native-task-context.ts';
 import {
   implementationReviewInstructions,
   taskScopeInstructions,
 } from './native-task-instructions.ts';
-import nativeClarification from './native-clarification.ts';
-import implementationMaterial from './implementation-material.ts';
-import { realpath } from 'node:fs/promises';
 
 import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
 import assessmentCheckout from './assessment-checkout.ts';
 import type { AssessmentEntryDependencies } from './assessment-entry.ts';
-import { DirectEntryStore } from './assessment-entry-store.ts';
 import { automationHash } from './automation-hash.ts';
-import implementationHandoff from './implementation-handoff.ts';
-import implementationEntryDelivery from './implementation-entry-delivery.ts';
+import { DirectEntryStore } from './direct-entry-store.ts';
 import implementationContext from './implementation-context.ts';
+import implementationEntryDelivery from './implementation-entry-delivery.ts';
 import { implementationEntriesSchema } from './implementation-entry-state.ts';
-import { implementationPresentation, implementationReadback } from './implementation-result.ts';
+import implementationHandoff from './implementation-handoff.ts';
+import { implementationPresentation } from './implementation-result.ts';
 import issueProgression from './issue-progression.ts';
 import { replyLocator } from './reply-target.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
@@ -68,8 +68,6 @@ export default async function implementationEntry(
         input.material,
         managed.selections?.implementation,
       );
-    if (input.operation === 'present')
-      return implementationReadback(managed.owner.id, managed.implementationResult);
     return {
       status: 'managed' as const,
       owner: managed.owner,
@@ -95,17 +93,13 @@ export default async function implementationEntry(
       retained.checkout.path !== checkout.path)
   )
     throw new Error('implementation-entry-context-changed');
-  // readback and completed recovery never reconnect providers or resolve a skill again.
+  // delivery recovery uses its original effect owner.
   if (retained && input.operation === 'delivery')
     return store.exclusive(async (entries, save) => {
       const entry = entries.find((record) => record.id === retained.id);
       if (!entry) throw new Error('implementation-entry-unavailable');
       return implementationEntryDelivery({ entry, action: input, deps, save });
     });
-  if (retained && input.operation === 'present') {
-    await deps.assertCurrent();
-    return implementationReadback(retained.id, retained.result);
-  }
   const provider = await deps.connectProvider();
   const repo = await provider.getRepository(locator.owner, locator.name);
   const issue = await provider.getItem(locator.owner, locator.name, locator.number);
@@ -205,7 +199,7 @@ export default async function implementationEntry(
           ' ' +
           implementationReviewInstructions +
           ' ' +
-          'Read evidence.source through normal GitHub tools for current requirements and relevant discussion, following pagination and recovering truncated reads. Execute the selected implementation body once using this verified context; never invoke its bootstrap again. Preserve partial files and follow the latest native plan and user direction. The plan supplied to this tool stays in native conversation; Agent System does not save or reload it. Do not assess, create another chat/worktree, activate notifications or change session settings. Respect the retained publicationAuthorized scope. Local scope forbids push and PR publication. A plan and skill composition grant no publication authority; pull-request scope is collected only from an explicit operator publication request, not inferred from the plan. When the authorized work is complete and verified, use dispatch implementation delivery publish with authored title and body. The native caller and selected issue determine the retained work; do not supply IDs or digests. Result formatting keeps output in native context and is never a delivery prerequisite. Report ordinary substantive output and ask questions directly in native chat. Read historical results only on explicit request or to reconcile a particular attempted operation; they do not replace current direction. Keep partial files and questions in the native conversation; an answer is ordinary input and needs no clarification checkpoint. Existing publication effects must resume through their original owner and receipts, never a substitute publication.',
+          'Read evidence.source through normal GitHub tools for current requirements and relevant discussion, following pagination and recovering truncated reads. Execute the selected implementation body once using this verified context; never invoke its bootstrap again. Preserve partial files and follow the latest native plan and user direction. The plan supplied to this tool stays in native conversation; Agent System does not save or reload it. Do not assess, create another chat/worktree, activate notifications or change session settings. Respect the retained publicationAuthorized scope. Local scope forbids push and PR publication. A plan and skill composition grant no publication authority; pull-request scope is collected only from an explicit operator publication request, not inferred from the plan. When the authorized work is complete and verified, use dispatch implementation delivery publish with authored title and body. The native caller and selected issue determine the retained work; do not supply IDs or digests. Result formatting keeps output in native context and is never a delivery prerequisite. Report ordinary substantive output and ask questions directly in native chat. Keep partial files and questions in the native conversation; an answer is ordinary input and needs no clarification checkpoint. Existing publication effects must resume through their original owner and receipts, never a substitute publication.',
       };
       return implementationMaterial(
         response,
@@ -219,14 +213,6 @@ export default async function implementationEntry(
       automationHash(entry.caller) !== automationHash(source)
     )
       throw new Error('implementation-context-required');
-    if (input.operation === 'present') {
-      if (!entry.result) throw new Error('implementation-result-missing');
-      return {
-        status: 'presented',
-        id: entry.id,
-        presentation: implementationPresentation(entry.result),
-      };
-    }
     if (!input.result) throw new Error('implementation-result-required');
     if (input.result.outcome === 'clarification-needed')
       return nativeClarification(entry.id, implementationPresentation(input.result));

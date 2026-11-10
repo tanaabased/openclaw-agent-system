@@ -1,23 +1,21 @@
-import codexWorkState from './codex-work-state.ts';
-import { observeCodexActivity } from './codex-capacity-reconcile.ts';
-import issueWorkflowMode from './issue-workflow-mode.ts';
-import codexWorkContext from './codex-work-context.ts';
-import recordCodexWorkResult from './codex-work-result.ts';
-import advanceCodexWorkTurn from './codex-work-turn.ts';
-import { dispatchAdmission } from './managed-issue.ts';
 import { realpath } from 'node:fs/promises';
-
+import { observeCodexActivity } from './codex-capacity-reconcile.ts';
 import type { CodexWorkContext } from './codex-continuation-context.ts';
 import { revalidateDispatchAssignment } from './codex-dispatch-context.ts';
 import { verifyDispatchWorktree } from './codex-dispatch-project.ts';
 import type { DispatchRecord, DispatchState } from './codex-dispatch-state.ts';
 import { selectCodexIntake } from './codex-intake.ts';
 import codexSessionSettings from './codex-session-settings.ts';
+import codexWorkContext from './codex-work-context.ts';
+import renderCodexWorkResult from './codex-work-result.ts';
+import codexWorkState from './codex-work-state.ts';
+import advanceCodexWorkTurn from './codex-work-turn.ts';
 import issueProgression, { retainedIssueProgression } from './issue-progression.ts';
+import issueWorkflowMode from './issue-workflow-mode.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
+import { dispatchAdmission } from './managed-issue.ts';
 import { notificationAuthorityDigest } from './notification-authority.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
-
 export async function prepareCodexWork(state: DispatchState, context: CodexWorkContext) {
   const { input, deps, current, caller, native, admissions, save } = context;
   const direction = context.operatorInput ?? context.feedbackInput;
@@ -33,7 +31,6 @@ export async function prepareCodexWork(state: DispatchState, context: CodexWorkC
         !record.worktree ||
         !record.request ||
         record.supersededBy ||
-        record.retired ||
         record.retirement ||
         record.reset ||
         !admitted ||
@@ -57,8 +54,7 @@ export async function prepareCodexWork(state: DispatchState, context: CodexWorkC
           resolveSkill: (id) => native.assessmentSkill(record.worktree!, id),
         });
         (context.preparedSelections ??= new Set()).add(record.id);
-        record.continuation = {
-          phase: 'waiting',
+        record.nativeWork = {
           selection: selected.selection,
           policyDigest: notificationAuthorityDigest(current.manifest.github?.notifications),
         };
@@ -83,7 +79,6 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       !record.project ||
       !record.request ||
       record.supersededBy ||
-      record.retired ||
       record.retirement ||
       record.reset
     )
@@ -169,8 +164,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     record.effective = codexSessionSettings(record, found);
     await save();
     if (input.action === 'cancel') {
-      if (record.nativeRecord) work.cancelled = true;
-      else work.phase = 'cancelled';
+      work.cancelled = true;
       await save();
       return { status: 'cancelled' as const, id: record.id };
     }
@@ -212,13 +206,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
         selection: turn.selection,
       });
     }
-    if (input.action === 'result')
-      return await recordCodexWorkResult(
-        record,
-        context,
-        { ...found, turnId: found.turnId },
-        turn.revisionInput,
-      );
+    if (input.action === 'result') return renderCodexWorkResult(record, context);
     if (input.action === 'delivery') {
       if (work.scope === 'local') throw new Error('implementation-publication-not-authorized');
       return { status: 'deliver' as const, id: record.id };

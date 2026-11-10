@@ -64,6 +64,7 @@ function fixture() {
     client: provider.client,
     now: baseline + 180_000,
     save: async () => {},
+    ownReplies: async (): Promise<string[]> => [],
     comments: async () => ({
       identity: account,
       listIssueComments: async () => ({ comments, truncated: false }),
@@ -109,7 +110,7 @@ describe('assignment feedback reactivation', () => {
       inspectActiveIssue(h.input.intake, h.provider.client),
       /dispatch-assignment-removed/,
     );
-    h.record.feedback!.events[0]!.phase = 'published';
+    h.record.feedback!.events[0]!.phase = 'delivered';
     assert.equal(await h.run(), true);
     assert.equal(h.record.feedback!.events.length, 1);
   });
@@ -123,7 +124,7 @@ describe('assignment feedback reactivation', () => {
       assert.equal(await h.run(), true);
       assert.equal(h.record.feedback!.events.length, 1);
       assert.equal(h.record.feedback!.events[0]!.createdAt, Date.parse(boundary));
-      h.record.feedback!.events[0]!.phase = 'published';
+      h.record.feedback!.events[0]!.phase = 'delivered';
       assert.equal(await h.run(), true);
       assert.equal(h.record.feedback!.events.length, 1);
     });
@@ -181,7 +182,6 @@ describe('assignment feedback reactivation', () => {
     'incidental',
     'disabled',
     'own-reply',
-    'own-summary',
   ] as const) {
     it(`should not reactivate from ${kind} feedback`, async () => {
       const h = fixture();
@@ -191,18 +191,7 @@ describe('assignment feedback reactivation', () => {
       if (kind === 'incidental') h.comment.body = 'An ordinary comment.';
       if (kind === 'disabled')
         h.provider.policy.issueAssignment!.feedback = { inherit: false, allowed: [] };
-      if (kind === 'own-summary')
-        h.record.assessmentSummaries = [
-          { receipt: { nodeId: 'comment', databaseId: 42 } },
-        ] as SharedDispatchRecord['assessmentSummaries'];
-      if (kind === 'own-reply')
-        h.record.feedback = {
-          startedAt: baseline,
-          baseline: {},
-          events: [
-            { receipt: { nodeId: 'comment', databaseId: 42 } },
-          ] as FeedbackSourceState['events'],
-        };
+      if (kind === 'own-reply') h.input.ownReplies = async () => ['comment'];
       assert.equal(await h.run(), false);
       assert.equal(h.record.feedbackReactivation, undefined);
     });

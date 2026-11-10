@@ -11,7 +11,7 @@ export default async function observeUnavailableRetirementSession(input: {
   request: DispatchRequest;
 }) {
   const { record, agentId, owner, request } = input;
-  const intent = retirementSessionIdentity(record, agentId);
+  const intent = retirementSessionIdentity(record);
   if (
     ![
       'retirement-session-identity-unresolved',

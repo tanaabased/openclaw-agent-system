@@ -74,7 +74,6 @@ describe('scripts/aimock-tool-search', () => {
     const { normalizeToolParameterSchema } = await import(
       hostRequire.resolve('@openclaw/ai/internal/tool-schema')
     );
-    const id = 'a'.repeat(64);
     const common = {
       version: 1,
       summary: 'A bounded result.',
@@ -91,11 +90,9 @@ describe('scripts/aimock-tool-search', () => {
     ]) {
       const tool = { name: 'agent_system_dispatch', parameters };
       for (const envelope of [
-        { action: 'result', id },
         {
           action: 'assessment',
-          operation: 'result',
-          id,
+          operation: 'render',
           target: 'https://github.com/o/r/issues/3',
         },
       ]) {
@@ -130,9 +127,8 @@ describe('scripts/aimock-tool-search', () => {
         }
       }
       for (const envelope of [
-        { action: 'implementation', operation: 'result', id },
-        { action: 'implementation-result', id },
-        { action: 'feedback', operation: 'implementation-result', id, eventId: id },
+        { action: 'implementation', operation: 'result' },
+        { action: 'implementation-result' },
       ]) {
         const field = envelope.action === 'implementation' ? 'result' : 'implementationResult';
         assert.throws(
@@ -341,6 +337,7 @@ describe('scripts/aimock-tool-search', () => {
   });
 
   it('should carry notification assessment and operator delivery through wrapped tools and retained history', async () => {
+    const id = 'a'.repeat(64);
     // test the pinned host's actual projection without importing it into plugin runtime code.
     const hostRequire = createRequire(
       createRequire(import.meta.url).resolve('openclaw/plugin-sdk/plugin-entry'),
@@ -353,7 +350,6 @@ describe('scripts/aimock-tool-search', () => {
       modelId: 'gpt-5.5',
     });
     const scenario = withToolSearch(resolveScenario('openclaw-pr-journey'));
-    const id = 'a'.repeat(64);
     const digest = 'b'.repeat(64);
     const input = request(
       `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`,
@@ -434,7 +430,7 @@ describe('scripts/aimock-tool-search', () => {
       selection: { defaultSkill: true, skill: { path: '/tmp/reply/SKILL.md' } },
     });
     assert.match(composed.privateText, /Should disposable test issues/);
-    await step('summary-skill', 'read', { content: 'Compose a concise public question.' });
+    await step('plan-reply-skill', 'read', { content: 'Compose a concise public question.' });
     await step('native-plan-candidate', 'agent_system_dispatch', {
       status: 'candidate-recorded',
       publication: 'workflow-authorized',
@@ -545,7 +541,7 @@ describe('scripts/aimock-tool-search', () => {
       { role: 'assistant', content: paused.content },
       {
         role: 'user',
-        content: `Operator request for managed issue ${id}: Show the saved plan and existing PR card again.`,
+        content: `Operator request for managed issue ${id}: Show the plan from this conversation and existing PR card again.`,
       },
     );
     await discover();

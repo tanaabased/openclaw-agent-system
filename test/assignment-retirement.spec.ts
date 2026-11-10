@@ -1,22 +1,22 @@
-import commentProviderFixture from './github-comment-provider-fixture.ts';
+import assert from 'node:assert/strict';
 import reactivateAssignmentFeedback from '../agent/assignment-feedback-reactivation.ts';
-import type { FeedbackSourceState } from '../agent/feedback-state.ts';
+import assignmentRetirement from '../agent/assignment-retirement.ts';
 import {
   parseCleanupConfiguration,
   type CleanupConfiguration,
 } from '../agent/cleanup-configuration.ts';
-import assert from 'node:assert/strict';
-import assignmentRetirement from '../agent/assignment-retirement.ts';
-import workflowStatus from '../agent/workflow-status.ts';
-import reconcile from '../agent/reconcile-assignment-lifecycle.ts';
 import pendingAssignments, { issueKey } from '../agent/dispatch-pending.ts';
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
+import type { FeedbackSourceState } from '../agent/feedback-state.ts';
 import type { OperatorIssue } from '../agent/managed-issue.ts';
+import reconcile from '../agent/reconcile-assignment-lifecycle.ts';
+import workflowStatus from '../agent/workflow-status.ts';
 import type { IntakeRecord, IntakeState } from '../channels/github/intake/record-store.ts';
+import commentProviderFixture from './github-comment-provider-fixture.ts';
 import {
-  intakeFixture,
   account,
   baseline,
+  intakeFixture,
   removeFixtureAssignment,
 } from './github-intake-fixture.ts';
 
@@ -53,6 +53,7 @@ function setup() {
   };
   const records = [record];
   const admissions = [admitted];
+  const observedAssignments: NonNullable<IntakeState['observedAssignments']> = [];
   const run = (
     targetId?: string,
     reactivate?: (record: SharedDispatchRecord, intake: IntakeRecord) => Promise<boolean>,
@@ -62,6 +63,10 @@ function setup() {
       configuration: settings.value,
       readConfiguration: async () => settings.value,
       records,
+      dispose: async (target) => {
+        records.splice(records.indexOf(target), 1);
+        observedAssignments.push({ ...admitted, consumedBy: target.id });
+      },
       admitted: admissions,
       policy: {
         policy: fixture.policy,
@@ -93,6 +98,7 @@ function setup() {
     admitted,
     records,
     admissions,
+    observedAssignments,
     run,
     advance: (minutes: number) => {
       now += minutes * 60_000;
@@ -189,10 +195,10 @@ describe('assignment retirement', () => {
       if (scenario.startsWith('wrong-')) {
         assert.equal(h.cleanups(), 0);
         assert.equal(h.record.retirement?.code, 'dispatch-issue-identity-changed');
-        assert.equal(h.record.retired, undefined);
+        assert.ok(h.records.includes(h.record));
       } else {
         assert.equal(h.cleanups(), 1);
-        assert.ok(h.record.retired);
+        assert.ok(!h.records.includes(h.record));
         assert.equal(h.record.retirement?.code, undefined);
         assert.equal(h.fixture.item.state, 'open');
         await h.run(h.record.id);
@@ -210,7 +216,7 @@ describe('assignment retirement', () => {
     assert.equal(h.cleanups(), 0);
     assert.equal(workflowStatus(h.record), 'awaiting-reassignment');
     assert.equal(h.record.nativeInactive, true);
-    assert.equal(h.record.retired, undefined);
+    assert.ok(h.records.includes(h.record));
     assert.equal(h.records.length, 1);
   });
   for (const assigned of [false, true]) {
@@ -229,63 +235,57 @@ describe('assignment retirement', () => {
       await h.run();
       assert.equal(h.cleanups(), 1);
       assert.deepEqual(h.closedInputs, [true]);
-      assert.ok(h.record.retired);
+      assert.ok(!h.records.includes(h.record));
     });
   }
   for (const receipt of [
-    { code: 'retirement-worktree-dirty' },
     { archiveAttempt: { at: baseline, turnId: 'archive-turn' } },
     { archiveRequest: { at: baseline, sessionId: 'original' } },
     { archivedAt: baseline },
     { worktreeRemovalAttemptedAt: baseline },
     { worktreeRemovedAt: baseline },
   ]) {
-    it(`should retain legacy removal ${Object.keys(receipt)[0]!.toLowerCase()} evidence without replay`, async () => {
+    it(`should preserve pending closure ${Object.keys(receipt)[0]!.toLowerCase()} evidence after reopening and unassignment`, async () => {
       const h = setup();
+      h.fixture.item.state = 'closed';
+      await h.run();
+      // An in-flight native cleanup can outlive the provider's closure state.
+      Object.assign(h.record.retirement!, receipt);
+      h.fixture.item.state = 'open';
       removeFixtureAssignment(h.fixture);
-      h.record.retirement = {
-        ...assignmentRetirement({
-          reason: 'assignment-removed',
-          intakeId: h.admitted.id,
-          now: baseline,
-          graceMinutes: 0,
-        })!,
-        ...receipt,
-      };
+      h.advance(1);
       await h.run();
       h.advance(120);
       await h.run();
       assert.equal(workflowStatus(h.record), 'awaiting-reassignment');
       for (const [key, value] of Object.entries(receipt))
         assert.deepEqual(h.record.retirement![key as keyof typeof h.record.retirement], value);
-      assert.equal(h.record.retired, undefined);
+      assert.ok(h.records.includes(h.record));
       assert.equal(h.cleanups(), 0);
       assert.equal(pendingAssignments({ records: h.records }, { records: h.admissions }).length, 0);
-      if (!('code' in receipt)) {
-        const event = {
-          ...h.fixture.events[0]!,
-          nodeId: 'reassigned',
-          databaseId: 40,
-          event: 'assigned' as const,
-          createdAt: new Date(baseline + 120 * 60_000).toISOString(),
-        };
-        h.fixture.item.assignees = [account];
-        h.fixture.events.push(event);
-        h.admissions.push({ ...h.admitted, id: 'successor', assignment: event });
-        h.advance(1);
-        let feedbackChecks = 0;
-        await h.run(undefined, async () => {
-          feedbackChecks++;
-          return true;
-        });
-        assert.equal(feedbackChecks, 0);
-        assert.equal(h.record.intakeId, h.admitted.id);
-        assert.equal(workflowStatus(h.record), 'awaiting-reassignment');
-        for (const [key, value] of Object.entries(receipt))
-          assert.deepEqual(h.record.retirement![key as keyof typeof h.record.retirement], value);
-        assert.equal(h.cleanups(), 0);
-        assert.equal(h.records.length, 1);
-      }
+      const event = {
+        ...h.fixture.events[0]!,
+        nodeId: 'reassigned',
+        databaseId: 40,
+        event: 'assigned' as const,
+        createdAt: new Date(baseline + 120 * 60_000).toISOString(),
+      };
+      h.fixture.item.assignees = [account];
+      h.fixture.events.push(event);
+      h.admissions.push({ ...h.admitted, id: 'successor', assignment: event });
+      h.advance(1);
+      let feedbackChecks = 0;
+      await h.run(undefined, async () => {
+        feedbackChecks++;
+        return true;
+      });
+      assert.equal(feedbackChecks, 0);
+      assert.equal(h.record.intakeId, h.admitted.id);
+      assert.equal(workflowStatus(h.record), 'awaiting-reassignment');
+      for (const [key, value] of Object.entries(receipt))
+        assert.deepEqual(h.record.retirement![key as keyof typeof h.record.retirement], value);
+      assert.equal(h.cleanups(), 0);
+      assert.equal(h.records.length, 1);
     });
   }
   it('should protect a dormant owner sharing a checkout with a closed task', async () => {
@@ -334,7 +334,7 @@ describe('assignment retirement', () => {
     h.activity();
     await h.run();
     assert.equal(h.record.retirement!.eligibleAt, deadline);
-    assert.ok(h.record.retired);
+    assert.ok(!h.records.includes(h.record));
   });
   for (const closed of [true, false]) {
     it(`should ${closed ? 'ignore' : 'protect'} activity changes during a fresh effect check for ${closed ? 'closed' : 'nonterminal'} retirement`, async () => {
@@ -420,7 +420,7 @@ describe('assignment retirement', () => {
         });
       await h.run(h.record.id, reactivate);
       assert.equal(h.cleanups(), scenario === 'busy' ? 0 : 1);
-      assert.equal(Boolean(h.record.retired), scenario !== 'busy');
+      assert.equal(!h.records.includes(h.record), scenario !== 'busy');
       assert.equal(
         (h.record as SharedDispatchRecord & { feedback?: FeedbackSourceState }).feedback,
         undefined,
@@ -446,9 +446,9 @@ describe('assignment retirement', () => {
     h.records.push({ ...h.record, id: 'peer', retirement: undefined });
     await h.run(h.record.id);
     assert.equal(h.cleanups(), 1);
-    assert.ok(h.record.retired);
+    assert.ok(!h.records.includes(h.record));
     assert.equal(h.record.retirement?.reason, 'operator-requested');
-    assert.equal(h.records[1]!.retirement, undefined);
+    assert.equal(h.records.find((entry) => entry.id === 'peer')!.retirement, undefined);
     assert.equal(h.fixture.item.state, 'open');
     await h.run(h.record.id);
     assert.equal(h.cleanups(), 1);
@@ -475,9 +475,12 @@ describe('assignment retirement', () => {
     };
     h.admissions.push(successor);
     await h.run(h.record.id);
-    assert.ok(h.record.retired);
+    assert.ok(!h.records.includes(h.record));
     assert.equal(h.record.retirement!.at, baseline - 60000);
-    const intake = { records: h.admissions } as IntakeState;
+    const intake = {
+      records: h.admissions,
+      observedAssignments: h.observedAssignments,
+    } as IntakeState;
     assert.deepEqual(pendingAssignments({ records: h.records }, intake), []);
     const fresh = {
       ...successor,
@@ -524,7 +527,7 @@ describe('assignment retirement', () => {
     };
     await h.run(h.record.id);
     assert.equal(h.cleanups(), 1);
-    assert.ok(h.record.retired);
+    assert.ok(!h.records.includes(h.record));
   });
 
   for (const shared of [false, true]) {
@@ -541,6 +544,9 @@ describe('assignment retirement', () => {
         configuration: h.settings.value,
         readConfiguration: async () => h.settings.value,
         records: h.records,
+        dispose: async (target) => {
+          h.records.splice(h.records.indexOf(target), 1);
+        },
         admitted: h.admissions,
         policy: {
           policy: h.fixture.policy,
@@ -560,7 +566,7 @@ describe('assignment retirement', () => {
         },
       });
       assert.equal(removals, shared ? 0 : 1);
-      assert.equal(Boolean(h.record.retired), !shared);
+      assert.equal(!h.records.includes(h.record), !shared);
       assert.equal(h.record.retirement?.archivedAt, undefined);
       assert.equal(h.record.nativeInactive, undefined);
       assert.deepEqual(h.record.retirement?.sessionUnavailableObserved, {
@@ -592,22 +598,19 @@ describe('assignment retirement', () => {
       assert.equal(next.checkedAt, 600_100);
     });
   }
-  for (const scenario of ['unapproved', 'unavailable', 'legacy'] as const) {
+  for (const scenario of ['unapproved', 'unavailable', 'previously-approved'] as const) {
     it(`should preserve resources and membership under unresolved removal: ${scenario}`, async () => {
       const h = setup();
       const event = removeFixtureAssignment(h.fixture);
+      if (scenario === 'previously-approved') {
+        await h.run();
+        h.advance(1);
+      }
       if (scenario !== 'unavailable') event.actor = { ...account, nodeId: 'outsider' };
       else
         h.fixture.client.listAssignmentEvents = async () => {
           throw new Error('unavailable');
         };
-      if (scenario === 'legacy')
-        h.record.retirement = assignmentRetirement({
-          reason: 'assignment-removed',
-          intakeId: h.admitted.id,
-          now: baseline,
-          graceMinutes: 0,
-        });
       h.settings.value = {
         status: 'blocked',
         code: 'retirement-configuration-invalid',
@@ -616,7 +619,7 @@ describe('assignment retirement', () => {
       h.advance(120);
       await h.run();
       assert.equal(h.record.retirement, undefined);
-      assert.equal(h.record.retired, undefined);
+      assert.ok(h.records.includes(h.record));
       assert.equal(h.record.assignmentObservation?.missing, true);
       assert.equal(h.cleanups(), 0);
     });
@@ -630,7 +633,7 @@ describe('assignment retirement', () => {
     h.fixture.policy.issueAssignment!.allowed = [];
     await h.run();
     assert.equal(h.cleanups(), 0);
-    assert.equal(h.record.retired, undefined);
+    assert.ok(h.records.includes(h.record));
     h.advance(1);
     await h.run();
     assert.equal(h.record.retirement, undefined);
@@ -663,17 +666,17 @@ describe('assignment retirement', () => {
     assert.equal(h.record.assignmentObservation?.code, 'assignment-removal-approved');
     assert.equal(h.record.retirement?.reason, 'assignment-removed');
   });
-  it('should retain uncertain native effects when legacy removal authority cannot be verified', async () => {
+  it('should preserve pending cleanup effects when an unassigned issue reopens and removal authority changes', async () => {
     const h = setup();
-    removeFixtureAssignment(h.fixture);
-    h.fixture.policy.issueAssignment!.allowed = [];
-    h.record.retirement = assignmentRetirement({
-      reason: 'assignment-removed',
-      intakeId: h.admitted.id,
-      now: baseline,
-      graceMinutes: 0,
-    });
+    h.fixture.item.state = 'closed';
+    await h.run();
     h.record.retirement!.archiveAttempt = { at: baseline, turnId: 'archive-turn' };
+    h.fixture.item.state = 'open';
+    removeFixtureAssignment(h.fixture);
+    h.advance(1);
+    await h.run();
+    h.fixture.policy.issueAssignment!.allowed = [];
+    h.advance(1);
     await h.run();
     assert.equal(h.record.retirement?.archiveAttempt?.turnId, 'archive-turn');
     assert.equal(h.record.retirement?.code, 'retirement-removal-authority-unresolved');
@@ -684,7 +687,7 @@ describe('assignment retirement', () => {
     h.fixture.item.state = 'closed';
     await h.run();
     assert.equal(h.record.retirement?.at, baseline);
-    assert.equal(Boolean(h.record.retired), false);
+    assert.equal(!h.records.includes(h.record), false);
     assert.equal(h.cleanups(), 0);
     h.advance(59);
     await h.run();
@@ -692,7 +695,7 @@ describe('assignment retirement', () => {
     h.advance(1);
     await h.run();
     assert.equal(h.cleanups(), 1);
-    assert.equal(h.record.retired?.at, baseline + 3_600_000);
+    assert.ok(!h.records.includes(h.record));
     h.advance(60);
     await h.run();
     assert.equal(h.cleanups(), 1);
@@ -802,7 +805,7 @@ describe('assignment retirement', () => {
     await h.run();
     h.advance(30);
     await h.run();
-    assert.equal(h.record.retired, undefined);
+    assert.ok(h.records.includes(h.record));
     assert.equal(h.record.retirement?.code, 'retirement-configuration-invalid');
     assert.equal(h.cleanups(), 0);
   });
@@ -825,7 +828,7 @@ describe('assignment retirement', () => {
     h.advance(17);
     await h.run();
     assert.equal(h.cleanups(), 1);
-    assert.ok(h.record.retired);
+    assert.ok(!h.records.includes(h.record));
   });
 
   it('should preserve an existing deadline through a configuration hold and grace edits', async () => {
@@ -862,22 +865,14 @@ describe('assignment retirement', () => {
     assert.equal(h.cleanups(), 1);
   });
 
-  it('should preserve historically retired resources without enqueueing a cleanup sweep', async () => {
-    const h = setup();
-    h.record.retired = { at: baseline, by: 'intake' };
-    h.fixture.item.state = 'closed';
-    h.advance(120);
-    await h.run();
-    assert.equal(h.cleanups(), 0);
-    assert.equal(h.record.retirement, undefined);
-    assert.deepEqual(h.record.retired, { at: baseline, by: 'intake' });
-  });
-
   it('should suppress old admission while pending but admit fresh work after manual archival', async () => {
     const h = setup();
     h.setArchived();
     await h.run();
-    const intake = { records: h.admissions } as IntakeState;
+    const intake = {
+      records: h.admissions,
+      observedAssignments: h.observedAssignments,
+    } as IntakeState;
     assert.deepEqual(pendingAssignments({ records: h.records }, intake), []);
     const successor = { ...h.admitted, id: 'successor' };
     h.admissions.push(successor);
@@ -904,18 +899,17 @@ describe('assignment retirement', () => {
       await h.run();
       assert.equal(h.record.retirement?.code, 'retirement-worktree-shared');
       assert.equal(h.cleanups(), 0);
-      assert.equal(h.record.retired, undefined);
+      assert.ok(h.records.includes(h.record));
       other.retirement = {
         ...h.record.retirement!,
         archivedAt: baseline + 3_600_000,
         worktreeRemovedAt: baseline + 3_600_000,
       };
-      other.retired = { at: baseline + 3_600_000, by: 'other-intake' };
       other.nativeInactive = true;
       h.advance(1);
       await h.run();
       assert.equal(h.cleanups(), 0);
-      assert.equal(h.record.retired, undefined);
+      assert.ok(h.records.includes(h.record));
     });
   }
   for (const count of [2, 14]) {
@@ -932,6 +926,9 @@ describe('assignment retirement', () => {
           configuration: h.settings.value,
           readConfiguration: async () => h.settings.value,
           records: h.records,
+          dispose: async (target) => {
+            h.records.splice(h.records.indexOf(target), 1);
+          },
           admitted: h.admissions,
           policy: {
             policy: h.fixture.policy,
@@ -962,10 +959,10 @@ describe('assignment retirement', () => {
       }
       assert.equal(archived.size, 0);
       assert.equal(removals, 0);
-      assert.ok(h.records.every((record) => !record.retired));
+      assert.equal(h.records.length, count);
     });
   }
-  for (const condition of ['busy', 'unknown', 'grace', 'pending-deadline', 'legacy'] as const) {
+  for (const condition of ['busy', 'unknown', 'grace', 'pending-deadline'] as const) {
     it(`should keep a shared checkout when a pending peer is ${condition}`, async () => {
       const h = setup();
       h.fixture.item.state = 'closed';
@@ -974,13 +971,15 @@ describe('assignment retirement', () => {
       const other = { ...structuredClone(h.record), id: 'second' };
       if (condition === 'grace') other.retirement!.eligibleAt += 60_000;
       if (condition === 'pending-deadline') other.retirement!.deadlinePending = true;
-      if (condition === 'legacy') other.retired = { at: baseline, by: 'old-owner' };
       h.records.push(other);
       let cleanups = 0;
       await reconcile({
         configuration: h.settings.value,
         readConfiguration: async () => h.settings.value,
         records: h.records,
+        dispose: async (target) => {
+          h.records.splice(h.records.indexOf(target), 1);
+        },
         admitted: h.admissions,
         policy: {
           policy: h.fixture.policy,
@@ -1006,11 +1005,7 @@ describe('assignment retirement', () => {
         },
       });
       assert.equal(cleanups, 0);
-      assert.ok(
-        h.records
-          .filter((record) => condition !== 'legacy' || record.id !== 'second')
-          .every((record) => !record.retired),
-      );
+      assert.equal(h.records.length, 2);
     });
   }
   it('should retain observation of busy work while cleanup configuration is invalid', async () => {
@@ -1022,11 +1017,11 @@ describe('assignment retirement', () => {
     removeFixtureAssignment(h.fixture);
     h.setBusy(true);
     await h.run();
-    assert.equal(Boolean(h.record.retired), false);
+    assert.equal(!h.records.includes(h.record), false);
     h.setBusy(false);
     h.advance(1);
     await h.run();
-    assert.equal(h.record.retired, undefined);
+    assert.ok(h.records.includes(h.record));
     assert.equal(workflowStatus(h.record), 'awaiting-reassignment');
     assert.equal(h.record.retirement?.code, undefined);
     assert.equal(h.record.nativeInactive, true);
@@ -1067,7 +1062,7 @@ describe('assignment retirement', () => {
     await h.run();
     assert.deepEqual(h.closedInputs, [true]);
     assert.equal(h.cleanups(), 0);
-    assert.equal(h.record.retired, undefined);
+    assert.ok(h.records.includes(h.record));
     assert.equal(h.record.retirement?.code, 'retirement-observation-changed');
   });
 });

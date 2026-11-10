@@ -6,8 +6,8 @@ import { join, resolve } from 'node:path';
 import { parse, stringify } from 'smol-toml';
 
 import planCodexAutomations, { codexAutomationMarker } from '../agent/codex-automation-plan.ts';
+import codexAutomationSchedule from '../agent/codex-automation-schedule.ts';
 import type { NativeAutomation } from '../agent/codex-automation-state.ts';
-import { codexQuietHeartbeatInstructions } from '../agent/codex-heartbeat.ts';
 import {
   acknowledgeCodexAutomation,
   inspectCodexAutomations,
@@ -15,20 +15,20 @@ import {
   prepareCodexAutomation,
   syncCodexAutomationThreads,
 } from '../agent/codex-automations.ts';
-import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
-import checkCodexActivationIsolation from './codex-activation-fixture.ts';
+import { codexQuietHeartbeatInstructions } from '../agent/codex-heartbeat.ts';
+import {
+  codexIntakeJobs,
+  codexIntakePolicy,
+  intakeAutomationId,
+} from '../agent/codex-intake-policy.ts';
 import {
   connectCodexGitHub,
   inspectCodexIntake,
   runCodexIntake,
   selectCodexIntake,
 } from '../agent/codex-intake.ts';
-import {
-  codexIntakeJobs,
-  codexIntakePolicy,
-  intakeAutomationId,
-} from '../agent/codex-intake-policy.ts';
-import codexAutomationSchedule from '../agent/codex-automation-schedule.ts';
+import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
+import checkCodexActivationIsolation from './codex-activation-fixture.ts';
 import { baseline, intakeFixture, originalIntakeDigest } from './github-intake-fixture.ts';
 
 const models = {
@@ -632,9 +632,9 @@ describe('agent/codex-intake', () => {
         sourceThreadId: 'intake-thread',
       });
       assert.deepEqual(
-        (await inspectCodexDispatchActivation(pluginData, deps, false, false, 'assessment-summary'))
+        (await inspectCodexDispatchActivation(pluginData, deps, false, false, 'assessment'))
           .schedule?.saved.capabilities,
-        ['assessment-summary'],
+        ['assessment'],
       );
       await selected.store.exclusive(async (state, save) => {
         state!.policyDigest = 'previous-policy';
@@ -668,9 +668,9 @@ describe('agent/codex-intake', () => {
       sourceThreadId: 'intake-thread',
     });
     assert.deepEqual(
-      (await inspectCodexDispatchActivation(pluginData, deps, false, false, 'assessment-summary'))
-        .schedule?.saved.capabilities,
-      ['assessment-summary'],
+      (await inspectCodexDispatchActivation(pluginData, deps, false, false, 'assessment')).schedule
+        ?.saved.capabilities,
+      ['assessment'],
     );
     for (const capability of ['implementation', 'review', 'publication'] as const)
       await assert.rejects(

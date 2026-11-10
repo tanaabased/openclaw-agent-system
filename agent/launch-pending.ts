@@ -2,13 +2,10 @@
 export default function launchPending(record: {
   threadId?: string;
   sessionCreation?: { verified?: true };
-  assessmentTurn?: { runId: string; status: string };
   nativeTurns?: Array<{ role: string; turn: { runId: string; status: string } }>;
 }) {
   if (!record.threadId) return true;
-  const turn =
-    record.nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn ??
-    record.assessmentTurn;
+  const turn = record.nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn;
   if (record.sessionCreation)
     return (
       !record.sessionCreation.verified ||

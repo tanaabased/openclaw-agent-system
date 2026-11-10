@@ -10,8 +10,8 @@ import {
   githubNotificationPublicationMarker,
   githubNotificationPublicationTarget,
   githubNotificationPublicationText,
-  type GitHubNotificationPublicationSource,
   type GitHubNotificationPublicationItem,
+  type GitHubNotificationPublicationSource,
 } from './publication-contract.ts';
 
 type PublicationItem = GitHubNotificationPublicationItem;
@@ -27,7 +27,6 @@ export type GitHubNotificationCommentPublicationInput = {
     }
   | {
       intent:
-        | 'assessment-summary'
         | 'assignment-response'
         | 'initial-acknowledgment'
         | 'manual-response'
@@ -61,7 +60,6 @@ export interface GitHubNotificationCommentPublisherDependencies {
         }
       | {
           intent:
-            | 'assessment-summary'
             | 'assignment-response'
             | 'initial-acknowledgment'
             | 'manual-response'

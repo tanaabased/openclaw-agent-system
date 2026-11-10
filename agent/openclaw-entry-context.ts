@@ -1,20 +1,20 @@
-import { managedTargetUrl, dispatchAdmission } from './managed-issue.ts';
 import { hasDeliveredImplementation, nativeIssueContext } from './implementation-delivery.ts';
+import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
 
+import { realpath } from 'node:fs/promises';
 import type { ImplementationResult } from './implementation-result.ts';
 import managedImplementationRoute from './managed-implementation-route.ts';
-import { realpath } from 'node:fs/promises';
 
+import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 import type { AssessmentEntryDependencies } from './assessment-entry.ts';
 import assessmentOwner from './assessment-owner.ts';
 import { automationHash } from './automation-hash.ts';
 import type { OpenClawDispatchDependencies } from './openclaw-dispatch-context.ts';
 import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
-import { operatorInputEvent, nativeInputEvent } from './openclaw-session-input.ts';
 import { describeIssueSession, type DispatchCaller } from './openclaw-session-create.ts';
+import { nativeInputEvent, operatorInputEvent } from './openclaw-session-input.ts';
 import openClawSkill from './openclaw-skill.ts';
-import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
-import type { AgentManifest } from '../manifest/types.ts';
 
 /** native input and binding precede repository/provider access; intake activation is unnecessary. */
 export default async function openClawEntryContext<T>(
@@ -72,37 +72,17 @@ export default async function openClawEntryContext<T>(
       )
         throw new Error('assessment-managed-context-invalid');
       await describeIssueSession(request, record, deps.config());
-      const feedback = record.feedback?.events.find(
-        (event) => !event.native && event.turn?.runId === caller.runId,
-      );
       return {
         selections: record.manualIssue?.selections,
         nativeContext:
-          !feedback && (assessmentRead || hasDeliveredImplementation(record))
+          assessmentRead || hasDeliveredImplementation(record)
             ? nativeIssueContext(record)
             : undefined,
-        implementationResult: feedback ? feedback.work?.result : record.work?.result,
         digest,
-        owner: { id: record.id, ...(feedback ? { eventId: feedback.id } : {}) },
+        owner: { id: record.id },
         path: await realpath(record.worktree!),
-        selection:
-          record.turnEvidence?.selection ?? record.stageReceipt?.selection ?? record.assessment,
-        evidence: record.turnEvidence?.evidence ?? record.context,
-        result: record.result,
-        receipt: record.stageReceipt,
-        entries: async (run) =>
-          journal.exclusive(async (fresh, save) => {
-            const found = assessmentOwner(
-              fresh.records,
-              (await current.store.read())?.records ?? [],
-              caller.sessionKey,
-              target,
-            );
-            if (!found || found.digest !== digest)
-              throw new Error('assessment-managed-context-changed');
-            found.record.directAssessments ??= [];
-            return run(found.record.directAssessments, save);
-          }),
+        selection: record.assessment,
+        evidence: record.context,
       };
     };
     const records = (await journal.read()).records.filter(

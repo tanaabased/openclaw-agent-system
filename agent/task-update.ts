@@ -1,6 +1,6 @@
+import type { GitHubNotificationCommentPublicationInput } from '../channels/github/publication/comment-publisher.ts';
 import { automationHash } from './automation-hash.ts';
 import publicResponse, { type PublicResponseReceipt } from './public-response.ts';
-import type { GitHubNotificationCommentPublicationInput } from '../channels/github/publication/comment-publisher.ts';
 
 export interface TaskUpdateDraft {
   publicText?: string;
@@ -45,16 +45,10 @@ export default async function taskUpdate(input: {
   if (request.operation === 'publish' && request.digest !== request.expectedDigest)
     throw new Error('task-update-stale');
   const publication = input.publication(draft.publicText);
-  // legacy drafts acquire the same original publication, without changing their provider identity.
-  const retained = draft.publication
-    ? (JSON.parse(draft.publication) as GitHubNotificationCommentPublicationInput)
-    : publication;
+  if (!draft.publication) throw new Error('task-update-publication-required');
+  const retained = JSON.parse(draft.publication) as GitHubNotificationCommentPublicationInput;
   if (automationHash(retained) !== automationHash(publication))
     throw new Error('task-update-destination-changed');
-  if (!draft.publication) {
-    draft.publication = JSON.stringify(publication);
-    await input.save();
-  }
   return publicResponse({
     publication: retained,
     attempted: Boolean(draft.attempted),

@@ -1,16 +1,16 @@
-import { observeFeedbackPolicy } from '../agent/feedback-source.ts';
+import assert from 'node:assert/strict';
 import { Value } from 'typebox/value';
 import { codexFeedbackSchema, type CodexFeedback } from '../agent/codex-feedback-state.ts';
-import { openclawFeedbackSchema } from '../agent/openclaw-feedback-state.ts';
 import DiscoveryBudget, { DiscoveryPaused } from '../agent/discovery-budget.ts';
-import assert from 'node:assert/strict';
+import { observeFeedbackPolicy } from '../agent/feedback-source.ts';
+import { openclawFeedbackSchema } from '../agent/openclaw-feedback-state.ts';
 
 import { admitCodexFeedback, discoverCodexFeedback } from '../agent/codex-feedback-source.ts';
 import { account, intakeFixture } from './github-intake-fixture.ts';
 import {
-  reviewFixture,
-  reviewCommentFixture,
   reviewClientFixture,
+  reviewCommentFixture,
+  reviewFixture,
 } from './github-review-fixtures.ts';
 
 const comment = (nodeId: string, body = '@receiver explain this') => ({
@@ -112,7 +112,7 @@ describe('agent/codex-feedback-source', () => {
     assert.ok(Value.Check(openclawFeedbackSchema, restored));
   });
 
-  it('should reject completed-source replay and own replies after cold history expires while accepting edits', async () => {
+  it('should reject completed-source replay and own reply receipts while accepting edits', async () => {
     const policy = intakeFixture().policy;
     const state: CodexFeedback = {
       startedAt: Date.parse('2026-10-12T00:00:00Z'),
@@ -123,6 +123,7 @@ describe('agent/codex-feedback-source', () => {
     const scan = () =>
       discoverCodexFeedback({
         state,
+        ownCommentIds: ['own-reply'],
         policy,
         owner: 'owner',
         name: 'repo',
@@ -145,7 +146,6 @@ describe('agent/codex-feedback-source', () => {
         sourceId: original.sourceId,
         revision: original.revision,
         nodeId: original.nodeId,
-        receipt: { nodeId: 'own-reply', databaseId: 99 },
       },
     ];
     state.events = [];
@@ -317,29 +317,10 @@ describe('agent/codex-feedback-source', () => {
       };
       await run(14000);
       assert.equal(state.events.at(-1)?.sourceId, 'disabled');
-      state.events.at(-1)!.phase = 'published';
-      state.events.at(-1)!.receipt = { nodeId: 'reply', databaseId: 99 };
+      state.events.at(-1)!.phase = 'delivered';
       await run(15000);
       assert.equal(state.events.length, 5);
     });
-
-  it('should preserve legacy feedback state when no previous policy timestamp was saved', () => {
-    const policy = intakeFixture().policy;
-    policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
-    for (const scannedTime of [undefined, 2000]) {
-      const state: CodexFeedback = {
-        admission: { enabled: false },
-        scannedTime,
-        baseline: {},
-        events: [],
-      };
-      observeFeedbackPolicy(state, policy, 3000);
-      assert.equal(state.admission?.after, scannedTime ?? 3000);
-      observeFeedbackPolicy(state, policy, 4000);
-      assert.equal(state.admission?.after, scannedTime ?? 3000);
-      assert.equal(state.admission?.observedAt, 4000);
-    }
-  });
 
   it('should baseline once, queue exact edits once and suppress confirmed own replies', async () => {
     const state: CodexFeedback = { baseline: {}, events: [] };
@@ -349,7 +330,7 @@ describe('agent/codex-feedback-source', () => {
     let truncated = false;
     const input = {
       state,
-      ownCommentIds: ['summary'],
+      ownCommentIds: ['own', 'summary'],
       policy,
       owner: 'owner',
       name: 'repo',
@@ -376,7 +357,6 @@ describe('agent/codex-feedback-source', () => {
     await discoverCodexFeedback(input);
     assert.equal(state.events.length, 2);
     assert.equal(state.events[0]!.source, frozen);
-    state.events[0]!.receipt = { nodeId: 'own', databaseId: 99 };
     comments.push(comment('own'));
     comments.push(comment('summary'));
     comments.push(comment('copied-summary-marker', '@receiver a human copied a summary marker'));

@@ -1,21 +1,20 @@
-import { dispatchAdmission, managedTargetUrl, type ManagedIssue } from './managed-issue.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
+import { dispatchAdmission, managedTargetUrl, type ManagedIssue } from './managed-issue.ts';
 import { assertNativeContextInput } from './native-context-request.ts';
-
 /** Explicit operator target selection is not proof of authorization; the owner still checks it. */
 export default function nativeOperatorSelection<R extends SharedDispatchRecord>(
   input: Record<string, unknown>,
   records: readonly R[],
   admitted: readonly ManagedIssue[],
   caller: string,
-  invocation?: { turnId: string; inputId: string },
+  invocation?: {
+    turnId: string;
+    inputId: string;
+  },
 ) {
   assertNativeContextInput(input);
   const matches = records.filter((record) => {
-    if (
-      input.action === 'retry' &&
-      (record.retired || record.retirement || record.reset || record.supersededBy)
-    )
+    if (input.action === 'retry' && (record.retirement || record.reset || record.supersededBy))
       return false;
     if (input.chat && record.threadId !== input.chat) return false;
     if (input.chat && !input.target) return true;

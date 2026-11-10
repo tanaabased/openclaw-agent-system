@@ -331,7 +331,7 @@ function respond(
             'Committed the requested cleanup note change through managed Git in the verified issue worktree.',
         },
       });
-    if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
+    if (saved.status !== 'native' || typeof saved.presentation !== 'string') return;
     return { content: saved.presentation };
   }
   const id =
@@ -360,7 +360,7 @@ function respond(
     result,
     dispatch,
     call,
-    Boolean(openClawAIMockToolResultText(messages, prefix + 'summary-skill')),
+    Boolean(openClawAIMockToolResultText(messages, prefix + 'plan-reply-skill')),
   );
 }
 
@@ -414,7 +414,7 @@ export function createProgressionScenario(
         id: prefix + `routing-source-${index}`,
         name: 'agent_system_github',
       })),
-      { id: prefix + 'summary-skill', name: 'read' },
+      { id: prefix + 'plan-reply-skill', name: 'read' },
       { id: prefix + 'scan', name: 'agent_system_intake' },
       ...dispatchStages.flatMap((stage) =>
         [0, 1, 2, 3].map((attempt) => ({

@@ -1,46 +1,44 @@
-import nativeTaskInstructions from '../agent/native-task-instructions.ts';
-import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
-import summaryFixture from './assessment-summary-fixture.ts';
-import type { AssessmentSummaryRequest } from '../agent/assessment-summary-state.ts';
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { join } from 'node:path';
 import implementationMaterial, {
   type ImplementationMaterialRead,
 } from '../agent/implementation-material.ts';
-import { join } from 'node:path';
-import { createRequire } from 'node:module';
-import waitForAssessmentRelease from '../examples/openclaw-issue-intake/assessment-barrier.ts';
+import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
+import nativeTaskInstructions from '../agent/native-task-instructions.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
+import waitForAssessmentRelease from '../examples/openclaw-issue-intake/assessment-barrier.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
 import { matchFixture, type ChatCompletionRequest } from '@copilotkit/aimock';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import {
-  assessmentResultFormat,
-  assessmentResultContextSchema,
-} from '../agent/assessment-result.ts';
 import renderNativeAssessment from '../agent/assessment-render.ts';
-import { issueExampleScenario } from '../examples/openclaw-issue-journey/model-fixture.ts';
+import {
+  assessmentResultContextSchema,
+  assessmentResultFormat,
+} from '../agent/assessment-result.ts';
+import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
+import openclawTurnContext from '../agent/openclaw-turn-context.ts';
 import {
   createIntakeExampleScenario,
   intakeExampleScenario,
 } from '../examples/openclaw-issue-intake/model-fixture.ts';
-import { retirementExampleScenario } from '../examples/openclaw-notifications-retirement/model-fixture.ts';
+import { issueExampleScenario } from '../examples/openclaw-issue-journey/model-fixture.ts';
 import {
   progressionExampleScenario,
   retainedPlan,
 } from '../examples/openclaw-issue-progression/model-fixture.ts';
+import { retirementExampleScenario } from '../examples/openclaw-notifications-retirement/model-fixture.ts';
+import { prDiscoveryExampleScenario } from '../examples/openclaw-pr-discovery/model-fixture.ts';
 import {
   createPRExampleScenario,
   prExampleScenario,
 } from '../examples/openclaw-pr-journey/model-fixture.ts';
-import { prDiscoveryExampleScenario } from '../examples/openclaw-pr-discovery/model-fixture.ts';
+import resolveExampleModelScenario from '../scripts/example-model-scenarios.ts';
 import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 import { intakeParameters } from '../tools/intake/tool-schema.ts';
-import resolveExampleModelScenario from '../scripts/example-model-scenarios.ts';
-import openclawTurnContext from '../agent/openclaw-turn-context.ts';
-import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
 
 describe('examples/pr discovery inspection fixture', () => {
   it('should request the installed native inspection and return only its observed result', async () => {
@@ -133,10 +131,9 @@ for (const scenario of [
     else input.messages.push({ role: 'user', content });
   }
 
-  function assessmentContract(previousResultDigest?: string) {
+  function assessmentContract() {
     return {
       entry: 'managed',
-      previousResultDigest,
       resultSchema: assessmentResultContextSchema,
       resultFormat: assessmentResultFormat,
     };
@@ -173,7 +170,6 @@ for (const scenario of [
                               events: [
                                 {
                                   id: 'e'.repeat(64),
-                                  native: true,
                                   number: 123,
                                   itemType: 'issue',
                                   source: JSON.stringify({ databaseId: 42 }),
@@ -182,7 +178,7 @@ for (const scenario of [
                               ],
                             },
                           }
-                        : { assessmentTurn: { runId: 'current' } }),
+                        : { nativeTurns: [{ role: 'assessment', turn: { runId: 'current' } }] }),
                     } as OpenClawDispatchRecord,
                     {
                       agentId: 'receiver',
@@ -223,7 +219,7 @@ for (const scenario of [
           threadId: 'issue',
           request: { key: 'issue', agentId: 'receiver' },
           sessionCreation: { verified: true, sessionId: 'incarnation' },
-          assessmentTurn: { runId: 'assessment' },
+          nativeTurns: [{ role: 'assessment', turn: { runId: 'assessment' } }],
         } as OpenClawDispatchRecord,
         { agentId: 'receiver', sessionKey: 'issue', sessionId: 'incarnation', runId: 'assessment' },
       )!;
@@ -368,65 +364,6 @@ for (const scenario of [
     return args as Extract<Action, { action: A }>;
   }
 
-  async function publishProgressionSummary(
-    input: ChatCompletionRequest,
-    selectedScenario = scenario,
-    hold = false,
-  ) {
-    assert.equal((await action(input, 'summary', selectedScenario)).operation, 'compose');
-    const owner =
-      selectedScenario.id === 'openclaw-issue-progression' ? summaryFixture() : undefined;
-    if (owner) {
-      owner.record.id = id;
-      owner.retain({ ...owner.result, plan: retainedPlan, fullAssessment: retainedPlan });
-    }
-    const composition = owner
-      ? await owner.run({ operation: 'compose' })
-      : {
-          status: 'composition-ready',
-          digest,
-          selection: { defaultSkill: true, skill: { path: '/tmp/SUMMARY.md' } },
-        };
-    assert.ok('digest' in composition);
-    const beforePages = owner && structuredClone(owner.record);
-    assert.ok(JSON.stringify(composition).length < 48000);
-    append(input, 'summary-compose', composition);
-    if (owner) {
-      let pages = 0;
-      for (; pages < 64; pages++) {
-        const next = await response(input, selectedScenario);
-        assert.ok('toolCalls' in next && next.toolCalls?.length === 1);
-        const args = JSON.parse(next.toolCalls[0]!.arguments);
-        if (!args.material) break;
-        assert.ok(Value.Check(dispatchModelParameters, args));
-        assert.equal(args.action, 'summary');
-        assert.equal(args.operation, 'compose');
-        const page: Record<string, unknown> = await owner.run(args as AssessmentSummaryRequest);
-        assert.equal(page.status, 'material');
-        assert.ok(JSON.stringify(page).length < 48000);
-        append(input, `summary-material-${pages}`, page);
-      }
-      assert.ok(pages > 0 && pages < 64);
-      assert.deepEqual(owner.record, beforePages);
-    }
-    const read = await response(input, selectedScenario);
-    assert.ok('toolCalls' in read);
-    assert.equal(read.toolCalls?.[0]?.name, 'read');
-    append(input, 'summary-skill', { text: 'Selected reply guidance' });
-    const candidate = await action(input, 'summary', selectedScenario);
-    assert.equal(candidate.operation, 'candidate');
-    assert.equal('digest' in candidate, false);
-    append(input, 'summary-candidate', { status: 'candidate-recorded' });
-    const publication = await action(input, 'summary', selectedScenario);
-    assert.equal('digest' in publication, false);
-    assert.equal(publication.operation, hold ? 'hold' : 'publish');
-    append(input, hold ? 'summary-hold' : 'summary-publish', {
-      status: hold ? 'blocked' : 'published',
-      ...(hold ? { code: 'assessment-summary-native-approval-denied' } : {}),
-      presentation: hold ? 'Summary held; no publication.' : 'Published retained plan.',
-    });
-  }
-
   async function readAssessmentSource(
     input: ChatCompletionRequest,
     selectedScenario = scenario,
@@ -480,7 +417,7 @@ for (const scenario of [
     });
     const read = await response(input, selectedScenario);
     assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
-    append(input, 'summary-skill', 'Reply guidance');
+    append(input, 'plan-reply-skill', 'Reply guidance');
     assert.equal((await action(input, 'reply', selectedScenario)).operation, 'candidate');
     append(input, 'native-plan-candidate', {
       status: 'candidate-recorded',
@@ -909,25 +846,13 @@ for (const scenario of [
         later.messages.push({
           role: 'user',
           content:
-            '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> Agent System model-only current-turn facts previousResultDigest',
+            '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> Agent System model-only current-turn facts',
         });
         assert.equal('id' in (await action(later, 'context')), false);
         append(later, 'refresh-context', {
           status: 'verified',
           id,
-          ...assessmentContract(digest),
-          previousResultDigest: digest,
-          previousResult: {
-            version: 1,
-            outcome: 'plan-ready',
-            summary: 'Retained.',
-            assessment: 'Observed.',
-            plan: 'Complete retained plan.',
-            planSummary: 'Retain it.',
-            fullAssessment: 'Complete retained plan.',
-            evidence: [],
-            progress: { completed: [], remaining: [] },
-          },
+          ...assessmentContract(),
           currentTurnId: 'native-refresh',
           evidence: {
             source: 'https://github.com/owner/repo/issues/3',
@@ -1071,17 +996,6 @@ for (const scenario of [
       append(invalid, 'git', { exitCode: 0, stdout: '/tmp/other', truncated: false });
       assert.equal(matchFixture([...scenario.fixtures], invalid), null);
     });
-    if (scenario.id === 'openclaw-pr-journey')
-      it('should finish response-only recovery without repeating assessment or implementation', async () => {
-        const input = request(`recover only the pending public assessment summary with id ${id}`);
-        await action(input, 'present');
-        append(input, 'recovery-present', {
-          status: 'presented',
-          presentation: 'Retained assessment.',
-        });
-        await publishProgressionSummary(input);
-        assert.deepEqual(await response(input), { content: 'Published retained plan.' });
-      });
     if (scenario.id === 'openclaw-issue-progression') {
       it('should ask an auto clarification in native chat without recording another assessment', async () => {
         const selected = resolveExampleModelScenario('openclaw-issue-auto-plan');
@@ -1131,11 +1045,6 @@ for (const scenario of [
             runtime: 'openclaw',
             publicationAuthorized: true,
             instructions: nativeTaskInstructions('openclaw'),
-            pendingPublicResponse: {
-              kind: 'assessment-summary',
-              revision: direct ? 2 : 1,
-              state: direct ? 'blocked' : 'pending',
-            },
             project: { path: '/tmp/owned' },
           });
           const question = await response(automatic);
@@ -1170,7 +1079,7 @@ for (const scenario of [
           const completed = await action(answer, 'implementation-result');
           assert.equal(completed.implementationResult.outcome, 'done');
           append(answer, 'work-result', {
-            status: 'recorded',
+            status: 'native',
             presentation: 'Committed locally.',
             handoff: { next: 'delivery' },
           });
@@ -1200,16 +1109,14 @@ for (const scenario of [
             worktree: '/checkout',
             request: { key: 'issue', agentId: 'receiver' },
             sessionCreation: { verified: true, sessionId: 'incarnation' },
-            assessmentTurn: { runId: 'assessment' },
-            result: { outcome: 'plan-ready', plan: 'Original plan.' },
             work: {
-              result: { outcome: 'done', summary: 'Done.', fullResult: 'Verified.' },
               delivery: {
                 reconciled: true,
                 pullRequest: { pullRequestNumber: 7 },
                 binding: { branch: 'retained-branch' },
               },
             },
+            nativeTurns: [{ role: 'assessment', turn: { runId: 'assessment' } }],
           } as OpenClawDispatchRecord,
           {
             runId: 'question',
@@ -1387,7 +1294,7 @@ for (const scenario of [
             assert.deepEqual(await response(input, workScenario), { content: '> PR card' });
           }
           const retry = request(
-            `Operator request for managed issue ${id}: Show the saved plan and existing PR card again.`,
+            `Operator request for managed issue ${id}: Show the plan from this conversation and existing PR card again.`,
           );
           assert.equal((await action(retry, 'delivery', workScenario)).operation, 'present');
           append(retry, 'delivery-present', { status: 'presented', presentation: '> PR card' });
@@ -1556,7 +1463,6 @@ for (const scenario of [
               events: [
                 {
                   id: 'f'.repeat(64),
-                  native: true,
                   number: 123,
                   itemType: 'issue',
                   source: JSON.stringify({ databaseId: 41 }),
@@ -1564,7 +1470,6 @@ for (const scenario of [
                 },
                 {
                   id: 'e'.repeat(64),
-                  native: true,
                   number: 123,
                   itemType: 'issue',
                   source: JSON.stringify({ databaseId: 42 }),
@@ -1645,7 +1550,7 @@ for (const scenario of [
           append(input, 'context', {
             status: 'verified',
             runtime: 'openclaw',
-            ...assessmentContract(digest),
+            ...assessmentContract(),
             id,
             project: { path: '/tmp/managed-worktree' },
             assessment: { skill: { name: 'generic-assessment', path: '/fixture/SKILL.md' } },
@@ -1766,10 +1671,6 @@ for (const scenario of [
                   'FETCH_HEAD',
                 ]);
               append(input, stage, { exitCode: 0, truncated: false });
-            }
-            if (initial) {
-              assert.equal('id' in (await runAction(input, 'implementation-result')), false);
-              append(input, 'feedback-work-result', { status: 'recorded' });
             }
             assert.equal((await runAction(input, 'delivery')).operation, 'prepare');
             append(input, 'feedback-delivery-prepare', { status: 'prepared', digest });

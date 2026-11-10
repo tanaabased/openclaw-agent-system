@@ -1,22 +1,20 @@
-import cutover638Active from '../scripts/cutover-638-active.ts';
-import manualPullRequest from '../agent/manual-pull-request.ts';
-import codexEntryContext from '../agent/codex-entry-context.ts';
-import { codexDispatchNative } from '../agent/codex-dispatch-native.ts';
-import {
-  fixturePullRequest,
-  account,
-  baseline,
-  intakeFixture,
-  removeFixtureAssignment,
-} from './github-intake-fixture.ts';
-import { issueKey } from '../agent/dispatch-pending.ts';
-import { selectWorkflowStage } from '../agent/workflow-stage.ts';
-import { discoverFeedback } from '../agent/feedback-source.ts';
-import { notificationAuthorityDigest } from '../agent/notification-authority.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { codexDispatchNative } from '../agent/codex-dispatch-native.ts';
+import codexEntryContext from '../agent/codex-entry-context.ts';
+import { issueKey } from '../agent/dispatch-pending.ts';
+import { discoverFeedback } from '../agent/feedback-source.ts';
+import manualPullRequest from '../agent/manual-pull-request.ts';
+import { notificationAuthorityDigest } from '../agent/notification-authority.ts';
+import {
+  account,
+  baseline,
+  fixturePullRequest,
+  intakeFixture,
+  removeFixtureAssignment,
+} from './github-intake-fixture.ts';
 
 import announcementFixture from './delivery-announcement-fixture.ts';
 
@@ -181,7 +179,6 @@ describe('agent/codex-delivery', () => {
         now: baseline + 80000,
       });
       const event = record.feedback.events[0]!;
-      delete event.native; // retained legacy work still uses its original publication owner
       event.phase = 'running';
       event.attempt = {
         id: 'f'.repeat(64),
@@ -191,26 +188,6 @@ describe('agent/codex-delivery', () => {
         request: { threadId: 'child', prompt: 'feedback', model: 'model', thinking: 'high' },
       };
       record.progression = { stage: 'implementation', via: 'operator' };
-      // Retained legacy publication state, never a new per-comment workflow.
-      const selected = await selectWorkflowStage({
-        stage: 'implementation',
-        configuration: policy.issueAssignment?.implementation,
-        workspace,
-        observedAt: baseline + 80000,
-        resolveSkill: (id) => deps.native!.assessmentSkill!(record.worktree!, id),
-      });
-      event.work = {
-        selection: selected.selection,
-        ...(record.delivery?.pullRequest ? { pullRequest: record.delivery.pullRequest } : {}),
-      };
-      record.progression.workOwner = event.id;
-      event.work!.result = {
-        outcome: 'done',
-        summary: 'Fixed.',
-        fullResult: 'Regression passed; committed.',
-      };
-      event.work!.head = head;
-      record.assessment = event.work!.selection;
       await save();
       return event.id;
     });
@@ -250,8 +227,6 @@ describe('agent/codex-delivery', () => {
 
   it('should reserve one push and pr creation while another delivery and unrelated commit overlap', async () => {
     await store.exclusive(async (state, save) => {
-      state.records = state.records.map((record) => cutover638Active(record).record);
-      state.version = 3;
       await save();
     });
     const content = { title: 'Authored title', body: 'Authored body.' };
@@ -336,7 +311,7 @@ describe('agent/codex-delivery', () => {
       turnId: 'turn',
       followUpUserTurn: false,
     });
-    await assert.rejects(request('prepare'), /feedback-event-required/);
+    assert.equal((await request('prepare')).status, 'prepared');
     await request('prepare', { eventId });
     const outcome = await request('publish', { eventId });
     assert.equal(outcome.status, 'published');
@@ -346,7 +321,7 @@ describe('agent/codex-delivery', () => {
     assert.equal(gitCalls.filter((args) => args.includes('push')).length, 2);
   });
 
-  it('should require shared implementation permission even with a legacy feedback event id', async () => {
+  it('should require shared implementation permission from a verified feedback source', async () => {
     const { eventId } = await feedbackWorkFixture(true);
     const declaration = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
     declaration.github['issue-assignment'].mode = 'plan';
@@ -389,7 +364,7 @@ describe('agent/codex-delivery', () => {
     store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     const saved = (await store.read()).records[0]!;
     assert.equal(saved.implementationDelivered, true);
-    assert.equal(saved.continuation, undefined);
+    assert.equal(saved.nativeWork, undefined);
     assert.equal(saved.handoff, undefined);
     assert.equal(creates, 1);
     const find = deps.native!.find;
@@ -440,10 +415,10 @@ describe('agent/codex-delivery', () => {
     await request('prepare', { eventId });
     await assert.rejects(request('publish', { eventId }), /transport lost/);
     assert.equal(remote, head);
-    const retained = (await store.read()).records[0]!.feedback!.events[0]!.work;
+    const retained = (await store.read()).records[0]!.nativeWork;
     await request('prepare', { eventId });
     assert.equal((await request('publish', { eventId })).status, 'published');
-    assert.deepEqual((await store.read()).records[0]!.feedback!.events[0]!.work, retained);
+    assert.deepEqual((await store.read()).records[0]!.nativeWork, retained);
     assert.equal(gitCalls.filter((args) => args.includes('push')).length, 2);
     assert.equal(creates, 1);
   });
@@ -464,7 +439,7 @@ describe('agent/codex-delivery', () => {
     const { eventId } = await feedbackWorkFixture();
     head = 'c'.repeat(40);
     await store.exclusive(async (state, save) => {
-      delete state.records[0]!.feedback!.events[0]!.work;
+      delete state.records[0]!.nativeWork;
       await save();
     });
     assert.equal((await request('prepare', { eventId })).status, 'prepared');
@@ -512,7 +487,6 @@ describe('agent/codex-delivery', () => {
     const current = await selectCodexIntake(pluginData, { codexHome });
     const intake = (await current.store.read())!.records[0]!;
     store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
-    await store.file.write(JSON.stringify({ ...(await store.read()), version: 2 }));
     await store.exclusive(async (state, save) => {
       state.records.push({
         id,
@@ -871,7 +845,6 @@ describe('agent/codex-delivery', () => {
     dirty = false;
     assert.equal((await request('prepare')).status, 'bound');
     assert.equal((await request('bind', { pullRequest: url })).status, 'bound');
-    assert.equal((await store.read()).records[0]!.deliveryHistory, undefined);
     head = 'b'.repeat(40);
     await request('prepare');
     await request('publish', {});
@@ -949,7 +922,6 @@ describe('agent/codex-delivery', () => {
     await request('bind', { pullRequest: target });
     await request('bind', { pullRequest: target });
     const current = (await store.read()).records[0]!;
-    assert.equal(current.deliveryHistory, undefined);
     assert.equal(current.delivery!.pullRequest!.pullRequestNumber, 8);
     assert.equal(current.delivery!.reconciled, false);
     assert.equal(current.delivery!.pushedHead, undefined);
@@ -1201,8 +1173,7 @@ describe('agent/codex-delivery', () => {
     await publish();
     await request('reconcile');
     await store.exclusive(async (state, save) => {
-      state.records[0]!.continuation = {
-        phase: 'complete',
+      state.records[0]!.nativeWork = {
         policyDigest: 'a'.repeat(64),
         selection: {
           version: 1,
@@ -1886,8 +1857,7 @@ describe('agent/codex-delivery', () => {
     await store.exclusive(async (state, save) => {
       const record = state.records[0]!;
       record.progression = { stage: 'implementation', via: 'work' };
-      record.continuation = {
-        phase: 'delivery',
+      record.nativeWork = {
         selection: {
           version: 1,
           requestedSkill: 'implementation',
@@ -1896,7 +1866,6 @@ describe('agent/codex-delivery', () => {
           observedAt: 1,
         },
         policyDigest: 'a'.repeat(64),
-        result: { outcome: 'done', summary: 'Done.', fullResult: 'Checked.' },
       };
       await save();
     });
@@ -1904,11 +1873,10 @@ describe('agent/codex-delivery', () => {
     assert.equal((await store.read()).records[0]!.implementationDelivered, true);
     await store.exclusive(async (state, save) => {
       delete state.records[0]!.handoff;
-      state.records[0]!.continuation!.phase = 'blocked';
-      state.records[0]!.continuation!.code = 'continuation-send-unverified';
+      state.records[0]!.nativeWork!.code = 'continuation-send-unverified';
       await save();
     });
-    const initialWork = structuredClone((await store.read()).records[0]!.continuation);
+    const initialWork = structuredClone((await store.read()).records[0]!.nativeWork);
     deps.native!.operatorInput = async () => {
       throw new Error('native publication must not require another human-input receipt');
     };
@@ -1927,7 +1895,7 @@ describe('agent/codex-delivery', () => {
     await publish();
     assert.equal(remote, head);
     assert.equal(creates, 1);
-    assert.deepEqual((await store.read()).records[0]!.continuation, initialWork);
+    assert.deepEqual((await store.read()).records[0]!.nativeWork, initialWork);
     assert.equal((await store.read()).records[0]!.implementationDelivered, true);
   });
   for (const interruption of ['before', 'after'] as const)

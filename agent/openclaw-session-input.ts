@@ -1,7 +1,6 @@
-import { completeOpenClawMessage, openClawHistoryPages } from './openclaw-history.ts';
-import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
-import { sessionObject } from './openclaw-session-create.ts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
+import { completeOpenClawMessage, openClawHistoryPages } from './openclaw-history.ts';
+import { sessionObject } from './openclaw-session-create.ts';
 
 /** native tool context establishes owner authority; history establishes exact input custody. */
 export async function nativeInputEvent(input: {
@@ -134,7 +133,7 @@ export function issueInputEventId(
 /** verify exact journaled input before either reconciliation or assessment adopts its identity. */
 export default function issueInputEvent(
   entry: Record<string, unknown>,
-  turn: Pick<NonNullable<OpenClawDispatchRecord['assessmentTurn']>, 'runId' | 'message'>,
+  turn: { runId: string; message?: string },
   executionRunId = turn.runId,
 ) {
   const content =

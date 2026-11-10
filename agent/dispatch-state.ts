@@ -1,72 +1,47 @@
-import nativeDispatchRecord, { validNativeDispatchRecord } from './native-dispatch-record.ts';
-import { issuePickupStateSchema } from './issue-pickup-state.ts';
-import { validPendingRetirement } from './pending-retirement.ts';
-import { retirementEffectSchema, type RetirementEffect } from './retirement-effects.ts';
-import resetIssuePickup from './issue-pickup-reset.ts';
-import { AsyncLocalStorage } from 'node:async_hooks';
-import { projectWorkSchema } from './issue-pickup-authority.ts';
-import { issueKey } from './dispatch-pending.ts';
-import { adoptedPullRequestSchema, deliveryPullRequestSchema } from './delivery-state.ts';
-import ColdHistory from './cold-history.ts';
-import intakePassStarted from './intake-pass-started.ts';
-import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
-import { historyLifetimeMs, historySoftBytes, retainedHistorySchema } from './history-state.ts';
-import {
-  assertDispatchStorage,
-  dispatchStorageBytes,
-  dispatchStorageLimits,
-} from './dispatch-storage.ts';
-import retainDispatchHistory, {
-  validTerminalRecord,
-  verifiedTerminalCleanup,
-} from './retain-dispatch-history.ts';
-import { routingInstructionsSchema } from './routing-instructions.ts';
-import { operatorIssueSchema } from './managed-issue.ts';
-import { assessmentEntriesSchema } from './assessment-entry-state.ts';
-import { providerDiagnosticSchema } from '../utils/provider-diagnostic.ts';
-import { assertNotificationManagement } from './notification-reset-state.ts';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
+import { Type, type Static, type TObject, type TSchema } from 'typebox';
+import { Value } from 'typebox/value';
+import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
 import mergeStateSnapshot, {
   refreshStateSnapshot,
   stateSnapshotConflictCode,
 } from '../core/merge-state-snapshot.ts';
-
-import { Type, type Static, type TObject, type TSchema } from 'typebox';
-import { Value } from 'typebox/value';
-
-import { assignmentObservationSchema, retirementSchema } from './assignment-retirement.ts';
-
-import { assessmentResultSchema } from './assessment-result.ts';
-import { assessmentSummarySchema } from './assessment-summary-state.ts';
-import { assessmentSelectionSchema } from './assessment-selection.ts';
-import { openclawIntakePassSchema, sameIntakeRun } from './openclaw-intake-pass.ts';
-import { workflowBindingSchema } from './workflow-result.ts';
-import { issueProgressionSchema, implementationDecisionSchema } from './issue-progression.ts';
-import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
-import PrivateStateFile from '../core/private-state-file.ts';
 import acquirePrivateStateFileLock, {
   type PrivateStateFileLockHandle,
 } from '../core/private-state-file-lock.ts';
+import PrivateStateFile from '../core/private-state-file.ts';
 import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
-
+import { providerDiagnosticSchema } from '../utils/provider-diagnostic.ts';
+import { assessmentSelectionSchema } from './assessment-selection.ts';
+import { assignmentObservationSchema, retirementSchema } from './assignment-retirement.ts';
+import { adoptedPullRequestSchema, deliveryPullRequestSchema } from './delivery-state.ts';
+import { issueKey } from './dispatch-pending.ts';
+import {
+  assertDispatchStorage,
+  dispatchSoftBytes,
+  dispatchStorageBytes,
+  dispatchStorageLimits,
+} from './dispatch-storage.ts';
+import intakePassStarted from './intake-pass-started.ts';
+import { projectWorkSchema } from './issue-pickup-authority.ts';
+import resetIssuePickup from './issue-pickup-reset.ts';
+import { issuePickupStateSchema } from './issue-pickup-state.ts';
+import { implementationDecisionSchema, issueProgressionSchema } from './issue-progression.ts';
+import { operatorIssueSchema } from './managed-issue.ts';
+import { validNativeDispatchRecord } from './native-dispatch-record.ts';
+import { assertNotificationManagement } from './notification-reset-state.ts';
+import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import { openclawIntakePassSchema, sameIntakeRun } from './openclaw-intake-pass.ts';
+import { validPendingRetirement } from './pending-retirement.ts';
+import { retirementEffectSchema, type RetirementEffect } from './retirement-effects.ts';
+import { routingInstructionsSchema } from './routing-instructions.ts';
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
-export const assessmentStageReceiptSchema = Type.Object(
-  {
-    binding: workflowBindingSchema,
-    resultDigest: hash,
-    selection: Type.Optional(assessmentSelectionSchema),
-  },
-  { additionalProperties: false },
-);
 export const dispatchRecordProperties = {
-  nativeRecord: Type.Optional(Type.Literal(true)),
   blocker: Type.Optional(text),
   cleanupPending: Type.Optional(Type.Literal(true)),
   projectWork: Type.Optional(projectWorkSchema),
-  retainedHistory: Type.Optional(retainedHistorySchema),
-  directAssessments: Type.Optional(assessmentEntriesSchema),
   providerDiagnostic: Type.Optional(providerDiagnosticSchema),
   id: hash,
   intakeId: Type.Optional(hash),
@@ -115,11 +90,6 @@ export const dispatchRecordProperties = {
       { additionalProperties: false },
     ),
   ),
-  result: Type.Optional(assessmentResultSchema),
-  assessmentRevision: Type.Optional(Type.Integer({ minimum: 1 })),
-  assessmentSummaries: Type.Optional(Type.Array(assessmentSummarySchema)),
-  stageReceipt: Type.Optional(assessmentStageReceiptSchema),
-  resultTurnId: Type.Optional(text),
   reset: Type.Optional(
     Type.Object({ at: Type.Integer({ minimum: 0 }), by: text }, { additionalProperties: false }),
   ),
@@ -137,9 +107,6 @@ export const dispatchRecordProperties = {
       },
       { additionalProperties: false },
     ),
-  ),
-  retired: Type.Optional(
-    Type.Object({ at: Type.Integer({ minimum: 0 }), by: text }, { additionalProperties: false }),
   ),
   handoff: Type.Optional(
     Type.Object(
@@ -161,17 +128,15 @@ export const dispatchRecordProperties = {
 export type SharedDispatchRecord = Static<TObject<typeof dispatchRecordProperties>> & {
   request?: unknown;
 };
-
 export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema: TSchema) {
   return Type.Object(
     {
       storageReclaimedBytes: Type.Optional(Type.Integer({ minimum: 0 })),
-      version: Type.Union([Type.Literal(1), Type.Literal(2), Type.Literal(3)]),
+      version: Type.Literal(4),
       scope: hash,
       resetGeneration: Type.Optional(text),
       records: Type.Array(Type.Unsafe<R>(recordSchema)),
       retirementEffects: Type.Optional(Type.Array(retirementEffectSchema)),
-      // persisted compatibility field, not the current manifest policy name.
       projectPickup: Type.Optional(issuePickupStateSchema),
       openclawOccurrence: Type.Optional(
         Type.Object(
@@ -185,7 +150,6 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
           {
             id: text,
             actions: Type.Integer({ minimum: 0, maximum: 12 }),
-            responses: Type.Optional(Type.Array(text, { maxItems: 12 })),
           },
           { additionalProperties: false },
         ),
@@ -199,7 +163,6 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
             actions: Type.Integer({ minimum: 0, maximum: 12 }),
             stopped: Type.Optional(Type.Literal('blocked')),
             response: Type.Optional(Type.String({ maxLength: 128000 })),
-            reportVersion: Type.Optional(Type.Literal(1)),
           },
           { additionalProperties: false },
         ),
@@ -208,7 +171,6 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
         Type.Object(
           {
             fingerprint: hash,
-            reportVersion: Type.Optional(Type.Literal(1)),
             problems: Type.Array(Type.String({ maxLength: 256 }), { maxItems: 256 }),
             runId: text,
             response: Type.String({ maxLength: 128000 }),
@@ -242,7 +204,6 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
         ),
       ),
       intakeHealth: Type.Optional(Type.String({ maxLength: 128 })),
-      intakeHealthVersion: Type.Optional(Type.Literal(1)),
       checked: Type.Optional(
         Type.Object(
           { at: Type.Integer({ minimum: 0 }), digest: hash },
@@ -256,13 +217,11 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
 export type DispatchState<R extends SharedDispatchRecord> = Static<
   ReturnType<typeof dispatchStateSchema<R>>
 >;
-
 /** one journal bridges native actions; a persisted creation intent is never issued twice. */
 export default class DispatchStore<R extends SharedDispatchRecord> {
   readonly file: PrivateStateFile;
   readonly schema: ReturnType<typeof dispatchStateSchema<R>>;
   readonly path: string;
-  readonly history: ColdHistory;
   constructor(
     readonly root: string,
     readonly scope: string,
@@ -274,7 +233,6 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
   ) {
     this.schema = dispatchStateSchema<R>(contract.recordSchema);
     this.path = join(root, contract.runtime + '-dispatch-' + scope + '.json');
-    this.history = new ColdHistory(root, contract.runtime + '-' + scope);
     this.file = new PrivateStateFile({
       path: this.path,
       directories: [root],
@@ -316,15 +274,11 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
       new Set(state.records.map((r) => r.id)).size !== state.records.length ||
       new Set(
         state.records
-          .filter(
-            (r) =>
-              !r.reset && !r.retired && !r.retirement && !r.supersededBy && !r.manualIssue?.fresh,
-          )
+          .filter((r) => !r.reset && !r.retirement && !r.supersededBy && !r.manualIssue?.fresh)
           .map((r) => r.issueKey),
       ).size !==
         state.records.filter(
-          (r) =>
-            !r.reset && !r.retired && !r.retirement && !r.supersededBy && !r.manualIssue?.fresh,
+          (r) => !r.reset && !r.retirement && !r.supersededBy && !r.manualIssue?.fresh,
         ).length ||
       state.records.some(
         (r) =>
@@ -346,8 +300,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
               r.manualIssue.scope !== this.scope ||
               r.manualIssue.initiation.session !== r.sourceThreadId ||
               issueKey(r.manualIssue) !== r.issueKey)) ||
-          (!r.retainedHistory?.terminal &&
-            !r.cleanupPending &&
+          (!r.cleanupPending &&
             ((r.request && (!r.context || !r.routing || !r.routingNote)) ||
               (['creating', 'assessing', 'complete'].includes(r.phase) && !r.request) ||
               (r.phase === 'created' &&
@@ -357,22 +310,17 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
                   !r.effective)) ||
               (r.handoff && (!r.request || !r.threadId || !r.worktree)))),
       ) ||
-      state.records.some((r) => r.nativeRecord && !validNativeDispatchRecord(r)) ||
-      (state.version === 3 && state.records.some((r) => !r.nativeRecord && !r.cleanupPending)) ||
+      state.records.some((r) => !r.cleanupPending && !validNativeDispatchRecord(r)) ||
       state.records.some((r) => r.reset && (r.phase !== 'complete' || !r.threadId)) ||
       state.records.some((r) =>
-        r.cleanupPending
-          ? !validPendingRetirement(r)
-          : r.retainedHistory?.terminal
-            ? !validTerminalRecord(r)
-            : !this.contract.validRecord(r),
+        r.cleanupPending ? !validPendingRetirement(r) : !this.contract.validRecord(r),
       )
     )
       throw new Error('dispatch-state-invalid');
   }
   async read(): Promise<DispatchState<R>> {
     const contents = await this.file.read();
-    let state: unknown = { version: 3, scope: this.scope, resetGeneration: 'initial', records: [] };
+    let state: unknown = { version: 4, scope: this.scope, resetGeneration: 'initial', records: [] };
     if (contents !== undefined) {
       try {
         state = JSON.parse(contents);
@@ -380,23 +328,11 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
         throw new Error('dispatch-state-invalid');
       }
     }
-    if (
-      state &&
-      typeof state === 'object' &&
-      'scope' in state &&
-      state.scope === this.scope &&
-      'records' in state &&
-      Array.isArray(state.records) &&
-      state.records.length > 0 &&
-      !('resetGeneration' in state)
-    )
-      throw new Error('notification-state-reset-required');
+    if (state && typeof state === 'object' && 'version' in state && state.version !== 4)
+      throw new Error(
+        'dispatch-clean-start-required: stop writers and perform the reviewed clean start before using this runtime',
+      );
     this.validate(state);
-    return state;
-  }
-  async readNative(): Promise<DispatchState<R>> {
-    const state = await this.read();
-    if (state.version !== 3) throw new Error('dispatch-migration-required');
     return state;
   }
   retainRetirementEffects(state: DispatchState<R>, effects: RetirementEffect[]) {
@@ -405,12 +341,10 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     for (const effect of effects)
       if (!retained.some((entry) => entry.id === effect.id)) retained.push(effect);
   }
-
   /** caller has verified native cleanup and independent assignment consumption. */
   async dispose(state: DispatchState<R>, record: R) {
     const index = state.records.findIndex((entry) => entry.id === record.id);
     if (index < 0) throw new Error('retirement-task-missing');
-    await this.history.exclusive(() => this.history.removeTask(record.id));
     state.records.splice(index, 1);
     // References on other attempts preserve their historical fence and checkout identity.
     // They may point to a disposed task; removing them could reactivate a predecessor.
@@ -457,7 +391,6 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
                 !fresh ||
                 [
                   'reset',
-                  'retired',
                   'retirement',
                   'supersededBy',
                   'feedbackReactivation',
@@ -470,7 +403,6 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
                   'threadId',
                   'worktree',
                   'effective',
-                  'retainedHistory',
                 ].some((key) => !isDeepStrictEqual(previous[key as keyof R], fresh[key as keyof R]))
               )
                 throw Object.assign(new Error(stateSnapshotConflictCode), {
@@ -480,8 +412,6 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
             options.reconcile?.(before, state, current);
             const merged = mergeStateSnapshot(before, state, current) as DispatchState<R>;
             options.validate?.(current, merged);
-            if (merged.version === 3)
-              merged.records = merged.records.map((record) => nativeDispatchRecord(record));
             this.validate(merged);
             if (!isDeepStrictEqual(current, merged)) {
               refreshStateSnapshot(current, merged);
@@ -500,12 +430,10 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
       signal,
     );
   }
-
-  /** Existing runtime transactions recover eligible history before accepting new effects. */
+  /** Check the current journal under its lock before accepting new effects. */
   async reconcile(signal?: AbortSignal) {
     await this.exclusive(async () => {}, true, 'dispatch-reconcile', signal);
   }
-
   async exclusive<T>(
     run: (state: DispatchState<R>, save: () => Promise<void>, signal: AbortSignal) => Promise<T>,
     waitForLock = true,
@@ -522,8 +450,6 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
       currentUid: process.getuid?.(),
       label: this.contract.runtime + ' issue dispatch',
     });
-    // capture only enclosing guards; archive io must not inherit this journal's released lease.
-    const outsideJournal = AsyncLocalStorage.snapshot();
     const acquire = (wait: boolean) =>
       acquirePrivateStateFileLock(this.path, {
         staleMs: 30000,
@@ -531,15 +457,14 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
           category: 'dispatch',
           operation,
           // preserve the existing forty 250-ms retry envelope, including local queue time.
-          timeoutMs: wait ? 10_000 : 0,
+          timeoutMs: wait ? 10000 : 0,
           retryMs: 250,
           signal,
         },
         retries: { retries: 0, factor: 1, minTimeout: 250, maxTimeout: 250 },
       });
-    let lock: PrivateStateFileLockHandle | undefined = await acquire(waitForLock);
+    const lock: PrivateStateFileLockHandle = await acquire(waitForLock);
     const controller = new AbortController();
-    let reacquireFailure: unknown;
     const followLease = () => {
       const signal = lock!.signal;
       signal.addEventListener('abort', () => controller.abort(signal.reason), { once: true });
@@ -549,7 +474,6 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
       path: lock.path,
       signal: controller.signal,
       assertHeld() {
-        if (!lock) throw reacquireFailure ?? new Error('dispatch-journal-lease-suspended');
         lock.assertHeld();
       },
     };
@@ -565,36 +489,10 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
           if (current.resetGeneration !== committed.resetGeneration)
             throw new Error('notification-reset-stale-operation');
           if (!isDeepStrictEqual(current, committed)) throw new Error(stateSnapshotConflictCode);
-          if (state.version < committed.version)
-            throw new Error('dispatch-storage-version-regression');
           const retained = structuredClone(state);
-          if (retained.version === 3) {
-            for (const record of retained.records) {
-              if (
-                record.assessmentSummaries?.some(
-                  (summary) => summary.attempt && !summary.receipt && !summary.nativeDenial,
-                )
-              )
-                throw new Error('dispatch-external-effect-migration-required');
-            }
-            retained.records = retained.records.map((record) => nativeDispatchRecord(record));
-          }
           this.validate(retained);
           const originalBytes = dispatchStorageBytes(retained).contentBytes;
-          const pressure = originalBytes > historySoftBytes;
-          const now = Date.now();
-          let expiredHistory = false;
-          for (const record of retained.records) {
-            const history = record.retainedHistory;
-            if (!history) continue;
-            const entries = history.entries.filter((entry) => entry.at + historyLifetimeMs > now);
-            if (entries.length !== history.entries.length) {
-              history.expired = true;
-              expiredHistory = true;
-            }
-            history.entries = entries;
-          }
-          const snapshots: { original: R; projected: R }[] = [];
+          const pressure = originalBytes > dispatchSoftBytes;
           if (this.contract.runtime === 'openclaw') {
             for (const pass of retained.openclawPasses ?? []) {
               if (pass.completed) continue;
@@ -618,74 +516,13 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
               }
             }
           }
-          for (let index = 0; index < retained.records.length; index++) {
-            const original = retained.records[index]!;
-            // Version two keeps cleanup with its owner and never creates cold task copies.
-            if (retained.version >= 2 && verifiedTerminalCleanup(original)) continue;
-            const events = (original as R & { feedback?: { events: unknown[] } }).feedback?.events;
-            if (!verifiedTerminalCleanup(original) && !pressure && (events?.length ?? 0) < 350)
-              continue;
-            const projected = retainDispatchHistory(original);
-            if (!projected) continue;
-            // preflight the projected size before performing any archive effects.
-            if (retained.version === 1) {
-              projected.retainedHistory ??= { entries: [] };
-              snapshots.push({ original, projected });
-            }
-            retained.records[index] = projected;
-          }
           this.validate(retained);
           const admission = retained.records.some((record) => {
-            if (record.retired || record.retirement || record.reset) return false;
+            if (record.retirement || record.reset) return false;
             const previous = committed.records.find((entry) => entry.id === record.id);
             return !previous || (!previous.request && Boolean(record.request));
           });
           assertDispatchStorage(retained, admission);
-          if (snapshots.length || expiredHistory) {
-            await lock!.release();
-            lock = undefined;
-            let archiveError: unknown;
-            let archiveFailed = false;
-            try {
-              await outsideJournal(() =>
-                this.history.exclusive(async () => {
-                  for (const { original, projected } of snapshots) {
-                    const reference = await this.history.retain(
-                      original,
-                      original.retired?.at ?? now,
-                      now,
-                    );
-                    projected.retainedHistory!.entries.push(reference);
-                  }
-                  await this.history.prune(now);
-                }),
-              );
-            } catch (error) {
-              archiveError = error;
-              archiveFailed = true;
-            }
-            try {
-              lock = await outsideJournal(() => acquire(true));
-              followLease();
-            } catch (error) {
-              reacquireFailure = error;
-              throw error;
-            }
-            await assertNotificationManagement(this.root, this.scope);
-            const fresh = await this.read();
-            if (fresh.resetGeneration !== committed.resetGeneration)
-              throw new Error('notification-reset-stale-operation');
-            if (!isDeepStrictEqual(fresh, committed)) {
-              // A concurrent retirement can commit while this writer archives a stale snapshot.
-              await this.history.exclusive(async () => {
-                for (const record of committed.records)
-                  if (!fresh.records.some((current) => current.id === record.id))
-                    await this.history.removeTask(record.id);
-              });
-              throw new Error(stateSnapshotConflictCode);
-            }
-            if (archiveFailed) throw archiveError;
-          }
           this.validate(retained);
           const reclaimed = originalBytes - dispatchStorageBytes(retained).contentBytes;
           if (reclaimed > 0) retained.storageReclaimedBytes = reclaimed;
@@ -694,24 +531,12 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
           refreshStateSnapshot(state, retained);
           committed = JSON.parse(contents) as DispatchState<R>;
         };
-        const pressured = dispatchStorageBytes(state).contentBytes > historySoftBytes;
-        if (
-          state.version === 1 &&
-          state.records.some(
-            (record) =>
-              !record.retainedHistory?.terminal &&
-              (verifiedTerminalCleanup(record) || pressured) &&
-              retainDispatchHistory(record),
-          )
-        )
-          await save();
         return run(state, save, guard.signal);
       });
     } finally {
       await lock?.release();
     }
   }
-
   async reset(generation: string): Promise<void> {
     await this.exclusive(async (state, save) => {
       if (state.resetGeneration === generation) return;

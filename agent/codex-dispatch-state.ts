@@ -1,11 +1,8 @@
-import { codexWorkStateSchema } from './codex-work-state.ts';
-import { codexNativeRequestSchema } from './codex-native-request.ts';
 import { Type, type Static } from 'typebox';
+import { codexWorkStateSchema } from './codex-work-state.ts';
 
-import { codexFeedbackSchema } from './codex-feedback-state.ts';
-
-import { codexContinuationStateSchema, attemptSchema } from './codex-continuation-state.ts';
 import { codexDeliveryStateSchema } from './codex-delivery-state.ts';
+import { codexFeedbackSchema } from './codex-feedback-state.ts';
 import DispatchStore, {
   dispatchRecordProperties,
   type DispatchState as SharedDispatchState,
@@ -110,49 +107,12 @@ export const dispatchRecordSchema = Type.Object(
       ),
     ),
     nativeWork: Type.Optional(codexWorkStateSchema),
-    nativeRequests: Type.Optional(Type.Array(codexNativeRequestSchema)),
     preparationObservation: Type.Optional(preparationObservationSchema),
     implementationPreparationError: Type.Optional(text),
     denial: Type.Optional(intakeDenialSchema),
-    recoveredDenials: Type.Optional(
-      Type.Array(
-        Type.Object(
-          {
-            denial: intakeDenialSchema,
-            observation: Type.Optional(preparationObservationSchema),
-            recoveredAt: Type.Integer({ minimum: 0 }),
-            approvedBy: text,
-          },
-          { additionalProperties: false },
-        ),
-      ),
-    ),
     claimId: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
     claimPass: Type.Optional(text),
     claimAccepted: Type.Optional(Type.Boolean()),
-    previousSummaryAttempts: Type.Optional(Type.Array(attemptSchema)),
-    summaryRecovery: Type.Optional(
-      Type.Object(
-        {
-          revision: Type.Integer({ minimum: 1 }),
-          attempt: attemptSchema,
-          ended: Type.Optional(Type.Literal(true)),
-          code: Type.Optional(text),
-        },
-        { additionalProperties: false },
-      ),
-    ),
-    autoDecision: Type.Optional(
-      Type.Object(
-        {
-          attempt: attemptSchema,
-          ended: Type.Optional(Type.Literal(true)),
-          previousAttempts: Type.Optional(Type.Array(attemptSchema)),
-          code: Type.Optional(text),
-        },
-        { additionalProperties: false },
-      ),
-    ),
     reservationVersion: Type.Optional(Type.Literal(1)),
     capacityObservation: Type.Optional(
       Type.Object(
@@ -197,41 +157,9 @@ export const dispatchRecordSchema = Type.Object(
     request: Type.Optional(creationSchema),
     preparationTurnId: Type.Optional(text),
     creationAfterItemId: Type.Optional(text),
-    unsubmittedCreations: Type.Optional(
-      Type.Array(
-        Type.Object(
-          {
-            request: creationSchema,
-            createdAt: Type.Integer({ minimum: 0 }),
-            recoveredAt: Type.Integer({ minimum: 0 }),
-            continuation: Type.Optional(codexContinuationStateSchema),
-            turnId: text,
-          },
-          { additionalProperties: false },
-        ),
-      ),
-    ),
-    deniedCreations: Type.Optional(
-      Type.Array(
-        Type.Object(
-          {
-            request: creationSchema,
-            createdAt: Type.Integer({ minimum: 0 }),
-            recoveredAt: Type.Integer({ minimum: 0 }),
-            turnId: text,
-            callId: text,
-            continuation: Type.Optional(codexContinuationStateSchema),
-            approvedBy: Type.Optional(text),
-          },
-          { additionalProperties: false },
-        ),
-      ),
-    ),
     clientThreadId: Type.Optional(text),
     receiptThreadId: Type.Optional(text),
     delivery: Type.Optional(codexDeliveryStateSchema),
-    deliveryHistory: Type.Optional(Type.Array(codexDeliveryStateSchema)),
-    continuation: Type.Optional(codexContinuationStateSchema),
     feedback: Type.Optional(codexFeedbackSchema),
     renameRequested: Type.Optional(Type.Boolean()),
   },
@@ -248,13 +176,7 @@ export default class CodexDispatchStore extends DispatchStore<DispatchRecord> {
       validRecord: (record) =>
         (!record.issueBranch || record.issueBranch.attemptId === record.id) &&
         (!record.request || Boolean(record.project && record.reservationVersion === 1)) &&
-        (!(
-          record.continuation?.attempt ||
-          record.continuation?.binding ||
-          record.nativeWork?.binding ||
-          record.continuation?.result
-        ) ||
-          record.progression?.stage === 'implementation') &&
+        (!record.nativeWork?.binding || record.progression?.stage === 'implementation') &&
         (!record.claimAccepted || Boolean(record.claimId && record.effective && record.threadId)),
     });
   }

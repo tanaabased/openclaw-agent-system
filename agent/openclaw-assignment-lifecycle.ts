@@ -1,29 +1,26 @@
-import taskPullRequest from './task-pull-request.ts';
-import reconcileOpenClawRetirementEffects from './openclaw-retirement-effects.ts';
-import pendingRetirement from './pending-retirement.ts';
-import retirementEffects from './retirement-effects.ts';
-import retirementConsumption from './retirement-consumption.ts';
-import retirementLocalData from './retirement-local-data.ts';
-import replyOwnPublications from './reply-own-publications.ts';
-import { managedPullRequest } from './managed-issue.ts';
 import { lstat } from 'node:fs/promises';
-
-import { openClawCleanupConfiguration } from './cleanup-configuration.ts';
-import reactivateAssignmentFeedback from './assignment-feedback-reactivation.ts';
-import DiscoveryBudget from './discovery-budget.ts';
-import { listNativeAutomations } from './automation-gateway.ts';
-import workflowFailure from './workflow-failure.ts';
-
 import type { DispatchAuthority, DispatchRequest } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
+import reactivateAssignmentFeedback from './assignment-feedback-reactivation.ts';
+import { listNativeAutomations } from './automation-gateway.ts';
+import { openClawCleanupConfiguration } from './cleanup-configuration.ts';
+import DiscoveryBudget from './discovery-budget.ts';
+import { managedPullRequest } from './managed-issue.ts';
 import type OpenClawDispatchContext from './openclaw-dispatch-context.ts';
 import type { OpenClawDispatchRecord, OpenClawDispatchState } from './openclaw-dispatch-state.ts';
+import reconcileOpenClawRetirementEffects from './openclaw-retirement-effects.ts';
 import observeRetirementSession, {
-  retirementObject,
   observeRetiringResource,
+  retirementObject,
 } from './openclaw-retirement-observation.ts';
+import pendingRetirement from './pending-retirement.ts';
 import reconcileAssignmentLifecycle from './reconcile-assignment-lifecycle.ts';
-
+import replyOwnPublications from './reply-own-publications.ts';
+import retirementConsumption from './retirement-consumption.ts';
+import retirementEffects from './retirement-effects.ts';
+import retirementLocalData from './retirement-local-data.ts';
+import taskPullRequest from './task-pull-request.ts';
+import workflowFailure from './workflow-failure.ts';
 export default async function reconcileOpenClawLifecycle(input: {
   service: Pick<OpenClawDispatchContext, 'scope' | 'dependencies'>;
   manifest: AgentManifest;
@@ -63,9 +60,8 @@ export default async function reconcileOpenClawLifecycle(input: {
   if (
     !snapshot.records.some(
       (record) =>
-        !record.retired &&
         !record.reset &&
-        (input.targetId === record.id || (record.lifecycleCheckedAt ?? -Infinity) + 60_000 <= now),
+        (input.targetId === record.id || (record.lifecycleCheckedAt ?? -Infinity) + 60000 <= now),
     )
   )
     return;
@@ -73,7 +69,7 @@ export default async function reconcileOpenClawLifecycle(input: {
   const client = await read('lifecycle-connection', () =>
     service.dependencies.connect(
       { manifest, workspaceDir: workspace },
-      authority.signal ?? AbortSignal.timeout(20_000),
+      authority.signal ?? AbortSignal.timeout(20000),
     ),
   );
   const fresh = async () => {
@@ -175,7 +171,7 @@ export default async function reconcileOpenClawLifecycle(input: {
           comments: async () => {
             const provider = await service.dependencies.feedbackConnect?.(
               { manifest, workspaceDir: workspace },
-              authority.signal ?? AbortSignal.timeout(20_000),
+              authority.signal ?? AbortSignal.timeout(20000),
               client,
             );
             if (!provider) throw new Error('feedback-provider-unavailable');
@@ -185,7 +181,7 @@ export default async function reconcileOpenClawLifecycle(input: {
           ownReplies: async () => {
             const provider = await service.dependencies.feedbackConnect?.(
               { manifest, workspaceDir: workspace },
-              authority.signal ?? AbortSignal.timeout(20_000),
+              authority.signal ?? AbortSignal.timeout(20000),
               client,
             );
             if (!provider) throw new Error('feedback-provider-unavailable');
@@ -586,7 +582,11 @@ export default async function reconcileOpenClawLifecycle(input: {
     });
     if (target)
       return {
-        status: target.retired ? 'retired' : target.retirement ? 'retirement-pending' : 'active',
+        status: !state.records.some((record) => record.id === target.id)
+          ? 'retired'
+          : target.retirement
+            ? 'retirement-pending'
+            : 'active',
         id: target.id,
         retirement: target.retirement,
       };

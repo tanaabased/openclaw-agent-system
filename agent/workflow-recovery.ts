@@ -41,11 +41,11 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     ],
     'dispatch-state-capacity': [
       'This save exceeds the 64 MiB working-content or 65 MiB total journal ceiling. The committed state is preserved.',
-      'Retry context/reconciliation in the same chat to offload verified retired history, then resubmit the complete result. If protected active work still fills the emergency budget, reduce pressure through supported retirement. Do not delete the journal, reset intake, or manufacture completion flags.',
+      'Reduce pressure through supported task retirement, then retry the original operation. Do not delete the journal, reset intake, or manufacture completion flags.',
     ],
     'dispatch-storage-admission-paused': [
       'The proposed new task would reach the 32 MiB admission threshold; native creation was not authorized.',
-      'Leave the assignment pending. Existing tasks can progress, deliver and retire within the 64 MiB emergency budget. Reconciliation offloads eligible history; admission resumes automatically below 32 MiB with room for the proposed task.',
+      'Leave the assignment pending. Existing tasks can progress, deliver and retire within the 64 MiB emergency budget. Admission resumes below 32 MiB with room for the proposed task.',
     ],
     'workflow-evidence-incomplete': [
       'Native history discovery could not finish; missing evidence has not been proved absent.',
@@ -76,7 +76,7 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
       'Inspect the retained task and restore its original native history before reconciliation. Do not adopt a replacement session or discard its receipts.',
     ],
     'assessment-result-incomplete': [
-      'The new assessment is missing its complete source; the result was not recorded.',
+      'The new assessment is missing its complete source; the result was not formatted.',
       'Include the complete assessment, evidence, plan or questions in `fullAssessment` and use assessment render in this chat. The full source stays in native context; show its concise presentation without saving or reinjecting it.',
     ],
     'dispatch-receipt-id-invalid': [
@@ -117,7 +117,7 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     ],
     'dispatch-task-superseded': [
       'This preserved task was replaced and cannot continue managed work.',
-      'Use the successorId from the retained recovery result with Task Launch. Read the predecessor assessment with present if needed; do not resume its publication or delete its evidence.',
+      'Use the successorId from the retained recovery result with Task Launch. Preserve the predecessor’s native conversation and pending effects.',
     ],
     'dispatch-recovery-chat-active-or-unverified': [
       'Replacement could not verify an idle predecessor with an ended completed native turn.',
@@ -196,8 +196,8 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
       'Reconcile the original comment when GitHub is readable; do not post another claim for this attempt.',
     ],
     'dispatch-capacity-observation-required': [
-      'The historical creation has no native inactivity observation.',
-      'The next owning intake run will inspect native receipts. Its `action:reconcile` can also observe this retired record. Preserve the request; do not create another chat for this issue.',
+      'The retained creation has no native inactivity observation.',
+      'The next owning intake run will inspect native receipts. Its `action:reconcile` can also observe this creation receipt. Preserve the request; do not create another chat for this issue.',
     ],
     'dispatch-capacity-creation-unresolved': [
       'No native child or proof of non-submission was found.',
@@ -208,7 +208,7 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
       'Restore access to the retained chat or inspect its archived native history and creation receipt, then retry reconciliation. A missing worktree or missing chat alone does not prove inactivity.',
     ],
     'dispatch-capacity-native-active': [
-      'The historical native chat is still active.',
+      'The retained native chat is still active.',
       'This chat consumes a live slot. Let it finish or stop it through native controls when authorized; intake must verify its terminal state before releasing it.',
     ],
     'dispatch-capacity-native-not-ended': [

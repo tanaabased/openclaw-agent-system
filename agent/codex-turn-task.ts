@@ -1,27 +1,28 @@
-import workflowFailure from './workflow-failure.ts';
 import { omit } from 'lodash-es';
-import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
-import codexAssessmentSkill from './codex-assessment-skill.ts';
-import connectCodexFeedback from './codex-feedback-client.ts';
-import { feedbackInputContext } from './feedback-input.ts';
-import authorizeFeedback from './feedback-source-context.ts';
-import { feedbackConversationMode } from './feedback-work.ts';
-import taskTurnContext from './task-turn-context.ts';
 import resolveGitProtocol from '../tools/git/protocol.ts';
+import codexAssessmentSkill from './codex-assessment-skill.ts';
 import codexContinuationNative from './codex-continuation-native.ts';
 import { codexDispatchNative, type DispatchNativeThread } from './codex-dispatch-native.ts';
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
+import connectCodexFeedback from './codex-feedback-client.ts';
 import { selectCodexIntake } from './codex-intake.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
+import { feedbackConversationMode } from './feedback-conversation-mode.ts';
+import { feedbackInputContext } from './feedback-input.ts';
+import authorizeFeedback from './feedback-source-context.ts';
 import { retainedIssueProgression } from './issue-progression.ts';
+import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
 import taskPullRequest from './task-pull-request.ts';
-
-type Turn = { threadId: string; turnId?: string };
+import taskTurnContext from './task-turn-context.ts';
+import workflowFailure from './workflow-failure.ts';
+type Turn = {
+  threadId: string;
+  turnId?: string;
+};
 type Lookup = {
   find: ReturnType<typeof codexDispatchNative>['find'];
   receipt: ReturnType<typeof codexContinuationNative>;
 };
-
 /** verify native creation custody, including a child that starts before coordinator readback. */
 export async function selectCodexTaskOwner(
   records: readonly DispatchRecord[],
@@ -29,15 +30,16 @@ export async function selectCodexTaskOwner(
   find: Lookup['find'],
 ) {
   const owners = records.filter(
-    (record) =>
-      record.threadId === threadId && !record.retired && !record.reset && !record.supersededBy,
+    (record) => record.threadId === threadId && !record.reset && !record.supersededBy,
   );
   if (owners.length > 1) throw new Error('turn-context-owner-ambiguous');
-  const matches: { record: DispatchRecord; native: DispatchNativeThread }[] = [];
+  const matches: {
+    record: DispatchRecord;
+    native: DispatchNativeThread;
+  }[] = [];
   for (const record of records) {
     if (
       !record.request ||
-      record.retired ||
       record.reset ||
       record.supersededBy ||
       (record.threadId ? record.threadId !== threadId : record.phase !== 'creating')
@@ -65,7 +67,6 @@ export async function selectCodexTaskOwner(
   }
   return matches[0];
 }
-
 /** resolve hints through native creation and send receipts, never provider text. */
 export async function selectCodexTurnTask(
   records: readonly DispatchRecord[],
@@ -79,7 +80,11 @@ export async function selectCodexTurnTask(
   if (!turnId) throw new Error('turn-context-native-turn-unavailable');
   const feedback = [];
   let unresolvedFeedback = false;
-  let feedbackLimitation: { code: string } | undefined;
+  let feedbackLimitation:
+    | {
+        code: string;
+      }
+    | undefined;
   for (const event of record.feedback?.events ?? []) {
     if (
       !event.attempt ||
@@ -120,7 +125,6 @@ export async function selectCodexTurnTask(
     branch: record.issueBranch?.name,
   };
 }
-
 /** read the bound journal and native receipts without discovery, reconciliation, or writes. */
 export async function readCodexTaskOwner(pluginData: string, turn: Turn) {
   const current = await selectCodexIntake(
@@ -160,7 +164,6 @@ export async function readCodexTaskOwner(pluginData: string, turn: Turn) {
     await connection.close();
   }
 }
-
 /** hooks and explicit recovery share one read-only native context owner. */
 export default async function readCodexTurnTask(
   pluginData: string,
