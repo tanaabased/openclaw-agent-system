@@ -181,10 +181,11 @@ const retryAssignment: Fixture = {
   match: {
     model: issueExampleScenario.model.match,
     systemMessage: ['Name: Notification Tanaabot'],
-    predicate: (request) => helperPrompt(request).startsWith('Retry waiting assignment '),
+    predicate: (request) => helperPrompt(request).includes('Retry waiting assignment '),
   },
   response: (request) => {
-    const target = helperPrompt(request).slice('Retry waiting assignment '.length).trim();
+    const target = /Retry waiting assignment ([^\n]+)/u.exec(helperPrompt(request))?.[1]?.trim();
+    assert.ok(target);
     assert.match(
       target,
       /^https:\/\/github\.com\/tanaabased\/big-test-bucket\/issues\/[1-9][0-9]*$/u,
