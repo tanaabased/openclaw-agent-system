@@ -14,7 +14,11 @@ import { selectCodexIntake, type CodexIntakeDependencies } from './codex-intake.
 import observeResetThread from './codex-reset-observation.ts';
 import codexRetirementNative from './codex-retirement-native.ts';
 import CodexSidebarJournal, { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
-import { codexThreadAdapter, connectCodexThreads } from './codex-thread-client.ts';
+import {
+  codexThreadAdapter,
+  CodexThreadRpcError,
+  connectCodexThreads,
+} from './codex-thread-client.ts';
 import waitForCodexWorktreeRemoval from './codex-worktree-removal.ts';
 import {
   agentCommandAuthorityEnvironmentName,
@@ -106,8 +110,25 @@ export default async function runCodexNotificationReset(
       const sources = new Set(parse(record).records.map(({ sourceThreadId }) => sourceThreadId));
       if ('targetThreadId' in saved.definition) sources.add(saved.definition.targetThreadId);
       for (const threadId of sources) {
-        if (!(await codexThreadAdapter(request, current.workspace).lookup(threadId))) continue;
-        const { thread } = await request('thread/read', { threadId, includeTurns: false });
+        // only the coordinator belongs to the bound workspace; manual launch origins may differ.
+        if (
+          'targetThreadId' in saved.definition &&
+          threadId === saved.definition.targetThreadId &&
+          !(await codexThreadAdapter(request, current.workspace).lookup(threadId))
+        )
+          continue;
+        let thread: unknown;
+        try {
+          ({ thread } = await request('thread/read', { threadId, includeTurns: false }));
+        } catch (error) {
+          if (
+            error instanceof CodexThreadRpcError &&
+            error.code === -32600 &&
+            error.message === `no rollout found for thread id ${threadId}`
+          )
+            continue;
+          throw error;
+        }
         if (!nativeObject(thread) || thread.id !== threadId || !nativeObject(thread.status))
           throw new Error('notification-reset-coordinator-observation-unavailable');
         if (!['idle', 'notLoaded'].includes(String(thread.status.type))) return false;

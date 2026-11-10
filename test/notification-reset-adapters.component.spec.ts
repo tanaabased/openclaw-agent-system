@@ -673,6 +673,19 @@ describe('agent/notification reset runtime adapters', () => {
         });
       await save();
     });
+    await journal.exclusive(async (state, save) => {
+      state.records.push({
+        id: '9'.repeat(64),
+        intakeId: '8'.repeat(64),
+        issueKey: '7'.repeat(64),
+        sourceThreadId: 'manual-origin',
+        createdAt: 2000,
+        manifestDigest: 'manifest',
+      });
+      await save();
+    });
+    let originActive = true;
+    let coordinatorWorkspace = current.workspace;
     let finished = false;
     let archived = false;
     let creation: 'unavailable' | 'found' | 'absent' = 'unavailable';
@@ -709,10 +722,13 @@ describe('agent/notification reset runtime adapters', () => {
             return {
               thread: {
                 id: params.threadId,
-                cwd: current.workspace,
+                cwd: params.threadId === 'manual-origin' ? root : coordinatorWorkspace,
                 path: '/sessions/' + params.threadId,
                 archived,
-                status: { type: 'notLoaded' },
+                status: {
+                  type:
+                    params.threadId === 'manual-origin' && originActive ? 'active' : 'notLoaded',
+                },
               },
             };
           if (method === 'thread/items/list')
@@ -765,6 +781,12 @@ describe('agent/notification reset runtime adapters', () => {
     assert.equal((await run()).status, 'waiting');
     assert.equal((await current.store.read())!.baselineAt, 1);
     finished = true;
+    coordinatorWorkspace = root;
+    await assert.rejects(run(), /automation-thread-workspace-mismatch/u);
+    coordinatorWorkspace = current.workspace;
+    assert.equal((await run()).status, 'waiting');
+    assert.equal((await current.store.read())!.baselineAt, 1);
+    originActive = false;
     await assert.rejects(run(), /native inventory unavailable/u);
     creation = 'found';
     await assert.rejects(run(), /notification-reset-native-creation-unresolved/u);
