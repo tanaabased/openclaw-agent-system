@@ -25,6 +25,7 @@ import type { GitHubCanonicalIssueComment } from '../channels/github/provider/co
 import pendingPublicResponse from '../agent/pending-public-response.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import codexLiveTurn from '../agent/codex-live-turn.ts';
+import { codexWorkObservationHandoff } from '../agent/codex-dispatch-handoff.ts';
 import codexImplementationEntry from '../agent/codex-implementation-entry.ts';
 import codexContinuationNative from '../agent/codex-continuation-native.ts';
 import runCodexContinuation, {
@@ -36,6 +37,7 @@ import assert from 'node:assert/strict';
 import { readFile, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
 
 import properLockfile from 'proper-lockfile';
 
@@ -5709,7 +5711,43 @@ describe('agent/codex-dispatch', () => {
         ).read();
         assert.equal(state.records[0]!.continuation!.attempt, undefined);
         assert.notEqual(state.records[0]!.progression?.stage, 'implementation');
-        readReceived = true;
+        const handoff = codexWorkObservationHandoff(pending, {
+          argv: ['/node', '/runtime.js', 'continuation', 'context', '--plugin-data', pluginData],
+          input: {
+            action: 'context',
+            ...(assessment.decision ? { decision: assessment.decision } : {}),
+          },
+        }) as { nativeHandoff: string };
+        let nativeReads = 0;
+        let transitions = 0;
+        await runInNewContext(`(async () => { ${handoff.nativeHandoff} })()`, {
+          text: () => {},
+          tools: {
+            mcp__codex_app__read_thread: async (input: unknown) => {
+              assert.deepEqual(JSON.parse(JSON.stringify(input)), {
+                threadId: native!.id,
+                turnLimit: 1,
+                includeOutputs: false,
+              });
+              nativeReads++;
+              readReceived = true;
+              return { content: [] };
+            },
+            exec_command: async (input: { cmd: string }) => {
+              transitions++;
+              const semantic = JSON.parse(input.cmd.split('\n')[1]!);
+              assert.deepEqual(semantic, {
+                action: 'context',
+                ...(assessment.decision ? { decision: assessment.decision } : {}),
+              });
+              const continued = await work.run('context', semantic, true);
+              assert.equal(continued.status, 'verified', JSON.stringify(continued));
+              return { exit_code: 0, output: JSON.stringify(continued) };
+            },
+          },
+        });
+        assert.equal(nativeReads, 1);
+        assert.equal(transitions, 1);
       }
       const verified = await work.run(
         'context',
