@@ -218,11 +218,11 @@ openclaw agent-system notifications wait \
 
 Supported targets:
 
-| Target           | Selector required | Meaning                                            |
-| ---------------- | ----------------- | -------------------------------------------------- |
-| `baseline-ready` | no                | The first safe provider observation completed      |
-| `prepared`       | yes               | The conversation and worktree are verified         |
-| `worktree-ready` | yes               | The selected issue worktree is ready               |
+| Target           | Selector required | Meaning                                       |
+| ---------------- | ----------------- | --------------------------------------------- |
+| `baseline-ready` | no                | The first safe provider observation completed |
+| `prepared`       | yes               | The conversation and worktree are verified    |
+| `worktree-ready` | yes               | The selected issue worktree is ready          |
 
 Only the listed targets are supported; rejection and retirement are not wait targets.
 Without `--refresh`, wait observes state without advancing intake.

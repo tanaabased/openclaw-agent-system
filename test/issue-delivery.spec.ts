@@ -127,9 +127,11 @@ describe('github delivery head observation', () => {
       assert.ok(!argv.includes('graphql') && !argv.includes('POST') && !argv.includes('PATCH'));
       const value = argv.includes('repos/owner/repo/issues/3')
         ? { databaseId: 3, nodeId: 'I_issue', number: 3, title: 'Issue' }
-        : argv.some((arg) => arg.includes('draft,state'))
+        : argv.includes('repos/owner/repo/pulls/7')
           ? {
-              nodeId: 'PR_7',
+              ...f.observed,
+              branch: f.input.branch,
+              base: f.input.item.repositoryDefaultBranch,
               draft: false,
               state: 'open',
               head: f.input.headSha,
