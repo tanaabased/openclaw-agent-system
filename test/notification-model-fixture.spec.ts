@@ -1312,9 +1312,17 @@ for (const scenario of [
           assert.ok('content' in stopped);
           assert.match(String(stopped.content), /delivery-git-operation-failed/u);
           assert.match(String(stopped.content), /authentication/u);
+          const failedLink = structuredClone(input);
+          append(failedLink, 'delivery-publish', {
+            status: 'needs-attention',
+            code: 'github-delivery-linkage-unverified',
+          });
+          const linkStopped = await response(failedLink, workScenario);
+          assert.ok('content' in linkStopped);
+          assert.match(String(linkStopped.content), /notification-delivery-stopped/u);
           append(input, 'delivery-publish', {
             status: 'waiting',
-            code: 'github-delivery-linkage-unverified',
+            code: 'github-delivery-head-not-observed',
             pullRequest: { pullRequestNodeId: 'PR_owned', pullRequestNumber: 456 },
           });
           const reconciliation = await action(input, 'delivery', workScenario);
@@ -1810,15 +1818,40 @@ for (const scenario of [
               });
             }
             if (initial) {
-              append(input, 'feedback-delivery-publish', {
+              const waiting = structuredClone(input);
+              append(waiting, 'feedback-delivery-publish', {
                 status: 'waiting',
-                code: 'github-delivery-linkage-unverified',
-                nextAction: 'next',
+                code: 'github-delivery-head-not-observed',
+              });
+              assert.equal((await runAction(waiting, 'delivery')).operation, 'prepare');
+              append(input, 'feedback-delivery-publish', {
+                status: 'needs-attention',
+                code: 'github-delivery-head-not-observed',
               });
               const recovery = await runAction(input, 'delivery');
               assert.equal(recovery.operation, 'prepare');
               assert.equal('id' in recovery, false);
               assert.equal('eventId' in recovery, false);
+              const exhausted = structuredClone(input);
+              for (let index = 0; index < 3; index++) {
+                assert.equal((await runAction(exhausted, 'delivery')).operation, 'prepare');
+                append(exhausted, `feedback-link-prepare-${index}`, {
+                  status: 'prepared',
+                  digest,
+                  operation: {
+                    pullRequest: { pullRequestNodeId: 'PR_owned', pullRequestNumber: 456 },
+                  },
+                });
+                assert.equal((await runAction(exhausted, 'delivery')).operation, 'publish');
+                append(exhausted, `feedback-link-publish-${index}`, {
+                  status: 'needs-attention',
+                  code: 'github-delivery-head-not-observed',
+                });
+              }
+              assert.deepEqual(await runResponse(exhausted), {
+                content:
+                  'notification-delivery-reconciliation-exhausted: github-delivery-head-not-observed',
+              });
               const missingReceipt = structuredClone(input);
               append(missingReceipt, 'feedback-link-prepare-0', { status: 'prepared', digest });
               assert.equal(matchFixture([...scenario.fixtures], missingReceipt), null);

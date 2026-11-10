@@ -899,12 +899,6 @@ export default async function runCodexDelivery(
             linkIssue: !adoptedPullRequest && !adopted,
             adoptedPullRequest,
             contentUpdate: delivery.contentUpdate,
-            onLinkageRetry: async () => {
-              delivery.notices = [
-                ...new Set([...(delivery.notices ?? []), 'delivery-linkage-retried' as const]),
-              ];
-              await save();
-            },
           };
           const provider = new IssueDeliveryProvider(
             {

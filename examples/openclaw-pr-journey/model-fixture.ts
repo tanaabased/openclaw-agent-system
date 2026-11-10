@@ -117,10 +117,8 @@ function isTransientDelivery(result: Record<string, unknown>) {
 function isPendingDelivery(result: Record<string, unknown>) {
   return (
     isTransientDelivery(result) ||
-    (result.status === 'waiting' &&
-      ['github-delivery-linkage-unverified', 'github-delivery-head-not-observed'].includes(
-        String(result.code),
-      ))
+    (['waiting', 'needs-attention'].includes(String(result.status)) &&
+      result.code === 'github-delivery-head-not-observed')
   );
 }
 
@@ -991,7 +989,7 @@ function response(request: ChatCompletionRequest, options: PRFixtureOptions) {
   } catch (error) {
     if (
       error instanceof Error &&
-      /^(?:notification-retry-exhausted: (?:private-state-(?:file-lock-busy|snapshot-conflict)|discovery-checkpoint-changed)|notification-delivery-reconciliation-exhausted: github-delivery-(?:linkage-unverified|head-not-observed|github-request))$/u.test(
+      /^(?:notification-retry-exhausted: (?:private-state-(?:file-lock-busy|snapshot-conflict)|discovery-checkpoint-changed)|notification-delivery-reconciliation-exhausted: github-delivery-(?:head-not-observed|github-request))$/u.test(
         error.message,
       )
     )

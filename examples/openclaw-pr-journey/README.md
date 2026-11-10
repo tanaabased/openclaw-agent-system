@@ -25,17 +25,17 @@ publish a reply. Verify that another scan repeats none of the completed actions.
 - Approved GitHub comments retain their exact source, native turn, and publication receipts in the owning issue chat.
 - The strict fixture chooses one combined completion announcement on the issue and a separate reply to later PR feedback. This verifies the publication paths, not a live model's judgment about whether an announcement fully answers a question.
 - Feedback work enters through direct implementation with a scope argument; re-entry must preserve the existing feedback owner and its publication contract.
-- If the closing-issue link is delayed, the shared fixture checks the same delivery through at most three prepare/publish passes. Unknown failures and uncertain writes never create replacement PRs.
+- If GitHub has not yet observed the pushed head, the shared fixture checks the same delivery through at most three prepare/publish passes. Unknown failures and uncertain writes never create replacement PRs.
 
 ## Announcement recovery acceptance
 
 The ordinary journey does not establish recovery from a retained announcement
 prerequisite failure. In a disposable CI installation, stop after publishing the
-same linked PR but before announcing it, retain an unobserved-linkage failure,
+same linked PR but before announcing it, retain a transient provider-read failure,
 and let the enrolled scheduler check it. Before eligibility, require no provider
 check or delivery turn. At eligibility, an unchanged failure must advance backoff
 without sending a delivery turn; repeated failures must exhaust the bounded budget.
-When the association becomes observable before exhaustion, require only the missing
+When provider access recovers before exhaustion, require only the missing
 announcement on the same PR, then one quiet repeat scan. Preserve a saved draft and
 reconcile any uncertain post without another comment. After exhaustion, verify
 explicit same-chat resumption after correction. Do not inject failures into a
@@ -176,6 +176,7 @@ jq -e '.implementationDelivered == true and .work.result.outcome == "done" and .
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
 pr=$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
 openclaw agent-system tool gh -- pr view "$pr" --repo tanaabased/big-test-bucket --json number,state,headRefOid,assignees,closingIssuesReferences | tee "$TMPDIR/notification-pr.json" | jq -e --arg head "$(jq -er .work.delivery.binding.head "$TMPDIR/notification-delivery.json")" --argjson issue "$(jq -er .number "$TMPDIR/notification-issue.json")" '.state == "OPEN" and .headRefOid == $head and (.assignees | length) == 1 and .assignees[0].login == "tanaabot" and any(.closingIssuesReferences[]; .number == $issue)'
+openclaw agent-system tool gh -- api graphql -f query='query($id:ID!){node(id:$id){... on PullRequest{closingIssuesReferences(first:100,userLinkedOnly:true){nodes{number}}}}}' -f id="$(jq -er .work.delivery.pullRequest.pullRequestNodeId "$TMPDIR/notification-delivery.json")" --jq '.data.node.closingIssuesReferences.nodes' | jq -e --argjson issue "$(jq -er .number "$TMPDIR/notification-issue.json")" 'any(.[]; .number == $issue)'
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/pulls/$pr/requested_reviewers" | jq -e '(.users | length) == 0 and (.teams | length) == 0'
 conversation=$(jq -er .threadId "$TMPDIR/notification-delivery.json")
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json > "$TMPDIR/notification-published-history.json"
