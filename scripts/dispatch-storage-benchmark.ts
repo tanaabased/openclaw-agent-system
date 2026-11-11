@@ -69,7 +69,7 @@ if (!size) {
     await writeFile(store.path, serialized.contents, { mode: 0o600 });
     const writeStart = performance.now();
     await store.exclusive(async (current, save) => {
-      current.records[0]!.routingNote = 'existing assessment can save';
+      current.records[0]!.blocker = 'storage-benchmark-save';
       await save();
     });
     const rewriteMs = performance.now() - writeStart;

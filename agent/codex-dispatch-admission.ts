@@ -9,7 +9,6 @@ import resolveGitWorktreeLayout from '../tools/git/worktree-layout.ts';
 import { gitWorktreeRepositoryDirectoryName } from '../tools/git/worktree-names.ts';
 import { assignmentClaimRoute } from './assignment-claim-source.ts';
 import { automationHash } from './automation-hash.ts';
-import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import reconcileCodexCapacity from './codex-capacity-reconcile.ts';
 import codexCapacity from './codex-capacity.ts';
 import { adoptedCodexDelivery } from './issue-delivery-state.ts';
