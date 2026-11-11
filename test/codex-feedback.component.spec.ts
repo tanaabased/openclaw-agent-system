@@ -46,7 +46,7 @@ describe('agent/codex-feedback', () => {
     lost: boolean,
     creates: number,
     published: string | undefined;
-  let receiptStatus: 'verified' | 'blocked' | 'uncertain';
+  let receiptStatus: 'verified' | 'blocked' | 'uncertain' | 'mismatch';
   let receiptTurn: string | undefined;
   const call = (action: string, input = {}, child = false) =>
     runCodexFeedback(
@@ -199,9 +199,19 @@ describe('agent/codex-feedback', () => {
               turnId: receiptTurn ?? turn,
               ended,
             }
-          : !sent || receiptStatus === 'uncertain'
-            ? { status: 'uncertain' }
-            : { status: 'verified', turnId: receiptTurn ?? turn, ended },
+          : receiptStatus === 'mismatch'
+            ? {
+                status: 'mismatch',
+                code: 'continuation-send-mismatch',
+                callId: 'send',
+                requestDigest: id,
+                turnId: receiptTurn ?? turn,
+                latestTurnId: receiptTurn ?? turn,
+                ended,
+              }
+            : !sent || receiptStatus === 'uncertain'
+              ? { status: 'uncertain' }
+              : { status: 'verified', turnId: receiptTurn ?? turn, ended },
       git: async (_cwd, args) =>
         args[0] === 'remote'
           ? 'https://github.com/owner/repo.git'
@@ -791,6 +801,30 @@ describe('agent/codex-feedback', () => {
       if (outcome !== 'denied') assert.equal((await call('reconcile', ref)).status, 'uncertain');
     });
   }
+
+  it('should never mark a mismatched native send as delivered', async () => {
+    const ref = await prepare();
+    const attempt = (await store.read()).records[0]!.feedback!.events[0]!.attempt!;
+    sent = true;
+    turn = 'feedback';
+    receiptStatus = 'mismatch';
+    senderHistory([
+      {
+        id: 'send',
+        type: 'mcpToolCall',
+        server: 'codex_app',
+        tool: 'send_message_to_thread',
+        status: 'completed',
+        arguments: attempt.request,
+      },
+    ]);
+    const result = await call('reconcile', ref);
+    const event = (await store.read()).records[0]!.feedback!.events[0]!;
+    assert.equal(result.status, 'uncertain');
+    assert.equal(event.phase, 'prepared');
+    assert.equal(event.code, 'feedback-send-unresolved');
+    assert.deepEqual(event.attempt!.request, attempt.request);
+  });
 
   it('should reauthorize an unsent comment before recovering its native send', async () => {
     await prepare();
@@ -1441,14 +1475,14 @@ describe('agent/codex-feedback', () => {
     deps.native!.find = find;
     assert.equal((await call('next')).status, 'feedback-prepared');
   });
-  for (const outcome of ['ended', 'uncertain', 'capacity'] as const) {
+  for (const outcome of ['ended', 'uncertain', 'mismatch', 'capacity'] as const) {
     it(`should revisit queued feedback after an ended turn while respecting ${outcome}`, async () => {
       const first = await prepare();
       sent = true;
       turn = 'feedback';
       ended = true;
       comments.push({ ...comments[0]!, nodeId: 'second', databaseId: 43 });
-      if (outcome === 'uncertain') receiptStatus = 'uncertain';
+      if (outcome === 'uncertain' || outcome === 'mismatch') receiptStatus = outcome;
       if (outcome === 'capacity') {
         await store.exclusive(async (state, save) => {
           for (const digit of ['1', '2', '3']) {
@@ -1469,7 +1503,10 @@ describe('agent/codex-feedback', () => {
       const events = (await store.read()).records[0]!.feedback!.events;
       assert.equal(events.length, 2);
       assert.equal(next.status, 'feedback-prepared');
-      assert.equal(events[0]!.phase, outcome === 'uncertain' ? 'prepared' : 'delivered');
+      assert.equal(
+        events[0]!.phase,
+        ['uncertain', 'mismatch'].includes(outcome) ? 'prepared' : 'delivered',
+      );
       assert.equal(events[1]!.phase, 'prepared');
       assert.notEqual('eventId' in next && next.eventId, first.eventId);
       assert.equal(creates, 0);

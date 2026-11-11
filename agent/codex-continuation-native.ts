@@ -1,5 +1,6 @@
 import { nativeObject } from './automation-gateway.ts';
 import { automationHash } from './automation-hash.ts';
+import codexDelegatedInput from './codex-delegated-input.ts';
 import dispatchHistory, { dispatchHistoryPages, dispatchTurn } from './codex-dispatch-history.ts';
 import type { FeedbackEvent } from './codex-feedback-state.ts';
 import type { CodexThreadRequest } from './codex-thread-client.ts';
@@ -151,17 +152,10 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
           automationHash(attempt.request))
     )
       return { status: 'blocked' as const, code: 'continuation-send-mismatch' };
+    const actualPrompt = actual.prompt;
     const target = await dispatchHistory(request, attempt.request.threadId, attempt.beforeTurnId);
     const before = target.findIndex((entry) => entry.id === attempt.beforeTurnId);
     if (before < 0) throw new Error('continuation-history-incomplete');
-    const escaped = (value: string) =>
-      value.replace(/&/gu, '&amp;').replace(/</gu, '&lt;').replace(/>/gu, '&gt;');
-    const envelope =
-      '<codex_delegation>\n  <source_thread_id>' +
-      escaped(sourceThreadId) +
-      '</source_thread_id>\n  <input>' +
-      escaped(actual.prompt) +
-      '</input>\n</codex_delegation>';
     const candidates = target
       // native sends can arrive as steering inside the turn observed before dispatch.
       .slice(before)
@@ -174,7 +168,7 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
               ((item.type === 'functionCallOutput' &&
                 item.namespace === 'codex_app' &&
                 item.name === 'send_message_to_thread' &&
-                item.output === envelope) ||
+                codexDelegatedInput(item.output, sourceThreadId, actualPrompt)) ||
                 (entry.id !== attempt.beforeTurnId &&
                   call.status === 'completed' &&
                   item.type === 'userMessage' &&

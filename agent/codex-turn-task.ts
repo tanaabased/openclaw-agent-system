@@ -38,7 +38,7 @@ export async function selectCodexTaskOwner(
     record: DispatchRecord;
     native: DispatchNativeThread;
   }[] = [];
-  for (const record of records) {
+  for (const record of owners.length ? owners : records) {
     if (
       !record.request ||
       record.reset ||
@@ -81,6 +81,7 @@ export async function selectCodexTurnTask(
   if (!turnId) throw new Error('turn-context-native-turn-unavailable');
   const feedback = [];
   let unresolvedFeedback = false;
+  let currentFeedbackUnresolved = false;
   let feedbackLimitation:
     | {
         code: string;
@@ -97,15 +98,24 @@ export async function selectCodexTurnTask(
       const receipt = await lookup.receipt(record.sourceThreadId, event.attempt);
       if (receipt.status === 'verified' && receipt.turnId === turnId) {
         feedback.push(event);
-      } else if (receipt.status !== 'verified') unresolvedFeedback = true;
+      } else if (receipt.status !== 'verified') {
+        if ('turnId' in receipt && receipt.turnId && receipt.turnId !== turnId) continue;
+        unresolvedFeedback = true;
+        currentFeedbackUnresolved ||=
+          event.attempt.turnId === turnId || ('turnId' in receipt && receipt.turnId === turnId);
+        if ('code' in receipt && receipt.code) feedbackLimitation = { code: receipt.code };
+      }
     } catch (error) {
       unresolvedFeedback = true;
+      currentFeedbackUnresolved ||= event.attempt.turnId === turnId;
       feedbackLimitation = {
         code: workflowFailure(error, 'feedback-native-input-unavailable').code,
       };
     }
   }
-  const source = !unresolvedFeedback && feedback.length === 1 ? feedback[0] : undefined;
+  const source = !currentFeedbackUnresolved && feedback.length === 1 ? feedback[0] : undefined;
+  if (source) feedbackLimitation = undefined;
+  else if (feedback.length > 1) feedbackLimitation = { code: 'feedback-native-input-ambiguous' };
   const implementation = Boolean(retainedIssueProgression(record));
   return {
     currentTurn: { threadId: turn.threadId, turnId },
