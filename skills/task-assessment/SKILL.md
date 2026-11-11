@@ -233,7 +233,7 @@ limitation if recovery fails; malformed arguments are not an authorization denia
    Formatting writes no task journal, saved summary or plan revisions. Do not use
    legacy `result` recording routes or write a separate plan file. Submit the complete
    result, never a placeholder. If the host rejects the render call, the formatter
-   throws, or presentation paging fails, show the completed findings, concise plan,
+   throws, or returns `presentation-unavailable`, show the completed findings, concise plan,
    questions and actual blockers as ordinary Markdown. Mention unavailable card
    formatting briefly; do not call a completed assessment failed. Do not rebuild
    repeated payloads, restart investigation or ask for coordinator recovery.
