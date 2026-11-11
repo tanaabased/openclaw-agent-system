@@ -591,6 +591,74 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual(await store.read(), before);
     assert.deepEqual((await request('inspect', { target: 'other/repo#3' })).records, []);
   });
+  for (const waiting of [false, true])
+    it(`should admit ${waiting ? 'a waiting' : 'a new'} unset assignment with the configured default`, async () => {
+      const connect = deps.connect!;
+      deps.connect = async (...args) => ({
+        ...(await connect(...args)),
+        getItemContext: async () => ({
+          title: 'investigate and fix this failure',
+          body: 'Investigate package-source DNS failures on Ubuntu.',
+          comments: [],
+          labels: [],
+          truncated: false,
+        }),
+      });
+      let selected = await next();
+      if (waiting) {
+        const current = await selectCodexIntake(pluginData, deps);
+        const store = new CodexDispatchStore(pluginData, current.store.location.scope);
+        await store.exclusive(async (state, save) => {
+          state.records[0]!.blocker = 'dispatch-routing-unresolved';
+          await save();
+        });
+        now += 300000;
+        const resumed = await next();
+        assert.equal(resumed.status, 'routing-required');
+        assert.equal(resumed.id, selected.id);
+        selected = resumed;
+      }
+      const prepared = await request('prepare', {
+        id: selected.id,
+        digest: selected.digest,
+        title: 'Fix reported failure',
+        assessment: { complexity: 'unset', reason: 'No complexity tier is defensible yet.' },
+      });
+      assert.equal(prepared.status, 'prepared', JSON.stringify(prepared));
+      const creation = prepared.request as { model: string; thinking: string };
+      assert.equal(creation.model, 'gpt-6-astra');
+      assert.equal(creation.thinking, 'high');
+      created();
+      native!.model = creation.model;
+      native!.effort = creation.thinking;
+      const reconciled = await request('reconcile', { id: selected.id });
+      assert.equal(reconciled.status, 'created', JSON.stringify(reconciled));
+      await request('reconcile', { id: selected.id });
+      assert.equal((await next()).status, 'idle');
+      const records = (await readDispatchState()).records as DispatchRecord[];
+      assert.equal(records.length, 1);
+      assert.equal(records[0]!.id, selected.id);
+      assert.equal(records[0]!.threadId, native!.id);
+      assert.equal(records[0]!.blocker, undefined);
+    });
+
+  it('should identify missing routing configuration before preparing a native chat', async () => {
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({ ...manifest, models: undefined }),
+    );
+    const selected = await next();
+    const prepared = await request('prepare', {
+      id: selected.id,
+      digest: selected.digest,
+      title: 'Fix reported failure',
+      assessment: { complexity: 'unset', reason: 'No complexity tier is defensible yet.' },
+    });
+    assert.equal(prepared.code, 'model-routing-not-configured');
+    assert.equal(prepared.request, undefined);
+    assert.equal(native, undefined);
+  });
+
   it('should consume custom initial routing while verified complexity retains its tier', async () => {
     await writeFile(
       join(workspace, 'agent.yaml'),

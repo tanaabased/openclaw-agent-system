@@ -47,6 +47,15 @@ export default function modelRoutingCard({
       { label: 'Selected', value: code(routing.model) + ' / ' + code(routing.effort) },
       ...(method ? [{ label: 'Routing method', value: method }] : []),
       { label: 'Basis', value: code(routing.complexity) + ' complexity. ' + text(routing.reason) },
+      ...(routing.complexity === 'unset' && routing.profile === 'default'
+        ? [
+            {
+              label: 'Warning',
+              value:
+                'Complexity is unset. Using the configured default profile with any explicit overrides.',
+            },
+          ]
+        : []),
       {
         label: 'Source',
         value:

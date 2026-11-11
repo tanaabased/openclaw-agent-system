@@ -66,15 +66,12 @@ export default function resolveModelRoutingRequest(
     )
       throw new RoutingError(explicit.code, explicit.message);
   }
-  const candidate = decision.selection
-    ? projectRoutingProfile(decision.selection, runtime)
-    : undefined;
-  if (candidate?.status === 'unsupported')
-    throw new RoutingError(candidate.code, candidate.message);
+  const candidate = projectRoutingProfile(decision.selection, runtime);
+  if (candidate.status === 'unsupported') throw new RoutingError(candidate.code, candidate.message);
   return {
     ...decision,
     manifestDigest,
-    ...(candidate ? { candidate } : {}),
+    candidate,
     application: 'not-requested' as const,
     execution: 'unverified' as const,
   };

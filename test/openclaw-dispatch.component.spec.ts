@@ -1914,6 +1914,55 @@ describe('agent/openclaw issue dispatch', () => {
       authority,
     );
   }
+  for (const waiting of [false, true])
+    it(`should admit ${waiting ? 'a waiting' : 'a new'} unset assignment with the configured default`, async () => {
+      const selected = await next();
+      if (waiting) {
+        const { journal } = await service.scope(manifest, root);
+        await journal.exclusive(async (state, save) => {
+          state.records[0]!.blocker = 'dispatch-routing-unresolved';
+          state.records[0]!.failureStage = 'routing';
+          await save();
+        });
+        coordinator.runId = 'next-occurrence';
+        const resumed = await next();
+        assert.equal(resumed.id, selected.id);
+      }
+      const target = 'https://github.com/owner/repo/issues/3';
+      const prepared = await service.runModel(manifest, root, coordinator, {
+        action: 'prepare',
+        target,
+        title: 'Fix reported failure',
+        assessment: { complexity: 'unset', reason: 'No complexity tier is defensible yet.' },
+      });
+      assert.equal(prepared.status, 'session-created', JSON.stringify(prepared));
+      assert.equal(creates().length, 1);
+      assert.equal(creates()[0]!.params.model, 'openai/gpt-6-astra');
+      assert.equal(creates()[0]!.params.thinkingLevel, 'high');
+      await service.runModel(manifest, root, coordinator, { action: 'reconcile', target });
+      assert.equal(creates().length, 1);
+      assert.equal(preparedWorktrees, 1);
+      const saved = await record();
+      assert.equal(saved.id, selected.id);
+      assert.equal(saved.blocker, undefined);
+      assert.equal(JSON.parse(saved.routing!).profile, 'default');
+    });
+
+  it('should identify missing routing configuration before preparing a native chat', async () => {
+    delete manifest.models;
+    await next();
+    const prepared = await service.runModel(manifest, root, coordinator, {
+      action: 'prepare',
+      target: 'https://github.com/owner/repo/issues/3',
+      title: 'Fix reported failure',
+      assessment: { complexity: 'unset', reason: 'No complexity tier is defensible yet.' },
+    });
+    assert.ok('code' in prepared);
+    assert.equal(prepared.code, 'model-routing-not-configured');
+    assert.equal(creates().length, 0);
+    assert.equal(preparedWorktrees, 0);
+  });
+
   it('should resolve coordinator preparation and replay from the semantic issue target', async () => {
     const next = await service.runModel(manifest, root, coordinator, { action: 'next' });
     assert.ok('target' in next && typeof next.target === 'string');

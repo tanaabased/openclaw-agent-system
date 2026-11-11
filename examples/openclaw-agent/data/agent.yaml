@@ -8,7 +8,7 @@ agent:
 
 models:
   routing:
-    guidance: Preserve uncertainty and use only an explicit default fallback.
+    guidance: Preserve uncertainty and use the configured default when complexity is unset.
   default:
     model: aimock/gpt-5.5
     effort: medium

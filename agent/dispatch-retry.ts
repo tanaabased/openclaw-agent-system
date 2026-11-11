@@ -32,7 +32,7 @@ export const dispatchRetryProperties = {
   retryAfter: Type.Optional(Type.Integer({ minimum: 0 })),
 };
 
-type RetryState = Pick<SharedDispatchRecord, 'retry' | 'retryAfter'> & {
+type RetryState = Pick<SharedDispatchRecord, 'retry' | 'retryAfter' | 'blocker'> & {
   providerDiagnostic?: ProviderDiagnostic;
 };
 
@@ -52,6 +52,7 @@ const transient = new Set([
 // these owners can inspect repaired prerequisites or reconcile retained native intent.
 // rechecking never authorizes replay of an uncertain creation or a native denial.
 const recheckable = new Set([
+  'dispatch-routing-unresolved',
   'dispatch-project-inventory-invalid',
   'dispatch-project-registration-unavailable',
   'dispatch-assessment-skill-unavailable',
@@ -103,7 +104,9 @@ export function scheduleDispatchRetry(
 }
 
 export function dispatchRetryDue(record: RetryState, now: number) {
-  return Boolean(record.retry && record.retryAfter !== undefined && record.retryAfter <= now);
+  return record.retry
+    ? record.retryAfter !== undefined && record.retryAfter <= now
+    : record.blocker === 'dispatch-routing-unresolved';
 }
 
 /** durable stops name an actual authority or task decision; uncertainty is waiting. */

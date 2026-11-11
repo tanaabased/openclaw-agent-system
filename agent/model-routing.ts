@@ -41,8 +41,8 @@ export interface RoutingDecision extends RoutingAssessment {
   status: 'resolved' | 'unresolved';
   profile: 'default' | 'low' | 'medium' | 'high' | null;
   source: RoutingEvidence['source'] | 'assessed' | 'unset';
-  recommendation?: RoutingSelection;
-  selection?: RoutingSelection;
+  recommendation: RoutingSelection;
+  selection: RoutingSelection;
   overrides: RoutingOverrides;
 }
 
@@ -58,7 +58,7 @@ export class RoutingError extends Error {
 
 export const modelRoutingRubric = [
   'Use the shared model-neutral rubric: low means established, localized work with little uncertainty; medium means interacting concerns or meaningful investigation; high means novel, architectural or cross-system reasoning with substantial uncertainty. Consider correctness risk, not just size.',
-  'Explicit user Complexity or verified metadata determines the tier. Otherwise make a labeled content assessment. Use unset if no tier is defensible. Work size informs scope and decomposition only: 13 merits review and 21 normally splitting; neither upgrades the model.',
+  'Explicit user Complexity or verified metadata determines the tier. Otherwise read the issue and make a labeled content assessment; bounded source reading is allowed before the issue chat exists. Use unset if no tier is defensible; the runtime selects the configured default automatically. Work size informs scope and decomposition only: 13 merits review and 21 normally splitting; neither upgrades the model.',
   'Use model and effort from the configured profile, never a built-in tier mapping. Automatic efforts are the manifest schema values. Supply a concrete xhighReason when the selected profile, classifier profile, or explicit selection uses xhigh. No fallback model chains or infrastructure-driven escalation.',
 ].join('\n\n');
 
@@ -124,30 +124,23 @@ export function resolveModelRouting(
     );
   }
   const unresolved = assessment.complexity === 'unset';
-  const requestedProfile = assessment.complexity === 'unset' ? null : assessment.complexity;
-  const profile =
-    requestedProfile && models[requestedProfile]
-      ? requestedProfile
-      : (options.fallback ?? requestedProfile);
-  const recommendation = profile ? models[profile] : undefined;
-  if (profile && !recommendation) {
+  const requestedProfile = assessment.complexity === 'unset' ? 'default' : assessment.complexity;
+  const profile = models[requestedProfile]
+    ? requestedProfile
+    : (options.fallback ?? requestedProfile);
+  const recommendation = models[profile];
+  if (!recommendation) {
     throw new RoutingError(
       'model-routing-profile-missing',
       'The requested work tier is not configured. Select default explicitly or supply an explicit selection.',
     );
   }
   const overrides = options.overrides ?? {};
-  // validate partial overrides even when unresolved work has no selected profile.
-  selectRoutingOverrides(models.default, overrides);
-  const selection = recommendation
-    ? selectRoutingOverrides(recommendation, overrides)
-    : overrides.model && overrides.effort
-      ? selectRoutingOverrides({ model: overrides.model, effort: overrides.effort })
-      : undefined;
+  const selection = selectRoutingOverrides(recommendation, overrides);
   if (
     (overrides.effort === 'xhigh' ||
-      recommendation?.effort === 'xhigh' ||
-      selection?.effort === 'xhigh' ||
+      recommendation.effort === 'xhigh' ||
+      selection.effort === 'xhigh' ||
       options.classifierEffort === 'xhigh') &&
     !assessment.xhighReason?.trim()
   ) {
@@ -161,8 +154,8 @@ export function resolveModelRouting(
     status: unresolved ? 'unresolved' : 'resolved',
     profile,
     source: unresolved ? 'unset' : (options.evidence?.source ?? 'assessed'),
-    ...(recommendation ? { recommendation: { ...recommendation } } : {}),
-    ...(selection ? { selection } : {}),
+    recommendation: { ...recommendation },
+    selection,
     overrides: { ...overrides },
   };
 }

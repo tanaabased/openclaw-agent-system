@@ -1045,7 +1045,8 @@ describe('scripts/aimock-tool-search', () => {
               instructionsDigest: 'a'.repeat(64),
               instructions: {
                 guidance: {
-                  content: 'Preserve uncertainty and use only an explicit default fallback.',
+                  content:
+                    'Preserve uncertainty and use the configured default when complexity is unset.',
                 },
               },
             }),

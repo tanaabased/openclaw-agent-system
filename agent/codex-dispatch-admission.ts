@@ -793,8 +793,7 @@ export async function prepareDispatch(
       },
       'codex',
     );
-    if (!('candidate' in decision) || decision.candidate?.status !== 'mapped')
-      throw new Error('dispatch-routing-unresolved');
+    if (!('candidate' in decision)) throw new Error(decision.code);
     const live = await selectCodexIntake(pluginData, deps);
     const held = liveWorkflowPolicy(live.manifest, 'codex', intake);
     if (held) throw new WorkflowPolicyHeld(held);

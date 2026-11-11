@@ -22,6 +22,19 @@ const common = {
 };
 
 describe('channels/github/presentation/assessment-result', () => {
+  it('should explain default routing without turning a completed assessment into a blocker', () => {
+    const output = renderAssessmentResult(
+      { outcome: 'plan-ready', ...common },
+      {
+        ...context,
+        routing: { ...context.routing, complexity: 'unset', profile: 'default', source: 'unset' },
+      },
+    );
+    assert.match(output, /configured default profile/);
+    assert.ok(output.includes(common.reviewSummary));
+    assert.ok(output.includes(context.routing.model));
+  });
+
   it('should show only customized retained routing methods after the selected model', () => {
     const retained: RoutingInstructions = {
       version: 1,
