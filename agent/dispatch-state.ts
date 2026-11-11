@@ -1,3 +1,4 @@
+import dispatchOwnershipSchema from './dispatch-ownership-schema.ts';
 import { dispatchTaskSession } from './dispatch-task-scope.ts';
 import { issueDeliveryStateSchema } from './issue-delivery-state.ts';
 import { deliveryAnnouncementStateSchema } from './delivery-announcement-state.ts';
@@ -223,41 +224,13 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     readonly scope: string,
     readonly contract: {
       runtime: 'codex' | 'openclaw';
-      recordSchema: TSchema;
+      recordSchema: TObject;
       validRecord(record: R): boolean;
     },
   ) {
     this.schema = dispatchStateSchema<R>(contract.recordSchema);
     this.envelopeSchema = dispatchStateSchema<R>(Type.Unknown());
-    const properties = (contract.recordSchema as TObject).properties;
-    const keys = [
-      'id',
-      'intakeId',
-      'manualIssue',
-      'issueKey',
-      'sourceThreadId',
-      'threadId',
-      'worktree',
-      'request',
-      'project',
-      'issueBranch',
-      'worktreeAttemptId',
-      'adoptedLocalBranch',
-      'delivery',
-      'adoptedPullRequest',
-      'pullRequestLink',
-      'supersededBy',
-      'predecessorId',
-      'clientThreadId',
-      'receiptThreadId',
-      'sessionCreation',
-      'repositoryPreparation',
-    ];
-    this.ownershipSchema = Type.Object(
-      Object.fromEntries(
-        keys.filter((key) => properties[key]).map((key) => [key, properties[key]!]),
-      ),
-    );
+    this.ownershipSchema = dispatchOwnershipSchema(contract.recordSchema);
 
     this.path = join(root, contract.runtime + '-dispatch-' + scope + '.json');
     this.file = new PrivateStateFile({
@@ -267,6 +240,10 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
       label: this.contract.runtime + ' issue dispatch',
       maximumBytes: dispatchStorageLimits.file,
     });
+  }
+  private validateEnvelope(state: unknown): asserts state is DispatchState<R> {
+    if (!Value.Check(this.envelopeSchema, state) || state.scope !== this.scope)
+      throw new Error('dispatch-state-invalid');
   }
   private validateShared(state: unknown): asserts state is DispatchState<R> {
     if (
@@ -366,7 +343,6 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
         )
       )
         throw new Error('dispatch-task-ownership-unresolved', { cause: error });
-      this.validateShared(raw);
       const owners = records.filter((record) => record.threadId === session);
       if (owners.length !== 1)
         throw new Error('dispatch-task-ownership-unresolved', { cause: error });
@@ -424,15 +400,22 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
           r.delivery?.localBranch,
           r.delivery?.binding?.branch,
           r.adoptedPullRequest?.branch,
+          r.manualIssue?.pullRequest?.headRef,
         ].filter(Boolean),
       };
     };
+    const identities = (r: R) => {
+      const value = r as R & { worktreeAttemptId?: string; issueBranch?: { attemptId: string } };
+      return [r.id, value.worktreeAttemptId, value.issueBranch?.attemptId].filter(Boolean);
+    };
+    const issues = (r: R) => [r.issueKey, r.manualIssue && issueKey(r.manualIssue)].filter(Boolean);
     const pullRequests = (r: R) =>
       [
         r.pullRequestLink?.pullRequestNodeId,
         r.adoptedPullRequest?.pullRequestNodeId,
         r.delivery?.pullRequest?.pullRequestNodeId,
         r.delivery?.adopted?.pullRequestNodeId,
+        r.manualIssue?.pullRequest && r.manualIssue.issue.nodeId,
       ].filter(Boolean);
     for (const other of records) {
       if (other === owner) continue;
@@ -440,8 +423,8 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
         right = branch(other);
       if (
         ((other.request || 'sessionCreation' in other) && !other.threadId) ||
-        other.id === owner.id ||
-        other.issueKey === owner.issueKey ||
+        identities(owner).some((value) => identities(other).includes(value)) ||
+        issues(owner).some((value) => issues(other).includes(value)) ||
         (other.intakeId && other.intakeId === owner.intakeId) ||
         [other.predecessorId, other.supersededBy].includes(owner.id) ||
         [owner.predecessorId, owner.supersededBy].includes(other.id) ||
@@ -496,7 +479,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
       ...proposed,
       records: snapshot.raw.records.map((r) => (r.id === owner.id ? record : r)),
     };
-    this.validateShared(restored);
+    this.validateEnvelope(restored);
     this.assertIndependent(record, restored.records);
     return restored;
   }

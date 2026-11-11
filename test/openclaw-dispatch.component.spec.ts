@@ -4601,16 +4601,41 @@ describe('agent/openclaw issue dispatch', () => {
       issueKey: 'e'.repeat(64),
       sourceThreadId: 'other-coordinator',
       threadId: 'damaged-chat',
-      createdAt: 'damaged',
+      createdAt: 1,
       manifestDigest: 'other',
-      feedback: { pending: { attempted: true, destination: 'original' } },
+      delivery: {
+        id: 'c'.repeat(64),
+        binding: {
+          repositoryId: 'repository',
+          issueId: 'damaged-issue',
+          threadId: 'damaged-chat',
+          worktree: '/damaged',
+          branch: 'damaged-branch',
+          base: 'main',
+          head: 'f'.repeat(40),
+          authorId: 'author',
+        },
+        creationAttempted: true,
+        reconciled: false,
+        title: 42,
+        pendingPush: { previousHead: '', head: 'f'.repeat(40) },
+      },
     };
-    await journal.file.write(JSON.stringify({ ...raw, records: [...raw.records, damaged] }));
+    const third = {
+      id: 'f'.repeat(64),
+      intakeId: 'f'.repeat(64),
+      issueKey: damaged.issueKey,
+      sourceThreadId: 'other-coordinator',
+      threadId: 'third-chat',
+      createdAt: 1,
+      manifestDigest: 'other',
+    };
+    await journal.file.write(JSON.stringify({ ...raw, records: [...raw.records, damaged, third] }));
     const result = await context(input.id);
     assert.equal(result.status, 'verified');
     const saved = JSON.parse(await readFile(journal.path, 'utf8'));
     assert.ok(saved.records[0].assessmentCaller);
-    assert.deepEqual(saved.records[1], damaged);
+    assert.deepEqual(saved.records.slice(1), [damaged, third]);
     const prompt = await service.promptContext(manifest, root, {
       ...assessor(input.id),
       agentId: manifest.agent.id,

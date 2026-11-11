@@ -1,3 +1,4 @@
+import { issueKey } from '../agent/dispatch-pending.ts';
 import { withDispatchTask } from '../agent/dispatch-task-scope.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -286,6 +287,159 @@ describe('agent/shared dispatch state', () => {
       );
     });
 
+    const delivery = () => ({
+      id: 'c'.repeat(64),
+      binding: {
+        repositoryId: 'repository',
+        issueId: 'damaged-issue',
+        threadId: 'damaged-chat',
+        worktree: '/damaged',
+        branch: 'damaged-branch',
+        base: 'main',
+        head: 'f'.repeat(40),
+        authorId: 'author',
+      },
+      creationAttempted: true,
+      reconciled: false,
+      title: 'original title',
+      pendingPush: { previousHead: '', head: 'f'.repeat(40) },
+    });
+
+    it(`should preserve unrelated malformed ${runtime} delivery payloads during healthy progress`, async () => {
+      const store = makeStore(root);
+      for (const payload of [
+        { ...delivery(), title: 42 },
+        { ...delivery(), body: { damaged: true } },
+        { ...delivery(), pendingPush: { previousHead: '', head: 42 } },
+        { ...delivery(), contentUpdate: { title: 42 } },
+      ]) {
+        const other = {
+          ...pending('d'.repeat(64)),
+          threadId: 'damaged-chat',
+          worktree: '/damaged',
+          delivery: payload,
+        };
+        const raw = await write(store, [healthy(), other]);
+        await assert.rejects(
+          store.transaction(async () => assert.fail('shared operation entered')),
+          /dispatch-state-invalid/,
+        );
+        await task('healthy-chat', async () => {
+          assert.deepEqual((await store.read()).records, [healthy()]);
+          await store.transaction(async (state, save) => {
+            state.records[0]!.routingNote = 'healthy progress';
+            await save();
+          });
+        });
+        const saved = JSON.parse(await readFile(store.path, 'utf8'));
+        assert.equal(saved.records[0].routingNote, 'healthy progress');
+        assert.deepEqual(saved.records.slice(1), raw.records.slice(1));
+        await assert.rejects(
+          task('damaged-chat', () => store.read()),
+          /dispatch-task-record-invalid/,
+        );
+      }
+    });
+
+    it(`should reject ${runtime} delivery ownership damage and overlaps without touching payloads`, async () => {
+      const store = makeStore(root);
+      for (const binding of [
+        { ...delivery().binding, worktree: '/healthy' },
+        { ...delivery().binding, threadId: 'healthy-chat' },
+        { ...delivery().binding, branch: undefined },
+        { ...delivery().binding, worktree: 42 },
+      ]) {
+        await write(store, [
+          healthy(),
+          { ...damaged(), delivery: { ...delivery(), binding, title: 42 } },
+        ]);
+        const before = await readFile(store.path, 'utf8');
+        await assert.rejects(
+          task('healthy-chat', () =>
+            store.transaction(async () => {
+              assert.fail('unsafe effect entered');
+            }),
+          ),
+          /dispatch-task-ownership-unresolved/,
+        );
+        assert.equal(await readFile(store.path, 'utf8'), before);
+      }
+    });
+
+    it(`should isolate ${runtime} progress from collisions and broken links between unrelated records`, async () => {
+      const store = makeStore(root);
+      const third = { ...pending('f'.repeat(64)), threadId: 'third-chat', worktree: '/third' };
+      for (const pair of [
+        [damaged(), { ...third, issueKey: damaged().issueKey }],
+        [damaged(), { ...third, id: damaged().id }],
+        [{ ...damaged(), supersededBy: third.id }, third],
+      ]) {
+        const raw = await write(store, [healthy(), ...pair]);
+        await assert.rejects(store.read(), /dispatch-state-invalid/);
+        await assert.rejects(
+          store.transaction(async () => assert.fail('shared operation entered')),
+          /dispatch-state-invalid/,
+        );
+        await task('healthy-chat', () =>
+          store.transaction(async (state, save) => {
+            assert.deepEqual(state.records, [healthy()]);
+            state.records[0]!.routingNote = 'independent progress';
+            await save();
+          }),
+        );
+        const saved = JSON.parse(await readFile(store.path, 'utf8'));
+        assert.equal(saved.records[0].routingNote, 'independent progress');
+        assert.deepEqual(saved.records.slice(1), raw.records.slice(1));
+        const before = await readFile(store.path, 'utf8');
+        await assert.rejects(
+          task('healthy-chat', () =>
+            store.transaction(async (state, save) => {
+              state.discoveryCheckedAt = 2;
+              await save();
+            }),
+          ),
+          /dispatch-task-isolation-required/,
+        );
+        await assert.rejects(
+          task('healthy-chat', () =>
+            store.transaction(async (state, save) => {
+              state.records[0]!.worktree = '/damaged';
+              await save();
+            }),
+          ),
+          /dispatch-task-ownership-unresolved/,
+        );
+        assert.equal(await readFile(store.path, 'utf8'), before);
+      }
+    });
+
+    it(`should recheck ${runtime} dependencies after a concurrent ownership change`, async () => {
+      const store = makeStore(root);
+      const raw = await write(store, [
+        healthy(),
+        damaged(),
+        {
+          ...pending('f'.repeat(64)),
+          issueKey: damaged().issueKey,
+          threadId: 'third-chat',
+        },
+      ]);
+      let concurrent = '';
+      await assert.rejects(
+        task('healthy-chat', () =>
+          store.transaction(async (state, save) => {
+            state.records[0]!.routingNote = 'must not commit';
+            raw.records[1] = { ...damaged(), worktree: '/healthy' };
+            concurrent = JSON.stringify(raw);
+            await store.file.write(concurrent);
+            await save();
+          }),
+        ),
+        /dispatch-task-ownership-unresolved/,
+      );
+      assert.equal(await readFile(store.path, 'utf8'), concurrent);
+    });
+
     it(`should retain shared and unresolved ${runtime} ownership protections`, async () => {
       const store = makeStore(root);
       for (const other of [
@@ -351,6 +505,36 @@ describe('agent/shared dispatch state', () => {
         );
         assert.equal(await readFile(store.path, 'utf8'), before);
       }
+    });
+
+    it(`should refuse ${runtime} ownership aliases even when the outer record names differ`, async () => {
+      const store = makeStore(root);
+      const manualIssue = {
+        id: damaged().id,
+        scope,
+        receiving: { nodeId: 'receiver', login: 'receiver' },
+        repository: {
+          nodeId: 'repository',
+          databaseId: 1,
+          owner: { login: 'owner', nodeId: 'owner' },
+          name: 'repo',
+        },
+        issue: { nodeId: 'issue', databaseId: 1, number: 1 },
+        initiation: { session: 'other-coordinator' },
+        selections: { assessment: { damaged: true } },
+      };
+      const owner = { ...healthy(), issueKey: issueKey(manualIssue) };
+      await write(store, [owner, { ...damaged(), manualIssue }]);
+      const before = await readFile(store.path, 'utf8');
+      await assert.rejects(
+        task('healthy-chat', () =>
+          store.transaction(async () => {
+            assert.fail('aliased issue effect entered');
+          }),
+        ),
+        /dispatch-task-ownership-unresolved/,
+      );
+      assert.equal(await readFile(store.path, 'utf8'), before);
     });
 
     it(`should prohibit unrelated ${runtime} mutations through an isolated view`, async () => {
