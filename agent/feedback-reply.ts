@@ -2,7 +2,6 @@ import selectReplyDraft from './reply-selection.ts';
 import { cardCopyInstructions } from '../channels/github/presentation/card.ts';
 
 import assessmentGuidance from './assessment-guidance.ts';
-import assessmentSkillSource from './assessment-skill-source.ts';
 import { automationHash } from './automation-hash.ts';
 import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
 import feedbackComposition from './feedback-composition.ts';
@@ -373,15 +372,11 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
           })
         )
           throw new Error('reply-selection-changed');
-        const skill = await assessmentSkillSource(record.selection.skill);
         const guidance = await assessmentGuidance(
           deps.binding.workspace,
           typeof liveConfiguration === 'object' ? liveConfiguration.guidance : undefined,
         );
-        if (
-          automationHash(skill) !== automationHash(record.selection.skill) ||
-          automationHash(guidance ?? null) !== automationHash(record.selection.guidance ?? null)
-        )
+        if (automationHash(guidance ?? null) !== automationHash(record.selection.guidance ?? null))
           throw new Error('reply-selection-changed');
       }
     };

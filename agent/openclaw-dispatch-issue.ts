@@ -563,6 +563,7 @@ export default class OpenClawDispatchIssue {
                   workflow: 'issue-assignment',
                   workspace: current.workspace,
                   observedAt: retained?.composition?.observedAt ?? now,
+                  retained: input.operation === 'compose' ? undefined : retained?.composition,
                   resolveSkill: (id) => {
                     if (!record.request || !('key' in record.request))
                       throw new Error('delivery-announcement-owner-required');

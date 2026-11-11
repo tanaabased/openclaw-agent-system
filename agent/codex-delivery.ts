@@ -634,14 +634,18 @@ async function runCodexDeliveryScoped(
           authorId: connected.account.identity.nodeId,
           authorLogin: connected.account.identity.login,
           select: async (retained) => {
-            if (!native.assessmentSkill) throw new Error('delivery-announcement-skill-unavailable');
             return (
               await selectFeedbackStage({
                 policy,
                 workflow: 'issue-assignment',
                 workspace: current.workspace,
                 observedAt: retained?.composition?.observedAt ?? Date.now(),
-                resolveSkill: (id) => native.assessmentSkill!(found.cwd, id),
+                retained: input.action === 'compose' ? undefined : retained?.composition,
+                resolveSkill: (id) => {
+                  if (!native.assessmentSkill)
+                    throw new Error('delivery-announcement-skill-unavailable');
+                  return native.assessmentSkill(found.cwd, id);
+                },
               })
             ).selection;
           },

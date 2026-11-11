@@ -1,3 +1,4 @@
+import type { AssessmentSelection } from './assessment-selection.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
 import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
@@ -8,6 +9,7 @@ export default function selectFeedbackStage(input: {
   workflow: 'issue-assignment' | 'review-request';
   workspace: string;
   observedAt: number;
+  retained?: AssessmentSelection;
   resolveSkill: (id: string) => Promise<CodexAssessmentSkill>;
 }) {
   const feedback =
@@ -18,5 +20,9 @@ export default function selectFeedbackStage(input: {
     ...input,
     stage: 'feedback',
     configuration: typeof feedback === 'object' ? feedback : undefined,
+    resolveSkill: (id) =>
+      input.retained?.requestedSkill === id
+        ? Promise.resolve(input.retained.skill)
+        : input.resolveSkill(id),
   });
 }

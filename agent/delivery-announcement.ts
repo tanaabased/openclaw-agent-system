@@ -37,6 +37,19 @@ type CommentClient = Pick<
 >;
 type Delivery = AnnouncementDelivery;
 
+function announcementIntent(state: DeliveryAnnouncementState) {
+  return automationHash({
+    publicationId: state.publicationId,
+    authorId: state.authorId,
+    snapshot: { ...state.snapshot, title: undefined, body: undefined },
+    composition: state.composition && {
+      requestedSkill: state.composition.requestedSkill,
+      defaultSkill: state.composition.defaultSkill,
+      guidance: state.composition.guidance,
+    },
+  });
+}
+
 export function announcementPublication(
   state: DeliveryAnnouncementState,
   item: GitHubNotificationCommentPublicationInput['item'],
@@ -291,7 +304,7 @@ export function announcementRecoveryInstructions(
   if (state?.attempted || state?.receipt)
     return 'Call delivery announce to reconcile the retained announcement attempt. Do not compose or post a replacement.';
   if (state?.publicText)
-    return 'Call delivery announce through native approval to verify and publish the saved draft. Preserve the draft; do not compose a replacement merely to resume delivery. A stale snapshot or changed reply skill requires fresh composition before any write.';
+    return 'Call delivery announce through native approval to verify and publish the saved draft. Preserve the draft; do not compose a replacement merely to resume delivery. Changed PR identity, head, draft status, reply configuration or guidance requires fresh composition before any write.';
   return 'Call delivery compose, invoke the selected reply skill, submit candidate, then execute announce through native approval.';
 }
 
@@ -433,7 +446,7 @@ export default async function deliveryAnnouncement(input: {
           },
           maximumPublicCharacters: 500,
           instruction:
-            'Invoke the selected reply skill with this public delivery event and applicable voice guidance. Return only a short description of what the PR delivers; the host adds its verified link and draft/ready state. If this also answers an admitted feedback request on this destination, include its answer and source-author attribution in this one comment; reuse its confirmed text and permalink instead of a separate completion reply. Different destinations or distinct unanswered questions still require their own source-bound replies. Do not claim tests, approval or merge or expose private context. Submit delivery candidate with publicText, then inspect its preview and call announce through native approval. Missing skills stop composition. If skill content or guidance changes before publication is attempted, call compose again and replace the candidate; an uncertain write must be reconciled without reposting. Keep the full private PR card even if announcing fails.',
+            'Invoke the selected reply skill with this public delivery event and applicable voice guidance. Return only a short description of what the PR delivers; the host adds its verified link and draft/ready state. If this also answers an admitted feedback request on this destination, include its answer and source-author attribution in this one comment; reuse its confirmed text and permalink instead of a separate completion reply. Different destinations or distinct unanswered questions still require their own source-bound replies. Do not claim tests, approval or merge or expose private context. Submit delivery candidate with publicText, then inspect its preview and call announce through native approval. Missing skills stop composition. If reply configuration or applicable guidance changes before publication is attempted, call compose again and replace the candidate; an uncertain write must be reconciled without reposting. Keep the full private PR card even if announcing fails.',
         },
         input.request,
         input.material,
@@ -441,14 +454,7 @@ export default async function deliveryAnnouncement(input: {
     }
     const state = delivery.announcement;
     if (!state) throw new Error('delivery-announcement-candidate-required');
-    if (
-      automationHash({
-        ...state,
-        publicText: undefined,
-        code: undefined,
-        publication: undefined,
-      }) !== digest
-    )
+    if (announcementIntent(state) !== announcementIntent(current))
       throw new Error('delivery-announcement-stale');
     if (input.operation === 'candidate') {
       if (!input.publicText?.trim() || input.publicText.length > 500)
@@ -506,8 +512,10 @@ export default async function deliveryAnnouncement(input: {
       beforeCreate: async () => {
         await input.authorize();
         if (
-          automationHash(await input.provider.announcement(publication)) !==
-          automationHash(snapshot)
+          announcementIntent({
+            ...current,
+            snapshot: await input.provider.announcement(publication),
+          }) !== announcementIntent(current)
         )
           throw new Error('delivery-announcement-stale');
         await input.authorize();

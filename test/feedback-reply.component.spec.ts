@@ -1274,13 +1274,19 @@ describe('agent/feedback-reply', () => {
     assert.equal(selections, 1);
     assert.equal(writes, 1);
   });
-  it('should reject changed source, configuration and skill without silent fallback', async () => {
+  it('should publish a pinned candidate after composer changes without rediscovery', async () => {
     const reply = await candidate();
     await writeFile(join(root, 'SKILL.md'), '# changed');
-    await assert.rejects(call('publish', { ...reply }), /reply-selection-changed/);
-    const refreshed = await call('compose', { ...reply });
-    assert.equal(refreshed.status, 'composition-ready');
-    assert.equal(selections, 2);
+    await rm(join(root, 'SKILL.md'));
+    deps.resolveSkill = async () => {
+      throw new Error('composer unavailable');
+    };
+    assert.equal((await call('publish', { ...reply })).status, 'published');
+    assert.equal(selections, 1);
+    assert.equal(writes, 1);
+  });
+  it('should still require composition after explicit reply configuration changes', async () => {
+    const reply = await candidate();
     deps.manifest.github = {
       username: 'receiver',
       notifications: {
@@ -1292,6 +1298,7 @@ describe('agent/feedback-reply', () => {
         },
       },
     } as AgentManifest['github'];
+    await assert.rejects(call('publish', { ...reply }), /reply-selection-changed/);
     await assert.rejects(call('compose', { ...reply }), /guidance-unreadable/);
     assert.equal(writes, 0);
   });

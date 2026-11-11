@@ -462,13 +462,22 @@ describe('agent/delivery-announcement', () => {
     await run('announce', { digest: refreshed.digest });
     assert.match(comments[0]!.body, /Draft\./);
   });
-  it('should withhold changed skills, stale digests, and private candidate content', async () => {
+  it('should publish the exact candidate after composer and cosmetic pr metadata changes', async () => {
     await candidate();
+    const publicText = delivery.announcement!.publicText;
     skillDigest = 'b'.repeat(64);
-    await run('announce', {});
-    assert.equal(posts, 0);
-    const context = await run('compose');
-    assert.ok('digest' in context);
+    const read = input.provider.announcement;
+    input.provider.announcement = async (request) => ({
+      ...(await read(request)),
+      title: 'edited title',
+      body: 'edited description',
+    });
+    assert.equal((await run('announce', {})).status, 'announced');
+    assert.equal(posts, 1);
+    assert.ok(comments[0]!.body.includes(publicText!));
+  });
+  it('should continue to reject private candidate content', async () => {
+    await run('compose');
     await run('candidate', { publicText: 'password=secret' });
     assert.equal(posts, 0);
     assert.equal(delivery.announcement?.publicText, undefined);
