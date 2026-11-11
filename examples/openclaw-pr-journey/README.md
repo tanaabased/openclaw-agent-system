@@ -44,6 +44,15 @@ explicit same-chat resumption after correction. Do not inject failures into a
 production workflow or treat these acceptance steps as executed by this README's
 ordinary journey; deterministic failure permutations belong to component tests.
 
+For the missing-record acceptance case, start with a verified linked PR and no
+PR-creation or implementation-completion record. Require composition and one
+announcement, with no new PR or Git write. Announcing before composition must
+explain the missing candidate. After a lost post response, remove only the
+disposable checkout and relink the task; recovery must read the original comment
+at its original destination without posting again. Native denial and a mismatched
+PR must still stop publication. These are CI-only acceptance steps, not results
+established by the ordinary journey below.
+
 ## Setup
 
 ```bash

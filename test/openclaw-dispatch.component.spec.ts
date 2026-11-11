@@ -19,7 +19,7 @@ import { nativeTurnFor } from '../agent/openclaw-native-turns.ts';
 import { feedbackTarget } from '../agent/reply-target.ts';
 import workflowStatus from '../agent/workflow-status.ts';
 import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
-import { attemptedAnnouncement } from './delivery-announcement-fixture.ts';
+import announcementFixture, { attemptedAnnouncement } from './delivery-announcement-fixture.ts';
 import {
   baseline,
   fixturePullRequest,
@@ -6598,6 +6598,81 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal((await record()).delivery?.creationAttempted, undefined);
     });
   }
+
+  it('should recover the exact uncertain announcement without a checkout or delivery record', async () => {
+    const { id, who } = await operatorFollowup();
+    const retained = attemptedAnnouncement(fixture.client.identity.nodeId);
+    const provider = announcementFixture(fixture.client.identity);
+    provider.comments.push({
+      nodeId: 'IC_announcement',
+      databaseId: 91,
+      body: retained.body,
+      user: fixture.client.identity,
+    });
+    const { journal } = await service.scope(manifest, root);
+    await journal.exclusive(async (state, save) => {
+      const owner = state.records[0]!;
+      owner.announcement = retained.state;
+      owner.pullRequestLink = { pullRequestNodeId: 'PR_other', pullRequestNumber: 8 };
+      delete owner.delivery;
+      delete owner.progression;
+      await save();
+    });
+    await rm((await record()).worktree!, { recursive: true, force: true });
+    service.dependencies.delivery = async () => ({
+      account: {
+        identity: fixture.client.identity,
+        execute: async (argv, stdin) => {
+          const result = provider.execute(argv, stdin);
+          assert.ok(result, 'recovery must read the original comment destination only');
+          return result;
+        },
+      },
+      git: async () => assert.fail('announcement recovery must not use git'),
+    });
+    const result = await service.run(manifest, root, who, {
+      action: 'delivery',
+      operation: 'announce',
+      id,
+    });
+    assert.equal(result.status, 'announced', JSON.stringify(result));
+    assert.ok('url' in result && result.url === 'https://github.com/owner/repo/pull/7');
+    assert.equal(provider.posts, 0);
+    assert.equal((await record()).announcement?.receipt?.databaseId, 91);
+    assert.equal((await record()).delivery, undefined);
+  });
+
+  for (const code of [
+    'delivery-reconciliation-required',
+    'private-state-snapshot-conflict',
+    'native-approval-denied',
+  ])
+    it(`should return failure-specific announcement instructions for ${code}`, async () => {
+      const { id, who } = await operatorFollowup();
+      const { journal } = await service.scope(manifest, root);
+      await journal.exclusive(async (state, save) => {
+        state.records[0]!.pullRequestLink = { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 };
+        await save();
+      });
+      service.dependencies.delivery = async () => {
+        throw new Error(code);
+      };
+      const result = await service.run(manifest, root, who, {
+        action: 'delivery',
+        operation: 'compose',
+        id,
+      });
+      assert.ok('code' in result && result.code === code);
+      assert.ok('instructions' in result && typeof result.instructions === 'string');
+      if (code === 'delivery-reconciliation-required')
+        assert.match(result.instructions, /delivery compose.*delivery candidate/i);
+      else if (code === 'private-state-snapshot-conflict')
+        assert.match(result.instructions, /concurrent state.*current task context/i);
+      else assert.match(result.instructions, /stop.*denial/i);
+      assert.doesNotMatch(result.instructions, /use delivery prepare|prepare again/i);
+      assert.equal((await record()).delivery, undefined);
+      assert.equal((await record()).announcement, undefined);
+    });
 
   it('should verify the retained owner input after it leaves the recent history page', async () => {
     const { id, who } = await operatorFollowup();

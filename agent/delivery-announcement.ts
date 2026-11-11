@@ -422,8 +422,8 @@ export default async function deliveryAnnouncement(input: {
       );
     }
     const state = delivery.announcement;
+    if (!state) throw new Error('delivery-announcement-candidate-required');
     if (
-      !state ||
       automationHash({
         ...state,
         publicText: undefined,

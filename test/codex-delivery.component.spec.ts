@@ -234,6 +234,53 @@ describe('agent/codex-delivery', () => {
     assert.equal(creates, 1);
   });
 
+  it('should request composition for a linked pr with no announcement draft', async () => {
+    await publish();
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.pullRequestLink = record.delivery!.pullRequest;
+      delete record.delivery;
+      await save();
+    });
+    const result = await request('announce');
+    assert.equal(result.status, 'announcement-blocked');
+    assert.ok('code' in result && result.code === 'delivery-announcement-candidate-required');
+    assert.match(result.presentation!, /compose.*candidate/i);
+    assert.equal(announcement.posts, 0);
+    assert.equal((await store.read()).records[0]!.delivery, undefined);
+    await request('compose');
+    const withoutCandidate = await request('announce');
+    assert.ok(
+      'code' in withoutCandidate &&
+        withoutCandidate.code === 'delivery-announcement-candidate-required',
+    );
+    assert.equal(announcement.posts, 0);
+  });
+
+  it('should honor a native denial before posting a composed announcement', async () => {
+    await publish();
+    await request('compose');
+    await request('candidate', { publicText: 'The change is ready.' });
+    deps.authorizeSchedule = async () => {
+      throw new Error('native-approval-denied');
+    };
+    await assert.rejects(request('announce'), /native-approval-denied/);
+    assert.equal(announcement.posts, 0);
+  });
+
+  it('should reject a mismatched linked pr before composing or posting an announcement', async () => {
+    await publish();
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.pullRequestLink = { pullRequestNodeId: 'PR_other', pullRequestNumber: 7 };
+      delete state.records[0]!.delivery;
+      await save();
+    });
+    const result = await request('compose');
+    assert.equal(result.status, 'announcement-blocked');
+    assert.ok('code' in result && result.code === 'delivery-announcement-pr-changed');
+    assert.equal(announcement.posts, 0);
+  });
+
   it('should commit unrelated progress while delivery native readback is delayed', async () => {
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();

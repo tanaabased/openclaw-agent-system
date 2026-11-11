@@ -13,7 +13,7 @@ import {
 } from './openclaw-feedback-input.ts';
 import { nativeTurnFor } from './openclaw-native-turns.ts';
 import { nativeInputEvent, operatorInputEvent } from './openclaw-session-input.ts';
-import { isCurrentTaskPullRequest } from './task-pull-request.ts';
+import taskPullRequest, { isCurrentTaskPullRequest } from './task-pull-request.ts';
 import workflowStatus from './workflow-status.ts';
 
 import type { Static } from 'typebox';
@@ -35,6 +35,7 @@ import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import { issueAssessmentAction, selectOpenClawAssessment } from './openclaw-assessment.ts';
 import advanceOpenClawWork from './openclaw-continuation.ts';
 import openClawDelivery, { presentOpenClawDelivery } from './openclaw-delivery.ts';
+import openClawDeliveryRecovery from './openclaw-delivery-recovery.ts';
 import {
   type default as OpenClawDispatchContext,
   openClawDispatchFailureCode,
@@ -595,7 +596,16 @@ export default class OpenClawDispatchIssue {
             signal,
             assertCurrent,
             reauthorize: async () => {
-              await this.context.validate(manifest, workspace, record, true, false, client, signal);
+              await this.context.validate(
+                manifest,
+                workspace,
+                record,
+                true,
+                false,
+                client,
+                signal,
+                !['compose', 'candidate', 'announce'].includes(input.operation),
+              );
               await assertPRCheckout();
             },
             save,
@@ -639,8 +649,14 @@ export default class OpenClawDispatchIssue {
               ...workflowFailure(error, code),
               code: code === 'dispatch-operation-failed' ? 'delivery-provider-failed' : code,
               pullRequest: record.delivery?.pullRequest,
-              instructions:
-                'Preserve this operation and all work. Stop on denial or lost authority. For an interrupted publication, use delivery prepare again in this issue chat to reconcile the existing attempt. Never create a replacement PR or discard its retained binding.',
+              instructions: openClawDeliveryRecovery({
+                operation: input.operation,
+                code,
+                announcement: record.announcement,
+                delivery: record.delivery,
+                linked: Boolean(taskPullRequest(record)),
+                diagnostic: workflowFailure(error, code).providerDiagnostic,
+              }),
             };
           });
         },
