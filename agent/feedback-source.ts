@@ -108,9 +108,9 @@ export async function discoverFeedback(input: {
         }
       : undefined;
   let failure: { error: unknown } | undefined;
-  async function collect(read: () => Promise<void>) {
+  async function collect<T>(read: () => Promise<T>) {
     try {
-      await read();
+      return await read();
     } catch (error) {
       if (error instanceof Error && /discovery-checkpoint|private-state-file/.test(error.message))
         throw error;
@@ -142,7 +142,8 @@ export async function discoverFeedback(input: {
   const reviewMarkers = { ...state.reviewMarkers };
   if (input.itemType === 'pull-request')
     await collect(async () => {
-      if (!client.reviews) throw new Error('feedback-review-client-missing');
+      const reviewClient = client.reviews;
+      if (!reviewClient) throw new Error('feedback-review-client-missing');
       const pages = async <T>(
         read: (page: number) => Promise<{ values: T[]; nextPage: number }>,
       ) => {
@@ -154,54 +155,61 @@ export async function discoverFeedback(input: {
           if (result.nextPage !== page + 1) throw new Error('feedback-source-incomplete');
         }
       };
-      const reviews = await pages((page) => client.reviews!.listReviews(owner, name, number, page));
-      const reviewComments = await pages((page) =>
-        client.reviews!.listComments(owner, name, number, page),
+      const reviews = await collect(() =>
+        pages((page) => reviewClient.listReviews(owner, name, number, page)),
       );
-      for (const review of reviews) {
-        if (!review.submittedAt || review.state === 'PENDING') continue;
-        const previous = baseline?.[review.nodeId];
-        const group = previous ? (JSON.parse(previous) as GitHubCanonicalFeedback) : undefined;
-        // reviews lack an edit timestamp: retain the small body marker, expanding members only for changes.
-        if (discovery) {
-          const marker = JSON.stringify(review);
-          const changed =
-            reviewMarkers[review.nodeId] !== undefined && reviewMarkers[review.nodeId] !== marker;
-          if (changed) changedReviewBodies.add(review.nodeId);
-          const changedMember = reviewComments.some(
-            (comment) =>
-              comment.reviewId === review.databaseId &&
-              Date.parse(comment.updatedAt) >
-                (state.watermarks?.[input.nodeId] ?? state.startedAt ?? 0),
-          );
-          if (
-            !changed &&
-            !changedMember &&
-            Date.parse(review.updatedAt) <=
-              (state.watermarks?.[input.nodeId] ?? state.startedAt ?? 0)
-          ) {
+      const reviewComments = await collect(() =>
+        pages((page) => reviewClient.listComments(owner, name, number, page)),
+      );
+      for (const review of reviews ?? [])
+        await collect(async () => {
+          if (!review.submittedAt || review.state === 'PENDING') return;
+          const previous = baseline?.[review.nodeId];
+          const group = previous ? (JSON.parse(previous) as GitHubCanonicalFeedback) : undefined;
+          // reviews lack an edit timestamp: retain the small body marker, expanding members only for changes.
+          if (discovery) {
+            const marker = JSON.stringify(review);
+            const changed =
+              reviewMarkers[review.nodeId] !== undefined && reviewMarkers[review.nodeId] !== marker;
+            if (changed) changedReviewBodies.add(review.nodeId);
+            const changedMember =
+              reviewComments?.some(
+                (comment) =>
+                  comment.reviewId === review.databaseId &&
+                  Date.parse(comment.updatedAt) >
+                    (state.watermarks?.[input.nodeId] ?? state.startedAt ?? 0),
+              ) ?? true;
+            if (
+              !changed &&
+              !changedMember &&
+              Date.parse(review.updatedAt) <=
+                (state.watermarks?.[input.nodeId] ?? state.startedAt ?? 0)
+            ) {
+              reviewMarkers[review.nodeId] = marker;
+              return;
+            }
             reviewMarkers[review.nodeId] = marker;
-            continue;
           }
-          reviewMarkers[review.nodeId] = marker;
-        }
-        sources.push(
-          reviewFeedback(
-            review,
-            await client.reviews.getReviewComments(owner, name, number, review.databaseId),
-            group && isReviewFeedback(group) ? group.feedback.receipt : undefined,
-          ),
-        );
-      }
-      for (const reply of reviewComments.filter((comment) => comment.replyToId !== undefined)) {
-        const group = sources.find(
-          (source) => isReviewFeedback(source) && source.feedback.receipt.members[reply.nodeId],
-        );
-        if (group) continue;
-        const review = await client.reviews.getReview(owner, name, number, reply.reviewId);
-        const parent = reviewComments.find((comment) => comment.databaseId === reply.replyToId);
-        sources.push(reviewReplyFeedback(review, reply, parent));
-      }
+          sources.push(
+            reviewFeedback(
+              review,
+              await reviewClient.getReviewComments(owner, name, number, review.databaseId),
+              group && isReviewFeedback(group) ? group.feedback.receipt : undefined,
+            ),
+          );
+        });
+      for (const reply of (reviewComments ?? []).filter(
+        (comment) => comment.replyToId !== undefined,
+      ))
+        await collect(async () => {
+          const group = sources.find(
+            (source) => isReviewFeedback(source) && source.feedback.receipt.members[reply.nodeId],
+          );
+          if (group) return;
+          const review = await reviewClient.getReview(owner, name, number, reply.reviewId);
+          const parent = reviewComments!.find((comment) => comment.databaseId === reply.replyToId);
+          sources.push(reviewReplyFeedback(review, reply, parent));
+        });
     });
   if (failure && sources.length === 0) throw failure.error;
   let ownCommentIds = typeof input.ownCommentIds === 'function' ? undefined : input.ownCommentIds;
@@ -278,7 +286,8 @@ export async function discoverFeedback(input: {
   (state.evaluatedPolicyDigests ??= {})[input.nodeId] = policyDigest;
   state.baseline[input.nodeId] = next;
   state.events.push(...pending);
-  if (failure?.error instanceof DiscoveryPaused) await input.discovery?.save();
+  if (failure?.error instanceof DiscoveryPaused || input.discovery?.budget.exhausted)
+    await input.discovery?.save();
   else await discovery?.complete(!ownLookupFailed && !failure);
   if (failure) throw failure.error;
   return revisions;

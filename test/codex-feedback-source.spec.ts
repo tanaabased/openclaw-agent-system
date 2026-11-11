@@ -165,6 +165,102 @@ describe('agent/codex-feedback-source', () => {
     });
   }
 
+  for (const failure of ['members', 'reply', 'review-list', 'comment-list'] as const) {
+    it(`should isolate a failed review ${failure} and recover each complete source once`, async () => {
+      const policy = intakeFixture().policy;
+      policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
+      const state: CodexFeedback = { startedAt: 0, baseline: {}, events: [] };
+      const groups = [1, 2].map((id) =>
+        reviewFixture({
+          author: account,
+          databaseId: id,
+          nodeId: `review-${id}`,
+          body: '@receiver fix these',
+        }),
+      );
+      const roots = groups.map((review) =>
+        reviewCommentFixture({
+          author: account,
+          reviewId: review.databaseId,
+          databaseId: review.databaseId * 10,
+          nodeId: `root-${review.databaseId}`,
+        }),
+      );
+      const replies = roots.map((root) => ({
+        ...root,
+        databaseId: root.databaseId + 1,
+        nodeId: `reply-${root.reviewId}`,
+        replyToId: root.databaseId,
+        body: '@receiver followup',
+      }));
+      let failed = true;
+      const reviews = reviewClientFixture(groups[0]!, roots);
+      reviews.listReviews = async () => {
+        if (failed && failure === 'review-list') throw new Error('review-list-unavailable');
+        return { values: groups, nextPage: 1 };
+      };
+      reviews.listComments = async () => {
+        if (failed && failure === 'comment-list') throw new Error('comment-list-unavailable');
+        return { values: [...roots, ...replies], nextPage: 1 };
+      };
+      reviews.getReviewComments = async (_o, _n, _pr, id) => {
+        if (failed && failure === 'members' && id === 1) throw new Error('members-unavailable');
+        return [...roots, ...replies].filter((comment) => comment.reviewId === id);
+      };
+      reviews.getReview = async (_o, _n, _pr, id) => {
+        if (failed && failure === 'reply' && id === 1) throw new Error('reply-unavailable');
+        return groups.find((review) => review.databaseId === id)!;
+      };
+      const scan = () =>
+        discoverCodexFeedback({
+          state,
+          policy,
+          owner: 'owner',
+          name: 'repo',
+          number: 3,
+          nodeId: 'PR',
+          itemType: 'pull-request',
+          now: Date.parse('2026-10-14T00:00:00Z'),
+          client: {
+            identity: account,
+            reviews,
+            listIssueComments: async () => ({ comments: [], truncated: false }),
+            getIssueComment: async () => comment('unused'),
+          },
+          discovery: { budget: new DiscoveryBudget(), save: async () => {} },
+        });
+      await assert.rejects(scan(), /unavailable/);
+      const expected = ['review-1', 'review-2', 'reply-1', 'reply-2'].filter((id) =>
+        failure === 'review-list'
+          ? id.startsWith('reply')
+          : failure === 'comment-list'
+            ? id.startsWith('review')
+            : id !== (failure === 'members' ? 'review-1' : 'reply-1'),
+      );
+      assert.deepEqual(new Set(state.events.map((event) => event.sourceId)), new Set(expected));
+      assert.equal(state.watermarks?.PR, undefined);
+      const retained = state.events.map((event) => event.source);
+      failed = false;
+      await scan();
+      await scan();
+      assert.equal(state.events.length, 4);
+      assert.deepEqual(
+        state.events.slice(0, retained.length).map((event) => event.source),
+        retained,
+      );
+      for (const review of groups) {
+        const source = JSON.parse(
+          state.events.find((event) => event.sourceId === review.nodeId)!.source,
+        );
+        assert.deepEqual(
+          source.feedback.comments,
+          roots.filter((root) => root.reviewId === review.databaseId),
+        );
+      }
+      assert.equal(typeof state.watermarks?.PR, 'number');
+    });
+  }
+
   it('should admit unrelated authors while an outgoing lookup fails and revisit deferred self input', async () => {
     const policy = intakeFixture().policy;
     const human = { ...account, login: 'human', nodeId: 'U_human' };
@@ -773,7 +869,8 @@ describe('agent/codex-feedback-source', () => {
         },
       });
     await assert.rejects(run(), DiscoveryPaused);
-    assert.deepEqual(Object.keys(saved.discovery!.PR!.reads), ['comments:1', 'comments:2']);
+    assert.ok(saved.discovery!.PR!.reads['comments:1']);
+    assert.ok(saved.discovery!.PR!.reads['comments:2']);
     assert.equal(saved.watermarks?.PR, undefined);
     arrived = true;
     state = JSON.parse(JSON.stringify(saved));
