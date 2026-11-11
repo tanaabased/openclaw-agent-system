@@ -153,6 +153,7 @@
     "json5": "2.2.3",
     "kebabcase-keys": "^1.0.0",
     "lodash-es": "4.18.1",
+    "mdast-util-from-markdown": "2.0.2",
     "proper-lockfile": "4.1.2",
     "semver": "7.8.5",
     "smol-toml": "1.9.0",

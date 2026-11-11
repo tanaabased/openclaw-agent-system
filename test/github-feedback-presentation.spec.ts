@@ -55,12 +55,12 @@ describe('channels/github/presentation/feedback', () => {
         },
       }),
       [
-        '  @tanaabot Please check [the build](https://github.com/tanaabased/example/actions).',
+        '  [@tanaabot](https://github.com/tanaabot) Please check [the build](https://github.com/tanaabased/example/actions).',
         '',
         '## Notes',
         '',
         '- Keep `code` exact.',
-        '- Ask @octocat about #12.  ',
+        '- Ask [@octocat](https://github.com/octocat) about #12.  ',
         '',
         '> Quoted context',
         '',
@@ -126,7 +126,9 @@ describe('channels/github/presentation/feedback', () => {
         url: 'https://github.com/example/repo/pull/12#issuecomment-91',
       },
     });
-    assert.ok(presentation.includes('@tanaabot first\n\nsecond\nthird'));
+    assert.ok(
+      presentation.includes('[@tanaabot](https://github.com/tanaabot) first\n\nsecond\nthird'),
+    );
     assert.ok(
       presentation.includes(
         '[Comment ↗](https://github.com/example/repo/pull/12#issuecomment-91) from [@pirog]',
