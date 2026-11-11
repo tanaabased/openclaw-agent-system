@@ -173,6 +173,14 @@ describe('agent/codex-dispatch-unsubmitted', () => {
       { id: 'sleep', type: 'sleep' },
       { id: 'search', type: 'webSearch' },
       {
+        id: 'trigger',
+        type: 'functionCallOutput',
+        namespace: 'codex_app',
+        name: 'automation_update',
+        output: '<heartbeat>scheduled input</heartbeat>',
+      },
+      { id: 'hook', type: 'hookPrompt', fragments: [{ hookRunId: 'hook-run', text: 'context' }] },
+      {
         id: 'unrelated-tool',
         type: 'mcpToolCall',
         server: 'codex_app',
@@ -181,6 +189,23 @@ describe('agent/codex-dispatch-unsubmitted', () => {
       },
     ];
     assert.deepEqual(await prove(fixture(items)), { turnId: 'prepared' });
+    assert.deepEqual(await proveSend(fixture(items)), { turnId: 'prepared' });
+    assert.equal(
+      await proveSend(
+        fixture([
+          ...items,
+          {
+            id: 'send',
+            type: 'mcpToolCall',
+            server: 'codex_app',
+            tool: 'send_message_to_thread',
+            status: 'failed',
+            arguments: { threadId: 'child' },
+          },
+        ]),
+      ),
+      undefined,
+    );
     for (const status of ['completed', 'failed']) {
       const call = {
         id: 'creation',

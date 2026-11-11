@@ -1,4 +1,5 @@
 import { nativeObject } from './automation-gateway.ts';
+import codexToolOutputText from './codex-tool-output-text.ts';
 
 /** Decode native delegation output without normalizing the source or input itself. */
 export default function codexDelegatedInput(
@@ -7,11 +8,10 @@ export default function codexDelegatedInput(
   prompt: string,
 ) {
   const text =
-    typeof value === 'string'
-      ? value
-      : nativeObject(value) && typeof value.text === 'string' && value.truncated !== true
-        ? value.text
-        : undefined;
+    codexToolOutputText(value) ??
+    (nativeObject(value) && typeof value.text === 'string' && value.truncated !== true
+      ? value.text
+      : undefined);
   if (text === undefined) return false;
   const match =
     /^<codex_delegation>\s*<source_thread_id>([\s\S]*?)<\/source_thread_id>\s*<input>([\s\S]*?)<\/input>\s*<\/codex_delegation>\s*$/u.exec(

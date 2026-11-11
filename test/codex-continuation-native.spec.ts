@@ -150,6 +150,7 @@ describe('agent/codex-continuation-native', () => {
       error?: { message: string };
       result?: unknown;
       outputObject?: boolean;
+      outputArray?: boolean;
       outputWhitespace?: boolean;
       outputTruncated?: boolean;
     } = {},
@@ -202,7 +203,9 @@ describe('agent/codex-continuation-native', () => {
                 text: delegation,
                 truncated: options.outputTruncated ?? false,
               }
-            : delegation,
+            : options.outputArray
+              ? [{ type: 'input_text', text: delegation }]
+              : delegation,
         },
       ],
     };
@@ -309,6 +312,15 @@ describe('agent/codex-continuation-native', () => {
     });
   });
   it('should verify structured native output while matching exact source and prompt', async () => {
+    assert.deepEqual(await fixture({ sameTurn: true, outputArray: true })('source', attempt), {
+      status: 'verified',
+      turnId: 'assessment',
+      ended: false,
+    });
+    assert.deepEqual(
+      await fixture({ sameTurn: true, outputArray: true, prompt: 'different' })('source', attempt),
+      { status: 'uncertain' },
+    );
     assert.deepEqual(
       await fixture({ sameTurn: true, outputObject: true, outputWhitespace: true })(
         'source',

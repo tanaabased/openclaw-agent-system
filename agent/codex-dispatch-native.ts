@@ -2,6 +2,7 @@ import { realpath } from 'node:fs/promises';
 
 import codexDelegatedInput from './codex-delegated-input.ts';
 import codexDirectInput from './codex-direct-input.ts';
+import codexToolOutputText from './codex-tool-output-text.ts';
 import dispatchHistory, { dispatchHistoryPages } from './codex-dispatch-history.ts';
 import intakeDenial from './codex-intake-denial.ts';
 import creationHistory from './codex-dispatch-creation-history.ts';
@@ -175,7 +176,7 @@ export function codexDispatchNative(request: CodexThreadRequest) {
         item.type === 'functionCallOutput' &&
         item.namespace === 'codex_app' &&
         item.name === 'automation_update'
-          ? item.output
+          ? codexToolOutputText(item.output)
           : nativeObject(part) && part.type === 'text'
             ? part.text
             : undefined;

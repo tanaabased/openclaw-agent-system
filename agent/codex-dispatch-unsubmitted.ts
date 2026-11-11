@@ -18,6 +18,8 @@ export default async function unsubmittedNativeRequest(
       if (
         [
           'userMessage',
+          'functionCallOutput',
+          'hookPrompt',
           'agentMessage',
           'reasoning',
           'plan',
