@@ -471,9 +471,19 @@ describe('agent/codex-delivery', () => {
         }),
       },
       async (context) => {
+        await writeFile(
+          join(workspace, 'agent.yaml'),
+          JSON.stringify({ ...manifest, debug: true }),
+        );
         await context.assertCurrent();
+        assert.equal(context.manifest.debug, true);
         const owner = await context.managed({ repository: 'owner/repo', number: 3 });
         assert.ok(owner?.nativeContext);
+        await writeFile(
+          join(workspace, 'agent.yaml'),
+          JSON.stringify({ ...manifest, agent: { id: 'other' } }),
+        );
+        await assert.rejects(context.assertCurrent(), /binding-changed/);
         return owner.nativeContext;
       },
     );

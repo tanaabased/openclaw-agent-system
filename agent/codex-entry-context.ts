@@ -8,7 +8,6 @@ import managedImplementationRoute from './managed-implementation-route.ts';
 
 import type { AssessmentEntryDependencies } from './assessment-entry.ts';
 import assessmentOwner from './assessment-owner.ts';
-import { automationHash } from './automation-hash.ts';
 import codexAssessmentSkill from './codex-assessment-skill.ts';
 import codexDirectInput from './codex-direct-input.ts';
 import { withNative } from './codex-dispatch-context.ts';
@@ -118,14 +117,17 @@ export default async function codexEntryContext<T>(
       const fresh = await selectCodexIntake(pluginData, deps, { resolvePolicy: false });
       if (
         fresh.store.location.scope !== current.store.location.scope ||
-        automationHash(fresh.manifest) !== automationHash(current.manifest)
+        fresh.agentId !== current.agentId ||
+        fresh.workspace !== current.workspace ||
+        fresh.codexHome !== current.codexHome
       )
         throw new Error('assessment-binding-changed');
       const next = turn && (await codexDirectInput(connection.request, caller));
       if (turn && next && (next.turnId !== turn.turnId || next.inputId !== turn.inputId))
         throw new Error('assessment-native-input-changed');
+      entry.manifest = fresh.manifest;
     };
-    return await collect({
+    const entry: AssessmentEntryDependencies = {
       operator: true,
       root: pluginData,
       currentTarget,
@@ -159,7 +161,8 @@ export default async function codexEntryContext<T>(
         (deps.connect ?? connectCodexGitHub)(current.workspace, AbortSignal.timeout(60000)),
       resolveSkill: (id) => codexAssessmentSkill(connection.request, current.workspace, id),
       managed,
-    });
+    };
+    return await collect(entry);
   } finally {
     await connection.close();
   }

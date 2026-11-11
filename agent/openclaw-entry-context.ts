@@ -9,7 +9,6 @@ import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import type { AssessmentEntryDependencies } from './assessment-entry.ts';
 import assessmentOwner from './assessment-owner.ts';
-import { automationHash } from './automation-hash.ts';
 import type { OpenClawDispatchDependencies } from './openclaw-dispatch-context.ts';
 import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
 import { describeIssueSession, type DispatchCaller } from './openclaw-session-create.ts';
@@ -141,14 +140,14 @@ export default async function openClawEntryContext<T>(
       if (
         fresh.status !== 'loaded' ||
         fresh.manifest.agent.id !== manifest.agent.id ||
-        automationHash(fresh.manifest) !== automationHash(manifest) ||
         (await realpath(fresh.scope.workspaceDir)) !== current.workspace
       )
         throw new Error('assessment-binding-changed');
       if (turn && (await nativeInput()).inputEventId !== turn.inputEventId)
         throw new Error('assessment-native-input-changed');
+      entry.manifest = fresh.manifest;
     };
-    return collect({
+    const entry: AssessmentEntryDependencies = {
       operator: input.operator,
       root: deps.root,
       currentTarget,
@@ -170,7 +169,7 @@ export default async function openClawEntryContext<T>(
         if (!deps.assessmentGit) throw new Error('assessment-git-unavailable');
         await assertCurrent();
         return deps.assessmentGit({
-          manifest,
+          manifest: entry.manifest,
           workspace: current.workspace,
           caller,
           cwd,
@@ -182,7 +181,7 @@ export default async function openClawEntryContext<T>(
         await assertCurrent();
         if (!deps.delivery) throw new Error('implementation-delivery-unavailable');
         return deps.delivery({
-          manifest,
+          manifest: entry.manifest,
           workspaceDir: current.workspace,
           worktree: path,
           caller,
@@ -193,13 +192,14 @@ export default async function openClawEntryContext<T>(
         await assertCurrent();
         if (!deps.feedbackConnect) throw new Error('assessment-provider-unavailable');
         return deps.feedbackConnect(
-          { manifest, workspaceDir: current.workspace },
+          { manifest: entry.manifest, workspaceDir: current.workspace },
           authority.signal ?? AbortSignal.timeout(60000),
         );
       },
       resolveSkill: (id) =>
         openClawSkill(request, { agentId: manifest.agent.id, key: caller.sessionKey }, id),
       managed,
-    });
+    };
+    return collect(entry);
   });
 }

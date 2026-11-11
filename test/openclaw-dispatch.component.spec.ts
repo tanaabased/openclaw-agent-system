@@ -1,3 +1,4 @@
+import openClawEntryContext from '../agent/openclaw-entry-context.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -4578,6 +4579,40 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await assess(input.id)).status, 'assessment-completed');
     assert.equal(sends().length, 1);
     assert.equal(creates().length, 1);
+  });
+
+  it('should refresh ordinary context configuration without treating unrelated edits as a changed binding', async () => {
+    const input = await next();
+    await prepare(input);
+    await assess(input.id);
+    await openClawEntryContext(
+      {
+        manifest,
+        workspace: root,
+        caller: assessor(input.id),
+        action: { action: 'assessment', operation: 'context' },
+        operator: false,
+        authority: {},
+        dependencies: service.dependencies,
+      },
+      async (entry) => {
+        const manifests = service.dependencies.intake.dependencies.manifestService;
+        const load = manifests.loadForAgentId.bind(manifests);
+        manifests.loadForAgentId = async (...args) => {
+          const result = await load(...args);
+          if (result.status !== 'loaded') return result;
+          return { ...result, manifest: { ...result.manifest, debug: true } };
+        };
+        await entry.assertCurrent();
+        assert.equal(entry.manifest.debug, true);
+        manifests.loadForAgentId = async (...args) => {
+          const result = await load(...args);
+          if (result.status !== 'loaded') return result;
+          return { ...result, manifest: { ...result.manifest, agent: { id: 'other' } } };
+        };
+        await assert.rejects(entry.assertCurrent(), /assessment-binding-changed/);
+      },
+    );
   });
 
   it('should reconsider an existing openclaw routing failure without reset or reassignment', async () => {
