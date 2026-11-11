@@ -35,7 +35,11 @@ export default function mergeStateSnapshot(
       ...Object.keys(proposed),
       ...Object.keys(current),
     ])) {
-      const value = mergeStateSnapshot(before[key], proposed[key], current[key]);
+      const value = mergeStateSnapshot(
+        Object.hasOwn(before, key) ? before[key] : undefined,
+        Object.hasOwn(proposed, key) ? proposed[key] : undefined,
+        Object.hasOwn(current, key) ? current[key] : undefined,
+      );
       if (value !== undefined)
         Object.defineProperty(result, key, {
           value,
@@ -78,7 +82,7 @@ export function refreshStateSnapshot(
 ): void {
   for (const key of Object.keys(target)) if (!Object.hasOwn(source, key)) delete target[key];
   for (const [key, value] of Object.entries(source)) {
-    const old = target[key];
+    const old = Object.hasOwn(target, key) ? target[key] : undefined;
     if (object(old) && object(value)) refreshStateSnapshot(old, value);
     else if (Array.isArray(old) && Array.isArray(value) && keyed(old) && keyed(value)) {
       const retained = new Map(old.map((entry) => [entry.id, entry]));

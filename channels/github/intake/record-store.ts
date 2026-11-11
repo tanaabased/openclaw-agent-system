@@ -13,6 +13,7 @@ import { automationHash } from '../../../agent/automation-hash.ts';
 import ensurePrivateStateDirectories from '../../../core/ensure-private-state-directories.ts';
 import acquirePrivateStateFileLock from '../../../core/private-state-file-lock.ts';
 import PrivateStateFile from '../../../core/private-state-file.ts';
+import storedDataSchema from '../../../core/stored-data-schema.ts';
 import { withPrivateStateLock } from '../../../core/private-state-lock-context.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
@@ -138,6 +139,9 @@ const stateSchema = Type.Object(
   { additionalProperties: false },
 );
 export type IntakeState = Static<typeof stateSchema>;
+const storedStateSchema = storedDataSchema(stateSchema);
+// an assignment extension must never select the operator-only origin branch.
+Object.assign(storedStateSchema.properties.records.items.properties, { initiation: Type.Never() });
 
 export class IntakeError extends Error {
   constructor(readonly code: string) {
@@ -224,7 +228,7 @@ export default class IntakeRecordStore {
     try {
       const value: unknown = JSON.parse(contents);
       if (
-        !Value.Check(stateSchema, value) ||
+        !Value.Check(storedStateSchema, value) ||
         value.scope !== this.location.scope ||
         new Set(value.records.map((r) => r.id)).size !== value.records.length ||
         (value.observedAssignments ?? []).some(
@@ -302,7 +306,7 @@ export default class IntakeRecordStore {
               this.location.resetRoot ?? this.location.root,
               this.location.scope,
             );
-            if (!Value.Check(stateSchema, state) || state.scope !== this.location.scope)
+            if (!Value.Check(storedStateSchema, state) || state.scope !== this.location.scope)
               throw new IntakeError('intake-state-invalid');
             const retained = structuredClone(state);
             if (Buffer.byteLength(JSON.stringify(retained)) > intakeCleanupBytes) {

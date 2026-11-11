@@ -137,8 +137,11 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 60
 jq -es '[.[].records[]] | length == 3 and all(.[]; .threadId == null and .sessionCreation == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 jq -e '.claims | length == 3 and all(.[]; .attempted == true and .commentId != null and .nativeReceipt == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-instance/assignment-claims.json"
 
-# should start three native assessments after expanding the target to an unordered pool
+# should start three native assessments with unused stored fields after expanding the target pool
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-intake/tanaabot"
+for journal in "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json; do
+  node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; const path=process.argv[1]; const state=JSON.parse(readFileSync(path,"utf8")); for (const record of state.records) {record.routingNote="unused"; record.reservationVersion=1;} writeFileSync(path,JSON.stringify(state));' "$journal"
+done
 node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import {parse,stringify} from "yaml"; const path="agent.yaml"; const value=parse(readFileSync(path,"utf8")); const target=value.github.routing[0]["tanaabased/*"]; value.github.routing[0]["tanaabased/*"]=["11111111-1111-4111-8111-111111111111",target]; writeFileSync(path,stringify(value));'
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000

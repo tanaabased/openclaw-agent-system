@@ -54,7 +54,7 @@ export function dispatchStoragePressure<R extends SharedDispatchRecord>(state: D
   const level = dispatchStorageLevel(contentBytes);
   const protectedRecords: Record<string, number> = {};
   for (const record of state.records) {
-    const reason = record.retirement ? 'native-cleanup-unverified' : 'active-workflow';
+    const reason = record?.retirement ? 'native-cleanup-unverified' : 'active-workflow';
     protectedRecords[reason] = (protectedRecords[reason] ?? 0) + 1;
   }
   return {

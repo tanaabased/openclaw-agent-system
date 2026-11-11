@@ -16,6 +16,7 @@ import notificationWait from '../channels/github/cli/wait.ts';
 import assignmentIntakePolicy from '../agent/assignment-intake-policy.ts';
 import { codexIntakePolicy } from '../agent/codex-intake-policy.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
+import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
 import AgentDoctorService from '../agent/doctor-service.ts';
 import doctorAgentSystem from '../cli/doctor.ts';
 import AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';
@@ -99,6 +100,32 @@ describe('openclaw v2 intake slice', () => {
       },
     };
   }
+  it('should inspect and admit assignments while an unrelated task payload needs repair', async () => {
+    const f = fixture();
+    f.service.dependencies.resetRoot = join(root, 'v2');
+    await f.service.run(f.value, root, 'activate');
+    const { store } = await f.service.select(f.value, root);
+    const journal = new OpenClawDispatchStore(store.location.root, store.location.scope);
+    const contents = JSON.stringify({
+      version: 4,
+      scope: store.location.scope,
+      records: [{ id: 'a'.repeat(64), createdAt: 'damaged', delivery: { attempted: true } }],
+    });
+    await journal.file.write(contents);
+    assert.equal((await f.service.inspect(f.value, root)).status, 'ready');
+    const findings = await f.service.contribution().inspect!({
+      manifest: f.value,
+      workspaceDir: root,
+    } as Parameters<NonNullable<ReturnType<OpenClawIntake['contribution']>['inspect']>>[0]);
+    assert.ok(findings?.some((finding) => finding.code === 'intake-ready'));
+    f.provider.events.push(...intakeFixture().events);
+    f.setNow(baseline + 120000);
+    const scan = await f.service.run(f.value, root, 'scan');
+    assert.equal(scan.status, 'ready');
+    assert.ok((await store.read())!.records.length > 0);
+    assert.equal(await journal.file.read(), contents);
+    await assert.rejects(journal.read(), /dispatch-state-invalid/);
+  });
   it('should reevaluate a changed policy fingerprint without replacing the intake baseline', async () => {
     const f = fixture();
     f.value.github.notifications.runtimes = ['openclaw', 'codex'];

@@ -4,7 +4,7 @@ import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type { IssuePickupClient } from '../channels/github/provider/issue-pickup-client.ts';
 import AssignmentClaimStore from './assignment-claim-store.ts';
 import DiscoveryBudget from './discovery-budget.ts';
-import { assertDispatchStorage, dispatchStorageNotice } from './dispatch-storage.ts';
+import { assertDispatchStorage } from './dispatch-storage.ts';
 import type { IssuePickupAuthority } from './issue-pickup-authority.ts';
 import type IssuePickupEnrollmentStore from './issue-pickup-enrollment.ts';
 import IssuePickupFailure from './issue-pickup-failure.ts';
@@ -317,12 +317,12 @@ export default class OpenClawIntake {
       ...(code ? { code } : {}),
       ...(this.dependencies.resetRoot
         ? {
-            storage: dispatchStorageNotice(
+            storage: (
               await new OpenClawDispatchStore(
                 this.dependencies.resetRoot,
                 store.location.scope,
-              ).read(),
-            ),
+              ).inspectIntake()
+            ).storage,
           }
         : {}),
       baselineAt: state?.baselineAt ?? null,
@@ -381,8 +381,12 @@ export default class OpenClawIntake {
       runtime: 'openclaw',
       readIssuePickup: async () =>
         pickupAuthority(
-          (await new OpenClawDispatchStore(store.location.root, store.location.scope).read())
-            .projectPickup,
+          (
+            await new OpenClawDispatchStore(
+              store.location.root,
+              store.location.scope,
+            ).inspectIntake()
+          ).projectPickup,
         ) ?? this.dependencies.issuePickup,
       store: target,
       budget,

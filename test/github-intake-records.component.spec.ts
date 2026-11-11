@@ -52,6 +52,31 @@ describe('channels/github/intake/records', () => {
     };
   }
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should preserve unused ${runtime} assignment fields without weakening source identity checks`, async () => {
+      const { input, store, events } = setup(runtime);
+      const assigned = events.splice(0);
+      await scanAssignments({ ...input, activate: true });
+      events.push(...assigned);
+      await scanAssignments({ ...input, now: baseline + 120000 });
+      const raw = JSON.parse((await store.file.read())!);
+      raw.unusedNote = 'old';
+      raw.records[0].routingNote = 'unused';
+      raw.records[0].receiving.displayHint = 'unused';
+      await store.file.write(JSON.stringify(raw));
+      assert.deepEqual(await store.read(), raw);
+      await store.exclusive(async (state, save) => {
+        await save(state!);
+      });
+      assert.deepEqual(JSON.parse((await store.file.read())!), raw);
+      raw.records[0].initiation = { kind: 'operator' };
+      await store.file.write(JSON.stringify(raw));
+      await assert.rejects(store.read(), /intake-state-invalid/);
+      delete raw.records[0].initiation;
+      raw.records[0].receiving.nodeId = 'another-account';
+      await store.file.write(JSON.stringify(raw));
+      await assert.rejects(store.read(), /intake-state-invalid/);
+    });
+
     it(`should retain consumed ${runtime} assignments after task disposal and admit reassignment`, async () => {
       const { input, store, events } = setup(runtime);
       const assigned = events.splice(0);

@@ -724,6 +724,10 @@ describe('agent/codex-feedback', () => {
   }
 
   it('should recover preparation lost before send and deliver the exact retained comment once', async () => {
+    const raw = JSON.parse((await store.file.read())!);
+    raw.records[0].routingNote = 'unused';
+    raw.records[0].reservationVersion = 1;
+    await store.file.write(JSON.stringify(raw));
     const ref = await prepare(
       commenter,
       '@receiver implement option 1.\nKeep `quoted` text and $variables.',
@@ -761,6 +765,9 @@ describe('agent/codex-feedback', () => {
     occurrence++;
     assert.equal((await call('next')).status, 'idle');
     assert.equal(deliveries.length, 1);
+    const saved = JSON.parse((await store.file.read())!).records[0];
+    assert.equal(saved.routingNote, 'unused');
+    assert.equal(saved.reservationVersion, 1);
   });
 
   for (const outcome of ['possible-send', 'denied', 'missing-history'] as const) {

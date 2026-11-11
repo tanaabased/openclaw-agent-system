@@ -14,6 +14,7 @@ const mode = Type.Union([Type.Literal('plan'), Type.Literal('work'), Type.Litera
 export const operatorIssueSchema = Type.Object(
   {
     ...Type.Omit(intakeRecordSchema, ['assignment', 'evidence']).properties,
+    assignment: Type.Optional(Type.Never()),
     pullRequest: Type.Optional(manualPullRequestSchema),
     initiation: Type.Object(
       {

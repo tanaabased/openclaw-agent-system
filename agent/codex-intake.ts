@@ -16,7 +16,7 @@ import {
 } from './issue-pickup-jobs.ts';
 import issuePickup, { pickupAuthority, type PickupInput } from './issue-pickup.ts';
 import type { IssuePickupClient } from '../channels/github/provider/issue-pickup-client.ts';
-import { assertDispatchStorage, dispatchStorageNotice } from './dispatch-storage.ts';
+import { assertDispatchStorage } from './dispatch-storage.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type { IssuePickupAuthority } from './issue-pickup-authority.ts';
 import connectCodexGitHubAccount from './codex-github-client.ts';
@@ -232,7 +232,7 @@ export async function runCodexIntake(
             current.store.location.root,
             current.store.location.scope,
           );
-          await journal.exclusive(async (state, save) =>
+          await journal.observeIntake(async (state, save) =>
             acceptCodexIntakeOccurrence(
               state,
               occurrence,
@@ -258,7 +258,7 @@ export async function runCodexIntake(
             await new CodexDispatchStore(
               current.store.location.root,
               current.store.location.scope,
-            ).read()
+            ).inspectIntake()
           ).projectPickup,
         ) ?? deps.issuePickup,
       store: current.store,
@@ -380,9 +380,8 @@ export async function inspectCodexIntake(pluginData: string, deps: CodexIntakeDe
     ...context,
     ...(context
       ? {
-          storage: dispatchStorageNotice(
-            await new CodexDispatchStore(pluginData, context.scope).read(),
-          ),
+          storage: (await new CodexDispatchStore(pluginData, context.scope).inspectIntake())
+            .storage,
         }
       : {}),
     baselineAt: state?.baselineAt ?? null,

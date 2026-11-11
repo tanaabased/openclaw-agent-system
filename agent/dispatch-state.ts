@@ -16,6 +16,7 @@ import acquirePrivateStateFileLock, {
   type PrivateStateFileLockHandle,
 } from '../core/private-state-file-lock.ts';
 import PrivateStateFile from '../core/private-state-file.ts';
+import storedDataSchema from '../core/stored-data-schema.ts';
 import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 import { providerDiagnosticSchema } from '../utils/provider-diagnostic.ts';
 import { assessmentSelectionSchema } from './assessment-selection.ts';
@@ -27,6 +28,7 @@ import {
   dispatchSoftBytes,
   dispatchStorageBytes,
   dispatchStorageLimits,
+  dispatchStorageNotice,
 } from './dispatch-storage.ts';
 import intakePassStarted from './intake-pass-started.ts';
 import { projectWorkSchema } from './issue-pickup-authority.ts';
@@ -218,6 +220,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
   readonly path: string;
   readonly envelopeSchema: ReturnType<typeof dispatchStateSchema<R>>;
   readonly ownershipSchema: TObject;
+  private readonly recordSchema: TObject;
   constructor(
     readonly root: string,
     readonly scope: string,
@@ -227,8 +230,9 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
       validRecord(record: R): boolean;
     },
   ) {
-    this.schema = dispatchStateSchema<R>(contract.recordSchema);
-    this.envelopeSchema = dispatchStateSchema<R>(Type.Unknown());
+    this.recordSchema = storedDataSchema(contract.recordSchema, ['request']);
+    this.schema = storedDataSchema(dispatchStateSchema<R>(this.recordSchema), ['request']);
+    this.envelopeSchema = storedDataSchema(dispatchStateSchema<R>(Type.Unknown()));
     this.ownershipSchema = dispatchOwnershipSchema(contract.recordSchema);
 
     this.path = join(root, contract.runtime + '-dispatch-' + scope + '.json');
@@ -303,7 +307,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
   }
   private validRecord(r: R): boolean {
     return (
-      Value.Check(this.contract.recordSchema, r) &&
+      Value.Check(this.recordSchema, r) &&
       !(
         Boolean(r.intakeId) === Boolean(r.manualIssue) ||
         (r.manualIssue &&
@@ -314,7 +318,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
         (!r.cleanupPending &&
           ((r.request && (!r.context || !r.routing)) ||
             (r.handoff && (!r.request || !r.threadId || !r.worktree)))) ||
-        (!r.cleanupPending && !validNativeDispatchRecord(r)) ||
+        (!r.cleanupPending && !validNativeDispatchRecord(r, this.contract.runtime)) ||
         (r.reset && !r.threadId) ||
         (r.cleanupPending ? !validPendingRetirement(r) : !this.contract.validRecord(r))
       )
@@ -482,7 +486,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     this.assertIndependent(record, restored.records);
     return restored;
   }
-  private async snapshot() {
+  private async readEnvelope() {
     const contents = await this.file.read();
     let state: unknown = { version: 4, scope: this.scope, resetGeneration: 'initial', records: [] };
     if (contents !== undefined) {
@@ -496,8 +500,38 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
       throw new Error(
         'dispatch-clean-start-required: stop writers and perform the reviewed clean start before using this runtime',
       );
-    const projected = this.project(state);
-    return { raw: state as DispatchState<R>, state: projected };
+    this.validateEnvelope(state);
+    return state;
+  }
+  private async snapshot() {
+    const raw = await this.readEnvelope();
+    return { raw, state: this.project(raw) };
+  }
+  async inspectIntake() {
+    const state = await this.readEnvelope();
+    return {
+      projectPickup: state.projectPickup,
+      storage: dispatchStorageNotice(state),
+    };
+  }
+  async observeIntake<T>(
+    run: (
+      state: Pick<DispatchState<R>, 'run' | 'checked'>,
+      save: () => Promise<void>,
+    ) => Promise<T>,
+  ): Promise<T> {
+    return this.exclusive(
+      async (state, save) => {
+        const observation = { run: state.run, checked: state.checked };
+        return run(observation, async () => {
+          state.run = observation.run;
+          state.checked = observation.checked;
+          await save();
+        });
+      },
+      true,
+      'intake-observation',
+    );
   }
   async read(): Promise<DispatchState<R>> {
     return (await this.snapshot()).state;
@@ -607,10 +641,32 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
       | 'dispatch-commit'
       | 'dispatch-reconcile'
       | 'occurrence-registration'
+      | 'intake-observation'
       | 'delivery-checkpoint'
       | 'continuation-checkpoint' = 'dispatch-commit',
     signal?: AbortSignal,
   ): Promise<T> {
+    const intake = operation === 'intake-observation';
+    const snapshotForOperation = async () => {
+      if (!intake) return this.snapshot();
+      const raw = await this.readEnvelope();
+      return { raw, state: raw };
+    };
+    const restore = (
+      proposed: DispatchState<R>,
+      snapshot: { raw: DispatchState<R>; state: DispatchState<R> },
+    ) => {
+      if (!intake) return this.restore(proposed, snapshot);
+      this.validateEnvelope(proposed);
+      if (
+        !isDeepStrictEqual(
+          { ...proposed, run: undefined, checked: undefined },
+          { ...snapshot.raw, run: undefined, checked: undefined },
+        )
+      )
+        throw new Error('dispatch-intake-isolation-required');
+      return proposed;
+    };
     await ensurePrivateStateDirectories({
       directories: [this.root],
       currentUid: process.getuid?.(),
@@ -621,7 +677,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
         staleMs: 30000,
         contention: {
           category: 'dispatch',
-          operation,
+          operation: intake ? 'occurrence-registration' : operation,
           // preserve the existing forty 250-ms retry envelope, including local queue time.
           timeoutMs: wait ? 10000 : 0,
           retryMs: 250,
@@ -646,13 +702,13 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     try {
       return await withPrivateStateLock(guard, async () => {
         await assertNotificationManagement(this.root, this.scope);
-        let snapshot = await this.snapshot();
+        let snapshot = await snapshotForOperation();
         const state = structuredClone(snapshot.state);
         let committed = structuredClone(state);
         const save = async () => {
           guard.assertHeld();
           await assertNotificationManagement(this.root, this.scope);
-          const freshSnapshot = await this.snapshot();
+          const freshSnapshot = await snapshotForOperation();
           const current = freshSnapshot.state;
           if (current.resetGeneration !== committed.resetGeneration)
             throw new Error('notification-reset-stale-operation');
@@ -662,9 +718,9 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
           )
             throw new Error(stateSnapshotConflictCode);
           const retained = structuredClone(state);
-          const originalBytes = dispatchStorageBytes(this.restore(retained, snapshot)).contentBytes;
+          const originalBytes = dispatchStorageBytes(restore(retained, snapshot)).contentBytes;
           const pressure = originalBytes > dispatchSoftBytes;
-          if (this.contract.runtime === 'openclaw' && snapshot.raw === snapshot.state) {
+          if (!intake && this.contract.runtime === 'openclaw' && snapshot.raw === snapshot.state) {
             for (const pass of retained.openclawPasses ?? []) {
               if (pass.completed) continue;
               const started = intakePassStarted(
@@ -687,19 +743,21 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
               }
             }
           }
-          const admission = retained.records.some((record) => {
-            if (record.retirement || record.reset) return false;
-            const previous = committed.records.find((entry) => entry.id === record.id);
-            return !previous || (!previous.request && Boolean(record.request));
-          });
+          const admission =
+            !intake &&
+            retained.records.some((record) => {
+              if (record.retirement || record.reset) return false;
+              const previous = committed.records.find((entry) => entry.id === record.id);
+              return !previous || (!previous.request && Boolean(record.request));
+            });
           const reclaimed =
-            originalBytes - dispatchStorageBytes(this.restore(retained, snapshot)).contentBytes;
-          if (reclaimed > 0) retained.storageReclaimedBytes = reclaimed;
-          const contents = assertDispatchStorage(this.restore(retained, snapshot), admission);
+            originalBytes - dispatchStorageBytes(restore(retained, snapshot)).contentBytes;
+          if (!intake && reclaimed > 0) retained.storageReclaimedBytes = reclaimed;
+          const contents = assertDispatchStorage(restore(retained, snapshot), admission);
           await this.file.write(contents);
           refreshStateSnapshot(state, retained);
           const raw = JSON.parse(contents) as DispatchState<R>;
-          snapshot = { raw, state: this.project(raw) };
+          snapshot = { raw, state: intake ? raw : this.project(raw) };
           committed = structuredClone(snapshot.state);
         };
         return run(state, save, guard.signal);

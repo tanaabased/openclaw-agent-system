@@ -3,6 +3,21 @@ import assert from 'node:assert/strict';
 import mergeStateSnapshot, { refreshStateSnapshot } from '../core/merge-state-snapshot.ts';
 
 describe('core/merge-state-snapshot', () => {
+  it('should preserve extra json keys as own data without touching inherited objects', () => {
+    const prototype = { note: { value: 'original' } };
+    const target = Object.create(prototype);
+    const source = JSON.parse('{"__proto__":{"unused":true},"note":{"value":"new"}}');
+    refreshStateSnapshot(target, source);
+    assert.deepEqual(prototype, { note: { value: 'original' } });
+    assert.equal(Object.getPrototypeOf(target), prototype);
+    assert.equal(Object.hasOwn(target, '__proto__'), true);
+    assert.equal(Object.hasOwn(target, 'note'), true);
+    assert.deepEqual(JSON.parse(JSON.stringify(target)), source);
+    const merged = mergeStateSnapshot({}, source, { other: true });
+    assert.deepEqual(merged, { ...source, other: true });
+    assert.equal(Object.getPrototypeOf(merged), Object.prototype);
+  });
+
   it('should preserve independent record and event updates with retained object references', () => {
     const before = { records: [{ id: 'a', events: [{ id: 'event', status: 'attempted' }] }] };
     const desired = structuredClone(before);

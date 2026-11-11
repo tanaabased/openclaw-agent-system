@@ -209,7 +209,7 @@ describe('agent/shared dispatch state', () => {
     }
   });
 
-  it('should reject foreign schemas and scope rather than reset their evidence', async () => {
+  it('should reject foreign scope and invalid native requests without resetting evidence', async () => {
     const store = new OpenClawDispatchStore(root, scope);
     for (const value of [
       {
@@ -221,13 +221,15 @@ describe('agent/shared dispatch state', () => {
         version: 4,
         scope,
         resetGeneration: 'current',
-        records: [{ ...pending(), clientThreadId: 'codex' }],
+        records: [{ ...prepared(), request: { ...prepared().request, agentId: 42 } }],
       },
       {
         version: 4,
         scope,
         resetGeneration: 'current',
-        records: [{ ...prepared(), native: { sessionKey: 'different' } }],
+        records: [
+          { ...prepared(), request: { ...prepared().request, workspaceOverride: '/other' } },
+        ],
       },
     ]) {
       const contents = JSON.stringify(value);
@@ -260,6 +262,78 @@ describe('agent/shared dispatch state', () => {
       return raw;
     };
     const task = <T>(session: string, run: () => T) => withDispatchTask(runtime, session, run);
+
+    it(`should preserve unused ${runtime} fields while reading and saving current task data`, async () => {
+      const store = makeStore(root);
+      const record = {
+        ...healthy(),
+        routingNote: { obsolete: true },
+        reservationVersion: 7,
+        reset: { at: 1, by: 'operator', retiredDisplayHint: 'unused' },
+      };
+      await write(store, [record], { oldReport: 'unused' });
+      assert.deepEqual((await store.read()).records, [record]);
+      await store.transaction(async (state, save) => {
+        state.records[0]!.context = 'current context';
+        await save();
+      });
+      const saved = JSON.parse(await readFile(store.path, 'utf8'));
+      assert.deepEqual(saved.records, [{ ...record, context: 'current context' }]);
+      assert.equal(saved.oldReport, 'unused');
+      assert.equal((await store.inspectIntake()).storage.level, 'normal');
+      await write(store, [{ ...record, reset: { at: 'not-a-time', by: 'operator' } }]);
+      await assert.rejects(store.read(), /dispatch-state-invalid/);
+    });
+
+    it(`should inspect ${runtime} intake without interpreting another task's damaged effects`, async () => {
+      const store = makeStore(root);
+      await write(store, [healthy(), damaged()]);
+      const before = await readFile(store.path, 'utf8');
+      const result = await store.inspectIntake();
+      assert.equal(result.storage.level, 'normal');
+      assert.equal(result.storage.protectedRecords['active-workflow'], 2);
+      assert.equal(result.projectPickup, undefined);
+      assert.equal(await readFile(store.path, 'utf8'), before);
+      await store.observeIntake(async (state, save) => {
+        state.run = {
+          id: 'scan',
+          automationId: 'assignments',
+          currentTimeIso: '2026-11-11T12:00:00Z',
+          actions: 0,
+        };
+        await save();
+      });
+      assert.deepEqual(JSON.parse(await readFile(store.path, 'utf8')).records, [
+        healthy(),
+        damaged(),
+      ]);
+      await assert.rejects(
+        store.exclusive(
+          async (state, save) => {
+            state.records = [];
+            await save();
+          },
+          true,
+          'intake-observation',
+        ),
+        /dispatch-intake-isolation-required/,
+      );
+      await task('healthy-chat', async () => {
+        await store.transaction(async (state, save) => {
+          state.records[0]!.context = 'independent work';
+          await save();
+        });
+      });
+      await assert.rejects(
+        task('damaged-chat', () => store.read()),
+        /dispatch-task-record-invalid/,
+      );
+      assert.deepEqual(JSON.parse(await readFile(store.path, 'utf8')).records[1], damaged());
+      for (const extra of [{ scope: 'e'.repeat(64) }, { projectPickup: { invalid: true } }]) {
+        await write(store, [healthy(), damaged()], extra);
+        await assert.rejects(store.inspectIntake(), /dispatch-state-invalid/);
+      }
+    });
 
     it(`should isolate a healthy ${runtime} task and preserve damaged records and uncertain effects`, async () => {
       const store = makeStore(root);

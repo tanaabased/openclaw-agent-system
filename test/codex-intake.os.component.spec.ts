@@ -28,6 +28,7 @@ import {
   selectCodexIntake,
 } from '../agent/codex-intake.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
+import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import checkCodexActivationIsolation from './codex-activation-fixture.ts';
 import { baseline, intakeFixture } from './github-intake-fixture.ts';
 
@@ -67,6 +68,33 @@ describe('agent/codex-intake', () => {
   });
   afterEach(async () => {
     await rm(root, { force: true, recursive: true });
+  });
+  it('should inspect and admit assignments while an unrelated task payload needs repair', async () => {
+    const provider = intakeFixture();
+    const assigned = provider.events.splice(0);
+    let now = baseline;
+    const deps = {
+      codexHome,
+      assertActive: async () => {},
+      now: () => now,
+      connect: async () => provider.client,
+    };
+    await runCodexIntake(pluginData, true, deps);
+    const { store } = await selectCodexIntake(pluginData, deps);
+    const journal = new CodexDispatchStore(store.location.root, store.location.scope);
+    const contents = JSON.stringify({
+      version: 4,
+      scope: store.location.scope,
+      records: [{ id: 'a'.repeat(64), createdAt: 'damaged', feedback: { attempted: true } }],
+    });
+    await journal.file.write(contents);
+    assert.equal((await inspectCodexIntake(pluginData, deps)).status, 'ready');
+    provider.events.push(...assigned);
+    now += 120000;
+    assert.equal((await runCodexIntake(pluginData, false, deps)).status, 'ready');
+    assert.ok((await store.read())!.records.length > 0);
+    assert.equal(await journal.file.read(), contents);
+    await assert.rejects(journal.read(), /dispatch-state-invalid/);
   });
   it('should reject retired repository scope before codex intake connects', async () => {
     for (const routing of [undefined, ['owner/*'], []]) {

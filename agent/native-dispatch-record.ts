@@ -1,12 +1,11 @@
-import { Value } from 'typebox/value';
-import type { DispatchRecord } from './codex-dispatch-state.ts';
-import { codexWorkStateSchema } from './codex-work-state.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
-type Record = DispatchRecord & OpenClawDispatchRecord;
-export function validNativeDispatchRecord(source: SharedDispatchRecord) {
-  const record = source as Record;
-  if (record.nativeWork && !Value.Check(codexWorkStateSchema, record.nativeWork)) return false;
+export function validNativeDispatchRecord(
+  source: SharedDispatchRecord,
+  runtime: 'codex' | 'openclaw',
+) {
+  if (runtime === 'codex') return true;
+  const record = source as OpenClawDispatchRecord;
   const turns = record.nativeTurns ?? [];
   return (
     new Set(turns.map(({ turn }) => turn.runId)).size === turns.length &&

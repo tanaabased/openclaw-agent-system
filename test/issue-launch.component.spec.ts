@@ -369,6 +369,16 @@ describe('agent/issue-launch', () => {
     assert.equal(records[0]?.routingInstructions?.guidance?.content, 'Changed instructions.');
   });
 
+  it('should reject assignment data added to an operator-origin record', async () => {
+    await launch();
+    const raw = JSON.parse((await journal.file.read())!);
+    raw.records[0].manualIssue.assignment = fixture.events[0];
+    const contents = JSON.stringify(raw);
+    await journal.file.write(contents);
+    await assert.rejects(journal.read(), /dispatch-state-invalid/);
+    assert.equal(await journal.file.read(), contents);
+  });
+
   it('should reserve unassigned work once without creating an assignment receipt', async () => {
     fixture.item.assignees = [];
     fixture.client.listAssignmentEvents = async () => {

@@ -58,7 +58,7 @@ describe('agent/codex-dispatch-state', () => {
     assert.equal(await readFile(store.path, 'utf8'), contents);
   });
 
-  it('should reject removed workflow fields instead of repairing or replaying them', async () => {
+  it('should leave unused workflow fields inert instead of repairing or replaying them', async () => {
     const current = await store.read();
     for (const fields of [
       { compatibilityRecovery: { version: 1, codes: [] } },
@@ -80,7 +80,7 @@ describe('agent/codex-dispatch-state', () => {
         ],
       });
       await store.file.write(contents);
-      await assert.rejects(store.read(), /dispatch-state-invalid/);
+      assert.deepEqual(await store.read(), JSON.parse(contents));
       assert.equal(await readFile(store.path, 'utf8'), contents);
     }
   });
