@@ -43,6 +43,13 @@ test ! -e host-ready
 test ! -e agent-ready
 test ! -e setup-runs
 
+# should reject retired pickup spellings through installed validation
+cd "$GITHUB_WORKSPACE/fixtures/retired-pickup"
+if openclaw agent-system validate --json > "$TMPDIR/retired-pickup.stdout" 2> "$TMPDIR/retired-pickup.stderr"; then exit 1; fi
+test ! -s "$TMPDIR/retired-pickup.stdout"
+grep -F 'code=github-project-pickup-removed' "$TMPDIR/retired-pickup.stderr"
+grep -F 'code=github-routing-project-pickup-removed' "$TMPDIR/retired-pickup.stderr"
+
 # should install ordered setup and resolve environment-backed identity with codex model routing
 cd "$GITHUB_WORKSPACE/examples/openclaw-workspace"
 export AGENT_SYSTEM_WORKSPACE_HOST_NAME=Workspace

@@ -19,10 +19,9 @@ The generated pickup automation is now `📥 ISSUE PICKUP`, with declaration/YAM
 `github-issue-pickup` instead of `github-project-pickup`, in OpenClaw and standalone Codex.
 Its default chat name is `ISSUE PICKUP`, without the scheduler's emoji. Configure it
 under `github.issue-pickup` and use `issue-pickup` in routing workflow lists.
-The former `github.project-pickup` key and routing value `project-pickup` remain
-deprecated input aliases, so existing agents continue to parse their configuration.
-Replace the old spellings when updating a manifest; do not declare both configuration
-keys. No alias removal release is scheduled. Configured thread names and IDs,
+The former `github.project-pickup` key and routing value `project-pickup` are no
+longer accepted. Rename them to `issue-pickup` before upgrading, keeping the settings
+and the nested `projects` list. Configured thread names and IDs,
 retained journals, enrollment and assignment receipts remain unchanged.
 
 Run normal Install in each runtime to create the replacement. Verify its name,

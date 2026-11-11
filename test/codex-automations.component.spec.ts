@@ -554,22 +554,7 @@ describe('agent/codex-automations', () => {
         },
       },
     };
-    const saveManifest = (legacy = false) =>
-      writeFile(
-        join(workspace, 'agent.yaml'),
-        JSON.stringify(
-          legacy
-            ? {
-                ...source,
-                github: {
-                  ...source.github,
-                  'issue-pickup': undefined,
-                  'project-pickup': source.github['issue-pickup'],
-                },
-              }
-            : source,
-        ),
-      );
+    const saveManifest = () => writeFile(join(workspace, 'agent.yaml'), JSON.stringify(source));
     await saveManifest();
     const conversations = new Map<
       string,
@@ -688,7 +673,7 @@ describe('agent/codex-automations', () => {
     assert.ok(sameChatReplacement.expected.kind === 'heartbeat');
     assert.equal(sameChatReplacement.expected.targetThreadId, legacyChat);
     await nativeWrite({ ...legacyPickup.definition, status: 'ACTIVE' }, legacyPickup.id);
-    await saveManifest(true);
+    await saveManifest();
     await syncThreads(dependencies);
     await reconcile();
     const installedPickup = (await readCodexAutomations(codexHome)).find(

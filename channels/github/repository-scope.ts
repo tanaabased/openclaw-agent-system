@@ -17,7 +17,6 @@ const workflowSchema = Type.Union([
   Type.Literal(workflows[0]),
   Type.Literal(workflows[1]),
   Type.Literal(workflows[2]),
-  Type.Literal('project-pickup'),
 ]);
 const ruleIdSchema = Type.String({ pattern: '^[^\\s\\x00-\\x1f\\x7f]+(?![\\s\\S])' });
 const local = Type.Literal('local');
@@ -48,26 +47,6 @@ export const repositoryRouteSchema = Type.Union([
 ]);
 export type RepositoryRoute = Static<typeof repositoryRouteSchema>;
 
-function canonicalWorkflows(values: readonly (RoutingWorkflow | 'project-pickup')[]) {
-  return [
-    ...new Set(
-      values.map((value) => (value === 'project-pickup' ? ('issue-pickup' as const) : value)),
-    ),
-  ];
-}
-
-/** accept the legacy input spelling without introducing a fourth workflow. */
-export function decodeRepositoryRouting(routes: RepositoryRoute[]): RepositoryRoute[] {
-  return routes.map((route) => {
-    if (typeof route === 'string' || !Object.hasOwn(route, 'match')) return route;
-    const full = route as Static<typeof fullRouteSchema>;
-    return {
-      ...full,
-      ...(full.workflows ? { workflows: canonicalWorkflows(full.workflows) } : {}),
-    };
-  });
-}
-
 type Rule = {
   id?: string;
   match: string;
@@ -90,7 +69,7 @@ function normalizeRule(route: RepositoryRoute): Rule {
     return {
       id: full.id,
       match: full.match,
-      workflows: full.workflows ? canonicalWorkflows(full.workflows).sort() : workflows,
+      workflows: full.workflows ? [...full.workflows].sort() : workflows,
       target:
         typeof target === 'string'
           ? target
@@ -117,7 +96,7 @@ export function normalizeRepositoryRouting(routes: RepositoryRoute[]) {
   return routes.map((entry) => {
     const { match: pattern, workflows: eligible, target } = normalizeRule(entry);
     const match = pattern.toLowerCase();
-    // retain the persisted authority fingerprint while accepting either input spelling.
+    // retained authority fingerprints keep their original serialized workflow spelling.
     if (eligible.length !== workflows.length)
       return {
         match,

@@ -1,0 +1,14 @@
+schema-version: 1
+agent:
+  id: retired-pickup
+github:
+  username: receiver
+  runtimes: [openclaw, codex]
+  routing:
+    - match: owner/*
+      workflows: [project-pickup]
+      target: local
+  issue-assignment: {}
+  project-pickup:
+    projects:
+      - repository: owner/repo

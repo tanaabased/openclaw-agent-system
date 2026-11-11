@@ -310,6 +310,14 @@ node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-no
   | jq -e '.manifest.status == "invalid" and any(.manifest.diagnostics[]; .code == "github-repository-owners-removed" and (.message | contains("github.routing")))'
 test ! -d "$CODEX_HOME/automations"
 
+# should reject retired pickup spellings before binding or activation
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/fixtures/retired-pickup" \
+  | jq -e '.manifest.status == "invalid" and any(.manifest.diagnostics[]; .code == "github-project-pickup-removed") and any(.manifest.diagnostics[]; .code == "github-routing-project-pickup-removed")'
+test ! -d "$CODEX_HOME/automations"
+
 # should validate routed multi-repository pickup and reject copied native inventory
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
