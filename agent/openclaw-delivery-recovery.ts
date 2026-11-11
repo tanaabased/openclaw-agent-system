@@ -22,7 +22,8 @@ export default function openClawDeliveryRecovery(input: {
       'Stop on this denial or identity/authority failure. Restore the original authorized context before continuing; do not retry a write or bypass the denial.' +
       preserve
     );
-  if (input.diagnostic) return workflowRecovery(input.code, input.diagnostic).next + preserve;
+  const providerRecovery = input.diagnostic && workflowRecovery(input.code, input.diagnostic);
+  if (providerRecovery) return providerRecovery.next + preserve;
   const recovery =
     ['compose', 'candidate', 'announce'].includes(input.operation) &&
     (input.announcement?.attempted || input.announcement?.receipt)
