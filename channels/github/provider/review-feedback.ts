@@ -1,8 +1,11 @@
 import { createHash } from 'node:crypto';
 
 import { GitHubWorkEventClientError } from './work-event-api-client.ts';
-import { githubCommentCard } from '../presentation/comment.ts';
-import { githubNotificationMarkdownCode as inlineCode } from '../presentation/card.ts';
+import {
+  githubNotificationAttributedMessage,
+  githubNotificationMarkdownCode as inlineCode,
+  githubNotificationMarkdownText,
+} from '../presentation/card.ts';
 import {
   admitGitHubComment,
   type GitHubCanonicalIssueComment,
@@ -261,14 +264,9 @@ export function reviewFeedbackPresentation(comment: GitHubReviewFeedback): strin
       `${finding.body}\n\n[${inlineCode(finding.path)} ↗](${finding.url}) · reviewed commit ${inlineCode(finding.originalCommitId.slice(0, 7))}\nCurrent line: ${finding.line ?? 'unavailable or outdated'}; original line: ${finding.originalLine ?? 'unavailable'}; side: ${finding.side ? inlineCode(finding.side) : 'unavailable'}\n\n${reviewDiffPreview(finding)}`,
     );
   }
-  return githubCommentCard({
-    body: lines.join('\n\n'),
-    author: {
-      label: comment.author!.login,
-      url: `https://github.com/${encodeURIComponent(comment.author!.login)}`,
-    },
-    label: 'Review comment',
-    connector: 'from',
-    publication: { url: sourceUrl },
-  });
+  const author = `[${githubNotificationMarkdownText('@' + comment.author!.login)}](https://github.com/${encodeURIComponent(comment.author!.login)})`;
+  return githubNotificationAttributedMessage(
+    `${author} · [Review comment ↗](${sourceUrl})`,
+    lines.join('\n\n'),
+  );
 }

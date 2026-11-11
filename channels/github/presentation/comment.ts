@@ -1,4 +1,8 @@
-import { githubNotificationMarkdownText, githubNotificationQuote } from './card.ts';
+import {
+  githubNotificationAttributedMessage,
+  githubNotificationMarkdownText,
+  githubNotificationQuote,
+} from './card.ts';
 
 export interface GitHubNotificationCommentEventProjection {
   author: {
@@ -40,15 +44,11 @@ export function githubCommentCard(input: GitHubCommentCardInput): string {
   );
 }
 
-/** quote an admitted comment without rewriting its author prose or mentions. */
+/** present an admitted comment without rewriting its author prose or mentions. */
 export function githubNotificationCommentPresentation(
   projection: GitHubNotificationCommentEventProjection,
 ): string {
-  return githubCommentCard({
-    body: projection.body,
-    author: projection.author,
-    label: 'Comment',
-    connector: 'from',
-    publication: { url: projection.item.url },
-  });
+  const author = `[${githubNotificationMarkdownText('@' + projection.author.label)}](${projection.author.url})`;
+  const source = `[${githubNotificationMarkdownText(projection.item.label)} ↗](${projection.item.url})`;
+  return githubNotificationAttributedMessage(`${author} · ${source}`, projection.body);
 }

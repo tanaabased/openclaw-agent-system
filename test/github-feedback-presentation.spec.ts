@@ -3,6 +3,7 @@ import {
   githubCommentCard,
   githubNotificationCommentPresentation,
 } from '../channels/github/presentation/comment.ts';
+import assignmentCard from '../channels/github/presentation/assignment-card.ts';
 import feedbackResponse, {
   feedbackReplyPresentation,
 } from '../channels/github/presentation/feedback-response.ts';
@@ -29,7 +30,7 @@ describe('channels/github/presentation/feedback', () => {
     );
   });
 
-  it('should render trusted comment identity around the exact author prose', () => {
+  it('should render a plain source line around the exact incoming comment prose', () => {
     const body = [
       '  @tanaabot Please check [the build](https://github.com/tanaabased/example/actions).',
       '',
@@ -55,22 +56,41 @@ describe('channels/github/presentation/feedback', () => {
         },
       }),
       [
-        '>   @tanaabot Please check [the build](https://github.com/tanaabased/example/actions).',
-        '>',
-        '> ## Notes',
-        '>',
-        '> - Keep `code` exact.',
-        '> - Ask @octocat about #12.  ',
-        '>',
-        '> > Quoted context',
-        '>',
-        '> ```ts',
-        '> const mention = "@tanaabot";',
-        '> ```',
-        '>',
-        '> &nbsp;  ',
-        '> *[Comment ↗](https://github.com/tanaabased/openclaw-agent-system/issues/46#issuecomment-123) from [@pirog](https://github.com/pirog)*',
+        '[@pirog](https://github.com/pirog) · [tanaabased/openclaw-agent-system#46 ↗](https://github.com/tanaabased/openclaw-agent-system/issues/46#issuecomment-123)',
+        '',
+        '---',
+        '',
+        body,
+        '',
+        '---',
       ].join('\n'),
+    );
+  });
+
+  it('should use the plain source line for incoming assignments but retain request cards', () => {
+    const item = {
+      kind: 'Issue',
+      label: 'tanaabased/example#3',
+      url: 'https://github.com/tanaabased/example/issues/3',
+    };
+    assert.equal(
+      assignmentCard(
+        { emoji: '📥', item, sender: { label: 'pirog', url: 'https://github.com/pirog' } },
+        'Creation attempt 2.',
+      ),
+      [
+        '[@pirog](https://github.com/pirog) · [tanaabased/example#3 ↗](https://github.com/tanaabased/example/issues/3)',
+        '',
+        '---',
+        '',
+        '[@pirog](https://github.com/pirog) assigned you to [tanaabased/example#3](https://github.com/tanaabased/example/issues/3). Creation attempt 2.',
+        '',
+        '---',
+      ].join('\n'),
+    );
+    assert.equal(
+      assignmentCard({ emoji: '📥', item }),
+      '> ## 📥 Issue requested\n>\n> You requested [tanaabased/example#3](https://github.com/tanaabased/example/issues/3).',
     );
   });
 
@@ -117,22 +137,20 @@ describe('channels/github/presentation/feedback', () => {
     assert.ok(missingAuthor.includes('by author unavailable*'));
   });
 
-  it('should keep all provider line endings inside the comment quote', () => {
+  it('should preserve provider line endings and quoted content inside the message', () => {
+    const body = '@tanaabot first\r\n\r\nsecond\rthird';
     const presentation = githubNotificationCommentPresentation({
       author: { label: 'pirog', url: 'https://github.com/pirog' },
-      body: '@tanaabot first\r\n\r\nsecond\rthird',
+      body,
       item: {
         label: 'example/repo#12',
         url: 'https://github.com/example/repo/pull/12#issuecomment-91',
       },
     });
-    assert.ok(presentation.includes('> @tanaabot first\n>\n> second\n> third'));
-    assert.ok(presentation.split('\n').every((line) => line.startsWith('>')));
-    assert.ok(
-      presentation.includes(
-        '[Comment ↗](https://github.com/example/repo/pull/12#issuecomment-91) from [@pirog]',
-      ),
-    );
+    assert.ok(presentation.includes(body));
+    assert.ok(presentation.startsWith('[@pirog](https://github.com/pirog) · [example/repo#12 ↗]('));
+    assert.ok(presentation.includes('\n\n---\n\n'));
+    assert.ok(presentation.endsWith('\n\n---'));
   });
 });
 

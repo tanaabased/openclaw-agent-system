@@ -57,6 +57,11 @@ export function githubNotificationQuote(text: string): string {
     .join('\n');
 }
 
+/** present incoming prose with a plain source line and separators. */
+export function githubNotificationAttributedMessage(source: string, message: string): string {
+  return [source, '', '---', '', message, '', '---'].join('\n');
+}
+
 /** quote complete private cards; raw composition and public handoffs opt out explicitly. */
 export default function githubNotificationCard(
   input: GitHubNotificationCardInput,

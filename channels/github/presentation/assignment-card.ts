@@ -1,4 +1,7 @@
-import githubNotificationCard, { githubNotificationMarkdownText } from './card.ts';
+import githubNotificationCard, {
+  githubNotificationAttributedMessage,
+  githubNotificationMarkdownText,
+} from './card.ts';
 
 /** presentation only; the owning runtime supplies the authorized action. */
 export default function assignmentCard(
@@ -9,25 +12,21 @@ export default function assignmentCard(
   },
   note = '',
 ) {
+  const item = `[${githubNotificationMarkdownText(projection.item.label)}](${projection.item.url})`;
+  const sender = projection.sender
+    ? `[@${githubNotificationMarkdownText(projection.sender.label)}](${projection.sender.url})`
+    : undefined;
+  const summary = sender
+    ? `${sender} assigned you to ${item}.${note ? ' ' + note : ''}`
+    : `You requested ${item}.${note ? ' ' + note : ''}`;
+  if (sender)
+    return githubNotificationAttributedMessage(
+      `${sender} · [${githubNotificationMarkdownText(projection.item.label)} ↗](${projection.item.url})`,
+      summary,
+    );
   return githubNotificationCard({
     emoji: projection.emoji,
-    title: projection.item.kind + (projection.sender ? ' assigned' : ' requested'),
-    summary: !projection.sender
-      ? 'You requested [' +
-        githubNotificationMarkdownText(projection.item.label) +
-        '](' +
-        projection.item.url +
-        ').' +
-        (note ? ' ' + note : '')
-      : '[@' +
-        githubNotificationMarkdownText(projection.sender.label) +
-        '](' +
-        projection.sender.url +
-        ') assigned you to [' +
-        githubNotificationMarkdownText(projection.item.label) +
-        '](' +
-        projection.item.url +
-        ').' +
-        (note ? ' ' + note : ''),
+    title: projection.item.kind + ' requested',
+    summary,
   });
 }

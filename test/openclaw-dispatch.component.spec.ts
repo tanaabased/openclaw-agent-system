@@ -4323,14 +4323,17 @@ describe('agent/openclaw issue dispatch', () => {
       await prepare(input);
       await assess(input.id);
       const message = String(sends()[0]!.params.message);
-      assert.match(message, /Issue assigned/);
+      assert.match(message, /^\[@receiver\].*owner\/repo#3 ↗/s);
+      assert.match(message, /\n\n---\n\n/);
       assert.ok(!message.includes('Model routing'));
       assert.match(message, /https:\/\/github.com\/receiver/);
       assert.match(message, /owner\/repo#3/);
+      assert.match(message, /assigned you to/);
+      assert.ok(!message.startsWith('>'));
       assert.ok(!message.includes('Assessment instructions'));
       assert.ok(!message.includes('Effective settings'));
       assert.doesNotMatch(message, /Return the missing result/);
-      assert.ok(message.split('\n').every((line) => line.startsWith('>')));
+      assert.ok(message.endsWith('\n\n---'));
       assert.ok(!message.includes(input.id));
       const snapshot = (await record()).context;
       service.dependencies.connect = async () => ({
