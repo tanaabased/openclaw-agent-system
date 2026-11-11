@@ -99,7 +99,14 @@ export async function discoverFeedback(input: {
     ? await feedbackDiscovery({ ...input, ...input.discovery })
     : undefined;
   const client = discovery?.client ?? input.client;
-  const baseline = state.baseline[input.nodeId];
+  const retained = state.events.filter((event) => event.nodeId === input.nodeId);
+  const baseline =
+    state.baseline[input.nodeId] || retained.length
+      ? {
+          ...Object.fromEntries(retained.map((event) => [event.sourceId, event.source])),
+          ...state.baseline[input.nodeId],
+        }
+      : undefined;
   let failure: { error: unknown } | undefined;
   async function collect(read: () => Promise<void>) {
     try {
@@ -143,7 +150,6 @@ export async function discoverFeedback(input: {
         for (let page = 1; ; page++) {
           const result = await read(page);
           values.push(...result.values);
-          if (values.length > 1000) throw new Error('feedback-queue-full');
           if (result.nextPage === 1) return values;
           if (result.nextPage !== page + 1) throw new Error('feedback-source-incomplete');
         }
@@ -265,8 +271,9 @@ export async function discoverFeedback(input: {
       phase: 'queued',
     });
   }
-  if (state.events.length + pending.length > 400 || Object.keys(next).length > 1000)
-    throw new Error('feedback-queue-full');
+  // Admitted sources already retain exact replay and reply evidence in their events.
+  for (const event of [...retained, ...pending])
+    if (next[event.sourceId] === event.source) delete next[event.sourceId];
   if (discovery && !ownLookupFailed && !failure) state.reviewMarkers = reviewMarkers;
   (state.evaluatedPolicyDigests ??= {})[input.nodeId] = policyDigest;
   state.baseline[input.nodeId] = next;

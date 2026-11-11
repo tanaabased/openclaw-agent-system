@@ -23,6 +23,90 @@ const comment = (nodeId: string, body = '@receiver explain this') => ({
   updatedAt: '2026-10-13T01:00:00Z',
 });
 describe('agent/codex-feedback-source', () => {
+  it('should admit new feedback beyond completed history without losing source or replay evidence', async () => {
+    const policy = intakeFixture().policy;
+    policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
+    const state: CodexFeedback = { startedAt: 0, baseline: {}, events: [] };
+    const comments = Array.from({ length: 400 }, (_, index) => ({
+      ...comment(`comment-${index}`),
+      databaseId: index + 1,
+    }));
+    const scan = () =>
+      discoverCodexFeedback({
+        state,
+        policy,
+        owner: 'owner',
+        name: 'repo',
+        number: 3,
+        nodeId: 'I',
+        itemType: 'issue',
+        now: Date.parse('2026-10-14T00:00:00Z'),
+        client: {
+          identity: account,
+          listIssueComments: async () => ({ comments, truncated: false }),
+          getIssueComment: async () => comments[0]!,
+        },
+      });
+    await scan();
+    for (const event of state.events) event.phase = 'delivered';
+    state.events.at(-1)!.phase = 'prepared';
+    const retained = structuredClone(state.events);
+    comments.push({ ...comment('new'), databaseId: 401 });
+    await scan();
+    await scan();
+    assert.equal(state.events.length, 401);
+    assert.deepEqual(state.events.slice(0, 400), retained);
+    assert.equal(state.events.at(-1)!.phase, 'queued');
+    assert.deepEqual(state.baseline.I, {});
+    assert.ok(Value.Check(codexFeedbackSchema, state));
+    assert.ok(Value.Check(openclawFeedbackSchema, state));
+    comments[0] = { ...comments[0]!, body: '@receiver edited direction' };
+    await scan();
+    assert.equal(state.events.length, 402);
+    assert.equal(state.events[0]!.source, retained[0]!.source);
+    assert.equal(JSON.parse(state.events.at(-1)!.source).body, '@receiver edited direction');
+  });
+
+  it('should retain unadmitted sources for policy reconsideration beyond the old baseline ceiling', async () => {
+    const policy = intakeFixture().policy;
+    policy.issueAssignment!.feedback = { inherit: false, allowed: [] };
+    const state: CodexFeedback = { startedAt: 0, baseline: {}, events: [] };
+    const comments = Array.from({ length: 1001 }, (_, index) => ({
+      ...comment(`comment-${index}`),
+      databaseId: index + 1,
+    }));
+    const scan = () =>
+      discoverCodexFeedback({
+        state,
+        policy,
+        owner: 'owner',
+        name: 'repo',
+        number: 3,
+        nodeId: 'I',
+        itemType: 'issue',
+        now: Date.parse('2026-10-14T00:00:00Z'),
+        discovery: { budget: new DiscoveryBudget(), save: async () => {} },
+        client: {
+          identity: account,
+          listIssueCommentPage: async () => ({ comments, truncated: false }),
+          listIssueComments: async () => ({ comments, truncated: false }),
+          getIssueComment: async () => comments[0]!,
+        },
+      });
+    await scan();
+    assert.equal(Object.keys(state.baseline.I!).length, 1001);
+    assert.equal(state.events.length, 0);
+    policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
+    // Already-observed disabled periods stay excluded; only fresh edits become input.
+    comments.push({ ...comment('fresh'), databaseId: 1002, updatedAt: '2026-10-15T00:00:00Z' });
+    await scan();
+    assert.deepEqual(
+      state.events.map((event) => event.sourceId),
+      ['fresh'],
+    );
+    assert.equal(state.baseline.I!.fresh, undefined);
+  });
+
   for (const failedRead of ['comments', 'reviews', 'members'] as const) {
     it(`should isolate failed ${failedRead} reads and recover without replay`, async () => {
       const policy = intakeFixture().policy;
