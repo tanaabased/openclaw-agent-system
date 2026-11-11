@@ -245,7 +245,11 @@ describe('agent/shared dispatch state', () => {
       runtime === 'codex'
         ? new CodexDispatchStore(root, scope)
         : new OpenClawDispatchStore(root, scope);
-    const healthy = () => ({ ...pending(), threadId: 'healthy-chat', worktree: '/healthy' });
+    const healthy = (): OpenClawDispatchRecord => ({
+      ...pending(),
+      threadId: 'healthy-chat',
+      worktree: '/healthy',
+    });
     const damaged = () => ({
       ...pending('d'.repeat(64)),
       threadId: 'damaged-chat',
