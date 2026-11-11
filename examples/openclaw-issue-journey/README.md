@@ -113,7 +113,7 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 60
 reconcile_run=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$reconcile_run" 600000
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
-jq -e '(.nativeTurns | map(select(.role == "assessment")) | last | .turn).status == "completed" and .assessment.requestedSkill == "generic-assessment"' "$TMPDIR/notification-dispatch-before.json"
+jq -e '(.nativeTurns | map(select(.role == "assessment")) | last | .turn).status == "completed"' "$TMPDIR/notification-dispatch-before.json"
 jq -e '(.nativeTurns | map(select(.role == "assessment")) | last | .turn).message == null' "$TMPDIR/notification-dispatch-before.json"
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json > "$TMPDIR/notification-assessment-history.json"
 jq -e --arg run "$run_id" '[.messages[] | select(.role == "assistant" and .__openclaw.runId == $run) | (.content | if type == "string" then . else map(.text // "") | join("") end)] | any(.[]; test("disposable (test )?issues"; "i") and test("close|cleanup"; "i") and test("evidence"; "i")) and all(.[]; (contains("notification-hidden-initial-fact") | not) and (contains("Documentation-only change:") | not))' "$TMPDIR/notification-assessment-history.json"

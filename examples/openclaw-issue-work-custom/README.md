@@ -119,7 +119,7 @@ jq -s '[.[] | . | select(.update != null and .receipt != null)]' "$XDG_CONFIG_HO
 jq -e --slurpfile saved "$TMPDIR/notification-delivery.json" --slurpfile summaries "$TMPDIR/notification-summary-drafts.json" '[.[] | select(.user.login == "tanaabot")] | length == 2 and any(.[]; .node_id == $summaries[0][0].receipt.nodeId) and any(.[]; .node_id == $saved[0].announcement.receipt.nodeId)' "$TMPDIR/notification-comments.json"
 
 # should preserve independently selected custom skills without saved plans
-jq -e '.assessment.requestedSkill == "cleanup-assessment" and .work.selection.skill.name == "cleanup-implementation"' "$TMPDIR/notification-delivery.json"
+jq -e '.work.selection.skill.name == "cleanup-implementation"' "$TMPDIR/notification-delivery.json"
 worktree=$(jq -er .worktree "$TMPDIR/notification-delivery.json")
 git -C "$worktree" show HEAD | grep -F 'Retain sanitized evidence before cleanup.'
 jq -e 'all(.[] | select(.user.login == "tanaabot"); (.body | contains("Evidence first")) and (.body | contains("Live interpretation remains untested")))' "$TMPDIR/notification-comments.json"

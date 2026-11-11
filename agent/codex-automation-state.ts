@@ -79,7 +79,7 @@ const savedSchema = Type.Union([
       target: Type.Union([
         Type.Object(
           { type: Type.Literal('project'), project_id: text },
-          { additionalProperties: true },
+          { additionalProperties: false },
         ),
         Type.Object({ type: Type.Literal('projectless') }, { additionalProperties: false }),
       ]),

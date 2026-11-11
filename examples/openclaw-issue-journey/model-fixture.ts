@@ -516,6 +516,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   if (!git) return call('git', 'agent_system_git', { argv: ['rev-parse', '--show-toplevel'] });
   if (git.exitCode !== 0 || String(git.stdout).trim() !== project.path || git.truncated !== false)
     return;
+  assert.equal(method?.name, 'generic-assessment');
   if (revision?.[1] === 'Clarify')
     return { content: 'Should cleanup close the issue only after evidence capture?' };
   return nativePlan(context, Boolean(revision));

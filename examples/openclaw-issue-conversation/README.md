@@ -211,7 +211,6 @@ for (const record of [question, answer]) {
   assert.equal(record.threadId, initial.threadId);
   assert.equal(record.worktree, initial.worktree);
   assert.equal(record.work, undefined);
-  assert.equal(record.assessment.requestedSkill, 'generic-assessment');
 }
 NODE
 

@@ -143,6 +143,7 @@ function call(stage: string, name: string, args: unknown): FixtureResponse {
 }
 
 interface PRFixtureOptions {
+  assessmentSkill?: string;
   explicitInitialLink?: boolean;
   initialQuestion?: boolean;
   incorporateCollaborator?: boolean;
@@ -662,9 +663,10 @@ function respond(
       return;
     const selection = context.assessment as {
       defaultSkill: boolean;
-      skill: { path: string };
+      skill: { name?: string; path: string };
       guidance?: { content?: string; path?: string };
     };
+    if (options.assessmentSkill) assert.equal(selection.skill.name, options.assessmentSkill);
     if (openClawAIMockToolResultText(messages, prefix + 'assessment-skill') === undefined)
       return call('assessment-skill', 'read', { path: selection.skill.path });
     if (!selection.defaultSkill) {

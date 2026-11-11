@@ -932,13 +932,12 @@ for (const scenario of [
             runtime: 'openclaw',
             id,
             project: { path: '/fixture' },
-            assessment:
-              scenario.id === 'openclaw-issue-journey'
-                ? { skill: { name: 'generic-assessment', path: '/fixture/SKILL.md' } }
-                : {},
+            assessment: !hookAssessment
+              ? { skill: { name: 'generic-assessment', path: '/fixture/SKILL.md' } }
+              : {},
             resultFormat: assessmentResultFormat,
           });
-          if (scenario.id === 'openclaw-issue-journey') {
+          if (!hookAssessment) {
             const read = await response(input);
             assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
             append(input, 'assessment-skill', 'Generic Assessment');
@@ -971,16 +970,15 @@ for (const scenario of [
         evidence: { source: 'https://github.com/owner/repo/issues/3' },
         project: { path: '/tmp/managed-worktree' },
         assessment: {
-          defaultSkill: scenario.id !== 'openclaw-issue-journey',
-          skill:
-            scenario.id === 'openclaw-issue-journey'
-              ? { name: 'generic-assessment', path: '/fixture/SKILL.md' }
-              : { path: '/fixture/SKILL.md' },
+          defaultSkill: hookAssessment,
+          skill: !hookAssessment
+            ? { name: 'generic-assessment', path: '/fixture/SKILL.md' }
+            : { path: '/fixture/SKILL.md' },
         },
         resultFormat: assessmentResultFormat,
       };
       append(input, 'context', context);
-      if (scenario.id === 'openclaw-issue-journey') {
+      if (!hookAssessment) {
         const read = await response(input);
         assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
         assert.deepEqual(JSON.parse(read.toolCalls![0]!.arguments), { path: '/fixture/SKILL.md' });
@@ -1202,6 +1200,7 @@ for (const scenario of [
         it(`should carry ${mode} through implementation and the same delivery on retry`, async () => {
           const workScenario = createPRExampleScenario(scenario.id, {
             explicitInitialLink: mode === 'work',
+            ...(mode === 'custom' ? { assessmentSkill: 'cleanup-assessment' } : {}),
           });
           const input = request(
             mode === 'operator'
@@ -1220,7 +1219,10 @@ for (const scenario of [
               resultFormat: assessmentResultFormat,
               assessment: {
                 defaultSkill: mode !== 'custom',
-                skill: { path: '/assessment/SKILL.md' },
+                skill: {
+                  name: mode === 'custom' ? 'cleanup-assessment' : 'default-assessment',
+                  path: '/assessment/SKILL.md',
+                },
                 guidance: { content: 'Preserve the evidence limit.\nExplain cleanup ordering.' },
               },
             });
