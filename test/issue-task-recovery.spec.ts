@@ -19,6 +19,7 @@ describe('task replacement feedback protection', () => {
 
   it('releases only unsent invalidated revisions while preserving live input and denials', () => {
     assert.equal(pendingRecoveryFeedback(stale), false);
+    assert.equal(pendingRecoveryFeedback({ ...stale, code: 'feedback-own-output' }), false);
     for (const phase of ['queued', 'prepared', 'running'] as const)
       assert.equal(pendingRecoveryFeedback({ ...stale, phase }), true);
     for (const code of [
@@ -52,6 +53,7 @@ describe('task replacement feedback protection', () => {
     };
     for (const event of [codex, openclaw]) {
       assert.equal(pendingRecoveryFeedback(event), true);
+      assert.equal(pendingRecoveryFeedback({ ...event, code: 'feedback-own-output' }), true);
       assert.equal(pendingRecoveryFeedback({ ...event, phase: 'delivered' }), false);
     }
   });

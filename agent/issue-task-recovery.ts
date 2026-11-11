@@ -8,10 +8,10 @@ import taskRecoveryCaller from './task-recovery-caller.ts';
 /** Replacement must preserve input and uncertain effects, not old reporting checkpoints. */
 export function pendingRecoveryFeedback(event: FeedbackEvent | OpenClawFeedbackEvent) {
   if (event.phase === 'delivered') return false;
-  // An invalidated revision with no native send has no input or effect to recover.
+  // An invalidated revision or own-output echo with no send has nothing to recover.
   return !(
     event.phase === 'blocked' &&
-    event.code === 'feedback-source-changed' &&
+    (event.code === 'feedback-source-changed' || event.code === 'feedback-own-output') &&
     !('attempt' in event && event.attempt) &&
     !('turn' in event && event.turn)
   );

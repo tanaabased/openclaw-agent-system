@@ -7023,6 +7023,26 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(reads, 2);
     assert.equal(creates().length, 1);
   });
+  it('should release a queued announcement echo from replacement without sending it', async () => {
+    const { comments } = await feedbackOwner();
+    const before = sends().length;
+    const { journal } = await service.scope(manifest, root);
+    await journal.exclusive(async (state, save) => {
+      state.records[0]!.announcement = {
+        ...attemptedAnnouncement(fixture.client.identity.nodeId).state,
+        receipt: { nodeId: comments[0]!.nodeId, databaseId: comments[0]!.databaseId },
+      };
+      await save();
+    });
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const event = (await record()).feedback!.events[0]!;
+    assert.equal(event.phase, 'blocked');
+    assert.equal(event.code, 'feedback-own-output');
+    assert.equal(event.turn, undefined);
+    assert.equal(sends().length, before);
+    assert.equal(pendingRecoveryFeedback(event), false);
+  });
+
   it('should reconcile an uncertain delivery announcement before discovering same-account feedback', async () => {
     const { comments } = await feedbackOwner();
     const announcement = attemptedAnnouncement(fixture.client.identity.nodeId);
