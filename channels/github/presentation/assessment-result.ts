@@ -1,5 +1,5 @@
 import { assessmentDecisionMode, type AssessmentResult } from '../../../agent/assessment-result.ts';
-import redactCodexFeedback from '../../../agent/codex-feedback-redaction.ts';
+import redactFeedback from '../../../agent/feedback-redaction.ts';
 import type { RoutingDecision } from '../../../agent/model-routing.ts';
 import type { RoutingInstructions } from '../../../agent/routing-instructions.ts';
 import githubNotificationCard, {
@@ -93,7 +93,7 @@ export default function renderAssessmentResult(
               },
               ...result.decision.reasons.map((reason) => ({
                 label: 'Reason',
-                value: text(redactCodexFeedback(reason)),
+                value: text(redactFeedback(reason)),
               })),
             ],
           }),

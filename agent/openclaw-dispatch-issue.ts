@@ -114,7 +114,6 @@ export default class OpenClawDispatchIssue {
     action: OpenClawFeedbackAction | undefined,
     save: () => Promise<void>,
     authority: DispatchAuthority,
-    operator = false,
   ) {
     const now = (this.context.dependencies.now ?? Date.now)();
     if (!action && event.retry && !dispatchRetryDue(event, now))
@@ -180,7 +179,6 @@ export default class OpenClawDispatchIssue {
         )
         .use({ ...authority, assertCurrent }, async (request) => {
           const common = {
-            operator,
             conversation: true,
             record,
             event,
@@ -190,22 +188,6 @@ export default class OpenClawDispatchIssue {
             provider,
             policy: (await this.context.scope(manifest, workspace)).policy.policy,
             intake,
-            workspace,
-            now,
-            debug: manifest.debug,
-            signal: authority.signal,
-            connectDelivery: async () => {
-              if (!this.context.dependencies.delivery)
-                throw new Error('delivery-runtime-unavailable');
-              return this.context.dependencies.delivery({
-                manifest,
-                workspaceDir: workspace,
-                worktree: record.worktree!,
-                caller,
-                signal: authority.signal ?? AbortSignal.timeout(60000),
-                connection: client,
-              });
-            },
             assertCurrent,
             livePolicy: async () => {
               const live = await this.context.validateLocal(
@@ -254,36 +236,42 @@ export default class OpenClawDispatchIssue {
           return openClawFeedback({ ...common, action });
         });
     } catch (error) {
+      // A failed context read cannot undo confirmed native delivery.
+      const failedEvent = event.phase === 'delivered' ? { ...event } : event;
       if (error instanceof WorkflowPolicyHeld) {
-        event.policyHeld = error.reason;
-        await save();
+        failedEvent.policyHeld = error.reason;
+        if (failedEvent === event) await save();
         return {
           status: 'policy-held' as const,
           id: record.id,
-          eventId: event.id,
+          eventId: failedEvent.id,
           reason: error.reason,
           nextAction: 'next',
         };
       }
       const code = openClawDispatchFailureCode(error);
-      event.code = code;
-      scheduleDispatchRetry(event, code, error, now);
+      failedEvent.code = code;
+      scheduleDispatchRetry(failedEvent, code, error, now);
       // unknown transport outcomes retain custody; terminal failures release the queued work.
       if (
-        !event.retry &&
+        !failedEvent.retry &&
         /revoked|authority-changed|owner-changed|source-(?:changed|identity-changed|author-changed|no-longer-eligible)|resource-missing|denied|turn-(?:failed|cancelled)|publication-(?:text|secret|output|reconciliation)|session-mismatch/.test(
           code,
         )
       ) {
-        event.phase = 'blocked';
-        record.feedback!.lastServedAt = now;
+        failedEvent.phase = 'blocked';
+        if (failedEvent === event) record.feedback!.lastServedAt = now;
       }
-      if (dispatchFailurePhase(event, code, error) === 'blocked') event.phase = 'blocked';
-      await save();
+      if (dispatchFailurePhase(failedEvent, code, error) === 'blocked')
+        failedEvent.phase = 'blocked';
+      if (failedEvent === event) await save();
       return {
-        status: event.phase === 'blocked' ? 'blocked' : dispatchFailureStatus(event, code, error),
+        status:
+          failedEvent.phase === 'blocked'
+            ? 'blocked'
+            : dispatchFailureStatus(failedEvent, code, error),
         id: record.id,
-        eventId: event.id,
+        eventId: failedEvent.id,
         nextAction: 'next',
         ...workflowFailure(error, code),
         code,
@@ -295,7 +283,6 @@ export default class OpenClawDispatchIssue {
     input: Static<typeof dispatchParameters>,
     record: OpenClawDispatchRecord,
     tx: OpenClawDispatchTransaction,
-    operator = false,
   ) {
     const { manifest, current, caller, save, authority, transactionSignal } = tx;
     const feedbackChild = input.action === 'feedback' && input.operation !== 'reconcile';
@@ -310,22 +297,12 @@ export default class OpenClawDispatchIssue {
           caller.sessionId !== record.sessionCreation?.sessionId)
       )
         throw new Error('feedback-owner-caller-required');
-      return this.feedback(
-        manifest,
-        current.workspace,
-        record,
-        event,
-        caller,
-        input,
-        save,
-        {
-          ...authority,
-          signal: authority.signal
-            ? AbortSignal.any([authority.signal, transactionSignal])
-            : transactionSignal,
-        },
-        operator,
-      );
+      return this.feedback(manifest, current.workspace, record, event, caller, input, save, {
+        ...authority,
+        signal: authority.signal
+          ? AbortSignal.any([authority.signal, transactionSignal])
+          : transactionSignal,
+      });
     }
     const feedbackSource = selectedOpenClawFeedback(record, caller.runId);
     if (feedbackSource && input.action === 'context') {

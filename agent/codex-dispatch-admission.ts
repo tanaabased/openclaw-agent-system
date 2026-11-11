@@ -38,7 +38,6 @@ import connectCodexGitHubAccount from './codex-github-client.ts';
 import { selectCodexIntake } from './codex-intake.ts';
 import codexIssueBranch from './codex-issue-branch.ts';
 import codexSessionSettings from './codex-session-settings.ts';
-import dispatchBlocker from './dispatch-blocker.ts';
 import dispatchContext from './dispatch-context.ts';
 import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
 import { dispatchRecheckable } from './dispatch-retry.ts';
@@ -163,7 +162,7 @@ export async function recover(
     } else if (predecessor?.claimId || predecessor?.claimAccepted)
       throw new Error('claim-recovery-owner-unresolved');
   }
-  if (dispatchBlocker(record) !== undefined) {
+  if (record.blocker !== undefined) {
     delete record.blocker;
   }
   await save();
@@ -403,11 +402,10 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
       record.request &&
       (!record.effective || (deps.claims && record.claimId && !record.claimAccepted)) &&
       (dispatchCreationStatus(record) !== 'blocked' ||
-        (dispatchBlocker(record) !== undefined &&
-          dispatchBlocker(record)! === 'dispatch-assignment-superseded')) &&
-      (dispatchBlocker(record) === undefined ||
+        record.blocker === 'dispatch-assignment-superseded') &&
+      (record.blocker === undefined ||
         Boolean(record.retry) ||
-        dispatchRecheckable(dispatchBlocker(record)!)) &&
+        dispatchRecheckable(record.blocker)) &&
       (record.retryAfter ?? 0) <= now,
   )) {
     const intake = dispatchAdmission(pending, admitted.records);
@@ -514,11 +512,10 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
         (!deps.claims || record?.claimPass !== (tx.operatorInput?.turnId ?? state.run!.id)) &&
         (dispatchCreationStatus(record) !== 'blocked' || record?.intakeId !== intake.id) &&
         (!record ||
-          dispatchBlocker(record) === undefined ||
+          record.blocker === undefined ||
           Boolean(record.retry) ||
-          dispatchRecheckable(dispatchBlocker(record)!) ||
-          (dispatchBlocker(record)! === 'dispatch-creation-not-prepared' &&
-            unpreparedDispatch(record)) ||
+          dispatchRecheckable(record.blocker) ||
+          (record.blocker === 'dispatch-creation-not-prepared' && unpreparedDispatch(record)) ||
           record.intakeId !== intake.id) &&
         (record?.retryAfter ?? 0) <= now,
     )?.intake;

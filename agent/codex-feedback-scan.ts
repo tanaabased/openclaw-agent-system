@@ -4,7 +4,7 @@ import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import { revalidateFeedbackAssignment } from './assignment-feedback-reactivation.ts';
 import type { DispatchState } from './codex-dispatch-state.ts';
 import type connectCodexFeedback from './codex-feedback-client.ts';
-import { discoverCodexFeedback } from './codex-feedback-source.ts';
+import { discoverFeedback } from './feedback-source.ts';
 import type { CodexFeedback } from './codex-feedback-state.ts';
 import codexHostAccess from './codex-host-access.ts';
 import type { selectCodexIntake } from './codex-intake.ts';
@@ -26,7 +26,6 @@ export async function scanCodexFeedback(input: {
   current: Awaited<ReturnType<typeof selectCodexIntake>>;
   provider: Awaited<ReturnType<typeof connectCodexFeedback>>;
   occurrence: string;
-  sourceThreadId: string;
   now: number;
   budget?: DiscoveryBudget;
   checkpoint?(scan: FeedbackScan): Promise<void>;
@@ -80,7 +79,6 @@ export async function scanCodexFeedback(input: {
         state: feedback,
         ownCommentIds: () =>
           (publications ??= feedbackOwnPublications({
-            record,
             intake: admitted,
             client: provider.comments,
             announcement: record.announcement,
@@ -121,7 +119,7 @@ export async function scanCodexFeedback(input: {
             continue;
           }
         }
-        await discoverCodexFeedback({ ...source, ...target });
+        await discoverFeedback({ ...source, ...target });
       }
       feedback.scannedAt = input.occurrence;
       feedback.scannedTime = now;

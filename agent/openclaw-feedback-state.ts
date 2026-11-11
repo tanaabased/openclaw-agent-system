@@ -22,7 +22,7 @@ export const openclawFeedbackSchema = Type.Object(
         { additionalProperties: false },
       ),
     ),
-    events: Type.Array(openclawFeedbackEventSchema, { maxItems: 400 }),
+    events: Type.Array(openclawFeedbackEventSchema),
   },
   { additionalProperties: false },
 );

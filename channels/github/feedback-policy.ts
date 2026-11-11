@@ -5,7 +5,7 @@ import type {
   GitHubNotificationPolicy,
 } from './workflow-policy.ts';
 
-function configuredFeedbackIdentities(
+export function configuredFeedbackIdentities(
   allowed: readonly GitHubIdentityPin[],
   feedback: GitHubFeedbackPolicy | undefined,
 ): GitHubIdentityPin[] {

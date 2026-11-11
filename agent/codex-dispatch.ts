@@ -41,7 +41,6 @@ import retireCodexNative from './codex-native-retirement.ts';
 import reconcileCodexRetirementEffects from './codex-retirement-effects.ts';
 import { selectCodexTaskOwner } from './codex-turn-task.ts';
 import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
-import dispatchBlocker from './dispatch-blocker.ts';
 import dispatchInspection, { dispatchInspectionSummary } from './dispatch-inspection.ts';
 import { issueKey } from './dispatch-pending.ts';
 import liveWorkflowPolicy from './live-workflow-policy.ts';
@@ -302,7 +301,7 @@ async function executeCodexDispatch(
               callId: record.denial.callId,
               turnId: record.denial.turnId,
             },
-            code: dispatchBlocker(record),
+            code: record.blocker,
             feedback: record.feedback && {
               events: record.feedback.events.map(({ id, phase, code }) => ({ id, phase, code })),
             },

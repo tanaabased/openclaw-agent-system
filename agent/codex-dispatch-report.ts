@@ -15,7 +15,6 @@ import codexFeedbackProblem from './codex-feedback-problem.ts';
 import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
 import discoveryNotice from './discovery-notice.ts';
-import dispatchBlocker from './dispatch-blocker.ts';
 import pendingDispatchAssignments from './dispatch-pending.ts';
 import { dispatchStorageNotice } from './dispatch-storage.ts';
 import { dispatchAdmission, type ManagedIssueState as IntakeState } from './managed-issue.ts';
@@ -66,7 +65,7 @@ export default function prepareDispatchReport(input: {
     (record) =>
       !record.effective &&
       ['blocked', 'waiting', 'retrying'].includes(dispatchCreationStatus(record)) &&
-      Boolean(dispatchBlocker(record)),
+      Boolean(record.blocker),
   );
   const observations = [
     ...(intake.blocker
@@ -116,7 +115,7 @@ export default function prepareDispatchReport(input: {
       operation:
         record.denial?.operation === 'create' ? 'native chat creation' : 'assignment preparation',
       denial: record.denial,
-      code: dispatchBlocker(record) ?? '',
+      code: record.blocker ?? '',
     })),
   ];
   const notices = observations.map((failure) => ({

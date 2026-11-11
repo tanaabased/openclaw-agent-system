@@ -155,7 +155,6 @@ export default async function reactivateAssignmentFeedback(input: {
       ...(input.budget ? { discovery: { budget: input.budget, save: input.save } } : {}),
       ownCommentIds: () =>
         (publications ??= feedbackOwnPublications({
-          record,
           intake,
           client: comments,
           announcement: input.announcement,
