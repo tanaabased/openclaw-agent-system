@@ -812,30 +812,6 @@ export async function prepareDispatch(
     });
     record.assessment = selected.selection;
     record.issueMode = issueWorkflowMode(current.manifest.github?.notifications, record);
-    if (record.issueMode === 'work' || record.issueMode === 'auto') {
-      if (!record.manualIssue)
-        await (deps.activation ?? inspectCodexDispatchActivation)(
-          pluginData,
-          { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
-          false,
-          true,
-          'implementation',
-        );
-      const implementation = await selectWorkflowStage({
-        stage: 'implementation',
-        configuration: {
-          ...current.policy?.policy.issueAssignment?.implementation,
-          ...record.manualIssue?.selections?.implementation,
-        },
-        workspace: current.workspace,
-        observedAt: now,
-        resolveSkill: (id) =>
-          withNative(current, deps, (host) => host.assessmentSkill(record.project!.path, id)),
-      });
-      record.nativeWork = {
-        selection: implementation.selection,
-      };
-    }
     record.routing = JSON.stringify(decision);
     record.routingInstructions = instructions;
     record.createdAt = now;

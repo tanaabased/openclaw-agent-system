@@ -3201,7 +3201,7 @@ describe('agent/codex-dispatch', () => {
     );
     await assert.rejects(renderAssessment('invalid', child), /assessment-render-request-invalid/);
     for (const plan of ['Initial plan.', 'Current revised plan.']) {
-      const formatted = await renderAssessment({ ...result, plan }, child);
+      const formatted = await renderAssessment({ ...result, reviewSummary: plan }, child);
       assert.equal(formatted.status, 'formatted');
       assert.equal(formatted.retained, false);
       assert.equal('assessment' in formatted, false);
@@ -4552,6 +4552,32 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual(after.progression, before.progression);
   });
 
+  for (const mode of ['work', 'auto'] as const)
+    it(`should admit and assess ${mode} before resolving unavailable implementation dependencies`, async () => {
+      const select = deps.native!.assessmentSkill;
+      deps.native!.assessmentSkill = async (cwd, id) => {
+        if (id === 'company:implement') throw new Error('workflow-stage-skill-unavailable');
+        return select(cwd, id);
+      };
+      const work = await workIssue(
+        {
+          ...result,
+          ...(mode === 'auto' ? { decision: { mode: 'work', reasons: ['Bounded task.'] } } : {}),
+        },
+        'Follow the plan.',
+        'company:implement',
+        mode,
+      );
+      assert.ok(native!.id);
+      const state = await (await workStore()).read();
+      assert.equal(state.records[0]!.nativeWork, undefined);
+      work.receive();
+      const direction =
+        mode === 'auto' ? { decision: { mode: 'work', reasons: ['Bounded task.'] } } : {};
+      await assert.rejects(work.run('context', direction, true), /skill-unavailable/);
+      deps.native!.assessmentSkill = select;
+      assert.equal((await work.run('context', direction, true)).status, 'verified');
+    });
   it('should resolve the current implementation skill and surface an unavailable selection', async () => {
     const work = await workIssue();
     work.receive();
