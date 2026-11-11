@@ -245,10 +245,29 @@ describe('shared model routing', () => {
     );
   });
 
-  it('should require justification for selected, explicit, and classifier xhigh', () => {
-    const xhigh = { ...profiles, low: { ...profiles.low!, effort: 'xhigh' as const } };
+  it('should honor a configured xhigh default and tier without another model justification in either runtime', () => {
+    const models = {
+      ...profiles,
+      default: { ...profiles.default, effort: 'xhigh' as const },
+      low: { ...profiles.low!, effort: 'xhigh' as const },
+    };
+    for (const runtime of ['codex', 'openclaw'] as const) {
+      for (const complexity of ['unset', 'low'] as const) {
+        const result = resolveModelRoutingRequest(
+          models,
+          'digest',
+          { ...request, assessment: { complexity, reason: 'Use the configured profile.' } },
+          runtime,
+        );
+        assert.ok('candidate' in result);
+        assert.equal(result.selection?.effort, 'xhigh');
+        assert.equal(result.profile, complexity === 'unset' ? 'default' : complexity);
+      }
+    }
+  });
+
+  it('should require justification for explicit escalation and classifier xhigh', () => {
     for (const [models, options] of [
-      [xhigh, {}],
       [profiles, { overrides: { effort: 'xhigh' } }],
       [profiles, { classifierEffort: 'xhigh' }],
     ] as const) {

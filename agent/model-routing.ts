@@ -95,7 +95,7 @@ export function selectRoutingOverrides(
   return selection;
 }
 
-/** resolve judgment supplied by a caller; never classify, choose an implicit fallback, or apply a session change. */
+/** resolve judgment supplied by a caller; use the configured default for unset complexity without applying a session change. */
 export function resolveModelRouting(
   models: AgentModelsConfiguration,
   assessment: unknown,
@@ -138,9 +138,7 @@ export function resolveModelRouting(
   const overrides = options.overrides ?? {};
   const selection = selectRoutingOverrides(recommendation, overrides);
   if (
-    (overrides.effort === 'xhigh' ||
-      recommendation.effort === 'xhigh' ||
-      selection.effort === 'xhigh' ||
+    ((overrides.effort === 'xhigh' && recommendation.effort !== 'xhigh') ||
       options.classifierEffort === 'xhigh') &&
     !assessment.xhighReason?.trim()
   ) {
