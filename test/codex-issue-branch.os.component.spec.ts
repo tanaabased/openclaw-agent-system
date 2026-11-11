@@ -203,12 +203,14 @@ describe('agent/codex-issue-branch', () => {
     assert.equal(await git('rev-parse', 'HEAD'), base);
   });
 
-  it('should reject another branch without changing files or refs', async () => {
+  it('should adopt a switched branch without changing files or refs', async () => {
     const owned = await prepare();
     await git('switch', '-c', '42-historical-branch');
     await writeFile(join(root, 'work.txt'), 'preserve me');
-    await assert.rejects(prepare(), /codex-branch-owner-mismatch/);
-    await assert.rejects(prepare({ prepare: false }), /codex-branch-owner-mismatch/);
+    assert.equal(await prepare({ prepare: false }), '42-historical-branch');
+    assert.equal(record.issueBranch?.name, owned);
+    assert.equal(await prepare(), '42-historical-branch');
+    assert.equal(record.issueBranch?.name, '42-historical-branch');
     assert.equal(await git('branch', '--show-current'), '42-historical-branch');
     assert.match(await git('diff'), /preserve me/);
     assert.equal(await git('rev-parse', owned), base);
@@ -234,13 +236,13 @@ describe('agent/codex-issue-branch', () => {
     assert.equal(await git('rev-parse', record.issueBranch!.name), base);
   });
 
-  it('should preserve legacy authored work without adopting its issue-shaped branch', async () => {
+  it('should adopt authored work from a custom branch', async () => {
     await git('switch', '-c', '42-old-branch');
     await writeFile(join(root, 'work.txt'), 'old work');
     await git('commit', '-am', 'old work');
     const head = await git('rev-parse', 'HEAD');
-    await assert.rejects(prepare(), /codex-branch-owner-required/);
-    assert.equal(record.issueBranch, undefined);
+    assert.equal(await prepare(), '42-old-branch');
+    assert.equal(record.issueBranch?.name, '42-old-branch');
     assert.equal(await git('rev-parse', 'HEAD'), head);
   });
 
@@ -255,9 +257,8 @@ describe('agent/codex-issue-branch', () => {
         branch: 'legacy-delivery',
       },
     } as NonNullable<DispatchRecord['delivery']>;
-    await assert.rejects(prepare(), /codex-branch-owner-required/);
     record.delivery.pullRequest = { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 };
-    await assert.rejects(prepare(), /codex-branch-owner-required/);
+    await assert.rejects(prepare(), /codex-branch-owner-mismatch/);
     record.delivery.binding.threadId = record.threadId!;
     assert.equal(await prepare({ prepare: false }), 'legacy-delivery');
     records.push({

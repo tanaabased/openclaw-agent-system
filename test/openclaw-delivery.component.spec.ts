@@ -27,6 +27,7 @@ const response = (value: unknown) => ({
 });
 
 describe('agent/openclaw-delivery', () => {
+  let branch: string;
   let announcement: ReturnType<typeof announcementFixture>;
   let root: string, record: OpenClawDispatchRecord;
   let creates: number, pushes: number, saves: number, linkWrites: number;
@@ -80,6 +81,7 @@ describe('agent/openclaw-delivery', () => {
       handoff: { at: 2, by: 'issue-chat', turnId: 'operator-run' },
       work: { publication: source },
     };
+    branch = 'task-branch';
     input = {
       record,
       selectAnnouncement: async (retained) => ({
@@ -118,7 +120,7 @@ describe('agent/openclaw-delivery', () => {
       async connect() {
         return {
           async git(argv) {
-            if (argv[0] === 'branch') return 'task-branch';
+            if (argv[0] === 'branch') return branch;
             if (argv.includes('--show-toplevel')) return root;
             if (argv[0] === 'rev-parse')
               return argv.some((arg) => arg.startsWith('refs/agent-system/pr/')) ? remote : head;
@@ -203,15 +205,16 @@ describe('agent/openclaw-delivery', () => {
                     stderr: 'gh: Resource not accessible by integration (HTTP 403)',
                   };
                 assert.ok(record.delivery?.creationAttempted);
+                const created = JSON.parse(stdin!);
                 if (!missing)
                   pr = {
                     itemNodeId: 'PR_7',
                     number: 7,
                     state: 'open',
-                    baseRef: 'main',
-                    headRef: 'task-branch',
+                    baseRef: created.base,
+                    headRef: created.head,
                     headRepository: 'owner/repo',
-                    ...JSON.parse(stdin!),
+                    ...created,
                   };
                 if (lost || missing) throw new Error('response lost');
                 return response(pr);
@@ -251,8 +254,11 @@ describe('agent/openclaw-delivery', () => {
                   headRepositoryDatabaseId: 10,
                   authorId:
                     record.adoptedPullRequest?.authorId ?? (adopted ? 'U_operator' : 'U_agent'),
-                  baseRef: record.adoptedPullRequest?.base ?? (adopted ? 'release' : 'main'),
-                  headRef: record.adoptedPullRequest?.branch ?? 'task-branch',
+                  baseRef:
+                    record.adoptedPullRequest?.base ??
+                    pr?.baseRef ??
+                    (adopted ? 'release' : 'main'),
+                  headRef: record.adoptedPullRequest?.branch ?? pr?.headRef ?? branch,
                   state: 'open',
                   number: 7,
                 });
@@ -287,6 +293,36 @@ describe('agent/openclaw-delivery', () => {
     assert.ok('publishRequest' in prepared && prepared.publishRequest);
     return openClawDelivery({ ...input, action: { ...prepared.publishRequest, id: record.id } });
   }
+
+  it('should use a custom checkout branch and keep the selected base through pr recovery', async () => {
+    branch = 'pirog/custom-branch';
+    const content = {
+      title: 'Stacked fix',
+      body: 'An authored stacked change.',
+      base: 'release/2.x',
+    };
+    const preview = await request('prepare', content);
+    assert.ok('publishRequest' in preview && preview.publishRequest);
+    assert.equal(preview.publishRequest.base, content.base);
+    lost = true;
+    await assert.rejects(request('publish', content), /response lost/);
+    assert.equal(record.delivery?.binding.base, content.base);
+    assert.equal(pr?.headRef, branch);
+    assert.equal(pr?.baseRef, content.base);
+    await assert.rejects(
+      request('publish', { ...content, base: 'other' }),
+      /delivery-base-changed/,
+    );
+    lost = false;
+    assert.equal((await request('reconcile')).status, 'ready');
+    assert.equal(creates, 1);
+  });
+
+  it('should use the provider repository default when base is omitted', async () => {
+    input.base = 'develop';
+    assert.equal((await publish()).status, 'published');
+    assert.equal(pr?.baseRef, 'develop');
+  });
 
   it('should reconcile the original uncertain announcement after relinking and discarding pr creation state', async () => {
     await publish();

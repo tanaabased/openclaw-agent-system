@@ -14,7 +14,7 @@ export default function invalidDeliveryRequest(
       : operation === 'bind'
         ? 'Use pullRequest for the explicit same-repository PR URL. Do not use url or target.'
         : operation === 'prepare' || operation === 'publish'
-          ? 'Supply authored title and body when needed for publication; the runtime verifies the checkout.'
+          ? 'Supply title and body for publication. Pass base to select a target branch. The runtime reads the checked-out branch and uses the repository default when base is omitted.'
           : operation === 'candidate'
             ? 'Supply the authored announcement in publicText; the runtime binds its destination and publication context.'
             : operation === 'compose'

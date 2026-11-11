@@ -1,3 +1,4 @@
+import { deliveryHasEffects, selectDeliveryBase, verifyDeliveryCommits } from './delivery-base.ts';
 import { retainedAnnouncementPublication } from './delivery-announcement-recovery.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
 import invalidDeliveryRequest from '../tools/dispatch/delivery-request-error.ts';
@@ -67,6 +68,8 @@ export default async function openClawDelivery(input: {
   now?: number;
 }) {
   const { record, intake, action, assertCurrent } = input;
+  if (action.base !== undefined && !['prepare', 'publish'].includes(action.operation))
+    throw invalidDeliveryRequest(action.operation, 'openclaw');
   const save = async () => {
     await input.save();
   };
@@ -277,11 +280,16 @@ export default async function openClawDelivery(input: {
   }
   const previous = record.delivery;
   const adopted = previous?.adopted;
-  const base = adoptedPullRequest?.baseRef ?? adopted?.base ?? input.base;
+  const retainedBase =
+    adoptedPullRequest?.baseRef ??
+    adopted?.base ??
+    (deliveryHasEffects(previous) ? previous?.binding.base : undefined);
+  const base = selectDeliveryBase(action.base, input.base, retainedBase);
   let branch = await git(['branch', '--show-current']);
   if (previous?.localBranch && branch !== previous.localBranch)
     throw new Error('delivery-branch-diverged');
-  if (!branch || branch === input.base) throw new Error('delivery-branch-required');
+  if (!branch || branch === base || (!retainedBase && branch === input.base))
+    throw new Error('delivery-branch-required');
   await git(['check-ref-format', `refs/heads/${branch}`]);
   branch = adopted?.branch ?? branch;
   if (
@@ -302,9 +310,14 @@ export default async function openClawDelivery(input: {
         : previous.binding.head
       : await git(['rev-parse', '--verify', 'HEAD']);
   if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('delivery-head-invalid');
-  const count = Number(await git(['rev-list', '--count', `refs/remotes/origin/${base}..${head}`]));
-  if (!Number.isSafeInteger(count) || count < 1)
-    throw new Error('delivery-committed-work-required');
+  await verifyDeliveryCommits(
+    git,
+    base,
+    head,
+    action.operation === 'publish' && action.base !== undefined && retainedBase === undefined
+      ? repository
+      : undefined,
+  );
   const remotes = (await git(['remote', 'get-url', '--push', '--all', 'origin'])).split(/\r?\n/u);
   if (
     !remotes.length ||
@@ -336,8 +349,7 @@ export default async function openClawDelivery(input: {
       'sessionId',
       'threadId',
       'worktree',
-      'branch',
-      'base',
+      ...(deliveryHasEffects(previous) ? (['branch', 'base'] as const) : []),
       'authorId',
     ]);
   if (bindingChange) throw new Error(bindingChange);
@@ -410,6 +422,7 @@ export default async function openClawDelivery(input: {
         operation: 'publish' as const,
         title,
         body,
+        ...(action.base !== undefined ? { base } : {}),
       },
       instructions:
         'Publish with the authored title and body through native approval when authorized. The runtime resolves the current task, checkout and destination and revalidates them inside publication. Preparation is optional and grants no authority. Honor explicit restrictions and native denials; reconcile uncertain publication through its retained owner.',
@@ -434,7 +447,7 @@ export default async function openClawDelivery(input: {
       itemNodeId: intake.issue.nodeId,
       repositoryOwner: intake.repository.owner.login,
       repositoryName: intake.repository.name,
-      repositoryDefaultBranch: input.base,
+      repositoryDefaultBranch: base,
       assignmentActorLogin: intake.assignment?.actor.login,
       assignmentActorNodeId: intake.assignment?.actor.nodeId,
     },

@@ -26,18 +26,19 @@ export default async function codexWorkContext(
   const { current, git, signal, save, deps } = context;
   const { admitted, selection } = verified;
   const work = codexWorkState(record)!;
-  if (!readOnly)
-    await codexIssueBranch({
-      record,
-      records: context.records,
-      intake: admitted,
-      workspace: current.workspace,
-      agentId: current.manifest.agent.id,
-      git,
-      signal,
-      save,
-      prepare: true,
-    });
+  const issueBranch = readOnly
+    ? record.issueBranch?.name
+    : await codexIssueBranch({
+        record,
+        records: context.records,
+        intake: admitted,
+        workspace: current.workspace,
+        agentId: current.manifest.agent.id,
+        git,
+        signal,
+        save,
+        prepare: true,
+      });
   if (!readOnly && context.operatorInput && deps.directScope) work.scope = deps.directScope;
   if (!readOnly) await save();
   return {
@@ -49,7 +50,7 @@ export default async function codexWorkContext(
       scope: work.scope,
     }),
     issueStage: record.progression?.stage ?? 'planning',
-    issueBranch: record.issueBranch?.name,
+    issueBranch,
     adoptedPullRequest: record.adoptedPullRequest,
     assignmentObservation: record.assignmentObservation,
     assignmentWarning:

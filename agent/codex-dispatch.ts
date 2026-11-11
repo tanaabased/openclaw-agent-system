@@ -128,6 +128,7 @@ export async function runCodexDispatch(
                   action: request.deliveryOperation,
                   title: request.title,
                   body: request.body,
+                  base: request.base,
                 },
               }
             : {}),

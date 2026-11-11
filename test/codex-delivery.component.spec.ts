@@ -100,7 +100,7 @@ describe('agent/codex-delivery', () => {
   let root: string, workspace: string, pluginData: string, store: CodexDispatchStore;
   let deps: CodexDeliveryDependencies, fixture: ReturnType<typeof intakeFixture>;
   let head: string, remote: string, dirty: boolean, attached: boolean, creates: number;
-  let failCreate: boolean, failLink: boolean, failRecipient: boolean;
+  let failCreate: boolean, lostCreateResponse: boolean, failLink: boolean, failRecipient: boolean;
   let assignedRecipients: string[], requestedReviewers: string[];
   let pr: Record<string, unknown> | undefined;
   let providerLink: boolean | undefined;
@@ -570,7 +570,7 @@ describe('agent/codex-delivery', () => {
     dirty = false;
     attached = false;
     creates = 0;
-    failCreate = false;
+    failCreate = lostCreateResponse = false;
     failLink = false;
     failRecipient = false;
     assignedRecipients = [];
@@ -666,15 +666,17 @@ describe('agent/codex-delivery', () => {
                   stderr: 'gh: Resource not accessible by integration (HTTP 403)',
                 };
               if (failCreate) throw new Error('transport lost');
+              const created = JSON.parse(stdin!);
               pr = {
                 itemNodeId: 'PR_7',
                 number: 7,
                 state: 'open',
-                baseRef: 'main',
-                headRef: 'pirog-work',
+                baseRef: created.base,
+                headRef: created.head,
                 headRepository: 'owner/repo',
-                ...(JSON.parse(stdin!) as object),
+                ...created,
               };
+              if (lostCreateResponse) throw new Error('create response lost');
               return result(pr);
             }
             if (
@@ -718,8 +720,8 @@ describe('agent/codex-delivery', () => {
                   headRepositoryId: 'R_repo',
                   headSha: remote,
                   authorId: account.nodeId,
-                  baseRef: 'main',
-                  headRef: 'pirog-work',
+                  baseRef: pr?.baseRef ?? 'main',
+                  headRef: pr?.headRef ?? 'pirog-work',
                   state: 'open',
                   number: 7,
                   ...bindingOverride,
@@ -962,45 +964,73 @@ describe('agent/codex-delivery', () => {
     assert.equal(current.delivery!.pushedHead, undefined);
     assert.equal(creates, 1);
   });
-  it('should reject a retired or same-issue branch before pushing or creating a pr', async () => {
+  it('should reject a conflicting task branch before pushing or creating a pr', async () => {
     branch = '3-retired-attempt';
+    await store.exclusive(async (state, save) => {
+      const previous = state.records[0]!;
+      const other = 'e'.repeat(64);
+      state.records.push({
+        id: other,
+        intakeId: other,
+        issueKey: other,
+        sourceThreadId: previous.sourceThreadId,
+        createdAt: previous.createdAt,
+        manifestDigest: previous.manifestDigest,
+        project: previous.project,
+        threadId: 'retired-task',
+        reset: { at: 1, by: 'operator' },
+        issueBranch: { attemptId: other, name: branch, phase: 'ready' },
+      });
+      await save();
+    });
     await assert.rejects(publish(), /codex-branch-owner-mismatch/);
     assert.equal(creates, 0);
-    assert.equal(remote, '');
-    assert.equal(
-      gitCalls.some((args) => args.includes('push')),
-      false,
+    assert.ok(!gitCalls.some((args) => args.includes('push')));
+  });
+
+  it('should publish a custom branch and base and recover the original pr after a lost create response', async () => {
+    await request('prepare', { base: 'earlier-target' });
+    branch = 'pirog/custom-branch';
+    const content = {
+      title: 'Stacked fix',
+      body: 'An authored stacked change.',
+      base: 'release/2.x',
+    };
+    const preview = await request('prepare', content);
+    assert.ok('publishRequest' in preview && preview.publishRequest);
+    assert.equal(preview.publishRequest.base, content.base);
+    lostCreateResponse = true;
+    try {
+      await assert.rejects(request('publish', content), /create response lost/);
+    } finally {
+      lostCreateResponse = false;
+    }
+    assert.equal(pr?.baseRef, content.base);
+    assert.equal(pr?.headRef, branch);
+    assert.ok(gitCalls.some((args) => args[0] === 'fetch' && args[2]?.includes(content.base)));
+    const retained = (await store.read()).records[0]!;
+    assert.equal(retained.issueBranch?.name, branch);
+    assert.equal(retained.delivery?.binding.base, content.base);
+    await assert.rejects(
+      request('publish', { ...content, base: 'other' }),
+      /delivery-base-changed/,
     );
-    branch = 'pirog-work';
-    await publish();
+    assert.equal((await request('publish')).status, 'published');
     assert.equal(creates, 1);
   });
 
-  it('should reject a branch switch after the publication preview', async () => {
-    await request('prepare');
-    branch = '3-retired-attempt';
-    await assert.rejects(request('publish', {}), /codex-branch-owner-mismatch/);
-    assert.equal(remote, '');
-    assert.equal(creates, 0);
+  it('should use the provider repository default when base is omitted', async () => {
+    fixture.repository.defaultBranch = 'develop';
+    assert.equal((await publish()).status, 'published');
+    assert.equal(pr?.baseRef, 'develop');
   });
 
-  it('should require attempt ownership before the first delivery and retain an existing delivery binding', async () => {
+  it('should publish a verified checkout even if its branch has no prior record', async () => {
     await store.exclusive(async (state, save) => {
       delete state.records[0]!.issueBranch;
       await save();
     });
-    await assert.rejects(publish(), /codex-branch-owner-required/);
-    assert.equal(creates, 0);
-    await store.exclusive(async (state, save) => {
-      state.records[0]!.issueBranch = { attemptId: id, name: branch, phase: 'ready' };
-      await save();
-    });
-    await publish();
-    await store.exclusive(async (state, save) => {
-      delete state.records[0]!.issueBranch;
-      await save();
-    });
-    await publish();
+    assert.equal((await publish()).status, 'published');
     assert.equal((await store.read()).records[0]!.issueBranch?.name, branch);
     assert.equal(creates, 1);
   });

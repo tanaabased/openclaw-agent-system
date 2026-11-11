@@ -1,3 +1,4 @@
+import { deliveryBaseSchema } from '../../agent/delivery-base.ts';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { implementationMaterialSchema } from './implementation-material-schema.ts';
@@ -24,6 +25,7 @@ export const directImplementationRequestSchema = Type.Object(
         Type.Literal('present'),
       ]),
     ),
+    base: Type.Optional(deliveryBaseSchema),
     title: Type.Optional(Type.String({ minLength: 1, maxLength: 512, pattern: '\\S' })),
     body: Type.Optional(Type.String({ minLength: 1, maxLength: 65536, pattern: '\\S' })),
     target: Type.Optional(text),
@@ -45,6 +47,9 @@ export function parseDirectImplementationRequest(input: unknown) {
     (input.operation === 'result' && !input.result) ||
     (input.operation === 'delivery' && !input.deliveryOperation) ||
     ((input.plan !== undefined || input.scope !== undefined) && input.operation !== 'context') ||
+    (input.base !== undefined &&
+      (input.operation !== 'delivery' ||
+        !['prepare', 'publish'].includes(input.deliveryOperation ?? ''))) ||
     ((input.deliveryOperation || input.title || input.body) && input.operation !== 'delivery')
   )
     throw invalidImplementationRequest(input);
@@ -60,7 +65,7 @@ export function invalidImplementationRequest(input: unknown) {
       : operation === 'result'
         ? 'put outcome, summary and fullResult inside result, not at the request root. outcome must be done, blocked or clarification-needed; clarification-needed also requires questions inside result. Result formatting stays in native context and is not a prerequisite for PR delivery.'
         : operation === 'delivery'
-          ? 'supply deliveryOperation as prepare, publish, reconcile or present. Authored title and body belong at the request root. Do not include plan, scope or result.'
+          ? 'supply deliveryOperation as prepare, publish, reconcile or present. Title, body and optional base belong at the request root. Do not include plan, scope or result.'
           : 'use action implementation with operation context, result or delivery.';
   return new WorkflowRequestError('implementation-request-invalid', guidance);
 }

@@ -530,6 +530,7 @@ export default class OpenClawDispatch {
               operation: input.deliveryOperation ?? 'prepare',
               title: input.title,
               body: input.body,
+              base: input.base,
             }
           : input.operation === 'context'
             ? { action: 'implementation-context', id, scope: input.scope, material: input.material }

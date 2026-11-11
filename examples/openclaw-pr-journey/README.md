@@ -20,6 +20,8 @@ publish a reply. Verify that another scan repeats none of the completed actions.
 
 ## Notes
 
+- For installed pilot acceptance, repeat the delivery with a custom working branch selected through managed Git and a disposable non-default PR base. Verify the provider head, base, and explicit issue link. The executable journey below exercises the repository default.
+
 - Strict AIMock supplies the model text and tool choices. GitHub requests, chat execution, dispatch, managed Git, and native conversation history still run normally. Only Tanaabot is assigned; EMORI creates the test issues and comments.
 - Each job prepares its own issue, assessment, and linked PR. Refreshes target only this issue; a 24-hour schedule avoids unrelated discovery.
 - Approved GitHub comments retain their exact source, native turn, and publication receipts in the owning issue chat.

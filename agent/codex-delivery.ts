@@ -1,3 +1,9 @@
+import {
+  deliveryBaseSchema,
+  deliveryHasEffects,
+  selectDeliveryBase,
+  verifyDeliveryCommits,
+} from './delivery-base.ts';
 import { retainedAnnouncementPublication } from './delivery-announcement-recovery.ts';
 import { realpath } from 'node:fs/promises';
 import { Type, type Static } from 'typebox';
@@ -79,6 +85,7 @@ const requestSchema = Type.Object(
     ),
     material: Type.Optional(implementationMaterialSchema),
     publicText: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
+    base: Type.Optional(deliveryBaseSchema),
     title: Type.Optional(Type.String({ minLength: 1, maxLength: 512, pattern: '\\S' })),
     body: Type.Optional(Type.String({ maxLength: 65536 })),
   },
@@ -186,6 +193,8 @@ export default async function runCodexDelivery(
       input.body ||
       input.pullRequest !== undefined)
   )
+    throw invalidDeliveryRequest(input.action, 'codex');
+  if (input.base !== undefined && !['prepare', 'publish'].includes(input.action))
     throw invalidDeliveryRequest(input.action, 'codex');
   if (input.pullRequest !== undefined && !['bind', 'link'].includes(input.action))
     throw invalidDeliveryRequest(input.action, 'codex');
@@ -650,9 +659,15 @@ export default async function runCodexDelivery(
         };
       }
       const adopted = previous?.adopted ?? record.adoptedPullRequest;
+      const retainedBase =
+        adoptedPullRequest?.baseRef ??
+        adopted?.base ??
+        (deliveryHasEffects(previous) ? previous?.binding.base : undefined);
+      const base = selectDeliveryBase(input.base, checked.repo.defaultBranch, retainedBase);
       await verifyDispatchWorktree(record.project, found.cwd, repository, git, 'handoff');
-      let branch = (await git(found.cwd, ['branch', '--show-current'], signal)).trim();
-      if (!branch || branch === (adoptedPullRequest?.baseRef ?? checked.repo.defaultBranch))
+      const checkedOutBranch = (await git(found.cwd, ['branch', '--show-current'], signal)).trim();
+      let branch = checkedOutBranch;
+      if (!branch || branch === base || (!retainedBase && branch === checked.repo.defaultBranch))
         throw new Error('delivery-branch-required');
       await codexIssueBranch({
         record,
@@ -664,29 +679,23 @@ export default async function runCodexDelivery(
         signal,
         save,
       });
-      await git(found.cwd, ['check-ref-format', `refs/heads/${branch}`], signal);
       if (previous?.localBranch && branch !== previous.localBranch)
         throw new Error('codex-branch-owner-mismatch');
-      const localBranch = adopted ? branch : undefined;
+      const localBranch = adopted || adoptedPullRequest ? branch : undefined;
       branch = adopted?.branch ?? branch;
       if (await git(found.cwd, ['status', '--porcelain=v1'], signal))
         throw new Error('delivery-uncommitted-work');
       if (adoptedPullRequest) branch = adoptedPullRequest.headRef;
       const head = (await git(found.cwd, ['rev-parse', '--verify', 'HEAD'], signal)).trim();
       if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('delivery-head-invalid');
-      const count = Number(
-        await git(
-          found.cwd,
-          [
-            'rev-list',
-            '--count',
-            `refs/remotes/origin/${adoptedPullRequest?.baseRef ?? adopted?.base ?? checked.repo.defaultBranch}..HEAD`,
-          ],
-          signal,
-        ),
+      await verifyDeliveryCommits(
+        (argv) => git(found.cwd, argv, signal),
+        base,
+        head,
+        input.action === 'publish' && input.base !== undefined && retainedBase === undefined
+          ? repository
+          : undefined,
       );
-      if (!Number.isSafeInteger(count) || count < 1)
-        throw new Error('delivery-committed-work-required');
       if (!adoptedPullRequest && !adopted)
         await new GitHubIdentityCache(current.store.location).resolve(
           current.manifest.github?.notifications,
@@ -713,7 +722,7 @@ export default async function runCodexDelivery(
         threadId: record.threadId,
         worktree: record.worktree,
         branch,
-        base: adoptedPullRequest?.baseRef ?? adopted?.base ?? checked.repo.defaultBranch,
+        base,
         head,
         authorId: adopted?.authorId ?? connected.account.identity.nodeId,
       };
@@ -731,8 +740,7 @@ export default async function runCodexDelivery(
           'issueId',
           'threadId',
           'worktree',
-          'branch',
-          'base',
+          ...(deliveryHasEffects(previous) ? (['branch', 'base'] as const) : []),
           'authorId',
         ]);
       if (bindingChange) throw new Error(bindingChange);
@@ -753,10 +761,10 @@ export default async function runCodexDelivery(
         title: input.title ?? previous?.title ?? existingContent?.title,
         body: input.body ?? previous?.body ?? existingContent?.body,
         creationAttempted: previous?.creationAttempted ?? false,
+        ...(localBranch ? { localBranch } : {}),
         ...(adopted
           ? {
               adopted,
-              localBranch,
               pullRequest: {
                 pullRequestNodeId: adopted.pullRequestNodeId,
                 pullRequestNumber: adopted.pullRequestNumber,
@@ -817,6 +825,7 @@ export default async function runCodexDelivery(
             action: 'publish' as const,
             title: delivery.title,
             body: delivery.body,
+            ...(input.base !== undefined ? { base } : {}),
           },
           currentPullRequest: taskPullRequest(record),
           instruction:
@@ -824,6 +833,7 @@ export default async function runCodexDelivery(
         };
       if (input.action === 'publish') {
         await authorizePublication();
+        record.issueBranch = { attemptId: record.id, name: checkedOutBranch, phase: 'ready' };
         record.delivery = delivery;
         await save();
         try {
@@ -834,7 +844,7 @@ export default async function runCodexDelivery(
               itemNodeId: intake.issue.nodeId,
               repositoryOwner: intake.repository.owner.login,
               repositoryName: intake.repository.name,
-              repositoryDefaultBranch: adoptedPullRequest?.baseRef ?? checked.repo.defaultBranch,
+              repositoryDefaultBranch: base,
               assignmentActorLogin: intake.assignment?.actor.login,
               assignmentActorNodeId: intake.assignment?.actor.nodeId,
             },

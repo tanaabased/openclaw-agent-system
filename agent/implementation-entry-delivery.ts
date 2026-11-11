@@ -1,3 +1,4 @@
+import { deliveryHasEffects, selectDeliveryBase, verifyDeliveryCommits } from './delivery-base.ts';
 import { realpath } from 'node:fs/promises';
 import type { Static } from 'typebox';
 
@@ -62,8 +63,12 @@ export default async function implementationEntryDelivery(input: {
   };
   if ((await realpath(await git(['rev-parse', '--show-toplevel']))) !== entry.checkout.path)
     throw new Error('delivery-worktree-diverged');
+  const previous = entry.delivery;
+  const retainedBase = deliveryHasEffects(previous) ? previous?.binding.base : undefined;
+  const base = selectDeliveryBase(action.base, repo.defaultBranch, retainedBase);
   const branch = await git(['branch', '--show-current']);
-  if (!branch || branch === repo.defaultBranch) throw new Error('delivery-branch-required');
+  if (!branch || branch === base || branch === repo.defaultBranch)
+    throw new Error('delivery-branch-required');
   await git(['check-ref-format', `refs/heads/${branch}`]);
   if (operation !== 'reconcile' && (await git(['status', '--porcelain=v1'])))
     throw new Error('delivery-uncommitted-work');
@@ -72,11 +77,14 @@ export default async function implementationEntryDelivery(input: {
       ? entry.delivery.binding.head
       : await git(['rev-parse', '--verify', 'HEAD']);
   if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('delivery-head-invalid');
-  const count = Number(
-    await git(['rev-list', '--count', `refs/remotes/origin/${repo.defaultBranch}..${head}`]),
+  await verifyDeliveryCommits(
+    git,
+    base,
+    head,
+    operation === 'publish' && action.base !== undefined && retainedBase === undefined
+      ? repository
+      : undefined,
   );
-  if (!Number.isSafeInteger(count) || count < 1)
-    throw new Error('delivery-committed-work-required');
   const remotes = (await git(['remote', 'get-url', '--push', '--all', 'origin'])).split(/\r?\n/u);
   if (
     !remotes.length ||
@@ -90,11 +98,10 @@ export default async function implementationEntryDelivery(input: {
     threadId: deps.binding.session,
     worktree: entry.checkout.path,
     branch,
-    base: repo.defaultBranch,
+    base,
     head,
     authorId: connection.account.identity.nodeId,
   };
-  const previous = entry.delivery;
   const changed =
     previous &&
     deliveryBindingChange(previous.binding, binding, [
@@ -103,8 +110,7 @@ export default async function implementationEntryDelivery(input: {
       'sessionId',
       'threadId',
       'worktree',
-      'branch',
-      'base',
+      ...(deliveryHasEffects(previous) ? (['branch', 'base'] as const) : []),
       'authorId',
     ]);
   if (changed) throw new Error(changed);
@@ -113,18 +119,22 @@ export default async function implementationEntryDelivery(input: {
   if (!title?.trim() || !body?.trim() || title.includes('\0') || body.includes('\0'))
     throw new Error('delivery-authored-content-required');
   if (
+    deliveryHasEffects(previous) &&
     previous &&
     (title !== previous.title || body !== previous.body || head !== previous.binding.head)
   )
     throw new Error('delivery-content-changed');
-  const delivery = entry.delivery ?? {
-    id: automationHash({ binding, title, body }),
-    binding,
-    title,
-    body,
-    creationAttempted: false,
-    reconciled: false,
-  };
+  const delivery =
+    deliveryHasEffects(previous) && previous
+      ? previous
+      : {
+          id: automationHash({ binding, title, body }),
+          binding,
+          title,
+          body,
+          creationAttempted: false,
+          reconciled: false,
+        };
   if (operation === 'prepare')
     return {
       status: 'prepared',
@@ -133,6 +143,7 @@ export default async function implementationEntryDelivery(input: {
       body,
       branch,
       head,
+      base,
       publishRequest: {
         action: 'implementation' as const,
         operation: 'delivery' as const,
@@ -140,6 +151,7 @@ export default async function implementationEntryDelivery(input: {
         target: entry.target,
         title,
         body,
+        ...(action.base !== undefined ? { base } : {}),
       },
       instruction:
         'Publish authored title and body through the owning runtime within the existing publication scope. The native caller and selected issue determine the retained work; do not supply IDs or digests. Native denials stop publication; reconcile uncertain effects through their original receipts without replay.',
@@ -155,7 +167,7 @@ export default async function implementationEntryDelivery(input: {
         itemNodeId: issue.nodeId,
         repositoryOwner: repo.owner.login,
         repositoryName: repo.name,
-        repositoryDefaultBranch: repo.defaultBranch,
+        repositoryDefaultBranch: base,
       },
       repositoryNodeId: repo.nodeId,
       branch,
