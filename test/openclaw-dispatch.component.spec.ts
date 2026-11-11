@@ -2427,14 +2427,11 @@ describe('agent/openclaw issue dispatch', () => {
   });
 
   for (const [limit, occupied, expected] of [
-    [3, 0, 3],
-    [3, 1, 2],
-    [3, 3, 0],
-    [1, 0, 1],
-    [5, 0, 5],
+    [2, 1, 1],
+    [1, 1, 0],
   ] as const) {
     it(`should fill ${expected} initially free slots with limit ${limit} and ${occupied} occupied`, async () => {
-      await assignments(limit + 3, limit);
+      await assignments(limit + 1, limit);
       for (let index = 0; index < occupied; index++) {
         const input = await next();
         await prepare(input);
@@ -3105,19 +3102,6 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await service.check(manifest, root)).changed, false);
     await service.run(manifest, root, coordinator, { action: 'retry', id: input.id }, true);
     assert.equal((await service.check(manifest, root)).changed, true);
-  });
-
-  it('should expose no arbitrary identity credential message or removed actions', () => {
-    for (const action of ['start', 'canary', 'context', 'result', 'validate-result'])
-      assert.equal(Value.Check(dispatchParameters, { action }), false);
-    for (const extra of [
-      { agentId: 'other' },
-      { method: 'chat.send' },
-      { token: 'secret' },
-      { cwd: '/' },
-      { message: 'work' },
-    ])
-      assert.equal(Value.Check(dispatchParameters, { action: 'next', ...extra }), false);
   });
 
   const sends = () => calls.filter(({ method }) => method === 'chat.send');

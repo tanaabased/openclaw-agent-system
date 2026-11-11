@@ -5,6 +5,19 @@ import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import { launchRequestSchema } from '../tools/dispatch/launch-schema.ts';
 
 describe('agent/codex-dispatch-request', () => {
+  it('should expose no arbitrary identity credential message or removed actions', () => {
+    for (const action of ['start', 'canary', 'context', 'result', 'validate-result'])
+      assert.equal(Value.Check(dispatchParameters, { action }), false);
+    for (const extra of [
+      { agentId: 'other' },
+      { method: 'chat.send' },
+      { token: 'secret' },
+      { cwd: '/' },
+      { message: 'work' },
+    ])
+      assert.equal(Value.Check(dispatchParameters, { action: 'next', ...extra }), false);
+  });
+
   it('should reject unknown actions, extra authority, missing ids, and malformed selections', () => {
     for (const [action, input] of [
       ['toString', {}],
