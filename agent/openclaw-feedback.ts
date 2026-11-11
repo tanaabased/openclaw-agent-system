@@ -16,10 +16,9 @@ import { type OpenClawDeliveryConnection } from './openclaw-delivery.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import openClawFeedbackInput from './openclaw-feedback-input.ts';
 import type { OpenClawFeedbackEvent } from './openclaw-feedback-state.ts';
-import sendOpenClawTurn from './openclaw-send-turn.ts';
+import deliverOpenClawTaskInput from './openclaw-task-input.ts';
 import observeIssueActivity from './openclaw-session-activity.ts';
-import { describeIssueSession, type DispatchCaller } from './openclaw-session-create.ts';
-import { reconcileOpenClawTurn } from './openclaw-turn.ts';
+import type { DispatchCaller } from './openclaw-session-create.ts';
 export { default as authorizeFeedback } from './feedback-source-context.ts';
 
 export type OpenClawFeedbackProvider = GitHubNotificationProviderClient & {
@@ -51,52 +50,37 @@ export async function advanceFeedbackTurn(input: {
   const expected = record.request;
   if (!expected || !('key' in expected) || !record.sessionCreation?.verified)
     throw new Error('feedback-session-unverified');
-  if (!event.turn) {
-    const session = await observeIssueActivity(request, record, input.config);
-    // The host's followup queue preserves active work; feedback needs no idle gate.
-    record.nativeInactive = !session.busy;
-    if (typeof session.leaf !== 'string' || !session.leaf)
-      throw new Error('feedback-session-unverified');
-    const runId = `${record.id}:feedback:${event.id}`;
-    const message = input.sourcePresentation;
-    if (!message) throw new Error('feedback-source-presentation-required');
-    await sendOpenClawTurn({
-      request,
-      params: {
-        sessionKey: expected.key,
-        agentId: expected.agentId,
-        sessionId: record.sessionCreation.sessionId!,
-        message,
-        expectedLeafEntryId: session.leaf,
-        idempotencyKey: runId,
-      },
-      assertCurrent: async () => {
-        await input.assertCurrent();
-        await input.authorizeInput?.();
-      },
-      recordAttempt() {
-        event.turn = { runId, message, status: 'attempted' };
-        event.phase = 'prepared';
-      },
-      recordAcceptance() {
-        event.turn!.status = 'accepted';
-        event.phase = 'running';
-      },
-      save,
-    });
-  }
-  await describeIssueSession(request, record, input.config, 'feedback');
-  await reconcileOpenClawTurn({
-    allowExecutionRunId: true,
-    deliveryOnly: true,
+  const receipt = await deliverOpenClawTaskInput({
     record,
+    turn: event.turn,
+    source: 'feedback',
     request,
-    sessionKey: expected.key,
-    sessionId: record.sessionCreation.sessionId!,
-    turn: event.turn!,
-    save,
+    config: input.config,
+    save: async () => {
+      if (event.turn?.status === 'accepted') event.phase = 'running';
+      await save();
+    },
+    assertCurrent: async () => {
+      await input.assertCurrent();
+      await input.authorizeInput?.();
+    },
+    retain(turn) {
+      event.turn = turn;
+      event.phase = 'prepared';
+    },
+    async prepare() {
+      const session = await observeIssueActivity(request, record, input.config);
+      // The host's followup queue preserves active work; feedback needs no idle gate.
+      record.nativeInactive = !session.busy;
+      if (typeof session.leaf !== 'string' || !session.leaf)
+        throw new Error('feedback-session-unverified');
+      const runId = `${record.id}:feedback:${event.id}`;
+      const message = input.sourcePresentation;
+      if (!message) throw new Error('feedback-source-presentation-required');
+      return { runId, message, leaf: session.leaf };
+    },
   });
-  const settled = event.turn!.status === 'completed' || event.turn!.status === 'consumed';
+  const settled = receipt.status === 'delivered';
   if (settled) {
     event.phase = 'delivered';
     delete event.code;

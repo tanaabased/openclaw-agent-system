@@ -804,6 +804,18 @@ describe('agent/codex-feedback', () => {
     assert.equal(event.phase, 'blocked');
     assert.equal(event.code, 'feedback-source-changed');
   });
+  it('should keep a native denial stopped when later receipt history is unavailable', async () => {
+    const ref = await prepare();
+    receiptStatus = 'blocked';
+    await call('reconcile', ref);
+    const original = (await store.read()).records[0]!.feedback!.events[0]!;
+    receiptStatus = 'uncertain';
+    senderHistory();
+    occurrence++;
+    assert.equal((await call('next')).status, 'idle');
+    assert.equal((await call('reconcile', ref)).status, 'blocked');
+    assert.deepEqual((await store.read()).records[0]!.feedback!.events[0], original);
+  });
   it('should deliver native conversation once without a feedback result or a reply gate', async () => {
     const before = (await store.read()).records[0]!;
     const ref = await prepare(commenter, '@receiver why this approach?');
@@ -863,6 +875,40 @@ describe('agent/codex-feedback', () => {
     sent = true;
     turn = 'feedback';
     assert.equal((await call('context', ref, true)).status, 'verified');
+  });
+  it('should settle retained delivery without provider access or creation metadata', async () => {
+    const ref = await prepare();
+    sent = true;
+    turn = 'feedback';
+    await store.exclusive(async (state, save) => {
+      delete state.records[0]!.request;
+      delete state.records[0]!.worktree;
+      await save();
+    });
+    deps.feedbackConnect = async () => {
+      throw new Error('provider unavailable');
+    };
+    deps.native!.find = async () => {
+      throw new Error('creation history unavailable');
+    };
+    await call('reconcile', ref);
+    const event = (await store.read()).records[0]!.feedback!.events[0]!;
+    assert.equal(event.phase, 'delivered');
+    assert.equal(event.attempt!.turnId, 'feedback');
+  });
+  it('should reject a changed native receipt during coordinator reconciliation', async () => {
+    const ref = await prepare();
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.feedback!.events[0]!.attempt!.turnId = 'original';
+      await save();
+    });
+    sent = true;
+    turn = 'different';
+    await call('reconcile', ref);
+    const event = (await store.read()).records[0]!.feedback!.events[0]!;
+    assert.equal(event.phase, 'blocked');
+    assert.equal(event.code, 'feedback-turn-changed');
+    assert.equal(event.attempt!.turnId, 'original');
   });
   it('should reselect delivered feedback in a later turn and publish one source-bound reply', async () => {
     const ref = await prepare(commenter, '@receiver please explain.');

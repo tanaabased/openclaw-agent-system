@@ -499,7 +499,13 @@ describe('agent/openclaw-feedback', () => {
     await assert.rejects(advanceFeedbackTurn(input), /connection-lost/);
     assert.equal(event.turn?.status, 'attempted');
     lost = false;
-    await advanceFeedbackTurn(input);
+    await advanceFeedbackTurn({
+      ...input,
+      sourcePresentation: undefined,
+      authorizeInput: async () => {
+        throw new Error('source unavailable after send');
+      },
+    });
     assert.equal(sends, 1);
     assert.equal(event.turn?.status, 'consumed');
     assert.equal(openClawCapacity([record], 3).occupied, 1);

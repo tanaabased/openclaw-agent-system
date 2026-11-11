@@ -11,7 +11,8 @@ import type { CodexDispatchDependencies } from './codex-dispatch-context.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
 import unsubmittedNativeRequest from './codex-dispatch-unsubmitted.ts';
 import { codexFeedbackHandoff } from './codex-dispatch-handoff.ts';
-import CodexDispatchStore from './codex-dispatch-state.ts';
+import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
+import type { FeedbackEvent } from './codex-feedback-state.ts';
 import authorizeCodexFeedback from './codex-feedback-authority.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';
 import { applyFeedbackScans, scanCodexFeedback } from './codex-feedback-scan.ts';
@@ -33,6 +34,7 @@ import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import { dispatchAdmission } from './managed-issue.ts';
 import type { OpenClawFeedbackProvider } from './openclaw-feedback.ts';
 import retainedIntakePolicy from './retained-intake-policy.ts';
+import deliverTaskInput, { type TaskInputReceipt } from './task-input-delivery.ts';
 import workflowFailure from './workflow-failure.ts';
 import { requireWorkflowSchedule } from './workflow-schedule.ts';
 const requestSchema = Type.Object(
@@ -209,19 +211,45 @@ export default async function runCodexFeedback(
         return connection;
       };
       const records = state.records.filter(
-        (record) =>
-          !record.supersededBy &&
-          !record.reset &&
-          record.threadId &&
-          record.request &&
-          record.worktree,
+        (record) => !record.supersededBy && !record.reset && record.threadId,
       );
+      const reconcileInput = async (
+        record: DispatchRecord,
+        event: FeedbackEvent,
+      ): Promise<TaskInputReceipt> => {
+        const attempt = event.attempt!;
+        if (attempt.request.threadId !== record.threadId)
+          throw new Error('feedback-native-binding-mismatch');
+        const receipt = await receiptFor(record.sourceThreadId, attempt);
+        if (receipt.status === 'uncertain') return { status: 'pending' };
+        if (receipt.status === 'verified' && attempt.turnId && attempt.turnId !== receipt.turnId)
+          throw new Error('feedback-turn-changed');
+        if (!input.material) {
+          if ('turnId' in receipt) attempt.turnId = receipt.turnId;
+          if (receipt.status === 'blocked') {
+            event.phase = 'blocked';
+            event.code = receipt.code;
+          } else {
+            event.phase = 'delivered';
+            record.feedback!.lastServedAt = now;
+            delete record.nativeInactive;
+            delete record.capacityObservation;
+            delete event.code;
+            delete event.retry;
+            delete event.retryAfter;
+          }
+          await save();
+        }
+        return receipt.status === 'blocked'
+          ? { status: 'held', code: receipt.code }
+          : { status: 'delivered' };
+      };
       if (
         input.action === 'next' &&
         !records.some((record) =>
           record.feedback?.events.some(
             (event) =>
-              (event.attempt && !['delivered'].includes(event.phase)) ||
+              (event.attempt && !['delivered', 'blocked'].includes(event.phase)) ||
               (!event.policyHeld && ['queued', 'prepared', 'running'].includes(event.phase)),
           ),
         )
@@ -242,7 +270,7 @@ export default async function runCodexFeedback(
             ? feedback.events
                 .filter(
                   (event) =>
-                    (event.attempt && !['delivered'].includes(event.phase)) ||
+                    (event.attempt && !['delivered', 'blocked'].includes(event.phase)) ||
                     (event.phase === 'queued' && !event.policyHeld),
                 )
                 .sort((a, b) => a.createdAt - b.createdAt)
@@ -251,29 +279,11 @@ export default async function runCodexFeedback(
         for (const event of events) {
           let sourcePresentation: string | undefined;
           try {
+            if (event?.phase === 'blocked')
+              return { status: 'blocked', id: record.id, eventId: event.id, code: event.code };
             if (event?.attempt && ['next', 'reconcile'].includes(input.action)) {
-              if (event.attempt.request.threadId !== record.threadId)
-                throw new Error('feedback-native-binding-mismatch');
-              const receipt = await receiptFor(record.sourceThreadId, event.attempt);
-              if (receipt.status === 'blocked') {
-                event.phase = 'blocked';
-                event.code = receipt.code;
-                if ('turnId' in receipt) event.attempt.turnId = receipt.turnId;
-                await save();
-                continue;
-              }
-              if (receipt.status === 'verified') {
-                if ('turnId' in receipt) event.attempt.turnId = receipt.turnId;
-                event.phase = 'delivered';
-                feedback.lastServedAt = now;
-                delete record.nativeInactive;
-                delete record.capacityObservation;
-                delete event.code;
-                delete event.retry;
-                delete event.retryAfter;
-                await save();
-                continue;
-              }
+              const receipt = await reconcileInput(record, event);
+              if (receipt.status !== 'pending') continue;
               // Recover only a completed sender turn with complete native proof that no
               // send was invoked. Missing acknowledgments and actual refusals never replay.
               const sender = event.attempt.sourceThreadId ?? record.sourceThreadId;
@@ -308,22 +318,23 @@ export default async function runCodexFeedback(
               event.phase = 'queued';
               await save();
             }
+            if (!event || record.retirement) continue;
+            if (event.phase === 'delivered' && ['next', 'reconcile'].includes(input.action)) {
+              if (input.action === 'next') continue;
+              return { status: event.phase, id: record.id, eventId: event.id, code: event.code };
+            }
+            if (!record.request || !record.worktree)
+              throw new Error('feedback-native-binding-mismatch');
             const provider = await providerFor();
             const admitted = dispatchAdmission(record, intake.records ?? []);
             if (!admitted) throw new Error('feedback-admission-missing');
             const owner = admitted.repository.owner.login,
               name = admitted.repository.name;
-            if (!event || record.retirement) continue;
             if (!nativeContext) {
               if (!schedule) throw new Error('workflow-schedule-reconciliation-required');
               requireWorkflowSchedule(schedule.saved, schedule.current, 'feedback');
             }
             if (input.action === 'next' && event.retry && !dispatchRetryDue(event, now)) continue;
-            if (
-              (event.phase === 'delivered' && ['next', 'reconcile'].includes(input.action)) ||
-              event.phase === 'blocked'
-            )
-              return { status: event.phase, id: record.id, eventId: event.id, code: event.code };
             if (input.action === 'context' && caller !== record.threadId)
               throw new Error('feedback-owner-caller-required');
             const source = JSON.parse(event.source) as GitHubCanonicalFeedback;
@@ -370,41 +381,17 @@ export default async function runCodexFeedback(
               await save();
             }
             if (event.attempt) {
-              const receipt = await receiptFor(record.sourceThreadId, event.attempt);
-              if (receipt.status === 'blocked') throw new Error(receipt.code);
-              if (receipt.status === 'uncertain') {
-                if (input.action === 'next') continue;
+              const receipt = await reconcileInput(record, event);
+              if (receipt.status === 'held') throw new Error(receipt.code);
+              if (receipt.status === 'pending') {
                 return { status: 'uncertain', id: record.id, eventId: event.id };
               }
-              if (event.attempt.turnId && event.attempt.turnId !== receipt.turnId)
-                throw new Error('feedback-turn-changed');
-              if (!input.material) {
-                event.attempt.turnId = receipt.turnId;
-                delete event.retry;
-                delete event.retryAfter;
-                if (event.phase === 'prepared') event.phase = 'running';
-                if (
-                  receipt.ended &&
-                  found.turnEnded &&
-                  ['idle', 'notLoaded'].includes(found.status)
-                )
-                  record.nativeInactive = true;
-                else delete record.nativeInactive;
-                delete record.capacityObservation;
-                {
-                  event.phase = 'delivered';
-                  feedback.lastServedAt = now;
-                  delete event.code;
-                }
-                await save();
-              }
-              if (input.action === 'next' || input.action === 'reconcile') continue;
             } else {
               if (input.action !== 'next') throw new Error('feedback-send-unverified');
               if (!['idle', 'notLoaded'].includes(found.status) || found.turnEnded !== true)
                 continue;
               const id = automationHash([event.id, occurrence!.id, found.turnId]);
-              event.attempt = {
+              const attempt: NonNullable<FeedbackEvent['attempt']> = {
                 id,
                 sourceThreadId: activation!.sourceThreadId,
                 sourceTurnId: occurrence!.id,
@@ -414,16 +401,25 @@ export default async function runCodexFeedback(
                   prompt: sourcePresentation,
                 },
               };
-              delete record.nativeInactive;
-              delete record.capacityObservation;
-              event.phase = 'prepared';
-              await save();
+              await deliverTaskInput({
+                attempt: event.attempt,
+                prepare: async () => attempt,
+                retain(prepared) {
+                  event.attempt = prepared;
+                  delete record.nativeInactive;
+                  delete record.capacityObservation;
+                  event.phase = 'prepared';
+                },
+                reconcile: () => reconcileInput(record, event),
+                assertCurrent: authorize,
+                save,
+              });
               return {
                 status: 'feedback-prepared',
                 id: record.id,
                 eventId: event.id,
-                request: event.attempt.request,
-                nativeHandoff: codexFeedbackHandoff(event.attempt.request),
+                request: attempt.request,
+                nativeHandoff: codexFeedbackHandoff(attempt.request),
               };
             }
             {

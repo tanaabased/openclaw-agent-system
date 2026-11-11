@@ -63,6 +63,7 @@ import routingInstructions, {
   routingInstructionsReference,
 } from './routing-instructions.ts';
 import workflowFailure from './workflow-failure.ts';
+import deliverTaskInput from './task-input-delivery.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
 async function verifySelectedPullRequest(
   record: DispatchRecord,
@@ -864,7 +865,7 @@ export async function prepareDispatch(
     record.reservationVersion = 1;
     delete record.capacityObservation;
     delete record.nativeInactive;
-    record.request = {
+    const request: NonNullable<DispatchRecord['request']> = {
       title: issueChatTitle(
         input.title as string,
         intake.issue.number,
@@ -883,8 +884,15 @@ export async function prepareDispatch(
       },
     };
 
-    await fresh();
-    await save();
+    await deliverTaskInput({
+      attempt: record.request,
+      prepare: async () => request,
+      retain(prepared) {
+        record.request = prepared;
+      },
+      assertCurrent: fresh,
+      save,
+    });
     return {
       status: 'prepared' as const,
       changed: true,

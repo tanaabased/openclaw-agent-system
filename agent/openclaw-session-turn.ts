@@ -2,10 +2,9 @@ import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import { assessmentTurnMessage } from './openclaw-assessment.ts';
 import { nativeTurnFor } from './openclaw-native-turns.ts';
 import type { OpenClawTurn } from './openclaw-turn-state.ts';
-import { reconcileOpenClawTurn } from './openclaw-turn.ts';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
-import sendOpenClawTurn from './openclaw-send-turn.ts';
+import deliverOpenClawTaskInput from './openclaw-task-input.ts';
 
 import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
@@ -62,65 +61,49 @@ export default async function advanceIssueTurn(input: {
   };
   await guard();
   return input.credential.use(authority, async (request) => {
-    if (!currentTurn()) {
-      let leaf: string | null = null;
-      if (input.assessment && nativeTurnFor(record, 'first')) {
-        if (nativeTurnFor(record, 'first')!.status !== 'completed')
-          throw new Error('dispatch-investigation-incomplete');
-        await describeIssueSession(request, record, input.config);
-        const history = sessionObject(
-          await request('chat.history', { sessionKey: expected.key, limit: 1 }),
-        );
-        const info = sessionObject(history.sessionInfo);
-        if (
-          history.sessionId !== sessionId ||
-          info.hasActiveRun !== false ||
-          sessionObject(history.pendingInputs).total !== 0 ||
-          !Array.isArray(history.messages) ||
-          history.messages.length !== 1 ||
-          sessionObject(sessionObject(history.messages[0]).__openclaw).id !==
-            nativeTurnFor(record, 'first')!.replyEventId ||
-          typeof info.activeLeafEntryId !== 'string' ||
-          !info.activeLeafEntryId
-        )
-          throw new Error('dispatch-assessment-session-not-idle');
-        leaf = info.activeLeafEntryId;
-      } else await verifyEmptyIssueSession(request, record, input.config, true);
-      const message = input.assessment
-        ? assessmentTurnMessage(record, input.presentation)
-        : firstTurnMessage(record);
-      const runId = `${record.id}:${input.assessment ? 'assessment' : 'first-turn'}`;
-      await sendOpenClawTurn({
-        request,
-        params: {
-          sessionKey: expected.key,
-          agentId: expected.agentId,
-          sessionId,
-          message,
-          expectedLeafEntryId: leaf,
-          idempotencyKey: runId,
-        },
-        assertCurrent: guard,
-        recordAttempt() {
-          const turn: OpenClawTurn = { runId, message, status: 'attempted' };
-          (record.nativeTurns ??= []).push({ role, turn });
-        },
-        recordAcceptance() {
-          currentTurn()!.status = 'accepted';
-        },
-        save,
-      });
-    }
-    const turn = currentTurn()! as OpenClawTurn;
-    await describeIssueSession(request, record, input.config);
-    await reconcileOpenClawTurn({
+    await deliverOpenClawTaskInput({
       record,
+      turn: currentTurn() as OpenClawTurn | undefined,
+      source: 'assignment',
       request,
-      sessionKey: expected.key,
-      sessionId,
-      turn,
+      config: input.config,
+      assertCurrent: guard,
       save,
+      retain(turn) {
+        (record.nativeTurns ??= []).push({ role, turn });
+      },
+      async prepare() {
+        let leaf: string | null = null;
+        if (input.assessment && nativeTurnFor(record, 'first')) {
+          if (nativeTurnFor(record, 'first')!.status !== 'completed')
+            throw new Error('dispatch-investigation-incomplete');
+          await describeIssueSession(request, record, input.config);
+          const history = sessionObject(
+            await request('chat.history', { sessionKey: expected.key, limit: 1 }),
+          );
+          const info = sessionObject(history.sessionInfo);
+          if (
+            history.sessionId !== sessionId ||
+            info.hasActiveRun !== false ||
+            sessionObject(history.pendingInputs).total !== 0 ||
+            !Array.isArray(history.messages) ||
+            history.messages.length !== 1 ||
+            sessionObject(sessionObject(history.messages[0]).__openclaw).id !==
+              nativeTurnFor(record, 'first')!.replyEventId ||
+            typeof info.activeLeafEntryId !== 'string' ||
+            !info.activeLeafEntryId
+          )
+            throw new Error('dispatch-assessment-session-not-idle');
+          leaf = info.activeLeafEntryId;
+        } else await verifyEmptyIssueSession(request, record, input.config, true);
+        const message = input.assessment
+          ? assessmentTurnMessage(record, input.presentation)
+          : firstTurnMessage(record);
+        const runId = `${record.id}:${input.assessment ? 'assessment' : 'first-turn'}`;
+        return { runId, message, leaf };
+      },
     });
+    const turn = currentTurn()! as OpenClawTurn;
     if (turn.status === 'completed') delete currentTurn()!.message;
     await guard();
 
