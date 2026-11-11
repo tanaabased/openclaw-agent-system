@@ -2,6 +2,7 @@ import { providerDiagnosticSchema, type ProviderDiagnostic } from '../utils/prov
 import { Type } from 'typebox';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import workflowFailure from './workflow-failure.ts';
+import AgentSystemToolError from '../api/error.ts';
 
 export const dispatchRetryLimit = 5;
 
@@ -89,7 +90,14 @@ const repositoryPrerequisites = new Set([
 
 /** keep repairable local I/O failures identifiable across saved preparation attempts. */
 export function repositoryPreparationFailure(error: unknown) {
-  const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+  const failure =
+    error instanceof AgentSystemToolError &&
+    error.code === 'execution_failed' &&
+    error.cause instanceof Error
+      ? error.cause
+      : error;
+  const code =
+    failure && typeof failure === 'object' && 'code' in failure ? failure.code : undefined;
   return typeof code === 'string' &&
     [
       'ENOSPC',
@@ -103,8 +111,8 @@ export function repositoryPreparationFailure(error: unknown) {
       'EEXIST',
       'ENOTDIR',
     ].includes(code)
-    ? new Error('repository-io-unavailable', { cause: error })
-    : error;
+    ? new Error('repository-io-unavailable', { cause: failure })
+    : failure;
 }
 
 export function dispatchRecheckable(code: string | undefined, repositoryPreparation = false) {

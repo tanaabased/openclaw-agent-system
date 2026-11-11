@@ -687,15 +687,22 @@ describe('agent/openclaw issue dispatch', () => {
       const input = await next();
       const original = service.dependencies.worktrees.prepareGitHub;
       service.dependencies.worktrees.prepareGitHub = async () => {
+        const wrapped = (cause: Error) =>
+          Object.assign(
+            new AgentSystemToolError('execution_failed', 'Git worktree preparation failed'),
+            { cause },
+          );
         if (failure === 'fetch-lock')
-          throw new GitCommandError('fetch', {
-            exitCode: 128,
-            stderr: "Unable to create 'main.lock': File exists",
-          });
+          throw wrapped(
+            new GitCommandError('fetch', {
+              exitCode: 128,
+              stderr: "Unable to create 'main.lock': File exists",
+            }),
+          );
         if (failure === 'disk-full')
-          throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+          throw wrapped(Object.assign(new Error('disk full'), { code: 'ENOSPC' }));
         if (failure === 'path-permissions')
-          throw new RepositoryPreparationError('repository-path-unsafe', root);
+          throw wrapped(new RepositoryPreparationError('repository-path-unsafe', root));
         throw new Error('session-dispatch-connect-timeout');
       };
       const failed = await prepare(input);
