@@ -23,6 +23,64 @@ const comment = (nodeId: string, body = '@receiver explain this') => ({
   updatedAt: '2026-10-13T01:00:00Z',
 });
 describe('agent/codex-feedback-source', () => {
+  for (const failedRead of ['comments', 'reviews', 'members'] as const) {
+    it(`should isolate failed ${failedRead} reads and recover without replay`, async () => {
+      const policy = intakeFixture().policy;
+      policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
+      const state: CodexFeedback = { startedAt: 0, baseline: {}, events: [] };
+      const review = reviewFixture({ author: account, body: '@receiver fix this' });
+      const members = [reviewCommentFixture({ author: account })];
+      const reviews = reviewClientFixture(review, members);
+      const originalList = reviews.listReviews;
+      const originalMembers = reviews.getReviewComments;
+      let failed = true;
+      reviews.listReviews = async (...args) => {
+        if (failed && failedRead === 'reviews') throw new Error('review-unavailable');
+        return originalList(...args);
+      };
+      reviews.getReviewComments = async (...args) => {
+        if (failed && failedRead === 'members') throw new Error('members-unavailable');
+        return originalMembers(...args);
+      };
+      const scan = () =>
+        discoverCodexFeedback({
+          state,
+          policy,
+          owner: 'owner',
+          name: 'repo',
+          number: 3,
+          nodeId: 'PR',
+          itemType: 'pull-request',
+          now: Date.parse('2026-10-14T00:00:00Z'),
+          client: {
+            identity: account,
+            reviews,
+            listIssueComments: async () => {
+              if (failed && failedRead === 'comments') throw new Error('comments-unavailable');
+              return { comments: [comment('ordinary')], truncated: false };
+            },
+            getIssueComment: async () => comment('ordinary'),
+          },
+          discovery: { budget: new DiscoveryBudget(), save: async () => {} },
+        });
+      await assert.rejects(scan(), /unavailable/);
+      assert.deepEqual(
+        state.events.map((event) => event.sourceId),
+        failedRead === 'comments' ? [review.nodeId] : ['ordinary'],
+      );
+      assert.equal(state.watermarks?.PR, undefined);
+      failed = false;
+      await scan();
+      await scan();
+      assert.equal(state.events.length, 2);
+      const grouped = JSON.parse(
+        state.events.find((event) => event.sourceId === review.nodeId)!.source,
+      );
+      assert.deepEqual(grouped.feedback.comments, members);
+      assert.equal(typeof state.watermarks?.PR, 'number');
+    });
+  }
+
   it('should admit unrelated authors while an outgoing lookup fails and revisit deferred self input', async () => {
     const policy = intakeFixture().policy;
     const human = { ...account, login: 'human', nodeId: 'U_human' };
