@@ -110,6 +110,84 @@ describe('agent/feedback-source', () => {
     assert.equal(state.baseline.I!.fresh, undefined);
   });
 
+  for (const edited of ['review', 'reply'] as const)
+    it(`should prefer fresh ${edited} evidence during policy reconsideration and recover independently`, async () => {
+      const policy = intakeFixture().policy;
+      policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
+      const state: CodexFeedback = { startedAt: 0, baseline: {}, events: [] };
+      const review = reviewFixture({ author: account, body: '@receiver original review' });
+      const root = reviewCommentFixture({ author: account });
+      const reply = reviewCommentFixture({
+        author: account,
+        nodeId: 'reply',
+        databaseId: 85,
+        replyToId: root.databaseId,
+        body: '@receiver original reply',
+      });
+      const reviews = reviewClientFixture(review, [root, reply]);
+      const human = { ...account, login: 'human', nodeId: 'U_human' };
+      const comments = [{ ...comment('retained'), author: human }];
+      let now = Date.parse('2026-10-14T00:00:00Z');
+      let unavailable = false;
+      const list = reviews.listReviews;
+      reviews.listReviews = async (...args) => {
+        if (unavailable) throw new Error('reviews-unavailable');
+        return list(...args);
+      };
+      const scan = () =>
+        discoverFeedback({
+          state,
+          policy,
+          owner: 'owner',
+          name: 'repo',
+          number: 3,
+          nodeId: 'PR',
+          itemType: 'pull-request',
+          now: (now += 60000),
+          discovery: { budget: new DiscoveryBudget(), save: async () => {} },
+          client: {
+            identity: account,
+            reviews,
+            listIssueComments: async () => ({ comments, truncated: false }),
+            getIssueComment: async () => comments[0]!,
+          },
+        });
+      await scan();
+      assert.equal(state.events.length, 2);
+      const original = structuredClone(state.events);
+      const watermark = state.watermarks!.PR;
+      policy.issueAssignment!.feedback.allowed.push(human);
+      const source = edited === 'review' ? review : reply;
+      source.body = '@receiver edited direction';
+      source.updatedAt = new Date(now + 1000).toISOString();
+      // The incremental endpoint omits the older, newly eligible comment.
+      comments.splice(0, 1, { ...comment('independent'), updatedAt: source.updatedAt });
+      unavailable = true;
+      await assert.rejects(scan(), /reviews-unavailable/);
+      assert.equal(state.watermarks!.PR, watermark);
+      assert.ok(state.events.some((event) => event.sourceId === 'independent'));
+      assert.ok(state.events.some((event) => event.sourceId === 'retained'));
+      unavailable = false;
+      await scan();
+      // A second policy change plus edit covers the successful fresh-read path too.
+      policy.issueAssignment!.feedback.allowed.push({
+        ...human,
+        login: 'other',
+        nodeId: 'U_other',
+      });
+      source.body = '@receiver final direction';
+      source.updatedAt = new Date(now + 1000).toISOString();
+      await scan();
+      const admitted = structuredClone(state.events);
+      await scan();
+      assert.deepEqual(state.events, admitted);
+      assert.deepEqual(state.events.slice(0, 2), original);
+      assert.equal(JSON.parse(state.events.at(-1)!.source).body, source.body);
+      assert.ok(state.watermarks!.PR! > watermark!);
+      assert.ok(Value.Check(codexFeedbackSchema, state));
+      assert.ok(Value.Check(openclawFeedbackSchema, state));
+    });
+
   for (const failedRead of ['comments', 'reviews', 'members'] as const) {
     it(`should isolate failed ${failedRead} reads and recover without replay`, async () => {
       const policy = intakeFixture().policy;

@@ -124,11 +124,6 @@ export async function discoverFeedback(input: {
     sources.push(...comments.comments);
   });
   const policyDigest = feedbackAuthorityDigest(input.policy);
-  if (state.evaluatedPolicyDigests?.[input.nodeId] !== policyDigest)
-    for (const encoded of Object.values(baseline ?? {})) {
-      const saved = JSON.parse(encoded) as GitHubCanonicalFeedback;
-      if (!sources.some((source) => source.nodeId === saved.nodeId)) sources.push(saved);
-    }
   for (const event of state.events) {
     const source = JSON.parse(event.source) as GitHubCanonicalFeedback;
     if (
@@ -211,6 +206,12 @@ export async function discoverFeedback(input: {
           sources.push(reviewReplyFeedback(review, reply, parent));
         });
     });
+  // Reconsider retained sources only after fresh comments, reviews and replies are collected.
+  if (state.evaluatedPolicyDigests?.[input.nodeId] !== policyDigest)
+    for (const encoded of Object.values(baseline ?? {})) {
+      const saved = JSON.parse(encoded) as GitHubCanonicalFeedback;
+      if (!sources.some((source) => source.nodeId === saved.nodeId)) sources.push(saved);
+    }
   if (failure && sources.length === 0) throw failure.error;
   let ownCommentIds = typeof input.ownCommentIds === 'function' ? undefined : input.ownCommentIds;
   let observedOwn = typeof input.ownCommentIds !== 'function';
