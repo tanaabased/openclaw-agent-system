@@ -932,12 +932,13 @@ for (const scenario of [
             runtime: 'openclaw',
             id,
             project: { path: '/fixture' },
-            assessment: !hookAssessment
-              ? { skill: { name: 'generic-assessment', path: '/fixture/SKILL.md' } }
-              : {},
+            assessment:
+              scenario.id === 'openclaw-issue-journey'
+                ? { skill: { name: 'generic-assessment', path: '/fixture/SKILL.md' } }
+                : {},
             resultFormat: assessmentResultFormat,
           });
-          if (!hookAssessment) {
+          if (scenario.id === 'openclaw-issue-journey') {
             const read = await response(input);
             assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
             append(input, 'assessment-skill', 'Generic Assessment');
@@ -970,15 +971,16 @@ for (const scenario of [
         evidence: { source: 'https://github.com/owner/repo/issues/3' },
         project: { path: '/tmp/managed-worktree' },
         assessment: {
-          defaultSkill: hookAssessment,
-          skill: !hookAssessment
-            ? { name: 'generic-assessment', path: '/fixture/SKILL.md' }
-            : { path: '/fixture/SKILL.md' },
+          defaultSkill: scenario.id !== 'openclaw-issue-journey',
+          skill:
+            scenario.id === 'openclaw-issue-journey'
+              ? { name: 'generic-assessment', path: '/fixture/SKILL.md' }
+              : { path: '/fixture/SKILL.md' },
         },
         resultFormat: assessmentResultFormat,
       };
       append(input, 'context', context);
-      if (!hookAssessment) {
+      if (scenario.id === 'openclaw-issue-journey') {
         const read = await response(input);
         assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
         assert.deepEqual(JSON.parse(read.toolCalls![0]!.arguments), { path: '/fixture/SKILL.md' });
