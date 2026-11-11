@@ -273,6 +273,69 @@ for (const scenario of [
       : fixture.response;
   }
 
+  const compositionTimeout = {
+    status: 'waiting',
+    code: 'github-notification-response-bounded',
+    providerDiagnostic: { provider: 'github', classification: 'transport', httpStatus: null },
+  };
+
+  async function verifyAnnouncementStops(
+    input: ChatCompletionRequest,
+    stage: string,
+    selectedScenario = scenario,
+  ) {
+    const stopped = structuredClone(input);
+    append(stopped, stage, compositionTimeout);
+    assert.deepEqual(await response(stopped, selectedScenario), {
+      content: `notification-delivery-stopped: ${JSON.stringify(compositionTimeout)}`,
+    });
+  }
+
+  async function verifyCompositionRecovery(
+    input: ChatCompletionRequest,
+    stage: string,
+    selectedScenario = scenario,
+  ) {
+    const exhausted = structuredClone(input);
+    for (let attempt = 0; attempt <= 3; attempt++) {
+      const attemptStage = attempt ? `${stage}_retry_${attempt}` : stage;
+      const next = await response(exhausted, selectedScenario);
+      assert.ok('toolCalls' in next && next.toolCalls?.length === 1);
+      assert.deepEqual(next.toolCalls[0], {
+        id: `call_notifications_${attemptStage}`,
+        name: 'agent_system_dispatch',
+        arguments: JSON.stringify({ action: 'delivery', operation: 'compose' }),
+      });
+      if (attempt > 0) {
+        const recovered = structuredClone(exhausted);
+        append(recovered, attemptStage, {
+          status: 'composition-ready',
+          selection: { defaultSkill: true, skill: { path: '/skills/reply/SKILL.md' } },
+        });
+        const resumed = await response(recovered, selectedScenario);
+        assert.ok('toolCalls' in resumed && resumed.toolCalls?.[0]?.name === 'read');
+        assert.deepEqual(JSON.parse(resumed.toolCalls[0].arguments), {
+          path: '/skills/reply/SKILL.md',
+        });
+      }
+      append(exhausted, attemptStage, compositionTimeout);
+    }
+    assert.deepEqual(await response(exhausted, selectedScenario), {
+      content: 'notification-retry-exhausted: github-notification-response-bounded',
+    });
+    for (const classification of ['unknown', 'permission', 'rate-limit']) {
+      const stopped = structuredClone(input);
+      const obstacle = {
+        ...compositionTimeout,
+        providerDiagnostic: { ...compositionTimeout.providerDiagnostic, classification },
+      };
+      append(stopped, stage, obstacle);
+      assert.deepEqual(await response(stopped, selectedScenario), {
+        content: `notification-delivery-stopped: ${JSON.stringify(obstacle)}`,
+      });
+    }
+  }
+
   async function readRoutingSource(input: ChatCompletionRequest, index = 0) {
     const next = await response(input);
     assert.ok('toolCalls' in next && next.toolCalls?.[0]?.name === 'agent_system_github');
@@ -1271,6 +1334,7 @@ for (const scenario of [
             pullRequest: { pullRequestNumber: 456 },
           });
           assert.equal((await action(input, 'delivery', workScenario)).operation, 'compose');
+          await verifyCompositionRecovery(input, 'delivery-compose', workScenario);
           append(input, 'delivery-compose', {
             status: 'composition-ready',
             digest,
@@ -1282,6 +1346,7 @@ for (const scenario of [
           assert.equal((await action(input, 'delivery', workScenario)).operation, 'candidate');
           append(input, 'delivery-candidate', { status: 'announcement-prepared', digest });
           assert.equal((await action(input, 'delivery', workScenario)).operation, 'announce');
+          await verifyAnnouncementStops(input, 'delivery-announce', workScenario);
           append(input, 'delivery-announce', { status: 'announced' });
           if (mode === 'operator') {
             assert.ok('content' in (await response(input, workScenario)));
@@ -1795,6 +1860,7 @@ for (const scenario of [
                 pullRequest: { pullRequestNumber: 456 },
               });
               assert.equal((await runAction(input, 'delivery')).operation, 'compose');
+              await verifyCompositionRecovery(input, 'feedback-delivery-compose', selectedScenario);
               append(input, 'feedback-delivery-compose', {
                 status: 'composition-ready',
                 digest,
@@ -1809,6 +1875,7 @@ for (const scenario of [
                 digest,
               });
               assert.equal((await runAction(input, 'delivery')).operation, 'announce');
+              await verifyAnnouncementStops(input, 'feedback-delivery-announce', selectedScenario);
               append(input, 'feedback-delivery-announce', { status: 'announced' });
               assert.equal((await runAction(input, 'delivery')).operation, 'present');
               append(input, 'feedback-delivery-present', {

@@ -107,6 +107,18 @@ function isTransientDelivery(result: Record<string, unknown>) {
   );
 }
 
+function isCompositionReadTimeout(stage: string, result: Record<string, unknown>) {
+  const diagnostic = result.providerDiagnostic as Record<string, unknown> | undefined;
+  return (
+    ['delivery-compose', 'feedback-delivery-compose'].includes(stage) &&
+    result.status === 'waiting' &&
+    result.code === 'github-notification-response-bounded' &&
+    diagnostic?.provider === 'github' &&
+    diagnostic.classification === 'transport' &&
+    diagnostic.httpStatus === null
+  );
+}
+
 function isPendingDelivery(result: Record<string, unknown>) {
   return (
     isTransientDelivery(result) ||
@@ -269,7 +281,7 @@ function respond(
       content: 'The linked PR contains the completed cleanup note. No further work was requested.',
     };
   }
-  // repeat only known contention, preserving the operation and its retained arguments.
+  // repeat only known contention or read-only composition timeouts with unchanged arguments.
   const attempts = new Map<string, number>();
   const result = (stage: string): Record<string, unknown> | undefined => {
     for (let attempt = 0; attempt <= 3; attempt++) {
@@ -280,7 +292,11 @@ function respond(
       }
       let value = JSON.parse(text);
       while (typeof value === 'string') value = JSON.parse(value);
-      if (!dispatchStages.includes(stage) || !isContention(value)) return value;
+      if (
+        !dispatchStages.includes(stage) ||
+        (!isContention(value) && !isCompositionReadTimeout(stage, value))
+      )
+        return value;
       if (attempt === 3) throw new Error(`notification-retry-exhausted: ${value.code}`);
     }
     return undefined;
@@ -568,7 +584,8 @@ function respond(
             operation: 'compose',
           });
         const selection = composed.selection as { skill?: { path?: string } } | undefined;
-        if (composed.status !== 'composition-ready' || !selection?.skill?.path) return;
+        if (composed.status !== 'composition-ready') return deliveryObstacle(composed);
+        if (!selection?.skill?.path) return;
         if (!openClawAIMockToolResultText(messages, prefix + 'delivery-skill'))
           return call('delivery-skill', 'read', { path: selection.skill.path });
         const candidate = result('feedback-delivery-candidate');
@@ -590,7 +607,7 @@ function respond(
             action: 'delivery',
             operation: 'announce',
           });
-        if (announced.status !== 'announced') return;
+        if (announced.status !== 'announced') return deliveryObstacle(announced);
         const presented = result('feedback-delivery-present');
         if (!presented)
           return dispatch('feedback-delivery-present', {
@@ -879,7 +896,7 @@ function respond(
           action: 'delivery',
           operation: 'compose',
         });
-      if (composed.status !== 'composition-ready') return;
+      if (composed.status !== 'composition-ready') return deliveryObstacle(composed);
       const selection = composed.selection as { skill?: { path?: string } } | undefined;
       if (!selection?.skill?.path) return;
       if (!openClawAIMockToolResultText(messages, prefix + 'delivery-skill'))
@@ -898,7 +915,7 @@ function respond(
           action: 'delivery',
           operation: 'announce',
         });
-      if (announced.status !== 'announced') return;
+      if (announced.status !== 'announced') return deliveryObstacle(announced);
       if (!automaticId)
         return {
           content:
@@ -933,7 +950,7 @@ function response(request: ChatCompletionRequest, options: PRFixtureOptions) {
   } catch (error) {
     if (
       error instanceof Error &&
-      /^(?:notification-retry-exhausted: (?:private-state-(?:file-lock-busy|snapshot-conflict)|discovery-checkpoint-changed)|notification-delivery-reconciliation-exhausted: github-delivery-(?:head-not-observed|github-request))$/u.test(
+      /^(?:notification-retry-exhausted: (?:private-state-(?:file-lock-busy|snapshot-conflict)|discovery-checkpoint-changed|github-notification-response-bounded)|notification-delivery-reconciliation-exhausted: github-delivery-(?:head-not-observed|github-request))$/u.test(
         error.message,
       )
     )
