@@ -972,11 +972,16 @@ export async function replaceCodexNotificationCoordinator(
           entry.enrollment.workspaceDir === selected.workspace &&
           entry.enrollment.agentId === selected.loaded.manifest.agent.id &&
           entry.enrollment.runtime === 'codex' &&
-          [before.id, actual.id].includes(entry.nativeId ?? ''),
+          entry.nativeId !== undefined,
       );
-      if (matches.length !== 1) throw new Error('issue-pickup-enrollment-missing');
-      const enrollment = matches[0]!;
-      if (enrollment.nativeId !== actual.id)
+      if (
+        matches.length > 1 ||
+        (!matches.length && before.definition.status === 'ACTIVE') ||
+        matches.some((entry) => ![before.id, actual.id].includes(entry.nativeId!))
+      )
+        throw new Error('issue-pickup-enrollment-missing');
+      const enrollment = matches[0];
+      if (enrollment && enrollment.nativeId !== actual.id)
         await enrollments.activate(enrollment.enrollment.id, actual.id, before.id);
     }
     record.nativeId = actual.id;

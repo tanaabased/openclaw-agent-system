@@ -11,6 +11,8 @@ import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
 import OpenClawNotificationReset from '../agent/openclaw-notification-reset.ts';
 import IntakeRecordStore from '../channels/github/intake/record-store.ts';
+import assignmentIntakePolicy from '../agent/assignment-intake-policy.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 import { account, intakeFixture } from './github-intake-fixture.ts';
 
 describe('agent/notification reset runtime adapters', () => {
@@ -34,6 +36,155 @@ describe('agent/notification reset runtime adapters', () => {
         records: [],
       }),
     );
+
+  for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should preview ${runtime} without tracking and create only an empty baseline after confirmation`, async () => {
+      const fixture = intakeFixture();
+      const unsupported = async (): Promise<never> => {
+        throw new Error('assignment scan or unrelated effect');
+      };
+      const client = new Proxy(fixture.client, {
+        get: (_target, key) =>
+          key === 'then' ? undefined : key === 'identity' ? account : unsupported,
+      });
+      const workspace = join(root, 'workspace');
+      const codexHome = join(root, 'codex');
+      const pluginData = join(root, 'plugin');
+      await mkdir(workspace);
+      await mkdir(codexHome);
+      await writeFile(
+        join(workspace, 'agent.yaml'),
+        JSON.stringify({
+          'schema-version': 1,
+          agent: { id: 'receiver' },
+          models: { default: { model: 'openai/gpt-6-luna', effort: 'medium' } },
+          github: {
+            username: 'receiver',
+            runtimes: [runtime],
+            routing: ['owner/*'],
+            'issue-assignment': {
+              model: 'default',
+              paused: true,
+              allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],
+            },
+          },
+        }),
+      );
+      const binding = await bindCodexWorkspace(pluginData, workspace);
+      assert.equal(binding.status, 'bound', JSON.stringify(binding));
+      const current = await selectCodexIntake(pluginData, { codexHome });
+      const saved: SavedAutomation = {
+        id: 'job',
+        definition: {
+          kind: 'heartbeat',
+          destination: 'thread',
+          targetThreadId: 'coordinator',
+          name: 'intake',
+          prompt: 'fixture',
+          rrule: 'FREQ=DAILY',
+          status: 'PAUSED',
+          notificationPolicy: null,
+        },
+      };
+      const deps = {
+        codexHome,
+        caller: 'operator',
+        connect: async () => client,
+        automation: async () => saved,
+        pickupAutomation: async () => undefined,
+        threads: async () => ({
+          close: async () => {},
+          request: async (method: string) => {
+            if (method === 'thread/read')
+              return {
+                thread: {
+                  id: 'coordinator',
+                  path: '/sessions/coordinator',
+                  cwd: current.workspace,
+                  archived: false,
+                  status: { type: 'notLoaded' },
+                },
+              };
+            if (method === 'thread/turns/list') return { data: [] };
+            throw new Error(method);
+          },
+        }),
+      };
+      const manifest: AgentManifest = {
+        schemaVersion: 1,
+        agent: { id: 'receiver' },
+        github: { username: 'receiver', notifications: { ...fixture.policy, runtimes: [runtime] } },
+      };
+      const service = new OpenClawNotificationReset({
+        root: pluginData,
+        intake: {
+          select: async () => ({
+            store: current.store,
+            workspace: current.workspace,
+            selected: assignmentIntakePolicy(manifest, 'openclaw'),
+          }),
+        },
+        automations: {
+          notificationResetSnapshot: async () => ({
+            id: 'intake',
+            nativeId: 'job',
+            enabled: false,
+            hash: 'hash',
+            sessionKey: 'coordinator',
+          }),
+          notificationResetToggle: async () => {},
+          notificationResetReplace: unsupported,
+        },
+        credential: { use: unsupported },
+        connect: async () => ({ client, account: { identity: account, execute: unsupported } }),
+        worktrees: { inspectGitHub: unsupported, cleanupGitHub: unsupported },
+      });
+      const preview = () =>
+        runtime === 'codex'
+          ? runCodexNotificationReset(pluginData, { agent: ['receiver'], purge: true }, deps)
+          : service.preview(manifest, current.workspace, true);
+      assert.deepEqual(await preview(), await preview());
+      assert.equal(await current.store.read(), undefined);
+      if (runtime === 'codex') {
+        const result = await runCodexNotificationReset(
+          pluginData,
+          {
+            agent: ['receiver'],
+            purge: true,
+            yes: true,
+            nativeInventory: {
+              schemaVersion: 4,
+              pinnedThreads: [],
+              unavailableHosts: [],
+              unavailableSources: [],
+            },
+          },
+          deps,
+        );
+        assert.equal(result.status, 'native-action');
+      } else {
+        // Stop at the coordinator boundary after the real reset owner writes the baseline.
+        service.dependencies.credential.use = async (_authority, run) =>
+          run(async (method) => {
+            if (method === 'sessions.resolve') return { ok: false };
+            if (method === 'sessions.list') return { sessions: [] };
+            throw new Error(method);
+          });
+        await assert.rejects(
+          service.run(
+            manifest,
+            current.workspace,
+            await service.preview(manifest, current.workspace, true),
+          ),
+          /assignment scan or unrelated effect/,
+        );
+      }
+      const state = (await current.store.read())!;
+      assert.ok(state.baselineAt > 0);
+      assert.deepEqual(state.records, []);
+      assert.deepEqual(state.account, { login: account.login, nodeId: account.nodeId });
+      assert.equal(saved.definition.status, 'PAUSED');
+    });
 
   function coordinator(active = () => false) {
     let archived = false;

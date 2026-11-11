@@ -395,16 +395,20 @@ export default class IntakeRecordStore {
     });
   }
 
-  async reset(baselineAt: number): Promise<void> {
+  async reset(
+    baselineAt: number,
+    initial?: Pick<IntakeState, 'scope' | 'workspaceDir' | 'agentId' | 'account' | 'policyDigest'>,
+  ): Promise<void> {
     await this.exclusive(async (state, save) => {
-      if (!state) throw new IntakeError('intake-activation-required');
+      const baseline = state ?? initial;
+      if (!baseline) throw new IntakeError('intake-activation-required');
       await save({
         version: 1,
-        scope: state.scope,
-        workspaceDir: state.workspaceDir,
-        agentId: state.agentId,
-        account: state.account,
-        policyDigest: state.policyDigest,
+        scope: baseline.scope,
+        workspaceDir: baseline.workspaceDir,
+        agentId: baseline.agentId,
+        account: baseline.account,
+        policyDigest: baseline.policyDigest,
         baselineAt,
         records: [],
       });

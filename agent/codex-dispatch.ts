@@ -218,8 +218,6 @@ async function runCodexDispatchScoped(
       deps,
     );
   validateDispatchRequest(action, input);
-  if (action === 'retire' && input.preview !== true)
-    await reconcileCodexRetirementEffects(pluginData, deps, true);
   if (action === 'retire' && typeof input.native === 'string')
     return retireCodexNative(
       pluginData,
@@ -230,6 +228,8 @@ async function runCodexDispatchScoped(
       },
       deps,
     );
+  if (action === 'retire' && input.preview !== true)
+    await reconcileCodexRetirementEffects(pluginData, deps, true);
   deps = {
     ...deps,
     claimStore: deps.claimStore ?? codexInstanceStore(pluginData),
