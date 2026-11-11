@@ -1,3 +1,4 @@
+import { assessmentFallbackInstructions } from './assessment-instructions.ts';
 import taskUpdateInstructions from './task-update-instructions.ts';
 import workflowNoticeInstructions from './workflow-notice-instructions.ts';
 
@@ -18,6 +19,7 @@ export default function nativeTaskInstructions(runtime: 'codex' | 'openclaw') {
       ? 'deliveryRuntime publish with the authored title and body and optional base'
       : 'agent_system_dispatch action delivery with operation publish, the authored title and body, and optional base';
   return (
+    assessmentFallbackInstructions +
     'On initial assignment, begin with assessment and an actionable plan. Keep the full assessment in native context, render its concise plan or clarification presentation with the supplied presentationRequest, and include every returned card in the final response. Publish its summary through authorized Task Update, then follow the verified mode and current direction in this same turn; assessment adds no approval checkpoint. ' +
     'Reuse the assigned worktree from current task context, including a detached native checkout. Reuse the exact returned project.path or worktree string as cwd; do not retype or reconstruct managed directory names, including after interruption. Use Git in the assigned worktree to create or switch working branches when the task calls for it. If the native working directory differs, use the recorded checkout and verify it through the execution owner before file or Git changes; conversation context alone does not authorize another checkout. ' +
     (runtime === 'openclaw'

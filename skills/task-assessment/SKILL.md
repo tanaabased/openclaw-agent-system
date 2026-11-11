@@ -232,18 +232,17 @@ limitation if recovery fails; malformed arguments are not an authorization denia
    concise `reviewSummary` and consequential questions or required actions.
    Formatting writes no task journal, saved summary or plan revisions. Do not use
    legacy `result` recording routes or write a separate plan file. Submit the complete
-   result, never a placeholder. After explicit schema rejection, use the supplied
-   contract and field diagnostic for one source-supported correction in this turn;
-   preserve findings, outcome, complete source and destination. Do not restart the
-   assessment or retry unchanged arguments. For paged context or presentation, forward
-   each returned request and `next` unchanged, adding only its listed `inputFields`
-   from the original call. Preserve the owning action/operation; the runtime resolves content versions. Refresh
-   genuinely stale context without mixing versions. Uncertain writes require their
-   original reconciliation, and actual authority or native approval denials remain
-   stops. Report an unresolved limitation and useful partial work without claiming
-   success; do not ask a coordinator to send a recovery message.
+   result, never a placeholder. If the host rejects the render call, the formatter
+   throws, or presentation paging fails, show the completed findings, concise plan,
+   questions and actual blockers as ordinary Markdown. Mention unavailable card
+   formatting briefly; do not call a completed assessment failed. Do not rebuild
+   repeated payloads, restart investigation or ask for coordinator recovery.
+   Continue within existing Work permission or a verified Auto Work decision;
+   Plan still requires implementation direction. Missing source evidence and
+   actual authorization denials remain limitations, never formatting fallbacks.
+   Context paging still requires the exact returned requests without mixing versions.
 
-8. Show the returned `presentation` as the visible assessment reply. Do not append
+8. Show the returned `presentation`, or the plain Markdown fallback, as the visible assessment reply. Do not append
    the full engineering plan or tool JSON. The model can use the complete assessment
    in native conversation and revise its understanding as the conversation changes.
    Do not automatically reload or reinject the original assessment or summary.
