@@ -695,6 +695,46 @@ describe('agent/codex-dispatch', () => {
     assert.equal(((await readDispatchState()).records as DispatchRecord[]).length, 1);
   });
 
+  for (const failure of ['inventory', 'workspace'] as const) {
+    it(`should resume the same assignment after repairing local ${failure} preparation`, async () => {
+      const originalGit = deps.git!;
+      deps.git = async (cwd, argv, signal) => {
+        if (failure === 'inventory' && argv[0] === 'remote')
+          throw Object.assign(new Error('dispatch-project-git-unavailable'), {
+            providerDiagnostic: providerDiagnostic('git', 'git-command', 'unknown', {
+              providerMessage: 'fatal: bad config line 1 in file .git/config',
+            }),
+          });
+        if (failure === 'workspace' && argv.includes('--is-bare-repository')) return 'true';
+        return originalGit(cwd, argv, signal);
+      };
+      const failed = await next();
+      assert.equal(
+        failed.code,
+        failure === 'inventory'
+          ? 'dispatch-project-inventory-unavailable'
+          : 'dispatch-project-workspace-required',
+      );
+      const before = ((await readDispatchState()).records as DispatchRecord[])[0]!;
+      assert.equal(before.request, undefined);
+      assert.ok(before.retryAfter);
+      deps.git = originalGit;
+      assert.equal((await next()).status, 'idle');
+      now = before.retryAfter;
+      const resumed = await next();
+      assert.equal(resumed.status, 'routing-required');
+      assert.equal(resumed.id, before.id);
+      const prepared = await request('prepare', {
+        id: resumed.id,
+        digest: resumed.digest,
+        title: 'repair contained behavior',
+        assessment: { complexity: 'medium', reason: 'Bounded work.' },
+      });
+      assert.equal(prepared.status, 'prepared');
+      assert.equal(((await readDispatchState()).records as DispatchRecord[]).length, 1);
+    });
+  }
+
   it('should identify missing routing configuration before preparing a native chat', async () => {
     await writeFile(
       join(workspace, 'agent.yaml'),

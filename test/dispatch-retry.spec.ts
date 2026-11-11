@@ -33,6 +33,8 @@ describe('agent/dispatch-retry', () => {
       'dispatch-assessment-skill-ambiguous',
       'dispatch-project-inventory-invalid',
       'dispatch-project-ambiguous',
+      'dispatch-project-inventory-unavailable',
+      'dispatch-project-workspace-required',
       'dispatch-project-registration-unavailable',
       'dispatch-assessment-skill-unavailable',
       'dispatch-assessment-guidance-unreadable',
@@ -52,6 +54,36 @@ describe('agent/dispatch-retry', () => {
         false,
       );
       assert.equal(record.retry, undefined);
+      assert.equal(record.retryAfter, undefined);
+    }
+  });
+
+  it('should recheck unclassified local inventory failures without retrying arbitrary failures', () => {
+    const record = {} as SharedDispatchRecord;
+    const diagnostic = providerDiagnostic('git', 'git-command', 'unknown', {
+      providerMessage: 'fatal: bad config line 1 in file .git/config',
+      retryAfterMs: 600000,
+    });
+    for (const now of [0, 600000, 1200000]) {
+      assert.equal(
+        scheduleDispatchRetry(
+          record,
+          'dispatch-project-inventory-unavailable',
+          {
+            cause: { providerDiagnostic: diagnostic },
+          },
+          now,
+        ),
+        true,
+      );
+      assert.equal(record.retryAfter, now + 600000);
+      assert.deepEqual(record.providerDiagnostic, diagnostic);
+    }
+    for (const code of ['unclassified-failure', 'dispatch-creation-denied']) {
+      assert.equal(
+        scheduleDispatchRetry(record, code, { providerDiagnostic: diagnostic }, 0),
+        false,
+      );
       assert.equal(record.retryAfter, undefined);
     }
   });
@@ -85,6 +117,8 @@ describe('agent/dispatch-retry', () => {
       'model-routing-not-configured',
       'codex-model-provider-unsupported',
       'dispatch-project-ambiguous',
+      'dispatch-project-inventory-unavailable',
+      'dispatch-project-workspace-required',
     ]) {
       record.blocker = blocker;
       assert.equal(dispatchRetryDue(record, 1), true);

@@ -62,6 +62,8 @@ const recheckable = new Set([
   'dispatch-assessment-skill-ambiguous',
   'dispatch-assessment-skill-unreadable',
   'dispatch-project-inventory-invalid',
+  'dispatch-project-inventory-unavailable',
+  'dispatch-project-workspace-required',
   'dispatch-project-ambiguous',
   'dispatch-project-registration-unavailable',
   'dispatch-assessment-skill-unavailable',
@@ -91,16 +93,21 @@ export function scheduleDispatchRetry(
 ) {
   const diagnostic = workflowFailure(error, code).providerDiagnostic;
   record.providerDiagnostic = diagnostic;
-  const recheck = !diagnostic && dispatchRecheckable(code);
+  // Local inventory reads can fail with an unclassified Git configuration error.
+  const recheck =
+    dispatchRecheckable(code) &&
+    (!diagnostic ||
+      (code === 'dispatch-project-inventory-unavailable' &&
+        diagnostic.classification === 'unknown'));
   const retryable =
     !explicitStop(code) &&
-    (diagnostic
-      ? ['transport', 'rate-limit', 'authentication', 'permission'].includes(
-          diagnostic.classification,
-        )
-      : recheck ||
-        transient.has(code) ||
-        /^git-(?:fetch|clone)-(?:(?:dns|timeout|connection)-)/.test(code));
+    (recheck ||
+      (diagnostic
+        ? ['transport', 'rate-limit', 'authentication', 'permission'].includes(
+            diagnostic.classification,
+          )
+        : transient.has(code) ||
+          /^git-(?:fetch|clone)-(?:(?:dns|timeout|connection)-)/.test(code)));
   if (!retryable) {
     delete record.retry;
     delete record.retryAfter;
