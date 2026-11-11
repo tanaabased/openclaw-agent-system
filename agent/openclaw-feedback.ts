@@ -41,8 +41,6 @@ export async function advanceFeedbackTurn(input: {
   assertCurrent(): Promise<void>;
   authorizeInput?(): Promise<void>;
   sourcePresentation?: string;
-  reauthorize?: ReauthorizeFeedback;
-  livePolicy?(): Promise<GitHubNotificationPolicy>;
 }) {
   const { record, event, request, save } = input;
   if (event.phase === 'delivered')

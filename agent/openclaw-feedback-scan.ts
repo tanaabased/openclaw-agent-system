@@ -155,7 +155,6 @@ export async function scanOpenClawFeedback(input: {
           ownCommentIds: () =>
             (publications ??= budget.read('own-publications', () =>
               feedbackOwnPublications({
-                record,
                 intake,
                 client: provider!,
                 announcement: record.announcement,

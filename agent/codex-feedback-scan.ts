@@ -80,7 +80,6 @@ export async function scanCodexFeedback(input: {
         state: feedback,
         ownCommentIds: () =>
           (publications ??= feedbackOwnPublications({
-            record,
             intake: admitted,
             client: provider.comments,
             announcement: record.announcement,
