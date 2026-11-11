@@ -49,7 +49,7 @@ blockers without contacting GitHub.
 
 `pickup` requires the designated installation's active native job; ordinary tool calls
 cannot activate it. A `selection-required` result accepts `selection` with the returned
-`id`, `digest`, chosen `issueNodeId` (or `null`) and a short `rationale`. It may self-assign
+`issueNodeId` (or `null`) and a short `rationale`, with an optional `shortlist`. It may self-assign
 one issue on GitHub. Reconcile an uncertain assignment through the same operation,
 never a separate GitHub command. See [issue pickup setup](../../channels/github/CONFIG.md#githubissue-pickup).
 
