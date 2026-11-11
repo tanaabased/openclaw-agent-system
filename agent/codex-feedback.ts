@@ -224,6 +224,9 @@ export default async function runCodexFeedback(
         if (receipt.status === 'uncertain') return { status: 'pending' };
         if (receipt.status === 'verified' && attempt.turnId && attempt.turnId !== receipt.turnId)
           throw new Error('feedback-turn-changed');
+        // A completed send with altered content is not proof that this exact comment arrived.
+        // Keep its original attempt for reconciliation; never turn mismatch into delivery.
+        if (receipt.status === 'mismatch') return { status: 'pending' };
         if (!input.material) {
           if ('turnId' in receipt) attempt.turnId = receipt.turnId;
           if (receipt.status === 'blocked') {

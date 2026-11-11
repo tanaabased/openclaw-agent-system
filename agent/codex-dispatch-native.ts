@@ -1,5 +1,6 @@
 import { realpath } from 'node:fs/promises';
 
+import codexDelegatedInput from './codex-delegated-input.ts';
 import codexDirectInput from './codex-direct-input.ts';
 import dispatchHistory, { dispatchHistoryPages } from './codex-dispatch-history.ts';
 import intakeDenial from './codex-intake-denial.ts';
@@ -25,10 +26,6 @@ export interface DispatchNativeThread {
   followUpUserTurn?: boolean;
 }
 
-function escaped(value: string) {
-  return value.replace(/&/gu, '&amp;').replace(/</gu, '&lt;').replace(/>/gu, '&gt;');
-}
-
 /** only native creation items establish provenance; quoted/user-authored markers never do. */
 export function matchesDispatchCreation(
   thread: Record<string, unknown>,
@@ -38,19 +35,13 @@ export function matchesDispatchCreation(
   if (!Array.isArray(thread.turns)) return false;
   const turn = thread.turns[0];
   if (!nativeObject(turn) || !Array.isArray(turn.items)) return false;
-  const expected =
-    '<codex_delegation>\n  <source_thread_id>' +
-    escaped(sourceThreadId) +
-    '</source_thread_id>\n  <input>' +
-    escaped(prompt) +
-    '</input>\n</codex_delegation>';
   return turn.items.some(
     (item) =>
       nativeObject(item) &&
       item.type === 'functionCallOutput' &&
       item.name === 'create_thread' &&
       item.namespace === 'codex_app' &&
-      item.output === expected,
+      codexDelegatedInput(item.output, sourceThreadId, prompt),
   );
 }
 
