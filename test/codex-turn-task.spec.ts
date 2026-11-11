@@ -198,15 +198,25 @@ describe('agent/codex-turn-task', () => {
         ],
       },
     } as DispatchRecord;
-    for (const status of ['uncertain', 'blocked']) {
+    for (const status of ['uncertain', 'blocked', 'mismatch']) {
       const output = await selectCodexTurnTask([feedback], turn, {
         ...lookup,
         receipt: async () =>
-          ({ status, code: 'unverified' }) as Awaited<ReturnType<typeof lookup.receipt>>,
+          ({
+            status,
+            code: 'continuation-send-mismatch',
+            callId: 'send',
+            requestDigest: 'a'.repeat(64),
+            turnId: turn.turnId,
+            latestTurnId: turn.turnId,
+            ended: false,
+          }) as Awaited<ReturnType<typeof lookup.receipt>>,
       });
       assert.equal(output?.feedbackContextRequest, undefined);
       assert.equal(output?.contextRequest, undefined);
       assert.equal(output?.stage, 'feedback');
+      if (status === 'mismatch')
+        assert.deepEqual(output?.feedbackLimitation, { code: 'continuation-send-mismatch' });
     }
   });
   it('should select the exact feedback source verified by its native send receipt', async () => {

@@ -96,7 +96,10 @@ export async function selectCodexTurnTask(
       const receipt = await lookup.receipt(record.sourceThreadId, event.attempt);
       if (receipt.status === 'verified' && receipt.turnId === turnId) {
         feedback.push(event);
-      } else if (receipt.status !== 'verified') unresolvedFeedback = true;
+      } else if (receipt.status !== 'verified') {
+        unresolvedFeedback = true;
+        if ('code' in receipt && receipt.code) feedbackLimitation = { code: receipt.code };
+      }
     } catch (error) {
       unresolvedFeedback = true;
       feedbackLimitation = {

@@ -18,6 +18,26 @@ function localSendArguments(value: unknown) {
   return request;
 }
 
+function delegatedInputMatches(value: unknown, sourceThreadId: string, prompt: string) {
+  const text =
+    typeof value === 'string'
+      ? value
+      : nativeObject(value) && typeof value.text === 'string' && value.truncated !== true
+        ? value.text
+        : undefined;
+  if (text === undefined) return false;
+  const match =
+    /^<codex_delegation>\s*<source_thread_id>([\s\S]*?)<\/source_thread_id>\s*<input>([\s\S]*?)<\/input>\s*<\/codex_delegation>\s*$/u.exec(
+      text,
+    );
+  if (!match) return false;
+  const unescape = (part: string) =>
+    part.replace(/&(lt|gt|amp);/gu, (entity) =>
+      entity === '&lt;' ? '<' : entity === '&gt;' ? '>' : '&',
+    );
+  return unescape(match[1]!) === sourceThreadId && unescape(match[2]!) === prompt;
+}
+
 /** verify the native assessment turn or exact recovery send, never a model claim. */
 export default function codexContinuationNative(request: CodexThreadRequest) {
   return async (sourceThreadId: string, attempt: CodexNativeAttempt) => {
@@ -151,17 +171,10 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
           automationHash(attempt.request))
     )
       return { status: 'blocked' as const, code: 'continuation-send-mismatch' };
+    const actualPrompt = actual.prompt;
     const target = await dispatchHistory(request, attempt.request.threadId, attempt.beforeTurnId);
     const before = target.findIndex((entry) => entry.id === attempt.beforeTurnId);
     if (before < 0) throw new Error('continuation-history-incomplete');
-    const escaped = (value: string) =>
-      value.replace(/&/gu, '&amp;').replace(/</gu, '&lt;').replace(/>/gu, '&gt;');
-    const envelope =
-      '<codex_delegation>\n  <source_thread_id>' +
-      escaped(sourceThreadId) +
-      '</source_thread_id>\n  <input>' +
-      escaped(actual.prompt) +
-      '</input>\n</codex_delegation>';
     const candidates = target
       // native sends can arrive as steering inside the turn observed before dispatch.
       .slice(before)
@@ -174,7 +187,7 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
               ((item.type === 'functionCallOutput' &&
                 item.namespace === 'codex_app' &&
                 item.name === 'send_message_to_thread' &&
-                item.output === envelope) ||
+                delegatedInputMatches(item.output, sourceThreadId, actualPrompt)) ||
                 (entry.id !== attempt.beforeTurnId &&
                   call.status === 'completed' &&
                   item.type === 'userMessage' &&

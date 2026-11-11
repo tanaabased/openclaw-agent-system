@@ -46,7 +46,7 @@ describe('agent/codex-feedback', () => {
     lost: boolean,
     creates: number,
     published: string | undefined;
-  let receiptStatus: 'verified' | 'blocked' | 'uncertain';
+  let receiptStatus: 'verified' | 'blocked' | 'uncertain' | 'mismatch';
   let receiptTurn: string | undefined;
   const call = (action: string, input = {}, child = false) =>
     runCodexFeedback(
@@ -199,9 +199,19 @@ describe('agent/codex-feedback', () => {
               turnId: receiptTurn ?? turn,
               ended,
             }
-          : !sent || receiptStatus === 'uncertain'
-            ? { status: 'uncertain' }
-            : { status: 'verified', turnId: receiptTurn ?? turn, ended },
+          : receiptStatus === 'mismatch'
+            ? {
+                status: 'mismatch',
+                code: 'continuation-send-mismatch',
+                callId: 'send',
+                requestDigest: id,
+                turnId: receiptTurn ?? turn,
+                latestTurnId: receiptTurn ?? turn,
+                ended,
+              }
+            : !sent || receiptStatus === 'uncertain'
+              ? { status: 'uncertain' }
+              : { status: 'verified', turnId: receiptTurn ?? turn, ended },
       git: async (_cwd, args) =>
         args[0] === 'remote'
           ? 'https://github.com/owner/repo.git'
@@ -687,7 +697,8 @@ describe('agent/codex-feedback', () => {
     const prompt = (await store.read()).records[0]!.feedback!.events.find(
       (event) => event.id === result.eventId,
     )!.attempt!.request.prompt;
-    assert.ok(prompt.split('\n').every((line) => line.startsWith('>')));
+    assert.ok(prompt.includes(body));
+    assert.ok(prompt.includes('https://github.com/owner/repo/issues/3#issuecomment-42'));
     assert.ok(!prompt.includes(id));
     assert.ok(!prompt.includes(result.eventId));
     return { id, eventId: result.eventId };
@@ -791,6 +802,30 @@ describe('agent/codex-feedback', () => {
       if (outcome !== 'denied') assert.equal((await call('reconcile', ref)).status, 'uncertain');
     });
   }
+
+  it('should never mark a mismatched native send as delivered', async () => {
+    const ref = await prepare();
+    const attempt = (await store.read()).records[0]!.feedback!.events[0]!.attempt!;
+    sent = true;
+    turn = 'feedback';
+    receiptStatus = 'mismatch';
+    senderHistory([
+      {
+        id: 'send',
+        type: 'mcpToolCall',
+        server: 'codex_app',
+        tool: 'send_message_to_thread',
+        status: 'completed',
+        arguments: attempt.request,
+      },
+    ]);
+    const result = await call('reconcile', ref);
+    const event = (await store.read()).records[0]!.feedback!.events[0]!;
+    assert.equal(result.status, 'uncertain');
+    assert.equal(event.phase, 'prepared');
+    assert.equal(event.code, 'feedback-send-unresolved');
+    assert.deepEqual(event.attempt!.request, attempt.request);
+  });
 
   it('should reauthorize an unsent comment before recovering its native send', async () => {
     await prepare();
@@ -1212,8 +1247,9 @@ describe('agent/codex-feedback', () => {
     const body = '@receiver **question**\n\n> quoted context\n\n```ts\nconst value = 1;\n```';
     const ref = await prepare(account, body);
     const attempt = (await store.read()).records[0]!.feedback!.events[0]!.attempt!;
-    assert.ok(attempt.request.prompt.startsWith('> @receiver **question**'));
-    assert.ok(attempt.request.prompt.includes('> > quoted context'));
+    assert.ok(attempt.request.prompt.includes('@receiver **question**'));
+    assert.ok(attempt.request.prompt.includes('> quoted context'));
+    assert.ok(attempt.request.prompt.includes('```ts\nconst value = 1;\n```'));
     assert.ok(attempt.request.prompt.includes('#issuecomment-42)'));
     sent = true;
     turn = 'feedback';
@@ -1221,7 +1257,8 @@ describe('agent/codex-feedback', () => {
     assert.equal('publication' in context && context.publication, 'private-only');
     assert.ok('presentation' in context && typeof context.presentation === 'string');
     assert.ok(attempt.request.prompt.startsWith(context.presentation));
-    assert.ok(context.presentation.includes('from [@receiver]'));
+    assert.ok(context.presentation.includes('https://github.com/receiver'));
+    assert.ok(context.presentation.includes('#issuecomment-42'));
     assert.equal(creates, 0);
   });
   for (const kind of ['inline', 'group'] as const)

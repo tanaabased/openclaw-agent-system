@@ -4417,11 +4417,8 @@ describe('agent/openclaw issue dispatch', () => {
       undefined,
     );
     assert.equal(sends().length, 1);
-    assert.ok(
-      String(sends()[0]!.params.message)
-        .split('\n')
-        .every((line) => line.startsWith('>')),
-    );
+    assert.match(String(sends()[0]!.params.message), /\[@receiver\].*owner\/repo#3 ↗/s);
+    assert.match(String(sends()[0]!.params.message), /\n\n---\n\n/);
     const current = await record();
     const privateContext = await service.promptContext(manifest, root, {
       agentId: manifest.agent.id,
