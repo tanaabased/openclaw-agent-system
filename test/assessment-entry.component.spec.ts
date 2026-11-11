@@ -19,15 +19,9 @@ import hydrateImplementation from './implementation-material-fixture.ts';
 import nativeMaterialFixture from './native-material-fixture.ts';
 const target = 'https://github.com/owner/repo/issues/3';
 const ready = {
-  version: 1,
   outcome: 'plan-ready',
   summary: 'Assess only.',
-  assessment: 'Recommendation.',
-  fullAssessment: 'Complete source and evidence.\n\nFull plan.',
-  plan: 'Full plan.',
   reviewSummary: 'A concise review.',
-  evidence: [],
-  progress: { completed: [], remaining: [] },
 } satisfies AssessmentSubmission;
 describe('agent/assessment-entry', () => {
   let root: string, deps: AssessmentEntryDependencies, selections: string[], reads: string[];
@@ -110,13 +104,8 @@ describe('agent/assessment-entry', () => {
 
   it('should deliver every clarification through the real native tool output limit', async () => {
     const partial = {
-      version: ready.version,
       summary: ready.summary,
-      assessment: ready.assessment,
-      fullAssessment: ready.fullAssessment,
       reviewSummary: ready.reviewSummary,
-      evidence: ready.evidence,
-      progress: ready.progress,
     };
     const source = {
       ...partial,
@@ -283,7 +272,7 @@ describe('agent/assessment-entry', () => {
                   rendered = result.presentation;
                   output = result;
                 } catch (error) {
-                  assert.ok(error instanceof Error && error.message.includes('result.plan'));
+                  assert.ok(error instanceof Error && error.message.includes('result.summary'));
                   rejected++;
                   output = error.message;
                 }

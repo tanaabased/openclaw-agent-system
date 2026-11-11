@@ -22,17 +22,10 @@ import hydrateImplementation from './implementation-material-fixture.ts';
 
 const target = 'https://github.com/owner/repo/issues/3';
 const result: AssessmentSubmission = {
-  version: 1,
   outcome: 'plan-ready',
   summary: 'Make it easier to resume a task.',
-  assessment: 'Use current conversation context.',
-  fullAssessment:
-    'ENGINEERING-SOURCE: inspect owners, preserve constraints and validate both runtimes.',
-  plan: 'ENGINEERING-PLAN: change shared owners and verify behavior.',
   reviewSummary:
     'You can resume the task from the current conversation without an old plan replacing your changes.',
-  evidence: [],
-  progress: { completed: [], remaining: [] },
 };
 
 describe('agent/assessment-render', () => {
@@ -67,12 +60,7 @@ describe('agent/assessment-render', () => {
           operation: 'render',
           target,
           result: {
-            version: 1,
             summary: 'Choose a subject.',
-            assessment: 'The form is known.',
-            fullAssessment: 'Only the subject remains unknown.',
-            evidence: [],
-            progress: { completed: [], remaining: [] },
             outcome: 'clarification-needed',
             questions: ['Which subject?'],
             reviewSummary: 'Choose a subject.',
@@ -115,52 +103,6 @@ describe('agent/assessment-render', () => {
           );
         }
       });
-
-  for (const runtime of ['codex', 'openclaw'] as const)
-    it(`should format ${runtime} input without boilerplate while preserving substantive requirements`, () => {
-      const unversioned: Record<string, unknown> = { ...result };
-      delete unversioned.version;
-      delete unversioned.evidence;
-      delete unversioned.progress;
-      const request = { ...assessmentPresentationRequest(target), result: unversioned };
-      const formatted = renderNativeAssessment(request, runtime);
-      assert.equal(formatted.status, 'formatted');
-      assert.ok(!('version' in request.result));
-      assert.throws(() =>
-        renderNativeAssessment({ ...request, result: { ...unversioned, version: 2 } }, runtime),
-      );
-      for (const invalid of [
-        { evidence: null },
-        { evidence: [{}] },
-        { progress: null },
-        { progress: { completed: [] } },
-      ])
-        assert.throws(() =>
-          renderNativeAssessment({ ...request, result: { ...unversioned, ...invalid } }, runtime),
-        );
-      const withoutPlan = { ...unversioned };
-      delete withoutPlan.plan;
-      assert.throws(
-        () => renderNativeAssessment({ ...request, result: withoutPlan }, runtime),
-        /request.result.plan/,
-      );
-      const question = {
-        ...withoutPlan,
-        outcome: 'clarification-needed',
-        questions: ['Which subject?'],
-        decision: { mode: 'plan', reasons: ['Subject missing.'] },
-      };
-      const asked = renderNativeAssessment({ ...request, result: question }, runtime);
-      assert.ok('presentation' in asked);
-      assert.match(String(asked.presentation), /Which subject/);
-      assert.match(String(asked.presentation), /Waiting for the missing answers/);
-      assert.doesNotMatch(String(asked.presentation), /Await your direction/);
-      assert.throws(
-        () =>
-          renderNativeAssessment({ ...request, result: { ...question, questions: [] } }, runtime),
-        /questions/,
-      );
-    });
 
   for (const runtime of ['codex', 'openclaw'] as const)
     for (const outcome of ['plan-ready', 'clarification-needed'] as const)
@@ -220,15 +162,10 @@ describe('agent/assessment-render', () => {
           outcome === 'plan-ready'
             ? result
             : {
-                version: 1,
                 outcome,
                 summary: 'Choose a subject.',
-                assessment: 'Haiku form is known.',
-                fullAssessment: 'The subject is the only missing choice.',
                 reviewSummary: 'Choose a subject before writing.',
                 questions: ['What subject should the haiku cover?'],
-                evidence: [],
-                progress: { completed: [], remaining: [] },
               };
         const renderContext = {
           runtime,
@@ -379,24 +316,6 @@ describe('agent/assessment-render', () => {
     assert.match(response.presentation, /> ## 🧭/);
   });
 
-  it('should keep a large complete plan in native input without echoing it into tool output', () => {
-    const source = {
-      ...result,
-      fullAssessment: 'engineering details '.repeat(1500),
-      plan: 'implementation step '.repeat(1500),
-    };
-    const snapshot = JSON.stringify(source);
-    const response = renderNativeAssessment({
-      ...assessmentPresentationRequest(target),
-      result: source,
-    });
-    assert.equal(JSON.stringify(source), snapshot);
-    assert.equal(response.status, 'formatted');
-    assert.ok(JSON.stringify(response).length < 2000);
-    assert.ok(response.presentation.includes(source.reviewSummary!));
-    assert.doesNotMatch(JSON.stringify(response), /engineering details|implementation step/);
-  });
-
   it('should keep direct assessment presentation separate from implementation permission', () => {
     const response = renderNativeAssessment({
       ...assessmentPresentationRequest(target, true),
@@ -411,15 +330,10 @@ describe('agent/assessment-render', () => {
     const response = renderNativeAssessment({
       ...assessmentPresentationRequest(target),
       result: {
-        version: 1,
         outcome: 'clarification-needed',
         summary: 'Choose the scope.',
-        assessment: 'Both options are feasible.',
-        fullAssessment: 'Complete partial investigation.',
         reviewSummary: 'We need to choose which experience to support.',
         questions: ['Should existing tasks keep their current settings?'],
-        evidence: [],
-        progress: { completed: [], remaining: [] },
       },
     });
     assert.equal(response.status, 'formatted');
@@ -434,14 +348,9 @@ describe('agent/assessment-render', () => {
         {
           ...assessmentPresentationRequest(target),
           result: {
-            version: 1,
             outcome: 'clarification-needed',
             summary: 'Choose a subject.',
-            assessment: 'The form is already known.',
-            fullAssessment: 'A haiku is requested. Its subject remains undecided.',
             questions: [question],
-            evidence: [],
-            progress: { completed: ['Selected haiku.'], remaining: ['Choose subject.'] },
           },
         },
         runtime,
@@ -454,13 +363,8 @@ describe('agent/assessment-render', () => {
 
   it('should page long clarification text without saving or echoing the engineering plan', async () => {
     const partial = {
-      version: result.version,
       summary: result.summary,
-      assessment: result.assessment,
-      fullAssessment: result.fullAssessment,
       reviewSummary: result.reviewSummary,
-      evidence: result.evidence,
-      progress: result.progress,
     };
     const source = {
       ...partial,
@@ -493,11 +397,10 @@ describe('agent/assessment-render', () => {
     );
   });
 
-  it('should reject missing source, missing review and comment destinations', () => {
+  it('should reject missing summary and comment destinations', () => {
     const request = assessmentPresentationRequest(target);
     for (const invalid of [
-      { ...request, result: { ...result, fullAssessment: undefined } },
-      { ...request, result: { ...result, reviewSummary: undefined } },
+      { ...request, result: { ...result, summary: undefined } },
       { ...request, result, target: target + '#issuecomment-1' },
       { ...request, result, includeDetails: true },
     ])
@@ -548,10 +451,10 @@ describe('agent/assessment-render', () => {
         const request = { ...assessmentPresentationRequest(target), result };
         const snapshot = structuredClone(request);
         await assert.rejects(
-          invoke({ ...request, result: { ...result, progress: { completed: [] } } }),
+          invoke({ ...request, result: { ...result, summary: '' } }),
           (error: unknown) => {
             assert.ok(error instanceof AssessmentValidationError);
-            assert.deepEqual(error.recovery.fields, ['request.result.progress.remaining']);
+            assert.deepEqual(error.recovery.fields, ['request.result.summary']);
             assert.equal(error.code, 'assessment-render-request-invalid');
             return true;
           },

@@ -23,12 +23,6 @@ describe('agent/workflow-recovery', () => {
       /ended completed native turn/,
     );
   });
-  it('should direct incomplete assessment recovery to native formatting', () => {
-    const recovery = workflowRecovery('assessment-result-incomplete')!;
-    assert.match(recovery.summary, /not formatted/);
-    assert.match(recovery.next, /fullAssessment.*assessment render/);
-    assert.match(recovery.next, /native context/);
-  });
   it('should explain how to recover from a malformed dispatch receipt id', () => {
     const recovery = workflowRecovery('dispatch-receipt-id-invalid')!;
     assert.match(recovery.summary, /not looked up/);

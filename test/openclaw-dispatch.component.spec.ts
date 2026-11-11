@@ -3657,17 +3657,9 @@ describe('agent/openclaw issue dispatch', () => {
     );
   });
   const plan: AssessmentSubmission = {
-    version: 1,
     outcome: 'plan-ready',
     summary: 'Restore the missing result.',
     reviewSummary: 'Restore the missing result.',
-    assessment: 'The handler drops its return value.',
-    planSummary: 'Return the result to the caller.',
-    plan: 'Update handler.ts to return the value and cover the missing-result case.',
-    fullAssessment:
-      'The handler drops its return value. Update handler.ts and verify the caller receives it.',
-    evidence: [{ source: 'handler.ts:20', status: 'observed', detail: 'The result is discarded.' }],
-    progress: { completed: ['Inspected the handler.'], remaining: [] },
   };
   const assess = (id: string) => service.run(manifest, root, coordinator, { action: 'assess', id });
   const assessor = (id: string, runId = `${id}:assessment`): DispatchCaller => ({
@@ -3982,9 +3974,6 @@ describe('agent/openclaw issue dispatch', () => {
       const result = await renderAssessment(input.id, assessment);
       assert.ok(
         'presentation' in result && result.presentation?.includes(assessment.reviewSummary!),
-      );
-      assert.ok(
-        'presentation' in result && !result.presentation?.includes(assessment.fullAssessment!),
       );
       inputReceipts = [];
       const who = assessor(input.id);
@@ -4529,9 +4518,6 @@ describe('agent/openclaw issue dispatch', () => {
     const formatted = await service.run(manifest, root, assessor(input.id), candidate);
     assert.equal(formatted.status, 'formatted');
     assert.equal('assessment' in formatted, false);
-    assert.ok(
-      'presentation' in formatted && !formatted.presentation?.includes(plan.fullAssessment!),
-    );
     await record();
     assert.equal((await context(input.id)).status, 'verified');
     assessmentReply(input.id);
@@ -4714,14 +4700,9 @@ describe('agent/openclaw issue dispatch', () => {
     await assess(input.id);
     await context(input.id);
     const clarification: AssessmentResult = {
-      version: 1,
       outcome: 'clarification-needed',
       summary: 'Which caller needs the result?',
-      assessment: 'The intended caller is unclear.',
       questions: ['Should the API caller receive it?'],
-      fullAssessment: 'Inspected the handler. The caller requirement remains unresolved.',
-      evidence: [],
-      progress: { completed: ['Inspected handler.'], remaining: ['Resolve caller requirement.'] },
     };
     const saved = await renderAssessment(input.id, clarification);
     assert.equal(saved.status, 'formatted');
@@ -4835,13 +4816,13 @@ describe('agent/openclaw issue dispatch', () => {
     await assert.rejects(
       renderAssessment(input.id, {
         ...plan,
-        fullAssessment: undefined,
+        summary: '',
       } as unknown as AssessmentSubmission),
       /assessment-render-request-invalid/,
     );
     await writeFile(join(root, 'SKILL.md'), '# changed selection');
     const concise = { ...plan };
-    delete concise.planSummary;
+    delete concise.reviewSummary;
     await renderAssessment(input.id, concise);
   });
 
@@ -4890,19 +4871,11 @@ describe('agent/openclaw issue dispatch', () => {
     await assess(input.id);
     await context(input.id);
     const blocker: AssessmentResult = {
-      version: 1,
       outcome: 'operator-setup-blocker',
       summary: 'Opening editor unavailable.',
       reviewSummary: 'Opening editor unavailable.',
       code: 'assessment-editor-unavailable',
       remediation: 'Enable the isolated helper in this session, then continue here.',
-      fullAssessment:
-        'Repository investigation is retained. The required isolated editing pass is unavailable.',
-      evidence: [],
-      progress: {
-        completed: ['Inspected the repository.'],
-        remaining: ['Run the isolated editor.'],
-      },
     };
     assert.equal((await renderAssessment(input.id, blocker)).status, 'formatted');
     assessmentReply(input.id);
@@ -5321,9 +5294,7 @@ describe('agent/openclaw issue dispatch', () => {
         variant.includes('skill') ? 'ordinary-assessment' : 'agent-system-task-assessment',
       );
       assert.equal(selection.guidance?.content, variant.includes('inline') ? guidance : undefined);
-      const fullAssessment =
-        'Return the value; test the caller.\nThe caller may depend on undefined; that remains uncertain.';
-      const result = { ...plan, fullAssessment, plan: fullAssessment };
+      const result = { ...plan };
       assert.equal((await renderAssessment(input.id, result)).status, 'formatted');
       const retained = await record();
       assert.ok('evidence' in verified);

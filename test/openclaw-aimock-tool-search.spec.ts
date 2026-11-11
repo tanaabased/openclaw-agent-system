@@ -75,11 +75,7 @@ describe('scripts/aimock-tool-search', () => {
       hostRequire.resolve('@openclaw/ai/internal/tool-schema')
     );
     const common = {
-      version: 1,
       summary: 'A bounded result.',
-      evidence: [],
-      progress: { completed: [], remaining: [] },
-      fullAssessment: 'Complete retained source.',
     };
     for (const parameters of [
       dispatchModelParameters,
@@ -98,12 +94,12 @@ describe('scripts/aimock-tool-search', () => {
       ]) {
         for (const [result, missing, irrelevant] of [
           [
-            { ...common, outcome: 'plan-ready', assessment: 'Observed.' },
-            'plan',
+            { ...common, summary: undefined, outcome: 'plan-ready' },
+            'summary',
             /questions|remediation/u,
           ],
           [
-            { ...common, outcome: 'clarification-needed', assessment: 'Unknown.' },
+            { ...common, outcome: 'clarification-needed' },
             'questions',
             /result\.plan|remediation/u,
           ],
@@ -162,7 +158,7 @@ describe('scripts/aimock-tool-search', () => {
     );
     const call = { id: 'call_invalid', name: 'agent_system_dispatch' };
     const error =
-      'Invalid arguments for tool "openclaw:agent_system_dispatch": result.plan: must have required property \'plan\';';
+      'Invalid arguments for tool "openclaw:agent_system_dispatch": result.summary: must have required property \'summary\';';
     append(
       input,
       {
@@ -260,19 +256,19 @@ describe('scripts/aimock-tool-search', () => {
     const invalid = (await reply(scenario, input)).response;
     assert.ok('toolCalls' in invalid && invalid.toolCalls?.[0]);
     const original = JSON.parse(invalid.toolCalls[0].arguments).args;
-    assert.equal(original.result.plan, undefined);
+    assert.equal(original.result.summary, undefined);
     append(input, invalid, {
       status: 'error',
       tool: 'tool_call',
       error:
-        'Invalid arguments for tool "openclaw:agent_system_dispatch": result.plan: must have required property \'plan\'; result: must match "else" schema.',
+        'Invalid arguments for tool "openclaw:agent_system_dispatch": result.summary: must have required property \'summary\'; result: must match "else" schema.',
     });
     const corrected = (await reply(scenario, input)).response;
     assert.ok('toolCalls' in corrected && corrected.toolCalls?.[0]);
     const correction = JSON.parse(corrected.toolCalls[0].arguments).args;
     assert.deepEqual(correction, {
       ...original,
-      result: { ...original.result, plan: original.result.fullAssessment },
+      result: { ...original.result, summary: 'Assess cleanup documentation only.' },
     });
     append(input, corrected, {
       tool: { id: 'openclaw:agent_system_dispatch', name: 'agent_system_dispatch' },
@@ -416,7 +412,7 @@ describe('scripts/aimock-tool-search', () => {
     await step('native-plan-render', 'agent_system_dispatch', {
       status: 'formatted',
       retained: false,
-      assessment: { fullAssessment: 'Complete engineering source.' },
+      assessment: {},
       presentation: 'Choose cleanup behavior.',
     });
     await step('native-plan-context', 'agent_system_dispatch', {

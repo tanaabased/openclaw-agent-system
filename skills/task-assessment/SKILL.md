@@ -146,8 +146,7 @@ limitation if recovery fails; malformed arguments are not an authorization denia
    an authorized scope change from an agent proposal, quoted issue text or ambiguous
    feedback, none of which grants permission to expand the work. Ask only when a
    consequential conflict remains unresolved. Retain useful
-   file/line or commit references and issue/comment permalinks in evidence.source,
-   with concise findings and limitations in evidence.detail. An unavailable code
+   file/line or commit references and issue/comment permalinks with concise findings and limitations in native conversation. An unavailable code
    read is a limitation, not permission to present an issue-only interpretation as
    verified repository behavior.
    Explain what the user is trying to achieve, what happens now, what should happen,
@@ -170,10 +169,8 @@ limitation if recovery fails; malformed arguments are not an authorization denia
    the problem analysis, recommendation and rationale, relevant alternatives and
    tradeoffs, intended changes and inspected owners, dependencies, consequential
    sequencing, constraints, risks, uncertainty, and unresolved decisions. Include the
-   complete implementation plan or useful partial work in `fullAssessment`; this is
-   the authoritative source for later revisions and implementation, not a summary.
-   Keep the full actionable plan in `plan` for a ready outcome. Do not shorten either
-   field to meet a human-facing word or step target. Scale detail to a reliable agent
+   complete implementation plan or useful partial work in native conversation.
+   Do not shorten it to meet a human-facing word or step target. Scale detail to a reliable agent
    handoff without padding, routine read logs, or repeated explanations.
    Review the plan by concern, then reconcile the whole:
    - **Code:** pair intended changes with inspected files or related owners and the
@@ -189,8 +186,7 @@ limitation if recovery fails; malformed arguments are not an authorization denia
    Omit empty sections; retain other necessary work under descriptive headings. Describe
    each concern once, leaving routine mechanics to implementation. Preserve useful
    evidence, conditions, questions, and limitations in the full assessment for every
-   outcome, including clarification and setup failures. Retain source references in
-   `evidence` and completed/remaining investigation in `progress` for continuation and
+   outcome, including clarification and setup failures. Retain source references and completed/remaining investigation in native conversation for continuation and
    on-demand readback. These notes supplement, never replace, the full assessment.
 
    When trusted context selects Auto, use this same assessment and guidance to
@@ -218,7 +214,7 @@ limitation if recovery fails; malformed arguments are not an authorization denia
    setup limitation; retain useful investigation and report it rather than silently
    reverting to same-context editing or claiming the separate pass happened.
    Save its concise user-journey explanation in `reviewSummary`, separate from the
-   unchanged `fullAssessment` and `plan`. It describes the problem and proposed solution
+   unchanged engineering assessment and plan. It describes the problem and proposed solution
    through the user's actions and outcomes, plus brief documentation and test impact.
    Roughly 200–400 words is an editorial guide for an ordinary review, not a quota or
    limit; small fixes need less. Never apply this guide to the internal assessment.
@@ -229,11 +225,10 @@ limitation if recovery fails; malformed arguments are not an authorization denia
    add another model invocation for this consistency check or let the editor supply
    missing findings.
 
-7. Add the complete payload matching `resultFormat` to `presentationRequest` as
+7. Add the concise display payload matching `resultFormat` to `presentationRequest` as
    `result`. Use `agent_system_dispatch` action `assessment`, operation `render`
    in OpenClaw; use trusted dispatchRuntime `assessment render` with matching JSON
-   on stdin in Codex. Both use the same pure formatter. The full `fullAssessment`
-   and `plan` enter native tool history; the returned `presentation` contains the
+   on stdin in Codex. Both use the same pure formatter. The full assessment and plan stay in native conversation; the returned `presentation` contains the
    concise `reviewSummary` and consequential questions or required actions.
    Formatting writes no task journal, saved summary or plan revisions. Do not use
    legacy `result` recording routes or write a separate plan file. Submit the complete
@@ -249,8 +244,8 @@ limitation if recovery fails; malformed arguments are not an authorization denia
    success; do not ask a coordinator to send a recovery message.
 
 8. Show the returned `presentation` as the visible assessment reply. Do not append
-   the full engineering plan or tool JSON. The model can use the complete result
-   in native tool context and revise its understanding as the conversation changes.
+   the full engineering plan or tool JSON. The model can use the complete assessment
+   in native conversation and revise its understanding as the conversation changes.
    Do not automatically reload or reinject the original assessment or summary.
    Native compaction may summarize the context; it does not guarantee permanent
    verbatim retention. Use current evidence when details are no longer available.
@@ -311,8 +306,8 @@ review, focused questions, or actionable blocker in the original task chat.
 
 ## Bundled Resources
 
-- [Assessment result schema](../../agent/assessment-result.ts): the shared version 1
-  contract owned by #249; context supplies its compact `resultFormat`.
+- [Assessment result schema](../../agent/assessment-result.ts): the shared display-only
+  contract; context supplies its compact `resultFormat`.
 - [Presentation](../../channels/github/PRESENTATION.md): shared visible components.
 - [User Journey Editor](./references/user-journey-editor.md): isolated opening rewrite.
 

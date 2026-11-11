@@ -71,18 +71,9 @@ const manifest = {
   },
 };
 const result = {
-  version: 1,
   outcome: 'plan-ready',
   summary: 'Repair the contained behavior.',
   reviewSummary: 'Repair the contained behavior.',
-  fullAssessment: 'Complete private assessment, evidence and plan.',
-  assessment: 'The user needs a reliable result.',
-  planSummary: 'Repair the owner and cover the missing case.',
-  plan: 'Update the owner and test its public boundary.',
-  evidence: [
-    { source: 'repo/file.ts', status: 'observed', detail: 'The current owner omits this case.' },
-  ],
-  progress: { completed: ['Inspected the owner.'], remaining: ['Implement after authorization.'] },
 };
 
 describe('agent/codex-dispatch', () => {
@@ -1742,14 +1733,9 @@ describe('agent/codex-dispatch', () => {
     );
     assert.ok(!String(recorded.presentation).includes('Prefer small fixes.'));
     const question = {
-      version: 1,
       outcome: 'clarification-needed',
       summary: 'Need a decision.',
-      fullAssessment: 'Complete assessment and unresolved requirement.',
-      assessment: 'Missing requirement.',
       questions: ['Which behavior?'],
-      evidence: [],
-      progress: { completed: [], remaining: ['Answer.'] },
     };
     const revised = await renderAssessment(question, { threadId: 'issue-thread' });
     assert.equal(revised.status, 'formatted');
@@ -3226,18 +3212,13 @@ describe('agent/codex-dispatch', () => {
     delete native!.effort;
     const child = { threadId: 'issue-thread' };
     const common = {
-      version: 1,
       summary: 'Additional input is needed.',
       reviewSummary: 'Additional input is needed.',
-      fullAssessment: 'Complete partial assessment and next action.',
-      evidence: result.evidence,
-      progress: result.progress,
     };
     for (const outcome of [
       {
         ...common,
         outcome: 'clarification-needed',
-        assessment: 'Retention is unspecified.',
         questions: ['How long should evidence remain?'],
       },
       {
@@ -3970,14 +3951,9 @@ describe('agent/codex-dispatch', () => {
     await runCodexIntake(pluginData, false, deps);
     await renderAssessment(
       {
-        version: 1,
         outcome: 'clarification-needed',
         summary: 'Decide retention.',
-        assessment: 'A choice is needed.',
-        fullAssessment: 'Complete source for the unresolved choice.',
         questions: ['How long?'],
-        evidence: result.evidence,
-        progress: result.progress,
       },
       child,
     );
@@ -4082,14 +4058,9 @@ describe('agent/codex-dispatch', () => {
 
   it('should enter issue work from a verified native answer to the original clarification', async () => {
     const question = {
-      version: 1,
       outcome: 'clarification-needed',
       summary: 'Choose approach.',
-      assessment: 'A decision is needed.',
-      fullAssessment: 'Choose the smaller approach before implementation.',
       questions: ['Which approach?'],
-      evidence: [],
-      progress: { completed: [], remaining: ['Answer.'] },
     };
     const work = await workIssue(question, 'Follow the answer.', 'company:implement', 'plan');
     const current = await selectCodexIntake(pluginData, deps);
@@ -4155,12 +4126,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(record.worktree, before.records[0]!.worktree);
     assert.equal(record.workflowStatus, workflowStatus(before.records[0]!));
     assert.deepEqual(record.progression, before.records[0]!.progression);
-    for (const text of [
-      result.fullAssessment,
-      result.plan,
-      'Historical implementation guidance.',
-      before.records[0]!.request!.prompt,
-    ])
+    for (const text of ['Historical implementation guidance.', before.records[0]!.request!.prompt])
       assert.equal(JSON.stringify(inspection).includes(text), false, text);
     assert.equal('result' in record, false);
     assert.equal('continuation' in record, false);
@@ -4645,8 +4611,6 @@ describe('agent/codex-dispatch', () => {
     it(`should hand ${mode} directly from assessment to implementation without a coordinator send with isolated reader ${isolatedReader}`, async () => {
       const assessment = {
         ...result,
-        fullAssessment:
-          'Internal rationale and alternatives. Preserve exact source and receipt ordering.',
         reviewSummary:
           'You would see the result immediately. Docs clarify it; tests cover the missing return.',
         ...(mode === 'auto' ? { decision: { mode: 'work' as const, reasons: ['Ready.'] } } : {}),
@@ -4659,7 +4623,6 @@ describe('agent/codex-dispatch', () => {
       const recorded = await renderAssessment(assessment, { threadId: native!.id });
       assert.equal(recorded.status, 'formatted');
       assert.ok(String(recorded.presentation).includes(assessment.reviewSummary));
-      assert.ok(!String(recorded.presentation).includes(assessment.fullAssessment));
       if (isolatedReader) {
         native!.status = 'notLoaded';
         native!.turnStatus = 'interrupted';

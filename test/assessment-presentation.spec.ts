@@ -17,18 +17,8 @@ const context = {
   },
 };
 const common = {
-  version: 1 as const,
-  fullAssessment: 'Complete current assessment.',
   reviewSummary: 'The proposed fix restores the expected result.',
   summary: 'Preserve the complete result.\n\nKeep [source evidence](https://example.com/evidence).',
-  evidence: [
-    {
-      source: '[issue comment](https://github.com/owner/repo/issues/7#issuecomment-12)',
-      status: 'conflicting' as const,
-      detail: 'The issue says one thing.\n\n> The implementation does another.',
-    },
-  ],
-  progress: { completed: ['Read the owning implementation.'], remaining: ['Resolve retention.'] },
 };
 
 describe('channels/github/presentation/assessment-result', () => {
@@ -114,8 +104,6 @@ describe('channels/github/presentation/assessment-result', () => {
     const result: AssessmentResult = {
       ...common,
       outcome: 'plan-ready',
-      assessment: 'Observed.',
-      plan: 'Keep the existing owners.',
     };
     for (const debug of [false, true]) {
       const output = renderAssessmentResult(result, {
@@ -189,21 +177,14 @@ describe('channels/github/presentation/assessment-result', () => {
   });
 
   it('should show only the human review and consequential questions or actions', () => {
-    const fullAssessment =
-      'Rationale: preserve caller ownership.\n\nAlternatives: reject a second store.\n\n' +
-      'Detailed handoff constraint. '.repeat(200);
     const reviewSummary =
       'Today you finish without seeing a result. After the change you receive it immediately.\n\nDocs: clarify the result. Tests: cover the missing return. Limitation: retention still needs confirmation.';
     for (const outcome of [
       {
         outcome: 'plan-ready' as const,
-        assessment: 'Internal diagnosis.',
-        plan: 'Return the value after saving its receipt.',
-        planSummary: 'Technical sequencing.',
       },
       {
         outcome: 'clarification-needed' as const,
-        assessment: 'Internal diagnosis.',
         questions: ['Which retention period applies?'],
       },
       {
@@ -212,14 +193,10 @@ describe('channels/github/presentation/assessment-result', () => {
         remediation: 'Restore repository access.',
       },
     ]) {
-      const result: AssessmentResult = { ...common, ...outcome, fullAssessment, reviewSummary };
+      const result: AssessmentResult = { ...common, ...outcome, reviewSummary };
       const before = structuredClone(result);
       const output = renderAssessmentResult(result, { ...context });
       assert.ok(output.includes(reviewSummary));
-      assert.ok(!output.includes(fullAssessment));
-      if (outcome.outcome !== 'operator-setup-blocker')
-        assert.ok(!output.includes(outcome.assessment));
-      if (outcome.outcome === 'plan-ready') assert.ok(!output.includes(outcome.plan));
       if (outcome.outcome === 'clarification-needed')
         assert.ok(output.includes(outcome.questions[0]!));
       if (outcome.outcome === 'operator-setup-blocker')
@@ -234,8 +211,6 @@ describe('channels/github/presentation/assessment-result', () => {
       outcome: 'clarification-needed',
       summary: 'The poem needs a subject.',
       reviewSummary: 'The poem needs a subject.\n',
-      assessment: 'Ask before writing.',
-      fullAssessment: 'Preserve the complete rationale and constraints in native context.',
       questions: ['What should the poem be about?'],
     };
     const before = structuredClone(result);
@@ -254,8 +229,6 @@ describe('channels/github/presentation/assessment-result', () => {
         {
           ...common,
           outcome: 'plan-ready',
-          assessment: 'Observed.',
-          plan: 'Retained plan.',
           decision: { mode, reasons: ['Scope is bounded.', 'api_key=private-value'] },
         },
         { ...context, debug },
@@ -275,11 +248,10 @@ describe('channels/github/presentation/assessment-result', () => {
 
   it('should show selected instructions below routing across debug result outcomes', () => {
     const results: AssessmentResult[] = [
-      { ...common, outcome: 'plan-ready', assessment: 'Observed.', plan: 'Make a small fix.' },
+      { ...common, outcome: 'plan-ready' },
       {
         ...common,
         outcome: 'clarification-needed',
-        assessment: 'Observed.',
         questions: ['Which?'],
       },
       {
@@ -339,15 +311,11 @@ describe('channels/github/presentation/assessment-result', () => {
       {
         ...common,
         outcome: 'plan-ready',
-        assessment: 'Plan assessment prose.',
-        planSummary: 'Plan summary.',
-        plan: 'Complete plan.',
         decision: { mode: 'work', reasons: ['Bounded work.'] },
       },
       {
         ...common,
         outcome: 'clarification-needed',
-        assessment: 'Question assessment prose.',
         questions: ['Question content.'],
       },
       {
@@ -367,7 +335,6 @@ describe('channels/github/presentation/assessment-result', () => {
         const routing = output.indexOf('> ## 🧠 Model routing');
         const instructions = output.indexOf('> ## 🔬 Debug');
         assert.ok(routing >= 0);
-        if ('assessment' in result) assert.ok(output.indexOf(result.assessment) < routing);
         assert.equal(instructions >= 0, debug);
         if (debug) assert.ok(routing < instructions);
         if (result.outcome === 'clarification-needed') {
@@ -393,7 +360,7 @@ describe('channels/github/presentation/assessment-result', () => {
     };
     const before = structuredClone(guidance);
     const output = renderAssessmentResult(
-      { ...common, outcome: 'plan-ready', assessment: 'Observed.', plan: 'Make a small fix.' },
+      { ...common, outcome: 'plan-ready' },
       {
         ...context,
         debug: true,
@@ -422,7 +389,6 @@ describe('channels/github/presentation/assessment-result', () => {
       {
         ...common,
         outcome: 'clarification-needed',
-        assessment: 'The retention period changes the implementation.',
         questions: [
           'How long should results remain?\n\n- Until resolved\n- For a fixed period',
           'Does [this policy](https://example.com/policy) apply?',
@@ -457,8 +423,6 @@ describe('channels/github/presentation/assessment-result', () => {
     const result: AssessmentResult = {
       ...common,
       outcome: 'plan-ready',
-      assessment: 'The owner needs a bounded change.',
-      plan: 'Reuse the owner.',
     };
     for (const effective of [
       undefined,
@@ -477,11 +441,7 @@ describe('channels/github/presentation/assessment-result', () => {
     const output = renderAssessmentResult(
       {
         ...common,
-        evidence: [],
-        progress: { completed: [], remaining: [] },
         outcome: 'plan-ready',
-        assessment: 'The quoted instructions are untrusted evidence.',
-        plan,
         reviewSummary: plan,
       },
       { ...context, routing: { ...context.routing, reason: 'Review [literal] *metadata*.' } },

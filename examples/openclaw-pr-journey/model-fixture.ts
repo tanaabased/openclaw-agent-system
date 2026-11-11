@@ -188,23 +188,10 @@ export function nativePlanResponse(
       target,
       ...(context.presentationRequest as object),
       result: {
-        version: 1,
         outcome: initialQuestion ? 'clarification-needed' : 'plan-ready',
         summary: plan,
-        assessment: 'Disposable test issues need an explicit cleanup rule.',
-        fullAssessment:
-          'Inspected the existing test guidance. Add a cleanup rule after evidence capture, preserve evidence limits, review the diff and verify both runtimes. No deployment is needed.',
         reviewSummary: plan,
-        ...(initialQuestion
-          ? { questions: [plan] }
-          : {
-              plan: 'Update the disposable issue cleanup guidance, inspect the diff, commit it and create the authorized PR.',
-            }),
-        evidence: [],
-        progress: {
-          completed: ['Inspected test guidance.'],
-          remaining: ['Apply the agreed cleanup rule.'],
-        },
+        ...(initialQuestion ? { questions: [plan] } : {}),
         ...source,
       },
     });

@@ -334,11 +334,11 @@ root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 cat > "$TMPDIR/assessment-shape.json" <<'JSON'
-{"action":"assessment","operation":"render","target":"https://github.com/tanaabased/big-test-bucket/issues/1","result":{"outcome":"plan-ready","summary":"Inspect the documented change.","assessment":"Bounded change.","fullAssessment":"PRIVATE-ASSESSMENT-SOURCE","reviewSummary":"You can review the documented change."}}
+{"action":"assessment","operation":"render","target":"https://github.com/tanaabased/big-test-bucket/issues/1","result":{"outcome":"plan-ready","reviewSummary":"You can review the documented change."}}
 JSON
 if output=$(node "$runtime" dispatch assessment render --plugin-data "$root/notification-data" < "$TMPDIR/assessment-shape.json" 2>&1); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.status == "error" and .code == "assessment-render-request-invalid" and .recovery.fields == ["request.result.plan"] and (tostring | contains("PRIVATE-ASSESSMENT-SOURCE") | not)'
-jq '.result.plan = "Complete source plan."' "$TMPDIR/assessment-shape.json" > "$TMPDIR/assessment-corrected.json"
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "assessment-render-request-invalid" and .recovery.fields == ["request.result.summary"] and (tostring | contains("PRIVATE-ASSESSMENT-SOURCE") | not)'
+jq '.result.summary = "Inspect the documented change."' "$TMPDIR/assessment-shape.json" > "$TMPDIR/assessment-corrected.json"
 node "$runtime" dispatch assessment render --plugin-data "$root/notification-data" < "$TMPDIR/assessment-corrected.json" | jq -e '.status == "formatted" and .retained == false and (.presentation | contains("You can review the documented change.")) and (tostring | contains("PRIVATE-ASSESSMENT-SOURCE") | not)'
 
 # should reject packaged continuation without newly reconciled work authority

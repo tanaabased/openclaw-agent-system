@@ -287,8 +287,7 @@ lists, or tables only when they make substantive content easier to review.
 <problem and proposed solution as a concise user journey, brief documentation/test impact, and consequential limits or decisions>
 ```
 
-When a result includes both `reviewSummary` and `fullAssessment`, show the review
-summary by default. Explain what the person does today, where it fails, and how the
+Show the concise `reviewSummary` when supplied. Explain what the person does today, where it fails, and how the
 proposed change would improve that experience.
 Include brief documentation and test impact in the repository's own terms, plus any
 risk, uncertainty, or decision that could change approval. Roughly 200–400 words is
@@ -297,11 +296,9 @@ need less. Do not apply review-length guidance to the full assessment or plan.
 
 The full engineering assessment remains authoritative for implementation: rationale,
 tradeoffs, owners, dependencies, constraints, complete plan, validation, evidence, and
-unresolved questions. Keep it unchanged in `fullAssessment` and the full implementation plan in `plan`
-within the native tool exchange. New assessments do not save either field in Agent
-System. `reviewSummary` is a derived human view, never a
-replacement source. `assessment` may repeat the recommendation; `planSummary` remains
-optional. Questions and required actions remain prominent in the review.
+unresolved questions. Keep it in native conversation. The formatter accepts only
+human-facing review content; it saves no assessment or plan. Questions and required
+actions remain prominent in the review.
 
 When an assessment includes a continuation decision, show an **Auto mode decision**
 card after the routing card. Keep it visible

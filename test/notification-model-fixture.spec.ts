@@ -579,7 +579,7 @@ for (const scenario of [
         assert.equal(corrected.operation, 'render');
         assert.deepEqual(corrected, {
           ...malformed,
-          result: { ...malformed.result, plan: malformed.result.fullAssessment },
+          result: { ...malformed.result, summary: 'Assess cleanup documentation only.' },
         });
         append(input, 'direct-assessment-result', {
           status: 'formatted',

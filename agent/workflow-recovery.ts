@@ -55,10 +55,6 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
       'Native history returned a different session or message identity from the retained task.',
       'Inspect the retained task and restore its original native history before reconciliation. Do not adopt a replacement session or discard its receipts.',
     ],
-    'assessment-result-incomplete': [
-      'The new assessment is missing its complete source; the result was not formatted.',
-      'Include the complete assessment, evidence, plan or questions in `fullAssessment` and use assessment render in this chat. The full source stays in native context; show its concise presentation without saving or reinjecting it.',
-    ],
     'dispatch-receipt-id-invalid': [
       'The supplied receipt ID is malformed, so it was not looked up or used to change workflow state.',
       'Retry the owning operation without a receipt ID; the runtime resolves the current task. If native ownership is unavailable, inspect it through its owning runtime. Do not guess, reset, or recreate the workflow.',

@@ -428,15 +428,9 @@ describe('agent/implementation-entry', () => {
     renderNativeAssessment({
       ...context.presentationRequest,
       result: {
-        version: 1,
         outcome: 'plan-ready',
         summary: 'Ready',
-        assessment: 'Inspected',
-        fullAssessment: 'Complete assessment',
-        plan,
         reviewSummary: 'Ready for discussion.',
-        evidence: [],
-        progress: { completed: [], remaining: [] },
       },
     });
     selections = [];

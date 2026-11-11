@@ -91,16 +91,7 @@ export default function renderNativeAssessment(
     );
   const target = replyLocator(input.target);
   if (target.kind) throw new Error('assessment-render-target-invalid');
-  const submitted = parseAssessmentSubmission(input.result);
-  // Complete questions already carry their own concise review; formatting must not hide them.
-  const assessment =
-    !submitted.reviewSummary && submitted.outcome === 'clarification-needed'
-      ? {
-          ...submitted,
-          reviewSummary: submitted.summary,
-        }
-      : submitted;
-  if (!assessment.reviewSummary?.trim()) throw new Error('assessment-review-summary-required');
+  const assessment = parseAssessmentSubmission(input.result);
   return implementationMaterial(
     {
       runtime,
@@ -117,7 +108,7 @@ export default function renderNativeAssessment(
       }),
       instructions:
         cardCopyInstructions +
-        " The complete assessment stays in this native tool call; Agent System has not saved it. Include the complete presentation, with all routing, decision and debug cards, in this turn's final response. Commentary or progress output does not count as final presentation. Append any Task Update publication outcome and current blocker to that final response without replacing the assessment cards or duplicating the full engineering source. Continue from native conversation and current direction; do not record or reinject this assessment. Formatting grants no implementation or publication authority. Publish the concise review through Task Update only within its existing authorization.",
+        " The complete assessment stays in native conversation; Agent System has not saved it. Include the complete presentation, with all routing, decision and debug cards, in this turn's final response. Commentary or progress output does not count as final presentation. Append any Task Update publication outcome and current blocker to that final response without replacing the assessment cards or duplicating the full engineering source. Continue from native conversation and current direction; do not record or reinject this assessment. Formatting grants no implementation or publication authority. Publish the concise review through Task Update only within its existing authorization.",
     },
     assessmentPresentationRequest(input.target, input.assessmentOnly),
     input.material,
