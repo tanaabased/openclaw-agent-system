@@ -55,8 +55,6 @@ export default async function reconcileCodexCapacity(
         : undefined;
     if (found) {
       if (threadId && found.id !== threadId) throw new Error('dispatch-native-readback-diverged');
-      // fresh native activity adopts current reservation semantics until terminal proof.
-      if (found.status === 'active') record.reservationVersion = 1;
       return observeCodexActivity(record, found, now);
     } else if (
       !threadId &&

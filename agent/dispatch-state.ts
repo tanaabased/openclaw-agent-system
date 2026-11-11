@@ -74,7 +74,6 @@ export const dispatchRecordProperties = {
   context: Type.Optional(Type.String({ maxLength: 96000 })),
   routing: Type.Optional(Type.String({ maxLength: 32000 })),
   routingInstructions: Type.Optional(routingInstructionsSchema),
-  routingNote: Type.Optional(text),
   threadId: Type.Optional(text),
   worktree: Type.Optional(text),
   effective: Type.Optional(
@@ -313,7 +312,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
             r.manualIssue.initiation.session !== r.sourceThreadId ||
             issueKey(r.manualIssue) !== r.issueKey)) ||
         (!r.cleanupPending &&
-          ((r.request && (!r.context || !r.routing || !r.routingNote)) ||
+          ((r.request && (!r.context || !r.routing)) ||
             (r.handoff && (!r.request || !r.threadId || !r.worktree)))) ||
         (!r.cleanupPending && !validNativeDispatchRecord(r)) ||
         (r.reset && !r.threadId) ||

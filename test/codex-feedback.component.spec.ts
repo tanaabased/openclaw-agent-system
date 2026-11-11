@@ -105,7 +105,6 @@ describe('agent/codex-feedback', () => {
       state.records.push({
         context: JSON.stringify({ source: 'https://github.com/owner/repo/issues/3' }),
         routing: 'routing',
-        routingNote: 'note',
         id,
         intakeId: admitted.id,
         issueKey: automationHash([
@@ -123,7 +122,6 @@ describe('agent/codex-feedback', () => {
         issueBranch: { attemptId: id, name: 'issue-work', phase: 'ready' },
         effective: { status: 'verified', model: 'model', effort: 'high' },
         project: { id: 'project', path: source, commonDir, ref: 'main', commit: 'a'.repeat(40) },
-        reservationVersion: 1,
         request: {
           title: 'issue',
           prompt: 'assessment',

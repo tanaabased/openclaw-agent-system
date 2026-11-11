@@ -3,7 +3,6 @@ import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { workflowFeedbackAccepting } from '../channels/github/feedback-policy.ts';
 import assignmentCard from '../channels/github/presentation/assignment-card.ts';
-import modelRoutingCard from '../channels/github/presentation/model-routing.ts';
 import resolveGitProtocol from '../tools/git/protocol.ts';
 import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
 import resolveGitWorktreeLayout from '../tools/git/worktree-layout.ts';
@@ -839,18 +838,6 @@ export async function prepareDispatch(
     }
     record.routing = JSON.stringify(decision);
     record.routingInstructions = instructions;
-    record.routingNote = modelRoutingCard({
-      routing: {
-        ...decision,
-        model: decision.candidate.model,
-        effort: decision.candidate.thinking,
-      },
-      instructions: record.routingInstructions,
-      workspace: current.workspace,
-      debug: current.manifest.debug,
-      manifestPath:
-        current.manifestSources?.['/models/routing/guidance']?.path ?? current.manifestPath,
-    });
     record.createdAt = now;
     record.preparationTurnId = tx.operatorInput?.turnId ?? state.run!.id;
     record.sourceThreadId = tx.activation.sourceThreadId;
@@ -860,7 +847,6 @@ export async function prepareDispatch(
     delete record.preparationObservation;
     delete record.retry;
     delete record.retryAfter;
-    record.reservationVersion = 1;
     delete record.capacityObservation;
     delete record.nativeInactive;
     const request: NonNullable<DispatchRecord['request']> = {

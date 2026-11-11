@@ -578,7 +578,6 @@ describe('agent/codex-delivery', () => {
 
         createdAt: baseline,
         manifestDigest: current.digest,
-        reservationVersion: 1,
         project: {
           id: 'project',
           path: source,
@@ -588,7 +587,6 @@ describe('agent/codex-delivery', () => {
         },
         context: JSON.stringify({ source: 'https://github.com/owner/repo/issues/3' }),
         routing: 'routing',
-        routingNote: 'note',
         threadId: 'child',
         worktree,
         issueBranch: { attemptId: id, name: 'pirog-work', phase: 'ready' },

@@ -14,7 +14,6 @@ describe('agent/codex-capacity-reconcile', () => {
   it('should release a known ended native turn despite missing workspace files', async () => {
     const owner = {
       ...record(),
-      reservationVersion: 1 as const,
       threadId: 'child',
       worktree: '/removed',
     };
@@ -47,7 +46,6 @@ describe('agent/codex-capacity-reconcile', () => {
     ]) {
       const owner = {
         ...record(),
-        reservationVersion: 1 as const,
         threadId: 'child',
         nativeInactive: true,
       };
@@ -66,7 +64,7 @@ describe('agent/codex-capacity-reconcile', () => {
       assert.equal(codexCapacity([owner], 3).occupied, 1);
       assert.ok(owner.capacityObservation?.code);
     }
-    const owner = { ...record(), reservationVersion: 1 as const, threadId: 'child' };
+    const owner = { ...record(), threadId: 'child' };
     await reconcile(
       owner,
       {

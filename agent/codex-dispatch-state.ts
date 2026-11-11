@@ -110,7 +110,6 @@ export const dispatchRecordSchema = Type.Object(
     claimId: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
     claimPass: Type.Optional(text),
     claimAccepted: Type.Optional(Type.Boolean()),
-    reservationVersion: Type.Optional(Type.Literal(1)),
     capacityObservation: Type.Optional(
       Type.Object(
         {
@@ -170,7 +169,7 @@ export default class CodexDispatchStore extends DispatchStore<DispatchRecord> {
       recordSchema: dispatchRecordSchema,
       validRecord: (record) =>
         (!record.issueBranch || record.issueBranch.attemptId === record.id) &&
-        (!record.request || Boolean(record.project && record.reservationVersion === 1)) &&
+        (!record.request || Boolean(record.project)) &&
         (!record.claimAccepted || Boolean(record.claimId && record.effective && record.threadId)),
     });
   }

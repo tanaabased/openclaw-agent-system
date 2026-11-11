@@ -28,7 +28,6 @@ function prepared(): OpenClawDispatchRecord {
 
     context: '{}',
     routing: '{}',
-    routingNote: 'selected',
     worktree: '/worktree',
     request: {
       key: 'agent:receiver:issue:one',
@@ -135,9 +134,7 @@ describe('agent/shared dispatch state', () => {
       blocker: 'native-approval-denied',
       context: '{}',
       routing: '{}',
-      routingNote: 'selected',
       effective: { status: 'verified' as const },
-      reservationVersion: 1 as const,
       project: {
         id: 'project',
         path: '/repo',
@@ -273,14 +270,14 @@ describe('agent/shared dispatch state', () => {
         await store.transaction(async (state, save) => {
           state.records[0]!.context = 'verified progress';
           await save();
-          state.records[0]!.routingNote = 'second checkpoint';
+          state.records[0]!.blocker = 'second checkpoint';
           await save();
         });
       });
       const saved = JSON.parse(await readFile(store.path, 'utf8'));
       assert.deepEqual(saved.records[1], raw.records[1]);
       assert.equal(saved.records[0].context, 'verified progress');
-      assert.equal(saved.records[0].routingNote, 'second checkpoint');
+      assert.equal(saved.records[0].blocker, 'second checkpoint');
       await assert.rejects(
         task('damaged-chat', () => store.read()),
         /dispatch-task-record-invalid/,
@@ -331,12 +328,12 @@ describe('agent/shared dispatch state', () => {
         await task('healthy-chat', async () => {
           assert.deepEqual((await store.read()).records, [healthy()]);
           await store.transaction(async (state, save) => {
-            state.records[0]!.routingNote = 'healthy progress';
+            state.records[0]!.blocker = 'healthy progress';
             await save();
           });
         });
         const saved = JSON.parse(await readFile(store.path, 'utf8'));
-        assert.equal(saved.records[0].routingNote, 'healthy progress');
+        assert.equal(saved.records[0].blocker, 'healthy progress');
         assert.deepEqual(saved.records.slice(1), raw.records.slice(1));
         await assert.rejects(
           task('damaged-chat', () => store.read()),
@@ -387,12 +384,12 @@ describe('agent/shared dispatch state', () => {
         await task('healthy-chat', () =>
           store.transaction(async (state, save) => {
             assert.deepEqual(state.records, [healthy()]);
-            state.records[0]!.routingNote = 'independent progress';
+            state.records[0]!.blocker = 'independent progress';
             await save();
           }),
         );
         const saved = JSON.parse(await readFile(store.path, 'utf8'));
-        assert.equal(saved.records[0].routingNote, 'independent progress');
+        assert.equal(saved.records[0].blocker, 'independent progress');
         assert.deepEqual(saved.records.slice(1), raw.records.slice(1));
         const before = await readFile(store.path, 'utf8');
         await assert.rejects(
@@ -432,7 +429,7 @@ describe('agent/shared dispatch state', () => {
       await assert.rejects(
         task('healthy-chat', () =>
           store.transaction(async (state, save) => {
-            state.records[0]!.routingNote = 'must not commit';
+            state.records[0]!.blocker = 'must not commit';
             raw.records[1] = { ...damaged(), worktree: '/healthy' };
             concurrent = JSON.stringify(raw);
             await store.file.write(concurrent);
@@ -584,7 +581,7 @@ describe('agent/shared dispatch state', () => {
       const raw = await write(store, [healthy(), damaged()]);
       await task('healthy-chat', () =>
         store.transaction(async (state, save) => {
-          state.records[0]!.routingNote = 'progress';
+          state.records[0]!.blocker = 'progress';
           raw.records[1] = {
             ...damaged(),
             feedback: { unresolved: { destination: 'new evidence', attempted: true } },
@@ -639,13 +636,13 @@ describe('agent/shared dispatch state', () => {
       const retained = state.records[0]!;
       retained.context = 'outer observation';
       await new OpenClawDispatchStore(root, scope).transaction(async (other, commit) => {
-        other.records[0]!.routingNote = 'inner observation';
+        other.records[0]!.blocker = 'inner observation';
         other.records.push(pending('c'.repeat(64)));
         await commit();
       });
       await save();
       assert.equal(state.records[0], retained);
-      assert.equal(retained.routingNote, 'inner observation');
+      assert.equal(retained.blocker, 'inner observation');
       assert.equal(state.records.length, 2);
     });
     assert.equal((await store.read()).records[0]!.context, 'outer observation');
@@ -684,16 +681,16 @@ describe('agent/shared dispatch state', () => {
     await store.transaction(
       async (state, save) => {
         state.records[0]!.context = undefined;
-        state.records[0]!.routingNote = 'updated';
+        state.records[0]!.blocker = 'updated';
         await save();
         await save();
-        state.records[0]!.routingNote = 'next checkpoint';
+        state.records[0]!.blocker = 'next checkpoint';
         await save();
       },
       codexCommit(1, pending().id),
     );
     const saved = (await store.read()).records[0]!;
-    assert.equal(saved.routingNote, 'next checkpoint');
+    assert.equal(saved.blocker, 'next checkpoint');
     assert.equal(Object.hasOwn(saved, 'context'), false);
   });
 

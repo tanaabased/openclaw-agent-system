@@ -498,7 +498,6 @@ describe('agent/notification reset runtime adapters', () => {
         manifestDigest: 'manifest',
         context: '{}',
         routing: '{}',
-        routingNote: 'fixture',
         worktree: root,
         request: {
           key: 'agent:receiver:issue:missing',
@@ -660,7 +659,6 @@ describe('agent/notification reset runtime adapters', () => {
         manifestDigest: 'manifest',
         context: '{}',
         routing: '{}',
-        routingNote: 'fixture',
         worktree: join(root, 'old-checkout'),
         sessionCreation: {
           attempted: true,
@@ -822,10 +820,8 @@ describe('agent/notification reset runtime adapters', () => {
 
           createdAt: 2000,
           manifestDigest: 'manifest',
-          reservationVersion: 1,
           context: '{}',
           routing: '{}',
-          routingNote: 'fixture',
           project: {
             id: 'project',
             path: workspace,
@@ -1094,7 +1090,6 @@ describe('agent/notification reset runtime adapters', () => {
         manifestDigest: 'manifest',
         context: '{}',
         routing: '{}',
-        routingNote: 'fixture',
         effective: { status: 'verified', model: 'fixture', effort: 'low' },
         threadId: key,
         worktree,

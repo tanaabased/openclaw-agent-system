@@ -188,7 +188,6 @@ export default class OpenClawDispatchAdmission {
       }
       record.routing = JSON.stringify(routing);
       record.routingInstructions = instructions;
-      record.routingNote = `Requested ${routing.candidate.model} / ${routing.candidate.thinking}; session settings are verified at creation, not model execution.`;
       delete record.retry;
       delete record.retryAfter;
       record.request = {

@@ -194,7 +194,6 @@ export default async function recoverDispatch(
       verifiedCaller.inputId !== nativeCaller.inputId
     )
       throw new Error('dispatch-native-caller-changed');
-    if (!record.cleanupPending) record.reservationVersion = 1;
     record.retirement = assignmentRetirement({
       previous: record.retirement,
       reason: 'operator-requested',

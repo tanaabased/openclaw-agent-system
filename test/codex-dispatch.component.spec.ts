@@ -613,10 +613,13 @@ describe('agent/codex-dispatch', () => {
     });
     assert.equal(prepared.status, 'prepared');
     assert.equal((prepared.request as { model: string }).model, 'gpt-6.1-sol');
-    const saved = ((await readDispatchState()).records as Array<{ routingNote: string }>)[0]!;
-    assert.match(saved.routingNote, /Routing method.*company:route.*custom guidance/);
-    assert.match(saved.routingNote, /Effective settings.*Not independently verified/);
-    assert.ok(!saved.routingNote.includes('Prefer cheap work.'));
+    const saved = (
+      (await readDispatchState()).records as Array<{
+        routingInstructions: { requestedSkill: string };
+      }>
+    )[0]!;
+    assert.equal(saved.routingInstructions.requestedSkill, 'company:route');
+    assert.equal('routingNote' in saved, false);
   });
 
   it('should reject changed routing instructions before native creation', async () => {

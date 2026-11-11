@@ -125,7 +125,6 @@ export async function issueAssessmentAction(input: {
       id: record.id,
       project: { path: record.worktree },
       routing: JSON.parse(record.routing!),
-      routingNote: record.routingNote,
       effective: record.effective,
       executionEffort: 'unverified',
       evidence: JSON.parse(input.evidence ?? record.context!),
