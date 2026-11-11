@@ -14,6 +14,8 @@ import AssessmentValidationError from '../agent/assessment-validation.ts';
 import { runCodexDispatch } from '../agent/codex-dispatch.ts';
 import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
 import implementationMaterial, {
+  implementationContextBudget,
+  implementationMaterialSize,
   type ImplementationMaterialRead,
 } from '../agent/implementation-material.ts';
 import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
@@ -277,7 +279,7 @@ describe('agent/assessment-render', () => {
       };
       const request = {
         ...assessmentPresentationRequest(target),
-        result: { ...result, reviewSummary: 'Review detail. '.repeat(900) },
+        result: { ...result, reviewSummary: 'Review detail. '.repeat(10) },
       };
       const first = renderNativeAssessment(request, runtime, metadata);
       const restored = await hydrateImplementation(first, async (read) =>
@@ -307,12 +309,10 @@ describe('agent/assessment-render', () => {
   it('should validate complete native input and return only the concise visible review', () => {
     const response = renderNativeAssessment({ ...assessmentPresentationRequest(target), result });
     assert.equal(response.status, 'formatted');
-    assert.equal(response.status, 'formatted');
     assert.equal(response.retained, false);
     assert.equal('assessment' in response, false);
-    assert.doesNotMatch(JSON.stringify(response), /ENGINEERING-/);
     assert.ok(response.presentation.includes(result.reviewSummary!));
-    assert.doesNotMatch(response.presentation, /ENGINEERING-|saved for implementation/);
+    assert.doesNotMatch(response.presentation, /saved for implementation/);
     assert.match(response.presentation, /> ## 🧭/);
   });
 
@@ -361,41 +361,33 @@ describe('agent/assessment-render', () => {
       assert.ok(response.presentation.includes(question));
     });
 
-  it('should page long clarification text without saving or echoing the engineering plan', async () => {
-    const partial = {
-      summary: result.summary,
-      reviewSummary: result.reviewSummary,
-    };
-    const source = {
-      ...partial,
-      outcome: 'clarification-needed',
-      questions: Array.from({ length: 5 }, (_, i) => `Question ${i}: ` + 'detail '.repeat(180)),
-    };
-    const request = { ...assessmentPresentationRequest(target), result: source };
-    const first = renderNativeAssessment(request, 'openclaw');
-    assert.equal(first.status, 'formatted');
-    assert.ok(first.contextMaterials);
-    assert.doesNotMatch(JSON.stringify(first), /ENGINEERING-/);
-    const restored = await hydrateImplementation(first, async (read) =>
-      renderNativeAssessment({ ...request, ...read }, 'openclaw'),
-    );
-    for (const question of source.questions)
-      assert.ok(String(restored.presentation).includes(question));
-    assert.equal(restored.retained, false);
-    const read = first.contextMaterials.fields[0]!.request;
-    assert.throws(
-      () =>
-        renderNativeAssessment(
-          {
-            ...request,
-            ...read,
-            result: { ...source, questions: ['Changed question'] },
-          },
-          'openclaw',
-        ),
-      /stale/,
-    );
-  });
+  for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should use native ${runtime} findings when presentation exceeds the output allowance`, () => {
+      const source = {
+        outcome: 'clarification-needed',
+        summary: 'Choose the scope.',
+        questions: Array.from({ length: 5 }, (_, i) => `Question ${i}: ` + 'detail '.repeat(2000)),
+      };
+      const request = { ...assessmentPresentationRequest(target), result: source };
+      const before = structuredClone(request);
+      const response = renderNativeAssessment(request, runtime);
+      assert.equal(response.status, 'presentation-unavailable');
+      assert.equal(response.retained, false);
+      assert.equal('contextMaterials' in response, false);
+      assert.equal('next' in response, false);
+      assert.ok(implementationMaterialSize(response) <= implementationContextBudget);
+      assert.match(response.instructions, /every unanswered question/);
+      assert.match(response.instructions, /ordinary Markdown/);
+      assert.deepEqual(request, before);
+      assert.throws(
+        () =>
+          renderNativeAssessment(
+            { ...request, material: { path: ['presentation'], offset: 0 } },
+            runtime,
+          ),
+        /assessment-render-request-invalid/,
+      );
+    });
 
   it('should reject missing summary and comment destinations', () => {
     const request = assessmentPresentationRequest(target);

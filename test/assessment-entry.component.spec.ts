@@ -102,7 +102,7 @@ describe('agent/assessment-entry', () => {
       await assert.rejects(readdir(deps.root), { code: 'ENOENT' });
     });
 
-  it('should deliver every clarification through the real native tool output limit', async () => {
+  it('should deliver a complete fallback through the real native tool output limit', async () => {
     const partial = {
       summary: ready.summary,
       reviewSummary: ready.reviewSummary,
@@ -113,17 +113,20 @@ describe('agent/assessment-entry', () => {
       reviewSummary: 'Choose the intended experience.',
       questions: Array.from(
         { length: 5 },
-        (_, i) => `Question ${i}: ` + 'important detail '.repeat(70),
+        (_, i) => `Question ${i}: ` + 'important detail '.repeat(700),
       ),
     };
     const request = { action: 'assessment', operation: 'render', target, result: source };
     await nativeMaterialFixture({
       request,
       run: (input) => renderNativeAssessment(input, 'openclaw'),
+      minimumPages: 0,
       verify: (output) => {
         assert.equal(output.retained, false);
-        for (const question of source.questions)
-          assert.ok(String(output.presentation).includes(question));
+        assert.equal(output.status, 'presentation-unavailable');
+        assert.equal(output.contextMaterials, undefined);
+        assert.match(String(output.instructions), /every unanswered question/);
+        assert.match(String(output.instructions), /ordinary Markdown/);
       },
     });
     await assert.rejects(readdir(deps.root), { code: 'ENOENT' });
