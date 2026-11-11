@@ -15,6 +15,21 @@ import fixture from './issue-pickup-selection-fixture.ts';
 
 describe('agent/issue-pickup', () => {
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should finish an accepted selection after pause and preserve it across a new paused run in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      const selection = await f.select();
+      const originalRun = f.tx.runId;
+      const operation = structuredClone(f.state.projectPickup!.operations);
+      f.policy.issuePickup!.paused = true;
+      f.tx.runId = 'new-paused-run';
+      assert.equal((await f.run()).status, 'paused');
+      assert.deepEqual(f.state.projectPickup!.operations, operation);
+      assert.equal(f.effects.writes, 0);
+      f.tx.runId = originalRun;
+      assert.equal((await f.run({ selection })).status, 'assigned');
+      assert.equal(f.effects.writes, 1);
+    });
+
     it(`should stop on shared authentication failure before comparing repositories in ${runtime}`, async () => {
       const f = fixture(runtime);
       f.addRepository('other');

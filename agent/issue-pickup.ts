@@ -320,6 +320,14 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
       changed,
     };
   };
+  // A pause stops new occurrences without discarding another accepted run's selection.
+  if (
+    pickup.paused &&
+    !journal.operations.some(
+      (entry) => !entry.receipt && (entry.attemptedAt !== undefined || entry.runId === tx.runId),
+    )
+  )
+    return { status: 'paused', allowances, changed };
   // Only an unfinished write or an unconsumed intake receipt survives its scan.
   for (const entry of journal.operations) {
     if (entry.attemptedAt !== undefined || entry.receipt) discardSelection(entry);
@@ -361,7 +369,6 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
   const repositories = new Map<string, Awaited<ReturnType<IssuePickupClient['getRepository']>>>();
   if (!op) {
     if (!window) return idle('idle');
-    if (pickup.paused) return idle('paused');
     const digest = scanDigest(policy);
     const active = journal.operations.filter(
       (entry) => entry.runId === tx.runId && ['discovering', 'selecting'].includes(entry.phase),
@@ -373,6 +380,7 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
       op = undefined;
     }
     if (!op) {
+      if (pickup.paused) return idle('paused');
       const guidance = await assessmentGuidance(tx.workspaceDir, pickup.selection?.guidance);
       op = {
         id: automationHash({
@@ -838,7 +846,6 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
       const live = await tx.readPolicy();
       if (scanDigest(live) !== operation.scan?.digest)
         throw new Error('issue-pickup-policy-changed');
-      if (live.issuePickup?.paused) return finish(operation, 'paused');
       const code = await routingEligibility(live, authorized.repository);
       if (code) return finish(operation, 'pending', code);
       if (

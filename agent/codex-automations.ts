@@ -603,6 +603,7 @@ export async function inspectCodexAutomations(
 export async function inspectCodexPickupActivation(
   pluginData: string,
   dependencies: CodexAutomationDependencies = {},
+  acceptedOccurrence = false,
 ) {
   const selected = await snapshot(pluginData, dependencies);
   const job = selected.jobs.find((entry) => entry.id === issuePickupAutomationId);
@@ -623,7 +624,13 @@ export async function inspectCodexPickupActivation(
   if (
     matches.length !== 1 ||
     matches[0]!.id !== record.nativeId ||
-    !savedMatches(matches[0]!, record.definition, selected.workspace) ||
+    !savedMatches(
+      matches[0]!,
+      acceptedOccurrence
+        ? { ...record.definition, status: matches[0]!.definition.status }
+        : record.definition,
+      selected.workspace,
+    ) ||
     record.definition.prompt !==
       job.payload.prompt +
         '\n\n' +
@@ -631,7 +638,7 @@ export async function inspectCodexPickupActivation(
     record.definition.rrule !== codexAutomationSchedule(job.schedule, record.definition.rrule)
   )
     throw new CodexAutomationError('issue-pickup-automation-drift');
-  if (!job.enabled || record.definition.status !== 'ACTIVE')
+  if (!acceptedOccurrence && (!job.enabled || record.definition.status !== 'ACTIVE'))
     throw new CodexAutomationError('issue-pickup-paused');
   return { threadId: record.definition.targetThreadId, nativeId: record.nativeId };
 }

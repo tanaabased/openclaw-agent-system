@@ -144,6 +144,38 @@ describe('agent/automation-lifecycle-authority', () => {
     const run: AutomationLifecycleRun = { ...fixture().context, jobId: 'native-job' };
     const verify = () => verifyAutomationLifecycleRun(service, scheduler, manifest, run);
     await verify();
+    declared.enabled = false;
+    native.enabled = false;
+    await assert.rejects(verify());
+    await verifyAutomationLifecycleRun(
+      service,
+      scheduler,
+      manifest,
+      run,
+      undefined,
+      undefined,
+      true,
+    );
+    record.hash = effectiveAutomation(declared, context).hash;
+    record.nativeHash = nativeAutomationHash(native);
+    await verifyAutomationLifecycleRun(
+      service,
+      scheduler,
+      manifest,
+      run,
+      undefined,
+      undefined,
+      true,
+    );
+    native.payload = { ...native.payload, message: 'changed executable prompt' };
+    await assert.rejects(
+      verifyAutomationLifecycleRun(service, scheduler, manifest, run, undefined, undefined, true),
+    );
+    Object.assign(native, projectAutomation(declared, record, context));
+    declared.enabled = true;
+    native.enabled = true;
+    record.hash = effectiveAutomation(declared, context).hash;
+    record.nativeHash = nativeAutomationHash(native);
     const methods: string[] = [];
     await verifyAutomationLifecycleRun(
       service,

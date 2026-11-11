@@ -127,8 +127,6 @@ export default class OpenClawIntake {
           throw new IntakeError('issue-pickup-native-caller-required');
         authority = { enrollment: retained.enrollment, receipts: [] };
       }
-      const code = await this.readiness(manifest, workspace);
-      if (code) throw new IntakeError(code);
       const journal = new OpenClawDispatchStore(store.location.root, store.location.scope);
       return await journal.exclusive(async (state, save, signal) => {
         const readPolicy = async () => {

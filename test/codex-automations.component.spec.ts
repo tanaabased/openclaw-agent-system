@@ -729,6 +729,8 @@ describe('agent/codex-automations', () => {
       inspectCodexPickupActivation(pluginData, dependencies),
       rejectsCode('issue-pickup-paused'),
     );
+    assert.deepEqual(await inspectCodexPickupActivation(pluginData, dependencies, true), active);
+
     source.github['issue-pickup'].paused = false;
     await saveManifest();
     await reconcile();

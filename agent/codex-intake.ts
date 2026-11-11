@@ -50,7 +50,9 @@ import type { GitHubNotificationIntakeClient } from '../channels/github/provider
 
 export interface CodexIntakeDependencies {
   issuePickup?: IssuePickupAuthority;
-  pickupActivation?: () => Promise<{ threadId: string; nativeId: string }>;
+  pickupActivation?: (
+    acceptedOccurrence: boolean,
+  ) => Promise<{ threadId: string; nativeId: string }>;
   assertActive?: () => Promise<void>;
   threadId?: string;
   intakeNative?: Pick<ReturnType<typeof codexDispatchNative>, 'occurrence'>;
@@ -404,22 +406,13 @@ export async function runCodexIssuePickup(
     const current = await selectCodexIntake(pluginData, deps);
     debug = current.manifest.debug;
     const enrollmentStore = new IssuePickupEnrollmentStore(codexInstanceStore(pluginData).root);
+    const journal = new CodexDispatchStore(
+      current.store.location.root,
+      current.store.location.scope,
+    );
     const verifyNative = async (policy: GitHubNotificationPolicy) => {
       const retained = await enrollmentStore.inspect(policy, 'codex', current.store.location.scope);
-      const activation = await (
-        deps.pickupActivation ??
-        (() =>
-          inspectCodexPickupActivation(pluginData, {
-            codexHome: current.codexHome,
-            inspectBinding: deps.inspectBinding,
-          }))
-      )();
-      if (
-        !deps.threadId ||
-        deps.threadId !== activation.threadId ||
-        retained.nativeId !== activation.nativeId
-      )
-        throw new IntakeError('issue-pickup-native-caller-required');
+      if (!deps.threadId) throw new IntakeError('issue-pickup-native-caller-required');
       const connection = deps.intakeNative
         ? undefined
         : await connectCodexThreads(current.workspace, current.codexHome);
@@ -427,6 +420,27 @@ export async function runCodexIssuePickup(
         const occurrence = await (
           deps.intakeNative ?? codexDispatchNative(connection!.request)
         ).occurrence(deps.threadId);
+        const acceptedOccurrence = Boolean(
+          (await journal.inspectIntake()).projectPickup?.operations.some(
+            (entry) => entry.runId === occurrence.id,
+          ),
+        );
+        const activation = deps.pickupActivation
+          ? await deps.pickupActivation(acceptedOccurrence)
+          : await inspectCodexPickupActivation(
+              pluginData,
+              {
+                codexHome: current.codexHome,
+                inspectBinding: deps.inspectBinding,
+              },
+              acceptedOccurrence,
+            );
+        if (
+          deps.threadId !== activation.threadId ||
+          retained.nativeId !== activation.nativeId ||
+          (nativeOccurrence && nativeOccurrence.id !== occurrence.id)
+        )
+          throw new IntakeError('issue-pickup-native-caller-required');
         if (occurrence.automationId !== activation.nativeId)
           throw new IntakeError('issue-pickup-native-caller-required');
         nativeOccurrence = occurrence;
@@ -441,11 +455,6 @@ export async function runCodexIssuePickup(
       const retained = await verifyNative(current.policy.policy);
       authority = { enrollment: retained.enrollment, receipts: [] };
     }
-    await assertCodexIntakeActive(pluginData, current, deps);
-    const journal = new CodexDispatchStore(
-      current.store.location.root,
-      current.store.location.scope,
-    );
     return await journal.exclusive(async (state, save, signal) => {
       const readPolicy = async () => {
         const live = await selectCodexIntake(pluginData, deps);
