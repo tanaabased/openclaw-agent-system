@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { pendingRecoveryFeedback } from '../agent/issue-task-recovery.ts';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -874,6 +875,30 @@ describe('agent/codex-feedback', () => {
     assert.equal((await call('next')).status, 'idle');
     assert.equal(creates, 0);
   });
+  it('should preserve completed delivery and recovery eligibility when its source is edited', async () => {
+    const ref = await prepare(commenter, '@receiver initial question');
+    sent = true;
+    turn = 'feedback';
+    assert.equal((await call('context', ref, true)).status, 'verified');
+    const original = structuredClone((await store.read()).records[0]!.feedback!.events[0]!);
+    assert.equal(original.phase, 'delivered');
+    comments[0]!.body = '@receiver edited question';
+    comments[0]!.updatedAt = '2026-10-13T02:00:00Z';
+    const stale = await call('context', ref, true);
+    assert.equal(stale.status, 'blocked');
+    assert.equal('code' in stale && stale.code, 'feedback-source-changed');
+    assert.deepEqual((await store.read()).records[0]!.feedback!.events[0], original);
+    assert.equal(pendingRecoveryFeedback(original), false);
+    ended = true;
+    occurrence++;
+    const next = await call('next');
+    assert.equal(next.status, 'feedback-prepared');
+    const events = (await store.read()).records[0]!.feedback!.events;
+    assert.equal(events.length, 2);
+    assert.deepEqual(events[0], original);
+    assert.equal(pendingRecoveryFeedback(events[1]!), true);
+  });
+
   it('should settle verified native delivery while its response is still running', async () => {
     await prepare(commenter, '@receiver why this approach?');
     await store.exclusive(async (state, save) => {

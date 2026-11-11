@@ -181,18 +181,6 @@ export async function scanOpenClawFeedback(input: {
           owner: intake.repository.owner.login,
           name: intake.repository.name,
         };
-        const invalidate = (nodeId: string, revisions: Map<string, string>) => {
-          for (const event of feedback.events)
-            if (
-              event.nodeId === nodeId &&
-              event.phase !== 'blocked' &&
-              revisions.has(event.sourceId) &&
-              revisions.get(event.sourceId) !== event.revision
-            ) {
-              event.phase = 'blocked';
-              event.code = 'feedback-source-changed';
-            }
-        };
         const sources = feedbackSources(record, intake, feedback);
         let served = false;
         for (const source of sources) {
@@ -216,7 +204,7 @@ export async function scanOpenClawFeedback(input: {
               continue;
             }
           }
-          invalidate(source.nodeId, await discoverFeedback({ ...common, ...source }));
+          await discoverFeedback({ ...common, ...source });
           delete feedback.discoveryStalls?.[target];
           updateStallCode();
         }

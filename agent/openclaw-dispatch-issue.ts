@@ -254,36 +254,42 @@ export default class OpenClawDispatchIssue {
           return openClawFeedback({ ...common, action });
         });
     } catch (error) {
+      // A failed context read cannot undo confirmed native delivery.
+      const failedEvent = event.phase === 'delivered' ? { ...event } : event;
       if (error instanceof WorkflowPolicyHeld) {
-        event.policyHeld = error.reason;
-        await save();
+        failedEvent.policyHeld = error.reason;
+        if (failedEvent === event) await save();
         return {
           status: 'policy-held' as const,
           id: record.id,
-          eventId: event.id,
+          eventId: failedEvent.id,
           reason: error.reason,
           nextAction: 'next',
         };
       }
       const code = openClawDispatchFailureCode(error);
-      event.code = code;
-      scheduleDispatchRetry(event, code, error, now);
+      failedEvent.code = code;
+      scheduleDispatchRetry(failedEvent, code, error, now);
       // unknown transport outcomes retain custody; terminal failures release the queued work.
       if (
-        !event.retry &&
+        !failedEvent.retry &&
         /revoked|authority-changed|owner-changed|source-(?:changed|identity-changed|author-changed|no-longer-eligible)|resource-missing|denied|turn-(?:failed|cancelled)|publication-(?:text|secret|output|reconciliation)|session-mismatch/.test(
           code,
         )
       ) {
-        event.phase = 'blocked';
-        record.feedback!.lastServedAt = now;
+        failedEvent.phase = 'blocked';
+        if (failedEvent === event) record.feedback!.lastServedAt = now;
       }
-      if (dispatchFailurePhase(event, code, error) === 'blocked') event.phase = 'blocked';
-      await save();
+      if (dispatchFailurePhase(failedEvent, code, error) === 'blocked')
+        failedEvent.phase = 'blocked';
+      if (failedEvent === event) await save();
       return {
-        status: event.phase === 'blocked' ? 'blocked' : dispatchFailureStatus(event, code, error),
+        status:
+          failedEvent.phase === 'blocked'
+            ? 'blocked'
+            : dispatchFailureStatus(failedEvent, code, error),
         id: record.id,
-        eventId: event.id,
+        eventId: failedEvent.id,
         nextAction: 'next',
         ...workflowFailure(error, code),
         code,
