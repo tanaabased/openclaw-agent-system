@@ -70,6 +70,72 @@ describe('channels/github/identity-cache', () => {
     assert.deepEqual(new Set(references), new Set(['@actor', 'U_actor']));
   });
 
+  it('should resolve feedback authors independently of recipients and excluded assigners', async () => {
+    const input = policy();
+    input.issueAssignment!.feedback = { inherit: false, allowed: [{ ...reviewer }] };
+    input.issueAssignment!.pullRequest = {
+      recipients: [{ login: 'recipient', nodeId: 'U_recipient', roles: ['reviewer'] }],
+    };
+    const references: string[] = [];
+    await new GitHubIdentityCache({ root, scope: 'feedback' }).resolve(
+      input,
+      {
+        resolveIdentity: async (reference) => {
+          references.push(reference);
+          if (reference !== reviewer.nodeId) throw new Error('unrelated-identity-unavailable');
+          return { ...reviewer };
+        },
+      },
+      'feedback',
+      true,
+    );
+    assert.deepEqual(references, [reviewer.nodeId]);
+    assert.deepEqual(
+      feedbackIdentities(input.issueAssignment!.allowed, input.issueAssignment!.feedback),
+      [{ login: reviewer.login, nodeId: reviewer.nodeId }],
+    );
+  });
+
+  it('should retain inherited author verification and reject required identity failures', async () => {
+    const input = policy();
+    const references: string[] = [];
+    await new GitHubIdentityCache({ root, scope: 'inherited' }).resolve(
+      input,
+      {
+        resolveIdentity: async (reference) => {
+          references.push(reference);
+          return resolveIdentity(reference);
+        },
+      },
+      'feedback',
+      true,
+    );
+    assert.deepEqual(new Set(references), new Set(['@actor', 'U_actor', reviewer.nodeId]));
+    await assert.rejects(
+      new GitHubIdentityCache({ root, scope: 'failed-author' }).resolve(
+        policy(),
+        {
+          resolveIdentity: async () => {
+            throw new Error('author-unavailable');
+          },
+        },
+        'feedback',
+      ),
+      /author-unavailable/,
+    );
+    await assert.rejects(
+      new GitHubIdentityCache({ root, scope: 'changed-author' }).resolve(
+        input,
+        {
+          resolveIdentity: async () => ({ ...reviewer, nodeId: 'U_wrong' }),
+        },
+        'feedback',
+        true,
+      ),
+      /github-identity-conflict/,
+    );
+  });
+
   it('should batch retained immutable pins during scans while preserving rename and conflict checks', async () => {
     const cache = new GitHubIdentityCache({ root, scope: 'batch' });
     await cache.resolve(policy(), { resolveIdentity });
