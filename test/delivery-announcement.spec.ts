@@ -1,3 +1,4 @@
+import { mock } from 'node:test';
 import hydrateImplementation from './implementation-material-fixture.ts';
 import type { ImplementationMaterialRead } from '../agent/implementation-material.ts';
 import assert from 'node:assert/strict';
@@ -552,6 +553,32 @@ describe('agent/delivery-announcement', () => {
     }
     assert.equal(posts, 1);
     assert.equal(reads, before);
+  });
+  it('should drain confirmed content and preserve the receipt when its card renderer fails', async () => {
+    await candidate();
+    const body = delivery.announcement!.publicText!;
+    const original = String.prototype.replace;
+    const stub = mock.method(
+      String.prototype,
+      'replace',
+      function (this: string, ...args: Parameters<typeof original>) {
+        if (String(this) === body && String(args[0]) === String(/\r\n|\r/gu))
+          throw new Error('card formatter unavailable');
+        return original.apply(this, args);
+      },
+    );
+    try {
+      const result = await run('announce');
+      assert.equal(result.status, 'announced');
+      assert.ok('presentation' in result && result.presentation?.includes('#issuecomment-1'));
+      assert.equal(delivery.announcement!.publicText, undefined);
+      assert.equal(delivery.announcement!.publication, undefined);
+      assert.deepEqual(delivery.announcement!.receipt, { nodeId: 'IC_1', databaseId: 1 });
+      assert.equal((await run('announce')).status, 'announced');
+      assert.equal(posts, 1);
+    } finally {
+      stub.mock.restore();
+    }
   });
   it('should identify a later published head only for the same reconciled pr', async () => {
     await candidate();

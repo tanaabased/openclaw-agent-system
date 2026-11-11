@@ -1,3 +1,4 @@
+import safePresentation from './safe.ts';
 import { githubNotificationMarkdownText, githubNotificationQuote } from './card.ts';
 import mentionLinks from './mention-links.ts';
 
@@ -26,30 +27,45 @@ export function githubCommentCard(
   input: GitHubCommentCardInput,
   { style = 'quoted' }: { style?: 'quoted' | 'unquoted' } = {},
 ): string {
-  const label =
-    'url' in input.publication
-      ? `[${input.label} ↗](${input.publication.url})`
-      : `${input.label} draft`;
-  const author = input.author
-    ? `[@${githubNotificationMarkdownText(input.author.label)}](${input.author.url})`
-    : 'author unavailable';
-  const body = input.body.replace(/\r\n|\r/gu, '\n');
-  const card = `${body}\n\n&nbsp;  \n*${label} ${input.connector} ${author}*`;
-  return style === 'quoted' ? githubNotificationQuote(card) : card;
+  return safePresentation(
+    () => {
+      const label =
+        'url' in input.publication
+          ? `[${input.label} ↗](${input.publication.url})`
+          : `${input.label} draft`;
+      const author = input.author
+        ? `[@${githubNotificationMarkdownText(input.author.label)}](${input.author.url})`
+        : 'author unavailable';
+      const body = input.body.replace(/\r\n|\r/gu, '\n');
+      const card = `${body}\n\n&nbsp;  \n*${label} ${input.connector} ${author}*`;
+      return style === 'quoted' ? githubNotificationQuote(card) : card;
+    },
+    () =>
+      [
+        input.body,
+        `${input.label} ${'url' in input.publication ? input.publication.url : '(draft)'}`,
+        input.author ? `Author: ${input.author.label} (${input.author.url})` : 'Author unavailable',
+      ].join('\n\n'),
+  );
 }
 
 /** link incoming prose mentions without changing the retained provider source. */
 export function githubNotificationCommentPresentation(
   projection: GitHubNotificationCommentEventProjection,
 ): string {
-  return githubCommentCard(
-    {
-      body: mentionLinks(projection.body),
-      author: projection.author,
-      label: 'Comment',
-      connector: 'from',
-      publication: { url: projection.item.url },
-    },
-    { style: 'unquoted' },
+  return safePresentation(
+    () =>
+      githubCommentCard(
+        {
+          body: mentionLinks(projection.body),
+          author: projection.author,
+          label: 'Comment',
+          connector: 'from',
+          publication: { url: projection.item.url },
+        },
+        { style: 'unquoted' },
+      ),
+    () =>
+      `${projection.body}\n\nComment: ${projection.item.url}\nAuthor: ${projection.author.label} (${projection.author.url})`,
   );
 }

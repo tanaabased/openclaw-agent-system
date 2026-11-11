@@ -1,3 +1,4 @@
+import safePresentation from '../channels/github/presentation/safe.ts';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { cardCopyInstructions } from '../channels/github/presentation/card.ts';
@@ -97,15 +98,38 @@ export default function renderNativeAssessment(
       runtime,
       status: 'formatted' as const,
       retained: false as const,
-      presentation: renderAssessmentResult(assessment, {
-        issue: {
-          label: `${target.owner}/${target.name}#${target.number}`,
-          url: input.target,
-          kind: target.itemType === 'pull-request' ? 'Pull request' : 'Issue',
-        },
-        cards: context ? assessmentContextCards(context) : undefined,
-        assessmentOnly: input.assessmentOnly,
-      }),
+      presentation: safePresentation(
+        () =>
+          renderAssessmentResult(assessment, {
+            issue: {
+              label: `${target.owner}/${target.name}#${target.number}`,
+              url: input.target,
+              kind: target.itemType === 'pull-request' ? 'Pull request' : 'Issue',
+            },
+            cards: context ? assessmentContextCards(context) : undefined,
+            assessmentOnly: input.assessmentOnly,
+          }),
+        () =>
+          [
+            assessment.summary,
+            assessment.reviewSummary,
+            assessment.outcome === 'clarification-needed'
+              ? assessment.questions.join('\n\n')
+              : assessment.outcome === 'operator-setup-blocker'
+                ? `${assessment.code}: ${assessment.remediation}`
+                : '',
+            input.target,
+            input.assessmentOnly
+              ? 'Assessment only. No implementation or publication is authorized.'
+              : '',
+            assessment.decision
+              ? `Auto decision: ${assessment.decision.mode}\n${assessment.decision.reasons.join('\n')}`
+              : '',
+            'Card formatting unavailable; continue under existing authorization.',
+          ]
+            .filter(Boolean)
+            .join('\n\n'),
+      ),
       instructions:
         cardCopyInstructions +
         " The complete assessment stays in native conversation; Agent System has not saved it. Include the complete presentation, with all routing, decision and debug cards, in this turn's final response. Commentary or progress output does not count as final presentation. Append any Task Update publication outcome and current blocker to that final response without replacing the assessment cards or duplicating the full engineering source. Continue from native conversation and current direction; do not record or reinject this assessment. Formatting grants no implementation or publication authority. Publish the concise review through Task Update only within its existing authorization.",

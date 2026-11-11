@@ -157,10 +157,18 @@ export function announcementPresentation(
 }
 
 function completeAnnouncement(state: DeliveryAnnouncementState, issueUrl: string, show: boolean) {
+  const publicText = state.publicText;
+  delete state.publicText;
+  delete state.publication;
+  delete state.composition;
+  delete state.snapshot.title;
+  delete state.snapshot.body;
+  delete state.snapshot.draft;
+  delete state.code;
   const presentation =
-    show && state.publicText
+    show && publicText
       ? githubCommentCard({
-          body: state.publicText,
+          body: publicText,
           author: state.authorLogin
             ? {
                 label: state.authorLogin,
@@ -172,13 +180,6 @@ function completeAnnouncement(state: DeliveryAnnouncementState, issueUrl: string
           publication: { url: `${issueUrl}#issuecomment-${state.receipt!.databaseId}` },
         })
       : '';
-  delete state.publicText;
-  delete state.publication;
-  delete state.composition;
-  delete state.snapshot.title;
-  delete state.snapshot.body;
-  delete state.snapshot.draft;
-  delete state.code;
   return { status: 'announced' as const, receipt: state.receipt!, presentation };
 }
 

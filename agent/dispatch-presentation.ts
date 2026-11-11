@@ -11,7 +11,12 @@ export function dispatchAssessmentContext(
   workspace: string,
   presentation: WorkflowInstructionsPresentation & { routingManifestPath?: string } = {},
 ) {
-  const decision = record.routing ? (JSON.parse(record.routing) as RoutingDecision) : undefined;
+  let decision: RoutingDecision | undefined;
+  try {
+    decision = record.routing ? JSON.parse(record.routing) : undefined;
+  } catch {
+    // optional display metadata never invalidates native ownership or the assessment.
+  }
   return {
     ...presentation,
     workflow: presentation.workflow && {

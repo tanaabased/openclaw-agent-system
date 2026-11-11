@@ -1,3 +1,4 @@
+import safePresentation from './safe.ts';
 import publicResponsePresentation from './public-response.ts';
 import { githubCommentCard } from './comment.ts';
 import {
@@ -31,32 +32,49 @@ export default function feedbackResponse(
     publication?: { url: string } | { withheld: string };
   },
 ): string {
-  const comparable = (text: string) => text.replace(/\r\n?/gu, '\n').trim();
-  const publicText = input.publicReply ? comparable(input.publicReply.text) : undefined;
-  const privateText = comparable(input.privateText);
-  // publication may prepend a standalone verified commenter mention; keep it in the quote.
-  const repeated =
-    publicText !== undefined &&
-    (privateText === publicText ||
-      privateText === publicText.replace(/^@[A-Za-z0-9][A-Za-z0-9-]*\n\n/u, ''));
-  const sections: string[] = [];
-  if (!repeated && privateText) sections.push(input.privateText);
-  if (input.publicReply)
-    sections.push(
-      feedbackReplyPresentation(
-        input.publicReply.author,
-        input.publicReply.text,
-        input.publication && 'url' in input.publication ? input.publication.url : undefined,
-      ),
-    );
-  if (input.publication && 'withheld' in input.publication)
-    sections.push(
-      publicResponsePresentation({
-        kind: 'Public reply',
-        code: input.publication.withheld,
-        attempted: /unconfirmed/.test(input.publication.withheld),
-        withheld: /private-only|not-required|self-publication/.test(input.publication.withheld),
-      }),
-    );
-  return sections.join('\n\n');
+  return safePresentation(
+    () => {
+      const comparable = (text: string) => text.replace(/\r\n?/gu, '\n').trim();
+      const publicText = input.publicReply ? comparable(input.publicReply.text) : undefined;
+      const privateText = comparable(input.privateText);
+      // publication may prepend a standalone verified commenter mention; keep it in the quote.
+      const repeated =
+        publicText !== undefined &&
+        (privateText === publicText ||
+          privateText === publicText.replace(/^@[A-Za-z0-9][A-Za-z0-9-]*\n\n/u, ''));
+      const sections: string[] = [];
+      if (!repeated && privateText) sections.push(input.privateText);
+      if (input.publicReply)
+        sections.push(
+          feedbackReplyPresentation(
+            input.publicReply.author,
+            input.publicReply.text,
+            input.publication && 'url' in input.publication ? input.publication.url : undefined,
+          ),
+        );
+      if (input.publication && 'withheld' in input.publication)
+        sections.push(
+          publicResponsePresentation({
+            kind: 'Public reply',
+            code: input.publication.withheld,
+            attempted: /unconfirmed/.test(input.publication.withheld),
+            withheld: /private-only|not-required|self-publication/.test(input.publication.withheld),
+          }),
+        );
+      return sections.join('\n\n');
+    },
+    () =>
+      [
+        input.privateText,
+        input.publicReply?.text,
+        input.publicReply?.author ? `Author: ${input.publicReply.author}` : '',
+        input.publication
+          ? 'url' in input.publication
+            ? `Published: ${input.publication.url}`
+            : `Publication unconfirmed or withheld: ${input.publication.withheld}`
+          : 'Reply draft',
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+  );
 }
