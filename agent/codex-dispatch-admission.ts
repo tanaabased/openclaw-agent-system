@@ -64,6 +64,7 @@ import routingInstructions, {
 } from './routing-instructions.ts';
 import workflowFailure from './workflow-failure.ts';
 import deliverTaskInput from './task-input-delivery.ts';
+import { codexNativeHandoff } from './codex-dispatch-handoff.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
 async function verifySelectedPullRequest(
   record: DispatchRecord,
@@ -898,8 +899,9 @@ export async function prepareDispatch(
       changed: true,
       id: record.id,
       request: record.request,
+      nativeHandoff: codexNativeHandoff('create_thread', request),
       instruction:
-        'Next, call native create_thread once with this request unchanged. Do not call prepare again to retrieve or reauthorize it. In a code orchestration tool, parse this response and pass its request object directly to create_thread; do not reconstruct the prompt. Reconcile only the receipt returned by that call, never one from history or another assessment, even for the same issue. If the call fails or its outcome is unknown, reconcile without a receipt; never repeat an uncertain creation.',
+        'Execute nativeHandoff exactly once in a separate functions.exec call. It contains the complete native create_thread request; do not reconstruct it or call prepare again to retrieve it. Then reconcile the original attempt using the receipt returned by that call. If execution was omitted, failed, or its outcome is unknown, reconcile without a receipt; never execute an old handoff again.',
       ...creationRecovery(record, 'create'),
     };
   } catch (error) {

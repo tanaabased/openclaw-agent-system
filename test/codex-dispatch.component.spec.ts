@@ -2927,6 +2927,38 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual((state.records as { request: unknown }[])[0]!.request, prepared.request);
   });
 
+  it('should recover a lost response from the returned creation handoff without another creation', async () => {
+    const prepared = await prepare();
+    assert.equal(typeof prepared.nativeHandoff, 'string');
+    let creations = 0;
+    await assert.rejects(
+      runInNewContext('(async () => {' + prepared.nativeHandoff + '})()', {
+        text: () => {},
+        tools: {
+          mcp__codex_app__create_thread: async (input: unknown) => {
+            assert.deepEqual(JSON.parse(JSON.stringify(input)), prepared.request);
+            creations++;
+            created();
+            throw new Error('native response lost');
+          },
+        },
+      }),
+      /native response lost/,
+    );
+    const recovered = await request('reconcile', { id: prepared.id });
+    assert.equal(recovered.status, 'created');
+    assert.equal(recovered.threadId, 'issue-thread');
+    assert.equal(recovered.nativeHandoff, undefined);
+    const again = await request('prepare', {
+      id: prepared.id,
+      title: 'repair contained behavior',
+      assessment: { complexity: 'medium', reason: 'Same request.' },
+    });
+    assert.equal(again.status, 'reconcile-required');
+    assert.equal(again.nativeHandoff, undefined);
+    assert.equal(creations, 1);
+  });
+
   it('should report unknown creation outcomes immediately without a pending receipt', async () => {
     const prepared = await prepare();
     const unknown = await request('reconcile', { id: prepared.id });
@@ -3011,8 +3043,20 @@ describe('agent/codex-dispatch', () => {
       ).status,
       'reconcile-required',
     );
-    created();
+    let creations = 0;
+    await runInNewContext('(async () => {' + retry.nativeHandoff + '})()', {
+      text: () => {},
+      tools: {
+        mcp__codex_app__create_thread: async (input: unknown) => {
+          assert.deepEqual(JSON.parse(JSON.stringify(input)), retry.request);
+          creations++;
+          created();
+          return { threadId: 'issue-thread' };
+        },
+      },
+    });
     assert.equal((await request('reconcile', { id: retry.id })).status, 'created');
+    assert.equal(creations, 1);
   });
 
   it('should preserve an uncertain request when absence cannot be proved', async () => {
@@ -3226,7 +3270,18 @@ describe('agent/codex-dispatch', () => {
         archived: true,
       });
       assert.equal((await record()).worktree, moved);
-      native!.archived = true;
+      const archives: unknown[] = [];
+      await runInNewContext('(async () => {' + attempt.nativeHandoff + '})()', {
+        text: () => {},
+        tools: {
+          mcp__codex_app__set_thread_archived: async (input: unknown) => {
+            archives.push(JSON.parse(JSON.stringify(input)));
+            native!.archived = true;
+            return {};
+          },
+        },
+      });
+      assert.deepEqual(archives, [attempt.request]);
       native!.cwd = source;
       await next();
       assert.equal((await record()).retirement?.code, 'retirement-native-reclamation-pending');

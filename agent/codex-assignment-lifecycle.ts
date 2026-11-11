@@ -3,6 +3,7 @@ import cleanupConfiguration from './cleanup-configuration.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import type { CodexDispatchDependencies } from './codex-dispatch-context.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
+import { codexNativeHandoff } from './codex-dispatch-handoff.ts';
 import { verifyDispatchWorktree } from './codex-dispatch-project.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';
@@ -304,7 +305,12 @@ export default async function reconcileCodexLifecycle(
           return result;
         },
       });
-      if (prepared) return { status: 'retirement-prepared', ...prepared };
+      if (prepared)
+        return {
+          status: 'retirement-prepared',
+          ...prepared,
+          nativeHandoff: codexNativeHandoff('set_thread_archived', prepared.request),
+        };
       if (needsInventory)
         return {
           status: 'retirement-inventory-required',

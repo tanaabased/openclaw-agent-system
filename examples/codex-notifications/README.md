@@ -30,7 +30,7 @@ conversation remains usable independently of the schedule.
 
 ### Native Acceptance Inventory
 
-- **Feedback send recovery:** admit one approved issue comment, PR comment, and inline review comment. Execute each returned `nativeHandoff` without a preceding JavaScript store write and verify the exact source reaches its existing issue chat once. End one coordinator turn after preparation but before sending; the next occurrence must use complete native history to recover that input. Lose a native send response after acceptance and verify reconciliation does not resend. Denied sends and incomplete history must remain visible obstacles while unrelated comments continue. These are Codex desktop checks; the headless scenario cannot establish native delivery. OpenClaw already sends through its enrolled session adapter and does not use this Codex handoff.
+- **Assignment and feedback handoffs:** execute the returned assignment `nativeHandoff` without JavaScript store/load support and verify one issue chat with its configured model, effort, and checkout. Then admit one approved issue comment, PR comment, and inline review comment. Execute each returned `nativeHandoff` the same way and verify the exact source reaches its existing issue chat once. For assignment and feedback separately, end one coordinator turn after preparation but before the native call; the next occurrence must use complete native history to recover the unsubmitted operation. Lose a native response after acceptance and verify reconciliation does not repeat creation or delivery. Denied sends and incomplete history must remain visible obstacles while unrelated comments continue. These are Codex desktop checks; the headless scenario cannot establish native delivery. OpenClaw already sends through its enrolled session adapter and does not use this Codex handoff.
 
 - **Selected automation isolation:** in isolated Codex desktop state, activate assignment and pickup, then add an unrelated malformed or unsupported saved definition. Verify each healthy selected job can still accept eligible work. Invalid selected definitions and copied ownership claims must still stop activation; Install must still reject an invalid full inventory. OpenClaw receives structured jobs from its native scheduler rather than parsing saved Codex TOML, so this read-isolation defect is Codex-specific. Controlled fixtures cover both activation consumers; native desktop execution remains unrun until actual receipts are captured.
 
@@ -405,7 +405,7 @@ assert.ok(block, 'installed schedule must contain its execution block');
 const calls = [];
 await runInNewContext('(async () => {' + block + '})()', {
   runtimeRoute: 'continuation', runtimeInput: { action: 'next' },
-  load: () => undefined, store: () => {}, text: () => {},
+  text: () => {},
   tools: { exec_command: async request => {
     calls.push(request);
     return { exit_code: 0, output: JSON.stringify({ status: 'idle' }) };
@@ -442,7 +442,7 @@ symlinkSync(previous, node);
 const results = [];
 const context = {
   runtimeRoute: 'intake', runtimeInput: { action: 'failure-response', automationId: 'disposable', code: 'codex-runtime-failed' },
-  load: () => undefined, store: () => {}, text: value => results.push(value),
+  text: value => results.push(value),
   tools: { exec_command: async ({cmd}) => {
     const result = spawnSync('/bin/sh', ['-c', cmd], { encoding: 'utf8', env: {...process.env, PATH:bin}, timeout:10000 });
     assert.ifError(result.error);

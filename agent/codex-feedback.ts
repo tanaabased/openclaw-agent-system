@@ -10,7 +10,7 @@ import codexContinuationNative from './codex-continuation-native.ts';
 import type { CodexDispatchDependencies } from './codex-dispatch-context.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
 import unsubmittedNativeRequest from './codex-dispatch-unsubmitted.ts';
-import { codexFeedbackHandoff } from './codex-dispatch-handoff.ts';
+import { codexNativeHandoff } from './codex-dispatch-handoff.ts';
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
 import type { FeedbackEvent } from './codex-feedback-state.ts';
 import authorizeCodexFeedback from './codex-feedback-authority.ts';
@@ -419,7 +419,7 @@ export default async function runCodexFeedback(
                 id: record.id,
                 eventId: event.id,
                 request: attempt.request,
-                nativeHandoff: codexFeedbackHandoff(attempt.request),
+                nativeHandoff: codexNativeHandoff('send_message_to_thread', attempt.request),
               };
             }
             {
