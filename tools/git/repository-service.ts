@@ -50,8 +50,9 @@ export class RepositoryPreparationError extends Error {
     readonly code: string,
     readonly path: string,
     readonly identity?: string,
+    options?: ErrorOptions,
   ) {
-    super(code);
+    super(code, options);
   }
 }
 

@@ -38,7 +38,7 @@ import codexIssueBranch from './codex-issue-branch.ts';
 import codexSessionSettings from './codex-session-settings.ts';
 import dispatchContext from './dispatch-context.ts';
 import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
-import { dispatchRecheckable } from './dispatch-retry.ts';
+import { dispatchRecheckable, repositoryPreparationFailure } from './dispatch-retry.ts';
 import dispatchRoutingAssessment from './dispatch-routing-assessment.ts';
 import { dispatchStoragePressure } from './dispatch-storage.ts';
 import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
@@ -511,7 +511,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
         (!record ||
           record.blocker === undefined ||
           Boolean(record.retry) ||
-          dispatchRecheckable(record.blocker) ||
+          dispatchRecheckable(record.blocker, true) ||
           (record.blocker === 'dispatch-creation-not-prepared' && unpreparedDispatch(record)) ||
           record.intakeId !== intake.id) &&
         (record?.retryAfter ?? 0) <= now,
@@ -566,7 +566,7 @@ export async function prepareIssueProject(
   tx: CodexDispatchTransaction,
 ) {
   const { current, deps, state, activation, now, signal, save, fresh } = tx;
-  const fail = (record: DispatchRecord, error: unknown) => failDispatch(record, error, tx);
+  let repositoryPreparation = false;
   assertDispatchProjectInventory(input.projects);
   try {
     if (!record.manualIssue && !('initiation' in intake)) {
@@ -576,6 +576,7 @@ export async function prepareIssueProject(
     const { client, repo } = await revalidateDispatchAssignment(current, intake, deps, signal);
     const waiting = await selectClaim(record, intake, client, tx);
     if (waiting) return waiting;
+    repositoryPreparation = true;
     const configuration = current.manifest.git?.worktrees ?? {};
     const repositoryId = 'github-' + repo.databaseId;
     const layout = resolveGitWorktreeLayout(current.workspace, configuration);
@@ -664,8 +665,10 @@ export async function prepareIssueProject(
     }
     if (record.adoptedPullRequest && project.commit !== record.adoptedPullRequest.head)
       throw new Error('launch-pr-head-changed');
+    repositoryPreparation = false;
     await verifySelectedPullRequest(record, intake, tx);
     if (record.adoptedPullRequest) {
+      repositoryPreparation = true;
       const base = record.adoptedPullRequest.base;
       const git = deps.git ?? dispatchGit;
       await git(project.path, ['check-ref-format', `refs/heads/${base}`], signal);
@@ -675,6 +678,7 @@ export async function prepareIssueProject(
         signal,
       );
     }
+    repositoryPreparation = false;
     const context = await client.getItemContext(
       repo.owner.login,
       repo.name,
@@ -728,7 +732,12 @@ export async function prepareIssueProject(
     await save();
     return dispatchRoutingRequired(record, current, true);
   } catch (error) {
-    return fail(record, error);
+    return failDispatch(
+      record,
+      repositoryPreparation ? repositoryPreparationFailure(error) : error,
+      tx,
+      repositoryPreparation,
+    );
   }
 }
 export async function prepareDispatch(

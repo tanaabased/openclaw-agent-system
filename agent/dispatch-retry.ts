@@ -73,8 +73,47 @@ const recheckable = new Set([
   'dispatch-assignment-superseded',
 ]);
 
-export function dispatchRecheckable(code: string | undefined) {
-  return code !== undefined && recheckable.has(code);
+// Only repository preparation can re-run these guards and reconcile its retained Git attempt.
+// Identity/ownership conflicts and submitted native effects are deliberately outside this scope.
+const repositoryPrerequisites = new Set([
+  'dispatch-project-path-unsafe',
+  'dispatch-starting-ref-invalid',
+  'dispatch-project-git-unavailable',
+  'repository-git-unavailable',
+  'repository-path-unsafe',
+  'repository-path-missing',
+  'repository-clone-interrupted',
+  'repository-workspace-interrupted',
+  'repository-io-unavailable',
+]);
+
+/** keep repairable local I/O failures identifiable across saved preparation attempts. */
+export function repositoryPreparationFailure(error: unknown) {
+  const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+  return typeof code === 'string' &&
+    [
+      'ENOSPC',
+      'EDQUOT',
+      'EROFS',
+      'EMFILE',
+      'ENFILE',
+      'EIO',
+      'EBUSY',
+      'ENOENT',
+      'EEXIST',
+      'ENOTDIR',
+    ].includes(code)
+    ? new Error('repository-io-unavailable', { cause: error })
+    : error;
+}
+
+export function dispatchRecheckable(code: string | undefined, repositoryPreparation = false) {
+  return (
+    code !== undefined &&
+    (recheckable.has(code) ||
+      (repositoryPreparation &&
+        (repositoryPrerequisites.has(code) || /^git-[a-z-]+-exit-(?:\d+|terminated)$/.test(code))))
+  );
 }
 
 function explicitStop(code: string) {
@@ -90,14 +129,16 @@ export function scheduleDispatchRetry(
   code: string,
   error: unknown,
   now: number,
+  repositoryPreparation = false,
 ) {
   const diagnostic = workflowFailure(error, code).providerDiagnostic;
   record.providerDiagnostic = diagnostic;
-  // Local inventory reads can fail with an unclassified Git configuration error.
+  // Git may classify local locks, disk failures, and configuration errors as unknown.
   const recheck =
-    dispatchRecheckable(code) &&
+    dispatchRecheckable(code, repositoryPreparation) &&
     (!diagnostic ||
-      (code === 'dispatch-project-inventory-unavailable' &&
+      ((code === 'dispatch-project-inventory-unavailable' ||
+        (repositoryPreparation && diagnostic.provider === 'git')) &&
         diagnostic.classification === 'unknown'));
   const retryable =
     !explicitStop(code) &&
@@ -119,10 +160,10 @@ export function scheduleDispatchRetry(
   return true;
 }
 
-export function dispatchRetryDue(record: RetryState, now: number) {
+export function dispatchRetryDue(record: RetryState, now: number, repositoryPreparation = false) {
   return record.retry
     ? record.retryAfter !== undefined && record.retryAfter <= now
-    : dispatchRecheckable(record.blocker);
+    : dispatchRecheckable(record.blocker, repositoryPreparation);
 }
 
 /** durable stops name an actual authority or task decision; uncertainty is waiting. */

@@ -87,6 +87,7 @@ export default async function prepareDispatchRepository(
               'repository-git-unavailable',
               selected.path,
               identity,
+              { cause: error },
             );
           throw error;
         }

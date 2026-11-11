@@ -3,6 +3,7 @@ import {
   dispatchFailurePhase,
   dispatchFailureStatus,
   dispatchRetryDue,
+  repositoryPreparationFailure,
   scheduleDispatchRetry,
 } from '../agent/dispatch-retry.ts';
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
@@ -85,6 +86,87 @@ describe('agent/dispatch-retry', () => {
         false,
       );
       assert.equal(record.retryAfter, undefined);
+    }
+  });
+
+  it('should recheck repository failures only within preparation and retain provider backoff', () => {
+    const diagnostic = providerDiagnostic('git', 'git-command', 'unknown');
+    for (const code of [
+      'dispatch-project-git-unavailable',
+      'repository-git-unavailable',
+      'git-fetch-lock-exit-128',
+      'git-clone-disk-full-exit-128',
+      'git-worktree-preparation-unknown-exit-1',
+      'repository-path-unsafe',
+      'repository-path-missing',
+      'repository-io-unavailable',
+      'repository-clone-interrupted',
+      'repository-workspace-interrupted',
+      'dispatch-project-path-unsafe',
+      'dispatch-starting-ref-invalid',
+    ]) {
+      const record = { blocker: code } as SharedDispatchRecord;
+      assert.equal(dispatchRetryDue(record, 1), false);
+      assert.equal(dispatchRetryDue(record, 1, true), true);
+      const error = code.includes('git') ? { providerDiagnostic: diagnostic } : undefined;
+      assert.equal(scheduleDispatchRetry(record, code, error, 0), false);
+      for (const now of [0, 300000, 600000]) {
+        assert.equal(scheduleDispatchRetry(record, code, error, now, true), true);
+        assert.equal(record.retryAfter, now + 300000);
+      }
+    }
+    for (const code of [
+      'repository-identity-conflict',
+      'repository-path-conflict',
+      'repository-preparation-changed',
+      'git-worktree-owner-mismatch',
+      'git-worktree-branch-exists',
+      'git-worktree-path-occupied',
+      'launch-pr-head-changed',
+      'dispatch-operation-cancelled',
+      'dispatch-creation-denied',
+      'unclassified-failure',
+    ]) {
+      const record = { blocker: code } as SharedDispatchRecord;
+      assert.equal(dispatchRetryDue(record, 1, true), false);
+      assert.equal(scheduleDispatchRetry(record, code, undefined, 0, true), false);
+    }
+    const record = {} as SharedDispatchRecord;
+    const error = {
+      providerDiagnostic: providerDiagnostic('git', 'git-command', 'rate-limit', {
+        resetAt: 900000,
+      }),
+    };
+    assert.equal(scheduleDispatchRetry(record, 'git-fetch-unknown-exit-128', error, 0, true), true);
+    assert.equal(record.retryAfter, 900000);
+  });
+
+  it('should retain repairable filesystem failures without masking host access or authority errors', () => {
+    for (const code of [
+      'ENOSPC',
+      'EDQUOT',
+      'EROFS',
+      'EMFILE',
+      'ENFILE',
+      'EIO',
+      'EBUSY',
+      'ENOENT',
+      'EEXIST',
+      'ENOTDIR',
+    ]) {
+      const original = Object.assign(new Error('local I/O failed'), { code });
+      const error = repositoryPreparationFailure(original) as Error;
+      assert.equal(error.message, 'repository-io-unavailable');
+      assert.equal(error.cause, original);
+    }
+    for (const code of [
+      'EPERM',
+      'EACCES',
+      'repository-identity-conflict',
+      'dispatch-creation-denied',
+    ]) {
+      const error = Object.assign(new Error(code), { code });
+      assert.equal(repositoryPreparationFailure(error), error);
     }
   });
 

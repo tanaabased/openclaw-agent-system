@@ -1,3 +1,4 @@
+import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
 import openClawEntryContext from '../agent/openclaw-entry-context.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
@@ -681,24 +682,74 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await record()).feedback!.admission?.after, first + 1000);
   });
 
-  it('should retry a transient worktree failure on a later occurrence without creating twice', async () => {
-    const input = await next();
-    const original = service.dependencies.worktrees.prepareGitHub;
-    service.dependencies.worktrees.prepareGitHub = async () => {
-      throw new Error('session-dispatch-connect-timeout');
-    };
-    const failure = await prepare(input);
-    assert.ok('code' in failure && failure.code === 'session-dispatch-connect-timeout');
-    const retained = await record();
-    assert.equal(retained.retry?.attempts, 1);
-    assert.equal(creates().length, 0);
-    service.dependencies.worktrees.prepareGitHub = original;
-    service.dependencies.now = () => retained.retryAfter!;
-    coordinator.runId = 'retry-intake';
-    const retry = await next();
-    assert.equal(retry.status, 'routing-required');
-    assert.equal((await prepare(retry)).status, 'session-created');
+  for (const failure of ['transport', 'fetch-lock', 'path-permissions', 'disk-full'] as const)
+    it(`should retry a repaired ${failure} worktree failure without creating twice`, async () => {
+      const input = await next();
+      const original = service.dependencies.worktrees.prepareGitHub;
+      service.dependencies.worktrees.prepareGitHub = async () => {
+        if (failure === 'fetch-lock')
+          throw new GitCommandError('fetch', {
+            exitCode: 128,
+            stderr: "Unable to create 'main.lock': File exists",
+          });
+        if (failure === 'disk-full')
+          throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+        if (failure === 'path-permissions')
+          throw new RepositoryPreparationError('repository-path-unsafe', root);
+        throw new Error('session-dispatch-connect-timeout');
+      };
+      const failed = await prepare(input);
+      assert.ok('code' in failed);
+      assert.equal(
+        failed.code,
+        failure === 'transport'
+          ? 'session-dispatch-connect-timeout'
+          : failure === 'fetch-lock'
+            ? 'git-fetch-lock-exit-128'
+            : failure === 'path-permissions'
+              ? 'repository-path-unsafe'
+              : 'repository-io-unavailable',
+      );
+      const retained = await record();
+      assert.equal(retained.retry?.attempts, 1);
+      assert.equal(creates().length, 0);
+      service.dependencies.worktrees.prepareGitHub = original;
+      coordinator.runId = 'before-retry';
+      assert.equal(
+        (await service.run(manifest, root, coordinator, { action: 'next' })).status,
+        'idle',
+      );
+      service.dependencies.now = () => retained.retryAfter!;
+      coordinator.runId = 'retry-intake';
+      const retry = await next();
+      assert.equal(retry.id, input.id);
+      assert.equal(retry.status, 'routing-required');
+      assert.equal((await prepare(retry)).status, 'session-created');
+      assert.equal(creates().length, 1);
+    });
+
+  it('should recover retained repository failures without replaying an existing native request', async () => {
+    const selected = await next();
+    const { journal } = await service.scope(manifest, root);
+    await journal.exclusive(async (state, save) => {
+      state.records[0]!.blocker = 'git-fetch-lock-exit-128';
+      state.records[0]!.failureStage = 'worktree';
+      await save();
+    });
+    coordinator.runId = 'repaired-retained-preparation';
+    const resumed = await next();
+    assert.equal(resumed.id, selected.id);
+    assert.equal((await prepare(resumed)).status, 'session-created');
     assert.equal(creates().length, 1);
+    await journal.exclusive(async (state, save) => {
+      state.records[0]!.blocker = 'git-fetch-lock-exit-128';
+      state.records[0]!.failureStage = 'worktree';
+      await save();
+    });
+    coordinator.runId = 'existing-native-request';
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal(creates().length, 1);
+    assert.equal((await record()).blocker, 'git-fetch-lock-exit-128');
   });
 
   it('should retry an already waiting collision with one durable worktree attempt', async () => {

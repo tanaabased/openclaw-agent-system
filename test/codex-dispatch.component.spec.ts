@@ -695,14 +695,20 @@ describe('agent/codex-dispatch', () => {
     assert.equal(((await readDispatchState()).records as DispatchRecord[]).length, 1);
   });
 
-  for (const failure of ['inventory', 'workspace'] as const) {
+  for (const failure of ['inventory', 'workspace', 'fetch-lock'] as const) {
     it(`should resume the same assignment after repairing local ${failure} preparation`, async () => {
       const originalGit = deps.git!;
       deps.git = async (cwd, argv, signal) => {
-        if (failure === 'inventory' && argv[0] === 'remote')
+        if (
+          (failure === 'inventory' && argv[0] === 'remote') ||
+          (failure === 'fetch-lock' && argv[0] === 'fetch')
+        )
           throw Object.assign(new Error('dispatch-project-git-unavailable'), {
             providerDiagnostic: providerDiagnostic('git', 'git-command', 'unknown', {
-              providerMessage: 'fatal: bad config line 1 in file .git/config',
+              providerMessage:
+                failure === 'inventory'
+                  ? 'fatal: bad config line 1 in file .git/config'
+                  : "Unable to create 'main.lock': File exists",
             }),
           });
         if (failure === 'workspace' && argv.includes('--is-bare-repository')) return 'true';
@@ -713,7 +719,9 @@ describe('agent/codex-dispatch', () => {
         failed.code,
         failure === 'inventory'
           ? 'dispatch-project-inventory-unavailable'
-          : 'dispatch-project-workspace-required',
+          : failure === 'workspace'
+            ? 'dispatch-project-workspace-required'
+            : 'dispatch-project-git-unavailable',
       );
       const before = ((await readDispatchState()).records as DispatchRecord[])[0]!;
       assert.equal(before.request, undefined);

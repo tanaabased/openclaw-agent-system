@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
+import workflowFailure from '../agent/workflow-failure.ts';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -141,6 +143,19 @@ describe('agent/codex-dispatch-repository', () => {
     assert.equal(retained?.checkout, undefined);
     assert.equal(fixture.git.calls.filter(({ argv }) => argv[0] === 'clone').length, 1);
     assert.ok(!fixture.git.calls.some(({ argv }) => argv.includes('--bare')));
+  });
+
+  it('should preserve provider diagnostics when repository preparation wraps a git failure', async () => {
+    const diagnostic = providerDiagnostic('git', 'git-command', 'rate-limit', { resetAt: 900000 });
+    fixture.git.execute = async () => {
+      throw Object.assign(new Error('dispatch-project-git-unavailable'), {
+        providerDiagnostic: diagnostic,
+      });
+    };
+    await assert.rejects(prepare(), (error: unknown) => {
+      assert.deepEqual(workflowFailure(error, 'failed').providerDiagnostic, diagnostic);
+      return true;
+    });
   });
 
   it('should reject a changed path after setup without a second clone', async () => {

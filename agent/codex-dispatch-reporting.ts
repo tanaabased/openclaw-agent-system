@@ -234,6 +234,7 @@ export async function failDispatch(
   record: DispatchRecord,
   error: unknown,
   tx: Pick<CodexDispatchTransaction, 'state' | 'admitted' | 'now' | 'save'>,
+  repositoryPreparation = false,
 ) {
   const { state, admitted, now, save } = tx;
   if (error instanceof WorkflowPolicyHeld)
@@ -263,7 +264,7 @@ export async function failDispatch(
   );
   record.blocker = failure.code;
   record.retryAfter = now + 300000;
-  scheduleDispatchRetry(record, code(error), error, now);
+  scheduleDispatchRetry(record, code(error), error, now, repositoryPreparation && !record.request);
 
   const shared = ['authentication', 'missing-credential'].includes(
     workflowFailure(error, 'dispatch-operation-failed').providerDiagnostic?.classification ?? '',
