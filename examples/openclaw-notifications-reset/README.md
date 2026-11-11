@@ -19,6 +19,7 @@ assignment baseline, and restores enabled intake alongside paused pickup.
 - Setup creates one real assessment, closes its issue, removes its worktree publicly, and observes retirement before reset. The surviving consumed-assignment tracking makes reset verification meaningful without depending on the full retirement/fresh-assignment journey.
 - Strict AIMock reuses the existing assessment protocol. The Gateway, native coordinator, reset command, automation, and receipts remain real.
 - A disposable milestone enrolls paused pickup without running another model turn. Assignment/allowance retention and partial recovery stay in controlled source coverage.
+- Ordinary-origin acceptance requires a retained task launched from the agent's main chat without per-chat `workspaceDir`: reset must wait while that origin has active work or pending input, then finish without archiving the origin. An actual coordinator in another workspace must still be rejected. Controlled adapter tests cover these cases; this installed scenario does not create a manual-launch origin.
 - One 61-second setup wait observes retirement; zero cleanup grace does not bypass the lifecycle observation interval. Reset diagnostics preserve safe phase/operation details and keep raw provider errors private.
 - CI owns its disposable issue, workspaces/state, and SSH registration. Only Tanaabot is assigned. Scoped refreshes and a 24-hour schedule isolate discovery; cleanup stops the Gateway before external changes.
 

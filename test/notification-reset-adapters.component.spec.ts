@@ -84,6 +84,183 @@ describe('agent/notification reset runtime adapters', () => {
     };
   }
 
+  async function ordinaryOpenClawOrigin() {
+    const scope = '7'.repeat(64);
+    const intake = new IntakeRecordStore({ root, path: join(root, 'intake.json'), scope });
+    await seed(intake);
+    const journal = new OpenClawDispatchStore(root, scope);
+    const key = 'agent:receiver:main';
+    await journal.exclusive(async (state, save) => {
+      state.records.push({
+        id: 'd'.repeat(64),
+        intakeId: 'e'.repeat(64),
+        issueKey: 'f'.repeat(64),
+        sourceThreadId: key,
+        createdAt: 2,
+        manifestDigest: 'manifest',
+        retirement: {
+          reason: 'issue-closed',
+          at: 3,
+          checkedAt: 4,
+          eligibleAt: 3,
+          intakeId: 'e'.repeat(64),
+          archivedAt: 4,
+          worktreeRemovedAt: 4,
+        },
+      });
+      await save();
+    });
+    const state = {
+      active: false,
+      pending: 0,
+      coordinatorWorkspace: root,
+      agentId: 'receiver',
+      sessionId: 'ordinary-session',
+      historySessionId: 'ordinary-session',
+      missing: false,
+      ambiguous: false,
+    };
+    const native = coordinator();
+    const toggles: boolean[] = [];
+    let enabled = true;
+    const manifest = { schemaVersion: 1 as const, agent: { id: 'receiver' } };
+    const service = new OpenClawNotificationReset({
+      root,
+      intake: { select: async () => ({ store: intake, selected: undefined, workspace: root }) },
+      automations: {
+        notificationResetReplace: native.replace,
+        notificationResetSnapshot: async () => ({
+          id: 'intake',
+          nativeId: 'job',
+          enabled,
+          hash: 'configuration',
+          sessionKey: 'coordinator',
+        }),
+        notificationResetToggle: async (_manifest, _workspace, expected, restore) => {
+          enabled = restore ? expected.enabled : false;
+          toggles.push(enabled);
+        },
+      },
+      credential: {
+        use: async (_authority, run) =>
+          run(async (method, params) => {
+            if (params.key === key || params.sessionKey === key) {
+              if (method === 'sessions.resolve')
+                return state.missing || state.ambiguous
+                  ? { ok: false, candidates: state.ambiguous ? [key, 'another'] : [] }
+                  : { ok: true, key, agentId: state.agentId };
+              if (method === 'sessions.describe')
+                return {
+                  session: { key, agentId: state.agentId, sessionId: state.sessionId },
+                };
+              if (method === 'chat.history')
+                return {
+                  sessionId: state.historySessionId,
+                  sessionInfo: { hasActiveRun: state.active },
+                  pendingInputs: { total: state.pending },
+                };
+              throw new Error('ordinary origin must only be observed: ' + method);
+            }
+            if (method === 'sessions.list')
+              return {
+                sessions: [
+                  { key, agentId: state.agentId, sessionId: state.sessionId },
+                  {
+                    key: 'coordinator',
+                    agentId: 'receiver',
+                    sessionId: 'source',
+                    workspaceDir: state.coordinatorWorkspace,
+                    archived: native.archived(),
+                  },
+                ],
+              };
+            return native.request(method);
+          }),
+      },
+      worktrees: {
+        inspectGitHub: async () => {
+          throw new Error('no worktree effects');
+        },
+        cleanupGitHub: async () => {
+          throw new Error('no worktree effects');
+        },
+      },
+      connect: async () => {
+        throw new Error('no provider effects');
+      },
+    });
+    return {
+      state,
+      intake,
+      journal,
+      native,
+      toggles,
+      generation: (await journal.read()).resetGeneration,
+      run: async (purge = false) =>
+        service.run(manifest, root, await service.preview(manifest, root, purge)),
+    };
+  }
+
+  for (const purge of [false, true])
+    it(`should reset with an ordinary main-chat origin without a per-chat workspace and purge ${purge}`, async () => {
+      const test = await ordinaryOpenClawOrigin();
+      assert.equal((await test.run(purge)).status, 'complete');
+      assert.deepEqual(test.toggles, [false, true]);
+      assert.equal(test.native.replacements(), 1);
+      assert.notEqual((await test.journal.read()).resetGeneration, test.generation);
+    });
+
+  for (const activity of ['active', 'pending'] as const)
+    it(`should wait for ${activity} ordinary-origin input and resume the same openclaw reset`, async () => {
+      const test = await ordinaryOpenClawOrigin();
+      test.state.active = activity === 'active';
+      test.state.pending = activity === 'pending' ? 1 : 0;
+      assert.equal((await test.run()).status, 'waiting');
+      assert.deepEqual(test.toggles, [false]);
+      assert.equal((await test.intake.read())!.baselineAt, 1);
+      assert.equal(test.native.archived(), false);
+      assert.equal((await test.journal.read()).resetGeneration, test.generation);
+      test.state.active = false;
+      test.state.pending = 0;
+      assert.equal((await test.run()).status, 'complete');
+      assert.deepEqual(test.toggles, [false, true]);
+      assert.equal(test.native.replacements(), 1);
+    });
+
+  it('should still reject an actual openclaw coordinator in another workspace', async () => {
+    const test = await ordinaryOpenClawOrigin();
+    test.state.coordinatorWorkspace = join(root, 'other-workspace');
+    await mkdir(test.state.coordinatorWorkspace);
+    await assert.rejects(test.run(), /automation-thread-workspace-mismatch/);
+    assert.equal(test.native.archived(), false);
+    assert.equal((await test.intake.read())!.baselineAt, 1);
+    test.state.coordinatorWorkspace = root;
+    assert.equal((await test.run()).status, 'complete');
+    assert.deepEqual(test.toggles, [false, true]);
+  });
+
+  for (const failure of ['owner', 'incarnation', 'ambiguous'] as const)
+    it(`should preserve reset state when ordinary-origin ${failure} is unverified`, async () => {
+      const test = await ordinaryOpenClawOrigin();
+      if (failure === 'owner') test.state.agentId = 'another-agent';
+      if (failure === 'incarnation') test.state.historySessionId = 'replacement-session';
+      if (failure === 'ambiguous') test.state.ambiguous = true;
+      await assert.rejects(
+        test.run(),
+        /notification-reset-source-(owner-mismatch|observation-unavailable)/,
+      );
+      assert.equal(test.native.archived(), false);
+      assert.equal((await test.journal.read()).resetGeneration, test.generation);
+      assert.equal((await test.intake.read())!.baselineAt, 1);
+    });
+
+  it('should allow a natively confirmed missing ordinary origin without treating it as a coordinator', async () => {
+    const test = await ordinaryOpenClawOrigin();
+    test.state.missing = true;
+    assert.equal((await test.run()).status, 'complete');
+    assert.equal(test.native.replacements(), 1);
+  });
+
   for (const pickupEnabled of [true, false])
     it(`should wait for active pickup and restore both openclaw jobs with pickup enabled ${pickupEnabled}`, async () => {
       const scope = '9'.repeat(64);

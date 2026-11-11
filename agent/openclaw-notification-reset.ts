@@ -113,12 +113,44 @@ export default class OpenClawNotificationReset {
               throw new Error('notification-reset-native-response-invalid');
             return result;
           };
-          const source = await automationThreadGateway(gateway, {
-            agentId: manifest.agent.id,
-            workspaceDir: workspace,
-            scope,
-          }).lookup(key);
-          if (!source) continue;
+          let originSessionId: string | undefined;
+          if (key === automation.sessionKey) {
+            const source = await automationThreadGateway(gateway, {
+              agentId: manifest.agent.id,
+              workspaceDir: workspace,
+              scope,
+            }).lookup(key);
+            if (!source) continue;
+          } else {
+            // ordinary origins belong to the agent, not necessarily a per-chat workspace.
+            const resolved = await gateway('sessions.resolve', {
+              key,
+              agentId: manifest.agent.id,
+              allowMissing: true,
+            });
+            if (
+              resolved.ok === false &&
+              (resolved.candidates === undefined ||
+                (Array.isArray(resolved.candidates) && resolved.candidates.length === 0))
+            )
+              continue;
+            if (
+              resolved.ok !== true ||
+              resolved.key !== key ||
+              resolved.agentId !== manifest.agent.id
+            )
+              throw new Error('notification-reset-source-owner-mismatch');
+            const { session } = await gateway('sessions.describe', { key });
+            if (
+              !nativeObject(session) ||
+              session.key !== key ||
+              session.agentId !== manifest.agent.id ||
+              typeof session.sessionId !== 'string' ||
+              !session.sessionId
+            )
+              throw new Error('notification-reset-source-observation-unavailable');
+            originSessionId = session.sessionId;
+          }
           const response = await request('chat.history', { sessionKey: key, limit: 1 });
           if (
             !nativeObject(response) ||
@@ -126,6 +158,8 @@ export default class OpenClawNotificationReset {
             !nativeObject(response.pendingInputs)
           )
             throw new Error('notification-reset-coordinator-observation-unavailable');
+          if (originSessionId && response.sessionId !== originSessionId)
+            throw new Error('notification-reset-source-observation-unavailable');
           if (response.sessionInfo.hasActiveRun !== false || response.pendingInputs.total !== 0)
             return false;
         }
