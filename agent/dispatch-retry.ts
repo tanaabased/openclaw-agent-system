@@ -53,6 +53,13 @@ const transient = new Set([
 // rechecking never authorizes replay of an uncertain creation or a native denial.
 const recheckable = new Set([
   'dispatch-routing-unresolved',
+  'model-routing-not-configured',
+  'model-routing-profile-missing',
+  'model-routing-instructions-changed',
+  'model-routing-xhigh-unjustified',
+  'dispatch-configured-project-missing',
+  'dispatch-assessment-skill-ambiguous',
+  'dispatch-assessment-skill-unreadable',
   'dispatch-project-inventory-invalid',
   'dispatch-project-registration-unavailable',
   'dispatch-assessment-skill-unavailable',
@@ -106,7 +113,7 @@ export function scheduleDispatchRetry(
 export function dispatchRetryDue(record: RetryState, now: number) {
   return record.retry
     ? record.retryAfter !== undefined && record.retryAfter <= now
-    : record.blocker === 'dispatch-routing-unresolved';
+    : dispatchRecheckable(record.blocker);
 }
 
 /** durable stops name an actual authority or task decision; uncertainty is waiting. */

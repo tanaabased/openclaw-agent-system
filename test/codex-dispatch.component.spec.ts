@@ -4524,6 +4524,22 @@ describe('agent/codex-dispatch', () => {
       });
     });
 
+  it('should reconsider an existing codex routing failure without reset or reassignment', async () => {
+    const selected = await next();
+    const store = await workStore();
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.blocker = 'model-routing-not-configured';
+      delete record.retry;
+      delete record.retryAfter;
+      await save();
+    });
+    const resumed = await next();
+    assert.equal(resumed.status, 'routing-required');
+    assert.equal(resumed.id, selected.id);
+    assert.equal((await store.read()).records.length, 1);
+  });
+
   it('should dispatch an independent codex assignment beside a damaged record', async () => {
     const selected = await next();
     const store = await workStore();

@@ -4580,6 +4580,23 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(creates().length, 1);
   });
 
+  it('should reconsider an existing openclaw routing failure without reset or reassignment', async () => {
+    const selected = await next();
+    const store = (await service.scope(manifest, root)).journal;
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.blocker = 'model-routing-not-configured';
+      delete record.retry;
+      delete record.retryAfter;
+      await save();
+    });
+    coordinator.runId = 'repaired-prerequisite-run';
+    const resumed = await next();
+    assert.equal(resumed.status, 'routing-required');
+    assert.equal(resumed.id, selected.id);
+    assert.equal((await store.read()).records.length, 1);
+  });
+
   it('should dispatch an independent openclaw assignment beside a damaged record', async () => {
     manifest.github!.notifications!.maxConcurrentItems = 2;
     const selected = await next();
