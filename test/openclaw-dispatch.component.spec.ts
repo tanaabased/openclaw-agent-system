@@ -406,12 +406,7 @@ describe('agent/openclaw issue dispatch', () => {
                 const workTurn = current.nativeTurns?.find(
                   ({ turn }) => turn.runId === params.idempotencyKey,
                 )?.turn;
-                const turn =
-                  workTurn ??
-                  feedbackTurn ??
-                  (String(params.idempotencyKey).endsWith(':assessment')
-                    ? nativeTurnFor(current, 'assessment')
-                    : nativeTurnFor(current, 'first'));
+                const turn = workTurn ?? feedbackTurn ?? nativeTurnFor(current, 'assessment');
                 assert.equal(turn?.status, 'attempted');
                 assert.equal(turn?.message, params.message);
                 onSend?.();
@@ -3063,7 +3058,7 @@ describe('agent/openclaw issue dispatch', () => {
   });
 
   it('should expose no arbitrary identity credential message or removed actions', () => {
-    for (const action of ['canary', 'context', 'result', 'validate-result'])
+    for (const action of ['start', 'canary', 'context', 'result', 'validate-result'])
       assert.equal(Value.Check(dispatchParameters, { action }), false);
     for (const extra of [
       { agentId: 'other' },
@@ -3076,11 +3071,11 @@ describe('agent/openclaw issue dispatch', () => {
   });
 
   const sends = () => calls.filter(({ method }) => method === 'chat.send');
-  function start(id: string, authority = {}) {
-    return service.run(manifest, root, coordinator, { action: 'start', id }, false, authority);
+  function sendAssessment(id: string, authority = {}) {
+    return service.run(manifest, root, coordinator, { action: 'assess', id }, false, authority);
   }
   async function finish(id: string) {
-    const runId = `${id}:first-turn`;
+    const runId = `${id}:assessment`;
     active = false;
     inputReceipts = [];
     messages.push({
@@ -3092,7 +3087,7 @@ describe('agent/openclaw issue dispatch', () => {
     return service.run(manifest, root, coordinator, { action: 'reconcile', id });
   }
 
-  it('should select the created session at capacity and persist exactly one useful working turn', async () => {
+  it('should select the created session at capacity and persist exactly one assessment turn', async () => {
     const input = await next();
     await prepare(input);
     assert.deepEqual(
@@ -3107,7 +3102,7 @@ describe('agent/openclaw issue dispatch', () => {
         id: input.id,
       },
     );
-    assert.equal((await start(input.id)).status, 'working-turn-pending');
+    assert.equal((await sendAssessment(input.id)).status, 'assessment-pending');
     const sent = sends()[0]!.params;
     assert.equal(sent.sessionId, 'ordinary-id');
     assert.equal(sent.deliver, false);
@@ -3115,7 +3110,6 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(sent.thinking, undefined);
     assert.ok(String(sent.message).includes('https://github.com/owner/repo/issues/3'));
     assert.doesNotMatch(String(sent.message), /Return the missing result/);
-    assert.match(String(sent.message), /Do not change files/);
     assert.deepEqual(
       await service.run(
         manifest,
@@ -3128,15 +3122,16 @@ describe('agent/openclaw issue dispatch', () => {
         id: input.id,
       },
     );
-    await start(input.id);
+    await sendAssessment(input.id);
     const completed = await finish(input.id);
-    assert.equal(completed.status, 'working-turn-completed');
+    assert.equal(completed.status, 'assessment-completed');
     assert.ok('executionEffort' in completed && completed.executionEffort === 'unverified');
-    assert.equal((await start(input.id)).status, 'working-turn-completed');
+    assert.equal((await sendAssessment(input.id)).status, 'assessment-completed');
     assert.equal(sends().length, 1);
     assert.equal(creates().length, 1);
     assert.equal(
-      (await record()).nativeTurns?.findLast(({ role }) => role === 'first')?.turn?.replyEventId,
+      (await record()).nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn
+        ?.replyEventId,
       'reply-event',
     );
 
@@ -3146,12 +3141,12 @@ describe('agent/openclaw issue dispatch', () => {
   it('should recover truncated completion in the retained workflow without another effect', async () => {
     const input = await next();
     await prepare(input);
-    await start(input.id);
+    await sendAssessment(input.id);
     const original = await record();
     const complete = {
       role: 'assistant',
       stopReason: 'stop',
-      __openclaw: { id: 'long-reply', runId: `${input.id}:first-turn`, runTerminal: true },
+      __openclaw: { id: 'long-reply', runId: `${input.id}:assessment`, runTerminal: true },
       content: [{ type: 'text', text: 'complete result '.repeat(10000) }],
     };
     messages.push({ ...complete, __openclaw: { ...complete.__openclaw, truncated: true } });
@@ -3174,26 +3169,26 @@ describe('agent/openclaw issue dispatch', () => {
           ),
       },
     });
-    const pending = await start(input.id);
+    const pending = await sendAssessment(input.id);
     assert.equal('code' in pending && pending.code, 'workflow-evidence-truncated');
     assert.equal(
-      (await record()).nativeTurns?.findLast(({ role }) => role === 'first')?.turn?.status,
+      (await record()).nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn?.status,
       'consumed',
     );
     available = true;
-    assert.equal((await start(input.id)).status, 'working-turn-completed');
-    assert.equal((await start(input.id)).status, 'working-turn-completed');
+    assert.equal((await sendAssessment(input.id)).status, 'assessment-completed');
+    assert.equal((await sendAssessment(input.id)).status, 'assessment-completed');
     const recovered = await record();
     assert.equal(recovered.threadId, original.threadId);
     assert.equal(recovered.worktree, original.worktree);
     assert.deepEqual(recovered.request, original.request);
     assert.deepEqual(recovered.routing, original.routing);
     assert.equal(
-      recovered.nativeTurns?.findLast(({ role }) => role === 'first')?.turn?.runId,
-      original.nativeTurns?.findLast(({ role }) => role === 'first')?.turn?.runId,
+      recovered.nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn?.runId,
+      original.nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn?.runId,
     );
     assert.equal(
-      recovered.nativeTurns?.findLast(({ role }) => role === 'first')?.turn?.replyEventId,
+      recovered.nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn?.replyEventId,
       'long-reply',
     );
     assert.equal(creates().length, 1);
@@ -3204,15 +3199,15 @@ describe('agent/openclaw issue dispatch', () => {
     const input = await next();
     await prepare(input);
     loseSend = true;
-    assert.equal((await start(input.id)).status, 'waiting');
+    assert.equal((await sendAssessment(input.id)).status, 'waiting');
     assert.equal(
-      (await record()).nativeTurns?.findLast(({ role }) => role === 'first')?.turn?.status,
+      (await record()).nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn?.status,
       'attempted',
     );
     assert.equal(JSON.stringify(await record()).includes('SECRET'), false);
     service = new OpenClawDispatch(service.dependencies);
-    assert.equal((await start(input.id)).status, 'working-turn-pending');
-    assert.equal((await finish(input.id)).status, 'working-turn-completed');
+    assert.equal((await sendAssessment(input.id)).status, 'assessment-pending');
+    assert.equal((await finish(input.id)).status, 'assessment-completed');
     assert.equal(sends().length, 1);
   });
 
@@ -3220,29 +3215,29 @@ describe('agent/openclaw issue dispatch', () => {
     const input = await next();
     await prepare(input);
     consumeSend = true;
-    assert.equal((await start(input.id)).status, 'working-turn-pending');
+    assert.equal((await sendAssessment(input.id)).status, 'assessment-pending');
     assert.equal(
-      (await record()).nativeTurns?.findLast(({ role }) => role === 'first')?.turn?.status,
+      (await record()).nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn?.status,
       'consumed',
     );
     assert.equal(
-      (await record()).nativeTurns?.findLast(({ role }) => role === 'first')?.turn
+      (await record()).nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn
         ?.consumedByEventId,
       'input-event',
     );
-    assert.equal((await finish(input.id)).status, 'working-turn-completed');
+    assert.equal((await finish(input.id)).status, 'assessment-completed');
     assert.equal(sends().length, 1);
   });
 
   it('should recover the saved accepted delivery blocker on the next coordinator run without resending', async () => {
     const input = await next();
     await prepare(input);
-    await start(input.id);
+    await sendAssessment(input.id);
     const journal = (await service.scope(manifest, root)).journal;
     await journal.exclusive(async (state, save) => {
       const saved = state.records[0]!;
 
-      saved.failureStage = 'first-turn';
+      saved.failureStage = 'assessment-turn';
       saved.blocker = 'dispatch-turn-delivery-unverified';
       await save();
     });
@@ -3260,17 +3255,18 @@ describe('agent/openclaw issue dispatch', () => {
         id: input.id,
       },
     );
-    assert.equal((await finish(input.id)).status, 'working-turn-completed');
+    assert.equal((await finish(input.id)).status, 'assessment-completed');
     assert.equal((await record()).blocker, undefined);
     assert.equal(
-      (await record()).nativeTurns?.findLast(({ role }) => role === 'first')?.turn?.replyEventId,
+      (await record()).nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn
+        ?.replyEventId,
       'reply-event',
     );
     service = new OpenClawDispatch(service.dependencies);
     assert.equal(
       (await service.run(manifest, root, coordinator, { action: 'reconcile', id: input.id }))
         .status,
-      'working-turn-completed',
+      'assessment-completed',
     );
     assert.equal((await service.check(manifest, root)).changed, true);
     assert.equal(sends().length, 1);
@@ -3280,14 +3276,14 @@ describe('agent/openclaw issue dispatch', () => {
   it('should preserve collected input receipts when their transcript input is outside the page', async () => {
     const input = await next();
     await prepare(input);
-    await start(input.id);
+    await sendAssessment(input.id);
     messages = [];
     inputReceipts = [
-      { runId: `${input.id}:first-turn`, state: 'consumed', consumedByEventId: 'collected-input' },
+      { runId: `${input.id}:assessment`, state: 'consumed', consumedByEventId: 'collected-input' },
     ];
-    assert.equal((await start(input.id)).status, 'working-turn-pending');
+    assert.equal((await sendAssessment(input.id)).status, 'assessment-pending');
     assert.equal(
-      (await record()).nativeTurns?.findLast(({ role }) => role === 'first')?.turn
+      (await record()).nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn
         ?.consumedByEventId,
       'collected-input',
     );
@@ -3306,7 +3302,7 @@ describe('agent/openclaw issue dispatch', () => {
     it(`should reject ${mismatch} ordinary input evidence without resending`, async () => {
       const input = await next();
       await prepare(input);
-      await start(input.id);
+      await sendAssessment(input.id);
       inputReceipts = [];
       const user = messages[0]!;
       const meta = user.__openclaw as Record<string, unknown>;
@@ -3317,9 +3313,9 @@ describe('agent/openclaw issue dispatch', () => {
       if (mismatch === 'missing') messages = [];
       if (mismatch === 'duplicate') messages.push(structuredClone(user));
       if (mismatch === 'incarnation') historySessionId = 'replacement';
-      assert.equal((await start(input.id)).status, 'waiting');
+      assert.equal((await sendAssessment(input.id)).status, 'waiting');
       assert.equal(
-        (await record()).nativeTurns?.findLast(({ role }) => role === 'first')?.turn?.status,
+        (await record()).nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn?.status,
         'accepted',
       );
       assert.equal(sends().length, 1);
@@ -3329,11 +3325,11 @@ describe('agent/openclaw issue dispatch', () => {
   it('should accept exact text-block input without inventing missing receipt evidence', async () => {
     const input = await next();
     await prepare(input);
-    await start(input.id);
+    await sendAssessment(input.id);
     messages[0]!.content = [{ type: 'text', text: messages[0]!.content }];
-    assert.equal((await finish(input.id)).status, 'working-turn-completed');
+    assert.equal((await finish(input.id)).status, 'assessment-completed');
     assert.equal(
-      (await record()).nativeTurns?.findLast(({ role }) => role === 'first')?.turn
+      (await record()).nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn
         ?.consumedByEventId,
       'input-event',
     );
@@ -3343,9 +3339,9 @@ describe('agent/openclaw issue dispatch', () => {
     const input = await next();
     await prepare(input);
     consumeSend = true;
-    await start(input.id);
+    await sendAssessment(input.id);
     (messages[0]!.__openclaw as Record<string, unknown>).id = 'replacement-input';
-    const result = await start(input.id);
+    const result = await sendAssessment(input.id);
     assert.ok('code' in result && result.code === 'dispatch-turn-input-mismatch');
     assert.equal(sends().length, 1);
   });
@@ -3353,7 +3349,7 @@ describe('agent/openclaw issue dispatch', () => {
   it('should not treat mirrored commentary as a terminal answer even when the run is idle', async () => {
     const input = await next();
     await prepare(input);
-    await start(input.id);
+    await sendAssessment(input.id);
     inputReceipts = [];
     active = false;
     messages.push({
@@ -3361,15 +3357,16 @@ describe('agent/openclaw issue dispatch', () => {
       stopReason: 'stop',
       __openclaw: {
         id: 'commentary',
-        runId: `${input.id}:first-turn`,
+        runId: `${input.id}:assessment`,
         mirrorOrigin: 'codex-app-server',
       },
       content: [{ type: 'text', text: 'I will investigate.' }],
     });
-    const result = await start(input.id);
+    const result = await sendAssessment(input.id);
     assert.ok('code' in result && result.code === 'dispatch-turn-outcome-unverified');
     assert.equal(
-      (await record()).nativeTurns?.findLast(({ role }) => role === 'first')?.turn?.replyEventId,
+      (await record()).nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn
+        ?.replyEventId,
       undefined,
     );
     await acknowledgeReport();
@@ -3380,9 +3377,9 @@ describe('agent/openclaw issue dispatch', () => {
   it('should preserve explicit cancellation after its pending receipt disappears', async () => {
     const input = await next();
     await prepare(input);
-    await start(input.id);
+    await sendAssessment(input.id);
     inputReceipts[0]!.cancelled = true;
-    const cancelled = await start(input.id);
+    const cancelled = await sendAssessment(input.id);
     assert.ok('code' in cancelled && cancelled.code === 'dispatch-turn-cancelled');
     assert.equal(openClawCapacity([await record()], 1).occupied, 1);
     await acknowledgeReport();
@@ -3396,7 +3393,8 @@ describe('agent/openclaw issue dispatch', () => {
     await service.check(manifest, root);
     assert.equal(openClawCapacity([await record()], 1).occupied, 0);
     assert.equal(
-      (await record()).nativeTurns?.findLast(({ role }) => role === 'first')?.turn?.replyEventId,
+      (await record()).nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn
+        ?.replyEventId,
       undefined,
     );
     await acknowledgeReport();
@@ -3410,9 +3408,9 @@ describe('agent/openclaw issue dispatch', () => {
     await prepare(input);
     loseSend = true;
     acceptSend = false;
-    await start(input.id);
+    await sendAssessment(input.id);
     for (let i = 0; i < 2; i++) {
-      const result = await start(input.id);
+      const result = await sendAssessment(input.id);
       assert.ok('code' in result && result.code === 'dispatch-turn-delivery-unverified');
     }
     assert.equal(sends().length, 1);
@@ -3431,7 +3429,7 @@ describe('agent/openclaw issue dispatch', () => {
       'at-capacity',
     );
     assert.equal(
-      (await record()).nativeTurns?.findLast(({ role }) => role === 'first')?.turn?.status,
+      (await record()).nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn?.status,
       'attempted',
     );
     assert.equal(sends().length, 1);
@@ -3441,18 +3439,14 @@ describe('agent/openclaw issue dispatch', () => {
     const input = await next();
     await prepare(input);
     messages = [{ role: 'user', content: 'unrelated' }];
-    assert.equal((await start(input.id)).status, 'waiting');
+    assert.equal((await sendAssessment(input.id)).status, 'waiting');
     messages = [];
     active = true;
-    assert.equal((await start(input.id)).status, 'waiting');
+    assert.equal((await sendAssessment(input.id)).status, 'waiting');
     active = false;
     session!.sessionId = 'replacement';
-    assert.equal((await start(input.id)).status, 'waiting');
+    assert.equal((await sendAssessment(input.id)).status, 'waiting');
     assert.equal(sends().length, 0);
-    assert.equal(
-      (await record()).nativeTurns?.findLast(({ role }) => role === 'first')?.turn,
-      undefined,
-    );
   });
 
   it('should preserve cancellation after send and reconcile without duplicating it', async () => {
@@ -3460,12 +3454,12 @@ describe('agent/openclaw issue dispatch', () => {
     await prepare(input);
     const controller = new AbortController();
     onSend = () => controller.abort();
-    assert.equal((await start(input.id, { signal: controller.signal })).status, 'blocked');
+    assert.equal((await sendAssessment(input.id, { signal: controller.signal })).status, 'blocked');
     assert.equal(
-      (await record()).nativeTurns?.findLast(({ role }) => role === 'first')?.turn?.status,
+      (await record()).nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn?.status,
       'attempted',
     );
-    assert.equal((await start(input.id)).status, 'working-turn-pending');
+    assert.equal((await sendAssessment(input.id)).status, 'assessment-pending');
     assert.equal(sends().length, 1);
   });
 
@@ -3473,12 +3467,12 @@ describe('agent/openclaw issue dispatch', () => {
     const input = await next();
     await prepare(input);
     await assert.rejects(
-      service.run(manifest, root, child, { action: 'start', id: input.id }, true),
+      service.run(manifest, root, child, { action: 'assess', id: input.id }, true),
       /dispatch-intake-caller-required/,
     );
     assert.equal(
       (
-        await start(input.id, {
+        await sendAssessment(input.id, {
           assertCurrent: async () => {
             throw new Error('authority-revoked');
           },
@@ -3487,18 +3481,18 @@ describe('agent/openclaw issue dispatch', () => {
       'blocked',
     );
     assert.equal(sends().length, 0);
-    await start(input.id);
+    await sendAssessment(input.id);
     removeFixtureAssignment(fixture);
-    assert.equal((await start(input.id)).status, 'blocked');
+    assert.equal((await sendAssessment(input.id)).status, 'blocked');
     assert.equal(sends().length, 1);
   });
 
   it('should not confuse unrelated assistant output or tool calls with the working turn reply', async () => {
     const input = await next();
     await prepare(input);
-    await start(input.id);
+    await sendAssessment(input.id);
     inputReceipts = [
-      { runId: `${input.id}:first-turn`, state: 'consumed', consumedByEventId: 'input-event' },
+      { runId: `${input.id}:assessment`, state: 'consumed', consumedByEventId: 'input-event' },
     ];
     active = false;
     messages.push({
@@ -3507,39 +3501,39 @@ describe('agent/openclaw issue dispatch', () => {
       __openclaw: { id: 'other', runId: 'another-run' },
       content: [{ type: 'text', text: 'unrelated' }],
     });
-    const result = await start(input.id);
+    const result = await sendAssessment(input.id);
     assert.ok('code' in result && result.code === 'dispatch-turn-outcome-unverified');
     assert.equal(
-      (await record()).nativeTurns?.findLast(({ role }) => role === 'first')?.turn?.status,
+      (await record()).nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn?.status,
       'consumed',
     );
-    messages[1]!.__openclaw = { id: 'tool-call', runId: `${input.id}:first-turn` };
+    messages[1]!.__openclaw = { id: 'tool-call', runId: `${input.id}:assessment` };
     messages[1]!.stopReason = 'toolUse';
-    assert.equal((await start(input.id)).status, 'waiting');
+    assert.equal((await sendAssessment(input.id)).status, 'waiting');
     assert.equal(sends().length, 1);
   });
 
   it('should retain executed model evidence only from the matching native terminal receipt', async () => {
     const input = await next();
     await prepare(input);
-    await start(input.id);
+    await sendAssessment(input.id);
     waitResult = {
       status: 'ok',
       terminalReceipt: {
-        runId: `${input.id}:first-turn`,
+        runId: `${input.id}:assessment`,
         sessionId: 'ordinary-id',
         effective: { provider: 'openai', model: 'gpt-6.1-sol' },
       },
     };
-    assert.equal((await finish(input.id)).status, 'working-turn-completed');
+    assert.equal((await finish(input.id)).status, 'assessment-completed');
   });
 
-  it('should reserve only one send when concurrent first-turn operations overlap', async () => {
+  it('should reserve only one send when concurrent assessment operations overlap', async () => {
     const input = await next();
     await prepare(input);
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
-    const first = start(input.id, {
+    const first = sendAssessment(input.id, {
       assertCurrent: async () => {
         entered.resolve();
         await release.promise;
@@ -3547,22 +3541,22 @@ describe('agent/openclaw issue dispatch', () => {
     });
     await entered.promise;
     try {
-      assert.equal((await start(input.id)).status, 'working-turn-pending');
+      assert.equal((await sendAssessment(input.id)).status, 'assessment-pending');
     } finally {
       release.resolve();
       await first;
     }
-    assert.ok('code' in (await first) && (await first).status === 'waiting');
-    assert.equal((await start(input.id)).status, 'working-turn-pending');
+    assert.equal((await first).status, 'busy');
+    assert.equal((await sendAssessment(input.id)).status, 'assessment-pending');
     assert.equal(sends().length, 1);
   });
 
   it('should preserve an attempted send when a lock error occurs after entering the journal', async () => {
     const input = await next();
     await prepare(input);
-    const result = await start(input.id, {
+    const result = await sendAssessment(input.id, {
       assertCurrent: async () => {
-        if ((await record()).nativeTurns?.findLast(({ role }) => role === 'first')?.turn)
+        if ((await record()).nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn)
           throw Object.assign(new Error('The private state file lock is busy.'), {
             code: privateStateFileLockBusyErrorCode,
           });
@@ -3571,40 +3565,40 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(result.status, 'retrying');
     assert.ok('code' in result && result.code === privateStateFileLockBusyErrorCode);
     assert.equal(
-      (await record()).nativeTurns?.findLast(({ role }) => role === 'first')?.turn?.status,
+      (await record()).nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn?.status,
       'attempted',
     );
-    assert.equal((await start(input.id)).status, 'waiting');
+    assert.equal((await sendAssessment(input.id)).status, 'waiting');
     assert.equal(sends().length, 0);
   });
 
   it('should retain a persisted attempt if authority is revoked before its send reaches the host', async () => {
     const input = await next();
     await prepare(input);
-    const result = await start(input.id, {
+    const result = await sendAssessment(input.id, {
       assertCurrent: async () => {
-        if ((await record()).nativeTurns?.findLast(({ role }) => role === 'first')?.turn)
+        if ((await record()).nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn)
           throw new Error('authority-revoked');
       },
     });
     assert.equal(result.status, 'blocked');
     assert.equal(
-      (await record()).nativeTurns?.findLast(({ role }) => role === 'first')?.turn?.status,
+      (await record()).nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn?.status,
       'attempted',
     );
     assert.equal(sends().length, 0);
-    assert.equal((await start(input.id)).status, 'waiting');
+    assert.equal((await sendAssessment(input.id)).status, 'waiting');
     assert.equal(sends().length, 0);
   });
 
   it('should reject terminal identity drift and retain a different observed execution model', async () => {
     const input = await next();
     await prepare(input);
-    await start(input.id);
+    await sendAssessment(input.id);
     waitResult = {
       status: 'ok',
       terminalReceipt: {
-        runId: `${input.id}:first-turn`,
+        runId: `${input.id}:assessment`,
         sessionId: 'replacement',
         effective: { provider: 'openai', model: 'gpt-6.1-sol' },
       },
@@ -3612,26 +3606,26 @@ describe('agent/openclaw issue dispatch', () => {
     const mismatch = await finish(input.id);
     assert.ok('code' in mismatch && mismatch.code === 'dispatch-turn-terminal-mismatch');
     assert.equal(
-      (await record()).nativeTurns?.findLast(({ role }) => role === 'first')?.turn?.status,
+      (await record()).nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn?.status,
       'consumed',
     );
     waitResult = {
       status: 'ok',
       terminalReceipt: {
-        runId: `${input.id}:first-turn`,
+        runId: `${input.id}:assessment`,
         sessionId: 'ordinary-id',
         effective: { provider: 'openai', model: 'other-model' },
       },
     };
-    const rerouted = await start(input.id);
-    assert.equal(rerouted.status, 'working-turn-completed');
+    const rerouted = await sendAssessment(input.id);
+    assert.equal(rerouted.status, 'assessment-completed');
     assert.equal(sends().length, 1);
   });
 
-  it('should reject incomplete or misbound durable first-turn receipts', async () => {
+  it('should reject incomplete or misbound durable assessment receipts', async () => {
     const input = await next();
     await prepare(input);
-    await start(input.id);
+    await sendAssessment(input.id);
     const journal = (await service.scope(manifest, root)).journal;
     for (const change of [
       { status: 'completed' as const },
@@ -3642,7 +3636,7 @@ describe('agent/openclaw issue dispatch', () => {
       await assert.rejects(
         journal.exclusive(async (state, save) => {
           Object.assign(
-            state.records[0]!.nativeTurns!.findLast(({ role }) => role === 'first')!.turn,
+            state.records[0]!.nativeTurns!.findLast(({ role }) => role === 'assessment')!.turn,
             change,
           );
           await save();
@@ -3652,7 +3646,7 @@ describe('agent/openclaw issue dispatch', () => {
       );
     }
     assert.equal(
-      (await record()).nativeTurns?.findLast(({ role }) => role === 'first')?.turn?.status,
+      (await record()).nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn?.status,
       'accepted',
     );
   });
@@ -4407,10 +4401,6 @@ describe('agent/openclaw issue dispatch', () => {
     const input = await next();
     await prepare(input);
     assert.equal((await assess(input.id)).status, 'assessment-pending');
-    assert.equal(
-      (await record()).nativeTurns?.findLast(({ role }) => role === 'first')?.turn,
-      undefined,
-    );
     assert.equal(sends().length, 1);
     assert.ok(!String(sends()[0]!.params.message).startsWith('>'));
     const current = await record();
@@ -4539,45 +4529,6 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await assess(input.id)).status, 'assessment-completed');
     assert.equal(sends().length, 1);
     assert.equal(creates().length, 1);
-  });
-
-  it('should continue the completed investigation in its original session without repeating it', async () => {
-    const input = await next();
-    await prepare(input);
-    await start(input.id);
-    await finish(input.id);
-    const previous = (await record()).nativeTurns?.findLast(({ role }) => role === 'first')?.turn;
-    assert.equal((await assess(input.id)).status, 'assessment-pending');
-    assert.deepEqual(
-      (await record()).nativeTurns?.findLast(({ role }) => role === 'first')?.turn,
-      previous,
-    );
-    assert.equal(sends()[1]!.params.expectedLeafEntryId, 'reply-event');
-    await context(input.id);
-    await renderAssessment(input.id);
-    assessmentReply(input.id);
-    assert.equal((await assess(input.id)).status, 'assessment-completed');
-    assert.equal(sends().length, 2);
-    assert.equal(creates().length, 1);
-  });
-
-  it('should refuse an intervening user message instead of appending an automatic assessment', async () => {
-    const input = await next();
-    await prepare(input);
-    await start(input.id);
-    await finish(input.id);
-    messages.push({
-      role: 'user',
-      content: 'Wait.',
-      __openclaw: { id: 'human-answer', runId: 'human-run' },
-    });
-    const blocked = await assess(input.id);
-    assert.ok('code' in blocked && blocked.code === 'dispatch-assessment-session-not-idle');
-    assert.equal(sends().length, 1);
-    assert.equal(
-      (await record()).nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn,
-      undefined,
-    );
   });
 
   it('should read and advance a healthy openclaw task beside a malformed slim record', async () => {

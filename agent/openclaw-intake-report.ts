@@ -79,7 +79,6 @@ export default function openclawIntakeReport(input: {
           record.blocker &&
           !record.handoff &&
           (!record.sessionCreation?.verified ||
-            record.failureStage === 'first-turn' ||
             (record.failureStage === 'assessment-turn' &&
               record.blocker.startsWith('dispatch-turn-'))),
       )

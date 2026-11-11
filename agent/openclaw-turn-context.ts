@@ -45,9 +45,7 @@ export default function openclawTurnContext(
   const assessment =
     !source &&
     !implementation &&
-    (!available.length ||
-      nativeTurnFor(record, 'assessment')?.runId === binding.runId ||
-      nativeTurnFor(record, 'first')?.runId === binding.runId);
+    (!available.length || nativeTurnFor(record, 'assessment')?.runId === binding.runId);
   return {
     appendSystemContext: [
       nativeTaskInstructions('openclaw'),

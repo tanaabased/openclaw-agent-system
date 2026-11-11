@@ -215,12 +215,7 @@ export default class OpenClawDispatchAdmission {
       await this.context.validateLocal(manifest, workspace, record);
       await save();
     }
-    if (
-      input.action === 'prepare' ||
-      input.action === 'reconcile' ||
-      input.action === 'start' ||
-      input.action === 'assess'
-    ) {
+    if (input.action === 'prepare' || input.action === 'reconcile' || input.action === 'assess') {
       if (!record.sessionCreation || !record.request)
         throw new Error('dispatch-session-creation-required');
       if (
@@ -233,9 +228,7 @@ export default class OpenClawDispatchAdmission {
       )
         throw new Error('dispatch-session-binding-changed');
       const assessment = input.action === 'assess' || Boolean(nativeTurnFor(record, 'assessment'));
-      const working =
-        assessment || input.action === 'start' || Boolean(nativeTurnFor(record, 'first'));
-      setStage(assessment ? 'assessment-turn' : working ? 'first-turn' : 'session-create');
+      setStage(assessment ? 'assessment-turn' : 'session-create');
       const signal = authority.signal
         ? AbortSignal.any([authority.signal, transactionSignal])
         : transactionSignal;
@@ -303,7 +296,7 @@ export default class OpenClawDispatchAdmission {
         } else if (predecessor?.claimId || predecessor?.claimAccepted)
           throw new Error('claim-recovery-owner-unresolved');
       }
-      const result = await (working ? advanceIssueTurn : createIssueSession)({
+      const result = await (assessment ? advanceIssueTurn : createIssueSession)({
         config: this.context.dependencies.config(),
         credential: this.context.guardedCredential(async (method) => {
           const checked = await this.context.validate(
@@ -326,7 +319,6 @@ export default class OpenClawDispatchAdmission {
         record,
         save,
         authority: turnAuthority,
-        assessment,
         presentation: { intake, workspace: current.workspace, debug: manifest.debug },
       });
       if (

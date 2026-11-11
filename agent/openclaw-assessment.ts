@@ -6,7 +6,6 @@ import {
   managedTargetUrl,
   type ManagedIssue as IntakeRecord,
 } from './managed-issue.ts';
-import { nativeTurnFor } from './openclaw-native-turns.ts';
 
 import assignmentCard from '../channels/github/presentation/assignment-card.ts';
 import { nativeAssessmentInstructions } from './assessment-instructions.ts';
@@ -92,8 +91,7 @@ export async function issueAssessmentAction(input: {
     ) ||
     !record.sessionCreation?.verified ||
     caller.sessionKey !== record.threadId ||
-    caller.sessionId !== record.sessionCreation.sessionId ||
-    caller.runId === nativeTurnFor(record, 'first')?.runId
+    caller.sessionId !== record.sessionCreation.sessionId
   )
     throw new Error('dispatch-assessment-caller-mismatch');
   await describeIssueSession(request, record, input.config);

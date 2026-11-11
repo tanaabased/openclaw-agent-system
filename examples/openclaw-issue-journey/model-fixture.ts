@@ -363,11 +363,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       if (advanced.nextAction === 'next') continue;
       const stoppedAdvance = terminal(advanced);
       if (stoppedAdvance) return stoppedAdvance;
-      if (
-        ['assessment-required', 'session-created', 'working-turn-completed'].includes(
-          String(advanced.status),
-        )
-      ) {
+      if (['assessment-required', 'session-created'].includes(String(advanced.status))) {
         const assessed = result(stage('assess'));
         if (!assessed) return dispatch(stage('assess'), { action: 'assess', target: next.target });
         advanced = assessed;
@@ -375,12 +371,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       if (advanced.nextAction === 'next') continue;
       const stoppedAssessment = terminal(advanced);
       if (stoppedAssessment) return stoppedAssessment;
-      if (
-        !['assessment-pending', 'assessment-completed', 'working-turn-pending'].includes(
-          String(advanced.status),
-        )
-      )
-        return;
+      if (!['assessment-pending', 'assessment-completed'].includes(String(advanced.status))) return;
     }
     return;
   }

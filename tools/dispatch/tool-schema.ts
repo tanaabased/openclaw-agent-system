@@ -67,7 +67,6 @@ const dispatchRequestVariants = Type.Union([
     fallback: Type.Optional(Type.Literal('default')),
   }),
   object({ action: Type.Literal('reconcile'), id }),
-  object({ action: Type.Literal('start'), id }),
   object({ action: Type.Literal('assess'), id }),
   object({
     action: Type.Literal('context'),
@@ -146,7 +145,7 @@ type ModelDispatchInput<T = Static<typeof dispatchParameters>> = T extends {
         ? Omit<T, 'id' | 'digest' | 'apply'> & { target?: string; chat?: string; preview?: boolean }
         : T extends { action: 'retire' }
           ? Static<typeof retirementModelSchema>
-          : T extends { action: 'prepare' | 'reconcile' | 'start' | 'assess' }
+          : T extends { action: 'prepare' | 'reconcile' | 'assess' }
             ? Omit<T, 'id' | 'digest'> & { target?: string }
             : Omit<T, 'projects' | 'observation'>;
 type ModelMaterialInput<T> = T extends { material?: unknown }
@@ -184,7 +183,7 @@ export const dispatchModelParameters = Type.Unsafe<ModelMaterialInput<ModelDispa
                     })
                   : variant.properties.action.const === 'retire'
                     ? retirementModelSchema
-                    : ['prepare', 'reconcile', 'start', 'assess'].includes(
+                    : ['prepare', 'reconcile', 'assess'].includes(
                           String(variant.properties.action.const),
                         )
                       ? object({

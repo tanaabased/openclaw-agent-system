@@ -43,10 +43,10 @@ describe('agent/native-issue-context', () => {
       nativeInactive: true,
       sessionCreation: { verified: true },
       feedback: { events: [] },
-      nativeTurns: [{ role: 'first', turn: { status: 'attempted' } }],
+      nativeTurns: [{ role: 'assessment', turn: { status: 'attempted' } }],
     } as unknown as OpenClawDispatchRecord;
     assert.equal(openClawItemOccupied(record), true);
-    record.nativeTurns!.findLast(({ role }) => role === 'first')!.turn.status = 'completed';
+    record.nativeTurns!.findLast(({ role }) => role === 'assessment')!.turn.status = 'completed';
     assert.equal(openClawItemOccupied(record), false);
     record.nativeInactive = false;
     assert.equal(openClawItemOccupied(record), true);

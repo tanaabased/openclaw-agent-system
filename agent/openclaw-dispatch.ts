@@ -927,12 +927,7 @@ export default class OpenClawDispatch {
             reason: error.reason,
             nextAction: 'next' as const,
           };
-        if (
-          input.action === 'prepare' ||
-          input.action === 'reconcile' ||
-          input.action === 'start' ||
-          input.action === 'assess'
-        )
+        if (input.action === 'prepare' || input.action === 'reconcile' || input.action === 'assess')
           return this.block(
             current.journal,
             input.id,

@@ -410,7 +410,6 @@ export default class OpenClawDispatchCoordinator {
         !record?.request ||
         !record.sessionCreation?.attempted ||
         record.intakeId === intake.id ||
-        nativeTurnFor(record, 'first') ||
         nativeTurnFor(record, 'assessment')
       )
         continue;
@@ -759,15 +758,6 @@ function continuationStatus(record: OpenClawDispatchRecord) {
   // only the accepted receipt gap is automatically recoverable, and never by another send.
   if (
     ['blocked', 'waiting'].includes(dispatchCreationStatus(record)) &&
-    record.failureStage === 'first-turn' &&
-    record.blocker === 'dispatch-turn-delivery-unverified' &&
-    record.sessionCreation.verified &&
-    nativeTurnFor(record, 'first') &&
-    ['accepted', 'consumed'].includes(nativeTurnFor(record, 'first')!.status)
-  )
-    return 'reconcile-required';
-  if (
-    ['blocked', 'waiting'].includes(dispatchCreationStatus(record)) &&
     record.failureStage === 'assessment-turn' &&
     record.blocker === 'dispatch-turn-delivery-unverified' &&
     nativeTurnFor(record, 'assessment') &&
@@ -780,8 +770,5 @@ function continuationStatus(record: OpenClawDispatchRecord) {
       ? 'reconcile-required'
       : undefined;
   if (dispatchCreationStatus(record) === 'creating') return 'reconcile-required';
-  if (dispatchCreationStatus(record) === 'created')
-    return nativeTurnFor(record, 'first') && nativeTurnFor(record, 'first')!.status !== 'completed'
-      ? 'reconcile-required'
-      : 'assessment-required';
+  if (dispatchCreationStatus(record) === 'created') return 'assessment-required';
 }

@@ -706,20 +706,12 @@ for (const scenario of [
       assert.deepEqual(await response(input), { content: 'pass completed' });
     });
 
-    it('should continue after working turns and terminate on native capacity and blockers', async () => {
-      for (const status of [
-        'working-turn-pending',
-        'working-turn-completed',
-        'assessment-completed',
-      ]) {
+    it('should continue after assessment turns and terminate on native capacity and blockers', async () => {
+      for (const status of ['assessment-pending', 'assessment-completed']) {
         const input = request(intakePrompt);
         append(input, 'scan', { status: 'ready' });
         append(input, 'next', { status: 'reconcile-required', target: source, id });
         append(input, 'reconcile', { status, id });
-        if (status === 'working-turn-completed') {
-          await action(input, 'assess');
-          append(input, 'assess', { status: 'assessment-pending', id });
-        }
         await action(input, 'next');
         append(input, 'next-1', { status: 'at-capacity' });
         await action(input, 'report');

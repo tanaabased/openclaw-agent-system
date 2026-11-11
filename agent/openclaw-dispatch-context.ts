@@ -434,10 +434,7 @@ export default class OpenClawDispatchContext {
     } catch (error) {
       feedbackLimitation = { code: openClawDispatchFailureCode(error) };
     }
-    const initial = [
-      nativeTurnFor(record, 'first')?.runId,
-      nativeTurnFor(record, 'assessment')?.runId,
-    ].includes(binding.runId);
+    const initial = nativeTurnFor(record, 'assessment')?.runId === binding.runId;
     const stage = feedbackTurn
       ? 'feedback'
       : retainedIssueProgression(record)

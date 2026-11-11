@@ -60,7 +60,6 @@ export const openclawDispatchRecordSchema = Type.Object(
         Type.Literal('assessment-skill'),
         Type.Literal('verification'),
         Type.Literal('session-create'),
-        Type.Literal('first-turn'),
         Type.Literal('assessment-turn'),
       ]),
     ),

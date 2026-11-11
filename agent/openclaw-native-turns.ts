@@ -4,7 +4,7 @@ import { issueTurnSchema } from './openclaw-turn-state.ts';
 
 export const nativeTurnSchema = Type.Object(
   {
-    role: Type.Union([Type.Literal('first'), Type.Literal('assessment'), Type.Literal('feedback')]),
+    role: Type.Union([Type.Literal('assessment'), Type.Literal('feedback')]),
     turn: Type.Object(
       {
         ...Type.Omit(issueTurnSchema, ['message']).properties,
