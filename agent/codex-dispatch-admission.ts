@@ -62,7 +62,6 @@ import routingInstructions, {
 import workflowFailure from './workflow-failure.ts';
 import deliverTaskInput from './task-input-delivery.ts';
 import { codexNativeHandoff } from './codex-dispatch-handoff.ts';
-import { selectWorkflowStage } from './workflow-stage.ts';
 async function verifySelectedPullRequest(
   record: DispatchRecord,
   intake: IntakeRecord,
@@ -796,16 +795,6 @@ export async function prepareDispatch(
     if (held) throw new WorkflowPolicyHeld(held);
     current.manifest = live.manifest;
     current.policy = live.policy;
-    const configuration = live.policy?.policy.issueAssignment?.assessment;
-    const selected = await selectWorkflowStage({
-      stage: 'assessment',
-      configuration,
-      workspace: current.workspace,
-      observedAt: now,
-      resolveSkill: (id) =>
-        withNative(current, deps, (native) => native.assessmentSkill(record.project!.path, id)),
-    });
-    record.assessment = selected.selection;
     record.issueMode = issueWorkflowMode(current.manifest.github?.notifications, record);
     record.routing = JSON.stringify(decision);
     record.routingInstructions = instructions;

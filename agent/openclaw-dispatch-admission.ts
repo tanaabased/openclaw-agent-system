@@ -13,7 +13,6 @@ import type { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import { automationHash } from './automation-hash.ts';
 import dispatchRoutingAssessment from './dispatch-routing-assessment.ts';
 import resolveModelRoutingRequest from './model-routing-request.ts';
-import { selectOpenClawAssessment } from './openclaw-assessment.ts';
 import dispatchCapacity from './openclaw-capacity.ts';
 import {
   type default as OpenClawDispatchContext,
@@ -55,7 +54,6 @@ export default class OpenClawDispatchAdmission {
       save,
       transactionSignal,
       sourceThreadId,
-      now,
     } = tx;
     const { client, intake, worktreeInput } = verified;
     const claims = this.context.dependencies.claims;
@@ -246,23 +244,6 @@ export default class OpenClawDispatchAdmission {
           signal.throwIfAborted();
         },
       };
-      if (assessment && !nativeTurnFor(record, 'assessment')) {
-        await turnAuthority.assertCurrent();
-        await this.context.dependencies.credential.use(turnAuthority, async (request) => {
-          await selectOpenClawAssessment({
-            request,
-            record,
-            workspace: current.workspace,
-            configuration: {
-              ...current.policy.policy.issueAssignment?.assessment,
-              ...record.manualIssue?.selections?.assessment,
-            },
-            now,
-          });
-          await turnAuthority.assertCurrent();
-          await save();
-        });
-      }
       if (record.predecessorId) {
         const predecessor = state.records.find((r) => r.id === record.predecessorId);
         const admission =

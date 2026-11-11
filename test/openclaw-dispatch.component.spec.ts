@@ -4581,6 +4581,32 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(creates().length, 1);
   });
 
+  for (const missing of ['skill', 'guidance'] as const)
+    it(`should deliver an openclaw assignment with missing assessment ${missing} and recover in place`, async () => {
+      manifest.github!.notifications!.issueAssignment!.assessment =
+        missing === 'skill'
+          ? { skill: 'missing-assessment' }
+          : { guidance: { file: 'missing-assessment.md' } };
+      const input = await next();
+      await prepare(input);
+      await assess(input.id);
+      assert.equal(creates().length, 1);
+      assert.equal(sends().length, 1);
+      const prompt = await service.promptContext(manifest, root, {
+        ...assessor(input.id),
+        agentId: manifest.agent.id,
+        workspace: root,
+      });
+      assert.ok(prompt?.appendContext.includes('contextLimitations'));
+      assert.ok(prompt?.appendContext.includes('https://github.com/owner/repo/issues/3'));
+      const before = await record();
+      delete manifest.github!.notifications!.issueAssignment!.assessment;
+      assert.equal((await context(input.id)).status, 'verified');
+      assert.equal(creates().length, 1);
+      assert.equal(sends().length, 1);
+      assert.deepEqual((await record()).request, before.request);
+    });
+
   it('should refresh ordinary context configuration without treating unrelated edits as a changed binding', async () => {
     const input = await next();
     await prepare(input);

@@ -1813,24 +1813,26 @@ describe('agent/codex-dispatch', () => {
     assert.ok(String(revised.presentation).includes('Clarification needed'));
   });
 
-  it('should block unavailable selections before preparing creation and recover the retained assignment', async () => {
+  it('should deliver the assignment despite a missing assessment skill and recover in the same chat', async () => {
     const available = deps.native!.assessmentSkill;
     deps.native!.assessmentSkill = async () => {
       throw new Error('dispatch-assessment-skill-unavailable');
     };
-    const selected = await next();
-    const blocked = await request('prepare', {
-      id: selected.id,
-      digest: selected.digest,
-      title: 'inspect issue',
-      assessment: { complexity: 'medium', reason: 'Verified native complexity.' },
-    });
-    assert.equal(blocked.code, 'dispatch-assessment-skill-unavailable');
-    const records = (await readDispatchState()).records as Array<{ request?: unknown }>;
-    assert.equal(records[0]!.request, undefined);
+    const prepared = await prepare();
+    created();
+    assert.equal((await request('reconcile', { id: prepared.id })).status, 'created');
+    await assert.rejects(
+      request('context', { id: prepared.id }, { threadId: 'issue-thread' }),
+      /dispatch-assessment-skill-unavailable/,
+    );
     deps.native!.assessmentSkill = available;
-    now += 300001;
-    assert.equal((await prepare()).id, selected.id);
+    assert.equal(
+      (await request('context', { id: prepared.id }, { threadId: 'issue-thread' })).status,
+      'verified',
+    );
+    const records = (await readDispatchState()).records as Array<{ request?: unknown }>;
+    assert.equal(records.length, 1);
+    assert.deepEqual(records[0]!.request, prepared.request);
   });
 
   it('should use updated assessment skill content without replacing the native request', async () => {
@@ -1865,21 +1867,22 @@ describe('agent/codex-dispatch', () => {
     );
   });
 
-  it('should block unreadable guidance before native creation without discarding the assignment', async () => {
+  it('should deliver the assignment despite unreadable assessment guidance and recover in the same chat', async () => {
     await configureAssessment({ guidance: { file: 'missing.md' } });
-    const selected = await next();
-    const blocked = await request('prepare', {
-      id: selected.id,
-      digest: selected.digest,
-      title: 'inspect issue',
-      assessment: { complexity: 'medium', reason: 'Verified native complexity.' },
-    });
-    assert.equal(blocked.code, 'dispatch-assessment-guidance-unreadable');
-    const records = (await readDispatchState()).records as Array<{ request?: unknown }>;
-    assert.equal(records[0]!.request, undefined);
+    const prepared = await prepare();
+    created();
+    assert.equal((await request('reconcile', { id: prepared.id })).status, 'created');
+    await assert.rejects(
+      request('context', { id: prepared.id }, { threadId: 'issue-thread' }),
+      /dispatch-assessment-guidance-unreadable/,
+    );
     await writeFile(join(workspace, 'missing.md'), 'Prefer small fixes.');
-    now += 300001;
-    assert.equal((await prepare()).id, selected.id);
+    assert.equal(
+      (await request('context', { id: prepared.id }, { threadId: 'issue-thread' })).status,
+      'verified',
+    );
+    const records = (await readDispatchState()).records as Array<{ request?: unknown }>;
+    assert.deepEqual(records[0]!.request, prepared.request);
   });
 
   it('should recognize an unchanged repo skill in the verified child worktree', async () => {
