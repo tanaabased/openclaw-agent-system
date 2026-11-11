@@ -133,14 +133,15 @@ export function announcementPresentation(
       ? state?.attempted || state?.receipt
         ? 'Reconcile the retained announcement attempt; do not compose or post a replacement.'
         : 'No announcement write was attempted. Compose and retain the announcement candidate, then continue with its preview.'
-      : recovery?.code === 'github-delivery-linkage-unverified' ||
-          recovery?.code === 'delivery-announcement-unconfirmed'
-        ? 'Check the existing PR’s closing association, then explicitly continue in this chat.'
-        : ['authentication', 'permission', 'missing-credential'].includes(
-              recovery?.providerDiagnostic?.classification ?? '',
-            )
-          ? 'Restore the indicated GitHub access, then explicitly continue in this chat.'
-          : 'Inspect the retained diagnostic and correct that specific obstacle before explicitly continuing in this chat.';
+      : ['authentication', 'permission', 'missing-credential'].includes(
+            recovery?.providerDiagnostic?.classification ?? '',
+          )
+        ? 'Restore the indicated GitHub access, then explicitly continue in this chat.'
+        : recovery?.code === 'delivery-announcement-unconfirmed'
+          ? 'Continue in this chat with read-only reconciliation of the original comment; do not compose or post a replacement.'
+          : recovery?.code === 'github-delivery-linkage-unverified'
+            ? 'Check the existing PR’s closing association, then explicitly continue in this chat.'
+            : 'Inspect the retained diagnostic and correct that specific obstacle before explicitly continuing in this chat.';
   const next = recovery
     ? recovery.status === 'retrying'
       ? `> **Recovery:** Scheduled read-only check after ${new Date(recovery.retryAfter!).toISOString()}; no delivery model turn while the prerequisite remains unverified.`
@@ -422,8 +423,8 @@ export default async function deliveryAnnouncement(input: {
       );
     }
     const state = delivery.announcement;
+    if (!state) throw new Error('delivery-announcement-candidate-required');
     if (
-      !state ||
       automationHash({
         ...state,
         publicText: undefined,
