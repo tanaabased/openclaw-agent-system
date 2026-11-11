@@ -9,25 +9,26 @@ export default function assignmentCard(
   },
   note = '',
 ) {
+  const itemLabel = githubNotificationMarkdownText(projection.item.label);
+  if (projection.sender) {
+    const senderLabel = githubNotificationMarkdownText(projection.sender.label);
+    return githubNotificationCard(
+      {
+        emoji: projection.emoji,
+        title: projection.item.kind + ' assigned',
+        summary:
+          `[@${senderLabel}](${projection.sender.url}) assigned you to ` +
+          `[${itemLabel}](${projection.item.url}).` +
+          (note ? ' ' + note : ''),
+      },
+      { quoted: false },
+    );
+  }
+
   return githubNotificationCard({
     emoji: projection.emoji,
-    title: projection.item.kind + (projection.sender ? ' assigned' : ' requested'),
-    summary: !projection.sender
-      ? 'You requested [' +
-        githubNotificationMarkdownText(projection.item.label) +
-        '](' +
-        projection.item.url +
-        ').' +
-        (note ? ' ' + note : '')
-      : '[@' +
-        githubNotificationMarkdownText(projection.sender.label) +
-        '](' +
-        projection.sender.url +
-        ') assigned you to [' +
-        githubNotificationMarkdownText(projection.item.label) +
-        '](' +
-        projection.item.url +
-        ').' +
-        (note ? ' ' + note : ''),
+    title: projection.item.kind + ' requested',
+    summary:
+      'You requested [' + itemLabel + '](' + projection.item.url + ').' + (note ? ' ' + note : ''),
   });
 }

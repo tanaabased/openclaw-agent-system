@@ -147,10 +147,14 @@ of the public GitHub response.
 
 ## Assignment Card
 
+Individual incoming assignment prompts keep their existing heading and linked
+attribution, with only the outer quote removed. The quoted format below remains
+for intake scan/status cards and other notification cards.
+
 ```markdown
-> ## 📥 Issue assigned
->
-> [@pirog](https://github.com/pirog) assigned you to [tanaabased/example#7 — Improve planning](https://github.com/tanaabased/example/issues/7). Assess this issue and prepare a plan. Stop before implementation or GitHub publication.
+## 📥 Issue assigned
+
+[@pirog](https://github.com/pirog) assigned you to [tanaabased/example#7 — Improve planning](https://github.com/tanaabased/example/issues/7). Assess this issue and prepare a plan. Stop before implementation or GitHub publication.
 ```
 
 ```markdown
@@ -171,16 +175,18 @@ model-only provider facts never belong in them.
 
 ## Direct Message
 
-Codex and OpenClaw share one body-first comment-card renderer. Do not add an
-emoji heading or top padding. Preserve the complete body's Markdown and mentions,
-quote every line once (including blanks and fences), then put a visible gap and an
-italic attribution footer inside that same quote. Preserve raw provider text separately.
+Codex and OpenClaw share one incoming-message renderer. For incoming comments and
+approved review feedback, remove only the outer quote wrapper. Preserve the complete
+provider body's Markdown, mentions, blank lines, fences, and authored quotes, then
+keep the existing spacer and attribution footer. Assignment prompts keep their
+existing heading and linked attribution. Intake scan/status cards and outgoing
+replies, plan assessments, and PR announcements keep their existing quoted format.
 
 ```markdown
-> @tanaabot can you confirm whether this also covers comments received while planning?
->
-> &nbsp;  
-> _[Comment ↗](https://github.com/tanaabased/example/issues/7#issuecomment-123) from [@pirog](https://github.com/pirog)_
+@tanaabot can you confirm whether this also covers comments received while planning?
+
+&nbsp;  
+_[Comment ↗](https://github.com/tanaabased/example/issues/7#issuecomment-123) from [@pirog](https://github.com/pirog)_
 ```
 
 Use these labels and connectors. The label links to the exact verified comment,
@@ -195,13 +201,11 @@ Normal HTTPS links do not promise a particular browser destination.
 | Public assessment summary         | Plan assessment | by        |
 | Public PR announcement            | PR announcement | by        |
 
-Copy decoded Markdown, not its JSON representation: the spacer ends in two
-spaces for a Markdown hard break, without a backslash. Preserve unquoted blank lines between cards; do not quote
-the complete response a second time.
-
-Use one `&nbsp;` spacer followed by a Markdown hard break before the attribution,
-without a blank quoted line between the spacer and footer. Keep a paragraph boundary
-after the body so trailing code fences and nested quotes remain intact. Native
+Copy decoded Markdown, not its JSON representation. Preserve unquoted blank lines
+between cards; do not quote the complete response a second time. The spacer ends in
+two spaces for a Markdown hard break, without a backslash. Keep a paragraph
+boundary after incoming bodies so trailing code fences and nested quotes remain
+intact. Native
 OpenClaw spacing must also be observed: renderer output or an HTML preview is not
 native display evidence. Do not introduce `<small>` or HTML anchors, which Codex
 displays literally. Record any unsupported host limitation and missing native

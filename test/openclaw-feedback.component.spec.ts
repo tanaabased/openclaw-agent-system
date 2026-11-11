@@ -230,10 +230,10 @@ describe('agent/openclaw-feedback', () => {
     await advanceFeedbackTurn(input);
     return action('context');
   }
-  it('should send only the native quoted comment card without workflow instructions or identifiers', async () => {
+  it('should send only the native unquoted comment card without workflow instructions or identifiers', async () => {
     await advanceFeedbackTurn(input);
     assert.equal(event.turn!.message, feedbackPresentation(event, 'owner/repo'));
-    assert.ok(event.turn!.message.split('\n').every((line) => line.startsWith('>')));
+    assert.ok(!event.turn!.message.startsWith('>'));
     assert.ok(!event.turn!.message.includes(record.id));
     assert.ok(!event.turn!.message.includes(event.id));
   });

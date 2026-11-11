@@ -261,14 +261,17 @@ export function reviewFeedbackPresentation(comment: GitHubReviewFeedback): strin
       `${finding.body}\n\n[${inlineCode(finding.path)} ↗](${finding.url}) · reviewed commit ${inlineCode(finding.originalCommitId.slice(0, 7))}\nCurrent line: ${finding.line ?? 'unavailable or outdated'}; original line: ${finding.originalLine ?? 'unavailable'}; side: ${finding.side ? inlineCode(finding.side) : 'unavailable'}\n\n${reviewDiffPreview(finding)}`,
     );
   }
-  return githubCommentCard({
-    body: lines.join('\n\n'),
-    author: {
-      label: comment.author!.login,
-      url: `https://github.com/${encodeURIComponent(comment.author!.login)}`,
+  return githubCommentCard(
+    {
+      body: lines.join('\n\n'),
+      author: {
+        label: comment.author!.login,
+        url: `https://github.com/${encodeURIComponent(comment.author!.login)}`,
+      },
+      label: 'Review comment',
+      connector: 'from',
+      publication: { url: sourceUrl },
     },
-    label: 'Review comment',
-    connector: 'from',
-    publication: { url: sourceUrl },
-  });
+    { style: 'unquoted' },
+  );
 }
