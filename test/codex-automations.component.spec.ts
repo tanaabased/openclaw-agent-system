@@ -117,6 +117,28 @@ describe('agent/codex-automation-native-contract', () => {
     assert.equal(heartbeat.definition.targetThreadId, 'fixture-thread');
   });
 
+  it('should accept native prompt fingerprints without changing verified automation settings', async () => {
+    for (const kind of ['project', 'heartbeat'] as const) {
+      const contents = await capture(kind);
+      const native = parse(contents);
+      const id = native.id as string;
+      const expected = parseSavedAutomation(contents, id);
+      native.model_prompt_sha256 = 'a'.repeat(64);
+      native.native_display_metadata = { revision: 2 };
+      assert.deepEqual(parseSavedAutomation(stringify(native), id), expected);
+      native.prompt = 'Changed native prompt';
+      assert.notDeepEqual(
+        parseSavedAutomation(stringify(native), id).definition,
+        expected.definition,
+      );
+      native.prompt = 123;
+      assert.throws(
+        () => parseSavedAutomation(stringify(native), id),
+        rejectsCode('automation-saved-schema-unsupported'),
+      );
+    }
+  });
+
   it('should require structured native receipts rather than rendered view cards', async () => {
     const native = JSON.parse(await capture('native'));
     assert.equal(
@@ -144,11 +166,11 @@ describe('agent/codex-automation-native-contract', () => {
     );
   });
 
-  it('should reject constructed unknown schemas, fields, malformed toml and mismatched ids', async () => {
+  it('should reject unsupported versions, malformed owned fields, malformed toml and mismatched ids', async () => {
     const recorded = await capture('project');
     for (const contents of [
       recorded.replace('version = 1', 'version = 2'),
-      `${recorded}\nunknown = true\n`,
+      recorded.replace('status = "PAUSED"', 'status = "UNKNOWN"'),
       recorded.slice(0, 23),
     ]) {
       assert.throws(() => parseSavedAutomation(contents, 'agent-system-196-paused-fixture'));
@@ -265,6 +287,7 @@ describe('agent/codex-automations', () => {
   // fake only the native write boundary, using the captured saved shape as its template.
   async function nativeWrite(expected: NativeAutomation, id = 'fixture-native') {
     const saved = parse(await capture(expected.kind === 'cron' ? 'project' : 'heartbeat'));
+    saved.model_prompt_sha256 = 'b'.repeat(64);
     Object.assign(saved, {
       id,
       name: expected.name,

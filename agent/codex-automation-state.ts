@@ -79,17 +79,17 @@ const savedSchema = Type.Union([
       target: Type.Union([
         Type.Object(
           { type: Type.Literal('project'), project_id: text },
-          { additionalProperties: false },
+          { additionalProperties: true },
         ),
         Type.Object({ type: Type.Literal('projectless') }, { additionalProperties: false }),
       ]),
       cwds: Type.Array(text, { minItems: 1, maxItems: 1 }),
     },
-    { additionalProperties: false },
+    { additionalProperties: true },
   ),
   Type.Object(
     { ...savedCommon, kind: Type.Literal('heartbeat'), target_thread_id: text },
-    { additionalProperties: false },
+    { additionalProperties: true },
   ),
 ]);
 
