@@ -246,6 +246,33 @@ describe('agent/delivery-announcement', () => {
     await assert.rejects(run('compose'), WorkflowPolicyHeld);
     assert.equal(JSON.stringify(delivery), saved);
   });
+  for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should direct exhausted uncertainty to read-only comment reconciliation in ${runtime} without reposting`, async () => {
+      input.runtime = runtime;
+      await candidate();
+      missing = true;
+      await run('announce', { now: 100 });
+      const retained = JSON.stringify(delivery.announcement);
+      while (delivery.announcementRecovery!.status === 'retrying')
+        await recheckAnnouncement({
+          ...input,
+          now: delivery.announcementRecovery!.retryAfter!,
+        });
+      assert.equal(delivery.announcementRecovery!.status, 'exhausted');
+      const presentation = announcementPresentation(
+        delivery.announcement,
+        'https://github.com/owner/repo/issues/3',
+        undefined,
+        delivery.announcementRecovery,
+      );
+      assert.match(presentation, /automatic checks exhausted/i);
+      assert.match(presentation, /read-only reconciliation of the original comment/i);
+      assert.match(presentation, /do not compose or post a replacement/i);
+      assert.doesNotMatch(presentation, /closing association/i);
+      assert.equal(JSON.stringify(delivery.announcement), retained);
+      assert.equal((await run('announce')).status, 'announcement-blocked');
+      assert.equal(posts, 1);
+    });
   it('should retain the same draft and preview while recovering a failed prerequisite', async () => {
     await candidate();
     const saved = JSON.stringify(delivery.announcement);
@@ -293,6 +320,15 @@ describe('agent/delivery-announcement', () => {
       };
       await run('compose', { now: 100 });
       assert.equal(announcementRecoveryAction(delivery, 86400000), 'wait');
+      assert.match(
+        announcementPresentation(
+          delivery.announcement,
+          'https://github.com/owner/repo/issues/3',
+          undefined,
+          delivery.announcementRecovery,
+        ),
+        /do not bypass a native denial/i,
+      );
       assert.equal(posts, 0);
     }
     for (const classification of [
@@ -321,6 +357,22 @@ describe('agent/delivery-announcement', () => {
         classification,
       );
       assert.equal(delivery.announcementRecovery!.retryAfter, 900100);
+      if (classification === 'permission' || classification === 'authentication') {
+        const recovery = delivery.announcementRecovery!;
+        assert.match(
+          announcementPresentation(
+            delivery.announcement,
+            'https://github.com/owner/repo/issues/3',
+            undefined,
+            {
+              ...recovery,
+              status: 'exhausted',
+              code: 'delivery-announcement-unconfirmed',
+            },
+          ),
+          /restore the indicated github access/i,
+        );
+      }
     }
   });
   for (const state of [false, true])
