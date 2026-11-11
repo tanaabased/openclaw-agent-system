@@ -12,13 +12,18 @@ export function openClawItemOccupied(record: OpenClawDispatchRecord) {
   );
 }
 export default function openClawCapacity(
-  records: OpenClawDispatchRecord[],
+  state:
+    OpenClawDispatchRecord[] | { records: OpenClawDispatchRecord[]; isolatedRecords?: unknown[] },
   limit: number,
   pickup?: IssuePickupState,
   excludeIssue?: string,
 ) {
   if (!Number.isSafeInteger(limit) || limit < 1) throw new Error('dispatch-capacity-invalid');
+  const records = Array.isArray(state) ? state : state.records;
+  const reserved = Array.isArray(state) ? 0 : (state.isolatedRecords?.length ?? 0);
   const occupied =
-    records.filter(openClawItemOccupied).length + issuePickupCapacity(pickup, excludeIssue);
+    reserved +
+    records.filter(openClawItemOccupied).length +
+    issuePickupCapacity(pickup, excludeIssue);
   return { occupied, available: Math.max(0, limit - occupied) };
 }

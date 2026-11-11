@@ -141,6 +141,7 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
   state: {
     projectPickup?: IssuePickupState;
     records: R[];
+    isolatedRecords?: Array<{ issueKey: string }>;
   };
   save(): Promise<void>;
   assertWriteCapacity?(): void;
@@ -460,6 +461,9 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
       item.state !== 'open' ||
       !pickupCandidateScope(scope, item) ||
       item.assignees.length !== 0 ||
+      state.isolatedRecords?.some(
+        (record) => record.issueKey === pickupIssueKey(journal, nodeId, repository.nodeId),
+      ) ||
       state.records.some(
         (record) =>
           record.issueKey === pickupIssueKey(journal, nodeId, repository.nodeId) &&
@@ -506,7 +510,9 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
       )
         return idle('scan-complete');
       if (
-        state.records.filter(tx.occupied).length + issuePickupCapacity(journal) >=
+        state.records.filter(tx.occupied).length +
+          (state.isolatedRecords?.length ?? 0) +
+          issuePickupCapacity(journal) >=
         policy.maxConcurrentItems
       )
         return idle('at-capacity');
@@ -836,7 +842,9 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
       const code = await routingEligibility(live, authorized.repository);
       if (code) return finish(operation, 'pending', code);
       if (
-        state.records.filter(tx.occupied).length + issuePickupCapacity(journal, candidate.nodeId) >=
+        state.records.filter(tx.occupied).length +
+          (state.isolatedRecords?.length ?? 0) +
+          issuePickupCapacity(journal, candidate.nodeId) >=
         live.maxConcurrentItems
       )
         return finish(operation, 'at-capacity');

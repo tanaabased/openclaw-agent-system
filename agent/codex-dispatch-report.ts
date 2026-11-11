@@ -49,7 +49,7 @@ export default function prepareDispatchReport(input: {
       ].includes(record.retirement.code),
   );
   const managing = active.filter((record) => record.effective && record.threadId);
-  const occupied = codexCapacity(state.records, input.slots, state.projectPickup).occupied;
+  const occupied = codexCapacity(state, input.slots, state.projectPickup).occupied;
   const pending = pendingDispatchAssignments(state, intake).length;
   const feedback = active.flatMap((record) =>
     (record.feedback?.events ?? []).map((event) => ({ record, event })),
@@ -68,6 +68,11 @@ export default function prepareDispatchReport(input: {
       Boolean(record.blocker),
   );
   const observations = [
+    ...(state.isolatedRecords ?? []).map((record) => ({
+      id: record.id,
+      code: record.code,
+      operation: 'task record',
+    })),
     ...(intake.blocker
       ? [
           {

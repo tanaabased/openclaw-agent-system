@@ -1,3 +1,5 @@
+import codexCapacity from '../agent/codex-capacity.ts';
+import openClawCapacity from '../agent/openclaw-capacity.ts';
 import { issueKey } from '../agent/dispatch-pending.ts';
 import { withDispatchTask } from '../agent/dispatch-task-scope.ts';
 import assert from 'node:assert/strict';
@@ -234,7 +236,12 @@ describe('agent/shared dispatch state', () => {
     ]) {
       const contents = JSON.stringify(value);
       await store.file.write(contents);
-      await assert.rejects(store.read(), /dispatch-state-invalid/);
+      if (value.scope !== scope) await assert.rejects(store.read(), /dispatch-state-invalid/);
+      else {
+        const state = await store.read();
+        assert.equal(state.records.length, 0);
+        assert.equal(state.isolatedRecords?.[0]?.code, 'dispatch-task-record-invalid');
+      }
       assert.equal(await readFile(store.path, 'utf8'), contents);
     }
   });
@@ -282,7 +289,7 @@ describe('agent/shared dispatch state', () => {
       assert.equal(saved.oldReport, 'unused');
       assert.equal((await store.inspectIntake()).storage.level, 'normal');
       await write(store, [{ ...record, reset: { at: 'not-a-time', by: 'operator' } }]);
-      await assert.rejects(store.read(), /dispatch-state-invalid/);
+      assert.equal((await store.read()).isolatedRecords?.length, 1);
     });
 
     it(`should inspect ${runtime} intake without interpreting another task's damaged effects`, async () => {
@@ -335,10 +342,51 @@ describe('agent/shared dispatch state', () => {
       }
     });
 
+    it(`should keep independent ${runtime} coordinator work usable without rewriting damaged records`, async () => {
+      const store = makeStore(root);
+      const raw = await write(store, [damaged(), healthy()], { oldMetadata: 'retained' });
+      await task(healthy().sourceThreadId, () =>
+        store.transaction(async (state, save) => {
+          assert.equal(state.records.length, 1);
+          assert.equal(state.isolatedRecords?.[0]?.code, 'dispatch-task-record-invalid');
+          assert.equal(
+            (runtime === 'codex'
+              ? codexCapacity({ records: [], isolatedRecords: state.isolatedRecords }, 3)
+              : openClawCapacity({ records: [], isolatedRecords: state.isolatedRecords }, 3)
+            ).occupied,
+            1,
+          );
+          state.records[0]!.context = 'healthy progress';
+          state.records.push({
+            ...pending('f'.repeat(64)),
+            threadId: 'new-chat',
+            worktree: '/new',
+          });
+          await save();
+          state.checked = { at: 10, digest: 'a'.repeat(64) };
+          await save();
+        }),
+      );
+      const saved = JSON.parse(await readFile(store.path, 'utf8'));
+      assert.deepEqual(saved.records[0], raw.records[0]);
+      assert.equal(saved.records[1].context, 'healthy progress');
+      assert.equal(saved.records[2].threadId, 'new-chat');
+      assert.equal(saved.oldMetadata, 'retained');
+      assert.equal(saved.isolatedRecords, undefined);
+      await assert.rejects(
+        store.transaction(async (state, save) => {
+          state.records.push({ ...pending('e'.repeat(64)), worktree: '/damaged' });
+          await save();
+        }),
+        /dispatch-task-ownership-unresolved/,
+      );
+      assert.equal(JSON.parse(await readFile(store.path, 'utf8')).records.length, 3);
+    });
+
     it(`should isolate a healthy ${runtime} task and preserve damaged records and uncertain effects`, async () => {
       const store = makeStore(root);
       const raw = await write(store, [healthy(), damaged()]);
-      await assert.rejects(store.read(), /dispatch-state-invalid/);
+      assert.equal((await store.read()).isolatedRecords?.length, 1);
       await task('healthy-chat', async () => {
         assert.deepEqual((await store.read()).records, [healthy()]);
         await store.transaction(async (state, save) => {
@@ -395,10 +443,10 @@ describe('agent/shared dispatch state', () => {
           delivery: payload,
         };
         const raw = await write(store, [healthy(), other]);
-        await assert.rejects(
-          store.transaction(async () => assert.fail('shared operation entered')),
-          /dispatch-state-invalid/,
-        );
+        await store.transaction(async (state) => {
+          assert.deepEqual(state.records, [healthy()]);
+          assert.equal(state.isolatedRecords?.[0]?.id, other.id);
+        });
         await task('healthy-chat', async () => {
           assert.deepEqual((await store.read()).records, [healthy()]);
           await store.transaction(async (state, save) => {

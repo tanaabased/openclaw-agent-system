@@ -4524,6 +4524,33 @@ describe('agent/codex-dispatch', () => {
       });
     });
 
+  it('should dispatch an independent codex assignment beside a damaged record', async () => {
+    const selected = await next();
+    const store = await workStore();
+    const raw = await store.read();
+    const damaged = {
+      ...raw.records[0]!,
+      id: 'd'.repeat(64),
+      intakeId: 'd'.repeat(64),
+      issueKey: 'e'.repeat(64),
+      threadId: 'damaged-chat',
+      worktree: '/damaged',
+      createdAt: 'invalid',
+      routingNote: 'unused',
+    };
+    await store.file.write(JSON.stringify({ ...raw, records: [...raw.records, damaged] }));
+    const prepared = await request('prepare', {
+      id: selected.id,
+      digest: selected.digest,
+      title: 'independent task',
+      assessment: { complexity: 'medium', reason: 'bounded work' },
+    });
+    assert.equal(prepared.status, 'prepared', JSON.stringify(prepared));
+    const saved = JSON.parse(await readFile(store.path, 'utf8'));
+    assert.deepEqual(saved.records[1], damaged);
+    assert.equal(saved.isolatedRecords, undefined);
+  });
+
   it('should read and advance a healthy codex task beside a malformed slim record', async () => {
     const work = await workIssue(null);
     work.receive();

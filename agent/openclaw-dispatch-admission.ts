@@ -93,7 +93,7 @@ export default class OpenClawDispatchAdmission {
         hasCapacity:
           Boolean(record.request) ||
           dispatchCapacity(
-            state.records,
+            state,
             current.policy.policy.maxConcurrentItems,
             state.projectPickup,
             'initiation' in intake ? undefined : intake.evidence?.projectWork?.pickup?.issueNodeId,
@@ -119,7 +119,7 @@ export default class OpenClawDispatchAdmission {
       if (
         !record.manualIssue &&
         !dispatchCapacity(
-          state.records,
+          state,
           current.policy.policy.maxConcurrentItems,
           state.projectPickup,
           'initiation' in intake ? undefined : intake.evidence?.projectWork?.pickup?.issueNodeId,

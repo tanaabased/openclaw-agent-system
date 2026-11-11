@@ -138,7 +138,7 @@ export default class OpenClawNotifications {
       const journal = await (this.dependencies.readDispatch?.(store.location.scope) ??
         new OpenClawDispatchStore(this.dependencies.root, store.location.scope).read());
       const capacity = dispatchCapacity(
-        journal.records,
+        journal,
         selected.policy.maxConcurrentItems,
         journal.projectPickup,
       );

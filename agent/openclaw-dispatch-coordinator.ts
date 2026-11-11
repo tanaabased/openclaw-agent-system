@@ -271,7 +271,7 @@ export default class OpenClawDispatchCoordinator {
       .some(
         ({ intake }) =>
           dispatchCapacity(
-            state.records,
+            state,
             current.policy.policy.maxConcurrentItems,
             state.projectPickup,
             intake.evidence?.projectWork?.pickup?.issueNodeId,
@@ -551,7 +551,7 @@ export default class OpenClawDispatchCoordinator {
     }
     await save();
     const capacity = dispatchCapacity(
-      state.records,
+      state,
       current.policy.policy.maxConcurrentItems,
       state.projectPickup,
     );
@@ -613,7 +613,7 @@ export default class OpenClawDispatchCoordinator {
           pass.candidates.includes(intake.id) &&
           (!record || !pass.selected.includes(record.id)) &&
           dispatchCapacity(
-            state.records,
+            state,
             current.policy.policy.maxConcurrentItems,
             state.projectPickup,
             intake.evidence?.projectWork?.pickup?.issueNodeId,

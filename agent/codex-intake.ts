@@ -499,11 +499,8 @@ export async function runCodexIssuePickup(
         outcome: result,
         debug: current.manifest.debug,
         capacity: {
-          occupied: codexCapacity(
-            state.records,
-            reportPolicy.maxConcurrentItems,
-            state.projectPickup,
-          ).occupied,
+          occupied: codexCapacity(state, reportPolicy.maxConcurrentItems, state.projectPickup)
+            .occupied,
           limit: reportPolicy.maxConcurrentItems,
         },
       });

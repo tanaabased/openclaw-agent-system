@@ -4580,6 +4580,29 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(creates().length, 1);
   });
 
+  it('should dispatch an independent openclaw assignment beside a damaged record', async () => {
+    manifest.github!.notifications!.maxConcurrentItems = 2;
+    const selected = await next();
+    const store = (await service.scope(manifest, root)).journal;
+    const raw = await store.read();
+    const damaged = {
+      ...raw.records[0]!,
+      id: 'd'.repeat(64),
+      intakeId: 'd'.repeat(64),
+      issueKey: 'e'.repeat(64),
+      threadId: 'damaged-chat',
+      worktree: '/damaged',
+      createdAt: 'invalid',
+      routingNote: 'unused',
+    };
+    await store.file.write(JSON.stringify({ ...raw, records: [...raw.records, damaged] }));
+    const prepared = await prepare(selected);
+    assert.equal(creates().length, 1, JSON.stringify(prepared));
+    const saved = JSON.parse(await readFile(store.path, 'utf8'));
+    assert.deepEqual(saved.records[1], damaged);
+    assert.equal(saved.isolatedRecords, undefined);
+  });
+
   it('should read and advance a healthy openclaw task beside a malformed slim record', async () => {
     const input = await next();
     await prepare(input);

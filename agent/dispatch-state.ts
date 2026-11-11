@@ -212,7 +212,10 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
 }
 export type DispatchState<R extends SharedDispatchRecord> = Static<
   ReturnType<typeof dispatchStateSchema<R>>
->;
+> & {
+  // Read-time reservations only; saves retain the original records, never this projection.
+  isolatedRecords?: Array<{ id: string; issueKey: string; intakeId?: string; code: string }>;
+};
 /** one journal bridges native actions; a persisted creation intent is never issued twice. */
 export default class DispatchStore<R extends SharedDispatchRecord> {
   readonly file: PrivateStateFile;
@@ -335,7 +338,6 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
       return raw;
     } catch (error) {
       const session = dispatchTaskSession(this.contract.runtime);
-      if (!session) throw error;
       if (!Value.Check(this.envelopeSchema, raw) || raw.scope !== this.scope)
         throw new Error('dispatch-state-invalid', { cause: error });
       const records = raw.records;
@@ -346,7 +348,31 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
         )
       )
         throw new Error('dispatch-task-ownership-unresolved', { cause: error });
-      const owners = records.filter((record) => record.threadId === session);
+      const owners = session ? records.filter((record) => record.threadId === session) : [];
+      if (!owners.length && (!session || records.some((r) => r.sourceThreadId === session))) {
+        this.validateShared(raw);
+        const isolatedRecords: NonNullable<DispatchState<R>['isolatedRecords']> = [];
+        const damaged = records.filter((record) => !this.validRecord(record));
+        const usable = records.filter((record) => {
+          let code = 'dispatch-task-record-invalid';
+          try {
+            if (this.validRecord(record)) {
+              this.assertIndependent(record, damaged);
+              return true;
+            }
+          } catch {
+            code = 'dispatch-task-ownership-unresolved';
+          }
+          isolatedRecords.push({
+            id: record.id,
+            issueKey: record.issueKey,
+            intakeId: record.intakeId,
+            code,
+          });
+          return false;
+        });
+        return { ...raw, records: usable, isolatedRecords };
+      }
       if (owners.length !== 1)
         throw new Error('dispatch-task-ownership-unresolved', { cause: error });
       const owner = owners[0]!;
@@ -452,6 +478,31 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     if (snapshot.raw === snapshot.state) {
       this.validate(proposed);
       return proposed;
+    }
+    if (snapshot.state.isolatedRecords) {
+      if (!isDeepStrictEqual(proposed.isolatedRecords, snapshot.state.isolatedRecords))
+        throw new Error('dispatch-task-isolation-required');
+      const held = snapshot.raw.records.filter((r) =>
+        snapshot.state.isolatedRecords!.some((entry) => entry.id === r.id),
+      );
+      for (const record of proposed.records) {
+        if (!this.validRecord(record)) throw new Error('dispatch-task-record-invalid');
+        this.assertIndependent(record, held);
+      }
+      const restored = {
+        ...proposed,
+        records: [
+          ...snapshot.raw.records.flatMap((r) =>
+            held.includes(r) ? [r] : proposed.records.filter((entry) => entry.id === r.id),
+          ),
+          ...proposed.records.filter(
+            (r) => !snapshot.raw.records.some((entry) => entry.id === r.id),
+          ),
+        ],
+      };
+      delete restored.isolatedRecords;
+      this.validateShared(restored);
+      return restored;
     }
     const owner = snapshot.state.records[0]!;
     if (

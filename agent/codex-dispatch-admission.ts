@@ -210,7 +210,7 @@ async function selectClaim(
     turnId: tx.operatorInput?.turnId ?? state.run!.id,
     hasCapacity:
       codexCapacity(
-        state.records,
+        state,
         current.policy?.policy.maxConcurrentItems ?? 3,
         state.projectPickup,
         intake.evidence?.projectWork?.pickup?.issueNodeId,
@@ -500,7 +500,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
     .find(
       ({ record, intake }) =>
         codexCapacity(
-          state.records,
+          state,
           current.policy?.policy.maxConcurrentItems ?? 3,
           state.projectPickup,
           intake.evidence?.projectWork?.pickup?.issueNodeId,
@@ -519,11 +519,8 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
     )?.intake;
   if (!intake)
     return checked(
-      codexCapacity(
-        state.records,
-        current.policy?.policy.maxConcurrentItems ?? 3,
-        state.projectPickup,
-      ).available
+      codexCapacity(state, current.policy?.policy.maxConcurrentItems ?? 3, state.projectPickup)
+        .available
         ? 'idle'
         : 'at-capacity',
     );

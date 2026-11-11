@@ -207,11 +207,8 @@ export default class OpenClawIntake {
           outcome: result,
           debug: manifest.debug,
           capacity: {
-            occupied: openClawCapacity(
-              state.records,
-              reportPolicy.maxConcurrentItems,
-              state.projectPickup,
-            ).occupied,
+            occupied: openClawCapacity(state, reportPolicy.maxConcurrentItems, state.projectPickup)
+              .occupied,
             limit: reportPolicy.maxConcurrentItems,
           },
         });

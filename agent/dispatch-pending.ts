@@ -16,6 +16,7 @@ export function issueKey(
 export default function pendingDispatchAssignments<R extends SharedDispatchRecord>(
   state: {
     records: R[];
+    isolatedRecords?: Array<{ issueKey: string }>;
   },
   intake: {
     records: ManagedIssue[];
@@ -25,6 +26,7 @@ export default function pendingDispatchAssignments<R extends SharedDispatchRecor
   const latest = new Map<string, IntakeRecord>();
   for (const item of intake.records) if (item.assignment) latest.set(issueKey(item), item);
   return [...latest].flatMap(([key, item]) => {
+    if (state.isolatedRecords?.some((record) => record.issueKey === key)) return [];
     if (
       intake.observedAssignments?.some(
         (entry) =>
