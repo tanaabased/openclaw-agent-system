@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
-import { pendingRecoveryFeedback } from '../agent/issue-task-recovery.ts';
-import { mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { automationHash } from '../agent/automation-hash.ts';
@@ -9,6 +8,7 @@ import {
   retainedAnnouncementPublication,
 } from '../agent/delivery-announcement-recovery.ts';
 import { implementationContextBudget } from '../agent/implementation-material.ts';
+import { pendingRecoveryFeedback } from '../agent/issue-task-recovery.ts';
 import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
 import {
   implementationReviewInstructions,
@@ -4596,6 +4596,62 @@ describe('agent/openclaw issue dispatch', () => {
       (await record()).nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn,
       undefined,
     );
+  });
+
+  it('should read and advance a healthy openclaw task beside a malformed slim record', async () => {
+    const input = await next();
+    await prepare(input);
+    await assess(input.id);
+    const journal = (await service.scope(manifest, root)).journal;
+    const raw = await journal.read();
+    const damaged = {
+      id: 'd'.repeat(64),
+      intakeId: 'd'.repeat(64),
+      issueKey: 'e'.repeat(64),
+      sourceThreadId: 'other-coordinator',
+      threadId: 'damaged-chat',
+      createdAt: 1,
+      manifestDigest: 'other',
+      delivery: {
+        id: 'c'.repeat(64),
+        binding: {
+          repositoryId: 'repository',
+          issueId: 'damaged-issue',
+          threadId: 'damaged-chat',
+          worktree: '/damaged',
+          branch: 'damaged-branch',
+          base: 'main',
+          head: 'f'.repeat(40),
+          authorId: 'author',
+        },
+        creationAttempted: true,
+        reconciled: false,
+        title: 42,
+        pendingPush: { previousHead: '', head: 'f'.repeat(40) },
+      },
+    };
+    const third = {
+      id: 'f'.repeat(64),
+      intakeId: 'f'.repeat(64),
+      issueKey: damaged.issueKey,
+      sourceThreadId: 'other-coordinator',
+      threadId: 'third-chat',
+      createdAt: 1,
+      manifestDigest: 'other',
+    };
+    await journal.file.write(JSON.stringify({ ...raw, records: [...raw.records, damaged, third] }));
+    const result = await context(input.id);
+    assert.equal(result.status, 'verified');
+    const saved = JSON.parse(await readFile(journal.path, 'utf8'));
+    assert.ok(saved.records[0].assessmentCaller);
+    assert.deepEqual(saved.records.slice(1), [damaged, third]);
+    const prompt = await service.promptContext(manifest, root, {
+      ...assessor(input.id),
+      agentId: manifest.agent.id,
+      workspace: root,
+    });
+    assert.ok(prompt?.appendContext.includes(input.id));
+    await assert.rejects(journal.read(), /dispatch-state-invalid/);
   });
 
   it('should bind assessment context to the exact native session and input without a formatting prerequisite', async () => {

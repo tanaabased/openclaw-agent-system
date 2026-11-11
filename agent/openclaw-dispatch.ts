@@ -1,3 +1,4 @@
+import { withDispatchTask } from './dispatch-task-scope.ts';
 import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { isDeepStrictEqual } from 'node:util';
 import type { Static } from 'typebox';
@@ -132,7 +133,10 @@ export default class OpenClawDispatch {
       ...(error instanceof IssueSessionMismatchError ? { mismatchedField: error.field } : {}),
     };
   }
-  async runModel(
+  runModel(...args: Parameters<OpenClawDispatch['runModelScoped']>) {
+    return withDispatchTask('openclaw', args[2].sessionKey, () => this.runModelScoped(...args));
+  }
+  private async runModelScoped(
     manifest: AgentManifest,
     workspace: string,
     caller: DispatchCaller,
@@ -316,7 +320,10 @@ export default class OpenClawDispatch {
       modelInput,
     );
   }
-  async run(
+  run(...args: Parameters<OpenClawDispatch['runScoped']>) {
+    return withDispatchTask('openclaw', args[2].sessionKey, () => this.runScoped(...args));
+  }
+  private async runScoped(
     manifest: AgentManifest,
     workspace: string,
     caller: DispatchCaller,

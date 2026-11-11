@@ -1,3 +1,4 @@
+import { withDispatchTask } from './dispatch-task-scope.ts';
 import { Value } from 'typebox/value';
 import recoverCodexAnnouncement from './codex-announcement-recovery.ts';
 import codexCommit from './codex-commit.ts';
@@ -31,7 +32,15 @@ import { requireWorkflowSchedule } from './workflow-schedule.ts';
 
 export type { CodexContinuationDependencies } from './codex-continuation-context.ts';
 /** work mode is standing authority; these checks never ask for another stage approval. */
-export default async function runCodexContinuation(
+export default function runCodexContinuation(
+  ...args: Parameters<typeof runCodexContinuationScoped>
+) {
+  const deps = args[2] ?? {};
+  return withDispatchTask('codex', deps.threadId ?? process.env.CODEX_THREAD_ID, () =>
+    runCodexContinuationScoped(...args),
+  );
+}
+async function runCodexContinuationScoped(
   pluginData: string,
   input: unknown,
   deps: CodexContinuationDependencies = {},

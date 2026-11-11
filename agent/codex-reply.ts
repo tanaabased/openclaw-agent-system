@@ -1,3 +1,4 @@
+import { withDispatchTask } from './dispatch-task-scope.ts';
 import { parseReplyRequest } from '../tools/dispatch/reply-schema.ts';
 import codexAssessmentSkill from './codex-assessment-skill.ts';
 import codexContinuationNative from './codex-continuation-native.ts';
@@ -20,7 +21,13 @@ import ReplyStore, { type ReplyDraft } from './reply-store.ts';
 import { feedbackTarget } from './reply-target.ts';
 export { default as codexReplyInput } from './codex-direct-input.ts';
 /** standalone execution uses the portable binding and native GitHub account, never OpenClaw secrets. */
-export default async function codexReply(
+export default function codexReply(...args: Parameters<typeof codexReplyScoped>) {
+  const deps = args[2] ?? {};
+  return withDispatchTask('codex', deps.threadId ?? process.env.CODEX_THREAD_ID, () =>
+    codexReplyScoped(...args),
+  );
+}
+async function codexReplyScoped(
   pluginData: string,
   request: unknown,
   deps: CodexFeedbackDependencies,
