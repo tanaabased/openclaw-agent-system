@@ -11,6 +11,8 @@ import {
   type DispatchGit,
 } from '../agent/codex-dispatch-project.ts';
 import codexHostAccess from '../agent/codex-host-access.ts';
+import { dispatchRetryDue, scheduleDispatchRetry } from '../agent/dispatch-retry.ts';
+import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
 
 describe('agent/codex-dispatch-project', () => {
   let root: string, source: string, other: string, commonDir: string;
@@ -190,7 +192,16 @@ describe('agent/codex-dispatch-project', () => {
       defaultBranch: 'main',
       workspace: root,
     };
-    await assert.rejects(resolveDispatchProject(input, git), /dispatch-project-ambiguous/);
+    const record = {} as SharedDispatchRecord;
+    await assert.rejects(resolveDispatchProject(input, git), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error.message, 'dispatch-project-ambiguous');
+      record.blocker = error.message;
+      assert.equal(scheduleDispatchRetry(record, error.message, error, 0), true);
+      return true;
+    });
+    assert.equal(dispatchRetryDue(record, 0), false);
+    assert.equal(dispatchRetryDue(record, record.retryAfter!), true);
     const selected = await resolveDispatchProject({ ...input, explicitPath: './source' }, git);
     assert.equal(selected.path, source);
     assert.equal(selected.commit, commit);

@@ -643,6 +643,58 @@ describe('agent/codex-dispatch', () => {
       assert.equal(records[0]!.blocker, undefined);
     });
 
+  it('should resume the same assignment after correcting an unsupported model provider', async () => {
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({
+        ...manifest,
+        models: { ...models, medium: { model: 'anthropic/claude-sonnet-4', effort: 'high' } },
+      }),
+    );
+    const selected = await next();
+    const failed = await request('prepare', {
+      id: selected.id,
+      digest: selected.digest,
+      title: 'repair contained behavior',
+      assessment: { complexity: 'medium', reason: 'Bounded work.' },
+    });
+    assert.equal(failed.code, 'codex-model-provider-unsupported');
+    const before = ((await readDispatchState()).records as DispatchRecord[])[0]!;
+    assert.equal(before.request, undefined);
+    assert.ok(before.retryAfter);
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
+    assert.equal((await next()).status, 'idle');
+    now = before.retryAfter;
+    const resumed = await next();
+    assert.equal(resumed.status, 'routing-required');
+    assert.equal(resumed.id, selected.id);
+    const prepared = await request('prepare', {
+      id: resumed.id,
+      digest: resumed.digest,
+      title: 'repair contained behavior',
+      assessment: { complexity: 'medium', reason: 'Bounded work.' },
+    });
+    assert.equal(prepared.status, 'prepared');
+    assert.equal((prepared.request as { model: string }).model, 'gpt-6.1-sol');
+    assert.equal(((await readDispatchState()).records as DispatchRecord[]).length, 1);
+  });
+
+  it('should resume the same assignment after resolving ambiguous saved projects', async () => {
+    const original = projects;
+    projects = [...original, { ...(original[0] as object), projectId: 'duplicate-project' }];
+    const failed = await next();
+    assert.equal(failed.code, 'dispatch-project-ambiguous');
+    const before = ((await readDispatchState()).records as DispatchRecord[])[0]!;
+    assert.equal(before.request, undefined);
+    assert.ok(before.retryAfter);
+    projects = original;
+    now = before.retryAfter;
+    const resumed = await next();
+    assert.equal(resumed.status, 'routing-required');
+    assert.equal(resumed.id, before.id);
+    assert.equal(((await readDispatchState()).records as DispatchRecord[]).length, 1);
+  });
+
   it('should identify missing routing configuration before preparing a native chat', async () => {
     await writeFile(
       join(workspace, 'agent.yaml'),
