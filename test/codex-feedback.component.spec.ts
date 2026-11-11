@@ -697,7 +697,7 @@ describe('agent/codex-feedback', () => {
     const prompt = (await store.read()).records[0]!.feedback!.events.find(
       (event) => event.id === result.eventId,
     )!.attempt!.request.prompt;
-    assert.ok(prompt.split('\n').every((line) => line.startsWith('>')));
+    assert.ok(!prompt.startsWith('>'));
     assert.ok(!prompt.includes(id));
     assert.ok(!prompt.includes(result.eventId));
     return { id, eventId: result.eventId };
@@ -1242,12 +1242,12 @@ describe('agent/codex-feedback', () => {
     assert.equal(state.records[0]!.feedback!.discoveryPending, false);
     assert.ok(Object.keys(state.records[0]!.feedback!.watermarks!).length);
   });
-  it('should preserve the incoming quote and attribution without a private result', async () => {
+  it('should preserve the incoming body and attribution without outer quotes or a private result', async () => {
     const body = '@receiver **question**\n\n> quoted context\n\n```ts\nconst value = 1;\n```';
     const ref = await prepare(account, body);
     const attempt = (await store.read()).records[0]!.feedback!.events[0]!.attempt!;
-    assert.ok(attempt.request.prompt.startsWith('> @receiver **question**'));
-    assert.ok(attempt.request.prompt.includes('> > quoted context'));
+    assert.ok(attempt.request.prompt.startsWith('@receiver **question**'));
+    assert.ok(attempt.request.prompt.includes('> quoted context'));
     assert.ok(attempt.request.prompt.includes('#issuecomment-42)'));
     sent = true;
     turn = 'feedback';

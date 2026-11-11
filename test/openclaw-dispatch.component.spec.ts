@@ -4330,7 +4330,7 @@ describe('agent/openclaw issue dispatch', () => {
       assert.ok(!message.includes('Assessment instructions'));
       assert.ok(!message.includes('Effective settings'));
       assert.doesNotMatch(message, /Return the missing result/);
-      assert.ok(message.split('\n').every((line) => line.startsWith('>')));
+      assert.ok(message.startsWith('## 📥 Issue assigned\n'));
       assert.ok(!message.includes(input.id));
       const snapshot = (await record()).context;
       service.dependencies.connect = async () => ({
@@ -4414,11 +4414,7 @@ describe('agent/openclaw issue dispatch', () => {
       undefined,
     );
     assert.equal(sends().length, 1);
-    assert.ok(
-      String(sends()[0]!.params.message)
-        .split('\n')
-        .every((line) => line.startsWith('>')),
-    );
+    assert.ok(!String(sends()[0]!.params.message).startsWith('>'));
     const current = await record();
     const privateContext = await service.promptContext(manifest, root, {
       agentId: manifest.agent.id,
