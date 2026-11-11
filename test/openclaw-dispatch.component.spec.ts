@@ -8886,23 +8886,19 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal(state.openclawOccurrence, undefined);
       assert.equal(state.records[0]!.manualIssue?.selections?.mode, 'plan');
       const retained = state.records[0]!;
-      assert.ok(
-        (
-          await service.promptContext(manifest, root, {
-            agentId: manifest.agent.id,
-            sessionKey: retained.threadId,
-            sessionId: retained.sessionCreation?.sessionId,
-            runId: retained.nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn?.runId,
-          })
-        )?.appendContext.includes('Agent System model-only current-turn facts'),
-      );
+      const output = await service.promptContext(manifest, root, {
+        agentId: manifest.agent.id,
+        sessionKey: retained.threadId,
+        sessionId: retained.sessionCreation?.sessionId,
+        runId: retained.nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn?.runId,
+      });
+      assert.ok(output);
+      const facts = JSON.parse(output.appendContext.split('\n')[1]!);
+      assert.equal(facts.status, 'verified');
       assert.equal(state.records[0]!.request?.model, 'openai/gpt-6-luna');
       assert.equal(state.records[0]!.request?.thinkingLevel, 'medium');
-      assert.equal(state.records[0]!.assessment?.skill.name, 'ordinary-assessment');
-      assert.equal(
-        state.records[0]!.assessment?.guidance?.content,
-        'Use the manual launch guidance.',
-      );
+      assert.equal(facts.assessment?.skill.name, 'ordinary-assessment');
+      assert.equal(facts.assessment?.guidance?.content, 'Use the manual launch guidance.');
       assert.equal(preparedWorktrees, 1);
       assert.equal(calls.filter((call) => call.method === 'sessions.create').length, 1);
       assert.equal(calls.filter((call) => call.method === 'chat.send').length, 1);
