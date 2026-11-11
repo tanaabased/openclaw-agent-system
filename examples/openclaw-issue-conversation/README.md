@@ -22,6 +22,7 @@ that an already-current issue needs no further post.
 
 - A real admitted issue and its initial assessment are prerequisites. Strict AIMock supplies text through the existing issue protocol; native context, routing, result history, and GitHub publication remain real.
 - The paired-question check compares retained fixture answers. It proves context transport and publication boundaries, not genuine model interpretation.
+- Feedback context resolves the active-stage and reply skills from one request-local catalog. Component tests cover discovery reuse, fresh discovery on the next request, and scoped missing-skill failures; the existing installed feedback turns exercise consumption of both selections without another model turn solely to count reads.
 - The shared fixture requires the private native turn probe before answering queued GitHub feedback, including when the accepted delivery and consuming execution have different identities. If source lookup fails, it uses the private recovery request instead of guessing a comment or restarting assessment. Component tests inject those failures; this installed scenario exercises ordinary queued-source resolution. Exact source authorization remains with the feedback context tool; the probe introduces no admission or completion gate.
 - Only Tanaabot is assigned; refreshes target this job's issue and cleanup stops the Gateway before external changes.
 
