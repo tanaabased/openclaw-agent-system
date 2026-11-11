@@ -93,7 +93,7 @@ describe('agent/delivery-announcement', () => {
           version: 1,
           requestedSkill: 'reply',
           defaultSkill: true,
-          observedAt: state?.composition.observedAt ?? 1,
+          observedAt: state?.composition?.observedAt ?? 1,
           skill: {
             name: 'reply',
             path: '/skills/reply/SKILL.md',
@@ -305,6 +305,8 @@ describe('agent/delivery-announcement', () => {
     assert.equal(snapshots, before);
     assert.equal(posts, 1);
     assert.equal(delivery.announcement!.receipt!.nodeId, 'IC_1');
+    assert.equal(delivery.announcement!.publicText, undefined);
+    assert.equal(delivery.announcement!.publication, undefined);
   });
   it('should hold native denials and missing references while respecting provider retry guidance', async () => {
     for (const code of [
@@ -407,7 +409,11 @@ describe('agent/delivery-announcement', () => {
     assert.equal((await run('announce', {})).status, 'announcement-blocked');
     assert.equal(delivery.announcement?.attempted, true);
     assert.equal(delivery.announcement?.receipt, undefined);
+    assert.ok(delivery.announcement?.publicText);
+    assert.ok(delivery.announcement?.publication);
     assert.equal((await run('announce')).status, 'announced');
+    assert.equal(delivery.announcement?.publicText, undefined);
+    assert.equal(delivery.announcement?.publication, undefined);
     assert.equal(posts, 1);
   });
   it('should retain uncertainty when a completed post cannot be found', async () => {
@@ -473,15 +479,24 @@ describe('agent/delivery-announcement', () => {
     assert.equal(posts, 0);
     assert.equal(reads, 0);
   });
-  it('should reject edited or deleted accepted comments without replacement', async () => {
-    await candidate();
-    await run('announce', {});
-    comments[0]!.body = comments[0]!.body.replace('Keeps', 'Changes');
-    assert.equal((await run('announce')).status, 'announcement-blocked');
-    comments.length = 0;
-    assert.equal((await run('announce')).status, 'announcement-blocked');
-    assert.equal(posts, 1);
-  });
+  for (const uncertain of [false, true])
+    it(`should never replace edited or deleted announcements with ${uncertain ? 'uncertain' : 'confirmed'} publication`, async () => {
+      await candidate();
+      lost = uncertain;
+      await run('announce');
+      comments[0]!.body = comments[0]!.body.replace('Keeps', 'Changes');
+      assert.equal(
+        (await run('announce')).status,
+        uncertain ? 'announcement-blocked' : 'announced',
+      );
+      comments.length = 0;
+      assert.equal(
+        (await run('announce')).status,
+        uncertain ? 'announcement-blocked' : 'announced',
+      );
+      assert.equal(posts, 1);
+      assert.equal(Boolean(delivery.announcement!.publicText), uncertain);
+    });
   it('should expose a verified receipt for feedback suppression after a response loss', async () => {
     await candidate();
     lost = true;
@@ -501,56 +516,42 @@ describe('agent/delivery-announcement', () => {
     assert.equal(receipt.nodeId, 'IC_1');
     assert.equal(posts, 1);
   });
-  it('should present the accepted public text and distinct pending or published outcome', async () => {
+  it('should return the published announcement once and retain only receipt metadata after restart', async () => {
     const preview = await candidate();
-    const pending = announcementPresentation(
-      delivery.announcement,
-      'https://github.com/owner/repo/issues/3',
-    );
-    assert.match(pending, /announcement pending/);
-    assert.match(pending, /Keeps the issue/);
-    assert.match(preview.presentation!, /PR announcement draft by \[@posting-agent\]/);
-    assert.ok(!preview.presentation!.includes('#issuecomment-'));
-    await run('announce', {});
-    const confirmed = announcementPresentation(
-      delivery.announcement,
-      'https://github.com/owner/repo/issues/3',
-    );
-    assert.ok(confirmed.includes(delivery.announcement!.publicText!.split('\n')[0]!));
-    assert.ok(
-      confirmed.includes(
-        '[Original PR announcement ↗](https://github.com/owner/repo/issues/3#issuecomment-1) by [@posting-agent]',
-      ),
-    );
-    assert.ok(!confirmed.includes('announcement published'));
-    assert.doesNotMatch(confirmed, /before this update/);
-    const historical = announcementPresentation(
-      delivery.announcement,
-      'https://github.com/owner/repo/issues/3',
-      undefined,
-      undefined,
-      true,
-    );
-    assert.ok(historical.endsWith(confirmed));
-    assert.match(historical.split('\n')[0]!, /before this update/);
-    const repeated = await run('compose', {});
-    assert.ok('presentation' in repeated);
-    assert.match(repeated.presentation!, /Original PR announcement ↗/);
-    assert.match(repeated.presentation!, /#issuecomment-1/);
-    assert.match(repeated.presentation!, /by \[@posting-agent\]/);
-    assert.ok(repeated.presentation!.includes(delivery.announcement!.publicText!.split('\n')[0]!));
-    assert.equal(posts, 1);
-    delete delivery.announcement!.authorLogin;
-    assert.ok(
-      announcementPresentation(
-        delivery.announcement,
-        'https://github.com/owner/repo/issues/3',
-      ).includes('by author unavailable*'),
-    );
+    const text = delivery.announcement!.publicText!;
+    assert.match(preview.presentation!, /PR announcement draft/);
     assert.match(
       announcementPresentation(delivery.announcement, 'https://github.com/owner/repo/issues/3'),
-      /#issuecomment-1/,
+      /announcement pending/,
     );
+    const result = await run('announce');
+    assert.ok('presentation' in result);
+    assert.ok(result.presentation!.includes(text.split('\n')[0]!));
+    assert.match(result.presentation!, /#issuecomment-1/);
+    assert.equal(delivery.announcement!.publicText, undefined);
+    assert.equal(delivery.announcement!.publication, undefined);
+    assert.equal(delivery.announcement!.composition, undefined);
+    assert.deepEqual(delivery.announcement!.snapshot, {
+      pullRequestNodeId: 'PR_7',
+      pullRequestNumber: 7,
+      head: 'a'.repeat(40),
+    });
+    assert.deepEqual(delivery.announcement!.receipt, { nodeId: 'IC_1', databaseId: 1 });
+    assert.equal(
+      announcementPresentation(delivery.announcement, 'https://github.com/owner/repo/issues/3'),
+      '',
+    );
+    delivery = JSON.parse(JSON.stringify(delivery));
+    input.delivery = delivery;
+    const before = reads;
+    for (const operation of ['compose', 'candidate', 'announce'] as const) {
+      const repeated = await run(operation);
+      assert.equal(repeated.status, 'announced');
+      assert.ok('presentation' in repeated);
+      assert.equal(repeated.presentation, '');
+    }
+    assert.equal(posts, 1);
+    assert.equal(reads, before);
   });
   it('should identify a later published head only for the same reconciled pr', async () => {
     await candidate();

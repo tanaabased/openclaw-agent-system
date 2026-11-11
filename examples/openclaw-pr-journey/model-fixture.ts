@@ -615,7 +615,9 @@ function respond(
             operation: 'present',
           });
         if (presented.status !== 'presented' || typeof presented.presentation !== 'string') return;
-        return { content: presented.presentation };
+        return {
+          content: [presented.presentation, announced.presentation].filter(Boolean).join('\n\n'),
+        };
       }
     }
     const privateText = initial
@@ -939,7 +941,12 @@ function respond(
       });
     if (presented.status !== 'presented' || typeof presented.presentation !== 'string') return;
     return {
-      content: presented.presentation,
+      content: [
+        presented.presentation,
+        !retry && !update ? result('delivery-announce')?.presentation : undefined,
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
     };
   }
 }

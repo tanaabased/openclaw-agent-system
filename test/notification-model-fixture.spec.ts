@@ -1347,7 +1347,10 @@ for (const scenario of [
           append(input, 'delivery-candidate', { status: 'announcement-prepared', digest });
           assert.equal((await action(input, 'delivery', workScenario)).operation, 'announce');
           await verifyAnnouncementStops(input, 'delivery-announce', workScenario);
-          append(input, 'delivery-announce', { status: 'announced' });
+          append(input, 'delivery-announce', {
+            status: 'announced',
+            presentation: '> Published announcement',
+          });
           if (mode === 'operator') {
             assert.ok('content' in (await response(input, workScenario)));
           } else {
@@ -1355,7 +1358,9 @@ for (const scenario of [
             append(input, 'delivery-repeat', { status: 'announced' });
             assert.equal((await action(input, 'delivery', workScenario)).operation, 'present');
             append(input, 'delivery-present', { status: 'presented', presentation: '> PR card' });
-            assert.deepEqual(await response(input, workScenario), { content: '> PR card' });
+            assert.deepEqual(await response(input, workScenario), {
+              content: '> PR card\n\n> Published announcement',
+            });
           }
           const retry = request(
             `Operator request for managed issue ${id}: Show the plan from this conversation and existing PR card again.`,
@@ -1876,14 +1881,17 @@ for (const scenario of [
               });
               assert.equal((await runAction(input, 'delivery')).operation, 'announce');
               await verifyAnnouncementStops(input, 'feedback-delivery-announce', selectedScenario);
-              append(input, 'feedback-delivery-announce', { status: 'announced' });
+              append(input, 'feedback-delivery-announce', {
+                status: 'announced',
+                presentation: 'Confirmed combined announcement',
+              });
               assert.equal((await runAction(input, 'delivery')).operation, 'present');
               append(input, 'feedback-delivery-present', {
                 status: 'presented',
-                presentation: 'Complete PR card and confirmed combined announcement',
+                presentation: 'Complete PR card',
               });
               assert.deepEqual(await runResponse(input), {
-                content: 'Complete PR card and confirmed combined announcement',
+                content: 'Complete PR card\n\nConfirmed combined announcement',
               });
               return;
             }

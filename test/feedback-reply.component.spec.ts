@@ -941,7 +941,6 @@ describe('agent/feedback-reply', () => {
       const announcement = {
         destination: url,
         url: url + '#issuecomment-8',
-        publicText: '@author Both choices implemented. PR #7 ready for review.',
       };
       owners = [
         {

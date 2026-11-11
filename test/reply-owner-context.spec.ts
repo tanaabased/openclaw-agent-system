@@ -123,7 +123,6 @@ describe('agent/reply-owner-context', () => {
     const input = fixture();
     const announcement = {
       authorId: input.intake.receiving.nodeId,
-      publicText: 'Both choices implemented. PR ready.',
       receipt: { nodeId: 'C_ready', databaseId: 99 },
     } as DeliveryAnnouncementState;
     input.record.announcement = announcement;
@@ -136,7 +135,6 @@ describe('agent/reply-owner-context', () => {
       assert.deepEqual(context.verifiedOutcome.announcement, {
         destination,
         url: destination + '#issuecomment-99',
-        publicText: announcement.publicText,
       });
     }
     owner.pullRequestNumber = 7;

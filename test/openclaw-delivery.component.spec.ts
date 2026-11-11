@@ -88,7 +88,7 @@ describe('agent/openclaw-delivery', () => {
         version: 1,
         requestedSkill: 'reply',
         defaultSkill: true,
-        observedAt: retained?.composition.observedAt ?? 1,
+        observedAt: retained?.composition?.observedAt ?? 1,
         skill: {
           name: 'reply',
           path: '/skills/reply/SKILL.md',
@@ -717,7 +717,7 @@ describe('agent/openclaw-delivery', () => {
             policy,
             workflow: 'issue-assignment',
             workspace: root,
-            observedAt: retained?.composition.observedAt ?? 1,
+            observedAt: retained?.composition?.observedAt ?? 1,
             resolveSkill: (id) =>
               openClawSkill(
                 async () => ({
@@ -757,7 +757,6 @@ describe('agent/openclaw-delivery', () => {
       await request('candidate', {
         publicText: 'Cleanup documented. Live transport remains untested.',
       });
-      assert.equal((await request('announce', {})).status, 'announced');
       const retainedSelection = record.announcement!.composition!;
       assert.equal(retainedSelection.skill.digest, composed.selection.skill.digest);
       assert.equal(
@@ -766,6 +765,9 @@ describe('agent/openclaw-delivery', () => {
       );
       if (variant.includes('file'))
         assert.equal(composed.selection.guidance?.path, retainedSelection.guidance?.path);
+      assert.equal((await request('announce', {})).status, 'announced');
+      assert.equal(record.announcement!.composition, undefined);
+      assert.equal(record.announcement!.publicText, undefined);
       assert.ok(announcement.comments[0]!.body.includes('Live transport remains untested.'));
       await request('announce', {});
       assert.equal(announcement.posts, 1);
@@ -812,7 +814,7 @@ describe('agent/openclaw-delivery', () => {
       const shown = await request('present');
       assert.ok('presentation' in shown);
       assert.match(shown.presentation!, /Pull request/);
-      assert.match(shown.presentation!, /#issuecomment-91/);
+      assert.doesNotMatch(shown.presentation!, /#issuecomment-91/);
       assert.equal(announcement.posts, 1);
       assert.ok(announcement.comments[0]!.body.includes(draft ? 'Draft.' : 'Ready for review.'));
       assert.equal(creates, 1);
@@ -1139,15 +1141,15 @@ describe('agent/openclaw-delivery', () => {
       assert.match(shown.presentation!, /pull\/7/);
       assert.equal(pr!.title, 'New title');
       assert.equal(creates, 1);
+      assert.doesNotMatch(
+        shown.presentation!,
+        /Original PR announcement|Delivers the requested change|#issuecomment-91/,
+      );
       if (snapshot) {
-        assert.match(shown.presentation!, /Original PR announcement/);
-        assert.match(shown.presentation!, /#issuecomment-91/);
-        assert.match(shown.presentation!, /Delivers the requested change/);
         const repeated = await request('compose');
         assert.ok('presentation' in repeated);
-        assert.match(repeated.presentation!, /Original PR announcement/);
-        assert.match(repeated.presentation!, /#issuecomment-91/);
-      } else assert.doesNotMatch(shown.presentation!, /Original PR announcement/);
+        assert.equal(repeated.presentation, '');
+      }
       assert.equal(announcement.posts, snapshot ? 1 : 0);
     });
   it('should preserve github body edits when explicitly updating only the title', async () => {
@@ -1217,17 +1219,13 @@ describe('agent/openclaw-delivery', () => {
       assert.equal((await request('announce')).status, 'announced');
       const shown = await request('present');
       assert.ok('presentation' in shown);
-      assert.match(shown.presentation!, /#issuecomment-91/);
+      assert.doesNotMatch(shown.presentation!, /#issuecomment-91/);
       assert.equal(creates, 1);
       assert.equal(pushes, 2);
       assert.match(shown.presentation!, /Pull request updated/);
-      assert.match(shown.presentation!, /Original PR announcement/);
-      assert.match(shown.presentation!, /before this update/);
-      assert.ok(
-        shown.presentation!.indexOf('Original announcement (before this update):') <
-          shown.presentation!.indexOf('Delivers the requested change'),
-      );
-      assert.match(shown.presentation!, /Delivers the requested change/);
+      assert.doesNotMatch(shown.presentation!, /Original PR announcement/);
+      assert.doesNotMatch(shown.presentation!, /before this update/);
+      assert.doesNotMatch(shown.presentation!, /Delivers the requested change/);
       assert.equal(announcement.posts, 1);
     });
   it('should rebuild the retained card without git provider or publication permission', async () => {

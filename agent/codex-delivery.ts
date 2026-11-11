@@ -550,7 +550,6 @@ async function runCodexDeliveryScoped(
               managedTargetUrl(intake),
               undefined,
               record.announcementRecovery,
-              updatedSinceAnnouncement,
             ),
             ...presentationNotices.map((notice) => notice.message),
           ].join('\n\n'),
@@ -641,7 +640,7 @@ async function runCodexDeliveryScoped(
                 policy,
                 workflow: 'issue-assignment',
                 workspace: current.workspace,
-                observedAt: retained?.composition.observedAt ?? Date.now(),
+                observedAt: retained?.composition?.observedAt ?? Date.now(),
                 resolveSkill: (id) => native.assessmentSkill!(found.cwd, id),
               })
             ).selection;

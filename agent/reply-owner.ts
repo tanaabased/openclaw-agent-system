@@ -19,7 +19,6 @@ export interface ReplyOwner {
   announcement?: {
     destination: string;
     url: string;
-    publicText: string;
   };
   publisherLogin?: string;
 }

@@ -53,7 +53,6 @@ export default function replyOwnerContext(input: {
     deliveredPullRequest: observationOnly ? undefined : delivery?.pullRequest,
     ...(destination &&
     announcement?.receipt &&
-    announcement.publicText &&
     announcement.authorId === intake?.receiving.nodeId &&
     !announcement.code &&
     !record.announcementRecovery
@@ -61,7 +60,6 @@ export default function replyOwnerContext(input: {
           announcement: {
             destination,
             url: `${destination}#issuecomment-${announcement.receipt.databaseId}`,
-            publicText: announcement.publicText,
           },
         }
       : {}),

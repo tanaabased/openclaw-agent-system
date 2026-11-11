@@ -1237,7 +1237,7 @@ describe('agent/codex-delivery', () => {
       await request('announce');
       const shown = await request('present');
       assert.match(String(shown.presentation), /Pull request/);
-      assert.match(String(shown.presentation), /#issuecomment-91/);
+      assert.doesNotMatch(String(shown.presentation), /#issuecomment-91/);
       assert.equal(announcement.posts, 1);
       assert.match(announcement.comments[0]!.body, /pull\/7/);
       assert.ok(announcement.comments[0]!.body.includes(draft ? 'Draft.' : 'Ready for review.'));
@@ -2043,15 +2043,15 @@ describe('agent/codex-delivery', () => {
       assert.match(shown.presentation!, /pull\/7/);
       assert.equal(pr!.title, 'New title');
       assert.equal(creates, 1);
+      assert.doesNotMatch(
+        shown.presentation!,
+        /Original PR announcement|Delivers the requested change|#issuecomment-91/,
+      );
       if (snapshot) {
-        assert.match(shown.presentation!, /Original PR announcement/);
-        assert.match(shown.presentation!, /#issuecomment-91/);
-        assert.match(shown.presentation!, /Delivers the requested change/);
         const repeated = await request('compose');
         assert.ok('presentation' in repeated);
-        assert.match(repeated.presentation!, /Original PR announcement/);
-        assert.match(repeated.presentation!, /#issuecomment-91/);
-      } else assert.doesNotMatch(shown.presentation!, /Original PR announcement/);
+        assert.equal(repeated.presentation, '');
+      }
       assert.equal(announcement.posts, snapshot ? 1 : 0);
     });
   it('should preserve github body edits when explicitly updating only the title', async () => {
@@ -2125,7 +2125,7 @@ describe('agent/codex-delivery', () => {
     const initial = await request('present');
     assert.ok('presentation' in initial);
     assert.match(initial.presentation!, /Pull request/);
-    assert.match(initial.presentation!, /Original PR announcement/);
+    assert.doesNotMatch(initial.presentation!, /Delivers the requested change|#issuecomment-91/);
     assert.doesNotMatch(initial.presentation!, /before this update/);
     head = 'b'.repeat(40);
     await publish({ title: String(pr!.title), body: String(pr!.body) });
@@ -2136,14 +2136,10 @@ describe('agent/codex-delivery', () => {
     const shown = await request('present');
     assert.ok('presentation' in shown);
     assert.match(shown.presentation!, /Pull request updated/);
-    assert.match(shown.presentation!, /Original PR announcement/);
-    assert.ok(
-      shown.presentation!.indexOf('Original announcement (before this update):') <
-        shown.presentation!.indexOf('Delivers the requested change'),
-    );
-    assert.match(shown.presentation!, /before this update/);
-    assert.match(shown.presentation!, /#issuecomment-91/);
-    assert.match(shown.presentation!, /Delivers the requested change/);
+    assert.doesNotMatch(shown.presentation!, /Original PR announcement/);
+    assert.doesNotMatch(shown.presentation!, /before this update/);
+    assert.doesNotMatch(shown.presentation!, /#issuecomment-91/);
+    assert.doesNotMatch(shown.presentation!, /Delivers the requested change/);
     assert.equal(creates, 1);
     assert.equal(announcement.posts, 1);
   });
@@ -2177,7 +2173,7 @@ describe('agent/codex-delivery', () => {
       announcement.lost = false;
       assert.equal((await request('announce')).status, 'announced');
       const shown = await request('present');
-      assert.match(String(shown.presentation), /#issuecomment-91/);
+      assert.doesNotMatch(String(shown.presentation), /#issuecomment-91/);
       assert.equal(creates, 1);
       assert.equal(gitCalls.filter((argv) => argv.includes('push')).length, 2);
       assert.equal(announcement.posts, 1);

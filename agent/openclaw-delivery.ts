@@ -59,7 +59,7 @@ export default async function openClawDelivery(input: {
   expectedLocalBranch?: string;
   selectAnnouncement?(
     state?: DeliveryAnnouncementState,
-  ): Promise<DeliveryAnnouncementState['composition']>;
+  ): Promise<NonNullable<DeliveryAnnouncementState['composition']>>;
   connect(): Promise<OpenClawDeliveryConnection>;
   assertCurrent(): Promise<void>;
   reauthorize(): Promise<void>;
@@ -574,7 +574,6 @@ export function presentOpenClawDelivery(
       managedTargetUrl(intake),
       undefined,
       record.announcementRecovery,
-      updatedSinceAnnouncement,
     ) +
     (notice ? '\n\n' + notice.message : '');
   return {

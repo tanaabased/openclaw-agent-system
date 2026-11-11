@@ -176,11 +176,11 @@ jq -e --slurp --arg issue_id "$(jq -er .node_id "$TMPDIR/notification-issue.json
 # should answer the initial implementation request with one combined announcement
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
-openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile saved "$TMPDIR/notification-delivery.json" --slurpfile source "$TMPDIR/notification-initial-source.json" '($saved[0].feedback.events[0]) as $event | $saved[0].announcement as $announcement | ($event.source | fromjson).nodeId == $source[0].node_id and ([.[] | select(.id > $source[0].id and .user.login == "tanaabot")] | length == 1 and .[0].node_id == $announcement.receipt.nodeId and (.[0].body | contains($announcement.publicText)) and (.[0].body | contains("@" + $source[0].user.login)))'
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile saved "$TMPDIR/notification-delivery.json" --slurpfile source "$TMPDIR/notification-initial-source.json" '($saved[0].feedback.events[0]) as $event | $saved[0].announcement as $announcement | ($event.source | fromjson).nodeId == $source[0].node_id and ([.[] | select(.id > $source[0].id and .user.login == "tanaabot")] | length == 1 and .[0].node_id == $announcement.receipt.nodeId and (.[0].body | contains("@" + $source[0].user.login)))'
 
 # should confirm the announcement without a separate delivery wakeup
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
-jq -e '.announcement.receipt.nodeId != null' "$TMPDIR/notification-delivery.json"
+jq -e '.announcement.receipt.nodeId != null and .announcement.publicText == null and .announcement.publication == null and .announcement.composition == null and .announcement.snapshot.body == null' "$TMPDIR/notification-delivery.json"
 
 # should verify the explicit closing relationship and pull request recipients
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
@@ -191,13 +191,13 @@ openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/pulls/$pr
 conversation=$(jq -er .threadId "$TMPDIR/notification-delivery.json")
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json > "$TMPDIR/notification-published-history.json"
 jq -e '.delivery.presentation == null' "$TMPDIR/notification-delivery.json"
-jq -e --arg run "$(jq -er .feedback.events[0].turn.runId "$TMPDIR/notification-delivery.json")" --arg text "$(jq -er .announcement.publicText "$TMPDIR/notification-delivery.json")" 'any(.messages[]; .role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | (gsub("(?m)^> ?"; "") | contains($text))))' "$TMPDIR/notification-published-history.json"
+jq -e --arg run "$(jq -er .feedback.events[0].turn.runId "$TMPDIR/notification-delivery.json")" --arg text "#issuecomment-$(jq -er .announcement.receipt.databaseId "$TMPDIR/notification-delivery.json")" 'any(.messages[]; .role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | (gsub("(?m)^> ?"; "") | contains($text))))' "$TMPDIR/notification-published-history.json"
 
 # should publish one issue announcement with a retained receipt and verified ready state
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-announcements.json"
-jq -e --slurpfile delivery "$TMPDIR/notification-delivery.json" '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:pull-request-handoff:")))] | length == 1 and .[0].node_id == $delivery[0].announcement.receipt.nodeId and (.[0].body | contains($delivery[0].announcement.publicText)) and (.[0].body | contains("Ready for review."))' "$TMPDIR/notification-announcements.json"
+jq -e --slurpfile delivery "$TMPDIR/notification-delivery.json" '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:pull-request-handoff:")))] | length == 1 and .[0].node_id == $delivery[0].announcement.receipt.nodeId and (.[0].body | contains("Ready for review."))' "$TMPDIR/notification-announcements.json"
 
 # should implement and publish one ordinary approved pr comment in the owning issue chat
 set -o pipefail
