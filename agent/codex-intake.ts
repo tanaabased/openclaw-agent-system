@@ -1,3 +1,4 @@
+import { withDispatchTask } from './dispatch-task-scope.ts';
 import IssuePickupFailure from './issue-pickup-failure.ts';
 import { omit } from 'lodash-es';
 import reconcileIssuePickup from './issue-pickup-reconcile.ts';
@@ -455,77 +456,79 @@ export async function runCodexIssuePickup(
       const retained = await verifyNative(current.policy.policy);
       authority = { enrollment: retained.enrollment, receipts: [] };
     }
-    return await journal.exclusive(async (state, save, signal) => {
-      const readPolicy = async () => {
-        const live = await selectCodexIntake(pluginData, deps);
-        if (live.store.location.scope !== current.store.location.scope || !live.policy)
-          throw new IntakeError('intake-workspace-binding-changed');
-        if (!deps.issuePickup) await verifyNative(live.policy.policy);
-        return live.policy.policy;
-      };
-      await readPolicy();
-      const client = (await connectSelected(current, deps, signal)) as IssuePickupClient;
-      if (
-        !client.discoverProject ||
-        !client.projectCandidate ||
-        !client.projectBlocked ||
-        !client.assignProjectIssue
-      )
-        throw new IntakeError('issue-pickup-provider-unavailable');
-      const result = await issuePickup({
-        runtime: 'codex',
-        scope: current.store.location.scope,
-        workspaceDir: current.workspace,
-        agentId: current.agentId,
-        enrollment: authority.enrollment,
-        timezone,
-        state,
-        save,
-        assertWriteCapacity: () => {
-          assertDispatchStorage(state, true);
-        },
-        now: deps.now ?? Date.now,
-        readPolicy,
-        client,
-        instance: codexInstanceStore(pluginData),
-        runId: nativeOccurrence?.id ?? authority.enrollment.id,
-        occupied: codexItemOccupied,
-        input,
-      });
-      if (['material', 'selection-required', 'discovering'].includes(result.status))
+    return await withDispatchTask('codex', undefined, () =>
+      journal.exclusive(async (state, save, signal) => {
+        const readPolicy = async () => {
+          const live = await selectCodexIntake(pluginData, deps);
+          if (live.store.location.scope !== current.store.location.scope || !live.policy)
+            throw new IntakeError('intake-workspace-binding-changed');
+          if (!deps.issuePickup) await verifyNative(live.policy.policy);
+          return live.policy.policy;
+        };
+        await readPolicy();
+        const client = (await connectSelected(current, deps, signal)) as IssuePickupClient;
+        if (
+          !client.discoverProject ||
+          !client.projectCandidate ||
+          !client.projectBlocked ||
+          !client.assignProjectIssue
+        )
+          throw new IntakeError('issue-pickup-provider-unavailable');
+        const result = await issuePickup({
+          runtime: 'codex',
+          scope: current.store.location.scope,
+          workspaceDir: current.workspace,
+          agentId: current.agentId,
+          enrollment: authority.enrollment,
+          timezone,
+          state,
+          save,
+          assertWriteCapacity: () => {
+            assertDispatchStorage(state, true);
+          },
+          now: deps.now ?? Date.now,
+          readPolicy,
+          client,
+          instance: codexInstanceStore(pluginData),
+          runId: nativeOccurrence?.id ?? authority.enrollment.id,
+          occupied: codexItemOccupied,
+          input,
+        });
+        if (['material', 'selection-required', 'discovering'].includes(result.status))
+          return {
+            ...result,
+            response: '',
+            instructions:
+              'instructions' in result
+                ? result.instructions
+                : result.status === 'discovering'
+                  ? 'Call pickup again to continue discovery.'
+                  : 'Follow next until the complete material is restored before selection.',
+          };
+        const reportPolicy = await readPolicy();
+        const report = issuePickupReport({
+          outcome: result,
+          debug: current.manifest.debug,
+          capacity: {
+            occupied: codexCapacity(state, reportPolicy.maxConcurrentItems, state.projectPickup)
+              .occupied,
+            limit: reportPolicy.maxConcurrentItems,
+          },
+        });
         return {
-          ...result,
-          response: '',
+          ...omit(result, ['selectionGuidance']),
+          response: codexHeartbeatEnvelope(
+            nativeOccurrence?.automationId ?? issuePickupAutomationId,
+            report.response,
+            report.notify,
+          ),
           instructions:
             'instructions' in result
               ? result.instructions
-              : result.status === 'discovering'
-                ? 'Call pickup again to continue discovery.'
-                : 'Follow next until the complete material is restored before selection.',
+              : 'Reproduce response unchanged as the whole final report. An empty response means no card. Preserve the native notification decision. Report preparation does not prove visible delivery.',
         };
-      const reportPolicy = await readPolicy();
-      const report = issuePickupReport({
-        outcome: result,
-        debug: current.manifest.debug,
-        capacity: {
-          occupied: codexCapacity(state, reportPolicy.maxConcurrentItems, state.projectPickup)
-            .occupied,
-          limit: reportPolicy.maxConcurrentItems,
-        },
-      });
-      return {
-        ...omit(result, ['selectionGuidance']),
-        response: codexHeartbeatEnvelope(
-          nativeOccurrence?.automationId ?? issuePickupAutomationId,
-          report.response,
-          report.notify,
-        ),
-        instructions:
-          'instructions' in result
-            ? result.instructions
-            : 'Reproduce response unchanged as the whole final report. An empty response means no card. Preserve the native notification decision. Report preparation does not prove visible delivery.',
-      };
-    });
+      }),
+    );
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error;
     throw new IssuePickupFailure(error, { debug, automationId: nativeOccurrence?.automationId });

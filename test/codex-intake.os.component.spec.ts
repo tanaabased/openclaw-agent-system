@@ -94,7 +94,7 @@ describe('agent/codex-intake', () => {
     assert.equal((await runCodexIntake(pluginData, false, deps)).status, 'ready');
     assert.ok((await store.read())!.records.length > 0);
     assert.equal(await journal.file.read(), contents);
-    await assert.rejects(journal.read(), /dispatch-state-invalid/);
+    await assert.rejects(journal.read(), /dispatch-task-ownership-unresolved/);
   });
   it('should reject retired repository scope before codex intake connects', async () => {
     for (const routing of [undefined, ['owner/*'], []]) {

@@ -124,7 +124,7 @@ describe('openclaw v2 intake slice', () => {
     assert.equal(scan.status, 'ready');
     assert.ok((await store.read())!.records.length > 0);
     assert.equal(await journal.file.read(), contents);
-    await assert.rejects(journal.read(), /dispatch-state-invalid/);
+    await assert.rejects(journal.read(), /dispatch-task-ownership-unresolved/);
   });
   it('should reevaluate a changed policy fingerprint without replacing the intake baseline', async () => {
     const f = fixture();

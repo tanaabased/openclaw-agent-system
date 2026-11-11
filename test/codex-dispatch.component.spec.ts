@@ -1,3 +1,4 @@
+import { selectWorkflowStage } from '../agent/workflow-stage.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -2711,7 +2712,14 @@ describe('agent/codex-dispatch', () => {
     await store.exclusive(async (state, save) => {
       const record = state.records[0]!;
       record.nativeWork = {
-        selection: record.assessment!,
+        selection: (
+          await selectWorkflowStage({
+            stage: 'assessment',
+            workspace,
+            observedAt: now,
+            resolveSkill: (id) => deps.native!.assessmentSkill!(workspace, id),
+          })
+        ).selection,
       };
       await save();
     });

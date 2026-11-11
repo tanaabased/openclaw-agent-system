@@ -369,13 +369,19 @@ describe('agent/issue-launch', () => {
     assert.equal(records[0]?.routingInstructions?.guidance?.content, 'Changed instructions.');
   });
 
-  it('should reject assignment data added to an operator-origin record', async () => {
+  it('should isolate assignment data added to an operator-origin record', async () => {
     await launch();
     const raw = JSON.parse((await journal.file.read())!);
     raw.records[0].manualIssue.assignment = fixture.events[0];
     const contents = JSON.stringify(raw);
     await journal.file.write(contents);
-    await assert.rejects(journal.read(), /dispatch-state-invalid/);
+    const isolated = await journal.read();
+    assert.deepEqual(isolated.records, []);
+    assert.deepEqual(
+      isolated.isolatedRecords?.map(({ id, code }) => ({ id, code })),
+      [{ id: raw.records[0].id, code: 'dispatch-task-record-invalid' }],
+    );
+    await assert.rejects(launch(), /dispatch-task-ownership-unresolved/);
     assert.equal(await journal.file.read(), contents);
   });
 

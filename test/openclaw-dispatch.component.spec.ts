@@ -3596,9 +3596,12 @@ describe('agent/openclaw issue dispatch', () => {
       release.resolve();
       await first;
     }
-    assert.equal((await first).status, 'busy');
     assert.equal((await sendAssessment(input.id)).status, 'assessment-pending');
     assert.equal(sends().length, 1);
+    assert.equal(
+      (await record()).nativeTurns?.filter(({ role }) => role === 'assessment').length,
+      1,
+    );
   });
 
   it('should preserve an attempted send when a lock error occurs after entering the journal', async () => {

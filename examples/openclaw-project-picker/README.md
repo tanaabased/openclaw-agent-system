@@ -6,7 +6,7 @@ native OpenClaw and OpenClaw-hosted Codex, then verify the window allows no seco
 
 ## What Belongs Here
 
-- Native pickup enrollment, unchanged Install, and pause/resume retaining the job and chat.
+- Native pickup enrollment, unchanged Install, and pause/resume retaining the job and chat. Pickup runs independently while the assignment schedule is paused.
 - Empty, selected, and exhausted-window outcome cards through the real automation/tool boundary, with selection triggered by a due-time occurrence.
 - Model selection from a small milestone configured as a list with the default `only` policy, GitHub self-assignment despite the ordinary assigner policy, and ordinary intake receiving the pickup exception and Work mode.
 - A repeat scan preserving the single assignment, chat, and checkout.
@@ -101,11 +101,15 @@ for runtime in codex openclaw; do
   if test "$runtime" = codex; then
     openclaw gateway call models.list --params '{"agentId":"pickup-codex-tanaabot","provider":"openai","view":"all","refresh":true}' --json | jq -e 'any(.models[]; .id == "gpt-5.4-nano" and .available == true and .agentRuntime.id == "codex")'
   fi
+  stage=pause-assignment-only
+  assignment_native=$(jq -er '.jobs[] | select(.id == "github-issue-assignment") | .nativeId' "$TMPDIR/pickup-$runtime-jobs.json")
+  openclaw cron edit "$assignment_native" --disable --json | jq -e '.enabled == false'
   stage=run-pickup
   run_id=$(openclaw agent-system automations run github-issue-pickup --json | jq -er 'select(.status == "queued") | .runId | strings')
   node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-pickup "$run_id"
   openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" --arg run "$run_id" '{id:$id,runId:$run,limit:1,offset:0}')" --json > "$TMPDIR/pickup-$runtime-empty.json"
   jq -e --arg run "$run_id" 'any(.entries[]; .runId == $run and (.summary | contains("no eligible issues")))' "$TMPDIR/pickup-$runtime-empty.json"
+  openclaw cron edit "$assignment_native" --enable --json | jq -e '.enabled == true'
   stage=pause-and-resume-pickup
   if test "$runtime" = openclaw; then
     cp agent.yaml "$TMPDIR/pickup-$runtime-active.yaml"

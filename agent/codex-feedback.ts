@@ -501,10 +501,7 @@ async function runCodexFeedbackScoped(
       }
       return { status: 'idle' };
     }, !['next', 'reconcile'].includes(input.action));
-    if (
-      ['context', 'implementation-context'].includes(input.action) &&
-      response.status === 'verified'
-    )
+    if (input.action === 'context' && response.status === 'verified')
       return feedbackContextMaterial(
         response,
         { action: input.action, id: input.id, eventId: input.eventId },
