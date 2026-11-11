@@ -4443,6 +4443,29 @@ describe('agent/codex-dispatch', () => {
       });
     });
 
+  it('should read and advance a healthy codex task beside a malformed slim record', async () => {
+    const work = await workIssue(null);
+    work.receive();
+    const store = await workStore();
+    const raw = await store.read();
+    const damaged = {
+      id: 'd'.repeat(64),
+      intakeId: 'd'.repeat(64),
+      issueKey: 'e'.repeat(64),
+      sourceThreadId: 'other-coordinator',
+      threadId: 'damaged-chat',
+      createdAt: 'damaged',
+      manifestDigest: 'other',
+      feedback: { pending: { attempted: true, destination: 'original' } },
+    };
+    await store.file.write(JSON.stringify({ ...raw, records: [...raw.records, damaged] }));
+    assert.equal((await work.run('context', {}, true)).status, 'verified');
+    const saved = JSON.parse(await readFile(store.path, 'utf8'));
+    assert.ok(saved.records[0].progression);
+    assert.deepEqual(saved.records[1], damaged);
+    await assert.rejects(store.read(), /dispatch-state-invalid/);
+  });
+
   it('should preserve implementation permission through policy edits without nudging the chat', async () => {
     const work = await workIssue(null);
     work.receive();

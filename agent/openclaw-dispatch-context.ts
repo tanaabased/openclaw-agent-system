@@ -1,3 +1,4 @@
+import { withDispatchTask } from './dispatch-task-scope.ts';
 import { realpath } from 'node:fs/promises';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import AgentSystemToolError from '../api/error.ts';
@@ -355,7 +356,10 @@ export default class OpenClawDispatchContext {
       )
     );
   }
-  async readTurnContext(
+  readTurnContext(...args: Parameters<OpenClawDispatchContext['readTaskContext']>) {
+    return withDispatchTask('openclaw', args[2].sessionKey, () => this.readTaskContext(...args));
+  }
+  private async readTaskContext(
     manifest: AgentManifest,
     workspace: string,
     binding: Parameters<typeof openclawTurnContext>[1],

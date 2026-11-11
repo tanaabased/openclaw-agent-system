@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { automationHash } from '../agent/automation-hash.ts';
@@ -4587,6 +4587,37 @@ describe('agent/openclaw issue dispatch', () => {
       (await record()).nativeTurns?.findLast(({ role }) => role === 'assessment')?.turn,
       undefined,
     );
+  });
+
+  it('should read and advance a healthy openclaw task beside a malformed slim record', async () => {
+    const input = await next();
+    await prepare(input);
+    await assess(input.id);
+    const journal = (await service.scope(manifest, root)).journal;
+    const raw = await journal.read();
+    const damaged = {
+      id: 'd'.repeat(64),
+      intakeId: 'd'.repeat(64),
+      issueKey: 'e'.repeat(64),
+      sourceThreadId: 'other-coordinator',
+      threadId: 'damaged-chat',
+      createdAt: 'damaged',
+      manifestDigest: 'other',
+      feedback: { pending: { attempted: true, destination: 'original' } },
+    };
+    await journal.file.write(JSON.stringify({ ...raw, records: [...raw.records, damaged] }));
+    const result = await context(input.id);
+    assert.equal(result.status, 'verified');
+    const saved = JSON.parse(await readFile(journal.path, 'utf8'));
+    assert.ok(saved.records[0].assessmentCaller);
+    assert.deepEqual(saved.records[1], damaged);
+    const prompt = await service.promptContext(manifest, root, {
+      ...assessor(input.id),
+      agentId: manifest.agent.id,
+      workspace: root,
+    });
+    assert.ok(prompt?.appendContext.includes(input.id));
+    await assert.rejects(journal.read(), /dispatch-state-invalid/);
   });
 
   it('should bind assessment context to the exact native session and input without a formatting prerequisite', async () => {

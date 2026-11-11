@@ -1,3 +1,4 @@
+import { withDispatchTask } from './dispatch-task-scope.ts';
 import { resolve } from 'node:path';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
@@ -54,7 +55,13 @@ export interface CodexFeedbackDependencies extends CodexDispatchDependencies {
   nativeRequest?: Parameters<typeof unsubmittedNativeRequest>[0];
 }
 /** the existing intake owns sends; feedback has no independent scheduler or work authority. */
-export default async function runCodexFeedback(
+export default function runCodexFeedback(...args: Parameters<typeof runCodexFeedbackScoped>) {
+  const deps = args[2] ?? {};
+  return withDispatchTask('codex', deps.threadId ?? process.env.CODEX_THREAD_ID, () =>
+    runCodexFeedbackScoped(...args),
+  );
+}
+async function runCodexFeedbackScoped(
   pluginData: string,
   input: unknown,
   deps: CodexFeedbackDependencies = {},

@@ -1,0 +1,10 @@
+{
+  "id": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "intakeId": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "issueKey": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "sourceThreadId": "fixture-damaged-coordinator",
+  "threadId": "fixture-damaged-task",
+  "createdAt": "damaged",
+  "manifestDigest": "fixture",
+  "feedback": { "pending": { "attempted": true, "destination": "preserve-original-effect" } }
+}
