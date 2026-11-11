@@ -1,4 +1,5 @@
 import { githubNotificationMarkdownText, githubNotificationQuote } from './card.ts';
+import mentionLinks from './mention-links.ts';
 
 export interface GitHubNotificationCommentEventProjection {
   author: {
@@ -40,12 +41,12 @@ export function githubCommentCard(input: GitHubCommentCardInput): string {
   );
 }
 
-/** quote an admitted comment without rewriting its author prose or mentions. */
+/** link incoming prose mentions without changing the retained provider source. */
 export function githubNotificationCommentPresentation(
   projection: GitHubNotificationCommentEventProjection,
 ): string {
   return githubCommentCard({
-    body: projection.body,
+    body: mentionLinks(projection.body),
     author: projection.author,
     label: 'Comment',
     connector: 'from',

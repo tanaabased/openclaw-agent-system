@@ -231,11 +231,24 @@ describe('agent/openclaw-feedback', () => {
     return action('context');
   }
   it('should send only the native quoted comment card without workflow instructions or identifiers', async () => {
+    source.body = '@receiver ask @Octo-Cat. Keep `@code` and person@example.com.';
+    event.source = JSON.stringify(source);
+    event.revision = feedbackRevision(source);
+    input.sourcePresentation = feedbackPresentation(event, 'owner/repo');
+    const original = event.source;
     await advanceFeedbackTurn(input);
     assert.equal(event.turn!.message, feedbackPresentation(event, 'owner/repo'));
+    assert.ok(event.turn!.message.includes('[@Octo-Cat](https://github.com/Octo-Cat)'));
+    assert.ok(event.turn!.message.includes('`@code` and person@example.com'));
+    assert.ok(event.turn!.message.includes('from [@operator](https://github.com/operator)'));
+    assert.ok(event.turn!.message.includes('#issuecomment-42)'));
     assert.ok(event.turn!.message.split('\n').every((line) => line.startsWith('>')));
     assert.ok(!event.turn!.message.includes(record.id));
     assert.ok(!event.turn!.message.includes(event.id));
+    const context = await action('context');
+    assert.ok('source' in context);
+    assert.equal(context.source.body, source.body);
+    assert.equal(event.source, original);
   });
   it('should answer a delivered comment from a later run without execution metadata', async () => {
     await advanceFeedbackTurn(input);

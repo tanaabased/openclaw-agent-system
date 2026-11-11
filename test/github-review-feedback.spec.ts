@@ -24,6 +24,29 @@ const admit = (comment: ReturnType<typeof reviewFeedback>) =>
   admitReviewFeedback({ account: notificationAccount, configuration, comment });
 
 describe('channels/github/provider/review-feedback', () => {
+  it('should link summary and finding prose without rewriting sources or diff literals', () => {
+    const review = reviewFixture({ body: '@reviewer check `@summary-code`.' });
+    const finding = reviewCommentFixture({
+      body: 'Ask @finder; keep [@linked](https://example.com) and email@example.com.',
+      path: '@file.ts',
+      diffHunk: '+ @diff-literal',
+    });
+    for (const feedback of [
+      reviewFeedback(review, [finding]),
+      reviewReplyFeedback(review, { ...finding, replyToId: 70 }),
+    ]) {
+      const original = JSON.stringify(feedback);
+      const card = reviewFeedbackPresentation(feedback);
+      assert.ok(card.includes('[@finder](https://github.com/finder)'));
+      assert.ok(card.includes('[@linked](https://example.com) and email@example.com'));
+      assert.ok(card.includes('> + @diff-literal'));
+      assert.ok(card.includes('`@file.ts`'));
+      assert.ok(card.includes(`](https://github.com/${feedback.author!.login})`));
+      assert.equal(JSON.stringify(feedback), original);
+    }
+    const group = reviewFeedbackPresentation(reviewFeedback(review, [finding]));
+    assert.ok(group.includes('[@reviewer](https://github.com/reviewer) check `@summary-code`'));
+  });
   it('should admit complete findings when their combined bodies and diffs exceed one response', () => {
     const findings = [1, 2].map((id) =>
       reviewCommentFixture({

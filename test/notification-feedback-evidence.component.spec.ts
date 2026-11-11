@@ -79,6 +79,17 @@ for (const [scenario, itemType] of [
         .find((text) => text.includes('const record=read("feedback")'));
       assert.ok(code);
       const root = await mkdtemp(join(tmpdir(), 'feedback-evidence-'));
+      const providerSource = {
+        node_id: 'source',
+        body: '@tanaabot explain the retained plan.',
+        html_url: 'https://github.com/owner/repo/issues/3#issuecomment-42',
+        user: { login: 'emoriwan' },
+      };
+      const incoming = {
+        role: 'user',
+        content:
+          '> [@tanaabot](https://github.com/tanaabot) explain the retained plan.\n>\n> &nbsp;  \n> *[Comment ↗](https://github.com/owner/repo/issues/3#issuecomment-42) from [@emoriwan](https://github.com/emoriwan)*',
+      };
       const answer = {
         role: 'assistant',
         __openclaw: { runId: 'current' },
@@ -110,7 +121,7 @@ for (const [scenario, itemType] of [
               {
                 id: 'event',
                 itemType,
-                source: JSON.stringify({ nodeId: 'source' }),
+                source: JSON.stringify({ nodeId: 'source', body: providerSource.body }),
                 turn: { runId: 'current' },
               },
             ],
@@ -125,7 +136,7 @@ for (const [scenario, itemType] of [
             receipt: { nodeId: 'reply' },
           },
         ]);
-        await write('feedback-source', { node_id: 'source' });
+        await write('feedback-source', providerSource);
         const replies = [
           ...summaries.map((node_id) => ({
             node_id,
@@ -148,19 +159,36 @@ for (const [scenario, itemType] of [
         const prior = { ...answer, __openclaw: { runId: 'earlier' } };
         await write('feedback-history', {
           requestedRunId: 'current',
-          messages: [prior, prior, prior, answer],
+          messages: [incoming, prior, prior, prior, answer],
         });
         const valid = execute();
         assert.equal(valid.status, 0, valid.stderr);
+        if (scenario === 'openclaw-issue-journey') {
+          await write('feedback-history', {
+            requestedRunId: 'current',
+            messages: [{ ...incoming, content: providerSource.body }, answer],
+          });
+          assert.notEqual(execute().status, 0);
+          await write('feedback-history', {
+            requestedRunId: 'current',
+            messages: [incoming, prior, prior, prior, answer],
+          });
+        }
         await write('feedback-replies', [
           ...replies,
           { node_id: 'unexpected-reply', user: { login: 'tanaabot' }, body: 'Public answer.' },
         ]);
         assert.notEqual(execute().status, 0);
         await write('feedback-replies', replies);
-        await write('feedback-history', { requestedRunId: 'current', messages: [answer, answer] });
+        await write('feedback-history', {
+          requestedRunId: 'current',
+          messages: [incoming, answer, answer],
+        });
         assert.notEqual(execute().status, 0);
-        await write('feedback-history', { requestedRunId: 'wrong-run', messages: [answer] });
+        await write('feedback-history', {
+          requestedRunId: 'wrong-run',
+          messages: [incoming, answer],
+        });
         assert.notEqual(execute().status, 0);
       } finally {
         await rm(root, { recursive: true, force: true });
