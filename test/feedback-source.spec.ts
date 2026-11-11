@@ -2,10 +2,13 @@ import assert from 'node:assert/strict';
 import { Value } from 'typebox/value';
 import { codexFeedbackSchema, type CodexFeedback } from '../agent/codex-feedback-state.ts';
 import DiscoveryBudget, { DiscoveryPaused } from '../agent/discovery-budget.ts';
-import { observeFeedbackPolicy } from '../agent/feedback-source.ts';
+import {
+  admitFeedback,
+  discoverFeedback,
+  observeFeedbackPolicy,
+} from '../agent/feedback-source.ts';
 import { openclawFeedbackSchema } from '../agent/openclaw-feedback-state.ts';
 
-import { admitCodexFeedback, discoverCodexFeedback } from '../agent/codex-feedback-source.ts';
 import { account, intakeFixture } from './github-intake-fixture.ts';
 import {
   reviewClientFixture,
@@ -22,7 +25,7 @@ const comment = (nodeId: string, body = '@receiver explain this') => ({
   createdAt: '2026-10-13T01:00:00Z',
   updatedAt: '2026-10-13T01:00:00Z',
 });
-describe('agent/codex-feedback-source', () => {
+describe('agent/feedback-source', () => {
   it('should admit new feedback beyond completed history without losing source or replay evidence', async () => {
     const policy = intakeFixture().policy;
     policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
@@ -32,7 +35,7 @@ describe('agent/codex-feedback-source', () => {
       databaseId: index + 1,
     }));
     const scan = () =>
-      discoverCodexFeedback({
+      discoverFeedback({
         state,
         policy,
         owner: 'owner',
@@ -76,7 +79,7 @@ describe('agent/codex-feedback-source', () => {
       databaseId: index + 1,
     }));
     const scan = () =>
-      discoverCodexFeedback({
+      discoverFeedback({
         state,
         policy,
         owner: 'owner',
@@ -127,7 +130,7 @@ describe('agent/codex-feedback-source', () => {
         return originalMembers(...args);
       };
       const scan = () =>
-        discoverCodexFeedback({
+        discoverFeedback({
           state,
           policy,
           owner: 'owner',
@@ -212,7 +215,7 @@ describe('agent/codex-feedback-source', () => {
         return groups.find((review) => review.databaseId === id)!;
       };
       const scan = () =>
-        discoverCodexFeedback({
+        discoverFeedback({
           state,
           policy,
           owner: 'owner',
@@ -269,7 +272,7 @@ describe('agent/codex-feedback-source', () => {
     const comments = [comment('own'), { ...comment('human'), author: human, databaseId: 43 }];
     let failed = true;
     const scan = () =>
-      discoverCodexFeedback({
+      discoverFeedback({
         state,
         policy,
         owner: 'owner',
@@ -325,7 +328,7 @@ describe('agent/codex-feedback-source', () => {
       assert.ok(Value.Check(codexFeedbackSchema, state));
       assert.ok(Value.Check(openclawFeedbackSchema, state));
     };
-    await discoverCodexFeedback({
+    await discoverFeedback({
       state,
       policy,
       owner: 'owner',
@@ -359,7 +362,7 @@ describe('agent/codex-feedback-source', () => {
     };
     let comments = [comment('source')];
     const scan = () =>
-      discoverCodexFeedback({
+      discoverFeedback({
         state,
         ownCommentIds: ['own-reply'],
         policy,
@@ -406,7 +409,7 @@ describe('agent/codex-feedback-source', () => {
     assert.equal(state.admission?.after, undefined);
     const comments = [comment('during-pause')];
     const scan = () =>
-      discoverCodexFeedback({
+      discoverFeedback({
         state,
         policy,
         owner: 'owner',
@@ -435,20 +438,20 @@ describe('agent/codex-feedback-source', () => {
   });
   it('should admit configured human self-feedback and reject changed pins or quoted mentions', () => {
     const policy = intakeFixture().policy;
-    assert.equal(admitCodexFeedback(policy, account, comment('C')).disposition, 'approved');
+    assert.equal(admitFeedback(policy, account, comment('C')).disposition, 'approved');
     assert.equal(
-      admitCodexFeedback(policy, account, comment('C', '> @receiver do this')).disposition,
+      admitFeedback(policy, account, comment('C', '> @receiver do this')).disposition,
       'rejected',
     );
     assert.equal(
-      admitCodexFeedback(policy, account, {
+      admitFeedback(policy, account, {
         ...comment('C'),
         author: { ...account, nodeId: 'foreign' },
       }).disposition,
       'rejected',
     );
     policy.issueAssignment!.feedback = { inherit: false, allowed: [] };
-    assert.equal(admitCodexFeedback(policy, account, comment('C')).disposition, 'rejected');
+    assert.equal(admitFeedback(policy, account, comment('C')).disposition, 'rejected');
   });
   for (const pause of ['empty-authors'] as const)
     it(`should preserve admission and receipts across ${pause} pause and resume without replaying history`, async () => {
@@ -470,7 +473,7 @@ describe('agent/codex-feedback-source', () => {
         updatedAt: new Date(startedAt + offset).toISOString(),
       });
       const run = (offset: number, nodeId = 'I') =>
-        discoverCodexFeedback({
+        discoverFeedback({
           state,
           policy,
           owner: 'owner',
@@ -574,28 +577,28 @@ describe('agent/codex-feedback-source', () => {
         getIssueComment: async () => comments[0]!,
       },
     };
-    await discoverCodexFeedback(input);
+    await discoverFeedback(input);
     assert.equal(state.events.length, 0);
     comments.push(comment('new'));
     comments.push(comment('new'));
-    await discoverCodexFeedback(input);
-    await discoverCodexFeedback(input);
+    await discoverFeedback(input);
+    await discoverFeedback(input);
     assert.equal(state.events.length, 1);
     const frozen = state.events[0]!.source;
     comments[1] = comment('new', '@receiver changed question');
     comments[2] = comments[1];
-    await discoverCodexFeedback(input);
+    await discoverFeedback(input);
     assert.equal(state.events.length, 2);
     assert.equal(state.events[0]!.source, frozen);
     comments.push(comment('own'));
     comments.push(comment('summary'));
     comments.push(comment('copied-summary-marker', '@receiver a human copied a summary marker'));
-    await discoverCodexFeedback(input);
+    await discoverFeedback(input);
     assert.equal(state.events.length, 3);
     assert.equal(state.events.at(-1)?.sourceId, 'copied-summary-marker');
     const before = structuredClone(state);
     truncated = true;
-    await assert.rejects(discoverCodexFeedback(input), /feedback-source-incomplete/);
+    await assert.rejects(discoverFeedback(input), /feedback-source-incomplete/);
     assert.deepEqual(state, before);
   });
   it('should suppress both publication receipts after reading comments and retain same-account human feedback', async () => {
@@ -612,7 +615,7 @@ describe('agent/codex-feedback-source', () => {
       ),
     ];
     let commentsRead = false;
-    await discoverCodexFeedback({
+    await discoverFeedback({
       state,
       policy,
       owner: 'owner',
@@ -647,7 +650,7 @@ describe('agent/codex-feedback-source', () => {
       baseline: {},
       events: [],
     };
-    await discoverCodexFeedback({
+    await discoverFeedback({
       state,
       policy,
       owner: 'owner',
@@ -689,7 +692,7 @@ describe('agent/codex-feedback-source', () => {
       itemType: 'pull-request' as const,
       now: 10,
     };
-    await discoverCodexFeedback(input);
+    await discoverFeedback(input);
     assert.equal(state.events.length, 1);
     const group = JSON.parse(state.events[0]!.source);
     assert.equal(group.feedback.comments[0].line, null);
@@ -703,7 +706,7 @@ describe('agent/codex-feedback-source', () => {
         body: '@receiver follow-up',
       }),
     );
-    await discoverCodexFeedback(input);
+    await discoverFeedback(input);
     assert.equal(state.events.length, 2);
     assert.equal(JSON.parse(state.events[1]!.source).feedback.receipt.kind, 'review-comment');
   });
@@ -737,8 +740,8 @@ describe('agent/codex-feedback-source', () => {
         reviews,
       },
     };
-    await discoverCodexFeedback(input);
-    await discoverCodexFeedback(input);
+    await discoverFeedback(input);
+    await discoverFeedback(input);
     assert.equal(state.events.length, 1);
     const source = JSON.parse(state.events[0]!.source);
     assert.equal(source.nodeId, reply.nodeId);
@@ -781,7 +784,7 @@ describe('agent/codex-feedback-source', () => {
       },
     };
     const run = () =>
-      discoverCodexFeedback({
+      discoverFeedback({
         state,
         policy,
         client,
@@ -840,7 +843,7 @@ describe('agent/codex-feedback-source', () => {
     };
     const cutoffs: string[] = [];
     const run = () =>
-      discoverCodexFeedback({
+      discoverFeedback({
         state,
         policy,
         owner: 'owner',
@@ -912,7 +915,7 @@ describe('agent/codex-feedback-source', () => {
       return [];
     };
     const run = () =>
-      discoverCodexFeedback({
+      discoverFeedback({
         state,
         policy,
         owner: 'owner',
@@ -949,7 +952,7 @@ describe('agent/codex-feedback-source', () => {
     const reviews = reviewClientFixture(review, []);
     let now = startedAt + 1000;
     const run = () =>
-      discoverCodexFeedback({
+      discoverFeedback({
         state,
         policy,
         owner: 'owner',
@@ -1005,7 +1008,7 @@ describe('agent/codex-feedback-source', () => {
       },
     };
     const run = () =>
-      discoverCodexFeedback({
+      discoverFeedback({
         state,
         policy,
         client,

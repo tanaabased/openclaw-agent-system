@@ -114,7 +114,6 @@ export default class OpenClawDispatchIssue {
     action: OpenClawFeedbackAction | undefined,
     save: () => Promise<void>,
     authority: DispatchAuthority,
-    operator = false,
   ) {
     const now = (this.context.dependencies.now ?? Date.now)();
     if (!action && event.retry && !dispatchRetryDue(event, now))
@@ -180,7 +179,6 @@ export default class OpenClawDispatchIssue {
         )
         .use({ ...authority, assertCurrent }, async (request) => {
           const common = {
-            operator,
             conversation: true,
             record,
             event,
@@ -190,22 +188,6 @@ export default class OpenClawDispatchIssue {
             provider,
             policy: (await this.context.scope(manifest, workspace)).policy.policy,
             intake,
-            workspace,
-            now,
-            debug: manifest.debug,
-            signal: authority.signal,
-            connectDelivery: async () => {
-              if (!this.context.dependencies.delivery)
-                throw new Error('delivery-runtime-unavailable');
-              return this.context.dependencies.delivery({
-                manifest,
-                workspaceDir: workspace,
-                worktree: record.worktree!,
-                caller,
-                signal: authority.signal ?? AbortSignal.timeout(60000),
-                connection: client,
-              });
-            },
             assertCurrent,
             livePolicy: async () => {
               const live = await this.context.validateLocal(
@@ -301,7 +283,6 @@ export default class OpenClawDispatchIssue {
     input: Static<typeof dispatchParameters>,
     record: OpenClawDispatchRecord,
     tx: OpenClawDispatchTransaction,
-    operator = false,
   ) {
     const { manifest, current, caller, save, authority, transactionSignal } = tx;
     const feedbackChild = input.action === 'feedback' && input.operation !== 'reconcile';
@@ -316,22 +297,12 @@ export default class OpenClawDispatchIssue {
           caller.sessionId !== record.sessionCreation?.sessionId)
       )
         throw new Error('feedback-owner-caller-required');
-      return this.feedback(
-        manifest,
-        current.workspace,
-        record,
-        event,
-        caller,
-        input,
-        save,
-        {
-          ...authority,
-          signal: authority.signal
-            ? AbortSignal.any([authority.signal, transactionSignal])
-            : transactionSignal,
-        },
-        operator,
-      );
+      return this.feedback(manifest, current.workspace, record, event, caller, input, save, {
+        ...authority,
+        signal: authority.signal
+          ? AbortSignal.any([authority.signal, transactionSignal])
+          : transactionSignal,
+      });
     }
     const feedbackSource = selectedOpenClawFeedback(record, caller.runId);
     if (feedbackSource && input.action === 'context') {

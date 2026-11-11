@@ -452,7 +452,6 @@ describe('agent/codex-feedback', () => {
         current,
         provider,
         occurrence: 'closed-pr',
-        sourceThreadId: 'intake',
         now: baseline + 71000,
         checkpoint: async () => {},
       });
@@ -470,7 +469,6 @@ describe('agent/codex-feedback', () => {
           current,
           provider,
           occurrence: 'reopened-pr',
-          sourceThreadId: 'intake',
           now: baseline + 72000,
           checkpoint: async () => {},
         });
@@ -532,7 +530,6 @@ describe('agent/codex-feedback', () => {
           current,
           provider,
           occurrence: `pr-association-${pass}`,
-          sourceThreadId: 'intake',
           now: baseline + 71000 + pass,
           checkpoint: (scan) => discoveryCheckpoint(store, scan),
         });
@@ -561,7 +558,6 @@ describe('agent/codex-feedback', () => {
       current,
       provider: await deps.feedbackConnect!(current.workspace, AbortSignal.timeout(1000)),
       occurrence: 'checkpoint-test',
-      sourceThreadId: 'intake',
       now: baseline + 70000,
       checkpoint: async (scan) => {
         visits.push(scan.id);
@@ -596,7 +592,6 @@ describe('agent/codex-feedback', () => {
       current,
       provider: await deps.feedbackConnect!(current.workspace, new AbortController().signal),
       occurrence: 'missing-admission',
-      sourceThreadId: 'intake',
       now: baseline + 71000,
     });
     assert.equal(
@@ -659,7 +654,6 @@ describe('agent/codex-feedback', () => {
         current,
         provider,
         occurrence: 'bot-regression',
-        sourceThreadId: 'intake',
         now: baseline + 70000,
       });
       assert.equal(scans.length, 2);

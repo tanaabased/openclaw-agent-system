@@ -137,7 +137,6 @@ export default async function runCodexFeedback(
               checkpoint: (scan) => discoveryCheckpoint(store, scan),
               current,
               occurrence: occurrence.id,
-              sourceThreadId: activation!.sourceThreadId,
               now: scanTime,
               provider: await (deps.feedbackConnect ?? connectCodexFeedback)(
                 current.workspace,

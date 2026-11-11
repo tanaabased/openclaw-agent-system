@@ -839,7 +839,7 @@ export default class OpenClawDispatch {
         if (input.action === 'next') return this.coordinator.next(tx);
         const record = state.records.find((entry) => entry.id === input.id);
         if (!record) throw new Error('dispatch-receipt-missing');
-        const feedback = await this.issue.routeFeedback(input, record, tx, operator);
+        const feedback = await this.issue.routeFeedback(input, record, tx);
         if (feedback !== undefined) return feedback;
         if (input.action === 'retry') {
           if (record.retirement) throw new Error('dispatch-issue-inactive');
