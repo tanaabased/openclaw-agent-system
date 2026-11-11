@@ -1,12 +1,10 @@
 import type { GitHubNotificationPublicationClient } from '../channels/github/provider/work-event-client.ts';
 import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
 import { reconcileAnnouncement } from './delivery-announcement.ts';
-import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 
 /** identify retained public output without publishing or authorizing another reply. */
 export default async function feedbackOwnPublications(input: {
-  record: SharedDispatchRecord;
   intake: IntakeRecord;
   client: GitHubNotificationPublicationClient;
   announcement?: DeliveryAnnouncementState;

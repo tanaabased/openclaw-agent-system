@@ -137,7 +137,6 @@ export default async function runCodexFeedback(
               checkpoint: (scan) => discoveryCheckpoint(store, scan),
               current,
               occurrence: occurrence.id,
-              sourceThreadId: activation!.sourceThreadId,
               now: scanTime,
               provider: await (deps.feedbackConnect ?? connectCodexFeedback)(
                 current.workspace,
@@ -446,44 +445,46 @@ export default async function runCodexFeedback(
               };
             }
           } catch (error) {
-            if (error instanceof WorkflowPolicyHeld && event) {
-              event.policyHeld = error.reason;
-              await save();
+            // A failed context read cannot undo confirmed native delivery.
+            const failedEvent = event?.phase === 'delivered' ? { ...event } : event;
+            if (error instanceof WorkflowPolicyHeld && failedEvent) {
+              failedEvent.policyHeld = error.reason;
+              if (failedEvent === event) await save();
               if (input.action === 'next') continue;
               return {
                 status: 'policy-held',
                 id: record.id,
-                eventId: event.id,
+                eventId: failedEvent.id,
                 reason: error.reason,
               };
             }
             if (codexHostAccess(error)) throw error;
             const failure = workflowFailure(error, 'feedback-operation-failed');
             const { code } = failure;
-            if (!event) feedback.code = code;
-            if (event) {
-              event.code = code;
-              scheduleDispatchRetry(event, code, error, now);
+            if (!failedEvent) feedback.code = code;
+            if (failedEvent) {
+              failedEvent.code = code;
+              scheduleDispatchRetry(failedEvent, code, error, now);
             }
             if (
-              event &&
-              !event.retry &&
+              failedEvent &&
+              !failedEvent.retry &&
               /^(?:feedback-(?:source-changed|source-identity-changed|source-author-changed|source-no-longer-eligible|source-owner-changed|authority-changed|turn-changed|native-binding-mismatch|self-publication-denied)|github-notification-publication-(?:text|secret|commenter|output|reconciliation)|continuation-native|dispatch-.*(?:revoked|diverged))/.test(
                 code,
               )
             ) {
-              event.phase = 'blocked';
-              event.code = code;
+              failedEvent.phase = 'blocked';
+              failedEvent.code = code;
             }
-            if (event && dispatchFailurePhase(event, code, error) === 'blocked')
-              event.phase = 'blocked';
-            await save();
+            if (failedEvent && dispatchFailurePhase(failedEvent, code, error) === 'blocked')
+              failedEvent.phase = 'blocked';
+            if (failedEvent === event) await save();
             if (input.action !== 'next')
               return {
                 status:
-                  event?.phase === 'blocked'
+                  failedEvent?.phase === 'blocked'
                     ? 'blocked'
-                    : dispatchFailurePhase(event ?? {}, code, error),
+                    : dispatchFailurePhase(failedEvent ?? {}, code, error),
                 id: record.id,
                 eventId: input.eventId,
                 ...failure,

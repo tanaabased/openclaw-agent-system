@@ -13,7 +13,6 @@ import prepareDispatchReport from './codex-dispatch-report.ts';
 import { type DispatchRecord, type DispatchState } from './codex-dispatch-state.ts';
 import codexHostAccess from './codex-host-access.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
-import dispatchBlocker from './dispatch-blocker.ts';
 import { scheduleDispatchRetry } from './dispatch-retry.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import {
@@ -241,7 +240,7 @@ export async function failDispatch(
     return { status: 'policy-held', id: record.id, reason: error.reason, nextAction: 'next' };
   if (['dispatch-policy-disabled', 'dispatch-activation-required'].includes(code(error)))
     throw error;
-  const previousCode = dispatchBlocker(record);
+  const previousCode = record.blocker;
   if (codexHostAccess(error)) throw error;
   // Native worktree setup returns a client receipt before the child is readable.
   if (

@@ -73,7 +73,7 @@ export const feedbackSourceStateSchema = Type.Object(
     reviewMarkers: Type.Optional(Type.Record(Type.String(), Type.String({ maxLength: 128000 }))),
     watermarks: Type.Optional(Type.Record(Type.String(), Type.Integer({ minimum: 0 }))),
     baseline: Type.Record(Type.String(), Type.Record(Type.String(), Type.String())),
-    events: Type.Array(feedbackSourceEventSchema, { maxItems: 400 }),
+    events: Type.Array(feedbackSourceEventSchema),
     code: Type.Optional(text),
   },
   { additionalProperties: false },

@@ -2,10 +2,13 @@ import assert from 'node:assert/strict';
 import { Value } from 'typebox/value';
 import { codexFeedbackSchema, type CodexFeedback } from '../agent/codex-feedback-state.ts';
 import DiscoveryBudget, { DiscoveryPaused } from '../agent/discovery-budget.ts';
-import { observeFeedbackPolicy } from '../agent/feedback-source.ts';
+import {
+  admitFeedback,
+  discoverFeedback,
+  observeFeedbackPolicy,
+} from '../agent/feedback-source.ts';
 import { openclawFeedbackSchema } from '../agent/openclaw-feedback-state.ts';
 
-import { admitCodexFeedback, discoverCodexFeedback } from '../agent/codex-feedback-source.ts';
 import { account, intakeFixture } from './github-intake-fixture.ts';
 import {
   reviewClientFixture,
@@ -22,7 +25,332 @@ const comment = (nodeId: string, body = '@receiver explain this') => ({
   createdAt: '2026-10-13T01:00:00Z',
   updatedAt: '2026-10-13T01:00:00Z',
 });
-describe('agent/codex-feedback-source', () => {
+describe('agent/feedback-source', () => {
+  it('should admit new feedback beyond completed history without losing source or replay evidence', async () => {
+    const policy = intakeFixture().policy;
+    policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
+    const state: CodexFeedback = { startedAt: 0, baseline: {}, events: [] };
+    const comments = Array.from({ length: 400 }, (_, index) => ({
+      ...comment(`comment-${index}`),
+      databaseId: index + 1,
+    }));
+    const scan = () =>
+      discoverFeedback({
+        state,
+        policy,
+        owner: 'owner',
+        name: 'repo',
+        number: 3,
+        nodeId: 'I',
+        itemType: 'issue',
+        now: Date.parse('2026-10-14T00:00:00Z'),
+        client: {
+          identity: account,
+          listIssueComments: async () => ({ comments, truncated: false }),
+          getIssueComment: async () => comments[0]!,
+        },
+      });
+    await scan();
+    for (const event of state.events) event.phase = 'delivered';
+    state.events.at(-1)!.phase = 'prepared';
+    const retained = structuredClone(state.events);
+    comments.push({ ...comment('new'), databaseId: 401 });
+    await scan();
+    await scan();
+    assert.equal(state.events.length, 401);
+    assert.deepEqual(state.events.slice(0, 400), retained);
+    assert.equal(state.events.at(-1)!.phase, 'queued');
+    assert.deepEqual(state.baseline.I, {});
+    assert.ok(Value.Check(codexFeedbackSchema, state));
+    assert.ok(Value.Check(openclawFeedbackSchema, state));
+    comments[0] = { ...comments[0]!, body: '@receiver edited direction' };
+    await scan();
+    assert.equal(state.events.length, 402);
+    assert.equal(state.events[0]!.source, retained[0]!.source);
+    assert.equal(JSON.parse(state.events.at(-1)!.source).body, '@receiver edited direction');
+  });
+
+  it('should retain unadmitted sources for policy reconsideration beyond the old baseline ceiling', async () => {
+    const policy = intakeFixture().policy;
+    policy.issueAssignment!.feedback = { inherit: false, allowed: [] };
+    const state: CodexFeedback = { startedAt: 0, baseline: {}, events: [] };
+    const comments = Array.from({ length: 1001 }, (_, index) => ({
+      ...comment(`comment-${index}`),
+      databaseId: index + 1,
+    }));
+    const scan = () =>
+      discoverFeedback({
+        state,
+        policy,
+        owner: 'owner',
+        name: 'repo',
+        number: 3,
+        nodeId: 'I',
+        itemType: 'issue',
+        now: Date.parse('2026-10-14T00:00:00Z'),
+        discovery: { budget: new DiscoveryBudget(), save: async () => {} },
+        client: {
+          identity: account,
+          listIssueCommentPage: async () => ({ comments, truncated: false }),
+          listIssueComments: async () => ({ comments, truncated: false }),
+          getIssueComment: async () => comments[0]!,
+        },
+      });
+    await scan();
+    assert.equal(Object.keys(state.baseline.I!).length, 1001);
+    assert.equal(state.events.length, 0);
+    policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
+    // Already-observed disabled periods stay excluded; only fresh edits become input.
+    comments.push({ ...comment('fresh'), databaseId: 1002, updatedAt: '2026-10-15T00:00:00Z' });
+    await scan();
+    assert.deepEqual(
+      state.events.map((event) => event.sourceId),
+      ['fresh'],
+    );
+    assert.equal(state.baseline.I!.fresh, undefined);
+  });
+
+  for (const edited of ['review', 'reply'] as const)
+    it(`should prefer fresh ${edited} evidence during policy reconsideration and recover independently`, async () => {
+      const policy = intakeFixture().policy;
+      policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
+      const state: CodexFeedback = { startedAt: 0, baseline: {}, events: [] };
+      const review = reviewFixture({ author: account, body: '@receiver original review' });
+      const root = reviewCommentFixture({ author: account });
+      const reply = reviewCommentFixture({
+        author: account,
+        nodeId: 'reply',
+        databaseId: 85,
+        replyToId: root.databaseId,
+        body: '@receiver original reply',
+      });
+      const reviews = reviewClientFixture(review, [root, reply]);
+      const human = { ...account, login: 'human', nodeId: 'U_human' };
+      const comments = [{ ...comment('retained'), author: human }];
+      let now = Date.parse('2026-10-14T00:00:00Z');
+      let unavailable = false;
+      const list = reviews.listReviews;
+      reviews.listReviews = async (...args) => {
+        if (unavailable) throw new Error('reviews-unavailable');
+        return list(...args);
+      };
+      const scan = () =>
+        discoverFeedback({
+          state,
+          policy,
+          owner: 'owner',
+          name: 'repo',
+          number: 3,
+          nodeId: 'PR',
+          itemType: 'pull-request',
+          now: (now += 60000),
+          discovery: { budget: new DiscoveryBudget(), save: async () => {} },
+          client: {
+            identity: account,
+            reviews,
+            listIssueComments: async () => ({ comments, truncated: false }),
+            getIssueComment: async () => comments[0]!,
+          },
+        });
+      await scan();
+      assert.equal(state.events.length, 2);
+      const original = structuredClone(state.events);
+      const watermark = state.watermarks!.PR;
+      policy.issueAssignment!.feedback.allowed.push(human);
+      const source = edited === 'review' ? review : reply;
+      source.body = '@receiver edited direction';
+      source.updatedAt = new Date(now + 1000).toISOString();
+      // The incremental endpoint omits the older, newly eligible comment.
+      comments.splice(0, 1, { ...comment('independent'), updatedAt: source.updatedAt });
+      unavailable = true;
+      await assert.rejects(scan(), /reviews-unavailable/);
+      assert.equal(state.watermarks!.PR, watermark);
+      assert.ok(state.events.some((event) => event.sourceId === 'independent'));
+      assert.ok(state.events.some((event) => event.sourceId === 'retained'));
+      unavailable = false;
+      await scan();
+      // A second policy change plus edit covers the successful fresh-read path too.
+      policy.issueAssignment!.feedback.allowed.push({
+        ...human,
+        login: 'other',
+        nodeId: 'U_other',
+      });
+      source.body = '@receiver final direction';
+      source.updatedAt = new Date(now + 1000).toISOString();
+      await scan();
+      const admitted = structuredClone(state.events);
+      await scan();
+      assert.deepEqual(state.events, admitted);
+      assert.deepEqual(state.events.slice(0, 2), original);
+      assert.equal(JSON.parse(state.events.at(-1)!.source).body, source.body);
+      assert.ok(state.watermarks!.PR! > watermark!);
+      assert.ok(Value.Check(codexFeedbackSchema, state));
+      assert.ok(Value.Check(openclawFeedbackSchema, state));
+    });
+
+  for (const failedRead of ['comments', 'reviews', 'members'] as const) {
+    it(`should isolate failed ${failedRead} reads and recover without replay`, async () => {
+      const policy = intakeFixture().policy;
+      policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
+      const state: CodexFeedback = { startedAt: 0, baseline: {}, events: [] };
+      const review = reviewFixture({ author: account, body: '@receiver fix this' });
+      const members = [reviewCommentFixture({ author: account })];
+      const reviews = reviewClientFixture(review, members);
+      const originalList = reviews.listReviews;
+      const originalMembers = reviews.getReviewComments;
+      let failed = true;
+      reviews.listReviews = async (...args) => {
+        if (failed && failedRead === 'reviews') throw new Error('review-unavailable');
+        return originalList(...args);
+      };
+      reviews.getReviewComments = async (...args) => {
+        if (failed && failedRead === 'members') throw new Error('members-unavailable');
+        return originalMembers(...args);
+      };
+      const budget = new DiscoveryBudget();
+      const scan = () =>
+        discoverFeedback({
+          state,
+          policy,
+          owner: 'owner',
+          name: 'repo',
+          number: 3,
+          nodeId: 'PR',
+          itemType: 'pull-request',
+          now: Date.parse('2026-10-14T00:00:00Z'),
+          client: {
+            identity: account,
+            reviews,
+            listIssueComments: async () => {
+              if (failed && failedRead === 'comments') throw new Error('comments-unavailable');
+              return { comments: [comment('ordinary')], truncated: false };
+            },
+            getIssueComment: async () => comment('ordinary'),
+          },
+          discovery: { budget, save: async () => {} },
+        });
+      await assert.rejects(scan(), /unavailable/);
+      assert.equal(
+        budget.operation,
+        failedRead === 'comments'
+          ? 'comments'
+          : failedRead === 'reviews'
+            ? 'reviews:1'
+            : `members:${review.databaseId}`,
+      );
+      assert.deepEqual(
+        state.events.map((event) => event.sourceId),
+        failedRead === 'comments' ? [review.nodeId] : ['ordinary'],
+      );
+      assert.equal(state.watermarks?.PR, undefined);
+      failed = false;
+      await scan();
+      await scan();
+      assert.equal(state.events.length, 2);
+      const grouped = JSON.parse(
+        state.events.find((event) => event.sourceId === review.nodeId)!.source,
+      );
+      assert.deepEqual(grouped.feedback.comments, members);
+      assert.equal(typeof state.watermarks?.PR, 'number');
+    });
+  }
+
+  for (const failure of ['members', 'reply', 'review-list', 'comment-list'] as const) {
+    it(`should isolate a failed review ${failure} and recover each complete source once`, async () => {
+      const policy = intakeFixture().policy;
+      policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
+      const state: CodexFeedback = { startedAt: 0, baseline: {}, events: [] };
+      const groups = [1, 2].map((id) =>
+        reviewFixture({
+          author: account,
+          databaseId: id,
+          nodeId: `review-${id}`,
+          body: '@receiver fix these',
+        }),
+      );
+      const roots = groups.map((review) =>
+        reviewCommentFixture({
+          author: account,
+          reviewId: review.databaseId,
+          databaseId: review.databaseId * 10,
+          nodeId: `root-${review.databaseId}`,
+        }),
+      );
+      const replies = roots.map((root) => ({
+        ...root,
+        databaseId: root.databaseId + 1,
+        nodeId: `reply-${root.reviewId}`,
+        replyToId: root.databaseId,
+        body: '@receiver followup',
+      }));
+      let failed = true;
+      const reviews = reviewClientFixture(groups[0]!, roots);
+      reviews.listReviews = async () => {
+        if (failed && failure === 'review-list') throw new Error('review-list-unavailable');
+        return { values: groups, nextPage: 1 };
+      };
+      reviews.listComments = async () => {
+        if (failed && failure === 'comment-list') throw new Error('comment-list-unavailable');
+        return { values: [...roots, ...replies], nextPage: 1 };
+      };
+      reviews.getReviewComments = async (_o, _n, _pr, id) => {
+        if (failed && failure === 'members' && id === 1) throw new Error('members-unavailable');
+        return [...roots, ...replies].filter((comment) => comment.reviewId === id);
+      };
+      reviews.getReview = async (_o, _n, _pr, id) => {
+        if (failed && failure === 'reply' && id === 1) throw new Error('reply-unavailable');
+        return groups.find((review) => review.databaseId === id)!;
+      };
+      const scan = () =>
+        discoverFeedback({
+          state,
+          policy,
+          owner: 'owner',
+          name: 'repo',
+          number: 3,
+          nodeId: 'PR',
+          itemType: 'pull-request',
+          now: Date.parse('2026-10-14T00:00:00Z'),
+          client: {
+            identity: account,
+            reviews,
+            listIssueComments: async () => ({ comments: [], truncated: false }),
+            getIssueComment: async () => comment('unused'),
+          },
+          discovery: { budget: new DiscoveryBudget(), save: async () => {} },
+        });
+      await assert.rejects(scan(), /unavailable/);
+      const expected = ['review-1', 'review-2', 'reply-1', 'reply-2'].filter((id) =>
+        failure === 'review-list'
+          ? id.startsWith('reply')
+          : failure === 'comment-list'
+            ? id.startsWith('review')
+            : id !== (failure === 'members' ? 'review-1' : 'reply-1'),
+      );
+      assert.deepEqual(new Set(state.events.map((event) => event.sourceId)), new Set(expected));
+      assert.equal(state.watermarks?.PR, undefined);
+      const retained = state.events.map((event) => event.source);
+      failed = false;
+      await scan();
+      await scan();
+      assert.equal(state.events.length, 4);
+      assert.deepEqual(
+        state.events.slice(0, retained.length).map((event) => event.source),
+        retained,
+      );
+      for (const review of groups) {
+        const source = JSON.parse(
+          state.events.find((event) => event.sourceId === review.nodeId)!.source,
+        );
+        assert.deepEqual(
+          source.feedback.comments,
+          roots.filter((root) => root.reviewId === review.databaseId),
+        );
+      }
+      assert.equal(typeof state.watermarks?.PR, 'number');
+    });
+  }
+
   it('should admit unrelated authors while an outgoing lookup fails and revisit deferred self input', async () => {
     const policy = intakeFixture().policy;
     const human = { ...account, login: 'human', nodeId: 'U_human' };
@@ -31,7 +359,7 @@ describe('agent/codex-feedback-source', () => {
     const comments = [comment('own'), { ...comment('human'), author: human, databaseId: 43 }];
     let failed = true;
     const scan = () =>
-      discoverCodexFeedback({
+      discoverFeedback({
         state,
         policy,
         owner: 'owner',
@@ -87,7 +415,7 @@ describe('agent/codex-feedback-source', () => {
       assert.ok(Value.Check(codexFeedbackSchema, state));
       assert.ok(Value.Check(openclawFeedbackSchema, state));
     };
-    await discoverCodexFeedback({
+    await discoverFeedback({
       state,
       policy,
       owner: 'owner',
@@ -121,7 +449,7 @@ describe('agent/codex-feedback-source', () => {
     };
     let comments = [comment('source')];
     const scan = () =>
-      discoverCodexFeedback({
+      discoverFeedback({
         state,
         ownCommentIds: ['own-reply'],
         policy,
@@ -168,7 +496,7 @@ describe('agent/codex-feedback-source', () => {
     assert.equal(state.admission?.after, undefined);
     const comments = [comment('during-pause')];
     const scan = () =>
-      discoverCodexFeedback({
+      discoverFeedback({
         state,
         policy,
         owner: 'owner',
@@ -197,20 +525,20 @@ describe('agent/codex-feedback-source', () => {
   });
   it('should admit configured human self-feedback and reject changed pins or quoted mentions', () => {
     const policy = intakeFixture().policy;
-    assert.equal(admitCodexFeedback(policy, account, comment('C')).disposition, 'approved');
+    assert.equal(admitFeedback(policy, account, comment('C')).disposition, 'approved');
     assert.equal(
-      admitCodexFeedback(policy, account, comment('C', '> @receiver do this')).disposition,
+      admitFeedback(policy, account, comment('C', '> @receiver do this')).disposition,
       'rejected',
     );
     assert.equal(
-      admitCodexFeedback(policy, account, {
+      admitFeedback(policy, account, {
         ...comment('C'),
         author: { ...account, nodeId: 'foreign' },
       }).disposition,
       'rejected',
     );
     policy.issueAssignment!.feedback = { inherit: false, allowed: [] };
-    assert.equal(admitCodexFeedback(policy, account, comment('C')).disposition, 'rejected');
+    assert.equal(admitFeedback(policy, account, comment('C')).disposition, 'rejected');
   });
   for (const pause of ['empty-authors'] as const)
     it(`should preserve admission and receipts across ${pause} pause and resume without replaying history`, async () => {
@@ -232,7 +560,7 @@ describe('agent/codex-feedback-source', () => {
         updatedAt: new Date(startedAt + offset).toISOString(),
       });
       const run = (offset: number, nodeId = 'I') =>
-        discoverCodexFeedback({
+        discoverFeedback({
           state,
           policy,
           owner: 'owner',
@@ -336,28 +664,28 @@ describe('agent/codex-feedback-source', () => {
         getIssueComment: async () => comments[0]!,
       },
     };
-    await discoverCodexFeedback(input);
+    await discoverFeedback(input);
     assert.equal(state.events.length, 0);
     comments.push(comment('new'));
     comments.push(comment('new'));
-    await discoverCodexFeedback(input);
-    await discoverCodexFeedback(input);
+    await discoverFeedback(input);
+    await discoverFeedback(input);
     assert.equal(state.events.length, 1);
     const frozen = state.events[0]!.source;
     comments[1] = comment('new', '@receiver changed question');
     comments[2] = comments[1];
-    await discoverCodexFeedback(input);
+    await discoverFeedback(input);
     assert.equal(state.events.length, 2);
     assert.equal(state.events[0]!.source, frozen);
     comments.push(comment('own'));
     comments.push(comment('summary'));
     comments.push(comment('copied-summary-marker', '@receiver a human copied a summary marker'));
-    await discoverCodexFeedback(input);
+    await discoverFeedback(input);
     assert.equal(state.events.length, 3);
     assert.equal(state.events.at(-1)?.sourceId, 'copied-summary-marker');
     const before = structuredClone(state);
     truncated = true;
-    await assert.rejects(discoverCodexFeedback(input), /feedback-source-incomplete/);
+    await assert.rejects(discoverFeedback(input), /feedback-source-incomplete/);
     assert.deepEqual(state, before);
   });
   it('should suppress both publication receipts after reading comments and retain same-account human feedback', async () => {
@@ -374,7 +702,7 @@ describe('agent/codex-feedback-source', () => {
       ),
     ];
     let commentsRead = false;
-    await discoverCodexFeedback({
+    await discoverFeedback({
       state,
       policy,
       owner: 'owner',
@@ -409,7 +737,7 @@ describe('agent/codex-feedback-source', () => {
       baseline: {},
       events: [],
     };
-    await discoverCodexFeedback({
+    await discoverFeedback({
       state,
       policy,
       owner: 'owner',
@@ -451,7 +779,7 @@ describe('agent/codex-feedback-source', () => {
       itemType: 'pull-request' as const,
       now: 10,
     };
-    await discoverCodexFeedback(input);
+    await discoverFeedback(input);
     assert.equal(state.events.length, 1);
     const group = JSON.parse(state.events[0]!.source);
     assert.equal(group.feedback.comments[0].line, null);
@@ -465,7 +793,7 @@ describe('agent/codex-feedback-source', () => {
         body: '@receiver follow-up',
       }),
     );
-    await discoverCodexFeedback(input);
+    await discoverFeedback(input);
     assert.equal(state.events.length, 2);
     assert.equal(JSON.parse(state.events[1]!.source).feedback.receipt.kind, 'review-comment');
   });
@@ -499,8 +827,8 @@ describe('agent/codex-feedback-source', () => {
         reviews,
       },
     };
-    await discoverCodexFeedback(input);
-    await discoverCodexFeedback(input);
+    await discoverFeedback(input);
+    await discoverFeedback(input);
     assert.equal(state.events.length, 1);
     const source = JSON.parse(state.events[0]!.source);
     assert.equal(source.nodeId, reply.nodeId);
@@ -543,7 +871,7 @@ describe('agent/codex-feedback-source', () => {
       },
     };
     const run = () =>
-      discoverCodexFeedback({
+      discoverFeedback({
         state,
         policy,
         client,
@@ -602,7 +930,7 @@ describe('agent/codex-feedback-source', () => {
     };
     const cutoffs: string[] = [];
     const run = () =>
-      discoverCodexFeedback({
+      discoverFeedback({
         state,
         policy,
         owner: 'owner',
@@ -631,7 +959,8 @@ describe('agent/codex-feedback-source', () => {
         },
       });
     await assert.rejects(run(), DiscoveryPaused);
-    assert.deepEqual(Object.keys(saved.discovery!.PR!.reads), ['comments:1', 'comments:2']);
+    assert.ok(saved.discovery!.PR!.reads['comments:1']);
+    assert.ok(saved.discovery!.PR!.reads['comments:2']);
     assert.equal(saved.watermarks?.PR, undefined);
     arrived = true;
     state = JSON.parse(JSON.stringify(saved));
@@ -673,7 +1002,7 @@ describe('agent/codex-feedback-source', () => {
       return [];
     };
     const run = () =>
-      discoverCodexFeedback({
+      discoverFeedback({
         state,
         policy,
         owner: 'owner',
@@ -710,7 +1039,7 @@ describe('agent/codex-feedback-source', () => {
     const reviews = reviewClientFixture(review, []);
     let now = startedAt + 1000;
     const run = () =>
-      discoverCodexFeedback({
+      discoverFeedback({
         state,
         policy,
         owner: 'owner',
@@ -766,7 +1095,7 @@ describe('agent/codex-feedback-source', () => {
       },
     };
     const run = () =>
-      discoverCodexFeedback({
+      discoverFeedback({
         state,
         policy,
         client,

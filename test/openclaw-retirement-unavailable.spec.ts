@@ -49,6 +49,15 @@ describe('agent/openclaw-retirement-unavailable', () => {
     assert.deepEqual(f.record, before);
     assert.deepEqual(f.calls, ['sessions.describe']);
   });
+  it('should retain original provenance when the lifecycle coordinator is replaced', async () => {
+    const f = fixture();
+    const before = structuredClone(f.record);
+    assert.equal(await observeUnavailable({ ...f.input, owner: 'replacement' }), 'not-found');
+    assert.deepEqual(f.record, before);
+    f.record.threadId = 'replacement';
+    f.record.request!.key = 'replacement';
+    assert.equal(await observeUnavailable({ ...f.input, owner: 'replacement' }), undefined);
+  });
   it('should not infer loss from timeouts, malformed responses, or a visible replacement', async () => {
     for (const response of [undefined, null, [], {}, 'access-denied', { session: {} }]) {
       const f = fixture();
@@ -79,7 +88,7 @@ describe('agent/openclaw-retirement-unavailable', () => {
   it('should preserve source, agent, workspace, and coordinator custody', async () => {
     for (const change of [
       (r: OpenClawDispatchRecord) => {
-        r.sourceThreadId = 'different';
+        r.sourceThreadId = r.threadId!;
       },
       (r: OpenClawDispatchRecord) => {
         r.threadId = 'different';

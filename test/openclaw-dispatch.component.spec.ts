@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { pendingRecoveryFeedback } from '../agent/issue-task-recovery.ts';
 import { mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
@@ -890,7 +891,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(deferred.retirement?.worktreeRemovalAttemptedAt, undefined);
   });
 
-  it('should retire only the closed owner after its deadline and preserve active sibling work', async () => {
+  it('should retire old coordinator tasks after replacement and preserve active sibling work', async () => {
     const { items } = await assignments(2, 2);
     const first = await next();
     await prepare(first);
@@ -924,15 +925,22 @@ describe('agent/openclaw issue dispatch', () => {
         status: input.verifyOnly ? 'preserved' : 'removed',
       };
     };
+    const replacement = { ...coordinator, sessionKey: 'agent:receiver:automation:replacement' };
+    service.dependencies.coordinator = async () => replacement.sessionKey;
+    await assert.rejects(
+      service.run(manifest, root, coordinator, { action: 'next' }),
+      /dispatch-intake-caller-required/,
+    );
     items[0]!.state = 'closed';
     service.dependencies.now = () => baseline + 180_001;
-    await service.run(manifest, root, { ...coordinator, runId: 'close' }, { action: 'next' });
+    await service.run(manifest, root, { ...replacement, runId: 'close' }, { action: 'next' });
     const pending = await record(closed.threadId);
     assert.equal(pending.retirement?.reason, 'issue-closed');
+    assert.equal(pending.sourceThreadId, closed.sourceThreadId);
     assert.ok(pending);
     assert.deepEqual(effects, []);
     service.dependencies.now = () => pending.retirement!.eligibleAt;
-    await service.run(manifest, root, { ...coordinator, runId: 'cleanup' }, { action: 'next' });
+    await service.run(manifest, root, { ...replacement, runId: 'cleanup' }, { action: 'next' });
     assert.deepEqual(effects, [
       ['verify', closed.worktree!],
       ['remove', closed.worktree!],
@@ -951,18 +959,19 @@ describe('agent/openclaw issue dispatch', () => {
       calls.filter((call) => call.method === 'sessions.patch').map(({ params }) => params.key),
       [closed.threadId],
     );
-    await service.run(manifest, root, { ...coordinator, runId: 'again' }, { action: 'next' });
+    await service.run(manifest, root, { ...replacement, runId: 'again' }, { action: 'next' });
     assert.equal(effects.length, 2);
   });
 
   for (const protection of ['none', 'running', 'pinned', 'dirty', 'invalid-config'] as const) {
-    it(`should attempt manual retirement immediately with native protection: ${protection}`, async () => {
+    it(`should retire old coordinator tasks manually with native protection: ${protection}`, async () => {
       await assignments(1, 1);
       const first = await next();
       await prepare(first);
       await assess(first.id);
       await completeAssessment(first.id);
       const before = structuredClone(await record());
+      service.dependencies.coordinator = async () => 'agent:receiver:automation:replacement';
       const operator = {
         ...coordinator,
         sessionKey: 'agent:receiver:operator',
@@ -7089,6 +7098,26 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(reads, 2);
     assert.equal(creates().length, 1);
   });
+  it('should release a queued announcement echo from replacement without sending it', async () => {
+    const { comments } = await feedbackOwner();
+    const before = sends().length;
+    const { journal } = await service.scope(manifest, root);
+    await journal.exclusive(async (state, save) => {
+      state.records[0]!.announcement = {
+        ...attemptedAnnouncement(fixture.client.identity.nodeId).state,
+        receipt: { nodeId: comments[0]!.nodeId, databaseId: comments[0]!.databaseId },
+      };
+      await save();
+    });
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const event = (await record()).feedback!.events[0]!;
+    assert.equal(event.phase, 'blocked');
+    assert.equal(event.code, 'feedback-own-output');
+    assert.equal(event.turn, undefined);
+    assert.equal(sends().length, before);
+    assert.equal(pendingRecoveryFeedback(event), false);
+  });
+
   it('should reconcile an uncertain delivery announcement before discovering same-account feedback', async () => {
     const { comments } = await feedbackOwner();
     const announcement = attemptedAnnouncement(fixture.client.identity.nodeId);
@@ -7833,8 +7862,15 @@ describe('agent/openclaw issue dispatch', () => {
       service = new OpenClawDispatch({ ...service.dependencies });
     }
     assert.deepEqual(reads, [3, 7, 7, 3, 7]);
+    assert.equal((await record()).feedback!.code, undefined);
+    await service.check(manifest, root);
     const stalled = (await record()).feedback!;
-    assert.deepEqual(stalled.discovery!.PR_7!.reads, {});
+    assert.equal(stalled.discovery!.PR_7!.reads.comments, undefined);
+    for (const endpoint of ['reviews:1', 'review-comments:1'])
+      assert.deepEqual(JSON.parse(stalled.discovery!.PR_7!.reads[endpoint]!), {
+        values: [],
+        nextPage: 1,
+      });
     assert.equal(stalled.watermarks?.PR_7, undefined);
     assert.equal(stalled.discoveryStalls!.PR_7!.operation, 'comments');
     assert.equal(stalled.code, 'feedback-discovery-no-progress');
@@ -8003,32 +8039,35 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(events[0]!.sourceId, comment.nodeId);
     assert.ok(events[0]!.turn);
   });
-  it('should return retained provider evidence when feedback fails before delivery completes', async () => {
-    const { id } = await feedbackOwner();
-    consumeSend = true;
-    await service.check(manifest, root);
-    await service.run(manifest, root, coordinator, { action: 'next' });
-    const event = (await record()).feedback!.events[0]!;
-    assert.ok(event.turn);
-    service.dependencies.feedbackConnect = async () => {
-      throw Object.assign(new Error('github-delivery-github-request'), {
-        providerDiagnostic: providerDiagnostic('github', 'api-request', 'transport', {
-          httpStatus: 500,
-        }),
+  for (const consumed of [false, true])
+    it(`should return provider evidence and preserve ${consumed ? 'completed' : 'unfinished'} feedback delivery`, async () => {
+      const { id } = await feedbackOwner();
+      consumeSend = consumed;
+      await service.check(manifest, root);
+      await service.run(manifest, root, coordinator, { action: 'next' });
+      const event = (await record()).feedback!.events[0]!;
+      assert.ok(event.turn);
+      service.dependencies.feedbackConnect = async () => {
+        throw Object.assign(new Error('github-delivery-github-request'), {
+          providerDiagnostic: providerDiagnostic('github', 'api-request', 'transport', {
+            httpStatus: 500,
+          }),
+        });
+      };
+      const result = await service.run(manifest, root, assessor(id, event.turn.runId), {
+        action: 'feedback',
+        operation: 'context',
+        id,
+        eventId: event.id,
       });
-    };
-    const result = await service.run(manifest, root, assessor(id, event.turn.runId), {
-      action: 'feedback',
-      operation: 'context',
-      id,
-      eventId: event.id,
+      assert.equal(result.status, 'retrying');
+      assert.ok('providerDiagnostic' in result);
+      assert.equal(result.providerDiagnostic?.httpStatus, 500);
+      assert.equal(result.providerDiagnostic?.classification, 'transport');
+      const retained = (await record()).feedback!.events[0]!;
+      if (consumed) assert.deepEqual(retained, event);
+      else assert.equal(retained.providerDiagnostic?.httpStatus, 500);
     });
-    assert.equal(result.status, 'retrying');
-    assert.ok('providerDiagnostic' in result);
-    assert.equal(result.providerDiagnostic?.httpStatus, 500);
-    assert.equal(result.providerDiagnostic?.classification, 'transport');
-    assert.equal((await record()).feedback!.events[0]!.providerDiagnostic?.httpStatus, 500);
-  });
   it('should enable feedback on a handed-off owner without changing historical assessment authority', async () => {
     const { id } = await feedbackOwner();
     consumeSend = true;
@@ -8105,6 +8144,39 @@ describe('agent/openclaw issue dispatch', () => {
       false,
     );
   });
+  it('should preserve delivered feedback across source edits and reject stale context without blocking recovery', async () => {
+    const { id, comments } = await feedbackOwner();
+    consumeSend = true;
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const original = structuredClone((await record()).feedback!.events[0]!);
+    assert.equal(original.phase, 'delivered');
+    comments[0]!.body = '@receiver revised question';
+    comments[0]!.updatedAt = '2026-10-07T10:04:00Z';
+    await service.check(manifest, root);
+    const events = (await record()).feedback!.events;
+    assert.equal(events.length, 2);
+    assert.deepEqual(events[0], original);
+    assert.equal(pendingRecoveryFeedback(events[0]!), false);
+    assert.equal(pendingRecoveryFeedback(events[1]!), true);
+    const stale = await service.run(manifest, root, assessor(id, original.turn!.runId), {
+      action: 'feedback',
+      operation: 'context',
+      id,
+      eventId: original.id,
+    });
+    assert.equal(stale.status, 'blocked');
+    assert.equal('code' in stale && stale.code, 'feedback-source-changed');
+    assert.deepEqual((await record()).feedback!.events[0], original);
+    coordinator.runId = 'edited-feedback-run';
+    const before = sends().length;
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal(sends().length, before + 1);
+    const delivered = (await record()).feedback!.events;
+    assert.equal(delivered.length, 2);
+    assert.deepEqual(delivered[0], original);
+    assert.equal(delivered.some(pendingRecoveryFeedback), false);
+  });
+
   it('should reject an edited source before admitting it to the native queue', async () => {
     const { comments } = await feedbackOwner();
     const before = sends().length;
@@ -8113,6 +8185,9 @@ describe('agent/openclaw issue dispatch', () => {
     await service.run(manifest, root, coordinator, { action: 'next' });
     assert.equal((await record()).feedback!.events[0]!.phase, 'blocked');
     assert.equal(sends().length, before);
+    const event = (await record()).feedback!.events[0]!;
+    assert.equal(event.turn, undefined);
+    assert.equal(pendingRecoveryFeedback(event), false);
   });
   it('should deliver a different eligible comment while an older feedback receipt is unresolved', async () => {
     await feedbackOwner();

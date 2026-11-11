@@ -1857,6 +1857,50 @@ describe('agent/codex-dispatch', () => {
     });
   }
 
+  it('should retire old coordinator tasks through the current coordinator and retain native provenance', async () => {
+    await writeCleanup(0);
+    const prepared = await prepare();
+    created();
+    await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
+    const current = await selectCodexIntake(pluginData, deps);
+    const journal = new CodexDispatchStore(
+      current.store.location.root,
+      current.store.location.scope,
+    );
+    const original = structuredClone((await journal.read()).records[0]!);
+    const find = deps.native!.find;
+    deps.native!.find = async (input) => {
+      assert.equal(input.sourceThreadId, original.sourceThreadId);
+      assert.equal(input.prompt, original.request!.prompt);
+      return find(input);
+    };
+    deps.activation = async () => ({ sourceThreadId: 'replacement-intake' });
+    await assert.rejects(
+      reconcileCodexLifecycle(pluginData, deps),
+      /dispatch-intake-caller-required/,
+    );
+    deps.threadId = 'replacement-intake';
+    fixture.item.state = 'closed';
+    now += 60_001;
+    await reconcileCodexLifecycle(pluginData, deps);
+    const held = (await journal.read()).records[0]!;
+    assert.equal(held.sourceThreadId, original.sourceThreadId);
+    assert.equal(held.retirement?.reason, 'issue-closed');
+    assert.equal(held.retirement?.code, 'retirement-native-work-unresolved');
+    assert.equal(held.retirement?.archiveAttempt, undefined);
+    native!.status = 'idle';
+    native!.turnEnded = true;
+    now += 60_001;
+    const ready = await reconcileCodexLifecycle(pluginData, deps);
+    assert.equal(ready?.status, 'retirement-inventory-required');
+    const operator = { threadId: 'operator' };
+    const preview = await request('retire', { id: prepared.id }, operator);
+    assert.equal(preview.status, 'retire-available');
+    const applied = await request('retire', { id: prepared.id, digest: preview.digest }, operator);
+    assert.equal(applied.status, 'retirement-inventory-required');
+    assert.equal((await journal.read()).records[0]!.sourceThreadId, original.sourceThreadId);
+  });
+
   it('should use configured automatic grace and ignore obsolete settings during operator retirement', async () => {
     const originalXdg = process.env.XDG_CONFIG_HOME;
     const originalOpenClaw = process.env.OPENCLAW_CONFIG_PATH;

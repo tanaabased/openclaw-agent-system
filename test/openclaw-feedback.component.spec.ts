@@ -134,8 +134,6 @@ describe('agent/openclaw-feedback', () => {
       sourcePresentation: feedbackPresentation(event, 'owner/repo'),
       provider,
       policy: fixture.policy,
-      workspace: root,
-      now: Date.now(),
       config: {},
       intake: {
         repository: fixture.repository,
@@ -372,7 +370,7 @@ describe('agent/openclaw-feedback', () => {
       operator: false,
       feedback: { inputId: feedback.inputId, message: event.source },
       mode: 'plan',
-      now: input.now,
+      now: Date.now(),
       request: input.request,
       config: input.config,
     });

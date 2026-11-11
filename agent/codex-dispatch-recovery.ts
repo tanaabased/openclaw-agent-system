@@ -142,8 +142,7 @@ export default async function recoverDispatch(
       item.nodeId !== intake.issue.nodeId ||
       item.databaseId !== intake.issue.databaseId ||
       item.itemType !== (managedPullRequest(intake) ? 'pull-request' : 'issue') ||
-      item.number !== intake.issue.number ||
-      record.sourceThreadId !== sourceThreadId
+      item.number !== intake.issue.number
     )
       throw new Error('dispatch-retire-target-mismatch');
     const repo = await client.getRepository(intake.repository.owner.login, intake.repository.name);

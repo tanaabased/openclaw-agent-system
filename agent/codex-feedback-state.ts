@@ -32,7 +32,7 @@ export const feedbackEventSchema = Type.Object(
 export const codexFeedbackSchema = Type.Object(
   {
     ...feedbackSourceStateSchema.properties,
-    events: Type.Array(feedbackEventSchema, { maxItems: 400 }),
+    events: Type.Array(feedbackEventSchema),
   },
   { additionalProperties: false },
 );

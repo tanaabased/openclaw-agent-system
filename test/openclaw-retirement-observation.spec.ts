@@ -185,9 +185,14 @@ describe('agent/openclaw retirement observation', () => {
       idle: false,
       unavailableSession: 'not-found',
     });
-    await assert.rejects(
-      observeRetirementSession(async () => ({ session: null }), f.record, 'owner', 'other'),
-      /dispatch-session-response-invalid-sessions-describe-session-null/u,
+    assert.deepEqual(
+      await observeRetirementSession(
+        async () => ({ session: null }),
+        f.record,
+        'owner',
+        'replacement',
+      ),
+      observed,
     );
   });
 });

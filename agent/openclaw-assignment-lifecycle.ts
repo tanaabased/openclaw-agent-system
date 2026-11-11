@@ -124,7 +124,6 @@ export default async function reconcileOpenClawLifecycle(input: {
       admitted: current.admitted.records,
       policy: current.policy,
       client,
-      owner,
       targetId: input.targetId,
       budget: input.budget,
       now,
