@@ -237,6 +237,18 @@ describe('agent/codex-dispatch-native', () => {
   it('should recognize only the exact native creation source and prompt', () => {
     const thread = { turns: [{ items: [creation] }] };
     assert.equal(matchesDispatchCreation(thread, 'intake', input.prompt), true);
+    for (const nativeOutput of [
+      { text: output, truncated: false },
+      output.replaceAll('\n  ', '\n    '),
+    ])
+      assert.equal(
+        matchesDispatchCreation(
+          { turns: [{ items: [{ ...creation, output: nativeOutput }] }] },
+          'intake',
+          input.prompt,
+        ),
+        true,
+      );
     assert.equal(matchesDispatchCreation(thread, 'other', input.prompt), false);
     assert.equal(matchesDispatchCreation(thread, 'intake', 'different'), false);
     for (const item of [
@@ -244,6 +256,7 @@ describe('agent/codex-dispatch-native', () => {
       { ...creation, namespace: 'other' },
       { ...creation, name: 'read_file' },
       { ...creation, output: 'Quoted:\n' + output },
+      { ...creation, output: { text: output, truncated: true } },
     ])
       assert.equal(
         matchesDispatchCreation({ turns: [{ items: [item] }] }, 'intake', input.prompt),

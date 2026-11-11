@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
+import codexContinuationNative from '../agent/codex-continuation-native.ts';
 import { selectCodexTurnTask } from '../agent/codex-turn-task.ts';
 
 const record = {
@@ -116,6 +117,26 @@ describe('agent/codex-turn-task', () => {
     assert.equal(output?.nativeCwd, '/another-checkout');
     assert.deepEqual(output?.contextRequest, { action: 'context' });
   });
+  it('should verify the known owner independently of another pending creation', async () => {
+    const pending = {
+      ...record,
+      id: 'pending',
+      request: { prompt: 'other assignment' },
+    } as DispatchRecord;
+    const owned = { ...record, threadId: turn.threadId };
+    const find = async (input: Parameters<LookupFind>[0]) => {
+      if (input.prompt === pending.request!.prompt)
+        throw new Error('unrelated history unavailable');
+      return native;
+    };
+    type LookupFind = Parameters<typeof selectCodexTurnTask>[2]['find'];
+    const selected = await selectCodexTurnTask([pending, owned], turn, { ...lookup, find });
+    assert.equal(selected?.receipt, owned.id);
+    await assert.rejects(
+      selectCodexTurnTask([pending, owned], turn, { ...lookup, find: async () => undefined }),
+      /turn-context-owner-unverified/,
+    );
+  });
   it('should map feedback through its exact native send receipt before the sender records a turn id', async () => {
     const feedback = {
       ...structuredClone(record),
@@ -198,15 +219,25 @@ describe('agent/codex-turn-task', () => {
         ],
       },
     } as DispatchRecord;
-    for (const status of ['uncertain', 'blocked']) {
+    for (const status of ['uncertain', 'blocked', 'mismatch']) {
       const output = await selectCodexTurnTask([feedback], turn, {
         ...lookup,
         receipt: async () =>
-          ({ status, code: 'unverified' }) as Awaited<ReturnType<typeof lookup.receipt>>,
+          ({
+            status,
+            code: 'continuation-send-mismatch',
+            callId: 'send',
+            requestDigest: 'a'.repeat(64),
+            turnId: turn.turnId,
+            latestTurnId: turn.turnId,
+            ended: false,
+          }) as Awaited<ReturnType<typeof lookup.receipt>>,
       });
       assert.equal(output?.feedbackContextRequest, undefined);
       assert.equal(output?.contextRequest, undefined);
       assert.equal(output?.stage, 'feedback');
+      if (status === 'mismatch')
+        assert.deepEqual(output?.feedbackLimitation, { code: 'continuation-send-mismatch' });
     }
   });
   it('should select the exact feedback source verified by its native send receipt', async () => {
@@ -226,6 +257,153 @@ describe('agent/codex-turn-task', () => {
       (await selectCodexTurnTask([feedback], turn, lookup))?.feedbackContextRequest?.eventId,
       'source',
     );
+  });
+
+  for (const outcome of ['uncertain', 'mismatch', 'blocked', 'unavailable'] as const)
+    it(`should isolate an older ${outcome} receipt from verified current feedback`, async () => {
+      const feedback = {
+        ...record,
+        threadId: turn.threadId,
+        feedback: {
+          events: ['old', 'current'].map((id) => ({
+            id,
+            attempt: { id, request: { threadId: turn.threadId, prompt: id } },
+          })),
+        },
+      } as DispatchRecord;
+      const before = structuredClone(feedback);
+      const output = await selectCodexTurnTask([feedback], turn, {
+        ...lookup,
+        receipt: async (_source, attempt) => {
+          if (attempt.id === 'current')
+            return { status: 'verified', turnId: turn.turnId, ended: false };
+          if (outcome === 'unavailable') throw new Error('old history unavailable');
+          if (outcome === 'uncertain') return { status: 'uncertain' };
+          if (outcome === 'blocked')
+            return { status: 'blocked', code: 'continuation-native-send-failed' };
+          return {
+            status: 'mismatch',
+            code: 'continuation-send-mismatch',
+            turnId: 'old-turn',
+            latestTurnId: turn.turnId,
+            callId: 'old-send',
+            requestDigest: 'a'.repeat(64),
+            ended: true,
+          };
+        },
+      });
+      assert.equal(output?.feedbackContextRequest?.eventId, 'current');
+      assert.equal(output?.feedbackLimitation, undefined);
+      assert.deepEqual(feedback, before);
+    });
+
+  it('should retain a current-turn denial and conflicting verified sources', async () => {
+    const feedback = {
+      ...record,
+      threadId: turn.threadId,
+      feedback: {
+        events: ['one', 'two'].map((id) => ({
+          id,
+          attempt: { id, request: { threadId: turn.threadId, prompt: id } },
+        })),
+      },
+    } as DispatchRecord;
+    const denied = await selectCodexTurnTask([feedback], turn, {
+      ...lookup,
+      receipt: async (_source, attempt) =>
+        attempt.id === 'one'
+          ? {
+              status: 'blocked',
+              code: 'continuation-native-approval-denied',
+              turnId: turn.turnId,
+              ended: false,
+            }
+          : { status: 'verified', turnId: turn.turnId, ended: false },
+    });
+    assert.equal(denied?.feedbackContextRequest, undefined);
+    assert.equal(denied?.feedbackLimitation?.code, 'continuation-native-approval-denied');
+    const ambiguous = await selectCodexTurnTask([feedback], turn, lookup);
+    assert.equal(ambiguous?.feedbackContextRequest, undefined);
+    assert.equal(ambiguous?.feedbackLimitation?.code, 'feedback-native-input-ambiguous');
+  });
+
+  it('should select current structured feedback through real native receipts after a mismatched earlier send', async () => {
+    const events = ['old', 'current'].map((id) => ({
+      id,
+      attempt: {
+        id,
+        sourceThreadId: 'intake',
+        sourceTurnId: `scan-${id}`,
+        beforeTurnId: 'initial',
+        request: { threadId: turn.threadId, prompt: `${id} <approved> & exact` },
+      },
+    }));
+    const actual = events.map(({ attempt }, index) => ({
+      ...attempt.request,
+      ...(index === 0 ? { prompt: 'altered old input' } : {}),
+    }));
+    const history = [
+      { id: 'initial', status: 'completed', completedAt: 1, items: [] },
+      ...actual.map((request, index) => ({
+        id: index === 0 ? 'old-turn' : turn.turnId,
+        status: index === 0 ? 'completed' : 'inProgress',
+        completedAt: index === 0 ? 2 : null,
+        items: [
+          {
+            type: 'functionCallOutput',
+            namespace: 'codex_app',
+            name: 'send_message_to_thread',
+            output: {
+              text: `<codex_delegation>\n    <source_thread_id>intake</source_thread_id>\n    <input>${request.prompt.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')}</input>\n</codex_delegation>`,
+              truncated: false,
+            },
+          },
+        ],
+      })),
+    ];
+    const receipt = codexContinuationNative(async (method, params) => {
+      if (params.threadId === 'intake') {
+        assert.equal(method, 'thread/items/list');
+        const index = events.findIndex((event) => event.attempt.sourceTurnId === params.turnId);
+        assert.ok(index >= 0);
+        return {
+          data: [
+            {
+              turnId: params.turnId,
+              item: {
+                id: `send-${index}`,
+                type: 'mcpToolCall',
+                server: 'codex_app',
+                tool: 'send_message_to_thread',
+                status: 'completed',
+                arguments: actual[index],
+              },
+            },
+          ],
+        };
+      }
+      assert.equal(params.threadId, turn.threadId);
+      if (method === 'thread/turns/list')
+        return {
+          data: history
+            .toReversed()
+            .slice(0, typeof params.limit === 'number' ? params.limit : undefined),
+        };
+      assert.equal(method, 'thread/items/list');
+      return {
+        data: history
+          .filter((entry) => entry.id === params.turnId)
+          .flatMap((entry) => entry.items.map((item) => ({ turnId: entry.id, item }))),
+      };
+    });
+    assert.equal((await receipt('intake', events[0]!.attempt)).status, 'mismatch');
+    const output = await selectCodexTurnTask(
+      [{ ...record, threadId: turn.threadId, feedback: { events } } as DispatchRecord],
+      turn,
+      { ...lookup, receipt },
+    );
+    assert.equal(output?.feedbackContextRequest?.eventId, 'current');
+    assert.equal(output?.feedbackLimitation, undefined);
   });
   it('should retain implementation permission on ordinary resumed turns', async () => {
     const working = {
