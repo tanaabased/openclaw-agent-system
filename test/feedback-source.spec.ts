@@ -207,6 +207,7 @@ describe('agent/feedback-source', () => {
         if (failed && failedRead === 'members') throw new Error('members-unavailable');
         return originalMembers(...args);
       };
+      const budget = new DiscoveryBudget();
       const scan = () =>
         discoverFeedback({
           state,
@@ -226,9 +227,17 @@ describe('agent/feedback-source', () => {
             },
             getIssueComment: async () => comment('ordinary'),
           },
-          discovery: { budget: new DiscoveryBudget(), save: async () => {} },
+          discovery: { budget, save: async () => {} },
         });
       await assert.rejects(scan(), /unavailable/);
+      assert.equal(
+        budget.operation,
+        failedRead === 'comments'
+          ? 'comments'
+          : failedRead === 'reviews'
+            ? 'reviews:1'
+            : `members:${review.databaseId}`,
+      );
       assert.deepEqual(
         state.events.map((event) => event.sourceId),
         failedRead === 'comments' ? [review.nodeId] : ['ordinary'],

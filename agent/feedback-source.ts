@@ -107,14 +107,14 @@ export async function discoverFeedback(input: {
           ...state.baseline[input.nodeId],
         }
       : undefined;
-  let failure: { error: unknown } | undefined;
+  let failure: { error: unknown; operation?: string } | undefined;
   async function collect<T>(read: () => Promise<T>) {
     try {
       return await read();
     } catch (error) {
       if (error instanceof Error && /discovery-checkpoint|private-state-file/.test(error.message))
         throw error;
-      failure ??= { error };
+      failure ??= { error, operation: input.discovery?.budget.operation };
     }
   }
   const sources: GitHubCanonicalFeedback[] = [];
@@ -212,7 +212,10 @@ export async function discoverFeedback(input: {
       const saved = JSON.parse(encoded) as GitHubCanonicalFeedback;
       if (!sources.some((source) => source.nodeId === saved.nodeId)) sources.push(saved);
     }
-  if (failure && sources.length === 0) throw failure.error;
+  if (failure && sources.length === 0) {
+    if (input.discovery && failure.operation) input.discovery.budget.operation = failure.operation;
+    throw failure.error;
+  }
   let ownCommentIds = typeof input.ownCommentIds === 'function' ? undefined : input.ownCommentIds;
   let observedOwn = typeof input.ownCommentIds !== 'function';
   let ownLookupFailed = false;
@@ -290,6 +293,9 @@ export async function discoverFeedback(input: {
   if (failure?.error instanceof DiscoveryPaused || input.discovery?.budget.exhausted)
     await input.discovery?.save();
   else await discovery?.complete(!ownLookupFailed && !failure);
-  if (failure) throw failure.error;
+  if (failure) {
+    if (input.discovery && failure.operation) input.discovery.budget.operation = failure.operation;
+    throw failure.error;
+  }
   return revisions;
 }

@@ -7787,8 +7787,15 @@ describe('agent/openclaw issue dispatch', () => {
       service = new OpenClawDispatch({ ...service.dependencies });
     }
     assert.deepEqual(reads, [3, 7, 7, 3, 7]);
+    assert.equal((await record()).feedback!.code, undefined);
+    await service.check(manifest, root);
     const stalled = (await record()).feedback!;
-    assert.deepEqual(stalled.discovery!.PR_7!.reads, {});
+    assert.equal(stalled.discovery!.PR_7!.reads.comments, undefined);
+    for (const endpoint of ['reviews:1', 'review-comments:1'])
+      assert.deepEqual(JSON.parse(stalled.discovery!.PR_7!.reads[endpoint]!), {
+        values: [],
+        nextPage: 1,
+      });
     assert.equal(stalled.watermarks?.PR_7, undefined);
     assert.equal(stalled.discoveryStalls!.PR_7!.operation, 'comments');
     assert.equal(stalled.code, 'feedback-discovery-no-progress');
