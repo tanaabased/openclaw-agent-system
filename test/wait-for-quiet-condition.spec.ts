@@ -59,15 +59,21 @@ describe('examples/openclaw-notifications-scheduling/wait-condition', () => {
           report: (
             nativeId: string,
             runId: string | undefined,
-            options: { evidence?: string[] } = {},
-          ) => reports.push({ nativeId, runId, evidence: options.evidence }),
+            options: { evidence?: string[]; observationWindow?: unknown } = {},
+          ) => reports.push({ nativeId, runId, ...options }),
         }),
         assert.AssertionError,
       );
       assert.equal(reports.length, 1);
-      const report = reports[0] as { nativeId: string; runId?: string; evidence: string[] };
+      const report = reports[0] as {
+        nativeId: string;
+        runId?: string;
+        evidence: string[];
+        observationWindow: unknown;
+      };
       assert.equal(report.nativeId, 'native');
       assert.equal(report.runId, undefined);
+      assert.deepEqual(report.observationWindow, { fromMs: 2000, throughMs: 2000 });
       const observation = JSON.parse(report.evidence[0]!.split(': ').slice(1).join(': '));
       assert.deepEqual(observation, { due: 2000, state });
       assert.ok(!JSON.stringify(reports).includes('must not be retained'));

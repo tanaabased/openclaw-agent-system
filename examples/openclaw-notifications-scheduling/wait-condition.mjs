@@ -55,6 +55,7 @@ export async function waitForQuietCondition(
     throw new Error('scheduled condition did not finish before the observation deadline');
   } catch (error) {
     report(nativeId, undefined, {
+      observationWindow: { fromMs: due, throughMs: now() },
       evidence: ['scheduled condition observation: ' + JSON.stringify({ due, state: observation })],
     });
     throw error;
