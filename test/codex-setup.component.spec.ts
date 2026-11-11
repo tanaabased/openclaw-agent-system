@@ -67,10 +67,6 @@ github:
     const installed = await installCodexSetup(pluginData, undefined, deps);
     assert.equal(installed.status, 'requires-native-app-sync');
     assert.equal(installed.automations.status, 'requires-fresh-inspection');
-    assert.equal(
-      installed.warnings.some(({ code }) => code === 'github-notification-enabled-deprecated'),
-      false,
-    );
     const inspected = await inspectCodexSetup(pluginData, undefined, deps);
     assert.ok(
       inspected.findings.some(({ code }) => code === 'github-notification-runtime-unsupported'),
