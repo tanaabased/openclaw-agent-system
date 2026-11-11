@@ -735,7 +735,7 @@ describe('agent/codex-dispatch', () => {
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
     const prepared = await prepare();
     const prompt = (prepared.request as { prompt: string }).prompt;
-    assert.ok(prompt.split('\n').every((line) => line.startsWith('>')));
+    assert.ok(prompt.startsWith('## 📥 Issue assigned\n'));
     assert.ok(!prompt.includes(String(prepared.id)));
     created();
     await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
@@ -1714,7 +1714,7 @@ describe('agent/codex-dispatch', () => {
     const launch = prepared.request as { prompt: string };
     assert.ok(!launch.prompt.includes('Use $agent-system-task-assessment'));
     assert.ok(!launch.prompt.includes(String(prepared.id)));
-    assert.ok(launch.prompt.split('\n').every((line) => line.startsWith('>')));
+    assert.ok(launch.prompt.startsWith('## 📥 Issue assigned\n'));
     created();
     await writeFile(join(workspace, 'guidance.md'), 'Implement and publish immediately.');
     const context = await request('context', { id: prepared.id }, { threadId: 'issue-thread' });
