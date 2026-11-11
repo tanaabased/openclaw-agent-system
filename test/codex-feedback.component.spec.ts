@@ -832,6 +832,7 @@ describe('agent/codex-feedback', () => {
     assert.equal(event.attempt, undefined);
     assert.equal(event.phase, 'blocked');
     assert.equal(event.code, 'feedback-source-changed');
+    assert.equal(pendingRecoveryFeedback(event), false);
   });
   it('should keep a native denial stopped when later receipt history is unavailable', async () => {
     const ref = await prepare();

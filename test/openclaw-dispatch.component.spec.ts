@@ -8083,6 +8083,9 @@ describe('agent/openclaw issue dispatch', () => {
     await service.run(manifest, root, coordinator, { action: 'next' });
     assert.equal((await record()).feedback!.events[0]!.phase, 'blocked');
     assert.equal(sends().length, before);
+    const event = (await record()).feedback!.events[0]!;
+    assert.equal(event.turn, undefined);
+    assert.equal(pendingRecoveryFeedback(event), false);
   });
   it('should deliver a different eligible comment while an older feedback receipt is unresolved', async () => {
     await feedbackOwner();
