@@ -147,17 +147,14 @@ of the public GitHub response.
 
 ## Assignment Card
 
-Individual incoming assignment prompts use a plain attribution and linked item
-source line, then the complete prompt between `---` separators. The quoted format
-below remains for intake scan/status cards and other notification cards.
+Individual incoming assignment prompts keep their existing heading and linked
+attribution, with only the outer quote removed. The quoted format below remains
+for intake scan/status cards and other notification cards.
 
 ```markdown
----
-[@pirog](https://github.com/pirog) · [tanaabased/example#7 — Improve planning](https://github.com/tanaabased/example/issues/7)
+## 📥 Issue assigned
 
-assigned you to tanaabased/example#7 — Improve planning. Assess this issue and prepare a plan. Stop before implementation or GitHub publication.
-
----
+[@pirog](https://github.com/pirog) assigned you to [tanaabased/example#7 — Improve planning](https://github.com/tanaabased/example/issues/7). Assess this issue and prepare a plan. Stop before implementation or GitHub publication.
 ```
 
 ```markdown
@@ -179,21 +176,17 @@ model-only provider facts never belong in them.
 ## Direct Message
 
 Codex and OpenClaw share one incoming-message renderer. For incoming comments and
-approved review feedback, show the verified author and exact source link on a plain
-attribution line, then preserve the complete provider body between `---`
-separators. Keep its Markdown, mentions, blank lines, fences, and authored quotes
-unchanged. Assignment prompts use the same envelope with the assigning actor and
-linked issue or pull request above the prompt. Keep intake scan/status cards and
-outgoing replies, plan assessments, and PR announcements in their existing quoted
-card format.
+approved review feedback, remove only the outer quote wrapper. Preserve the complete
+provider body's Markdown, mentions, blank lines, fences, and authored quotes, then
+keep the existing spacer and attribution footer. Assignment prompts keep their
+existing heading and linked attribution. Intake scan/status cards and outgoing
+replies, plan assessments, and PR announcements keep their existing quoted format.
 
 ```markdown
----
-[@pirog](https://github.com/pirog) · [Comment ↗](https://github.com/tanaabased/example/issues/7#issuecomment-123)
-
 @tanaabot can you confirm whether this also covers comments received while planning?
 
----
+&nbsp;  
+_[Comment ↗](https://github.com/tanaabased/example/issues/7#issuecomment-123) from [@pirog](https://github.com/pirog)_
 ```
 
 Use these labels and connectors. The label links to the exact verified comment,
@@ -209,7 +202,8 @@ Normal HTTPS links do not promise a particular browser destination.
 | Public PR announcement            | PR announcement | by        |
 
 Copy decoded Markdown, not its JSON representation. Preserve unquoted blank lines
-between cards; do not quote the complete response a second time. Keep a paragraph
+between cards; do not quote the complete response a second time. The spacer ends in
+two spaces for a Markdown hard break, without a backslash. Keep a paragraph
 boundary after incoming bodies so trailing code fences and nested quotes remain
 intact. Native
 OpenClaw spacing must also be observed: renderer output or an HTML preview is not

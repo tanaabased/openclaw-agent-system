@@ -32,7 +32,7 @@ describe('channels/github/presentation', () => {
     );
   });
 
-  it('should render assigned issues with a plain attribution and source line', () => {
+  it('should render assigned issues without the outer quote', () => {
     assert.equal(
       assignmentCard({
         emoji: '📥',
@@ -44,12 +44,9 @@ describe('channels/github/presentation', () => {
         sender: { label: 'pirog', url: 'https://github.com/pirog' },
       }),
       [
-        '---',
-        '[@pirog](https://github.com/pirog) · [tanaabased/openclaw-agent-system#675](https://github.com/tanaabased/openclaw-agent-system/issues/675)',
+        '## 📥 Issue assigned',
         '',
-        'assigned you to tanaabased/openclaw-agent-system#675.',
-        '',
-        '---',
+        '[@pirog](https://github.com/pirog) assigned you to [tanaabased/openclaw-agent-system#675](https://github.com/tanaabased/openclaw-agent-system/issues/675).',
       ].join('\n'),
     );
   });

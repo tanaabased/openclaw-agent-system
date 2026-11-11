@@ -55,9 +55,6 @@ describe('channels/github/presentation/feedback', () => {
         },
       }),
       [
-        '---',
-        '[@pirog](https://github.com/pirog) · [Comment ↗](https://github.com/tanaabased/openclaw-agent-system/issues/46#issuecomment-123)',
-        '',
         '  @tanaabot Please check [the build](https://github.com/tanaabased/example/actions).',
         '',
         '## Notes',
@@ -71,7 +68,8 @@ describe('channels/github/presentation/feedback', () => {
         'const mention = "@tanaabot";',
         '```',
         '',
-        '---',
+        '&nbsp;  ',
+        '*[Comment ↗](https://github.com/tanaabased/openclaw-agent-system/issues/46#issuecomment-123) from [@pirog](https://github.com/pirog)*',
       ].join('\n'),
     );
   });
@@ -119,7 +117,7 @@ describe('channels/github/presentation/feedback', () => {
     assert.ok(missingAuthor.includes('by author unavailable*'));
   });
 
-  it('should preserve provider content and normalize line endings between the source and message', () => {
+  it('should preserve provider content and normalize line endings without outer quotes', () => {
     const presentation = githubNotificationCommentPresentation({
       author: { label: 'pirog', url: 'https://github.com/pirog' },
       body: '@tanaabot first\r\n\r\nsecond\rthird',
@@ -128,13 +126,13 @@ describe('channels/github/presentation/feedback', () => {
         url: 'https://github.com/example/repo/pull/12#issuecomment-91',
       },
     });
+    assert.ok(presentation.includes('@tanaabot first\n\nsecond\nthird'));
     assert.ok(
-      presentation.startsWith(
-        '---\n[@pirog](https://github.com/pirog) · [Comment ↗](https://github.com/example/repo/pull/12#issuecomment-91)\n\n',
+      presentation.includes(
+        '[Comment ↗](https://github.com/example/repo/pull/12#issuecomment-91) from [@pirog]',
       ),
     );
-    assert.ok(presentation.includes('@tanaabot first\n\nsecond\nthird'));
-    assert.ok(presentation.endsWith('\n\n---'));
+    assert.ok(!presentation.startsWith('>'));
   });
 });
 

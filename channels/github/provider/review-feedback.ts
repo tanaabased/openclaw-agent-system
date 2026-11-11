@@ -272,6 +272,6 @@ export function reviewFeedbackPresentation(comment: GitHubReviewFeedback): strin
       connector: 'from',
       publication: { url: sourceUrl },
     },
-    { style: 'separated' },
+    { style: 'unquoted' },
   );
 }

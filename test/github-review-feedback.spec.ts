@@ -51,7 +51,7 @@ describe('channels/github/provider/review-feedback', () => {
     assert.equal(finding.body, body);
   });
 
-  it('should separate complete review and inline cards with exact source links and historical locations', () => {
+  it('should remove only outer quotes from complete review and inline cards', () => {
     const review = reviewFixture({ body: 'Review summary.\n\n> Quoted context.' });
     const finding = reviewCommentFixture({
       body: 'First paragraph.\r\n\r\n- One\r\n- Two\r\n\r\n```ts\r\nrun();\r\n```',
@@ -63,20 +63,19 @@ describe('channels/github/provider/review-feedback', () => {
       reviewReplyFeedback(review, { ...finding, replyToId: 70 }),
     ]) {
       const card = reviewFeedbackPresentation(comment);
-      assert.ok(card.startsWith('---\n[@'));
+      assert.ok(!card.startsWith('>'));
+      assert.ok(card.startsWith('Review summary:') || card.startsWith('First paragraph.'));
       assert.ok(card.indexOf('First paragraph.') < card.indexOf('reviewed commit'));
-      assert.ok(card.includes('\n\nFirst paragraph.\n\n- One\n- Two\n\n```ts\nrun();\n```'));
+      assert.ok(card.includes('First paragraph.\n\n- One\n- Two\n\n```ts\nrun();\n```'));
       assert.ok(card.includes('Current line: unavailable or outdated; original line: 7'));
       assert.ok(card.includes(finding.url));
       assert.ok(card.includes(finding.originalCommitId.slice(0, 7)));
       assert.ok(card.includes('```diff\n@@ -1 +1 @@\n+return values[0]\n```'));
-      assert.ok(card.endsWith('\n\n---'));
+      if (comment.feedback.receipt.kind === 'review') {
+        assert.ok(card.includes('\n> Quoted context.'));
+      }
       const source = comment.feedback.receipt.kind === 'review' ? review.url : finding.url;
-      assert.ok(
-        card.includes(
-          `[@${comment.author!.login}](https://github.com/${comment.author!.login}) · [Review comment ↗](${source})`,
-        ),
-      );
+      assert.ok(card.includes(`*[Review comment ↗](${source}) from [@${comment.author!.login}]`));
     }
   });
   it('should preserve every finding permalink beside the exact review footer', () => {
@@ -119,7 +118,7 @@ describe('channels/github/provider/review-feedback', () => {
     assert.ok(!card.includes('x'.repeat(400)));
     assert.ok(card.includes('…'));
     assert.ok(card.includes('Preview shortened'));
-    assert.ok(card.startsWith('---\n[@'));
+    assert.ok(!card.startsWith('>'));
     assert.ok(card.includes(finding.url));
   });
   it('should label provider-truncated and unavailable reviewed diffs honestly', () => {

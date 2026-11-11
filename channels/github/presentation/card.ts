@@ -31,18 +31,6 @@ function oneLine(value: string, label: string): string {
   return normalized;
 }
 
-/** render one incoming coordinator message with a plain source line and boundaries. */
-export function githubNotificationSeparatedMessage(attribution: string, body: string): string {
-  return [
-    '---',
-    oneLine(attribution, 'attribution'),
-    '',
-    body.replace(/\r\n|\r/gu, '\n'),
-    '',
-    '---',
-  ].join('\n');
-}
-
 /** Escape one provider-controlled value for use as Markdown text. */
 export function githubNotificationMarkdownText(value: string): string {
   return value

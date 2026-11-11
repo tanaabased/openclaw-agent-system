@@ -1,7 +1,4 @@
-import githubNotificationCard, {
-  githubNotificationMarkdownText,
-  githubNotificationSeparatedMessage,
-} from './card.ts';
+import githubNotificationCard, { githubNotificationMarkdownText } from './card.ts';
 
 /** presentation only; the owning runtime supplies the authorized action. */
 export default function assignmentCard(
@@ -15,9 +12,16 @@ export default function assignmentCard(
   const itemLabel = githubNotificationMarkdownText(projection.item.label);
   if (projection.sender) {
     const senderLabel = githubNotificationMarkdownText(projection.sender.label);
-    return githubNotificationSeparatedMessage(
-      `[@${senderLabel}](${projection.sender.url}) · [${itemLabel}](${projection.item.url})`,
-      `assigned you to ${itemLabel}.${note ? ' ' + note : ''}`,
+    return githubNotificationCard(
+      {
+        emoji: projection.emoji,
+        title: projection.item.kind + ' assigned',
+        summary:
+          `[@${senderLabel}](${projection.sender.url}) assigned you to ` +
+          `[${itemLabel}](${projection.item.url}).` +
+          (note ? ' ' + note : ''),
+      },
+      { quoted: false },
     );
   }
 
