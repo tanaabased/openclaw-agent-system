@@ -5,6 +5,7 @@ import type { CodexDispatchDependencies } from './codex-dispatch-context.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
 import { selectCodexIntake } from './codex-intake.ts';
 import nativeRetirement from './native-retirement.ts';
+import assertNotificationResetRetirement from './notification-reset-retirement.ts';
 import codexRetirementNative from './codex-retirement-native.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
 
@@ -14,7 +15,10 @@ export default async function retireCodexNative(
   input: { native: string; digest?: string; apply?: boolean },
   deps: CodexDispatchDependencies,
 ) {
-  const current = await selectCodexIntake(pluginData, deps, { resolvePolicy: false });
+  const current = await selectCodexIntake(pluginData, deps, {
+    resolvePolicy: false,
+    inspectionOnly: true,
+  });
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
   if (!caller) throw new Error('dispatch-native-caller-required');
   const connection = await (deps.replyConnection ?? connectCodexThreads)(
@@ -48,7 +52,15 @@ export default async function retireCodexNative(
         'Archive this exact unmanaged native Codex chat through codex_app.set_thread_archived. Normal native effects may archive descendants and reclaim its checkout/local branch; local-only work may be lost. No issue, assignment or remote branch is changed. If the desktop archive tool is unavailable, report native-retirement-capability-unavailable; do not substitute filesystem removal or a different archive owner. Existing explicit cleanup intent authorizes apply without another conversational confirmation.',
       assertCurrent: async () => {
         await deps.assertActive?.();
-        const fresh = await selectCodexIntake(pluginData, deps, { resolvePolicy: false });
+        const fresh = await selectCodexIntake(pluginData, deps, {
+          resolvePolicy: false,
+          inspectionOnly: true,
+        });
+        await assertNotificationResetRetirement(
+          pluginData,
+          current.store.location.scope,
+          input.native,
+        );
         const inputEvent = await codexDirectInput(connection.request, caller);
         if (
           fresh.workspace !== current.workspace ||
@@ -75,6 +87,12 @@ export default async function retireCodexNative(
           thread.ephemeral === true
         )
           throw new Error('native-retirement-target-mismatch');
+        await assertNotificationResetRetirement(
+          pluginData,
+          current.store.location.scope,
+          input.native,
+          thread.cwd,
+        );
         return {
           id: input.native,
           incarnation: input.native,

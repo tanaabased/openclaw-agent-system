@@ -10,7 +10,12 @@ import {
   replaceCodexNotificationCoordinator,
 } from './codex-automations.ts';
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
-import { selectCodexIntake, type CodexIntakeDependencies } from './codex-intake.ts';
+import {
+  connectCodexGitHub,
+  selectCodexIntake,
+  type CodexIntakeDependencies,
+} from './codex-intake.ts';
+import notificationResetBaseline from './notification-reset-baseline.ts';
 import observeResetThread from './codex-reset-observation.ts';
 import codexRetirementNative from './codex-retirement-native.ts';
 import CodexSidebarJournal, { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
@@ -202,8 +207,21 @@ export default async function runCodexNotificationReset(
     fence: (run) => current.store.exclusive(() => journal.exclusive(() => run(), true)),
     snapshot: async () => {
       const records = (await journal.read()).records;
-      const state = managedIssueState(await current.store.read(), records);
-      if (!state) throw new Error('notification-reset-intake-missing');
+      const state =
+        managedIssueState(await current.store.read(), records) ??
+        (await notificationResetBaseline({
+          scope: current.store.location.scope,
+          workspace: current.workspace,
+          agentId: current.agentId,
+          policy: current.policy,
+          identity: async () =>
+            (
+              await (deps.connect ?? connectCodexGitHub)(
+                current.workspace,
+                AbortSignal.timeout(30_000),
+              )
+            ).identity,
+        }));
       if (state.agentId !== current.agentId || state.workspaceDir !== current.workspace)
         throw new Error('notification-reset-scope-changed');
       const contents = { intake: state, records };
@@ -247,7 +265,7 @@ export default async function runCodexNotificationReset(
       await journal.reset(record.id);
     },
     baseline: async (record) => {
-      await current.store.reset(record.baselineAt!);
+      await current.store.reset(record.baselineAt!, parse(record).intake);
     },
     coordinator: async (record) => {
       const before = JSON.parse(record.automation) as SavedAutomation;

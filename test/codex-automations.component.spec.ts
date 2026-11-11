@@ -818,6 +818,20 @@ describe('agent/codex-automations', () => {
       (await codexNotificationResetPickupAutomation(pluginData, dependencies))?.definition.status,
       'PAUSED',
     );
+    await rm(enrollments.path);
+    assert.equal(
+      (await replaceCoordinator(resetBefore, dependencies, 'github-issue-pickup')).status,
+      'done',
+    );
+    assert.deepEqual((await enrollments.read()).records, []);
+    await assert.rejects(
+      replaceCoordinator(
+        { ...resetBefore, definition: { ...resetBefore.definition, status: 'ACTIVE' } },
+        dependencies,
+        'github-issue-pickup',
+      ),
+      /issue-pickup-enrollment-missing/,
+    );
   });
 
   it('should preserve intake on coordinator repair and retarget a reset only while paused', async () => {

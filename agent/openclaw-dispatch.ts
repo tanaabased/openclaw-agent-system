@@ -210,7 +210,7 @@ export default class OpenClawDispatch {
     if (input.action === 'retire') {
       if (!operator) throw new Error('dispatch-operator-required');
       await authority.assertCurrent?.();
-      if (!input.preview)
+      if (!input.preview && !input.native)
         await reconcileOpenClawRetirementEffects({
           dependencies: this.dependencies,
           manifest,

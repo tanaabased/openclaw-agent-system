@@ -1,4 +1,5 @@
 import notificationResetPickup from './notification-reset-pickup.ts';
+import notificationResetBaseline from './notification-reset-baseline.ts';
 import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
 import { managedPullRequest, managedIssueState, dispatchAdmission } from './managed-issue.ts';
 
@@ -53,7 +54,7 @@ export default class OpenClawNotificationReset {
 
   private async target(manifest: AgentManifest, workspaceDir: string, purge: boolean) {
     const deps = this.dependencies;
-    const { store: intake, workspace } = await deps.intake.select(manifest, workspaceDir);
+    const { store: intake, workspace, selected } = await deps.intake.select(manifest, workspaceDir);
     const scope = intake.location.scope;
     const journal = new OpenClawDispatchStore(deps.root, scope);
     const store = new NotificationResetStore(deps.root, scope);
@@ -218,8 +219,15 @@ export default class OpenClawNotificationReset {
       fence: (run) => intake.exclusive(() => journal.exclusive(() => run(), true)),
       snapshot: async () => {
         const records = (await journal.read()).records;
-        const state = managedIssueState(await intake.read(), records);
-        if (!state) throw new Error('notification-reset-intake-missing');
+        const state =
+          managedIssueState(await intake.read(), records) ??
+          (await notificationResetBaseline({
+            scope,
+            workspace,
+            agentId: manifest.agent.id,
+            policy: selected,
+            identity: async () => (await deps.connect(manifest, workspace)).client.identity,
+          }));
         if (state.agentId !== manifest.agent.id || state.workspaceDir !== workspace)
           throw new Error('notification-reset-scope-changed');
         const contents = { intake: state, records };
@@ -321,7 +329,7 @@ export default class OpenClawNotificationReset {
         await journal.reset(record.id);
       },
       baseline: async (record) => {
-        await intake.reset(record.baselineAt!);
+        await intake.reset(record.baselineAt!, inventory(record).intake);
       },
       coordinator: async (record, save) => {
         const expected = JSON.parse(record.automation);
