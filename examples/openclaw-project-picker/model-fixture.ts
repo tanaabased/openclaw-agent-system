@@ -175,19 +175,13 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
         advanced = reconciled;
       }
       if (advanced.nextAction === 'next') continue;
-      if (
-        ['assessment-required', 'session-created', 'working-turn-completed'].includes(
-          String(advanced.status),
-        )
-      ) {
+      if (['assessment-required', 'session-created'].includes(String(advanced.status))) {
         const assessed = result(stage('assess'));
         if (!assessed) return dispatch(stage('assess'), { action: 'assess', target: next.target });
         advanced = assessed;
       }
       assert.ok(
-        ['assessment-pending', 'assessment-completed', 'working-turn-pending'].includes(
-          String(advanced.status),
-        ),
+        ['assessment-pending', 'assessment-completed'].includes(String(advanced.status)),
         JSON.stringify(advanced),
       );
       break;

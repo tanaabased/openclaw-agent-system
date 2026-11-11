@@ -190,8 +190,6 @@ describe('agent/codex-runtime', () => {
           automationId: 'disposable',
           code: 'codex-runtime-failed',
         },
-        load: () => undefined,
-        store: () => {},
         text: (value: { exit_code: number; output: string }) => output.push(value),
         tools: {
           exec_command: async ({ cmd }: { cmd: string }) => {
@@ -332,31 +330,6 @@ describe('agent/codex-runtime', () => {
       assert.equal(result.status, 1);
       assert.equal(result.stdout, '');
       assert.equal(JSON.parse(result.stderr).code, 'intake-binding-unavailable');
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-
-  it('should route summary requests through the built command to the binding guard', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'codex-summary-route-'));
-    try {
-      const result = spawnSync(
-        process.execPath,
-        ['dist/codex/codex-runtime.js', 'dispatch', 'summary', 'compose', '--plugin-data', root],
-        {
-          input: JSON.stringify({ action: 'summary', operation: 'compose' }),
-          encoding: 'utf8',
-          timeout: 10000,
-          env: { ...process.env, CODEX_THREAD_ID: 'native-caller' },
-        },
-      );
-      assert.ifError(result.error);
-      assert.equal(result.status, 1);
-      assert.equal(result.stdout, '');
-      const failure = JSON.parse(result.stderr);
-      assert.equal(failure.code, 'intake-binding-unavailable');
-      assert.equal(failure.operation, 'dispatch:summary:compose');
-      assert.equal(failure.id, undefined);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

@@ -8,6 +8,7 @@ export default async function retirementConsumption(
   intake: ManagedIssue,
   taskId: string,
   now: number,
+  consumedThrough: number,
 ) {
   const assignment =
     intake.assignment ?? ('initiation' in intake ? intake.assignmentAttempt?.event : undefined);
@@ -32,5 +33,6 @@ export default async function retirementConsumption(
       observedAt: now,
     },
     taskId,
+    consumedThrough,
   );
 }

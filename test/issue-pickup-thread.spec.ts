@@ -1,3 +1,5 @@
+import { Value } from 'typebox/value';
+import { pickupInputSchema } from '../agent/issue-pickup.ts';
 import assert from 'node:assert/strict';
 
 import issuePickupJobs from '../agent/issue-pickup-jobs.ts';
@@ -42,6 +44,24 @@ describe('issue pickup conversation selection', () => {
         if (parsed.status !== 'valid') return;
         const job = issuePickupJobs(parsed.manifest, runtime)[0]!;
         assert.equal(job.id, 'github-issue-pickup');
+        assert.equal(job.payload.kind, 'prompt');
+        if (job.payload.kind !== 'prompt') throw new Error('prompt required');
+        const fields = /selection:\{([^}]+)\}/.exec(job.payload.prompt)?.[1]?.split(',');
+        assert.ok(fields);
+        const values: Record<string, unknown> = {
+          issueNodeId: 'I_selected',
+          rationale: 'Requirements are clear.',
+          shortlist: ['I_selected'],
+        };
+        const selection = Object.fromEntries(
+          fields.map((field) => [field, values[field] ?? 'runtime-internal-value']),
+        );
+        assert.equal(
+          Value.Check(pickupInputSchema, { selection }),
+          true,
+          'the generated selection example must satisfy the live input contract',
+        );
+
         assert.equal(job.displayName, '📥 ISSUE PICKUP');
         assert.deepEqual(
           job.thread,

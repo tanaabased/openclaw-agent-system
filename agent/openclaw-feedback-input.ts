@@ -1,15 +1,14 @@
-import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
-import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
+import type { DispatchRequest } from '../credentials/session-dispatch.ts';
+import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import { completeOpenClawMessage, openClawHistoryPages } from './openclaw-history.ts';
 import {
   describeIssueSession,
   sessionObject,
   type DispatchCaller,
 } from './openclaw-session-create.ts';
-import { openClawConsumedInput } from './openclaw-turn.ts';
 import issueInputEvent from './openclaw-session-input.ts';
-import { completeOpenClawMessage, openClawHistoryPages } from './openclaw-history.ts';
-
+import { openClawConsumedInput } from './openclaw-turn.ts';
 /** recover queued source identity from the native input, without asking the model to select it. */
 export async function resolveOpenClawTurnFeedback(
   record: OpenClawDispatchRecord,
@@ -31,13 +30,12 @@ export async function resolveOpenClawTurnFeedback(
     return verified;
   }
   const events = (record.feedback?.events ?? []).filter(
-    (event) => event.native && event.turn && !event.turn.cancelled,
+    (event) => event.turn && !event.turn.cancelled,
   );
   if (!events.length) return;
   if (
     record.threadId !== caller.sessionKey ||
     record.sessionCreation?.sessionId !== caller.sessionId ||
-    record.retired ||
     record.reset ||
     record.supersededBy
   )
@@ -69,7 +67,6 @@ export async function resolveOpenClawTurnFeedback(
     if (matches.length) return matches[0];
   }
 }
-
 /** Explicit context selection survives a native queued turn changing execution identity. */
 export function selectedOpenClawFeedback(record: OpenClawDispatchRecord, runId: string) {
   const selection = record.feedback?.context;
@@ -81,7 +78,6 @@ export function selectedOpenClawFeedback(record: OpenClawDispatchRecord, runId: 
     ) ?? [];
   return events.length === 1 ? events[0] : undefined;
 }
-
 /** Verify delivery to the owning chat; a later run may explicitly answer the same source. */
 export default async function openClawFeedbackInput(
   record: OpenClawDispatchRecord,
@@ -95,11 +91,10 @@ export default async function openClawFeedbackInput(
     : [selectedOpenClawFeedback(record, caller.runId)].filter((event) => event !== undefined);
   if (events.length > 1) throw new Error('feedback-native-input-ambiguous');
   const event = events[0];
-  if (!event?.native) return;
+  if (!event) return;
   if (
     record.threadId !== caller.sessionKey ||
     record.sessionCreation?.sessionId !== caller.sessionId ||
-    record.retired ||
     record.reset ||
     record.supersededBy ||
     !event.turn ||
@@ -116,14 +111,7 @@ export default async function openClawFeedbackInput(
   if (history.sessionId !== caller.sessionId || !Array.isArray(history.messages))
     throw new Error('feedback-input-unverified');
   const selection = record.feedback?.context;
-  const inputId = await openClawConsumedInput(
-    request,
-    caller,
-    event.turn!,
-    history,
-    true,
-    selection?.eventId === event.id ? selection : undefined,
-  );
+  const inputId = await openClawConsumedInput(request, caller, event.turn!, history, true);
   if (!eventId && selection?.runId === caller.runId && selection.inputEventId !== inputId)
     throw new Error('feedback-input-unverified');
   return { event, inputId };

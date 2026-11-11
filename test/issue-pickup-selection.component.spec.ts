@@ -1,3 +1,4 @@
+import { withDispatchTask } from '../agent/dispatch-task-scope.ts';
 import { omit } from 'lodash-es';
 import type { RepositoryRoute } from '../channels/github/repository-scope.ts';
 import type { Static } from 'typebox';
@@ -98,6 +99,7 @@ describe('issue pickup selection through native journals', () => {
           ],
         },
         'issue-pickup': {
+          paused: false,
           start: '10:00',
           window: '1 hour',
           selection: { guidance: { file: 'selection.md' } },
@@ -145,7 +147,11 @@ describe('issue pickup selection through native journals', () => {
         assertActive: async () => {},
         connect,
         threadId: 'pickup-thread',
-        pickupActivation: async () => ({ threadId: 'pickup-thread', nativeId: 'pickup-job' }),
+        pickupActivation: async (accepted) => {
+          if (manifest.github!.notifications!.issuePickup!.paused && !accepted)
+            throw new Error('issue-pickup-paused');
+          return { threadId: 'pickup-thread', nativeId: 'pickup-job' };
+        },
         intakeNative: {
           occurrence: async () => {
             await assertCurrent();
@@ -164,7 +170,10 @@ describe('issue pickup selection through native journals', () => {
       const enrollment = await prepareCodexPickupEnrollment(data, deps);
       await enrollmentStore.activate(enrollment.enrollment.id, occurrence.nativeId);
       Object.assign(f.authority.enrollment, enrollment.enrollment);
-      pickup = (input = {}) => runCodexIssuePickup(data, input, 'UTC', deps);
+      pickup = (input = {}) =>
+        withDispatchTask('codex', 'pickup-thread', () =>
+          runCodexIssuePickup(data, input, 'UTC', deps),
+        );
       scan = () => runCodexIntake(data, false, deps);
       read = async () => (await selected.store.read())!.records;
     } else {
@@ -240,6 +249,43 @@ describe('issue pickup selection through native journals', () => {
   }
 
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should keep pickup available beside an independently damaged task in ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      await f.configure((source) => {
+        source.github['max-concurrent-items'] = 2;
+      });
+      const damaged = {
+        id: 'd'.repeat(64),
+        intakeId: 'd'.repeat(64),
+        issueKey: 'd'.repeat(64),
+        sourceThreadId: 'assignment-thread',
+        threadId: 'damaged-task-thread',
+        createdAt: 'invalid',
+        manifestDigest: 'manifest',
+      };
+      await f.journal.file.write(
+        JSON.stringify({ ...(await f.journal.read()), records: [damaged] }),
+      );
+      const selection = await f.select();
+      assert.equal((await f.pickup({ selection })).status, 'assigned');
+      assert.equal(f.effects.writes, 1);
+      assert.deepEqual(JSON.parse(await readFile(f.journal.path, 'utf8')).records, [damaged]);
+    });
+
+    it(`should finish an accepted selection while its schedule is paused in ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      const selection = await f.select();
+      await f.configure((source) => {
+        source.github['issue-pickup'].paused = true;
+      });
+      assert.equal((await f.pickup({ selection })).status, 'assigned');
+      assert.equal(f.effects.writes, 1);
+      f.tick.id = 'next-paused-run';
+      if (runtime === 'codex') await assert.rejects(f.pickup(), /issue-pickup-paused/);
+      else assert.notEqual((await f.pickup()).status, 'assigned');
+      assert.equal(f.effects.writes, 1);
+    });
+
     it(`should page captured repository guidance and retain scope through ${runtime}`, async () => {
       const f = await fixture(runtime);
       const guidance = 'repository-specific priorities '.repeat(700);

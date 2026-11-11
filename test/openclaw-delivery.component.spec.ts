@@ -1,21 +1,19 @@
-import { authorizeFeedback, type OpenClawFeedbackProvider } from '../agent/openclaw-feedback.ts';
-import { feedbackRevision } from '../agent/feedback-source.ts';
-import { recoverRetainedAnnouncement } from '../agent/delivery-announcement.ts';
-import { openClawWorkSlot } from '../agent/openclaw-continuation.ts';
-import manualPullRequest from '../agent/manual-pull-request.ts';
-import { account, fixturePullRequest, intakeFixture } from './github-intake-fixture.ts';
-import { hasDeliveredImplementation } from '../agent/implementation-delivery.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { recoverRetainedAnnouncement } from '../agent/delivery-announcement.ts';
+import { feedbackRevision } from '../agent/feedback-source.ts';
+import manualPullRequest from '../agent/manual-pull-request.ts';
+import { openClawWorkSlot } from '../agent/openclaw-continuation.ts';
+import { authorizeFeedback, type OpenClawFeedbackProvider } from '../agent/openclaw-feedback.ts';
+import { account, fixturePullRequest, intakeFixture } from './github-intake-fixture.ts';
 
 import announcementFixture from './delivery-announcement-fixture.ts';
 
-import openClawSkill from '../agent/openclaw-skill.ts';
 import selectFeedbackStage from '../agent/feedback-stage.ts';
+import openClawSkill from '../agent/openclaw-skill.ts';
 
-import { automationHash } from '../agent/automation-hash.ts';
 import openClawDelivery from '../agent/openclaw-delivery.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
@@ -29,6 +27,7 @@ const response = (value: unknown) => ({
 });
 
 describe('agent/openclaw-delivery', () => {
+  let branch: string;
   let announcement: ReturnType<typeof announcementFixture>;
   let root: string, record: OpenClawDispatchRecord;
   let creates: number, pushes: number, saves: number, linkWrites: number;
@@ -60,23 +59,13 @@ describe('agent/openclaw-delivery', () => {
     remote = '';
     dirty = lost = missing = failLink = revoked = false;
     pr = undefined;
-    const result = {
-      version: 1 as const,
-      outcome: 'plan-ready' as const,
-      summary: 'Plan',
-      assessment: 'Plan',
-      plan: 'Plan',
-      fullAssessment: 'Complete plan',
-      evidence: [],
-      progress: { completed: [], remaining: [] },
-    };
     const source = { runId: 'operator-run', inputEventId: 'operator-input' };
     record = {
       id: 'd'.repeat(64),
       intakeId: 'e'.repeat(64),
       issueKey: 'f'.repeat(64),
       sourceThreadId: 'intake',
-      phase: 'complete',
+
       createdAt: 1,
       manifestDigest: 'b'.repeat(64),
       worktree: root,
@@ -89,17 +78,17 @@ describe('agent/openclaw-delivery', () => {
         sourceRunId: 'run',
         sourceToolCallId: 'call',
       },
-      result,
       handoff: { at: 2, by: 'issue-chat', turnId: 'operator-run' },
-      work: { assessmentDigest: automationHash(result), publication: source },
+      work: { publication: source },
     };
+    branch = 'task-branch';
     input = {
       record,
       selectAnnouncement: async (retained) => ({
         version: 1,
         requestedSkill: 'reply',
         defaultSkill: true,
-        observedAt: retained?.composition.observedAt ?? 1,
+        observedAt: retained?.composition?.observedAt ?? 1,
         skill: {
           name: 'reply',
           path: '/skills/reply/SKILL.md',
@@ -131,7 +120,7 @@ describe('agent/openclaw-delivery', () => {
       async connect() {
         return {
           async git(argv) {
-            if (argv[0] === 'branch') return 'task-branch';
+            if (argv[0] === 'branch') return branch;
             if (argv.includes('--show-toplevel')) return root;
             if (argv[0] === 'rev-parse')
               return argv.some((arg) => arg.startsWith('refs/agent-system/pr/')) ? remote : head;
@@ -192,9 +181,13 @@ describe('agent/openclaw-delivery', () => {
                   repositoryId: 'R_repo',
                   headRepositoryId: 'R_repo',
                   head: remote,
-                  branch: 'collaborator-work',
-                  base: 'release',
-                  authorId: 'U_collaborator',
+                  branch: pr?.headRef ?? 'collaborator-work',
+                  base: pr?.baseRef ?? 'release',
+                  authorId:
+                    !pr?.headRef || pr.headRef === 'collaborator-work'
+                      ? 'U_collaborator'
+                      : (record.adoptedPullRequest?.authorId ??
+                        (adopted ? 'U_operator' : 'U_agent')),
                   title: pr?.title,
                   body: pr?.body,
                 });
@@ -211,16 +204,17 @@ describe('agent/openclaw-delivery', () => {
                     exitCode: 1,
                     stderr: 'gh: Resource not accessible by integration (HTTP 403)',
                   };
-                assert.ok(record.work?.delivery?.creationAttempted);
+                assert.ok(record.delivery?.creationAttempted);
+                const created = JSON.parse(stdin!);
                 if (!missing)
                   pr = {
                     itemNodeId: 'PR_7',
                     number: 7,
                     state: 'open',
-                    baseRef: 'main',
-                    headRef: 'task-branch',
+                    baseRef: created.base,
+                    headRef: created.head,
                     headRepository: 'owner/repo',
-                    ...JSON.parse(stdin!),
+                    ...created,
                   };
                 if (lost || missing) throw new Error('response lost');
                 return response(pr);
@@ -260,8 +254,11 @@ describe('agent/openclaw-delivery', () => {
                   headRepositoryDatabaseId: 10,
                   authorId:
                     record.adoptedPullRequest?.authorId ?? (adopted ? 'U_operator' : 'U_agent'),
-                  baseRef: record.adoptedPullRequest?.base ?? (adopted ? 'release' : 'main'),
-                  headRef: record.adoptedPullRequest?.branch ?? 'task-branch',
+                  baseRef:
+                    record.adoptedPullRequest?.base ??
+                    pr?.baseRef ??
+                    (adopted ? 'release' : 'main'),
+                  headRef: record.adoptedPullRequest?.branch ?? pr?.headRef ?? branch,
                   state: 'open',
                   number: 7,
                 });
@@ -296,6 +293,114 @@ describe('agent/openclaw-delivery', () => {
     assert.ok('publishRequest' in prepared && prepared.publishRequest);
     return openClawDelivery({ ...input, action: { ...prepared.publishRequest, id: record.id } });
   }
+
+  it('should use a custom checkout branch and keep the selected base through pr recovery', async () => {
+    branch = 'pirog/custom-branch';
+    const content = {
+      title: 'Stacked fix',
+      body: 'An authored stacked change.',
+      base: 'release/2.x',
+    };
+    const preview = await request('prepare', content);
+    assert.ok('publishRequest' in preview && preview.publishRequest);
+    assert.equal(preview.publishRequest.base, content.base);
+    lost = true;
+    await assert.rejects(request('publish', content), /response lost/);
+    assert.equal(record.delivery?.binding.base, content.base);
+    assert.equal(pr?.headRef, branch);
+    assert.equal(pr?.baseRef, content.base);
+    await assert.rejects(
+      request('publish', { ...content, base: 'other' }),
+      /delivery-base-changed/,
+    );
+    lost = false;
+    assert.equal((await request('reconcile')).status, 'ready');
+    assert.equal(creates, 1);
+  });
+
+  it('should use the provider repository default when base is omitted', async () => {
+    input.base = 'develop';
+    assert.equal((await publish()).status, 'published');
+    assert.equal(pr?.baseRef, 'develop');
+  });
+
+  it('should reconcile the original uncertain announcement after relinking and discarding pr creation state', async () => {
+    await publish();
+    await request('compose');
+    await request('candidate', { publicText: 'The original change is ready.' });
+    announcement.lost = true;
+    assert.equal((await request('announce')).status, 'announcement-blocked');
+    record.pullRequestLink = { pullRequestNodeId: 'PR_other', pullRequestNumber: 8 };
+    delete record.delivery;
+    announcement.lost = false;
+    const recovered = await request('announce');
+    assert.equal(recovered.status, 'announced');
+    assert.equal(recovered.url, 'https://github.com/owner/repo/pull/7');
+    assert.equal(announcement.posts, 1);
+    assert.equal(creates, 1);
+  });
+
+  it('should announce a verified linked pr without a creation or implementation record', async () => {
+    await publish();
+    record.pullRequestLink = record.delivery!.pullRequest;
+    delete record.delivery;
+    delete record.progression;
+    record.work!.scope = 'local';
+    const connect = input.connect;
+    input.connect = async () => ({
+      ...(await connect()),
+      git: async () => assert.fail('announcement must not inspect or publish local work'),
+    });
+    const composed = await request('compose');
+    assert.equal(composed.status, 'composition-ready', JSON.stringify(composed));
+    await request('candidate', { publicText: 'The linked change is ready for review.' });
+    assert.equal((await request('announce')).status, 'announced');
+    const saved = record;
+    assert.equal(saved.delivery, undefined);
+    assert.ok(saved.announcement?.receipt);
+    assert.equal(announcement.posts, 1);
+    assert.equal(creates, 1);
+  });
+
+  it('should request composition for a linked pr with no announcement draft', async () => {
+    await publish();
+    record.pullRequestLink = record.delivery!.pullRequest;
+    delete record.delivery;
+    const result = await request('announce');
+    assert.equal(result.status, 'announcement-blocked');
+    assert.ok('code' in result && result.code === 'delivery-announcement-candidate-required');
+    assert.match(result.presentation!, /compose.*candidate/i);
+    assert.equal(announcement.posts, 0);
+    assert.equal(record.delivery, undefined);
+    await request('compose');
+    const withoutCandidate = await request('announce');
+    assert.ok(
+      'code' in withoutCandidate &&
+        withoutCandidate.code === 'delivery-announcement-candidate-required',
+    );
+    assert.equal(announcement.posts, 0);
+  });
+
+  it('should honor a native denial before posting a composed announcement', async () => {
+    await publish();
+    await request('compose');
+    await request('candidate', { publicText: 'The change is ready.' });
+    input.reauthorize = async () => {
+      throw new Error('native-approval-denied');
+    };
+    await assert.rejects(request('announce'), /native-approval-denied/);
+    assert.equal(announcement.posts, 0);
+  });
+
+  it('should reject a mismatched linked pr before composing or posting an announcement', async () => {
+    await publish();
+    record.pullRequestLink = { pullRequestNodeId: 'PR_other', pullRequestNumber: 7 };
+    delete record.delivery;
+    const result = await request('compose');
+    assert.equal(result.status, 'announcement-blocked');
+    assert.ok('code' in result && result.code === 'delivery-announcement-pr-changed');
+    assert.equal(announcement.posts, 0);
+  });
 
   it('should publish authored content and link the current task without copied receipts', async () => {
     const content = { title: 'One poem', body: 'First line.\n\nSecond line.' };
@@ -383,7 +488,7 @@ describe('agent/openclaw-delivery', () => {
   }
   it('should allow unlinking without invalidating publication or repeating initial association', async () => {
     await publish();
-    const receipt = structuredClone(record.work!.delivery);
+    const receipt = structuredClone(record.delivery);
     assert.equal(
       (
         await openClawDelivery({
@@ -408,13 +513,13 @@ describe('agent/openclaw-delivery', () => {
       action: { action: 'delivery', operation: 'link', id: record.id },
     });
     assert.equal(record.pullRequestLink, null);
-    assert.deepEqual(record.work!.delivery, receipt);
+    assert.deepEqual(record.delivery, receipt);
     assert.equal(creates, 1);
   });
 
   it('should accept the current pr url without operator input while preserving association changes', async () => {
     await publish();
-    const receipt = structuredClone(record.work!.delivery);
+    const receipt = structuredClone(record.delivery);
     const pullRequest = `https://github.com/${input.intake.repository.owner.login}/${input.intake.repository.name}/pull/${receipt!.pullRequest!.pullRequestNumber}`;
     const linked = await openClawDelivery({
       ...input,
@@ -441,7 +546,7 @@ describe('agent/openclaw-delivery', () => {
       }),
       /delivery-link-operator-required/,
     );
-    assert.deepEqual(record.work!.delivery, receipt);
+    assert.deepEqual(record.delivery, receipt);
     assert.equal(creates, 1);
   });
 
@@ -481,8 +586,8 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(patches, 0);
     assert.deepEqual(pr, original);
     assert.equal(pushes, 1);
-    assert.equal(record.work?.delivery?.binding.branch, 'task-branch');
-    assert.equal(record.work?.delivery?.pullRequest?.pullRequestNumber, 7);
+    assert.equal(record.delivery?.binding.branch, 'task-branch');
+    assert.equal(record.delivery?.pullRequest?.pullRequestNumber, 7);
     const shown = await request('present');
     assert.ok('presentation' in shown);
     assert.match(String(shown.presentation), /Pull request\n/);
@@ -506,7 +611,7 @@ describe('agent/openclaw-delivery', () => {
     await assert.rejects(publish(), /native-approval-denied/);
     assert.equal(pushes, 0);
     assert.equal(creates, 0);
-    assert.equal(record.work?.delivery?.pullRequest?.pullRequestNumber, 7);
+    assert.equal(record.delivery?.pullRequest?.pullRequestNumber, 7);
   });
   it('should bind and non-force update a collaborator pr without rewriting metadata or claiming prior publication', async () => {
     input.operator = true;
@@ -525,21 +630,21 @@ describe('agent/openclaw-delivery', () => {
       pullRequest: 'https://github.com/owner/repo/pull/7',
     });
     assert.equal(bound.status, 'bound');
-    assert.equal(record.work!.delivery!.reconciled, false);
-    assert.equal(record.work!.delivery!.announcement, undefined);
+    assert.equal(record.delivery!.reconciled, false);
+    assert.equal(record.announcement, undefined);
     assert.equal(pushes, 0);
     await request('prepare');
     assert.equal((await request('publish', {})).status, 'published');
-    assert.equal(record.work!.delivery!.binding.authorId, 'U_collaborator');
-    assert.equal(record.work!.delivery!.binding.base, 'release');
-    assert.equal(record.work!.delivery!.localBranch, 'task-branch');
+    assert.equal(record.delivery!.binding.authorId, 'U_collaborator');
+    assert.equal(record.delivery!.binding.base, 'release');
+    assert.equal(record.delivery!.localBranch, 'task-branch');
     assert.equal(creates, 0);
     assert.equal(pushes, 1);
     assert.equal(patches, 0);
     assert.equal(pr.body, '');
     const retained = await request('bind', { pullRequest: 'https://github.com/owner/repo/pull/7' });
     assert.ok('retained' in retained && retained.retained);
-    assert.equal(record.work!.delivery!.reconciled, true);
+    assert.equal(record.delivery!.reconciled, true);
   });
 
   it('should leave unchanged adoption unannounced and refuse switching its retained local branch', async () => {
@@ -555,10 +660,10 @@ describe('agent/openclaw-delivery', () => {
     };
     record.adoptedLocalBranch = 'task-branch';
     assert.equal((await request('prepare')).status, 'bound');
-    assert.equal(record.work!.delivery!.pushedHead, undefined);
-    assert.equal(record.work!.delivery!.announcement, undefined);
+    assert.equal(record.delivery!.pushedHead, undefined);
+    assert.equal(record.announcement, undefined);
     assert.equal(pushes + creates, 0);
-    record.work!.delivery!.localBranch = 'preserved-predecessor';
+    record.delivery!.localBranch = 'preserved-predecessor';
     await assert.rejects(request('prepare'), /delivery-branch-diverged/);
   });
 
@@ -612,7 +717,7 @@ describe('agent/openclaw-delivery', () => {
             policy,
             workflow: 'issue-assignment',
             workspace: root,
-            observedAt: retained?.composition.observedAt ?? 1,
+            observedAt: retained?.composition?.observedAt ?? 1,
             resolveSkill: (id) =>
               openClawSkill(
                 async () => ({
@@ -652,8 +757,7 @@ describe('agent/openclaw-delivery', () => {
       await request('candidate', {
         publicText: 'Cleanup documented. Live transport remains untested.',
       });
-      assert.equal((await request('announce', {})).status, 'announced');
-      const retainedSelection = record.work!.delivery!.announcement!.composition!;
+      const retainedSelection = record.announcement!.composition!;
       assert.equal(retainedSelection.skill.digest, composed.selection.skill.digest);
       assert.equal(
         retainedSelection.guidance?.content,
@@ -661,8 +765,10 @@ describe('agent/openclaw-delivery', () => {
       );
       if (variant.includes('file'))
         assert.equal(composed.selection.guidance?.path, retainedSelection.guidance?.path);
+      assert.equal((await request('announce', {})).status, 'announced');
+      assert.equal(record.announcement!.composition, undefined);
+      assert.equal(record.announcement!.publicText, undefined);
       assert.ok(announcement.comments[0]!.body.includes('Live transport remains untested.'));
-      assert.equal(record.result!.fullAssessment, 'Complete plan');
       await request('announce', {});
       assert.equal(announcement.posts, 1);
       assert.equal(creates, 1);
@@ -670,31 +776,19 @@ describe('agent/openclaw-delivery', () => {
   }
 
   it('should finish a new implementation through the same pr after earlier delivery completed', async () => {
-    record.work!.result = {
-      outcome: 'done',
-      summary: 'First pass.',
-      fullResult: 'First pass checked.',
-    };
-    record.work!.resultSource = { turnId: 'first-run', inputId: 'first-input' };
     await publish();
     await request('compose');
     await request('candidate', {
       publicText: 'Delivers the requested change.',
     });
     await request('announce', {});
-    assert.equal(hasDeliveredImplementation(record), true);
-    const receipt = structuredClone(record.work!.delivery!.pullRequest);
-    const initialResult = structuredClone(record.work!.result);
-    assert.equal(record.implementationDelivered, true);
+    const receipt = structuredClone(record.delivery!.pullRequest);
     head = 'b'.repeat(40); // ordinary native edits; no managed context/result round.
-    assert.equal(hasDeliveredImplementation(record), true);
-    assert.deepEqual(record.work!.delivery!.pullRequest, receipt);
+    assert.deepEqual(record.delivery!.pullRequest, receipt);
     await publish();
-    assert.equal(hasDeliveredImplementation(record), true);
     assert.equal(creates, 1);
     assert.equal(announcement.posts, 1);
-    assert.equal(record.work!.delivery!.pushedHead, head);
-    assert.deepEqual(record.work!.result, initialResult);
+    assert.equal(record.delivery!.pushedHead, head);
   });
 
   it('should retry pr creation after a definite provider rejection', async () => {
@@ -720,7 +814,7 @@ describe('agent/openclaw-delivery', () => {
       const shown = await request('present');
       assert.ok('presentation' in shown);
       assert.match(shown.presentation!, /Pull request/);
-      assert.match(shown.presentation!, /#issuecomment-91/);
+      assert.doesNotMatch(shown.presentation!, /#issuecomment-91/);
       assert.equal(announcement.posts, 1);
       assert.ok(announcement.comments[0]!.body.includes(draft ? 'Draft.' : 'Ready for review.'));
       assert.equal(creates, 1);
@@ -742,8 +836,8 @@ describe('agent/openclaw-delivery', () => {
     });
     announcement.lost = true;
     assert.equal((await request('announce', {})).status, 'announcement-blocked');
-    assert.equal(record.work!.delivery!.reconciled, true);
-    assert.equal(record.work!.delivery!.announcement!.attempted, true);
+    assert.equal(record.delivery!.reconciled, true);
+    assert.equal(record.announcement!.attempted, true);
     input.record = record = JSON.parse(JSON.stringify(record));
     announcement.lost = false;
     assert.equal((await request('announce')).status, 'announced');
@@ -778,9 +872,7 @@ describe('agent/openclaw-delivery', () => {
     };
     assert.equal((await request('compose')).status, 'announcement-blocked');
     input.record = record = JSON.parse(JSON.stringify(record));
-    record.work!.turn = { runId: 'implementation', message: 'done', status: 'completed' };
-    record.work!.result = { outcome: 'done', summary: 'Done.', fullResult: 'Checked.' };
-    const delivery = record.work!.delivery!;
+    const delivery = record;
     const first = delivery.announcementRecovery!.retryAfter!;
     assert.equal(openClawWorkSlot(record), undefined);
     const check = (now: number) =>
@@ -816,7 +908,7 @@ describe('agent/openclaw-delivery', () => {
 
   it('should show incomplete publication while preserving the original pr', async () => {
     await publish();
-    record.work!.delivery!.reconciled = false;
+    record.delivery!.reconciled = false;
     const shown = await request('present');
     assert.equal(shown.status, 'publication-incomplete');
     assert.ok('presentation' in shown);
@@ -838,7 +930,7 @@ describe('agent/openclaw-delivery', () => {
     const enabled = await request('present');
     assert.ok('presentation' in enabled);
     assert.match(enabled.presentation!, /originating item or review thread/);
-    const binding = record.work!.delivery!.binding;
+    const binding = record.delivery!.binding;
     assert.equal(binding.sessionId, 'issue-session');
     assert.equal(binding.threadId, 'issue-chat');
     assert.equal(binding.issueId, 'I_issue');
@@ -851,13 +943,13 @@ describe('agent/openclaw-delivery', () => {
   it('should recover a lost creation response using the same provider pr', async () => {
     lost = true;
     await assert.rejects(publish());
-    assert.equal(record.work!.delivery!.creationAttempted, true);
+    assert.equal(record.delivery!.creationAttempted, true);
     const restored = JSON.parse(JSON.stringify(record)) as OpenClawDispatchRecord;
     input.record = record = restored;
     lost = false;
     await publish();
     assert.equal(creates, 1);
-    assert.equal(record.work!.delivery!.pullRequest?.pullRequestNumber, 7);
+    assert.equal(record.delivery!.pullRequest?.pullRequestNumber, 7);
   });
   it('should reconcile an accepted creation with a lost receipt despite newer dirty local work', async () => {
     lost = true;
@@ -868,8 +960,8 @@ describe('agent/openclaw-delivery', () => {
     head = 'b'.repeat(40);
     dirty = true;
     assert.equal((await request('reconcile')).status, 'ready');
-    assert.equal(record.work!.delivery!.pushedHead, delivered);
-    assert.equal(record.work!.delivery!.reconciled, true);
+    assert.equal(record.delivery!.pushedHead, delivered);
+    assert.equal(record.delivery!.reconciled, true);
     assert.equal(pushes, 1);
     assert.equal(creates, 1);
   });
@@ -879,24 +971,24 @@ describe('agent/openclaw-delivery', () => {
     input.record = record = JSON.parse(JSON.stringify(record));
     failLink = false;
     assert.equal((await request('reconcile')).status, 'ready');
-    assert.equal(record.work!.delivery!.reconciled, true);
+    assert.equal(record.delivery!.reconciled, true);
     assert.equal(pushes, 1);
     assert.equal(creates, 1);
   });
   it('should prepare a new commit on the retained delivery without changing its receipt', async () => {
     await publish();
-    const retained = structuredClone(record.work!.delivery!);
+    const retained = structuredClone(record.delivery!);
     head = 'b'.repeat(40);
     const prepared = await request('prepare');
     assert.ok('operation' in prepared && prepared.operation);
     assert.equal(prepared.operation.id, retained.id);
     assert.equal(prepared.operation.binding.head, head);
     assert.deepEqual(prepared.operation.pullRequest, retained.pullRequest);
-    assert.deepEqual(record.work!.delivery, retained);
+    assert.deepEqual(record.delivery, retained);
     head = 'c'.repeat(40);
     const refreshed = await request('publish', {});
     assert.equal(refreshed.status, 'published');
-    assert.equal(record.work!.delivery!.binding.head, head);
+    assert.equal(record.delivery!.binding.head, head);
     assert.equal(pushes, 2);
   });
   it('should reject a changed session while retaining delivery across configuration changes', async () => {
@@ -909,33 +1001,31 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(pushes, 1);
   });
   it('should update the delivered pr without the original implementation stage', async () => {
-    record.work!.result = { outcome: 'done', summary: 'Done.', fullResult: 'Implemented.' };
     await publish();
-    assert.equal(record.implementationDelivered, true);
     delete record.progression;
     delete record.handoff;
     delete record.work!.publication;
     input.operator = true;
-    const receipt = structuredClone(record.work!.delivery!.pullRequest);
+    const receipt = structuredClone(record.delivery!.pullRequest);
     head = 'b'.repeat(40);
     await publish();
     assert.equal(remote, head);
-    assert.equal(record.work!.delivery!.pushedHead, head);
-    assert.equal(record.work!.delivery!.binding.head, head);
-    assert.deepEqual(record.work!.delivery!.pullRequest, receipt);
-    assert.equal(record.work!.delivery!.reconciled, true);
+    assert.equal(record.delivery!.pushedHead, head);
+    assert.equal(record.delivery!.binding.head, head);
+    assert.deepEqual(record.delivery!.pullRequest, receipt);
+    assert.equal(record.delivery!.reconciled, true);
     assert.equal(creates, 1);
     assert.equal(pushes, 2);
   });
   it('should publish an existing pr update while retaining approved feedback authority', async () => {
     await publish();
-    const receipt = structuredClone(record.work!.delivery!.pullRequest);
+    const receipt = structuredClone(record.delivery!.pullRequest);
     authorizePrFeedback();
     head = 'b'.repeat(40);
     assert.equal((await publish()).status, 'published');
     assert.equal(remote, head);
-    assert.deepEqual(record.work!.delivery!.pullRequest, receipt);
-    assert.equal(record.work!.delivery!.reconciled, true);
+    assert.deepEqual(record.delivery!.pullRequest, receipt);
+    assert.equal(record.delivery!.reconciled, true);
     assert.equal(pushes, 2);
     assert.equal(creates, 1);
   });
@@ -962,9 +1052,9 @@ describe('agent/openclaw-delivery', () => {
           throw new Error('comment-deleted');
         };
       if (change === 'closed') feedback.item.state = 'closed';
-      if (change === 'pr-id') record.work!.delivery!.pullRequest!.pullRequestNodeId = 'PR_other';
-      if (change === 'pr-number') record.work!.delivery!.pullRequest!.pullRequestNumber = 8;
-      if (change === 'missing-pr') delete record.work!.delivery!.pullRequest;
+      if (change === 'pr-id') record.delivery!.pullRequest!.pullRequestNodeId = 'PR_other';
+      if (change === 'pr-number') record.delivery!.pullRequest!.pullRequestNumber = 8;
+      if (change === 'missing-pr') delete record.delivery!.pullRequest;
       if (change === 'policy') feedback.policy.issueAssignment!.allowed = [];
       if (change === 'owner') revoked = true;
       const expected = {
@@ -1011,7 +1101,7 @@ describe('agent/openclaw-delivery', () => {
       const content = { title: 'Updated fix', body: 'Includes the follow-up change.' };
       failPatch = interruption;
       await assert.rejects(publish(content), /update interrupted/);
-      assert.equal(record.work!.delivery!.reconciled, false);
+      assert.equal(record.delivery!.reconciled, false);
       input.record = record = structuredClone(record);
       failPatch = false;
       await publish(content);
@@ -1020,7 +1110,7 @@ describe('agent/openclaw-delivery', () => {
       assert.equal(patches, interruption === 'before' ? 2 : 1);
       assert.equal(creates, 1);
       assert.equal(pushes, 1);
-      assert.equal(record.work!.delivery!.reconciled, true);
+      assert.equal(record.delivery!.reconciled, true);
     });
   it('should freeze content only until uncertain creation has been reconciled', async () => {
     lost = true;
@@ -1051,15 +1141,15 @@ describe('agent/openclaw-delivery', () => {
       assert.match(shown.presentation!, /pull\/7/);
       assert.equal(pr!.title, 'New title');
       assert.equal(creates, 1);
+      assert.doesNotMatch(
+        shown.presentation!,
+        /Original PR announcement|Delivers the requested change|#issuecomment-91/,
+      );
       if (snapshot) {
-        assert.match(shown.presentation!, /Original PR announcement/);
-        assert.match(shown.presentation!, /#issuecomment-91/);
-        assert.match(shown.presentation!, /Delivers the requested change/);
         const repeated = await request('compose');
         assert.ok('presentation' in repeated);
-        assert.match(repeated.presentation!, /Original PR announcement/);
-        assert.match(repeated.presentation!, /#issuecomment-91/);
-      } else assert.doesNotMatch(shown.presentation!, /Original PR announcement/);
+        assert.equal(repeated.presentation, '');
+      }
       assert.equal(announcement.posts, snapshot ? 1 : 0);
     });
   it('should preserve github body edits when explicitly updating only the title', async () => {
@@ -1084,13 +1174,13 @@ describe('agent/openclaw-delivery', () => {
     };
     const content = { title: 'Revised title', body: 'Closes #3' };
     await assert.rejects(publish(content), /github-delivery-content-unverified/);
-    assert.equal(record.work!.delivery!.reconciled, false);
-    assert.deepEqual(record.work!.delivery!.contentUpdate, content);
-    assert.equal(record.work!.delivery!.contentUpdateAttempted, true);
+    assert.equal(record.delivery!.reconciled, false);
+    assert.deepEqual(record.delivery!.contentUpdate, content);
+    assert.equal(record.delivery!.contentUpdateAttempted, true);
     input.connect = connect;
     await publish(content);
     assert.equal(pr!.title, content.title);
-    assert.equal(record.work!.delivery!.contentUpdate, undefined);
+    assert.equal(record.delivery!.contentUpdate, undefined);
     assert.equal(creates, 1);
   });
   for (const lostAnnouncement of [false, true])
@@ -1102,7 +1192,8 @@ describe('agent/openclaw-delivery', () => {
       });
       announcement.lost = lostAnnouncement;
       await request('announce', {});
-      const retained = structuredClone(record.work!.delivery!);
+      const retained = structuredClone(record.delivery!);
+      const retainedAnnouncement = structuredClone(record.announcement);
       head = 'b'.repeat(40);
       const connect = input.connect;
       input.connect = async () => {
@@ -1117,28 +1208,24 @@ describe('agent/openclaw-delivery', () => {
       };
       await assert.rejects(publish(), /push response lost/);
       assert.equal(remote, head);
-      assert.equal(record.work!.delivery!.pushedHead, retained.pushedHead);
+      assert.equal(record.delivery!.pushedHead, retained.pushedHead);
       input.record = record = structuredClone(record);
       input.connect = connect;
       await publish();
-      assert.equal(record.work!.delivery!.id, retained.id);
-      assert.deepEqual(record.work!.delivery!.pullRequest, retained.pullRequest);
-      assert.deepEqual(record.work!.delivery!.announcement, retained.announcement);
+      assert.equal(record.delivery!.id, retained.id);
+      assert.deepEqual(record.delivery!.pullRequest, retained.pullRequest);
+      assert.deepEqual(record.announcement, retainedAnnouncement);
       announcement.lost = false;
       assert.equal((await request('announce')).status, 'announced');
       const shown = await request('present');
       assert.ok('presentation' in shown);
-      assert.match(shown.presentation!, /#issuecomment-91/);
+      assert.doesNotMatch(shown.presentation!, /#issuecomment-91/);
       assert.equal(creates, 1);
       assert.equal(pushes, 2);
       assert.match(shown.presentation!, /Pull request updated/);
-      assert.match(shown.presentation!, /Original PR announcement/);
-      assert.match(shown.presentation!, /before this update/);
-      assert.ok(
-        shown.presentation!.indexOf('Original announcement (before this update):') <
-          shown.presentation!.indexOf('Delivers the requested change'),
-      );
-      assert.match(shown.presentation!, /Delivers the requested change/);
+      assert.doesNotMatch(shown.presentation!, /Original PR announcement/);
+      assert.doesNotMatch(shown.presentation!, /before this update/);
+      assert.doesNotMatch(shown.presentation!, /Delivers the requested change/);
       assert.equal(announcement.posts, 1);
     });
   it('should rebuild the retained card without git provider or publication permission', async () => {
@@ -1153,7 +1240,7 @@ describe('agent/openclaw-delivery', () => {
     assert.match(result.presentation, /^> ## 🔀 Pull request/m);
     assert.match(result.presentation, /issues\/3/);
     assert.match(result.presentation, /pull\/7/);
-    assert.deepEqual(record.work!.delivery!.pullRequest, persisted.work!.delivery!.pullRequest);
+    assert.deepEqual(record.delivery!.pullRequest, persisted.delivery!.pullRequest);
     assert.equal(creates, 1);
     assert.equal(pushes, 1);
   });
@@ -1167,11 +1254,11 @@ describe('agent/openclaw-delivery', () => {
   it('should recover a lost link response by reading the same pr without another mutation', async () => {
     lostLink = true;
     await assert.rejects(publish(), /link response lost/);
-    assert.equal(record.work!.delivery!.pullRequest?.pullRequestNumber, 7);
-    assert.equal(record.work!.delivery!.reconciled, false);
+    assert.equal(record.delivery!.pullRequest?.pullRequestNumber, 7);
+    assert.equal(record.delivery!.reconciled, false);
     input.record = record = JSON.parse(JSON.stringify(record));
     await publish();
-    assert.equal(record.work!.delivery!.reconciled, true);
+    assert.equal(record.delivery!.reconciled, true);
     assert.equal(linkWrites, 1);
     assert.equal(creates, 1);
     assert.equal(pushes, 1);
@@ -1179,8 +1266,8 @@ describe('agent/openclaw-delivery', () => {
   it('should resume linkage on the checkpointed pr without creating another', async () => {
     failLink = true;
     await assert.rejects(publish());
-    assert.equal(record.work!.delivery!.pullRequest?.pullRequestNumber, 7);
-    assert.equal(record.work!.delivery!.reconciled, false);
+    assert.equal(record.delivery!.pullRequest?.pullRequestNumber, 7);
+    assert.equal(record.delivery!.reconciled, false);
     failLink = false;
     await publish();
     assert.equal(creates, 1);
@@ -1195,37 +1282,25 @@ describe('agent/openclaw-delivery', () => {
       (await publish({ title: 'Fix issue', body: 'Updated body.' })).status,
       'published',
     );
-    assert.equal(record.work!.delivery!.pendingPush, undefined);
-    assert.equal(record.work!.delivery!.pushedHead, head);
+    assert.equal(record.delivery!.pendingPush, undefined);
+    assert.equal(record.delivery!.pushedHead, head);
     assert.equal(creates, 1);
     assert.equal(pushes, 2);
   });
-  it('should allow current authorized delivery despite an older unfinished result', async () => {
+  it('should publish current authorized work without a saved result', async () => {
     record.progression = { stage: 'implementation', via: 'work' };
-    for (const outcome of ['blocked', 'clarification-needed'] as const) {
-      record.work!.result =
-        outcome === 'blocked'
-          ? { outcome, summary: 'Missing shared interface.', fullResult: 'Partial work retained.' }
-          : {
-              outcome,
-              summary: 'Need an answer.',
-              fullResult: 'Partial work retained.',
-              questions: ['Which interface?'],
-            };
-      await publish();
-      assert.equal(creates, 1);
-      assert.equal(pushes, 1);
-    }
+    await publish();
+    assert.equal(creates, 1);
+    assert.equal(pushes, 1);
   });
   it('should publish completed implementation without a publication-only grant', async () => {
     delete record.handoff;
     delete record.work!.publication;
     record.progression = { stage: 'implementation', via: 'work' };
     record.work!.implementation = input.source;
-    record.work!.result = { outcome: 'done', summary: 'Done', fullResult: 'Done and tested.' };
     await publish();
     assert.equal(creates, 1);
-    assert.equal(record.work!.delivery!.reconciled, true);
+    assert.equal(record.delivery!.reconciled, true);
   });
   it('should reject unauthorized dirty divergent and revoked publication before writes', async () => {
     const permission = record.work!.publication;
@@ -1287,7 +1362,7 @@ describe('agent/openclaw-delivery', () => {
       /The pull request head does not match the verified push/,
     );
     input.record = record = JSON.parse(JSON.stringify(record));
-    assert.deepEqual(record.work!.delivery!.pendingPush, { previousHead: 'a'.repeat(40), head });
+    assert.deepEqual(record.delivery!.pendingPush, { previousHead: 'a'.repeat(40), head });
     await request('prepare', { title: 'Updated', body: 'Updated body.' });
     const recovered = await request('publish', {
       title: 'Updated',
@@ -1295,7 +1370,7 @@ describe('agent/openclaw-delivery', () => {
     });
     assert.equal(recovered.status, 'published');
     assert.equal(lagged, 5);
-    assert.equal(record.work!.delivery!.pendingPush, undefined);
+    assert.equal(record.delivery!.pendingPush, undefined);
     assert.equal(creates, 1);
     assert.equal(pushes, 2);
     assert.equal(patches, 1);

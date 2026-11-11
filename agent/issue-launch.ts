@@ -1,44 +1,45 @@
-import launchAssignment from './launch-assignment.ts';
+import dispatchCreationStatus from './dispatch-creation-status.ts';
+import { Value } from 'typebox/value';
 import type IntakeRecordStore from '../channels/github/intake/record-store.ts';
 import type { IntakeObservation } from '../channels/github/intake/record-store.ts';
-import repositoryScope from '../channels/github/repository-scope.ts';
-import { omit } from 'lodash-es';
-import launchPending from './launch-pending.ts';
-import { assertDispatchStorage } from './dispatch-storage.ts';
-import { issueChatTitleGuidance } from './issue-chat-title.ts';
-import IssueDeliveryProvider, {
-  type GitHubNotificationIssueDeliveryReceipt,
-} from '../channels/github/publication/issue-delivery.ts';
-import manualPullRequest from './manual-pull-request.ts';
-import initialModelRouting from './initial-model-routing.ts';
-import { routingInstructionsReference, routingInstructionsDigest } from './routing-instructions.ts';
-import { issuePullRequestRecipients } from '../channels/github/pull-request-recipients.ts';
-import { githubOrigin } from './codex-dispatch-project.ts';
-import { launchRequestSchema, type LaunchRequest } from '../tools/dispatch/launch-schema.ts';
-import { Value } from 'typebox/value';
-import type { AssessmentEntryDependencies } from './assessment-entry.ts';
-import { automationHash } from './automation-hash.ts';
-import dispatchContext from './dispatch-context.ts';
-import type DispatchStore from './dispatch-state.ts';
-import type { SharedDispatchRecord } from './dispatch-state.ts';
-import { issueKey } from './dispatch-pending.ts';
-import issueLaunchTarget from './issue-launch-target.ts';
-import managedOwner from './managed-owner.ts';
-import type { OperatorIssue } from './managed-issue.ts';
 import type {
   GitHubNotificationIntakeClient,
   GitHubNotificationItemContextClient,
 } from '../channels/github/provider/work-event-types.ts';
-
-type ExistingDelivery = { pullRequest?: GitHubNotificationIssueDeliveryReceipt };
-
+import IssueDeliveryProvider, {
+  type GitHubNotificationIssueDeliveryReceipt,
+} from '../channels/github/publication/issue-delivery.ts';
+import { issuePullRequestRecipients } from '../channels/github/pull-request-recipients.ts';
+import repositoryScope from '../channels/github/repository-scope.ts';
+import { launchRequestSchema, type LaunchRequest } from '../tools/dispatch/launch-schema.ts';
+import type { AssessmentEntryDependencies } from './assessment-entry.ts';
+import { automationHash } from './automation-hash.ts';
+import { githubOrigin } from './codex-dispatch-project.ts';
+import dispatchContext from './dispatch-context.ts';
+import { issueKey } from './dispatch-pending.ts';
+import type DispatchStore from './dispatch-state.ts';
+import type { SharedDispatchRecord } from './dispatch-state.ts';
+import { assertDispatchStorage } from './dispatch-storage.ts';
+import initialModelRouting from './initial-model-routing.ts';
+import { issueChatTitleGuidance } from './issue-chat-title.ts';
+import issueLaunchTarget from './issue-launch-target.ts';
+import launchAssignment from './launch-assignment.ts';
+import launchPending from './launch-pending.ts';
+import type { OperatorIssue } from './managed-issue.ts';
+import managedOwner from './managed-owner.ts';
+import manualPullRequest from './manual-pull-request.ts';
+import { routingInstructionsDigest, routingInstructionsReference } from './routing-instructions.ts';
+type ExistingDelivery = {
+  pullRequest?: GitHubNotificationIssueDeliveryReceipt;
+};
 /** operator admission uses the existing dispatch journal and native request identity. */
 export default async function issueLaunch<
   R extends SharedDispatchRecord & {
     delivery?: ExistingDelivery;
-    work?: { delivery?: ExistingDelivery };
-    sessionCreation?: { verified?: true };
-    assessmentTurn?: { runId: string; status: string };
+
+    sessionCreation?: {
+      verified?: true;
+    };
   },
 >(input: {
   action: LaunchRequest;
@@ -55,7 +56,6 @@ export default async function issueLaunch<
       | 'manualIssue'
       | 'issueKey'
       | 'sourceThreadId'
-      | 'phase'
       | 'createdAt'
       | 'manifestDigest'
       | 'context'
@@ -211,11 +211,7 @@ export default async function issueLaunch<
       context.binding.session,
       (record) =>
         record.issueKey === key ||
-        Boolean(
-          pullRequest &&
-          (record.delivery?.pullRequest?.pullRequestNodeId === item.nodeId ||
-            record.work?.delivery?.pullRequest?.pullRequestNodeId === item.nodeId),
-        ),
+        Boolean(pullRequest && record.delivery?.pullRequest?.pullRequestNodeId === item.nodeId),
     );
     const exact =
       state.records.find((entry) => entry.id === manual.id) ??
@@ -231,7 +227,6 @@ export default async function issueLaunch<
         entry.issueKey === key &&
         entry.sourceThreadId === context.binding.session &&
         entry.manualIssue?.initiation.incarnation === context.binding.incarnation &&
-        !entry.retired &&
         !entry.reset &&
         !entry.supersededBy &&
         launchPending(entry),
@@ -245,7 +240,7 @@ export default async function issueLaunch<
       (action.operation !== 'context' && pending.length === 1 ? pending[0] : undefined);
     if (!record && action.operation !== 'context')
       throw new Error(pending.length > 1 ? 'launch-owner-ambiguous' : 'launch-owner-unavailable');
-    if (record?.retirement || record?.retired || record?.reset || record?.supersededBy)
+    if (record?.retirement || record?.reset || record?.supersededBy)
       throw new Error('launch-owner-inactive');
     if (record?.manualIssue?.pullRequest && pullRequest)
       manualPullRequest(repo, item, record.manualIssue.pullRequest);
@@ -260,7 +255,6 @@ export default async function issueLaunch<
       record.context = JSON.stringify(evidence);
       await save();
     }
-
     if (
       adopted &&
       record &&
@@ -279,7 +273,7 @@ export default async function issueLaunch<
         id: record.id,
         destination: record.threadId,
         sameConversation: record.threadId === context.binding.session,
-        phase: record.phase,
+        phase: dispatchCreationStatus(record),
         pending: launchPending(record),
         instruction:
           'Reuse this managed issue destination and its current stage. Do not create another session or repeat completed setup. If creation or assessment dispatch is pending, call launch reconcile with this target from the original launching conversation.',
@@ -315,7 +309,7 @@ export default async function issueLaunch<
         manualIssue: manual,
         issueKey: key,
         sourceThreadId: context.binding.session,
-        phase: 'routing',
+
         createdAt: context.now,
         manifestDigest: automationHash(context.manifest),
         context: JSON.stringify(evidence),
@@ -369,7 +363,7 @@ export default async function issueLaunch<
           }
         : {}),
       id: record.id,
-      context: omit(JSON.parse(record.context!), ['body', 'comments', 'files', 'truncated']),
+      context: JSON.parse(record.context!),
       digest: automationHash({
         context: record.context,
         ...(record.adoptedPullRequest ? { adoptedPullRequest: record.adoptedPullRequest } : {}),

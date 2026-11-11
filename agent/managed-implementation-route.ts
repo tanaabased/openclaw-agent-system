@@ -2,7 +2,6 @@ import { realpath } from 'node:fs/promises';
 
 import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
 import type { AssessmentEntryDependencies } from './assessment-entry.ts';
-import type { ImplementationResult } from './implementation-result.ts';
 import { replyLocator } from './reply-target.ts';
 
 /** native adapters verify custody; matching work keeps its owner, scope and original receipts. */
@@ -10,7 +9,7 @@ export default async function managedImplementationRoute<T>(input: {
   action: unknown;
   currentTarget?: string;
   managed: AssessmentEntryDependencies['managed'];
-  route(owner: { id: string; eventId?: string }, result?: ImplementationResult): Promise<T>;
+  route(owner: { id: string; eventId?: string }): Promise<T>;
 }) {
   const action = parseDirectImplementationRequest(input.action);
   const target = action.target ?? input.currentTarget;
@@ -27,6 +26,6 @@ export default async function managedImplementationRoute<T>(input: {
     throw new Error('implementation-managed-context-mismatch');
   if (owner.nativeContext && action.operation === 'context') return;
   return {
-    result: owner.nativeContext ?? (await input.route(owner.owner, owner.implementationResult)),
+    result: owner.nativeContext ?? (await input.route(owner.owner)),
   };
 }

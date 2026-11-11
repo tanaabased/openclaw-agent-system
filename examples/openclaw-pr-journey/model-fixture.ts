@@ -21,10 +21,6 @@ const dispatchStages = [
   'native-plan-render',
   'context',
   'result',
-  'recovery-present',
-  'summary-compose',
-  'summary-candidate',
-  'summary-publish',
   'report',
   'discovery-inspect',
   'binding-verify',
@@ -43,12 +39,10 @@ const dispatchStages = [
   'delivery-announce',
   'delivery-repeat',
   'delivery-present',
-  'assessment-present',
   'feedback-context',
   'feedback-resume-context',
   'feedback-resume-context-repeat',
   'feedback-work-context',
-  'feedback-work-result',
   'feedback-delivery-prepare',
   'feedback-delivery-publish',
   ...Array.from({ length: 3 }, (_, index) => [
@@ -60,7 +54,6 @@ const dispatchStages = [
   'feedback-delivery-candidate',
   'feedback-delivery-announce',
   'feedback-delivery-present',
-  'feedback-result',
   'feedback-compose',
   'feedback-candidate',
   'feedback-publish',
@@ -114,6 +107,18 @@ function isTransientDelivery(result: Record<string, unknown>) {
   );
 }
 
+function isCompositionReadTimeout(stage: string, result: Record<string, unknown>) {
+  const diagnostic = result.providerDiagnostic as Record<string, unknown> | undefined;
+  return (
+    ['delivery-compose', 'feedback-delivery-compose'].includes(stage) &&
+    result.status === 'waiting' &&
+    result.code === 'github-notification-response-bounded' &&
+    diagnostic?.provider === 'github' &&
+    diagnostic.classification === 'transport' &&
+    diagnostic.httpStatus === null
+  );
+}
+
 function isPendingDelivery(result: Record<string, unknown>) {
   return (
     isTransientDelivery(result) ||
@@ -138,6 +143,7 @@ function call(stage: string, name: string, args: unknown): FixtureResponse {
 }
 
 interface PRFixtureOptions {
+  assessmentSkill?: string;
   explicitInitialLink?: boolean;
   initialQuestion?: boolean;
   incorporateCollaborator?: boolean;
@@ -183,23 +189,10 @@ export function nativePlanResponse(
       target,
       ...(context.presentationRequest as object),
       result: {
-        version: 1,
         outcome: initialQuestion ? 'clarification-needed' : 'plan-ready',
         summary: plan,
-        assessment: 'Disposable test issues need an explicit cleanup rule.',
-        fullAssessment:
-          'Inspected the existing test guidance. Add a cleanup rule after evidence capture, preserve evidence limits, review the diff and verify both runtimes. No deployment is needed.',
         reviewSummary: plan,
-        ...(initialQuestion
-          ? { questions: [plan] }
-          : {
-              plan: 'Update the disposable issue cleanup guidance, inspect the diff, commit it and create the authorized PR.',
-            }),
-        evidence: [],
-        progress: {
-          completed: ['Inspected test guidance.'],
-          remaining: ['Apply the agreed cleanup rule.'],
-        },
+        ...(initialQuestion ? { questions: [plan] } : {}),
         ...source,
       },
     });
@@ -234,7 +227,7 @@ export function nativePlanResponse(
     });
   assert.equal(composed.status, 'composition-ready');
   const skill = (composed.selection as { skill: { path: string } }).skill;
-  if (!skillRead) return call('summary-skill', 'read', { path: skill.path });
+  if (!skillRead) return call('plan-reply-skill', 'read', { path: skill.path });
   const candidate = result('native-plan-candidate');
   if (!candidate)
     return dispatch('native-plan-candidate', {
@@ -276,7 +269,7 @@ function respond(
       content: 'The linked PR contains the completed cleanup note. No further work was requested.',
     };
   }
-  // repeat only known contention, preserving the operation and its retained arguments.
+  // repeat only known contention or read-only composition timeouts with unchanged arguments.
   const attempts = new Map<string, number>();
   const result = (stage: string): Record<string, unknown> | undefined => {
     for (let attempt = 0; attempt <= 3; attempt++) {
@@ -287,7 +280,11 @@ function respond(
       }
       let value = JSON.parse(text);
       while (typeof value === 'string') value = JSON.parse(value);
-      if (!dispatchStages.includes(stage) || !isContention(value)) return value;
+      if (
+        !dispatchStages.includes(stage) ||
+        (!isContention(value) && !isCompositionReadTimeout(stage, value))
+      )
+        return value;
       if (attempt === 3) throw new Error(`notification-retry-exhausted: ${value.code}`);
     }
     return undefined;
@@ -314,54 +311,15 @@ function respond(
     if (retained.status !== 'reported' || typeof retained.response !== 'string') return;
     return { content: retained.response || 'notification-intake-unchanged' };
   };
-  const summary = (id: string, presentation?: string): FixtureResponse | undefined => {
-    if (!presentation) {
-      const shown = result('recovery-present');
-      if (!shown) return dispatch('recovery-present', { action: 'present' });
-      if (shown.status !== 'presented' || typeof shown.presentation !== 'string') return;
-      presentation = shown.presentation;
-    }
-    const args = { action: 'summary' };
-    const composed = result('summary-compose');
-    if (!composed)
-      return {
-        ...dispatch('summary-compose', { ...args, operation: 'compose' }),
-        content: presentation,
-      };
-    const skill = (composed.selection as { skill?: { path?: string } } | undefined)?.skill;
-    if (composed.status !== 'composition-ready' || !skill?.path) return;
-    if (openClawAIMockToolResultText(messages, prefix + 'summary-skill') === undefined)
-      return call('summary-skill', 'read', { path: skill.path });
-    const candidate = result('summary-candidate');
-    if (!candidate)
-      return dispatch('summary-candidate', {
-        ...args,
-        operation: 'candidate',
-        publicText: publicText(
-          composed,
-          'The plan is to document closing disposable test issues after capturing their evidence. The retained plan is ready for the configured workflow to continue.',
-        ),
-      });
-    if (candidate.status !== 'candidate-recorded') return;
-    const published = result('summary-publish');
-    if (!published) return dispatch('summary-publish', { ...args, operation: 'publish' });
-    if (published.status !== 'published' || typeof published.presentation !== 'string') return;
-    return { content: published.presentation };
-  };
   const nativePlan = (context: Record<string, unknown>) =>
     nativePlanResponse(
       context,
       result,
       dispatch,
       call,
-      Boolean(openClawAIMockToolResultText(messages, prefix + 'summary-skill')),
+      Boolean(openClawAIMockToolResultText(messages, prefix + 'plan-reply-skill')),
       options.initialQuestion,
     );
-  const recoveryId =
-    /recover only the pending public assessment summary[\s\S]*?id ([a-f0-9]{64})/u.exec(
-      prompt,
-    )?.[1];
-  if (recoveryId) return summary(recoveryId);
   const manual = prompt.includes('Advance previously admitted issue or feedback work.');
   if (manual || prompt.includes('Fill initially available intake slots in one bounded pass.')) {
     if (!manual && !prompt.includes('Consume saved discoveries')) {
@@ -436,11 +394,7 @@ function respond(
       if (advanced.nextAction === 'next') continue;
       const stoppedAdvance = terminal(advanced);
       if (stoppedAdvance) return stoppedAdvance;
-      if (
-        ['assessment-required', 'session-created', 'working-turn-completed'].includes(
-          String(advanced.status),
-        )
-      ) {
+      if (['assessment-required', 'session-created'].includes(String(advanced.status))) {
         const assessed = result(stage('assess'));
         if (!assessed) return dispatch(stage('assess'), { action: 'assess', target: next.target });
         advanced = assessed;
@@ -448,12 +402,7 @@ function respond(
       if (advanced.nextAction === 'next') continue;
       const stoppedAssessment = terminal(advanced);
       if (stoppedAssessment) return stoppedAssessment;
-      if (
-        !['assessment-pending', 'assessment-completed', 'working-turn-pending'].includes(
-          String(advanced.status),
-        )
-      )
-        return;
+      if (!['assessment-pending', 'assessment-completed'].includes(String(advanced.status))) return;
     }
     return;
   }
@@ -551,21 +500,6 @@ function respond(
           });
         if (executed.exitCode !== 0 || executed.truncated !== false) return;
       }
-      const completed = result('feedback-work-result');
-      if (initial && !completed)
-        return dispatch('feedback-work-result', {
-          action: 'implementation-result',
-          implementationResult: {
-            outcome: 'done',
-            summary: initial
-              ? 'Implemented the cleanup note.'
-              : 'Added the feedback continuity note.',
-            fullResult: initial
-              ? 'Created the cleanup note, checked the diff, and committed the requested implementation.'
-              : 'Updated the original note, checked the diff, and committed the feedback change.',
-          },
-        });
-      if (initial && completed?.status !== 'recorded') return;
       const title = 'Document disposable notification fixture cleanup';
       const body = 'Document closing disposable test issues after their evidence is captured.';
       const delivery = result('feedback-delivery-prepare');
@@ -629,7 +563,8 @@ function respond(
             operation: 'compose',
           });
         const selection = composed.selection as { skill?: { path?: string } } | undefined;
-        if (composed.status !== 'composition-ready' || !selection?.skill?.path) return;
+        if (composed.status !== 'composition-ready') return deliveryObstacle(composed);
+        if (!selection?.skill?.path) return;
         if (!openClawAIMockToolResultText(messages, prefix + 'delivery-skill'))
           return call('delivery-skill', 'read', { path: selection.skill.path });
         const candidate = result('feedback-delivery-candidate');
@@ -651,7 +586,7 @@ function respond(
             action: 'delivery',
             operation: 'announce',
           });
-        if (announced.status !== 'announced') return;
+        if (announced.status !== 'announced') return deliveryObstacle(announced);
         const presented = result('feedback-delivery-present');
         if (!presented)
           return dispatch('feedback-delivery-present', {
@@ -659,7 +594,9 @@ function respond(
             operation: 'present',
           });
         if (presented.status !== 'presented' || typeof presented.presentation !== 'string') return;
-        return { content: presented.presentation };
+        return {
+          content: [presented.presentation, announced.presentation].filter(Boolean).join('\n\n'),
+        };
       }
     }
     const privateText = initial
@@ -726,9 +663,10 @@ function respond(
       return;
     const selection = context.assessment as {
       defaultSkill: boolean;
-      skill: { path: string };
+      skill: { name?: string; path: string };
       guidance?: { content?: string; path?: string };
     };
+    if (options.assessmentSkill) assert.equal(selection.skill.name, options.assessmentSkill);
     if (openClawAIMockToolResultText(messages, prefix + 'assessment-skill') === undefined)
       return call('assessment-skill', 'read', { path: selection.skill.path });
     if (!selection.defaultSkill) {
@@ -782,7 +720,9 @@ function respond(
     const update =
       secondUpdate ||
       prompt.includes('Add a follow-up commit and update the existing PR title and body.');
-    const retry = prompt.includes('Show the saved plan and existing PR card again.');
+    const retry = prompt.includes(
+      'Show the plan from this conversation and existing PR card again.',
+    );
     const title = update
       ? 'Document disposable notification fixture cleanup and verification'
       : 'Document disposable notification fixture cleanup';
@@ -938,7 +878,7 @@ function respond(
           action: 'delivery',
           operation: 'compose',
         });
-      if (composed.status !== 'composition-ready') return;
+      if (composed.status !== 'composition-ready') return deliveryObstacle(composed);
       const selection = composed.selection as { skill?: { path?: string } } | undefined;
       if (!selection?.skill?.path) return;
       if (!openClawAIMockToolResultText(messages, prefix + 'delivery-skill'))
@@ -957,7 +897,7 @@ function respond(
           action: 'delivery',
           operation: 'announce',
         });
-      if (announced.status !== 'announced') return;
+      if (announced.status !== 'announced') return deliveryObstacle(announced);
       if (!automaticId)
         return {
           content:
@@ -981,7 +921,12 @@ function respond(
       });
     if (presented.status !== 'presented' || typeof presented.presentation !== 'string') return;
     return {
-      content: presented.presentation,
+      content: [
+        presented.presentation,
+        !retry && !update ? result('delivery-announce')?.presentation : undefined,
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
     };
   }
 }
@@ -992,7 +937,7 @@ function response(request: ChatCompletionRequest, options: PRFixtureOptions) {
   } catch (error) {
     if (
       error instanceof Error &&
-      /^(?:notification-retry-exhausted: (?:private-state-(?:file-lock-busy|snapshot-conflict)|discovery-checkpoint-changed)|notification-delivery-reconciliation-exhausted: github-delivery-(?:head-not-observed|github-request))$/u.test(
+      /^(?:notification-retry-exhausted: (?:private-state-(?:file-lock-busy|snapshot-conflict)|discovery-checkpoint-changed|github-notification-response-bounded)|notification-delivery-reconciliation-exhausted: github-delivery-(?:head-not-observed|github-request))$/u.test(
         error.message,
       )
     )
@@ -1036,7 +981,7 @@ export function createPRExampleScenario(
       { id: prefix + 'feedback-skill', name: 'read' },
       { id: prefix + 'feedback-implementation-skill', name: 'read' },
       { id: prefix + 'delivery-skill', name: 'read' },
-      { id: prefix + 'summary-skill', name: 'read' },
+      { id: prefix + 'plan-reply-skill', name: 'read' },
       { id: prefix + 'assessment-skill', name: 'read' },
       { id: prefix + 'implementation-skill', name: 'read' },
       { id: prefix + 'implementation-guidance', name: 'read' },

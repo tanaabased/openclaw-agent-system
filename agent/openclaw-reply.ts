@@ -1,24 +1,24 @@
-import selectReplyDraft from './reply-selection.ts';
-import { parseReplyRequest } from '../tools/dispatch/reply-schema.ts';
-import ReplyStore, { type ReplyDraft } from './reply-store.ts';
-import openClawFeedbackInput from './openclaw-feedback-input.ts';
-import { authorizeFeedback } from './openclaw-feedback.ts';
-import assignmentIntakePolicy from './assignment-intake-policy.ts';
-import { inspectIssueIdentity } from './dispatch-assignment.ts';
-import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
-import { feedbackTarget } from './reply-target.ts';
-import feedbackReply from './feedback-reply.ts';
-import type { OpenClawDispatchDependencies } from './openclaw-dispatch-context.ts';
-import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
-import { nativeInputEvent, operatorInputEvent } from './openclaw-session-input.ts';
-import { describeIssueSession, type DispatchCaller } from './openclaw-session-create.ts';
-import replyOwner, { retainedReply } from './reply-owner.ts';
-import replyOwnerContext from './reply-owner-context.ts';
+import { realpath } from 'node:fs/promises';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
+import { parseReplyRequest } from '../tools/dispatch/reply-schema.ts';
+import assignmentIntakePolicy from './assignment-intake-policy.ts';
+import { inspectIssueIdentity } from './dispatch-assignment.ts';
+import feedbackReply from './feedback-reply.ts';
+import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
+import type { OpenClawDispatchDependencies } from './openclaw-dispatch-context.ts';
+import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
+import openClawFeedbackInput from './openclaw-feedback-input.ts';
+import { authorizeFeedback } from './openclaw-feedback.ts';
+import openClawNativeTurns from './openclaw-native-turns.ts';
+import { describeIssueSession, type DispatchCaller } from './openclaw-session-create.ts';
+import { nativeInputEvent, operatorInputEvent } from './openclaw-session-input.ts';
 import openClawSkill from './openclaw-skill.ts';
-import { realpath } from 'node:fs/promises';
-
+import replyOwnerContext from './reply-owner-context.ts';
+import replyOwner from './reply-owner.ts';
+import selectReplyDraft from './reply-selection.ts';
+import ReplyStore, { type ReplyDraft } from './reply-store.ts';
+import { feedbackTarget } from './reply-target.ts';
 /** ordinary chats need neither an intake occurrence nor an enabled notification schedule. */
 export default async function openClawReply(input: {
   manifest: AgentManifest;
@@ -100,17 +100,13 @@ export default async function openClawReply(input: {
         return { inputEventId: matched.inputId, message: matched.event.source };
       }
       if (!input.operator) {
-        const turn = [
-          record?.assessmentTurn,
-          record?.decisionTurn,
-          record?.work?.turn,
-          record?.work?.deliveryTurn,
-        ].find((entry) => entry?.runId === caller.runId);
+        const turn = [...(record ? openClawNativeTurns(record).map(({ turn }) => turn) : [])].find(
+          (entry) => entry?.runId === caller.runId,
+        );
         if (!record) throw new Error('reply-operator-required');
         if (
           record.reset ||
           record.supersededBy ||
-          record.retired ||
           record.retirement ||
           record.sessionCreation?.sessionId !== caller.sessionId ||
           turn?.cancelled
@@ -176,9 +172,7 @@ export default async function openClawReply(input: {
         const record = state.records.find(
           (entry) => entry.id === source.ownerId && entry.threadId === caller.sessionKey,
         );
-        const retained =
-          record?.feedback?.events.find((entry) => entry.id === source.eventId) ??
-          record?.feedback?.completed?.find((entry) => entry.id === source.eventId);
+        const retained = record?.feedback?.events.find((entry) => entry.id === source.eventId);
         const event = source;
         const admitted =
           record && dispatchAdmission(record, (await current.store.read())?.records ?? []);
@@ -186,7 +180,7 @@ export default async function openClawReply(input: {
         const policy = assignmentIntakePolicy(fresh, 'openclaw');
         if (
           !record ||
-          !retained?.native ||
+          !retained ||
           !admitted ||
           !policy ||
           retained.revision !== source.revision ||
@@ -213,7 +207,7 @@ export default async function openClawReply(input: {
       assertCurrent,
       resolveSkill: (id) =>
         openClawSkill(request, { agentId: manifest.agent.id, key: caller.sessionKey }, id),
-      managed: async (target, purpose, privateText) => {
+      managed: async (target, purpose) => {
         const state = await journal.read();
         const admitted = await current.store.read();
         if (purpose || feedback) {
@@ -224,12 +218,7 @@ export default async function openClawReply(input: {
         }
         return replyOwner(
           state.records
-            .filter(
-              (record) =>
-                purpose ||
-                record.threadId === caller.sessionKey ||
-                retainedReply(record.feedback?.events, target, privateText),
-            )
+            .filter((record) => purpose || record.threadId === caller.sessionKey)
             .map((record) =>
               replyOwnerContext({
                 record,
@@ -244,14 +233,13 @@ export default async function openClawReply(input: {
                   !('key' in record.request) ||
                   record.request.key !== record.threadId ||
                   record.request.agentId !== manifest.agent.id,
-                delivery: record.work?.delivery,
+                delivery: record.delivery,
               }),
             ),
           caller.sessionKey,
           caller.sessionId,
           target,
           purpose,
-          privateText,
         );
       },
     });

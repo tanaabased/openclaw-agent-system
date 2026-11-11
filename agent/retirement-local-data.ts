@@ -1,12 +1,12 @@
-import AssessmentEntryStore, { DirectEntryStore } from './assessment-entry-store.ts';
+import { DirectEntryStore } from './direct-entry-store.ts';
 import { implementationEntriesSchema } from './implementation-entry-state.ts';
+import type { ManagedIssue } from './managed-issue.ts';
 import ReplyStore, { type ReplyBinding } from './reply-store.ts';
 import {
   retirementDeliveryEffects,
   retirementReplyEffect,
   type RetirementEffect,
 } from './retirement-effects.ts';
-import type { ManagedIssue } from './managed-issue.ts';
 
 /** transfer uncertain writes before deleting the exact native task's copied local material. */
 export default async function retirementLocalData(input: {
@@ -39,10 +39,6 @@ export default async function retirementLocalData(input: {
         .filter(owns)
         .flatMap((entry) => retirementDeliveryEffects(entry.delivery, input.intake)),
     );
-    entries.splice(0, entries.length, ...entries.filter((entry) => !owns(entry)));
-    await save(true);
-  });
-  await new AssessmentEntryStore(input.root, input.binding).exclusive(async (entries, save) => {
     entries.splice(0, entries.length, ...entries.filter((entry) => !owns(entry)));
     await save(true);
   });

@@ -1,41 +1,34 @@
-import { notificationAuthorityDigest } from './notification-authority.ts';
+import { mkdir, readdir, realpath, rmdir } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { workflowFeedbackAvailable } from '../channels/github/feedback-policy.ts';
+import { codexInstanceStore } from './codex-assignment-claims.ts';
 import codexAutomationSchedule from './codex-automation-schedule.ts';
+import IssuePickupEnrollmentStore from './issue-pickup-enrollment.ts';
 import {
   issuePickupAutomationId,
   issuePickupConfigurationCode,
   issuePickupErrorCode,
 } from './issue-pickup-jobs.ts';
-import IssuePickupEnrollmentStore from './issue-pickup-enrollment.ts';
-import { codexInstanceStore } from './codex-assignment-claims.ts';
-import { workflowFeedbackAvailable } from '../channels/github/feedback-policy.ts';
-import { mkdir, readdir, realpath, rmdir } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { notificationAuthorityDigest } from './notification-authority.ts';
 
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { AutomationError } from './automation-gateway.ts';
-import AutomationThreads, {
-  AutomationThreadSettingsHandoff,
-  AutomationThreadSettingsError,
-  type AutomationThreadModelObservation,
-  automationThreadSelection,
-  type AutomationThreadAdapter,
-} from './automation-threads.ts';
-import { codexThreadAdapter, connectCodexThreads } from './codex-thread-client.ts';
-import { codexIntakeJobs, intakeAutomationId } from './codex-intake-policy.ts';
 import { IntakeError } from '../channels/github/intake/record-store.ts';
-import {
-  prepareCodexPickupEnrollment,
-  inspectCodexPickup,
-  preflightCodexIntake,
-  runCodexIntake,
-  type CodexIntakeDependencies,
-} from './codex-intake.ts';
+import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
+import PrivateStateFile from '../core/private-state-file.ts';
 import type { ResolvedAutomation } from '../manifest/automation-schema.ts';
 import type { AgentManifest } from '../manifest/types.ts';
+import { AutomationError } from './automation-gateway.ts';
 import { automationHash } from './automation-hash.ts';
+import AutomationThreads, {
+  AutomationThreadSettingsError,
+  AutomationThreadSettingsHandoff,
+  automationThreadSelection,
+  type AutomationThreadAdapter,
+  type AutomationThreadModelObservation,
+} from './automation-threads.ts';
 import planCodexAutomations, {
   automationRecordSchema,
   codexAutomationMarker,
@@ -49,16 +42,23 @@ import {
   CodexAutomationError,
   nativeAutomationSchema,
   parseAutomationReceipt,
+  readCodexAutomationDefaults,
   readCodexAutomationSelection,
   readCodexAutomations,
-  readCodexAutomationDefaults,
   type SavedAutomation,
 } from './codex-automation-state.ts';
-import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
-import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
-import PrivateStateFile from '../core/private-state-file.ts';
+import { codexIntakeJobs, intakeAutomationId } from './codex-intake-policy.ts';
+import {
+  inspectCodexPickup,
+  preflightCodexIntake,
+  prepareCodexPickupEnrollment,
+  runCodexIntake,
+  type CodexIntakeDependencies,
+} from './codex-intake.ts';
 import CodexSidebarJournal, { type SidebarEffect } from './codex-sidebar-journal.ts';
 import { sidebarSections } from './codex-sidebar-placement.ts';
+import { codexThreadAdapter, connectCodexThreads } from './codex-thread-client.ts';
+import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
 
 class SidebarPending extends AutomationError {
   constructor(readonly effect: Exclude<SidebarEffect, { status: 'done' }>) {
@@ -603,6 +603,7 @@ export async function inspectCodexAutomations(
 export async function inspectCodexPickupActivation(
   pluginData: string,
   dependencies: CodexAutomationDependencies = {},
+  acceptedOccurrence = false,
 ) {
   const selected = await snapshot(pluginData, dependencies);
   const job = selected.jobs.find((entry) => entry.id === issuePickupAutomationId);
@@ -623,7 +624,13 @@ export async function inspectCodexPickupActivation(
   if (
     matches.length !== 1 ||
     matches[0]!.id !== record.nativeId ||
-    !savedMatches(matches[0]!, record.definition, selected.workspace) ||
+    !savedMatches(
+      matches[0]!,
+      acceptedOccurrence
+        ? { ...record.definition, status: matches[0]!.definition.status }
+        : record.definition,
+      selected.workspace,
+    ) ||
     record.definition.prompt !==
       job.payload.prompt +
         '\n\n' +
@@ -631,7 +638,7 @@ export async function inspectCodexPickupActivation(
     record.definition.rrule !== codexAutomationSchedule(job.schedule, record.definition.rrule)
   )
     throw new CodexAutomationError('issue-pickup-automation-drift');
-  if (!job.enabled || record.definition.status !== 'ACTIVE')
+  if (!acceptedOccurrence && (!job.enabled || record.definition.status !== 'ACTIVE'))
     throw new CodexAutomationError('issue-pickup-paused');
   return { threadId: record.definition.targetThreadId, nativeId: record.nativeId };
 }
@@ -648,8 +655,7 @@ export async function inspectCodexDispatchActivation(
     | 'implementation'
     | 'review'
     | 'publication'
-    | 'feedback'
-    | 'assessment-summary' = 'assessment',
+    | 'feedback' = 'assessment',
 ) {
   const selected = await snapshot(pluginData, dependencies);
   const job = selected.jobs.find((entry) => entry.id === intakeAutomationId);
@@ -712,8 +718,7 @@ export async function inspectCodexDispatchActivation(
               selected.loaded.manifest.github.notifications,
               'issue-assignment',
             )
-          : capability !== 'assessment-summary' &&
-            !['work', 'auto'].includes(
+          : !['work', 'auto'].includes(
               selected.loaded.manifest.github.notifications.issueAssignment?.mode ?? '',
             )) ||
         !job ||
@@ -737,12 +742,10 @@ export async function inspectCodexDispatchActivation(
       saved: {
         ...authority,
         version: 1 as const,
-        capabilities: (capability === 'assessment-summary'
-          ? ['assessment-summary']
-          : capability === 'feedback'
-            ? ['feedback', 'publication']
-            : ['assessment', 'implementation', 'publication']) as Array<
-          'assessment' | 'implementation' | 'publication' | 'feedback' | 'assessment-summary'
+        capabilities: (capability === 'feedback'
+          ? ['feedback', 'publication']
+          : ['assessment', 'implementation', 'publication']) as Array<
+          'assessment' | 'implementation' | 'publication' | 'feedback'
         >,
       },
     },
@@ -969,11 +972,16 @@ export async function replaceCodexNotificationCoordinator(
           entry.enrollment.workspaceDir === selected.workspace &&
           entry.enrollment.agentId === selected.loaded.manifest.agent.id &&
           entry.enrollment.runtime === 'codex' &&
-          [before.id, actual.id].includes(entry.nativeId ?? ''),
+          entry.nativeId !== undefined,
       );
-      if (matches.length !== 1) throw new Error('issue-pickup-enrollment-missing');
-      const enrollment = matches[0]!;
-      if (enrollment.nativeId !== actual.id)
+      if (
+        matches.length > 1 ||
+        (!matches.length && before.definition.status === 'ACTIVE') ||
+        matches.some((entry) => ![before.id, actual.id].includes(entry.nativeId!))
+      )
+        throw new Error('issue-pickup-enrollment-missing');
+      const enrollment = matches[0];
+      if (enrollment && enrollment.nativeId !== actual.id)
         await enrollments.activate(enrollment.enrollment.id, actual.id, before.id);
     }
     record.nativeId = actual.id;
@@ -1119,6 +1127,7 @@ export async function prepareCodexAutomation(
   digest: string,
   inputs: CodexAutomationInputs = {},
   dependencies: CodexAutomationDependencies = {},
+  id?: string,
 ) {
   const initial = await snapshot(pluginData, dependencies);
   return withJournal(initial, async () => {
@@ -1133,7 +1142,9 @@ export async function prepareCodexAutomation(
     ) {
       throw new CodexAutomationError('automation-plan-stale-or-blocked');
     }
-    const action = result.actions[0];
+    const action =
+      id === undefined ? result.actions[0] : result.actions.find((item) => item.manifestId === id);
+    if (!action) throw new CodexAutomationError('automation-action-not-found');
     if (action.manifestId === issuePickupAutomationId && action.expected.status === 'ACTIVE')
       await prepareCodexPickupEnrollment(pluginData, {
         ...dependencies.intake,

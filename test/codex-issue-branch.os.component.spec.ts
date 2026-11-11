@@ -5,10 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
-import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
-import codexIssueBranch from '../agent/codex-issue-branch.ts';
 import type { DispatchGit } from '../agent/codex-dispatch-project.ts';
 import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
+import codexIssueBranch from '../agent/codex-issue-branch.ts';
+import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 
 const execute = promisify(execFile);
 // exercise local git mechanics, not the host's managed launcher or credential configuration.
@@ -82,15 +82,15 @@ describe('agent/codex-issue-branch', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  it('should isolate a fresh attempt from preserved retired commits and retry on the same branch', async () => {
+  it('should isolate a fresh attempt from preserved reset commits and retry on the same branch', async () => {
     const old = await prepare();
-    await writeFile(join(root, 'work.txt'), 'retired work');
+    await writeFile(join(root, 'work.txt'), 'reset work');
     await git('commit', '-am', 'old work');
     const oldHead = await git('rev-parse', 'HEAD');
-    record.retired = { at: 1, by: 'operator' };
+    record.reset = { at: 1, by: 'operator' };
     await git('switch', '--detach', base);
     const previous = record;
-    record = { ...record, id: 'b'.repeat(64), issueBranch: undefined, retired: undefined };
+    record = { ...record, id: 'b'.repeat(64), issueBranch: undefined, reset: undefined };
     records = [previous, record];
     const fresh = await prepare();
     assert.notEqual(fresh, old);
@@ -203,12 +203,14 @@ describe('agent/codex-issue-branch', () => {
     assert.equal(await git('rev-parse', 'HEAD'), base);
   });
 
-  it('should reject another branch without changing files or refs', async () => {
+  it('should adopt a switched branch without changing files or refs', async () => {
     const owned = await prepare();
     await git('switch', '-c', '42-historical-branch');
     await writeFile(join(root, 'work.txt'), 'preserve me');
-    await assert.rejects(prepare(), /codex-branch-owner-mismatch/);
-    await assert.rejects(prepare({ prepare: false }), /codex-branch-owner-mismatch/);
+    assert.equal(await prepare({ prepare: false }), '42-historical-branch');
+    assert.equal(record.issueBranch?.name, owned);
+    assert.equal(await prepare(), '42-historical-branch');
+    assert.equal(record.issueBranch?.name, '42-historical-branch');
     assert.equal(await git('branch', '--show-current'), '42-historical-branch');
     assert.match(await git('diff'), /preserve me/);
     assert.equal(await git('rev-parse', owned), base);
@@ -234,17 +236,17 @@ describe('agent/codex-issue-branch', () => {
     assert.equal(await git('rev-parse', record.issueBranch!.name), base);
   });
 
-  it('should preserve legacy authored work without adopting its issue-shaped branch', async () => {
+  it('should adopt authored work from a custom branch', async () => {
     await git('switch', '-c', '42-old-branch');
     await writeFile(join(root, 'work.txt'), 'old work');
     await git('commit', '-am', 'old work');
     const head = await git('rev-parse', 'HEAD');
-    await assert.rejects(prepare(), /codex-branch-owner-required/);
-    assert.equal(record.issueBranch, undefined);
+    assert.equal(await prepare(), '42-old-branch');
+    assert.equal(record.issueBranch?.name, '42-old-branch');
     assert.equal(await git('rev-parse', 'HEAD'), head);
   });
 
-  it('should retain only an exact legacy delivery owner and reject conflicting retired ownership', async () => {
+  it('should retain only an exact legacy delivery owner and reject conflicting reset ownership', async () => {
     await git('switch', '-c', 'legacy-delivery');
     record.delivery = {
       binding: {
@@ -255,16 +257,15 @@ describe('agent/codex-issue-branch', () => {
         branch: 'legacy-delivery',
       },
     } as NonNullable<DispatchRecord['delivery']>;
-    await assert.rejects(prepare(), /codex-branch-owner-required/);
     record.delivery.pullRequest = { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 };
-    await assert.rejects(prepare(), /codex-branch-owner-required/);
+    await assert.rejects(prepare(), /codex-branch-owner-mismatch/);
     record.delivery.binding.threadId = record.threadId!;
     assert.equal(await prepare({ prepare: false }), 'legacy-delivery');
     records.push({
       ...record,
       id: 'b'.repeat(64),
       issueBranch: { attemptId: 'b'.repeat(64), name: 'legacy-delivery', phase: 'ready' },
-      retired: { at: 1, by: 'operator' },
+      reset: { at: 1, by: 'operator' },
     });
     await assert.rejects(prepare(), /codex-branch-owner-mismatch/);
   });

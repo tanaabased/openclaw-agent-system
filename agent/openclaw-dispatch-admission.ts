@@ -1,17 +1,18 @@
+import dispatchCreationStatus from './dispatch-creation-status.ts';
+import type { Static } from 'typebox';
 import { assignmentClaimRoute } from './assignment-claim-source.ts';
+import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
 import issueChatTitle from './issue-chat-title.ts';
-import { dispatchAdmission, managedPullRequest } from './managed-issue.ts';
 import verifyIssuePullRequest from './issue-pr-selection.ts';
+import { dispatchAdmission, managedPullRequest } from './managed-issue.ts';
+import { nativeTurnFor } from './openclaw-native-turns.ts';
 import openClawRoutingInstructions from './openclaw-routing-instructions.ts';
 import { assertRoutingInstructions, routingInstructionsDigest } from './routing-instructions.ts';
-import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
-import type { Static } from 'typebox';
 
 import type { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import { automationHash } from './automation-hash.ts';
 import dispatchRoutingAssessment from './dispatch-routing-assessment.ts';
 import resolveModelRoutingRequest from './model-routing-request.ts';
-import { selectOpenClawAssessment } from './openclaw-assessment.ts';
 import dispatchCapacity from './openclaw-capacity.ts';
 import {
   type default as OpenClawDispatchContext,
@@ -19,11 +20,11 @@ import {
   type OpenClawDispatchValidation,
 } from './openclaw-dispatch-context.ts';
 
+import managedGroupName from '../utils/managed-group-name.ts';
 import { type OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import { sameIntakeRun } from './openclaw-intake-pass.ts';
 import createIssueSession from './openclaw-session-create.ts';
 import advanceIssueTurn from './openclaw-session-turn.ts';
-import managedGroupName from '../utils/managed-group-name.ts';
 
 function digest(record: OpenClawDispatchRecord) {
   return automationHash({
@@ -53,7 +54,6 @@ export default class OpenClawDispatchAdmission {
       save,
       transactionSignal,
       sourceThreadId,
-      now,
     } = tx;
     const { client, intake, worktreeInput } = verified;
     const claims = this.context.dependencies.claims;
@@ -91,7 +91,7 @@ export default class OpenClawDispatchAdmission {
         hasCapacity:
           Boolean(record.request) ||
           dispatchCapacity(
-            state.records,
+            state,
             current.policy.policy.maxConcurrentItems,
             state.projectPickup,
             'initiation' in intake ? undefined : intake.evidence?.projectWork?.pickup?.issueNodeId,
@@ -117,14 +117,18 @@ export default class OpenClawDispatchAdmission {
       if (
         !record.manualIssue &&
         !dispatchCapacity(
-          state.records,
+          state,
           current.policy.policy.maxConcurrentItems,
           state.projectPickup,
           'initiation' in intake ? undefined : intake.evidence?.projectWork?.pickup?.issueNodeId,
         ).available
       )
         return { status: 'at-capacity' as const, id: record.id };
-      if (record.phase !== 'routing' || input.digest !== digest(record) || !record.context)
+      if (
+        dispatchCreationStatus(record) !== 'routing' ||
+        input.digest !== digest(record) ||
+        !record.context
+      )
         throw new Error('dispatch-preparation-stale');
       setStage('routing');
       const instructions = await openClawRoutingInstructions(this.context, tx);
@@ -148,10 +152,9 @@ export default class OpenClawDispatchAdmission {
         },
         'openclaw',
       );
-      if (!('candidate' in routing) || routing.candidate?.status !== 'mapped')
-        throw new Error('dispatch-routing-unresolved');
+      if (!('candidate' in routing)) throw new Error(routing.code);
       setStage('worktree');
-      if (!record.worktree && !record.worktreeAttemptId) {
+      if (!record.worktreeAttemptId) {
         // Save before Git runs so a lost preparation result still retries the same attempt.
         record.worktreeAttemptId = record.id;
         record.separateCheckout = true;
@@ -182,7 +185,6 @@ export default class OpenClawDispatchAdmission {
       }
       record.routing = JSON.stringify(routing);
       record.routingInstructions = instructions;
-      record.routingNote = `Requested ${routing.candidate.model} / ${routing.candidate.thinking}; session settings are verified at creation, not model execution.`;
       delete record.retry;
       delete record.retryAfter;
       record.request = {
@@ -205,17 +207,12 @@ export default class OpenClawDispatchAdmission {
         sourceRunId: caller.runId,
         sourceToolCallId: caller.toolCallId,
       };
-      record.phase = 'creating';
+
       setStage('verification');
       await this.context.validateLocal(manifest, workspace, record);
       await save();
     }
-    if (
-      input.action === 'prepare' ||
-      input.action === 'reconcile' ||
-      input.action === 'start' ||
-      input.action === 'assess'
-    ) {
+    if (input.action === 'prepare' || input.action === 'reconcile' || input.action === 'assess') {
       if (!record.sessionCreation || !record.request)
         throw new Error('dispatch-session-creation-required');
       if (
@@ -227,9 +224,8 @@ export default class OpenClawDispatchAdmission {
           managedGroupName(intake.repository.name, 512)
       )
         throw new Error('dispatch-session-binding-changed');
-      const assessment = input.action === 'assess' || Boolean(record.assessmentTurn);
-      const working = assessment || input.action === 'start' || Boolean(record.firstTurn);
-      setStage(assessment ? 'assessment-turn' : working ? 'first-turn' : 'session-create');
+      const assessment = input.action === 'assess' || Boolean(nativeTurnFor(record, 'assessment'));
+      setStage(assessment ? 'assessment-turn' : 'session-create');
       const signal = authority.signal
         ? AbortSignal.any([authority.signal, transactionSignal])
         : transactionSignal;
@@ -248,23 +244,6 @@ export default class OpenClawDispatchAdmission {
           signal.throwIfAborted();
         },
       };
-      if (assessment && !record.assessmentTurn) {
-        await turnAuthority.assertCurrent();
-        await this.context.dependencies.credential.use(turnAuthority, async (request) => {
-          await selectOpenClawAssessment({
-            request,
-            record,
-            workspace: current.workspace,
-            configuration: {
-              ...current.policy.policy.issueAssignment?.assessment,
-              ...record.manualIssue?.selections?.assessment,
-            },
-            now,
-          });
-          await turnAuthority.assertCurrent();
-          await save();
-        });
-      }
       if (record.predecessorId) {
         const predecessor = state.records.find((r) => r.id === record.predecessorId);
         const admission =
@@ -297,7 +276,7 @@ export default class OpenClawDispatchAdmission {
         } else if (predecessor?.claimId || predecessor?.claimAccepted)
           throw new Error('claim-recovery-owner-unresolved');
       }
-      const result = await (working ? advanceIssueTurn : createIssueSession)({
+      const result = await (assessment ? advanceIssueTurn : createIssueSession)({
         config: this.context.dependencies.config(),
         credential: this.context.guardedCredential(async (method) => {
           const checked = await this.context.validate(
@@ -320,7 +299,6 @@ export default class OpenClawDispatchAdmission {
         record,
         save,
         authority: turnAuthority,
-        assessment,
         presentation: { intake, workspace: current.workspace, debug: manifest.debug },
       });
       if (

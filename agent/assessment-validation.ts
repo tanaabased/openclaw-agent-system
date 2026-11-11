@@ -1,3 +1,4 @@
+import { assessmentFallbackInstructions } from './assessment-instructions.ts';
 import type { TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
@@ -17,8 +18,7 @@ export default class AssessmentValidationError extends Error {
       error?.keyword === 'required'
         ? error.params.requiredProperties.map((property) => `${path}.${property}`)
         : [path];
-    const instruction =
-      'Correct the listed fields against the supplied contract using existing findings; preserve the complete source and request destination. Use new validation diagnostics to correct remaining mistakes; do not repeat an unchanged invalid request. If no supported correction is available, report the affected operation and continue independently authorized work. Do not invent findings, truncate the source or restart the task.';
+    const instruction = assessmentFallbackInstructions;
     super(`${code}: invalid or missing fields: ${fields.join(', ')}. ${instruction}`);
     this.recovery = { instruction, fields };
   }

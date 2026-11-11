@@ -1,27 +1,29 @@
-import workflowFailure from './workflow-failure.ts';
+import { withDispatchTask } from './dispatch-task-scope.ts';
 import { omit } from 'lodash-es';
-import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
-import codexAssessmentSkill from './codex-assessment-skill.ts';
-import connectCodexFeedback from './codex-feedback-client.ts';
-import { feedbackInputContext } from './feedback-input.ts';
-import authorizeFeedback from './feedback-source-context.ts';
-import { feedbackConversationMode } from './feedback-work.ts';
-import taskTurnContext from './task-turn-context.ts';
 import resolveGitProtocol from '../tools/git/protocol.ts';
+import codexAssessmentSkill from './codex-assessment-skill.ts';
 import codexContinuationNative from './codex-continuation-native.ts';
 import { codexDispatchNative, type DispatchNativeThread } from './codex-dispatch-native.ts';
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
+import connectCodexFeedback from './codex-feedback-client.ts';
 import { selectCodexIntake } from './codex-intake.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
+import { feedbackConversationMode } from './feedback-conversation-mode.ts';
+import { feedbackInputContext } from './feedback-input.ts';
+import authorizeFeedback from './feedback-source-context.ts';
 import { retainedIssueProgression } from './issue-progression.ts';
+import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
 import taskPullRequest from './task-pull-request.ts';
-
-type Turn = { threadId: string; turnId?: string };
+import taskTurnContext from './task-turn-context.ts';
+import workflowFailure from './workflow-failure.ts';
+type Turn = {
+  threadId: string;
+  turnId?: string;
+};
 type Lookup = {
   find: ReturnType<typeof codexDispatchNative>['find'];
   receipt: ReturnType<typeof codexContinuationNative>;
 };
-
 /** verify native creation custody, including a child that starts before coordinator readback. */
 export async function selectCodexTaskOwner(
   records: readonly DispatchRecord[],
@@ -29,18 +31,19 @@ export async function selectCodexTaskOwner(
   find: Lookup['find'],
 ) {
   const owners = records.filter(
-    (record) =>
-      record.threadId === threadId && !record.retired && !record.reset && !record.supersededBy,
+    (record) => record.threadId === threadId && !record.reset && !record.supersededBy,
   );
   if (owners.length > 1) throw new Error('turn-context-owner-ambiguous');
-  const matches: { record: DispatchRecord; native: DispatchNativeThread }[] = [];
-  for (const record of records) {
+  const matches: {
+    record: DispatchRecord;
+    native: DispatchNativeThread;
+  }[] = [];
+  for (const record of owners.length ? owners : records) {
     if (
       !record.request ||
-      record.retired ||
       record.reset ||
       record.supersededBy ||
-      (record.threadId ? record.threadId !== threadId : record.phase !== 'creating')
+      (record.threadId && record.threadId !== threadId)
     )
       continue;
     let native;
@@ -65,7 +68,6 @@ export async function selectCodexTaskOwner(
   }
   return matches[0];
 }
-
 /** resolve hints through native creation and send receipts, never provider text. */
 export async function selectCodexTurnTask(
   records: readonly DispatchRecord[],
@@ -79,7 +81,12 @@ export async function selectCodexTurnTask(
   if (!turnId) throw new Error('turn-context-native-turn-unavailable');
   const feedback = [];
   let unresolvedFeedback = false;
-  let feedbackLimitation: { code: string } | undefined;
+  let currentFeedbackUnresolved = false;
+  let feedbackLimitation:
+    | {
+        code: string;
+      }
+    | undefined;
   for (const event of record.feedback?.events ?? []) {
     if (
       !event.attempt ||
@@ -91,15 +98,24 @@ export async function selectCodexTurnTask(
       const receipt = await lookup.receipt(record.sourceThreadId, event.attempt);
       if (receipt.status === 'verified' && receipt.turnId === turnId) {
         feedback.push(event);
-      } else if (receipt.status !== 'verified') unresolvedFeedback = true;
+      } else if (receipt.status !== 'verified') {
+        if ('turnId' in receipt && receipt.turnId && receipt.turnId !== turnId) continue;
+        unresolvedFeedback = true;
+        currentFeedbackUnresolved ||=
+          event.attempt.turnId === turnId || ('turnId' in receipt && receipt.turnId === turnId);
+        if ('code' in receipt && receipt.code) feedbackLimitation = { code: receipt.code };
+      }
     } catch (error) {
       unresolvedFeedback = true;
+      currentFeedbackUnresolved ||= event.attempt.turnId === turnId;
       feedbackLimitation = {
         code: workflowFailure(error, 'feedback-native-input-unavailable').code,
       };
     }
   }
-  const source = !unresolvedFeedback && feedback.length === 1 ? feedback[0] : undefined;
+  const source = !currentFeedbackUnresolved && feedback.length === 1 ? feedback[0] : undefined;
+  if (source) feedbackLimitation = undefined;
+  else if (feedback.length > 1) feedbackLimitation = { code: 'feedback-native-input-ambiguous' };
   const implementation = Boolean(retainedIssueProgression(record));
   return {
     currentTurn: { threadId: turn.threadId, turnId },
@@ -120,9 +136,11 @@ export async function selectCodexTurnTask(
     branch: record.issueBranch?.name,
   };
 }
-
 /** read the bound journal and native receipts without discovery, reconciliation, or writes. */
-export async function readCodexTaskOwner(pluginData: string, turn: Turn) {
+export function readCodexTaskOwner(pluginData: string, turn: Turn) {
+  return withDispatchTask('codex', turn.threadId, () => readScopedTaskOwner(pluginData, turn));
+}
+async function readScopedTaskOwner(pluginData: string, turn: Turn) {
   const current = await selectCodexIntake(
     pluginData,
     {},
@@ -132,8 +150,7 @@ export async function readCodexTaskOwner(pluginData: string, turn: Turn) {
   const records = (await journal.read()).records;
   if (
     !records.some(
-      (record) =>
-        record.threadId === turn.threadId || (!record.threadId && record.phase === 'creating'),
+      (record) => record.threadId === turn.threadId || (!record.threadId && record.request),
     )
   )
     return;
@@ -160,7 +177,6 @@ export async function readCodexTaskOwner(pluginData: string, turn: Turn) {
     await connection.close();
   }
 }
-
 /** hooks and explicit recovery share one read-only native context owner. */
 export default async function readCodexTurnTask(
   pluginData: string,

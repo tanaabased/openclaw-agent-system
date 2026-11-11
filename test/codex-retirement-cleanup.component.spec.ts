@@ -23,7 +23,7 @@ describe('codex retirement cleanup', () => {
       intakeId: 'i',
       issueKey: 'k',
       sourceThreadId: 'owner',
-      phase: 'complete',
+
       createdAt: 1,
       manifestDigest: 'd',
       threadId: 'child',

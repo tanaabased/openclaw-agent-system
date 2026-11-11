@@ -1,24 +1,24 @@
-import { nativeIssueContext } from '../agent/implementation-delivery.ts';
-import hydrateImplementation from './implementation-material-fixture.ts';
 import assert from 'node:assert/strict';
-import { mkdtemp, realpath, rm, writeFile, mkdir, readdir, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { nativeIssueContext } from '../agent/native-issue-context.ts';
+import hydrateImplementation from './implementation-material-fixture.ts';
 
-import renderNativeAssessment from '../agent/assessment-render.ts';
 import assessmentEntry, { type AssessmentEntryDependencies } from '../agent/assessment-entry.ts';
+import renderNativeAssessment from '../agent/assessment-render.ts';
 import assessmentSkillSource from '../agent/assessment-skill-source.ts';
+import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
+import { DirectEntryStore } from '../agent/direct-entry-store.ts';
+import implementationEntryDelivery from '../agent/implementation-entry-delivery.ts';
+import { implementationEntriesSchema } from '../agent/implementation-entry-state.ts';
 import implementationEntry from '../agent/implementation-entry.ts';
 import {
   implementationReviewInstructions,
   taskScopeInstructions,
 } from '../agent/native-task-instructions.ts';
-import implementationEntryDelivery from '../agent/implementation-entry-delivery.ts';
-import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
-import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
-import { DirectEntryStore } from '../agent/assessment-entry-store.ts';
-import { implementationEntriesSchema } from '../agent/implementation-entry-state.ts';
 import type { AgentManifest } from '../manifest/types.ts';
+import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
 const target = 'https://github.com/owner/repo/issues/3';
@@ -103,8 +103,8 @@ describe('agent/implementation-entry', () => {
       const context = await call();
       assert.ok('id' in context);
       await call('result', { result: ready });
-      const request = { action: 'implementation', operation: 'present' };
-      assert.equal((await implementationEntry(request, deps)).status, 'presented');
+      const request = { action: 'implementation', operation: 'context' };
+      assert.equal((await implementationEntry(request, deps)).status, 'verified');
       for (const field of ['id', 'digest', 'agentId', 'workspace', 'threadId'])
         await assert.rejects(
           implementationEntry({ ...request, [field]: context.id }, deps),
@@ -125,16 +125,19 @@ describe('agent/implementation-entry', () => {
         await save();
       });
       await assert.rejects(implementationEntry(request, deps), /target-selection-required/);
-      assert.equal((await implementationEntry({ ...request, target }, deps)).status, 'presented');
+      assert.equal((await implementationEntry({ ...request, target }, deps)).status, 'verified');
       deps.binding.incarnation = 'another-native-conversation';
-      await assert.rejects(implementationEntry({ ...request, target }, deps), /entry-unavailable/);
+      assert.equal(
+        (await implementationEntry({ ...request, target }, deps)).status,
+        'clarification-needed',
+      );
     });
 
   for (const runtime of ['codex', 'openclaw'] as const) {
     it(`should preserve delivered ${runtime} implementation facts when skill lookup fails`, async () => {
       deps.binding.runtime = runtime;
       const ownerId = 'd'.repeat(64);
-      const nativeContext = nativeIssueContext({ id: ownerId, phase: 'complete', worktree: root });
+      const nativeContext = nativeIssueContext({ id: ownerId, worktree: root });
       const before = structuredClone(nativeContext);
       deps.managed = async () => ({
         digest: 'c'.repeat(64),
@@ -179,7 +182,6 @@ describe('agent/implementation-entry', () => {
       const nativeContext = nativeIssueContext({
         id: ownerId,
         worktree: root,
-        phase: 'complete',
       });
       deps.managed = async () => ({
         digest: 'c'.repeat(64),
@@ -228,7 +230,7 @@ describe('agent/implementation-entry', () => {
       );
     });
 
-  it('should retain completed implementation after more than twenty direct entries', async () => {
+  it('should retain direct custody without copying completed output across twenty entries', async () => {
     const connect = deps.connectProvider;
     deps.connectProvider = async () => {
       const provider = await connect();
@@ -256,10 +258,6 @@ describe('agent/implementation-entry', () => {
     deps.connectProvider = async () => {
       throw new Error('completed work must recover without provider access');
     };
-    const recovered = await call('present', {});
-    assert.equal(recovered.status, 'presented');
-    assert.ok('previousResult' in recovered);
-    assert.deepEqual(recovered.previousResult, ready);
   });
 
   for (const runtime of ['codex', 'openclaw'] as const)
@@ -278,15 +276,8 @@ describe('agent/implementation-entry', () => {
         'implementation',
       );
       const entries = await store.exclusive(async (entries) => structuredClone(entries));
-      assert.equal(entries[0]!.plan, undefined);
-      assert.equal(entries[0]!.authorizationText, undefined);
-      assert.equal(entries[0]!.scopeText, undefined);
+      assert.equal('plan' in entries[0]!, false);
       assert.equal((await call('context', { plan: 'Current revised plan.' })).status, 'verified');
-      await store.exclusive(async (entries, save) => {
-        entries[0]!.plan = 'HISTORICAL-PLAN';
-        entries[0]!.evidence = JSON.stringify({ body: 'HISTORICAL-ISSUE-SNAPSHOT' });
-        await save();
-      });
       const resumed = await call('context', { plan: undefined });
       assert.equal(resumed.status, 'verified');
       assert.doesNotMatch(JSON.stringify(resumed), /HISTORICAL-PLAN|HISTORICAL-ISSUE-SNAPSHOT/);
@@ -304,7 +295,7 @@ describe('agent/implementation-entry', () => {
     ['openclaw', undefined],
     ['openclaw', 'custom:implement'],
   ] as const) {
-    it(`should inject the ${runtime} ${skillName ? 'custom' : 'built-in'} implementation once and retain ordinary output unchanged`, async () => {
+    it(`should inject the ${runtime} ${skillName ? 'custom' : 'built-in'} implementation once and format ordinary output without saving it`, async () => {
       deps.binding.runtime = runtime;
       deps.manifest.github = {
         notifications: { issueAssignment: { implementation: { skill: skillName } } },
@@ -338,9 +329,6 @@ describe('agent/implementation-entry', () => {
       const completed = await call('context', {});
       assert.equal(completed.status, 'verified');
       assert.equal('previousResult' in completed, false);
-      const readback = await call('present', {});
-      assert.ok('previousResult' in readback);
-      assert.deepEqual(readback.previousResult, ready);
     });
   }
   it('should reject malformed execution and delivery requests before native or provider access', async () => {
@@ -440,15 +428,9 @@ describe('agent/implementation-entry', () => {
     renderNativeAssessment({
       ...context.presentationRequest,
       result: {
-        version: 1,
         outcome: 'plan-ready',
         summary: 'Ready',
-        assessment: 'Inspected',
-        fullAssessment: 'Complete assessment',
-        plan,
         reviewSummary: 'Ready for discussion.',
-        evidence: [],
-        progress: { completed: [], remaining: [] },
       },
     });
     selections = [];
@@ -474,7 +456,7 @@ describe('agent/implementation-entry', () => {
     const resumed = await call('context', {});
     assert.equal('previousResult' in resumed, false);
     assert.equal(selections.length, 3);
-    assert.equal((await call('result', { result: ready })).status, 'recorded');
+    assert.equal((await call('result', { result: ready })).status, 'native');
   });
   it('should keep ownership failures ahead of provider access and never fall back to manual work', async () => {
     for (const code of [
@@ -508,7 +490,6 @@ describe('agent/implementation-entry', () => {
         observedAt: 1,
       },
       evidence: '{}',
-      entries: async (run) => run([], async () => {}),
     });
     const managed = await call();
     assert.equal(managed.status, 'managed');
@@ -522,15 +503,6 @@ describe('agent/implementation-entry', () => {
     const feedback = await call();
     assert.ok('owner' in feedback);
     assert.deepEqual(feedback.owner, { id: 'd'.repeat(64), eventId: 'e'.repeat(64) });
-    const feedbackOwner = deps.managed;
-    deps.managed = async (target) => {
-      const owner = await feedbackOwner(target);
-      return owner && { ...owner, implementationResult: ready };
-    };
-    const read = await call('present', {});
-    assert.equal(read.status, 'presented');
-    assert.equal('handoff' in read, false);
-
     assert.equal(reads, 0);
     assert.equal(selections.length, 0);
   });
@@ -609,7 +581,6 @@ describe('agent/implementation-entry', () => {
         turnId: 'publication-request',
         inputId: 'publication-input',
       });
-      assert.deepEqual(entries[0]!.result, ready);
     });
   });
   it('should recover lost push and pr responses through the same persisted publication without repeated effects', async () => {
@@ -847,7 +818,7 @@ describe('agent/native-implementation-entry', () => {
       { action: 'implementation', operation: 'result', target, result: ready },
       deps,
     );
-    assert.equal(result.status, 'recorded');
+    assert.equal(result.status, 'native');
     assert.deepEqual('handoff' in result && result.handoff, { next: 'complete' });
     assert.equal(calls.filter((name) => name === 'skills/list').length, 1);
     assert.ok(
@@ -978,7 +949,7 @@ describe('agent/native-implementation-entry', () => {
       { action: 'implementation', operation: 'result', target, result: ready },
       true,
     );
-    assert.equal(result.status, 'recorded');
+    assert.equal(result.status, 'native');
     assert.deepEqual('handoff' in result && result.handoff, { next: 'complete' });
     assert.equal(calls.filter((name) => name === 'skills.status').length, 1);
     assert.ok(

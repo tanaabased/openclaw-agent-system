@@ -17,8 +17,8 @@ Add a collaborator commit to a delivered PR, then implement approved PR feedback
 
 ## Notes
 
-- Strict AIMock supplies the model text and tool choices. GitHub requests, chat execution, dispatch, managed Git, and saved results still run normally. Only Tanaabot is assigned; EMORI creates the test issues and comments.
-- Each job prepares its own issue, assessment, and linked PR. The coordinator has up to three passes to verify the assessment before handling initial feedback, keeping the same source revision. Refreshes target only this issue; a 24-hour schedule avoids unrelated discovery.
+- Strict AIMock supplies the model text and tool choices. GitHub requests, chat execution, dispatch, managed Git, and native conversation history still run normally. Only Tanaabot is assigned; EMORI creates the test issues and comments.
+- Each job prepares its own issue, assessment, and linked PR. Refreshes target only this issue; a 24-hour schedule avoids unrelated discovery.
 - Approved GitHub comments retain their exact source, native turn, and publication receipts in the owning issue chat.
 - If the closing-issue link is delayed, the shared fixture checks the same delivery through at most three prepare/publish passes. Unknown failures and uncertain writes never create replacement PRs.
 
@@ -91,17 +91,17 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 60
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for worktree-ready --refresh --timeout 600 --json | tee "$TMPDIR/notification-plan.json" | jq -e '.status == "completed" and (.observation.items | length) == 1'
 conversation=$(jq -er .observation.items[0].workflow.conversation "$TMPDIR/notification-plan.json")
-assessment_run=$(jq -ers --arg key "$conversation" '[.[].records[] | select(.threadId == $key)][0].assessmentTurn.runId' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
+assessment_run=$(jq -ers --arg key "$conversation" '[.[].records[] | select(.threadId == $key)][0] | (.nativeTurns | map(select(.role == "assessment")) | last | .turn).runId' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$assessment_run" 600000
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
-run_id=$(jq -er .assessmentTurn.runId "$TMPDIR/notification-dispatch-before.json")
+run_id=$(jq -er '(.nativeTurns | map(select(.role == "assessment")) | last | .turn).runId' "$TMPDIR/notification-dispatch-before.json")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
 
 # should implement approved github direction without an extra decision and publish its linked pr
 set -o pipefail
 feedback_checkpoint() {
-  jq -cs --slurpfile receipt "$TMPDIR/notification-initial-source.json" --arg source "$(jq -r '.node_id // ""' "$TMPDIR/notification-initial-source.json")" '{source:($receipt[0] | {node_id,created_at,updated_at}),checkpoints:[.[] | {discoveryCheckedAt,discoveryCycleAt,discoveryProgress,records:[.records[] | {id,phase,blocker,assessmentTurn:(.assessmentTurn | {runId,status,consumedByEventId,replyEventId}),feedback:(.feedback | {code,startedAt,scannedTime,discoveryPending,admission,watermarks,activity,discovery:((.discovery // {}) | with_entries(.value |= {since,startedAt,reads:(.reads | to_entries | map({key,hasSource:(.value | contains($source))}))})),baselineHasSource:([.baseline[][]? | fromjson | select(.nodeId == $source)] | length),events:[.events[]? | {id,sourceId,revision,phase,code,policyHeld,turn}]} )}]}]}' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json >&2
+  jq -cs --slurpfile receipt "$TMPDIR/notification-initial-source.json" --arg source "$(jq -r '.node_id // ""' "$TMPDIR/notification-initial-source.json")" '{source:($receipt[0] | {node_id,created_at,updated_at}),checkpoints:[.[] | {discoveryCheckedAt,discoveryCycleAt,discoveryProgress,records:[.records[] | {id,nativeInactive,blocker,assessmentTurn:((.nativeTurns | map(select(.role == "assessment")) | last | .turn) | {runId,status,consumedByEventId,replyEventId}),feedback:(.feedback | {code,startedAt,scannedTime,discoveryPending,admission,watermarks,discovery:((.discovery // {}) | with_entries(.value |= {since,startedAt,reads:(.reads | to_entries | map({key,hasSource:(.value | contains($source))}))})),baselineHasSource:([.baseline[][]? | fromjson | select(.nodeId == $source)] | length),events:[.events[]? | {id,sourceId,revision,phase,code,policyHeld,turn}]} )}]}]}' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json >&2
 }
 feedback_diagnostics() {
   feedback_status=$?
@@ -125,11 +125,11 @@ for attempt in 1 2 3; do
   if test -n "$feedback_run"; then
     break
   fi
-  jq -es --slurpfile source "$TMPDIR/notification-initial-source.json" '[.[].records[] | select(.assessmentTurn.status == "completed" and .feedback.discoveryPending == false and .feedback.code == null and .feedback.activity.busy == false) | .feedback.events[]? | select(.sourceId == $source[0].node_id and (.source | fromjson).updatedAt == $source[0].updated_at)] | length == 1 and .[0].phase == "queued" and .[0].turn == null and .[0].code == null and .[0].policyHeld == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+  jq -es --slurpfile source "$TMPDIR/notification-initial-source.json" '[.[].records[].feedback.events[]? | select(.sourceId == $source[0].node_id and (.source | fromjson).updatedAt == $source[0].updated_at)] | length == 1 and .[0].phase == "queued" and .[0].turn == null and .[0].code == null and .[0].policyHeld == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 done
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$feedback_run" 600000
 jq -es '[.[].records[]] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-delivery.json"
-jq -e --slurp '.[1].progression.workOwner == "issue" and .[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[0].result == .[1].result and .[1].progression.stage == "implementation" and .[1].progression.via == "operator" and .[1].feedback.events[0].native == true and .[1].feedback.events[0].work == null and .[1].feedback.events[0].result == null and .[1].work.result.outcome == "done" and .[1].work.delivery.reconciled == true and .[1].work.delivery.binding.sessionId == .[1].sessionCreation.sessionId and .[1].work.delivery.binding.issueId == .[1].feedback.events[0].nodeId' "$TMPDIR/notification-dispatch-before.json" "$TMPDIR/notification-delivery.json"
+jq -e --slurp '.[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[1].progression.stage == "implementation" and .[1].progression.via == "operator" and .[1].delivery.reconciled == true and .[1].delivery.binding.sessionId == .[1].sessionCreation.sessionId and .[1].delivery.binding.issueId == .[1].feedback.events[0].nodeId' "$TMPDIR/notification-dispatch-before.json" "$TMPDIR/notification-delivery.json"
 ```
 
 ## Testing
@@ -140,21 +140,21 @@ set -o pipefail
 feedback_diagnostics() {
   feedback_status=$?
   if test "$feedback_status" -ne 0; then
-    jq -es '[.[].records[] | {id,phase,feedbackCode:.feedback.code,discoveryPending:.feedback.discoveryPending,stalls:.feedback.discoveryStalls,checkpoints:(.feedback.discovery // {} | with_entries(.value |= {startedAt,reads:(.reads | keys)}))}]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json >&2 || true
+    jq -es '[.[].records[] | {id,nativeInactive,feedbackCode:.feedback.code,discoveryPending:.feedback.discoveryPending,stalls:.feedback.discoveryStalls,checkpoints:(.feedback.discovery // {} | with_entries(.value |= {startedAt,reads:(.reads | keys)}))}]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json >&2 || true
   fi
   exit "$feedback_status"
 }
 trap feedback_diagnostics EXIT
 worktree=$(jq -er .worktree "$TMPDIR/notification-delivery.json")
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-collaboration/emori"
-number=$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
-branch=$(jq -er .work.delivery.binding.branch "$TMPDIR/notification-delivery.json")
+number=$(jq -er .delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
+branch=$(jq -er .delivery.binding.branch "$TMPDIR/notification-delivery.json")
 openclaw agent-system tool gh -- api --method PUT "repos/tanaabased/big-test-bucket/contents/collaborator-$number.txt" -f message="preserve disposable collaborator evidence" -f branch="$branch" -f content=Q29sbGFib3JhdG9yIHdvcmsuCg== > "$TMPDIR/notification-collaborator.json"
 openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/comments" -f 'body=@tanaabot add a note that feedback changes stay on the original PR, check it, and push the change.' > "$TMPDIR/notification-feedback-source.json"
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-collaboration/tanaabot"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
-jq -es '[.[].records[] | {id,phase,blocker,feedbackCode:.feedback.code,discoveryPending:.feedback.discoveryPending,events:[.feedback.events[]? | {sourceId,phase,code,policyHeld,turnStatus:.turn.status}]}]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+jq -es '[.[].records[] | {id,nativeInactive,blocker,feedbackCode:.feedback.code,discoveryPending:.feedback.discoveryPending,events:[.feedback.events[]? | {sourceId,phase,code,policyHeld,turnStatus:.turn.status}]}]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 feedback_run=$(jq -ers --arg source "$(jq -er .node_id "$TMPDIR/notification-feedback-source.json")" '[.[].records[].feedback.events[] | select(.sourceId == $source and .turn != null)] | if length == 1 then .[0].turn.runId else error("one feedback turn required; inspect retained dispatch feedback state") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$feedback_run" 600000
 conversation=$(jq -er .threadId "$TMPDIR/notification-delivery.json")
@@ -170,29 +170,26 @@ jq -e --slurp '
   then true else error({code:"initial-feedback-receipts-changed",before:$before,after:$after} | tojson) end
 ' "$TMPDIR/notification-delivery.json" "$TMPDIR/notification-feedback.json"
 jq -e --slurp '{
-  feedbackOwner:(.[1].progression.workOwner == "issue"),
   sameIssue:(.[0].id == .[1].id),
   sameChat:(.[0].threadId == .[1].threadId),
   sameWorktree:(.[0].worktree == .[1].worktree),
-  originalAssessment:(.[0].result == .[1].result),
-  originalImplementation:(.[0].work.result == .[1].work.result),
-  samePullRequest:(.[0].work.delivery.pullRequest == .[1].work.delivery.pullRequest),
-  sameAnnouncement:(.[0].work.delivery.announcement == .[1].work.delivery.announcement),
-  changedHead:(.[0].work.delivery.pushedHead != .[1].work.delivery.pushedHead),
+  samePullRequest:(.[0].delivery.pullRequest == .[1].delivery.pullRequest),
+  sameAnnouncement:(.[0].announcement == .[1].announcement),
+  changedHead:(.[0].delivery.pushedHead != .[1].delivery.pushedHead),
   exactEventCount:((.[1].feedback.events | length) == 2),
-  publishedFeedback:all(.[1].feedback.events[1:][]; .native == true and .work == null and .result == null and .itemType == "pull-request")
+  publishedFeedback:all(.[1].feedback.events[1:][]; .itemType == "pull-request")
 } | to_entries | map(select(.value == false)) | if length == 0 then true else error({code:"feedback-continuity-mismatch",failed:map(.key)} | tojson) end' "$TMPDIR/notification-delivery.json" "$TMPDIR/notification-feedback.json"
-openclaw agent-system tool gh -- pr view "$number" --repo tanaabased/big-test-bucket --json headRefOid | jq -e --arg head "$(jq -er .work.delivery.pushedHead "$TMPDIR/notification-feedback.json")" '.headRefOid == $head'
+openclaw agent-system tool gh -- pr view "$number" --repo tanaabased/big-test-bucket --json headRefOid | jq -e --arg head "$(jq -er .delivery.pushedHead "$TMPDIR/notification-feedback.json")" '.headRefOid == $head'
 git -C "$worktree" show HEAD | grep -F 'Keep feedback changes on the original PR.'
 git -C "$worktree" merge-base --is-ancestor "$(jq -er .commit.sha "$TMPDIR/notification-collaborator.json")" HEAD
 git -C "$worktree" show "HEAD:collaborator-$number.txt" | grep -F 'Collaborator work.'
-openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$(jq -er .work.delivery.binding.branch "$TMPDIR/notification-feedback.json")" --state all --json number | jq -e --argjson pr "$number" 'length == 1 and .[0].number == $pr'
+openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$(jq -er .delivery.binding.branch "$TMPDIR/notification-feedback.json")" --state all --json number | jq -e --argjson pr "$number" 'length == 1 and .[0].number == $pr'
 
 # should verify the exact response and suppress another reply on a repeat scan
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-collaboration/tanaabot"
 number=$(jq -er .feedback.events[1].number "$TMPDIR/notification-feedback.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-feedback-replies.json"
-jq -s '[.[] | (.drafts // [.])[]]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-reply-drafts.json"
+jq -s '[.[] | .]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-reply-drafts.json"
 node --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; const read=n=>JSON.parse(readFileSync(process.env.TMPDIR+"/notification-"+n+".json","utf8")); const record=read("feedback"); const replies=read("feedback-replies"); const history=read("feedback-history"); assert.equal(record.feedback.events.length,2); const event=record.feedback.events[1]; assert.equal(event.itemType,"pull-request"); assert.equal(JSON.parse(event.source).nodeId,read("feedback-source").node_id); assert.equal(history.requestedRunId,event.turn.runId); const draft=read("reply-drafts").find(d=>d.feedback?.eventId===event.id); assert.ok(draft); const found=replies.filter(c=>c.node_id===draft.receipt.nodeId); assert.equal(found.length,1); assert.equal(found[0].user.login,"tanaabot"); assert.ok(found[0].body.includes(draft.publicText)); const answer=history.messages.filter(m=>m.role==="assistant" && m.__openclaw?.runId===event.turn.runId && m.stopReason==="stop"); assert.equal(answer.length,1); const text=typeof answer[0].content==="string"?answer[0].content:answer[0].content.map(c=>c.text??"").join(""); assert.ok(text.includes(draft.privateText)); assert.ok(text.includes(draft.publicText)); assert.ok(text.includes("[Reply ↗]("+found[0].html_url+") from [@tanaabot](https://github.com/tanaabot)")); assert.ok(!text.includes("Reply published")); assert.equal(replies.filter(c=>c.user.login==="tanaabot").length,1);'
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000

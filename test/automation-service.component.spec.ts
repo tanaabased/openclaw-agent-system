@@ -533,7 +533,7 @@ describe('agent/automation-service', () => {
       assert.equal(native.length, 0);
     }
     assert.deepEqual(otherWork, ['before', 'after', 'before', 'after']);
-    assert.deepEqual(offlineMethods, ['cron.list', 'cron.list']);
+    assert.deepEqual(offlineMethods, ['cron.list', 'cron.list', 'cron.list', 'cron.list']);
     await assert.rejects(service.reconcile(manifest, root), {
       code: 'automation-gateway-unavailable',
     });
@@ -1055,8 +1055,19 @@ describe('agent/automation-service', () => {
   it('should register without selecting settings and select reports through the enrolled credential', async () => {
     const sessions = new Map<string, Record<string, unknown>>();
     const original = service.dependencies.request!;
-    service.dependencies.request = async (method, params) => {
-      if (!method.startsWith('sessions.')) return original(method, params);
+    let disconnected = false;
+    service.dependencies.request = createAutomationGateway(async (method, _options, input) => {
+      const params = input as Record<string, unknown>;
+      if (method === 'sessions.resolve' && !disconnected) {
+        disconnected = true;
+        throw Object.assign(new Error('socket closed during cold reload'), {
+          name: 'GatewayTransportError',
+          kind: 'closed',
+          connectionDetails: {},
+        });
+      }
+      if (!method.startsWith('sessions.'))
+        return original(method as Parameters<AutomationGateway>[0], params);
       calls.push({ method, params: structuredClone(params) });
       const key = String(params.key ?? params.sessionId);
       if (method === 'sessions.resolve')
@@ -1076,13 +1087,16 @@ describe('agent/automation-service', () => {
       if (method === 'sessions.patch') {
         assert.equal(params.expectedSessionId, 'same-chat');
         if (params.model || params.thinkingLevel) {
-          assert.deepEqual(params, {
-            key,
-            expectedSessionId: 'same-chat',
-            expectedLifecycleRevision: 'revision-1',
-            model: 'openai/gpt-6-luna',
-            thinkingLevel: 'high',
-          });
+          assert.deepEqual(
+            { ...params },
+            {
+              key,
+              expectedSessionId: 'same-chat',
+              expectedLifecycleRevision: 'revision-1',
+              model: 'openai/gpt-6-luna',
+              thinkingLevel: 'high',
+            },
+          );
         }
         Object.assign(sessions.get(key)!, {
           ...(params.autoLabel ? { displayName: params.autoLabel } : {}),
@@ -1093,7 +1107,7 @@ describe('agent/automation-service', () => {
         return { ok: true };
       }
       throw new Error('unexpected session call');
-    };
+    });
     manifest.models = { default: { model: 'openai/gpt-6-luna', effort: 'medium' } };
     manifest.automations = jobs([
       {
@@ -1110,6 +1124,8 @@ describe('agent/automation-service', () => {
       },
     ]);
     await service.reconcile(manifest, root);
+    assert.equal(disconnected, true);
+    assert.equal(calls.filter(({ method }) => method === 'sessions.create').length, 1);
     const [chat] = [...sessions.values()];
     assert.equal(chat?.model, undefined);
     assert.equal(chat?.thinkingLevel, undefined);

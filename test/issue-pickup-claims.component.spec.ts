@@ -213,7 +213,7 @@ describe('issue pickup handoff to ordinary assignment claims', () => {
       f.state.records.push({
         issueKey: pickupIssueKey(f.state.projectPickup!, record.issue.nodeId),
         projectWork: record.evidence.projectWork,
-        phase: 'routing',
+
         ...(request ? { request } : {}),
       });
       f.tx.runId = 'next-scan';

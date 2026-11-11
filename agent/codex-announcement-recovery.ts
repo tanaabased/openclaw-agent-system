@@ -15,7 +15,7 @@ export default async function recoverCodexAnnouncement(
   record: DispatchRecord,
   context: CodexWorkContext,
 ) {
-  const { delivery } = record;
+  const delivery = record;
   const { current, deps, signal, save } = context;
   if (!delivery || announcementRecoveryAction(delivery, (deps.now ?? Date.now)()) !== 'check')
     return;

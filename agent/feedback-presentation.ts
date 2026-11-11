@@ -1,7 +1,9 @@
+import safePresentation from '../channels/github/presentation/safe.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
 import {
   isReviewFeedback,
   reviewFeedbackPresentation,
+  reviewFeedbackContext,
   type GitHubCanonicalFeedback,
 } from '../channels/github/provider/review-feedback.ts';
 import { githubNotificationCommentPresentation } from '../channels/github/presentation/comment.ts';
@@ -12,16 +14,32 @@ export default function feedbackPresentation(
   repository: string,
 ) {
   const source = JSON.parse(event.source) as GitHubCanonicalFeedback;
-  return isReviewFeedback(source)
-    ? reviewFeedbackPresentation(source)
-    : githubNotificationCommentPresentation({
-        author: { label: source.author!.login, url: `https://github.com/${source.author!.login}` },
-        body: source.body,
-        item: {
-          label: `${repository}#${event.number}`,
-          url: `https://github.com/${repository}/${event.itemType === 'issue' ? 'issues' : 'pull'}/${event.number}#issuecomment-${source.databaseId}`,
-        },
-      });
+  const url = `https://github.com/${repository}/${event.itemType === 'issue' ? 'issues' : 'pull'}/${event.number}#issuecomment-${source.databaseId}`;
+  const review = isReviewFeedback(source) ? reviewFeedbackContext(source) : undefined;
+  return safePresentation(
+    () =>
+      isReviewFeedback(source)
+        ? reviewFeedbackPresentation(source)
+        : githubNotificationCommentPresentation({
+            author: {
+              label: source.author!.login,
+              url: `https://github.com/${source.author!.login}`,
+            },
+            body: source.body,
+            item: {
+              label: `${repository}#${event.number}`,
+              url: `https://github.com/${repository}/${event.itemType === 'issue' ? 'issues' : 'pull'}/${event.number}#issuecomment-${source.databaseId}`,
+            },
+          }),
+    () =>
+      [
+        source.body,
+        ...(review?.findings.map((finding) => `${finding.body}\n${finding.url}\n${finding.path}`) ??
+          []),
+        `Source: ${isReviewFeedback(source) ? source.feedback.review.url : url}`,
+        `Author: ${source.author!.login}`,
+      ].join('\n\n'),
+  );
 }
 
 export const feedbackResponseInstructions =

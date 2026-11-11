@@ -1,14 +1,13 @@
-import { managedTargetUrl, dispatchAdmission } from './managed-issue.ts';
-import { hasDeliveredImplementation, nativeIssueContext } from './implementation-delivery.ts';
+import { nativeIssueContext } from './native-issue-context.ts';
+import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
 
+import { realpath } from 'node:fs/promises';
+import connectCodexGitHubAccount from './codex-github-client.ts';
 import type { ImplementationResult } from './implementation-result.ts';
 import managedImplementationRoute from './managed-implementation-route.ts';
-import connectCodexGitHubAccount from './codex-github-client.ts';
-import { realpath } from 'node:fs/promises';
 
 import type { AssessmentEntryDependencies } from './assessment-entry.ts';
 import assessmentOwner from './assessment-owner.ts';
-import { automationHash } from './automation-hash.ts';
 import codexAssessmentSkill from './codex-assessment-skill.ts';
 import codexDirectInput from './codex-direct-input.ts';
 import { withNative } from './codex-dispatch-context.ts';
@@ -29,7 +28,7 @@ export default async function codexEntryContext<T>(
     result?: ImplementationResult,
   ) => Promise<T>,
 ) {
-  const assessmentRead =
+  const nativeRead =
     !!input &&
     typeof input === 'object' &&
     'action' in input &&
@@ -69,37 +68,14 @@ export default async function codexEntryContext<T>(
         (await realpath(native.cwd)) !== (await realpath(record.worktree!))
       )
         throw new Error('assessment-managed-context-invalid');
-      const eventId = record.feedback?.events.find(
-        (event) => !event.native && event.attempt?.turnId === native.turnId,
-      )?.id;
-      const feedback = eventId && record.feedback?.events.find((event) => event.id === eventId);
       return {
         selections: record.manualIssue?.selections,
-        nativeContext:
-          !feedback && (assessmentRead || hasDeliveredImplementation(record))
-            ? nativeIssueContext(record)
-            : undefined,
-        implementationResult: feedback ? feedback.work?.result : record.continuation?.result,
+        nativeContext: nativeRead ? nativeIssueContext(record) : undefined,
         digest,
-        owner: { id: record.id, ...(eventId ? { eventId } : {}) },
+        owner: { id: record.id },
         path: await realpath(record.worktree!),
-        selection: record.stageReceipt?.selection ?? record.assessment,
+        selection: record.assessment,
         evidence: record.context,
-        result: record.result,
-        receipt: record.stageReceipt,
-        entries: async (run) =>
-          journal.exclusive(async (fresh, save) => {
-            const found = assessmentOwner(
-              fresh.records,
-              (await current.store.read())?.records ?? [],
-              caller,
-              target,
-            );
-            if (!found || found.digest !== digest)
-              throw new Error('assessment-managed-context-changed');
-            found.record.directAssessments ??= [];
-            return run(found.record.directAssessments, save);
-          }),
       };
     };
     const records = (await journal.read()).records.filter((record) => record.threadId === caller);
@@ -110,7 +86,7 @@ export default async function codexEntryContext<T>(
     const currentTarget = admission ? managedTargetUrl(admission) : undefined;
     const nativeContextRequest =
       !!records[0] &&
-      (assessmentRead || hasDeliveredImplementation(records[0])) &&
+      nativeRead &&
       !!input &&
       typeof input === 'object' &&
       'operation' in input &&
@@ -141,14 +117,17 @@ export default async function codexEntryContext<T>(
       const fresh = await selectCodexIntake(pluginData, deps, { resolvePolicy: false });
       if (
         fresh.store.location.scope !== current.store.location.scope ||
-        automationHash(fresh.manifest) !== automationHash(current.manifest)
+        fresh.agentId !== current.agentId ||
+        fresh.workspace !== current.workspace ||
+        fresh.codexHome !== current.codexHome
       )
         throw new Error('assessment-binding-changed');
       const next = turn && (await codexDirectInput(connection.request, caller));
       if (turn && next && (next.turnId !== turn.turnId || next.inputId !== turn.inputId))
         throw new Error('assessment-native-input-changed');
+      entry.manifest = fresh.manifest;
     };
-    return await collect({
+    const entry: AssessmentEntryDependencies = {
       operator: true,
       root: pluginData,
       currentTarget,
@@ -182,7 +161,8 @@ export default async function codexEntryContext<T>(
         (deps.connect ?? connectCodexGitHub)(current.workspace, AbortSignal.timeout(60000)),
       resolveSkill: (id) => codexAssessmentSkill(connection.request, current.workspace, id),
       managed,
-    });
+    };
+    return await collect(entry);
   } finally {
     await connection.close();
   }

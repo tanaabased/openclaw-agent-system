@@ -1,0 +1,40 @@
+[
+  {
+    "id": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "intakeId": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "issueKey": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "sourceThreadId": "fixture-damaged-coordinator",
+    "threadId": "fixture-damaged-task",
+    "createdAt": 1,
+    "manifestDigest": "fixture",
+    "delivery": {
+      "id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "binding": {
+        "repositoryId": "fixture-repository",
+        "issueId": "fixture-damaged-issue",
+        "threadId": "fixture-damaged-task",
+        "worktree": "/fixture/damaged",
+        "branch": "fixture-damaged-branch",
+        "base": "main",
+        "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "authorId": "fixture-author"
+      },
+      "creationAttempted": true,
+      "reconciled": false,
+      "title": 42,
+      "pendingPush": {
+        "previousHead": "",
+        "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
+  {
+    "id": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "intakeId": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "issueKey": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "sourceThreadId": "fixture-damaged-coordinator",
+    "threadId": "fixture-colliding-task",
+    "createdAt": 1,
+    "manifestDigest": "fixture"
+  }
+]

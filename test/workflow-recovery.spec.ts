@@ -23,36 +23,13 @@ describe('agent/workflow-recovery', () => {
       /ended completed native turn/,
     );
   });
-  it('should direct incomplete assessment recovery to native formatting', () => {
-    const recovery = workflowRecovery('assessment-result-incomplete')!;
-    assert.match(recovery.summary, /not recorded/);
-    assert.match(recovery.next, /fullAssessment.*assessment render/);
-    assert.match(recovery.next, /native context/);
-  });
-  it('should explain unfinished delivery without suggesting publication retries', () => {
-    for (const code of [
-      'delivery-implementation-incomplete',
-      'continuation-implementation-required',
-      'delivery-continuation-stopped',
-    ]) {
-      const recovery = workflowRecovery(code)!;
-      assert.match(recovery.summary, /implementation/);
-      assert.match(recovery.next, /implementation context/);
-      assert.match(recovery.next, /[Dd]o not retry publication/);
-    }
-  });
   it('should explain how to recover from a malformed dispatch receipt id', () => {
     const recovery = workflowRecovery('dispatch-receipt-id-invalid')!;
     assert.match(recovery.summary, /not looked up/);
     assert.match(recovery.next, /without a receipt ID/);
     assert.match(recovery.next, /Do not guess/);
   });
-  it('should explain pre-reset restoration without authorizing replay or deletion', () => {
-    const recovery = workflowRecovery('notification-state-reset-required')!;
-    assert.match(recovery.summary, /no workflow was resumed/);
-    assert.match(recovery.next, /Preserve the original file/);
-    assert.match(recovery.next, /explicit notification reset/);
-  });
+
   it('should direct assignment recovery at the actual failed predicate', () => {
     assert.match(workflowRecovery('dispatch-issue-closed')!.next, /reopened/);
     assert.match(workflowRecovery('dispatch-assignment-removed')!.next, /new eligible assignment/);
@@ -69,7 +46,6 @@ describe('agent/workflow-recovery', () => {
       'branch',
       'base',
       'account',
-      'policy',
     ]) {
       const recovery = workflowRecovery(`delivery-${field}-changed`)!;
       assert.ok(recovery.summary.includes(field));

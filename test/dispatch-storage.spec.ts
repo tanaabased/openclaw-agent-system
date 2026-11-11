@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
+import type { DispatchState } from '../agent/codex-dispatch-state.ts';
 import {
   dispatchStorageBytes,
   dispatchStorageLevel,
   dispatchStorageNotice,
   dispatchStorageViolation,
 } from '../agent/dispatch-storage.ts';
-import type { DispatchState } from '../agent/codex-dispatch-state.ts';
 
 const mib = 1024 * 1024;
 describe('agent/dispatch storage', () => {
@@ -44,7 +44,7 @@ describe('agent/dispatch storage', () => {
 
   it('should count escaped utf8 content and reserve only generated reporting text', () => {
     const state: DispatchState = {
-      version: 1,
+      version: 4,
       scope: 'a'.repeat(64),
       records: [],
       run: {
@@ -55,13 +55,11 @@ describe('agent/dispatch storage', () => {
         response: '\u0000界',
       },
       intakeReport: { fingerprint: 'a'.repeat(64), problems: [], runId: 'run', response: 'report' },
-      continuationRun: { id: 'run', actions: 0, responses: ['report'] },
     };
     const measured = dispatchStorageBytes(state);
     const stripped = structuredClone(state);
     delete stripped.run!.response;
     stripped.intakeReport!.response = '';
-    delete stripped.continuationRun!.responses;
     assert.equal(measured.totalBytes, Buffer.byteLength(JSON.stringify(state)));
     assert.equal(measured.contentBytes, dispatchStorageBytes(stripped).contentBytes);
     assert.ok(measured.totalBytes > measured.contentBytes);

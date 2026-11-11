@@ -1,6 +1,5 @@
 import { managedPullRequest, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import feedbackOwnPublications from './feedback-own-publications.ts';
-import { feedbackAuthorityDigest } from './notification-authority.ts';
 import type DiscoveryBudget from './discovery-budget.ts';
 import { workflowFeedbackAccepting } from '../channels/github/feedback-policy.ts';
 import type { GitHubNotificationPublicationClient } from '../channels/github/provider/work-event-client.ts';
@@ -100,7 +99,6 @@ export default async function reactivateAssignmentFeedback(input: {
       (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || b.databaseId - a.databaseId,
     )[0];
   if (!latest) throw new Error('dispatch-assignment-event-missing');
-  const digest = feedbackAuthorityDigest(policy.policy);
   if (record.feedbackReactivation?.assignmentEventId === latest.nodeId) {
     const event = record.feedback?.events.find(
       (entry) => entry.id === record.feedbackReactivation!.eventId,
@@ -157,7 +155,6 @@ export default async function reactivateAssignmentFeedback(input: {
       ...(input.budget ? { discovery: { budget: input.budget, save: input.save } } : {}),
       ownCommentIds: () =>
         (publications ??= feedbackOwnPublications({
-          record,
           intake,
           client: comments,
           announcement: input.announcement,
@@ -176,8 +173,6 @@ export default async function reactivateAssignmentFeedback(input: {
       record.feedbackReactivation = {
         eventId: event.id,
         assignmentEventId: latest.nodeId,
-        policyDigest: digest,
-        at: input.now,
       };
       await input.save();
       return true;

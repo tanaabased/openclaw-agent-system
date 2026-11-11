@@ -147,10 +147,14 @@ of the public GitHub response.
 
 ## Assignment Card
 
+Individual incoming assignment prompts keep their existing heading and linked
+attribution, with only the outer quote removed. The quoted format below remains
+for intake scan/status cards and other notification cards.
+
 ```markdown
-> ## 📥 Issue assigned
->
-> [@pirog](https://github.com/pirog) assigned you to [tanaabased/example#7 — Improve planning](https://github.com/tanaabased/example/issues/7). Assess this issue and prepare a plan. Stop before implementation or GitHub publication.
+## 📥 Issue assigned
+
+[@pirog](https://github.com/pirog) assigned you to [tanaabased/example#7 — Improve planning](https://github.com/tanaabased/example/issues/7). Assess this issue and prepare a plan. Stop before implementation or GitHub publication.
 ```
 
 ```markdown
@@ -171,16 +175,18 @@ model-only provider facts never belong in them.
 
 ## Direct Message
 
-Codex and OpenClaw share one body-first comment-card renderer. Do not add an
-emoji heading or top padding. Preserve the complete body's Markdown and mentions,
-quote every line once (including blanks and fences), then put a visible gap and an
-italic attribution footer inside that same quote. Preserve raw provider text separately.
+Codex and OpenClaw share one incoming-message renderer. For incoming comments and
+approved review feedback, remove only the outer quote wrapper. Preserve the complete
+provider body's Markdown, mentions, blank lines, fences, and authored quotes, then
+keep the existing spacer and attribution footer. Assignment prompts keep their
+existing heading and linked attribution. Intake scan/status cards and outgoing
+replies, plan assessments, and PR announcements keep their existing quoted format.
 
 ```markdown
-> @tanaabot can you confirm whether this also covers comments received while planning?
->
-> &nbsp;  
-> _[Comment ↗](https://github.com/tanaabased/example/issues/7#issuecomment-123) from [@pirog](https://github.com/pirog)_
+@tanaabot can you confirm whether this also covers comments received while planning?
+
+&nbsp;  
+_[Comment ↗](https://github.com/tanaabased/example/issues/7#issuecomment-123) from [@pirog](https://github.com/pirog)_
 ```
 
 Use these labels and connectors. The label links to the exact verified comment,
@@ -195,13 +201,11 @@ Normal HTTPS links do not promise a particular browser destination.
 | Public assessment summary         | Plan assessment | by        |
 | Public PR announcement            | PR announcement | by        |
 
-Copy decoded Markdown, not its JSON representation: the spacer ends in two
-spaces for a Markdown hard break, without a backslash. Preserve unquoted blank lines between cards; do not quote
-the complete response a second time.
-
-Use one `&nbsp;` spacer followed by a Markdown hard break before the attribution,
-without a blank quoted line between the spacer and footer. Keep a paragraph boundary
-after the body so trailing code fences and nested quotes remain intact. Native
+Copy decoded Markdown, not its JSON representation. Preserve unquoted blank lines
+between cards; do not quote the complete response a second time. The spacer ends in
+two spaces for a Markdown hard break, without a backslash. Keep a paragraph
+boundary after incoming bodies so trailing code fences and nested quotes remain
+intact. Native
 OpenClaw spacing must also be observed: renderer output or an HTML preview is not
 native display evidence. Do not introduce `<small>` or HTML anchors, which Codex
 displays literally. Record any unsupported host limitation and missing native
@@ -283,28 +287,18 @@ lists, or tables only when they make substantive content easier to review.
 <problem and proposed solution as a concise user journey, brief documentation/test impact, and consequential limits or decisions>
 ```
 
-When a result includes both `reviewSummary` and `fullAssessment`, show the review
-summary by default. Explain what the person does today, where it fails, and how the
+Show the concise `reviewSummary` when supplied. Explain what the person does today, where it fails, and how the
 proposed change would improve that experience.
 Include brief documentation and test impact in the repository's own terms, plus any
 risk, uncertainty, or decision that could change approval. Roughly 200–400 words is
 an editorial guide for an ordinary human review, not a limit or minimum. Small fixes
-need less. Do not apply review-length guidance to the retained assessment or plan.
+need less. Do not apply review-length guidance to the full assessment or plan.
 
 The full engineering assessment remains authoritative for implementation: rationale,
 tradeoffs, owners, dependencies, constraints, complete plan, validation, evidence, and
-unresolved questions. Keep it unchanged in `fullAssessment` and the full implementation plan in `plan`
-within the native tool exchange. New assessments do not save either field in Agent
-System. Only explicit historical readback may describe older results as saved. `reviewSummary` is a derived human view, never a
-replacement source. `assessment` may repeat the recommendation; `planSummary` remains
-optional. Requesting `includeDetails: true` shows the complete assessment and any
-distinct plan, followed by supporting evidence and investigation.
-
-Without both an explicit review and full source, preserve the existing complete
-inline display for older/custom results. Omit only verbatim duplicate openings;
-never infer expendable content from headings, size, or skill identity. Never truncate
-or rewrite substantive source text. Questions and required actions remain prominent
-in every default and detailed view, even when repeated in the complete source.
+unresolved questions. Keep it in native conversation. The formatter accepts only
+human-facing review content; it saves no assessment or plan. Questions and required
+actions remain prominent in the review.
 
 When an assessment includes a continuation decision, show an **Auto mode decision**
 card after the routing card. Keep it visible
@@ -312,7 +306,7 @@ regardless of debug presentation. Use ▶️ for `work` and ⏸️ for `plan`, w
 code-formatted value in **Decision**. Use **Next** to distinguish automatic continuation
 once runtime checks pass from waiting for the operator's direction before implementation.
 Follow with bounded **Reason** rows. Escape reason text and withhold credential-shaped
-content; do not present the decision as permission or replace the retained assessment.
+content; do not present the decision as permission or replace the full assessment.
 
 The private routing card follows the recommendation (or a distinct assessment). Its values come from saved routing and
 native readback, with requested selection distinct from effective execution. Preserve

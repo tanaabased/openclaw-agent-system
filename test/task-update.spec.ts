@@ -110,13 +110,17 @@ describe('agent/task-update', () => {
     assert.equal((await f.run({ operation: 'reconcile', expectedDigest: '' })).status, 'published');
     assert.equal(f.writes, 1);
   });
-  it('should retain a legacy publication identity and reconcile its receipt without replay', async () => {
+  it('should reject a missing original publication without reconstructing or replaying it', async () => {
     const f = fixture();
     await f.run(candidate);
     await f.run(publish);
     const receipt = structuredClone(f.draft.receipt);
     delete f.draft.publication;
-    assert.equal((await f.run({ operation: 'reconcile', expectedDigest: '' })).status, 'published');
+    await assert.rejects(
+      f.run({ operation: 'reconcile', expectedDigest: '' }),
+      /task-update-publication-required/,
+    );
+    assert.equal(f.draft.publication, undefined);
     assert.deepEqual(f.draft.receipt, receipt);
     assert.equal(f.writes, 1);
   });

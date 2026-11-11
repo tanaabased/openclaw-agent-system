@@ -1,32 +1,8 @@
-import {
-  managedPullRequest,
-  managedIssueState,
-  dispatchAdmission,
-  managedTargetUrl,
-} from './managed-issue.ts';
-import { feedbackInputContext } from './feedback-input.ts';
-import authorizeFeedback from './feedback-source-context.ts';
-import { feedbackConversationMode } from './feedback-work.ts';
-import { retainedIssueProgression } from './issue-progression.ts';
-import {
-  resolveOpenClawTurnFeedback,
-  selectedOpenClawFeedback,
-} from './openclaw-feedback-input.ts';
-import openClawSkill from './openclaw-skill.ts';
-import taskTurnContext from './task-turn-context.ts';
-import { ContextMaterialError } from './implementation-material.ts';
-import AssessmentValidationError from './assessment-validation.ts';
-import WorkflowRequestError from './workflow-request-error.ts';
-
-import GitHubIdentityCache from '../channels/github/identity-cache.ts';
-import type AssignmentClaimStore from './assignment-claim-store.ts';
-import GitWorktreeConflict from '../tools/git/worktree-conflict.ts';
-import { assertNotificationManagement } from './notification-reset-state.ts';
+import { withDispatchTask } from './dispatch-task-scope.ts';
 import { realpath } from 'node:fs/promises';
-
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
-
 import AgentSystemToolError from '../api/error.ts';
+import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import { IntakeError } from '../channels/github/intake/record-store.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import type {
@@ -46,35 +22,55 @@ import {
   privateStateFileLockLostErrorCode,
 } from '../core/private-state-file-lock.ts';
 import {
-  type default as SessionDispatchCredential,
   type DispatchAuthority,
+  type default as SessionDispatchCredential,
 } from '../credentials/session-dispatch.ts';
-
 import type { AgentManifest } from '../manifest/types.ts';
 import GitCommandError from '../tools/git/command-error.ts';
 import type TrustedGitWorktreeService from '../tools/git/trusted-worktree-service.ts';
+import GitWorktreeConflict from '../tools/git/worktree-conflict.ts';
+import AssessmentValidationError from './assessment-validation.ts';
+import type AssignmentClaimStore from './assignment-claim-store.ts';
 import { inspectFeedbackAssignment } from './assignment-feedback-reactivation.ts';
 import { automationHash } from './automation-hash.ts';
 import {
-  inspectContinuedIssue,
   inspectAdmittedIssue,
+  inspectContinuedIssue,
   inspectIssueIdentity,
 } from './dispatch-assignment.ts';
+import { feedbackConversationMode } from './feedback-conversation-mode.ts';
+import { feedbackInputContext } from './feedback-input.ts';
+import authorizeFeedback from './feedback-source-context.ts';
+import { ContextMaterialError } from './implementation-material.ts';
+import { retainedIssueProgression } from './issue-progression.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
+import {
+  dispatchAdmission,
+  managedIssueState,
+  managedPullRequest,
+  managedTargetUrl,
+} from './managed-issue.ts';
+import { assertNotificationManagement } from './notification-reset-state.ts';
 import type OpenClawAssignmentClaims from './openclaw-assignment-claims.ts';
 import { type OpenClawDeliveryConnection } from './openclaw-delivery.ts';
 import OpenClawDispatchStore, {
-  type OpenClawDispatchState,
   type OpenClawDispatchRecord,
+  type OpenClawDispatchState,
 } from './openclaw-dispatch-state.ts';
-
+import {
+  resolveOpenClawTurnFeedback,
+  selectedOpenClawFeedback,
+} from './openclaw-feedback-input.ts';
 import { type OpenClawFeedbackProvider } from './openclaw-feedback.ts';
 import { type IntakeObservation } from './openclaw-intake-report.ts';
 import type OpenClawIntake from './openclaw-intake.ts';
+import { nativeTurnFor } from './openclaw-native-turns.ts';
 import { type DispatchCaller } from './openclaw-session-create.ts';
+import openClawSkill from './openclaw-skill.ts';
 import openclawTurnContext from './openclaw-turn-context.ts';
 import retainedIntakePolicy from './retained-intake-policy.ts';
-
+import taskTurnContext from './task-turn-context.ts';
+import WorkflowRequestError from './workflow-request-error.ts';
 export interface OpenClawDispatchDependencies {
   root: string;
   claimStore?: AssignmentClaimStore;
@@ -82,7 +78,10 @@ export interface OpenClawDispatchDependencies {
   config(): OpenClawConfig;
   intake: OpenClawIntake;
   connect(
-    input: { manifest: AgentManifest; workspaceDir: string },
+    input: {
+      manifest: AgentManifest;
+      workspaceDir: string;
+    },
     signal: AbortSignal,
   ): Promise<GitHubNotificationIntakeClient & GitHubNotificationItemContextClient>;
   worktrees: Pick<TrustedGitWorktreeService, 'prepareGitHub' | 'inspectGitHub'> &
@@ -103,12 +102,18 @@ export interface OpenClawDispatchDependencies {
   }): Promise<string>;
   now?: () => number;
   feedbackConnect?(
-    input: { manifest: AgentManifest; workspaceDir: string },
+    input: {
+      manifest: AgentManifest;
+      workspaceDir: string;
+    },
     signal: AbortSignal,
     connection?: GitHubNotificationIntakeClient & GitHubNotificationItemContextClient,
   ): Promise<OpenClawFeedbackProvider>;
   retirementDelivery?(
-    input: { manifest: AgentManifest; workspaceDir: string },
+    input: {
+      manifest: AgentManifest;
+      workspaceDir: string;
+    },
     signal: AbortSignal,
     connection: GitHubNotificationIntakeClient,
   ): Promise<IssueDeliveryProvider>;
@@ -121,7 +126,6 @@ export interface OpenClawDispatchDependencies {
     connection?: GitHubNotificationIntakeClient & GitHubNotificationItemContextClient;
   }): Promise<OpenClawDeliveryConnection>;
 }
-
 export function openClawDispatchFailureCode(error: unknown): string {
   if (error instanceof ContextMaterialError) return error.code;
   if (error instanceof AssessmentValidationError || error instanceof WorkflowRequestError)
@@ -153,7 +157,6 @@ export function openClawDispatchFailureCode(error: unknown): string {
     ? error.message
     : 'dispatch-operation-failed';
 }
-
 export default class OpenClawDispatchContext {
   constructor(readonly dependencies: OpenClawDispatchDependencies) {}
   async scope(manifest: AgentManifest, workspace: string) {
@@ -171,7 +174,6 @@ export default class OpenClawDispatchContext {
       journal,
     };
   }
-
   /** Local custody checks stay cheap enough to run before every native operation. */
   async validateLocal(
     manifest: AgentManifest,
@@ -198,7 +200,8 @@ export default class OpenClawDispatchContext {
       throw new Error('dispatch-task-superseded');
     if (
       feedback !== 'native' &&
-      (record.retired || (record.retirement && record.retirement.reason !== 'assignment-removed'))
+      record.retirement &&
+      record.retirement.reason !== 'assignment-removed'
     )
       throw new Error('dispatch-issue-inactive');
     if (record.reset) throw new Error('dispatch-reset-pending');
@@ -233,7 +236,6 @@ export default class OpenClawDispatchContext {
     if (held) throw new WorkflowPolicyHeld(held);
     return { current, intake, manifest: fresh.manifest };
   }
-
   /** Refresh provider authority at action entry and immediately before native dispatch. */
   guardedCredential(
     revalidate: (method: 'sessions.create' | 'chat.send') => Promise<unknown>,
@@ -248,7 +250,6 @@ export default class OpenClawDispatchContext {
         ),
     };
   }
-
   async validate(
     manifest: AgentManifest,
     workspace: string,
@@ -340,7 +341,6 @@ export default class OpenClawDispatchContext {
     }
     return { client, repo, item, intake, worktreeInput };
   }
-
   async promptContext(
     manifest: AgentManifest,
     workspace: string,
@@ -356,8 +356,10 @@ export default class OpenClawDispatchContext {
       )
     );
   }
-
-  async readTurnContext(
+  readTurnContext(...args: Parameters<OpenClawDispatchContext['readTaskContext']>) {
+    return withDispatchTask('openclaw', args[2].sessionKey, () => this.readTaskContext(...args));
+  }
+  private async readTaskContext(
     manifest: AgentManifest,
     workspace: string,
     binding: Parameters<typeof openclawTurnContext>[1],
@@ -432,7 +434,7 @@ export default class OpenClawDispatchContext {
     } catch (error) {
       feedbackLimitation = { code: openClawDispatchFailureCode(error) };
     }
-    const initial = [record.firstTurn?.runId, record.assessmentTurn?.runId].includes(binding.runId);
+    const initial = nativeTurnFor(record, 'assessment')?.runId === binding.runId;
     const stage = feedbackTurn
       ? 'feedback'
       : retainedIssueProgression(record)
@@ -462,7 +464,6 @@ export default class OpenClawDispatchContext {
       repository: `${admission.repository.owner.login}/${admission.repository.name}`,
     };
   }
-
   async reportScope(manifest: AgentManifest, workspace: string) {
     const current = await this.dependencies.intake.select(manifest, workspace);
     const journal = new OpenClawDispatchStore(this.dependencies.root, current.store.location.scope);
@@ -474,7 +475,6 @@ export default class OpenClawDispatchContext {
       journal: new OpenClawDispatchStore(this.dependencies.root, current.store.location.scope),
     };
   }
-
   async observe(manifest: AgentManifest, workspace: string): Promise<IntakeObservation> {
     try {
       const retained = await this.dependencies.intake.inspect(manifest, workspace);
@@ -485,7 +485,6 @@ export default class OpenClawDispatchContext {
     }
   }
 }
-
 export type OpenClawDispatchScope = Awaited<ReturnType<OpenClawDispatchContext['scope']>>;
 export interface OpenClawDispatchTransaction {
   manifest: AgentManifest;

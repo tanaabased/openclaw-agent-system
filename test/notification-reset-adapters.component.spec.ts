@@ -2,16 +2,18 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import OpenClawNotificationReset from '../agent/openclaw-notification-reset.ts';
+import { automationHash } from '../agent/automation-hash.ts';
+import type { SavedAutomation } from '../agent/codex-automation-state.ts';
+import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
+import { selectCodexIntake } from '../agent/codex-intake.ts';
 import runCodexNotificationReset from '../agent/codex-notification-reset.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
-import { selectCodexIntake } from '../agent/codex-intake.ts';
-import type { SavedAutomation } from '../agent/codex-automation-state.ts';
-import IntakeRecordStore from '../channels/github/intake/record-store.ts';
 import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
-import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
-import { automationHash } from '../agent/automation-hash.ts';
-import { intakeFixture, account } from './github-intake-fixture.ts';
+import OpenClawNotificationReset from '../agent/openclaw-notification-reset.ts';
+import IntakeRecordStore from '../channels/github/intake/record-store.ts';
+import assignmentIntakePolicy from '../agent/assignment-intake-policy.ts';
+import type { AgentManifest } from '../manifest/types.ts';
+import { account, intakeFixture } from './github-intake-fixture.ts';
 
 describe('agent/notification reset runtime adapters', () => {
   let root: string;
@@ -34,6 +36,155 @@ describe('agent/notification reset runtime adapters', () => {
         records: [],
       }),
     );
+
+  for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should preview ${runtime} without tracking and create only an empty baseline after confirmation`, async () => {
+      const fixture = intakeFixture();
+      const unsupported = async (): Promise<never> => {
+        throw new Error('assignment scan or unrelated effect');
+      };
+      const client = new Proxy(fixture.client, {
+        get: (_target, key) =>
+          key === 'then' ? undefined : key === 'identity' ? account : unsupported,
+      });
+      const workspace = join(root, 'workspace');
+      const codexHome = join(root, 'codex');
+      const pluginData = join(root, 'plugin');
+      await mkdir(workspace);
+      await mkdir(codexHome);
+      await writeFile(
+        join(workspace, 'agent.yaml'),
+        JSON.stringify({
+          'schema-version': 1,
+          agent: { id: 'receiver' },
+          models: { default: { model: 'openai/gpt-6-luna', effort: 'medium' } },
+          github: {
+            username: 'receiver',
+            runtimes: [runtime],
+            routing: ['owner/*'],
+            'issue-assignment': {
+              model: 'default',
+              paused: true,
+              allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],
+            },
+          },
+        }),
+      );
+      const binding = await bindCodexWorkspace(pluginData, workspace);
+      assert.equal(binding.status, 'bound', JSON.stringify(binding));
+      const current = await selectCodexIntake(pluginData, { codexHome });
+      const saved: SavedAutomation = {
+        id: 'job',
+        definition: {
+          kind: 'heartbeat',
+          destination: 'thread',
+          targetThreadId: 'coordinator',
+          name: 'intake',
+          prompt: 'fixture',
+          rrule: 'FREQ=DAILY',
+          status: 'PAUSED',
+          notificationPolicy: null,
+        },
+      };
+      const deps = {
+        codexHome,
+        caller: 'operator',
+        connect: async () => client,
+        automation: async () => saved,
+        pickupAutomation: async () => undefined,
+        threads: async () => ({
+          close: async () => {},
+          request: async (method: string) => {
+            if (method === 'thread/read')
+              return {
+                thread: {
+                  id: 'coordinator',
+                  path: '/sessions/coordinator',
+                  cwd: current.workspace,
+                  archived: false,
+                  status: { type: 'notLoaded' },
+                },
+              };
+            if (method === 'thread/turns/list') return { data: [] };
+            throw new Error(method);
+          },
+        }),
+      };
+      const manifest: AgentManifest = {
+        schemaVersion: 1,
+        agent: { id: 'receiver' },
+        github: { username: 'receiver', notifications: { ...fixture.policy, runtimes: [runtime] } },
+      };
+      const service = new OpenClawNotificationReset({
+        root: pluginData,
+        intake: {
+          select: async () => ({
+            store: current.store,
+            workspace: current.workspace,
+            selected: assignmentIntakePolicy(manifest, 'openclaw'),
+          }),
+        },
+        automations: {
+          notificationResetSnapshot: async () => ({
+            id: 'intake',
+            nativeId: 'job',
+            enabled: false,
+            hash: 'hash',
+            sessionKey: 'coordinator',
+          }),
+          notificationResetToggle: async () => {},
+          notificationResetReplace: unsupported,
+        },
+        credential: { use: unsupported },
+        connect: async () => ({ client, account: { identity: account, execute: unsupported } }),
+        worktrees: { inspectGitHub: unsupported, cleanupGitHub: unsupported },
+      });
+      const preview = () =>
+        runtime === 'codex'
+          ? runCodexNotificationReset(pluginData, { agent: ['receiver'], purge: true }, deps)
+          : service.preview(manifest, current.workspace, true);
+      assert.deepEqual(await preview(), await preview());
+      assert.equal(await current.store.read(), undefined);
+      if (runtime === 'codex') {
+        const result = await runCodexNotificationReset(
+          pluginData,
+          {
+            agent: ['receiver'],
+            purge: true,
+            yes: true,
+            nativeInventory: {
+              schemaVersion: 4,
+              pinnedThreads: [],
+              unavailableHosts: [],
+              unavailableSources: [],
+            },
+          },
+          deps,
+        );
+        assert.equal(result.status, 'native-action');
+      } else {
+        // Stop at the coordinator boundary after the real reset owner writes the baseline.
+        service.dependencies.credential.use = async (_authority, run) =>
+          run(async (method) => {
+            if (method === 'sessions.resolve') return { ok: false };
+            if (method === 'sessions.list') return { sessions: [] };
+            throw new Error(method);
+          });
+        await assert.rejects(
+          service.run(
+            manifest,
+            current.workspace,
+            await service.preview(manifest, current.workspace, true),
+          ),
+          /assignment scan or unrelated effect/,
+        );
+      }
+      const state = (await current.store.read())!;
+      assert.ok(state.baselineAt > 0);
+      assert.deepEqual(state.records, []);
+      assert.deepEqual(state.account, { login: account.login, nodeId: account.nodeId });
+      assert.equal(saved.definition.status, 'PAUSED');
+    });
 
   function coordinator(active = () => false) {
     let archived = false;
@@ -83,6 +234,183 @@ describe('agent/notification reset runtime adapters', () => {
       },
     };
   }
+
+  async function ordinaryOpenClawOrigin() {
+    const scope = '7'.repeat(64);
+    const intake = new IntakeRecordStore({ root, path: join(root, 'intake.json'), scope });
+    await seed(intake);
+    const journal = new OpenClawDispatchStore(root, scope);
+    const key = 'agent:receiver:main';
+    await journal.exclusive(async (state, save) => {
+      state.records.push({
+        id: 'd'.repeat(64),
+        intakeId: 'e'.repeat(64),
+        issueKey: 'f'.repeat(64),
+        sourceThreadId: key,
+        createdAt: 2,
+        manifestDigest: 'manifest',
+        retirement: {
+          reason: 'issue-closed',
+          at: 3,
+          checkedAt: 4,
+          eligibleAt: 3,
+          intakeId: 'e'.repeat(64),
+          archivedAt: 4,
+          worktreeRemovedAt: 4,
+        },
+      });
+      await save();
+    });
+    const state = {
+      active: false,
+      pending: 0,
+      coordinatorWorkspace: root,
+      agentId: 'receiver',
+      sessionId: 'ordinary-session',
+      historySessionId: 'ordinary-session',
+      missing: false,
+      ambiguous: false,
+    };
+    const native = coordinator();
+    const toggles: boolean[] = [];
+    let enabled = true;
+    const manifest = { schemaVersion: 1 as const, agent: { id: 'receiver' } };
+    const service = new OpenClawNotificationReset({
+      root,
+      intake: { select: async () => ({ store: intake, selected: undefined, workspace: root }) },
+      automations: {
+        notificationResetReplace: native.replace,
+        notificationResetSnapshot: async () => ({
+          id: 'intake',
+          nativeId: 'job',
+          enabled,
+          hash: 'configuration',
+          sessionKey: 'coordinator',
+        }),
+        notificationResetToggle: async (_manifest, _workspace, expected, restore) => {
+          enabled = restore ? expected.enabled : false;
+          toggles.push(enabled);
+        },
+      },
+      credential: {
+        use: async (_authority, run) =>
+          run(async (method, params) => {
+            if (params.key === key || params.sessionKey === key) {
+              if (method === 'sessions.resolve')
+                return state.missing || state.ambiguous
+                  ? { ok: false, candidates: state.ambiguous ? [key, 'another'] : [] }
+                  : { ok: true, key, agentId: state.agentId };
+              if (method === 'sessions.describe')
+                return {
+                  session: { key, agentId: state.agentId, sessionId: state.sessionId },
+                };
+              if (method === 'chat.history')
+                return {
+                  sessionId: state.historySessionId,
+                  sessionInfo: { hasActiveRun: state.active },
+                  pendingInputs: { total: state.pending },
+                };
+              throw new Error('ordinary origin must only be observed: ' + method);
+            }
+            if (method === 'sessions.list')
+              return {
+                sessions: [
+                  { key, agentId: state.agentId, sessionId: state.sessionId },
+                  {
+                    key: 'coordinator',
+                    agentId: 'receiver',
+                    sessionId: 'source',
+                    workspaceDir: state.coordinatorWorkspace,
+                    archived: native.archived(),
+                  },
+                ],
+              };
+            return native.request(method);
+          }),
+      },
+      worktrees: {
+        inspectGitHub: async () => {
+          throw new Error('no worktree effects');
+        },
+        cleanupGitHub: async () => {
+          throw new Error('no worktree effects');
+        },
+      },
+      connect: async () => {
+        throw new Error('no provider effects');
+      },
+    });
+    return {
+      state,
+      intake,
+      journal,
+      native,
+      toggles,
+      generation: (await journal.read()).resetGeneration,
+      run: async (purge = false) =>
+        service.run(manifest, root, await service.preview(manifest, root, purge)),
+    };
+  }
+
+  for (const purge of [false, true])
+    it(`should reset with an ordinary main-chat origin without a per-chat workspace and purge ${purge}`, async () => {
+      const test = await ordinaryOpenClawOrigin();
+      assert.equal((await test.run(purge)).status, 'complete');
+      assert.deepEqual(test.toggles, [false, true]);
+      assert.equal(test.native.replacements(), 1);
+      assert.notEqual((await test.journal.read()).resetGeneration, test.generation);
+    });
+
+  for (const activity of ['active', 'pending'] as const)
+    it(`should wait for ${activity} ordinary-origin input and resume the same openclaw reset`, async () => {
+      const test = await ordinaryOpenClawOrigin();
+      test.state.active = activity === 'active';
+      test.state.pending = activity === 'pending' ? 1 : 0;
+      assert.equal((await test.run()).status, 'waiting');
+      assert.deepEqual(test.toggles, [false]);
+      assert.equal((await test.intake.read())!.baselineAt, 1);
+      assert.equal(test.native.archived(), false);
+      assert.equal((await test.journal.read()).resetGeneration, test.generation);
+      test.state.active = false;
+      test.state.pending = 0;
+      assert.equal((await test.run()).status, 'complete');
+      assert.deepEqual(test.toggles, [false, true]);
+      assert.equal(test.native.replacements(), 1);
+    });
+
+  it('should still reject an actual openclaw coordinator in another workspace', async () => {
+    const test = await ordinaryOpenClawOrigin();
+    test.state.coordinatorWorkspace = join(root, 'other-workspace');
+    await mkdir(test.state.coordinatorWorkspace);
+    await assert.rejects(test.run(), /automation-thread-workspace-mismatch/);
+    assert.equal(test.native.archived(), false);
+    assert.equal((await test.intake.read())!.baselineAt, 1);
+    test.state.coordinatorWorkspace = root;
+    assert.equal((await test.run()).status, 'complete');
+    assert.deepEqual(test.toggles, [false, true]);
+  });
+
+  for (const failure of ['owner', 'incarnation', 'ambiguous'] as const)
+    it(`should preserve reset state when ordinary-origin ${failure} is unverified`, async () => {
+      const test = await ordinaryOpenClawOrigin();
+      if (failure === 'owner') test.state.agentId = 'another-agent';
+      if (failure === 'incarnation') test.state.historySessionId = 'replacement-session';
+      if (failure === 'ambiguous') test.state.ambiguous = true;
+      await assert.rejects(
+        test.run(),
+        /notification-reset-source-(owner-mismatch|observation-unavailable)/,
+      );
+      assert.equal(test.native.archived(), false);
+      assert.equal((await test.journal.read()).resetGeneration, test.generation);
+      assert.equal((await test.intake.read())!.baselineAt, 1);
+    });
+
+  it('should allow a natively confirmed missing ordinary origin without treating it as a coordinator', async () => {
+    const test = await ordinaryOpenClawOrigin();
+    test.state.missing = true;
+    assert.equal((await test.run()).status, 'complete');
+    assert.equal(test.native.replacements(), 1);
+  });
 
   for (const pickupEnabled of [true, false])
     it(`should wait for active pickup and restore both openclaw jobs with pickup enabled ${pickupEnabled}`, async () => {
@@ -316,12 +644,11 @@ describe('agent/notification reset runtime adapters', () => {
         intakeId: 'e'.repeat(64),
         issueKey: 'f'.repeat(64),
         sourceThreadId: 'coordinator',
-        phase: 'creating',
+
         createdAt: 2,
         manifestDigest: 'manifest',
         context: '{}',
         routing: '{}',
-        routingNote: 'fixture',
         worktree: root,
         request: {
           key: 'agent:receiver:issue:missing',
@@ -345,12 +672,21 @@ describe('agent/notification reset runtime adapters', () => {
         intakeId: 'e'.repeat(64),
         issueKey: 'c'.repeat(64),
         sourceThreadId: 'coordinator',
-        phase: 'complete',
+
         createdAt: 2,
         manifestDigest: 'manifest',
-        threadId: 'retired-child',
+        threadId: 'pending-cleanup-child',
         worktree: root,
-        retired: { at: 4, by: 'coordinator' },
+        request: {
+          key: 'pending-cleanup-child',
+          idempotencyKey: 'pending-cleanup',
+          agentId: 'receiver',
+          label: 'issue',
+          category: 'issues',
+          cwd: root,
+          model: 'fixture',
+          thinkingLevel: 'low',
+        },
         retirement: {
           reason: 'issue-closed',
           at: 3,
@@ -360,7 +696,15 @@ describe('agent/notification reset runtime adapters', () => {
           archivedAt: 4,
           worktreeRemovedAt: 4,
         },
-        retainedHistory: { terminal: true, entries: [], sessionId: 'retired-session' },
+        cleanupPending: true,
+        sessionCreation: {
+          attempted: true,
+          sourceSessionId: 'coordinator',
+          sourceRunId: 'run',
+          sourceToolCallId: 'call',
+          verified: true,
+          sessionId: 'retired-session',
+        },
       });
       await save();
     });
@@ -394,11 +738,11 @@ describe('agent/notification reset runtime adapters', () => {
           run(async (method, params) => {
             if (method === 'sessions.resolve' && params.key === 'agent:receiver:issue:missing')
               return missingSession;
-            if (params.key === 'retired-child' && method === 'sessions.describe') {
+            if (params.key === 'pending-cleanup-child' && method === 'sessions.describe') {
               terminalReads++;
               return {
                 session: {
-                  key: 'retired-child',
+                  key: 'pending-cleanup-child',
                   agentId: 'receiver',
                   sessionId: 'retired-session',
                   spawnedCwd: root,
@@ -406,7 +750,7 @@ describe('agent/notification reset runtime adapters', () => {
                 },
               };
             }
-            if (params.sessionKey === 'retired-child' && method === 'chat.history')
+            if (params.sessionKey === 'pending-cleanup-child' && method === 'chat.history')
               return {
                 sessionId: 'retired-session',
                 messages: [],
@@ -461,12 +805,11 @@ describe('agent/notification reset runtime adapters', () => {
         intakeId: 'e'.repeat(64),
         issueKey: 'f'.repeat(64),
         sourceThreadId: 'coordinator',
-        phase: 'creating',
+
         createdAt: 2,
         manifestDigest: 'manifest',
         context: '{}',
         routing: '{}',
-        routingNote: 'fixture',
         worktree: join(root, 'old-checkout'),
         sessionCreation: {
           attempted: true,
@@ -619,19 +962,17 @@ describe('agent/notification reset runtime adapters', () => {
     };
     const journal = new CodexDispatchStore(pluginData, current.store.location.scope);
     await journal.exclusive(async (state, save) => {
-      for (const [index, retired] of [false, true].entries())
+      for (const index of [0])
         state.records.push({
           id: String(index + 1).repeat(64),
           intakeId: 'e'.repeat(64),
           issueKey: 'f'.repeat(64),
           sourceThreadId: 'coordinator',
-          phase: 'creating',
+
           createdAt: 2000,
           manifestDigest: 'manifest',
-          reservationVersion: 1,
           context: '{}',
           routing: '{}',
-          routingNote: 'fixture',
           project: {
             id: 'project',
             path: workspace,
@@ -639,7 +980,6 @@ describe('agent/notification reset runtime adapters', () => {
             ref: 'main',
             commit: 'a'.repeat(40),
           },
-          ...(retired ? { retired: { at: 3000, by: 'operator' } } : {}),
           request: {
             title: 'issue',
             prompt: 'fixture issue',
@@ -657,6 +997,19 @@ describe('agent/notification reset runtime adapters', () => {
         });
       await save();
     });
+    await journal.exclusive(async (state, save) => {
+      state.records.push({
+        id: '9'.repeat(64),
+        intakeId: '8'.repeat(64),
+        issueKey: '7'.repeat(64),
+        sourceThreadId: 'manual-origin',
+        createdAt: 2000,
+        manifestDigest: 'manifest',
+      });
+      await save();
+    });
+    let originActive = true;
+    let coordinatorWorkspace = current.workspace;
     let finished = false;
     let archived = false;
     let creation: 'unavailable' | 'found' | 'absent' = 'unavailable';
@@ -693,10 +1046,13 @@ describe('agent/notification reset runtime adapters', () => {
             return {
               thread: {
                 id: params.threadId,
-                cwd: current.workspace,
+                cwd: params.threadId === 'manual-origin' ? root : coordinatorWorkspace,
                 path: '/sessions/' + params.threadId,
                 archived,
-                status: { type: 'notLoaded' },
+                status: {
+                  type:
+                    params.threadId === 'manual-origin' && originActive ? 'active' : 'notLoaded',
+                },
               },
             };
           if (method === 'thread/items/list')
@@ -749,6 +1105,12 @@ describe('agent/notification reset runtime adapters', () => {
     assert.equal((await run()).status, 'waiting');
     assert.equal((await current.store.read())!.baselineAt, 1);
     finished = true;
+    coordinatorWorkspace = root;
+    await assert.rejects(run(), /automation-thread-workspace-mismatch/u);
+    coordinatorWorkspace = current.workspace;
+    assert.equal((await run()).status, 'waiting');
+    assert.equal((await current.store.read())!.baselineAt, 1);
+    originActive = false;
     await assert.rejects(run(), /native inventory unavailable/u);
     creation = 'found';
     await assert.rejects(run(), /notification-reset-native-creation-unresolved/u);
@@ -874,12 +1236,11 @@ describe('agent/notification reset runtime adapters', () => {
         intakeId,
         issueKey: 'e'.repeat(64),
         sourceThreadId: 'coordinator',
-        phase: 'created',
+
         createdAt: 2,
         manifestDigest: 'manifest',
         context: '{}',
         routing: '{}',
-        routingNote: 'fixture',
         effective: { status: 'verified', model: 'fixture', effort: 'low' },
         threadId: key,
         worktree,
@@ -909,7 +1270,7 @@ describe('agent/notification reset runtime adapters', () => {
         id: 'f'.repeat(64),
         worktreeAttemptId: undefined,
         issueKey: 'a'.repeat(64),
-        phase: 'creating',
+
         threadId: undefined,
         effective: undefined,
         request: {
@@ -924,7 +1285,6 @@ describe('agent/notification reset runtime adapters', () => {
         },
       });
       if (missing) {
-        original.retired = { at: 4, by: 'coordinator' };
         original.retirement = {
           reason: 'issue-closed',
           at: 3,
@@ -937,7 +1297,7 @@ describe('agent/notification reset runtime adapters', () => {
       }
       await save();
     });
-    if (missing) assert.equal((await journal.read()).records[0]!.request, undefined);
+    if (missing) assert.ok((await journal.read()).records[0]!.request);
     const native = coordinator();
     native.missing();
     let pinned = !missing;

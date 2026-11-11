@@ -1,7 +1,7 @@
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
 import { inspectFeedbackAssignment } from './assignment-feedback-reactivation.ts';
 import { inspectIssueIdentity } from './dispatch-assignment.ts';
-import { admitFeedback, feedbackRevision } from './feedback-source.ts';
+import authorizeFeedback from './feedback-source-context.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
 import type {
@@ -11,11 +11,6 @@ import type {
 import type { selectCodexIntake } from './codex-intake.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
 import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
-import {
-  isReviewFeedback,
-  readReviewFeedback,
-  type GitHubCanonicalFeedback,
-} from '../channels/github/provider/review-feedback.ts';
 
 /** verify the exact admitted source before work and every dependent provider write. */
 export default async function authorizeCodexFeedback(input: {
@@ -31,45 +26,26 @@ export default async function authorizeCodexFeedback(input: {
 }) {
   const { current, record, event, intake, provider } = input;
   if (record.supersededBy) throw new Error('dispatch-task-superseded');
-  const policy = assignmentIntakePolicy(current.manifest, 'codex');
+  const policy = current.manifest.github?.notifications;
   if (!policy) throw new WorkflowPolicyHeld('feedback-disabled');
-  const owner = intake.repository.owner.login,
-    name = intake.repository.name;
-  const assignment = input.conversation
-    ? await inspectIssueIdentity(intake, provider.client)
-    : await inspectFeedbackAssignment(policy, intake, provider.client, record);
-  const item =
-    event.number === intake.issue.number
-      ? assignment.item
-      : await provider.client.getItem(owner, name, event.number);
-  if (
-    item.nodeId !== event.nodeId ||
-    item.itemType !== event.itemType ||
-    (!input.conversation && item.state !== 'open') ||
-    (!input.conversation &&
-      event.itemType === 'pull-request' &&
-      (record.delivery?.pullRequest?.pullRequestNodeId !== event.nodeId ||
-        record.delivery.pullRequest.pullRequestNumber !== event.number))
-  )
-    throw new Error('feedback-source-owner-changed');
-  const source = JSON.parse(event.source) as GitHubCanonicalFeedback;
-  const exact = isReviewFeedback(source)
-    ? await readReviewFeedback(
-        provider.comments.reviews!,
-        owner,
-        name,
-        event.number,
-        source.databaseId,
-        source.feedback.receipt,
-      )
-    : await provider.comments.getIssueComment(owner, name, event.number, source.databaseId);
-  if (!exact || exact.nodeId !== source.nodeId) throw new Error('feedback-source-identity-changed');
-  if (exact.author?.nodeId !== source.author?.nodeId)
-    throw new Error('feedback-source-author-changed');
-  if (feedbackRevision(exact) !== event.revision) throw new Error('feedback-source-changed');
-  if (
-    admitFeedback(current.manifest.github!.notifications!, provider.comments.identity, exact)
-      .disposition !== 'approved'
-  )
-    throw new WorkflowPolicyHeld('feedback-not-approved');
+  await authorizeFeedback({
+    conversation: input.conversation,
+    record,
+    event,
+    intake,
+    policy,
+    provider: {
+      identity: provider.comments.identity,
+      reviews: provider.comments.reviews,
+      getItem: (...args) => provider.client.getItem(...args),
+      getIssueComment: (...args) => provider.comments.getIssueComment(...args),
+    },
+    assertCurrent: async () => {},
+    reauthorize: async () => {
+      if (input.conversation) return (await inspectIssueIdentity(intake, provider.client)).item;
+      const admission = assignmentIntakePolicy(current.manifest, 'codex');
+      if (!admission) throw new WorkflowPolicyHeld('feedback-disabled');
+      return (await inspectFeedbackAssignment(admission, intake, provider.client, record)).item;
+    },
+  });
 }

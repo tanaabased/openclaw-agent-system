@@ -96,7 +96,7 @@ number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for worktree-ready --refresh --timeout 600 --json | tee "$TMPDIR/notification-plan.json" | jq -e '.status == "completed" and (.observation.items | length) == 1'
 conversation=$(jq -er .observation.items[0].workflow.conversation "$TMPDIR/notification-plan.json")
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
-run_id=$(jq -er .assessmentTurn.runId "$TMPDIR/notification-dispatch-before.json")
+run_id=$(jq -er '(.nativeTurns | map(select(.role == "assessment")) | last | .turn).runId' "$TMPDIR/notification-dispatch-before.json")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 # reconcile native completion before a later run selects feedback for this issue
 reconcile_run=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
@@ -127,7 +127,7 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$feedback_r
 conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$feedback_run" '{sessionKey:$key,inputRunIds:[$run],limit:200,maxChars:100000}')" --json | jq --arg run "$feedback_run" '. + {requestedRunId:$run}' > "$TMPDIR/notification-feedback-history.json"
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one issue owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-feedback.json"
-jq -e --slurp '.[1].retirement == null and .[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[0].result == .[1].result and .[0].stageReceipt == .[1].stageReceipt and .[1].work == null and (.[1].feedback.events | length) == 1 and all(.[1].feedback.events[]; .native == true and .itemType == "issue" and .result == null and .work == null)' "$TMPDIR/notification-dispatch-before.json" "$TMPDIR/notification-feedback.json"
+jq -e --slurp '.[1].retirement == null and .[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[1].work == null and (.[1].feedback.events | length) == 1 and all(.[1].feedback.events[]; .itemType == "issue" and .work == null)' "$TMPDIR/notification-dispatch-before.json" "$TMPDIR/notification-feedback.json"
 
 # should answer queued github feedback with the earlier private explanation in context
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-conversation/tanaabot"
@@ -151,7 +151,7 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" conversation
 feedback_event=$(jq -ers --arg source "$(jq -er .node_id "$TMPDIR/notification-followup-source.json")" '[.[].records[].feedback.events[] | select(.sourceId == $source)] | if length == 1 then .[0].id else error("one follow-up source required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
 execution_run=''
 for attempt in $(seq 1 120); do
-  execution_run=$(jq -rs --arg event "$feedback_event" '[.[] | (.drafts // [.])[] | select(.feedback.eventId == $event) | .turnId] | unique | if length == 1 then .[0] else "" end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json)
+  execution_run=$(jq -rs --arg event "$feedback_event" '[.[] | . | select(.feedback.eventId == $event) | .turnId] | unique | if length == 1 then .[0] else "" end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json)
   if test -n "$execution_run"; then break; fi
   sleep 0.5
 done
@@ -165,10 +165,10 @@ run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" 
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$feedback_run" '{sessionKey:$key,inputRunIds:[$run],limit:200,maxChars:100000}')" --json > "$TMPDIR/notification-followup-history.json"
 jq -es '[.[].records[]] | if length == 1 then .[0] else error("one issue owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-followup.json"
-jq -e --slurp '.[0] as $before | .[1] as $after | $before.id == $after.id and $before.threadId == $after.threadId and $before.worktree == $after.worktree and $before.result == $after.result and $after.progression == null and $after.work == null and ($after.feedback.events | length) == 2 and $before.feedback.events[0].result == $after.feedback.events[0].result and all($after.feedback.events[]; .native == true and .work == null and .result == null)' "$TMPDIR/notification-feedback.json" "$TMPDIR/notification-followup.json"
+jq -e --slurp '.[0] as $before | .[1] as $after | $before.id == $after.id and $before.threadId == $after.threadId and $before.worktree == $after.worktree and $after.progression == null and $after.work == null and ($after.feedback.events | length) == 2 and $before.feedback.events[0].result == $after.feedback.events[0].result and all($after.feedback.events[]; .work == null)' "$TMPDIR/notification-feedback.json" "$TMPDIR/notification-followup.json"
 jq -e 'all(.feedback.events[]; (.turn.message | contains("contextProbe") | not))' "$TMPDIR/notification-followup.json"
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-followup-replies.json"
-jq -s '[.[] | (.drafts // [.])[]]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-reply-drafts.json"
+jq -s '[.[] | .]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-reply-drafts.json"
 node --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; const read=n=>JSON.parse(readFileSync(process.env.TMPDIR+"/notification-"+n+".json","utf8")); const record=read("followup"), event=record.feedback.events[1], source=read("followup-source"), replies=read("followup-replies"); assert.equal(event.sourceId,source.node_id); const draft=read("reply-drafts").find(d=>d.feedback?.eventId===event.id); assert.ok(draft); const reply=replies.filter(c=>c.node_id===draft.receipt.nodeId); const history=read("followup-history"); const diagnostic=JSON.stringify({event:{phase:event.phase,code:event.code,retry:event.retry,turn:{status:event.turn?.status,runId:event.turn?.runId,executionRunId:event.turn?.executionRunId,consumedByEventId:event.turn?.consumedByEventId,inactive:event.turn?.inactive,cancelled:event.turn?.cancelled}},responderRunId:draft.turnId,sessionId:history.sessionId,hasActiveRun:history.sessionInfo?.hasActiveRun,inputReceipts:history.inputReceipts,messages:history.messages.map(m=>({role:m.role,stopReason:m.stopReason,id:m.__openclaw?.id,runId:m.__openclaw?.runId,idempotencyKey:m.__openclaw?.idempotencyKey??m.idempotencyKey,truncated:m.__openclaw?.truncated,runTerminal:m.__openclaw?.runTerminal}))}); assert.equal(event.phase,"delivered",diagnostic); assert.equal(event.turn.status,"consumed",diagnostic); assert.equal(reply.length,1); assert.ok(reply[0].body.includes(draft.publicText)); const text=history.messages.filter(m=>m.role==="assistant" && m.__openclaw?.runId===draft.turnId && m.stopReason==="stop").map(m=>typeof m.content==="string"?m.content:m.content.map(c=>c.text??"").join("")).join("\n"); assert.ok(text.includes(draft.privateText)); assert.ok(text.includes(draft.publicText));'
 
 # should answer the equivalent direct question without implementation or another github reply
@@ -211,10 +211,6 @@ for (const record of [question, answer]) {
   assert.equal(record.threadId, initial.threadId);
   assert.equal(record.worktree, initial.worktree);
   assert.equal(record.work, undefined);
-  assert.equal(record.result, undefined);
-  assert.equal(record.stageReceipt, undefined);
-  assert.equal(record.assessmentHistory, undefined);
-  assert.equal(record.assessment.requestedSkill, 'generic-assessment');
 }
 NODE
 
@@ -225,7 +221,7 @@ target=$(jq -er .html_url "$TMPDIR/notification-issue.json")
 params=$(jq -nc --arg key "$conversation" --arg target "$target" --arg checkout "$checkout" '{sessionKey:$key,agentId:"issue-conversation-tanaabot",message:("Direct issue assessment target: " + $target + " checkout: " + $checkout),deliver:false,idempotencyKey:"notification-managed-assessment-read"}')
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-managed-assessment-read"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-managed-assessment-read 600000
-jq -es --slurpfile before "$TMPDIR/notification-ordinary-Answer.json" '[.[].records[]] | length == 1 and .[0].result == $before[0].result and .[0].stageReceipt == $before[0].stageReceipt and .[0].assessmentHistory == $before[0].assessmentHistory and .[0].work == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+jq -es --slurpfile before "$TMPDIR/notification-ordinary-Answer.json" '[.[].records[]] | length == 1 and .[0].work == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 ```
 
 ## Status Update
@@ -242,7 +238,7 @@ target=$(jq -er .html_url "$TMPDIR/notification-issue.json")
 params=$(jq -nc --arg key "$conversation" --arg target "$target" '{sessionKey:$key,agentId:"issue-conversation-tanaabot",message:("Operator status update target: " + $target + "\nDecision: use the shared reply approach; implementation remains unstarted. Draft this public update."),deliver:false,idempotencyKey:"notification-status-draft"}')
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-status-draft"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-status-draft 600000
-jq -es '[.[] | (.drafts // [.])[] | select(.update != null)] | if length == 1 then .[0] else error("one status draft required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-status-draft.json"
+jq -es '[.[] | . | select(.update != null)] | if length == 1 then .[0] else error("one status draft required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-status-draft.json"
 jq -e '.publicText != null and .receipt == null and .attempted != true' "$TMPDIR/notification-status-draft.json"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-status-before.json"
@@ -276,9 +272,9 @@ node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-status-current 600000
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-status-after.json"
 jq -e --slurpfile before "$TMPDIR/notification-status-comments.json" '. == $before[0]' "$TMPDIR/notification-status-after.json"
-jq -es '[.[] | (.drafts // [.])[] | select(.update != null)] | length == 1 and .[0].receipt != null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json
+jq -es '[.[] | . | select(.update != null)] | length == 1 and .[0].receipt != null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json
 # should preserve the admitted owner, assessment, mode and checkout without implementation
-jq -es --slurpfile before "$TMPDIR/notification-ordinary-Answer.json" '[.[].records[]] | length == 1 and .[0].threadId == $before[0].threadId and .[0].worktree == $before[0].worktree and .[0].result == $before[0].result and .[0].work == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+jq -es --slurpfile before "$TMPDIR/notification-ordinary-Answer.json" '[.[].records[]] | length == 1 and .[0].threadId == $before[0].threadId and .[0].worktree == $before[0].worktree and .[0].work == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 ```
 
 ## Cleanup

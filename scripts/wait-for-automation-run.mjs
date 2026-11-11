@@ -17,7 +17,7 @@ function runCommand(command, args, input, timeoutMs = 30_000) {
  * collect ci-only failure evidence without changing the failed run's outcome.
  * @param {string} nativeId
  * @param {string | undefined} runId
- * @param {{run?: (command: string, args: string[], input?: string) => {status: number | null, stdout: string}, write?: (text: string) => void, evidence?: string[]}} options
+ * @param {{run?: (command: string, args: string[], input?: string) => {status: number | null, stdout: string}, write?: (text: string) => void, evidence?: string[], observationWindow?: {fromMs: number, throughMs: number}}} options
  */
 export function reportAutomationFailure(
   nativeId,
@@ -26,41 +26,83 @@ export function reportAutomationFailure(
     run = runCommand,
     write = (text) => process.stderr.write(text),
     evidence: additional = [],
+    observationWindow,
   } = {},
 ) {
   const evidence = [...additional];
   try {
     assert.ok(typeof nativeId === 'string' && nativeId.trim());
-    assert.ok(typeof runId === 'string' && runId.trim());
+    const exact = typeof runId === 'string' && runId.trim();
+    if (!exact) {
+      assert.ok(
+        observationWindow &&
+          Number.isSafeInteger(observationWindow.fromMs) &&
+          observationWindow.fromMs > 0 &&
+          Number.isSafeInteger(observationWindow.throughMs) &&
+          observationWindow.throughMs >= observationWindow.fromMs,
+        'an exact run or bounded observation window is required',
+      );
+    }
     const result = run('openclaw', [
       'gateway',
       'call',
       'cron.runs',
       '--params',
-      JSON.stringify({ id: nativeId, runId, limit: 1, offset: 0 }),
+      JSON.stringify({
+        id: nativeId,
+        ...(exact ? { runId } : {}),
+        limit: exact ? 1 : 10,
+        offset: 0,
+      }),
       '--json',
     ]);
     assert.equal(result.status, 0);
     const page = JSON.parse(result.stdout);
-    const entry = page.entries?.find((item) => item.jobId === nativeId && item.runId === runId);
-    assert.ok(entry, 'the exact native record is unavailable');
-    evidence.push(
-      'native cron failure: ' +
-        JSON.stringify({
-          ts: entry.ts,
-          jobId: entry.jobId,
-          runId: entry.runId,
-          status: entry.status,
-          completionStatus: entry.completionStatus,
-          error: entry.error,
-          errorReason: entry.errorReason,
-          diagnostics: entry.diagnostics,
-          durationMs: entry.durationMs,
-          deliveryError: entry.deliveryError,
-        }),
+    assert.ok(Array.isArray(page.entries), 'native run history is invalid');
+    const entries = page.entries.filter((item) =>
+      exact
+        ? item.jobId === nativeId && item.runId === runId
+        : item.jobId === nativeId &&
+          Number.isSafeInteger(item.runAtMs) &&
+          item.runAtMs >= observationWindow.fromMs &&
+          item.runAtMs <= observationWindow.throughMs,
     );
+    if (exact) assert.ok(entries.length, 'the exact native record is unavailable');
+    else
+      evidence.push(
+        'native cron observation window: ' +
+          JSON.stringify({
+            ...observationWindow,
+            sampledRecords: page.entries.length,
+            matchingRecords: entries.length,
+            hasMore: page.hasMore,
+          }) +
+          '; diagnostic sample only, not exact occurrence attribution',
+      );
+    for (const entry of entries)
+      evidence.push(
+        (exact ? 'native cron failure: ' : 'native cron window record: ') +
+          JSON.stringify({
+            ts: entry.ts,
+            jobId: entry.jobId,
+            runId: entry.runId,
+            runAtMs: entry.runAtMs,
+            action: entry.action,
+            status: entry.status,
+            completionStatus: entry.completionStatus,
+            error: entry.error,
+            errorReason: entry.errorReason,
+            diagnostics: entry.diagnostics,
+            durationMs: entry.durationMs,
+            deliveryError: entry.deliveryError,
+          }),
+      );
   } catch {
-    evidence.push('native cron failure: exact record lookup failed; no substitute run used');
+    evidence.push(
+      observationWindow && !runId
+        ? 'native cron failure: observation window lookup unavailable'
+        : 'native cron failure: exact record lookup failed; no substitute run used',
+    );
   }
   try {
     const log = run('openclaw-gateway', ['log-path']);

@@ -1,29 +1,29 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { IssueDeliveryState } from '../agent/issue-delivery-state.ts';
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
-import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
-import pendingRetirement from '../agent/pending-retirement.ts';
+import { DirectEntryStore } from '../agent/direct-entry-store.ts';
 import type DispatchStore from '../agent/dispatch-state.ts';
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
-import { retirementDeliveryEffects, type RetirementEffect } from '../agent/retirement-effects.ts';
-import type { CodexDeliveryState } from '../agent/codex-delivery-state.ts';
+import { implementationEntriesSchema } from '../agent/implementation-entry-state.ts';
+import type { ManagedIssue } from '../agent/managed-issue.ts';
+import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
+import pendingRetirement from '../agent/pending-retirement.ts';
 import reconcileRetirementEffects from '../agent/reconcile-retirement-effects.ts';
 import ReplyStore, { type ReplyDraft } from '../agent/reply-store.ts';
+import { retirementDeliveryEffects, type RetirementEffect } from '../agent/retirement-effects.ts';
 import retirementLocalData from '../agent/retirement-local-data.ts';
-import { DirectEntryStore } from '../agent/assessment-entry-store.ts';
-import { implementationEntriesSchema } from '../agent/implementation-entry-state.ts';
-import { account, intakeFixture } from './github-intake-fixture.ts';
-import type { ManagedIssue } from '../agent/managed-issue.ts';
 import { githubNotificationPublicationComment } from '../channels/github/publication/publication-contract.ts';
+import { account, intakeFixture } from './github-intake-fixture.ts';
 
 const task = (id: string): SharedDispatchRecord => ({
   id: id.repeat(64),
   intakeId: id.repeat(64),
   issueKey: id.repeat(64),
   sourceThreadId: 'intake',
-  phase: 'routing',
+
   createdAt: 1,
   manifestDigest: 'manifest',
   context: 'copied plan',
@@ -87,22 +87,13 @@ describe('agent/retirement disposal', () => {
       }
     });
 
-    it(`should remove exact task records and cold copies while preserving a sibling in ${Store.name.toLowerCase()}`, async () => {
+    it(`should remove exact task records while preserving a sibling in ${Store.name.toLowerCase()}`, async () => {
       const store: DispatchStore<SharedDispatchRecord> = new Store(root, 'b'.repeat(64));
       const original = task('a'),
         sibling = task('c');
       await store.exclusive(async (state, save) => {
         state.records.push(original, sibling);
         await save();
-      });
-      await store.history.exclusive(async () => {
-        await store.history.retain(original, Date.now(), Date.now());
-        await store.history.retain(
-          { ...original, context: 'older copied plan' },
-          Date.now(),
-          Date.now(),
-        );
-        await store.history.retain(sibling, Date.now(), Date.now());
       });
       await store.exclusive(async (state, save) => {
         store.retainRetirementEffects(state, [pending]);
@@ -121,10 +112,6 @@ describe('agent/retirement disposal', () => {
       const after = await restarted.read();
       assert.deepEqual(after.records, [sibling]);
       assert.deepEqual(after.retirementEffects, [pending]);
-      assert.equal(
-        (await readdir(store.history.directory)).filter((name) => name.endsWith('.json')).length,
-        1,
-      );
       await assert.rejects(
         restarted.exclusive((state) => restarted.dispose(state, original)),
         /retirement-task-missing/,
@@ -185,7 +172,6 @@ describe('agent/retirement disposal', () => {
       authorization: source,
       scopeSource: source,
       caller: source,
-      plan: 'copied task plan',
     };
     const unrelated = { ...entry, id: 'b'.repeat(64), subjectId: 'I_other' };
     await store.exclusive(async (entries, save) => {
@@ -206,7 +192,7 @@ describe('agent/retirement disposal', () => {
       issue: fixture.item,
     } as unknown as ManagedIssue;
     const head = 'a'.repeat(40);
-    const delivery: CodexDeliveryState = {
+    const delivery: IssueDeliveryState = {
       id: 'a'.repeat(64),
       binding: {
         repositoryId: fixture.repository.nodeId,
@@ -217,12 +203,10 @@ describe('agent/retirement disposal', () => {
         base: 'main',
         head,
         authorId: account.nodeId,
-        policyDigest: 'b'.repeat(64),
       },
       creationAttempted: false,
       reconciled: false,
       attached: false,
-      cardAttempts: 0,
       pendingPush: { previousHead: '', head },
       pushedHead: head,
       contentUpdate: { title: 'prepared only' },
@@ -253,7 +237,6 @@ describe('agent/retirement disposal', () => {
       target: '{}',
       privateText: 'private plan copy',
       configuration: 'b'.repeat(64),
-      ownerContext: 'task context',
       authorLogin: account.login,
       authorNodeId: account.nodeId,
       selection: {

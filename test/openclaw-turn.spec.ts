@@ -5,18 +5,14 @@ import type { OpenClawTurn } from '../agent/openclaw-turn-state.ts';
 import { consumedInputEvent, reconcileOpenClawTurn } from '../agent/openclaw-turn.ts';
 
 describe('agent/openclaw-turn', () => {
-  for (const conflict of ['selection', 'input', 'body', 'key'] as const)
-    it(`should refuse execution-hint repair with a conflicting ${conflict}`, () => {
+  for (const conflict of ['run', 'input', 'body', 'key'] as const)
+    it(`should reject a conflicting native feedback ${conflict}`, () => {
       const turn: OpenClawTurn = {
         runId: 'delivery',
         message: 'original feedback',
         status: 'consumed',
         consumedByEventId: 'input',
         executionRunId: 'later-responder',
-      };
-      const selection = {
-        runId: conflict === 'selection' ? 'another-responder' : 'later-responder',
-        inputEventId: 'input',
       };
       const message = {
         role: 'user',
@@ -28,7 +24,7 @@ describe('agent/openclaw-turn', () => {
         },
       };
       assert.throws(
-        () => consumedInputEvent([message], turn, true, selection),
+        () => consumedInputEvent([message], turn, true),
         /dispatch-turn-run-mismatch|dispatch-turn-input-mismatch/,
       );
       assert.equal(turn.executionRunId, 'later-responder');

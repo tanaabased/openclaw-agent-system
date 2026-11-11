@@ -1,7 +1,7 @@
 import type { codexDispatchNative } from './codex-dispatch-native.ts';
 import type CodexDispatchStore from './codex-dispatch-state.ts';
 
-type State = Awaited<ReturnType<CodexDispatchStore['read']>>;
+type State = Pick<Awaited<ReturnType<CodexDispatchStore['read']>>, 'run' | 'checked'>;
 type Occurrence = Awaited<ReturnType<ReturnType<typeof codexDispatchNative>['occurrence']>>;
 
 /** check scheduling once per native occurrence; pause never revokes an accepted run. */

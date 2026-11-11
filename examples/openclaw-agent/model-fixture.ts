@@ -79,7 +79,7 @@ fixtures.push(
         routingResult(request, inspectCall)?.status === 'available' &&
         (routingResult(request, inspectCall)?.instructions as { guidance?: { content?: string } })
           ?.guidance?.content ===
-          'Preserve uncertainty and use only an explicit default fallback.' &&
+          'Preserve uncertainty and use the configured default when complexity is unset.' &&
         !routingResult(request, resolveCall),
     },
     response: () => ({
@@ -92,7 +92,6 @@ fixtures.push(
             action: 'resolve',
             context: 'An unspecified task.',
             assessment: { complexity: 'unset', reason: 'No defensible tier.' },
-            fallback: 'default',
           }),
         },
       ],

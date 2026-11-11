@@ -1,3 +1,4 @@
+import { withDispatchTask } from './dispatch-task-scope.ts';
 import IssuePickupFailure from './issue-pickup-failure.ts';
 import { omit } from 'lodash-es';
 import reconcileIssuePickup from './issue-pickup-reconcile.ts';
@@ -16,7 +17,7 @@ import {
 } from './issue-pickup-jobs.ts';
 import issuePickup, { pickupAuthority, type PickupInput } from './issue-pickup.ts';
 import type { IssuePickupClient } from '../channels/github/provider/issue-pickup-client.ts';
-import { assertDispatchStorage, dispatchStorageNotice } from './dispatch-storage.ts';
+import { assertDispatchStorage } from './dispatch-storage.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type { IssuePickupAuthority } from './issue-pickup-authority.ts';
 import connectCodexGitHubAccount from './codex-github-client.ts';
@@ -50,7 +51,9 @@ import type { GitHubNotificationIntakeClient } from '../channels/github/provider
 
 export interface CodexIntakeDependencies {
   issuePickup?: IssuePickupAuthority;
-  pickupActivation?: () => Promise<{ threadId: string; nativeId: string }>;
+  pickupActivation?: (
+    acceptedOccurrence: boolean,
+  ) => Promise<{ threadId: string; nativeId: string }>;
   assertActive?: () => Promise<void>;
   threadId?: string;
   intakeNative?: Pick<ReturnType<typeof codexDispatchNative>, 'occurrence'>;
@@ -232,7 +235,7 @@ export async function runCodexIntake(
             current.store.location.root,
             current.store.location.scope,
           );
-          await journal.exclusive(async (state, save) =>
+          await journal.observeIntake(async (state, save) =>
             acceptCodexIntakeOccurrence(
               state,
               occurrence,
@@ -258,7 +261,7 @@ export async function runCodexIntake(
             await new CodexDispatchStore(
               current.store.location.root,
               current.store.location.scope,
-            ).read()
+            ).inspectIntake()
           ).projectPickup,
         ) ?? deps.issuePickup,
       store: current.store,
@@ -380,9 +383,8 @@ export async function inspectCodexIntake(pluginData: string, deps: CodexIntakeDe
     ...context,
     ...(context
       ? {
-          storage: dispatchStorageNotice(
-            await new CodexDispatchStore(pluginData, context.scope).read(),
-          ),
+          storage: (await new CodexDispatchStore(pluginData, context.scope).inspectIntake())
+            .storage,
         }
       : {}),
     baselineAt: state?.baselineAt ?? null,
@@ -405,22 +407,13 @@ export async function runCodexIssuePickup(
     const current = await selectCodexIntake(pluginData, deps);
     debug = current.manifest.debug;
     const enrollmentStore = new IssuePickupEnrollmentStore(codexInstanceStore(pluginData).root);
+    const journal = new CodexDispatchStore(
+      current.store.location.root,
+      current.store.location.scope,
+    );
     const verifyNative = async (policy: GitHubNotificationPolicy) => {
       const retained = await enrollmentStore.inspect(policy, 'codex', current.store.location.scope);
-      const activation = await (
-        deps.pickupActivation ??
-        (() =>
-          inspectCodexPickupActivation(pluginData, {
-            codexHome: current.codexHome,
-            inspectBinding: deps.inspectBinding,
-          }))
-      )();
-      if (
-        !deps.threadId ||
-        deps.threadId !== activation.threadId ||
-        retained.nativeId !== activation.nativeId
-      )
-        throw new IntakeError('issue-pickup-native-caller-required');
+      if (!deps.threadId) throw new IntakeError('issue-pickup-native-caller-required');
       const connection = deps.intakeNative
         ? undefined
         : await connectCodexThreads(current.workspace, current.codexHome);
@@ -428,6 +421,27 @@ export async function runCodexIssuePickup(
         const occurrence = await (
           deps.intakeNative ?? codexDispatchNative(connection!.request)
         ).occurrence(deps.threadId);
+        const acceptedOccurrence = Boolean(
+          (await journal.inspectIntake()).projectPickup?.operations.some(
+            (entry) => entry.runId === occurrence.id,
+          ),
+        );
+        const activation = deps.pickupActivation
+          ? await deps.pickupActivation(acceptedOccurrence)
+          : await inspectCodexPickupActivation(
+              pluginData,
+              {
+                codexHome: current.codexHome,
+                inspectBinding: deps.inspectBinding,
+              },
+              acceptedOccurrence,
+            );
+        if (
+          deps.threadId !== activation.threadId ||
+          retained.nativeId !== activation.nativeId ||
+          (nativeOccurrence && nativeOccurrence.id !== occurrence.id)
+        )
+          throw new IntakeError('issue-pickup-native-caller-required');
         if (occurrence.automationId !== activation.nativeId)
           throw new IntakeError('issue-pickup-native-caller-required');
         nativeOccurrence = occurrence;
@@ -442,85 +456,79 @@ export async function runCodexIssuePickup(
       const retained = await verifyNative(current.policy.policy);
       authority = { enrollment: retained.enrollment, receipts: [] };
     }
-    await assertCodexIntakeActive(pluginData, current, deps);
-    const journal = new CodexDispatchStore(
-      current.store.location.root,
-      current.store.location.scope,
-    );
-    return await journal.exclusive(async (state, save, signal) => {
-      const readPolicy = async () => {
-        const live = await selectCodexIntake(pluginData, deps);
-        if (live.store.location.scope !== current.store.location.scope || !live.policy)
-          throw new IntakeError('intake-workspace-binding-changed');
-        if (!deps.issuePickup) await verifyNative(live.policy.policy);
-        return live.policy.policy;
-      };
-      await readPolicy();
-      const client = (await connectSelected(current, deps, signal)) as IssuePickupClient;
-      if (
-        !client.discoverProject ||
-        !client.projectCandidate ||
-        !client.projectBlocked ||
-        !client.assignProjectIssue
-      )
-        throw new IntakeError('issue-pickup-provider-unavailable');
-      const result = await issuePickup({
-        runtime: 'codex',
-        scope: current.store.location.scope,
-        workspaceDir: current.workspace,
-        agentId: current.agentId,
-        enrollment: authority.enrollment,
-        timezone,
-        state,
-        save,
-        assertWriteCapacity: () => {
-          assertDispatchStorage(state, true);
-        },
-        now: deps.now ?? Date.now,
-        readPolicy,
-        client,
-        instance: codexInstanceStore(pluginData),
-        runId: nativeOccurrence?.id ?? authority.enrollment.id,
-        occupied: codexItemOccupied,
-        input,
-      });
-      if (['material', 'selection-required', 'discovering'].includes(result.status))
+    return await withDispatchTask('codex', undefined, () =>
+      journal.exclusive(async (state, save, signal) => {
+        const readPolicy = async () => {
+          const live = await selectCodexIntake(pluginData, deps);
+          if (live.store.location.scope !== current.store.location.scope || !live.policy)
+            throw new IntakeError('intake-workspace-binding-changed');
+          if (!deps.issuePickup) await verifyNative(live.policy.policy);
+          return live.policy.policy;
+        };
+        await readPolicy();
+        const client = (await connectSelected(current, deps, signal)) as IssuePickupClient;
+        if (
+          !client.discoverProject ||
+          !client.projectCandidate ||
+          !client.projectBlocked ||
+          !client.assignProjectIssue
+        )
+          throw new IntakeError('issue-pickup-provider-unavailable');
+        const result = await issuePickup({
+          runtime: 'codex',
+          scope: current.store.location.scope,
+          workspaceDir: current.workspace,
+          agentId: current.agentId,
+          enrollment: authority.enrollment,
+          timezone,
+          state,
+          save,
+          assertWriteCapacity: () => {
+            assertDispatchStorage(state, true);
+          },
+          now: deps.now ?? Date.now,
+          readPolicy,
+          client,
+          instance: codexInstanceStore(pluginData),
+          runId: nativeOccurrence?.id ?? authority.enrollment.id,
+          occupied: codexItemOccupied,
+          input,
+        });
+        if (['material', 'selection-required', 'discovering'].includes(result.status))
+          return {
+            ...result,
+            response: '',
+            instructions:
+              'instructions' in result
+                ? result.instructions
+                : result.status === 'discovering'
+                  ? 'Call pickup again to continue discovery.'
+                  : 'Follow next until the complete material is restored before selection.',
+          };
+        const reportPolicy = await readPolicy();
+        const report = issuePickupReport({
+          outcome: result,
+          debug: current.manifest.debug,
+          capacity: {
+            occupied: codexCapacity(state, reportPolicy.maxConcurrentItems, state.projectPickup)
+              .occupied,
+            limit: reportPolicy.maxConcurrentItems,
+          },
+        });
         return {
-          ...result,
-          response: '',
+          ...omit(result, ['selectionGuidance']),
+          response: codexHeartbeatEnvelope(
+            nativeOccurrence?.automationId ?? issuePickupAutomationId,
+            report.response,
+            report.notify,
+          ),
           instructions:
             'instructions' in result
               ? result.instructions
-              : result.status === 'discovering'
-                ? 'Call pickup again to continue discovery.'
-                : 'Follow next until the complete material is restored before selection.',
+              : 'Reproduce response unchanged as the whole final report. An empty response means no card. Preserve the native notification decision. Report preparation does not prove visible delivery.',
         };
-      const reportPolicy = await readPolicy();
-      const report = issuePickupReport({
-        outcome: result,
-        debug: current.manifest.debug,
-        capacity: {
-          occupied: codexCapacity(
-            state.records,
-            reportPolicy.maxConcurrentItems,
-            state.projectPickup,
-          ).occupied,
-          limit: reportPolicy.maxConcurrentItems,
-        },
-      });
-      return {
-        ...omit(result, ['selectionGuidance']),
-        response: codexHeartbeatEnvelope(
-          nativeOccurrence?.automationId ?? issuePickupAutomationId,
-          report.response,
-          report.notify,
-        ),
-        instructions:
-          'instructions' in result
-            ? result.instructions
-            : 'Reproduce response unchanged as the whole final report. An empty response means no card. Preserve the native notification decision. Report preparation does not prove visible delivery.',
-      };
-    });
+      }),
+    );
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error;
     throw new IssuePickupFailure(error, { debug, automationId: nativeOccurrence?.automationId });

@@ -24,6 +24,29 @@ const admit = (comment: ReturnType<typeof reviewFeedback>) =>
   admitReviewFeedback({ account: notificationAccount, configuration, comment });
 
 describe('channels/github/provider/review-feedback', () => {
+  it('should link summary and finding prose without rewriting sources or diff literals', () => {
+    const review = reviewFixture({ body: '@reviewer check `@summary-code`.' });
+    const finding = reviewCommentFixture({
+      body: 'Ask @finder; keep [@linked](https://example.com) and email@example.com.',
+      path: '@file.ts',
+      diffHunk: '+ @diff-literal',
+    });
+    for (const feedback of [
+      reviewFeedback(review, [finding]),
+      reviewReplyFeedback(review, { ...finding, replyToId: 70 }),
+    ]) {
+      const original = JSON.stringify(feedback);
+      const card = reviewFeedbackPresentation(feedback);
+      assert.ok(card.includes('[@finder](https://github.com/finder)'));
+      assert.ok(card.includes('[@linked](https://example.com) and email@example.com'));
+      assert.ok(card.includes('```diff\n+ @diff-literal\n```'));
+      assert.ok(card.includes('`@file.ts`'));
+      assert.ok(card.includes(`](https://github.com/${feedback.author!.login})`));
+      assert.equal(JSON.stringify(feedback), original);
+    }
+    const group = reviewFeedbackPresentation(reviewFeedback(review, [finding]));
+    assert.ok(group.includes('[@reviewer](https://github.com/reviewer) check `@summary-code`'));
+  });
   it('should admit complete findings when their combined bodies and diffs exceed one response', () => {
     const findings = [1, 2].map((id) =>
       reviewCommentFixture({
@@ -44,14 +67,14 @@ describe('channels/github/provider/review-feedback', () => {
     const body = 'Check `work`, [a link](https://example.com), and *literal prose*.';
     const finding = reviewCommentFixture({ body, path: 'api/[edge]`case`.ts', side: 'RIGHT' });
     const card = reviewFeedbackPresentation(reviewFeedback(reviewFixture(), [finding]));
-    assert.ok(card.includes('> ' + body));
+    assert.ok(card.includes(body));
     assert.ok(card.includes('[``api/[edge]`case`.ts`` ↗](' + finding.url + ')'));
     assert.ok(card.includes('reviewed commit `' + finding.originalCommitId.slice(0, 7) + '`'));
     assert.ok(card.includes('side: `RIGHT`'));
     assert.equal(finding.body, body);
   });
 
-  it('should quote complete review and inline cards with exact source links and historical locations', () => {
+  it('should remove only outer quotes from complete review and inline cards', () => {
     const review = reviewFixture({ body: 'Review summary.\n\n> Quoted context.' });
     const finding = reviewCommentFixture({
       body: 'First paragraph.\r\n\r\n- One\r\n- Two\r\n\r\n```ts\r\nrun();\r\n```',
@@ -63,17 +86,19 @@ describe('channels/github/provider/review-feedback', () => {
       reviewReplyFeedback(review, { ...finding, replyToId: 70 }),
     ]) {
       const card = reviewFeedbackPresentation(comment);
-      assert.ok(!card.startsWith('> ## 💬'));
+      assert.ok(!card.startsWith('>'));
+      assert.ok(card.startsWith('Review summary:') || card.startsWith('First paragraph.'));
       assert.ok(card.indexOf('First paragraph.') < card.indexOf('reviewed commit'));
-      assert.ok(card.split('\n').every((line) => line.startsWith('>')));
-      assert.ok(card.includes('> - One\n> - Two'));
-      assert.ok(card.includes('> ```ts\n> run();\n> ```'));
+      assert.ok(card.includes('First paragraph.\n\n- One\n- Two\n\n```ts\nrun();\n```'));
       assert.ok(card.includes('Current line: unavailable or outdated; original line: 7'));
       assert.ok(card.includes(finding.url));
       assert.ok(card.includes(finding.originalCommitId.slice(0, 7)));
-      assert.ok(card.includes('> ```diff\n> @@ -1 +1 @@\n> +return values[0]\n> ```'));
+      assert.ok(card.includes('```diff\n@@ -1 +1 @@\n+return values[0]\n```'));
+      if (comment.feedback.receipt.kind === 'review') {
+        assert.ok(card.includes('\n> Quoted context.'));
+      }
       const source = comment.feedback.receipt.kind === 'review' ? review.url : finding.url;
-      assert.ok(card.includes(`[Review comment ↗](${source}) from [@${comment.author!.login}]`));
+      assert.ok(card.includes(`*[Review comment ↗](${source}) from [@${comment.author!.login}]`));
     }
   });
   it('should preserve every finding permalink beside the exact review footer', () => {
@@ -109,14 +134,14 @@ describe('channels/github/provider/review-feedback', () => {
     });
     const card = reviewFeedbackPresentation(reviewFeedback(reviewFixture(), [finding]));
     assert.ok(card.includes('Reviewed diff excerpt'));
-    assert.ok(!card.includes('> +line 12\n'));
-    assert.ok(card.includes('> +line 13\n'));
-    assert.ok(card.includes('> ````diff\n'));
-    assert.ok(card.includes('> +```\n'));
+    assert.ok(!card.includes('+line 12\n'));
+    assert.ok(card.includes('+line 13\n'));
+    assert.ok(card.includes('````diff\n'));
+    assert.ok(card.includes('+```\n'));
     assert.ok(!card.includes('x'.repeat(400)));
     assert.ok(card.includes('…'));
     assert.ok(card.includes('Preview shortened'));
-    assert.ok(card.split('\n').every((line) => line.startsWith('>')));
+    assert.ok(!card.startsWith('>'));
     assert.ok(card.includes(finding.url));
   });
   it('should label provider-truncated and unavailable reviewed diffs honestly', () => {
@@ -125,7 +150,7 @@ describe('channels/github/provider/review-feedback', () => {
         reviewFeedback(reviewFixture(), [reviewCommentFixture({ diffHunk, diffTruncated })]),
       );
     assert.ok(render('+partial', true).includes('Reviewed diff excerpt'));
-    assert.ok(render('+trailing spaces  \n').includes('> +trailing spaces  \n'));
+    assert.ok(render('+trailing spaces  \n').includes('+trailing spaces  \n'));
     assert.ok(render(' \n').includes('Reviewed diff unavailable'));
     assert.ok(!render(' \n').includes('```diff'));
   });

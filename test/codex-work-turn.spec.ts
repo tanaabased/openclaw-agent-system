@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import advance from '../agent/codex-work-turn.ts';
-import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
 import type { CodexWorkContext } from '../agent/codex-continuation-context.ts';
+import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
+import advance from '../agent/codex-work-turn.ts';
 
 function fixture() {
   const source = { turnId: 'work', inputId: 'original-input' };
@@ -12,25 +12,10 @@ function fixture() {
     threadId: 'chat',
     worktree: '/tmp',
     request: {},
-    result: { outcome: 'plan-ready' },
-    resultTurnId: 'assessment',
-    progression: { stage: 'implementation', via: 'work', workOwner: 'issue' },
-    continuation: {
-      phase: 'running',
+    progression: { stage: 'implementation', via: 'work' },
+    nativeWork: {
       scope: 'local',
       selection: { observedAt: 1 },
-      policyDigest: 'policy',
-      assessmentDigest: 'assessment',
-      attempt: {
-        id: 'attempt',
-        origin: 'input',
-        inputId: source.inputId,
-        sourceThreadId: 'chat',
-        sourceTurnId: source.turnId,
-        beforeTurnId: source.turnId,
-        turnId: source.turnId,
-        request: { threadId: 'chat', prompt: 'Authorized work.' },
-      },
     },
   } as DispatchRecord;
   const receipts: string[] = [];
@@ -49,9 +34,8 @@ function fixture() {
     },
     save: async () => {},
   } as unknown as CodexWorkContext;
-  const verified = {
-    admitted: { id: 'admitted', repository: { nodeId: 'repo' }, issue: { nodeId: 'issue' } },
-    selection: record.continuation!.selection,
+  const verified: Parameters<typeof advance>[2] = {
+    selection: record.nativeWork!.selection,
     found: {
       id: 'chat',
       cwd: '/tmp',
@@ -61,11 +45,8 @@ function fixture() {
       turnEnded: false,
       followUpUserTurn: true,
     },
-    transition: { status: 'ready', progression: record.progression },
-    liveMode: 'work',
-    authorizeLive: async () => {},
-    resumeBlocked: false,
-  } as unknown as Parameters<typeof advance>[2];
+    transition: { status: 'ready', progression: record.progression! },
+  };
   return { record, context, verified, source, receipts };
 }
 
@@ -74,7 +55,7 @@ describe('agent/codex-work-turn', () => {
     const { record, context, verified } = fixture();
     delete record.progression;
     verified.found.turnStatus = 'interrupted';
-    record.continuation!.observation = { turnId: 'work', afterItemId: 'boundary' };
+    record.nativeWork!.observation = { turnId: 'work', afterItemId: 'boundary' };
     context.observeTurn = async () => ({
       status: 'unresolved',
       reason: 'native-observation-superseded',
@@ -92,12 +73,11 @@ describe('agent/codex-work-turn', () => {
     context.observeTurn = async () => ({ status: 'active', receiptId: 'fresh-read' });
     assert.equal((await advance(record, context, verified)).ready, true);
     assert.equal((record as DispatchRecord).progression?.stage, 'implementation');
-    assert.equal(record.continuation!.observation.receiptId, 'fresh-read');
+    assert.equal(record.nativeWork!.observation.turnId, 'work');
   });
 
-  it('should use current verified feedback without replacing an uncertain older request', async () => {
+  it('should bind current work to the exact verified feedback receipt', async () => {
     const { record, context, verified } = fixture();
-    const older = structuredClone(record.continuation!.attempt);
     verified.found.turnId = 'feedback';
     const attempt = {
       id: 'f'.repeat(64),
@@ -118,38 +98,11 @@ describe('agent/codex-work-turn', () => {
       return { status: 'verified', turnId: 'feedback', ended: false };
     };
     assert.equal((await advance(record, context, verified)).ready, true);
-    assert.deepEqual(record.continuation!.attempt, older);
-    assert.equal(record.continuation!.binding!.turnId, 'feedback');
-    assert.equal(record.progression!.workOwner, 'issue');
   });
-
-  for (const outcome of ['done', 'clarification-needed', 'blocked'] as const)
-    it(`should accept current input without making ${outcome} history a gate`, async () => {
-      const { record, context, verified } = fixture();
-      const work = record.continuation!;
-      work.result = {
-        outcome,
-        summary: 'Retained work.',
-        fullResult: 'Original result.',
-        ...(outcome === 'clarification-needed' ? { questions: ['Which option?'] } : {}),
-      } as NonNullable<typeof work.result>;
-      const previous = structuredClone(work);
-      context.operatorInput = { turnId: 'work', inputId: 'new-steering' };
-      assert.equal((await advance(record, context, verified)).ready, true);
-      assert.deepEqual(work.result, previous.result);
-      assert.deepEqual(work.attempt, previous.attempt);
-      assert.equal(work.scope, 'local');
-      assert.equal(work.phase, previous.phase);
-    });
 
   it('should enter work without saving a plan or creating a coordinator request', async () => {
     const { record, context, verified } = fixture();
-    delete record.result;
-    delete record.continuation!.attempt;
     assert.equal((await advance(record, context, verified)).ready, true);
-    assert.equal(record.result, undefined);
-    assert.equal(record.continuation!.attempt, undefined);
-    assert.equal(record.continuation!.binding!.turnId, 'work');
   });
 
   it('should preserve current native denials without mutating prior receipts', async () => {

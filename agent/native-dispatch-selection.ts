@@ -1,15 +1,14 @@
+import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { automationHash } from './automation-hash.ts';
-import { dispatchAdmission, managedTargetUrl, type ManagedIssue } from './managed-issue.ts';
-import { routingInstructionsDigest } from './routing-instructions.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
-import { assertNativeContextInput } from './native-context-request.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
+import { dispatchAdmission, managedTargetUrl, type ManagedIssue } from './managed-issue.ts';
+import { assertNativeContextInput } from './native-context-request.ts';
 import { feedbackTarget } from './reply-target.ts';
-
+import { routingInstructionsDigest } from './routing-instructions.ts';
 export function isNativeDispatchSelection(action: unknown) {
   return ['prepare', 'reconcile', 'start', 'assess'].includes(String(action));
 }
-
 /** The coordinator chooses an issue, never a journal key or preparation fingerprint. */
 export function nativeDispatchSelection<R extends SharedDispatchRecord>(
   input: Record<string, unknown>,
@@ -23,8 +22,8 @@ export function nativeDispatchSelection<R extends SharedDispatchRecord>(
     throw new Error('dispatch-target-invalid');
   const matches = records.filter((record) => {
     if (record.sourceThreadId !== caller || record.reset || record.supersededBy) return false;
-    if (record.retired && input.action !== 'reconcile') return false;
-    if (!input.target && input.action === 'prepare' && record.phase !== 'routing') return false;
+    if (!input.target && input.action === 'prepare' && dispatchCreationStatus(record) !== 'routing')
+      return false;
     const issue = dispatchAdmission(record, admitted);
     return issue && (!input.target || managedTargetUrl(issue) === input.target);
   });
@@ -32,10 +31,11 @@ export function nativeDispatchSelection<R extends SharedDispatchRecord>(
     throw new Error(matches.length ? 'dispatch-target-ambiguous' : 'dispatch-target-unavailable');
   return matches[0]!;
 }
-
 /** Internal snapshot check retained across the adapter/owner boundary. */
 export function nativeDispatchDigest(
-  record: SharedDispatchRecord & { project?: unknown },
+  record: SharedDispatchRecord & {
+    project?: unknown;
+  },
   runtime: 'codex' | 'openclaw',
 ) {
   return automationHash({
@@ -47,11 +47,12 @@ export function nativeDispatchDigest(
       record.routingInstructions && routingInstructionsDigest(record.routingInstructions),
   });
 }
-
 export function nativeDispatchResponse<T>(
   value: T,
   records: readonly (SharedDispatchRecord & {
-    feedback?: { events: readonly FeedbackSourceEvent[] };
+    feedback?: {
+      events: readonly FeedbackSourceEvent[];
+    };
   })[],
   admitted: readonly ManagedIssue[],
 ): T {

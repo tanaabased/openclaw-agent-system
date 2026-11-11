@@ -1,14 +1,7 @@
-import {
-  dispatchAdmission,
-  managedIssueState,
-  type ManagedIssue as IntakeRecord,
-  type ManagedIssueState as IntakeState,
-} from './managed-issue.ts';
+import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { type default as IntakeRecordStore } from '../channels/github/intake/record-store.ts';
-
 import { githubNotificationMarkdownCode as inlineCode } from '../channels/github/presentation/card.ts';
 import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
-import { type AssessmentResult } from './assessment-result.ts';
 import requireDispatchCheck from './codex-dispatch-check.ts';
 import {
   code,
@@ -16,22 +9,21 @@ import {
   repository,
   type CodexDispatchTransaction,
 } from './codex-dispatch-context.ts';
-import intakeDebug from './intake-debug.ts';
 import prepareDispatchReport from './codex-dispatch-report.ts';
-import { type DispatchState, type DispatchRecord } from './codex-dispatch-state.ts';
-
+import { type DispatchRecord, type DispatchState } from './codex-dispatch-state.ts';
 import codexHostAccess from './codex-host-access.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
-import {
-  dispatchFailurePhase,
-  dispatchRecheckable,
-  scheduleDispatchRetry,
-} from './dispatch-retry.ts';
+import { scheduleDispatchRetry } from './dispatch-retry.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
+import {
+  dispatchAdmission,
+  managedIssueState,
+  type ManagedIssue as IntakeRecord,
+  type ManagedIssueState as IntakeState,
+} from './managed-issue.ts';
 import workflowFailure from './workflow-failure.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import workflowStatus from './workflow-status.ts';
-
 export default async function reportDispatch(
   input: Record<string, unknown>,
   context: {
@@ -61,20 +53,7 @@ export default async function reportDispatch(
       instruction:
         'Refresh dispatch next for the current native occurrence, then report; never copy another occurrence into the request.',
     };
-  const present = (response: string) => {
-    const diagnostic = intakeDebug(context.debug, state.records, (record) => {
-      const item = dispatchAdmission(record, context.admitted.records ?? []);
-      return item ? repository(item) + '#' + item.issue.number : 'Issue';
-    });
-    return diagnostic
-      ? response.replace(
-          /<\/message>\n<\/heartbeat>$/u,
-          () => '\n\n' + diagnostic + '</message>\n</heartbeat>',
-        )
-      : response;
-  };
-  if (run.response && run.reportVersion === 1)
-    return { status: 'report', response: present(run.response) };
+  if (run.response) return { status: 'report', response: run.response };
   const occurrence = Date.parse(input.currentTimeIso);
   if (!Number.isFinite(occurrence)) throw new Error('heartbeat-request-invalid');
   const scan = await intakeStore.read();
@@ -99,7 +78,6 @@ export default async function reportDispatch(
     state.discoveryCycleAt ||
     state.records.some(
       (r) =>
-        !r.retired &&
         !r.reset &&
         (r.feedback?.discoveryPending || Object.keys(r.feedback?.discovery ?? {}).length),
     ),
@@ -107,7 +85,7 @@ export default async function reportDispatch(
   if (pendingDiscovery || state.discoveryProgress)
     state.discoveryProgress = {
       pending: pendingDiscovery,
-      sources: state.records.filter((r) => !r.retired && !r.reset && r.threadId).length,
+      sources: state.records.filter((r) => !r.reset && r.threadId).length,
       ...(state.discoveryProgress?.pending === pendingDiscovery
         ? { reported: state.discoveryProgress.reported }
         : {}),
@@ -121,17 +99,12 @@ export default async function reportDispatch(
   });
   for (const record of state.records)
     if (report.started.includes(record.id)) record.intakeReportedAt = now;
-  for (const record of state.records)
-    for (const event of record.feedback?.events ?? [])
-      if (report.sent.includes(event.id)) event.reported = true;
   if (state.discoveryProgress) state.discoveryProgress.reported = state.discoveryProgress.pending;
   state.intakeHealth = report.health;
-  state.intakeHealthVersion = 1;
   // this is a report attempt, not proof of delivery; prose never gates new assignments.
   run.response = report.response;
-  run.reportVersion = 1;
   await save();
-  return { status: 'report', response: present(run.response) };
+  return { status: 'report', response: run.response };
 }
 function remediation(value: string) {
   if (value.startsWith('dispatch-denial-'))
@@ -162,12 +135,7 @@ function remediation(value: string) {
     return 'Inspect the retained issue chat and its failure or interruption. Resume that same chat from current direction and use the native assessment formatter if a presentation is needed; do not save a new assessment or launch a replacement.';
   return 'Inspect this operation and the retained native creation receipt, chat, and worktree. Resolve the reported condition, then reconcile the existing creation; never repeat an uncertain create or change credentials without evidence of an authentication failure.';
 }
-function blocker(
-  record: DispatchRecord,
-  value: string,
-  error?: unknown,
-  repositoryId?: number,
-): AssessmentResult {
+function blocker(record: DispatchRecord, value: string, error?: unknown, repositoryId?: number) {
   const preparation = record.repositoryPreparation;
   const path =
     error instanceof RepositoryPreparationError
@@ -202,28 +170,20 @@ function blocker(
             ? 'Resolve the repository path or identity conflict, or restore access. Use an explicit local repository mapping for same-name repositories. Do not overwrite user work or change storage to bypass the failure.'
             : remediation(value);
   return {
-    version: 1,
-    outcome: 'operator-setup-blocker',
     code: value,
-    summary: 'The issue assessment needs setup or recovery.',
     remediation:
       (workflowRecovery(value, workflowFailure(error, value).providerDiagnostic)?.next ?? action) +
       detail,
-    evidence: [{ source: 'Agent System dispatch', status: 'observed', detail: value }],
-    progress: record.result?.progress ?? {
-      completed: record.threadId ? ['Retained native issue chat ' + record.threadId + '.'] : [],
-      remaining: ['Finish assessment in the verified issue worktree.'],
-    },
   };
 }
 export function notice(record: DispatchRecord, intake?: IntakeRecord) {
   const failure =
-    !record.effective && record.result?.outcome === 'operator-setup-blocker'
-      ? record.result
+    !record.effective && record.blocker
+      ? { code: record.blocker, remediation: workflowRecovery(record.blocker)?.next }
       : undefined;
   return {
     id: record.id,
-    status: record.handoff ? 'handed-off' : record.phase,
+    status: record.handoff ? 'handed-off' : dispatchCreationStatus(record),
     workflowStatus: workflowStatus(record),
     assignmentObservation: record.assignmentObservation,
     assignmentWarning:
@@ -270,25 +230,22 @@ export function notice(record: DispatchRecord, intake?: IntakeRecord) {
       : 'Continue checking pending assignments while this run has capacity. Assessment progress belongs only in the issue.',
   };
 }
-
 export async function failDispatch(
   record: DispatchRecord,
   error: unknown,
   tx: Pick<CodexDispatchTransaction, 'state' | 'admitted' | 'now' | 'save'>,
 ) {
   const { state, admitted, now, save } = tx;
-
   if (error instanceof WorkflowPolicyHeld)
     return { status: 'policy-held', id: record.id, reason: error.reason, nextAction: 'next' };
   if (['dispatch-policy-disabled', 'dispatch-activation-required'].includes(code(error)))
     throw error;
-  const previousCode =
-    record.result?.outcome === 'operator-setup-blocker' ? record.result.code : undefined;
-  if (codexHostAccess(error) || record.phase === 'complete') throw error;
+  const previousCode = record.blocker;
+  if (codexHostAccess(error)) throw error;
   // Native worktree setup returns a client receipt before the child is readable.
   if (
     code(error) === 'dispatch-creation-unresolved' &&
-    record.phase === 'creating' &&
+    dispatchCreationStatus(record) === 'creating' &&
     record.clientThreadId &&
     !record.threadId &&
     !record.receiptThreadId &&
@@ -298,28 +255,16 @@ export async function failDispatch(
     await save();
     return { id: record.id, status: 'creating', changed: false };
   }
-  record.result = blocker(
+  const failure = blocker(
     record,
     code(error),
     error,
     dispatchAdmission(record, admitted.records ?? [])?.repository.databaseId,
   );
+  record.blocker = failure.code;
   record.retryAfter = now + 300000;
   scheduleDispatchRetry(record, code(error), error, now);
-  record.phase = dispatchFailurePhase(record, code(error), error);
-  if (
-    record.phase === 'retrying' &&
-    record.retryAfter &&
-    record.result.outcome === 'operator-setup-blocker'
-  )
-    record.result.remediation = dispatchRecheckable(code(error))
-      ? record.result.remediation +
-        ' Agent System will recheck at or after ' +
-        new Date(record.retryAfter).toISOString() +
-        '.'
-      : 'Automatic recovery will retry at or after ' +
-        new Date(record.retryAfter).toISOString() +
-        '. Preserve the retained request; no new stage approval is needed.';
+
   const shared = ['authentication', 'missing-credential'].includes(
     workflowFailure(error, 'dispatch-operation-failed').providerDiagnostic?.classification ?? '',
   );
@@ -328,7 +273,9 @@ export async function failDispatch(
     else delete state.run.stopped;
   }
   const result = notice(record, dispatchAdmission(record, admitted.records ?? []));
-  Object.assign(result, workflowFailure(error, 'dispatch-operation-failed'));
+  Object.assign(result, workflowFailure(error, 'dispatch-operation-failed'), {
+    remediation: failure.remediation,
+  });
   if (shared) {
     result.nextAction = 'report';
     result.instruction =

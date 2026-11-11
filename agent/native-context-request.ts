@@ -1,20 +1,16 @@
 export function isNativeFeedbackRequest(route: string, input: Record<string, unknown>) {
   return (
     (route === 'dispatch' && input.action === 'feedback') ||
-    (route === 'feedback' && !['next', 'reply', 'publish-approved'].includes(String(input.action)))
+    (route === 'feedback' && !['next', 'reply'].includes(String(input.action)))
   );
 }
-
 /** bind current-task operations without accepting model-supplied ownership selectors. */
 export function isNativeContextRequest(route: string, input: Record<string, unknown>) {
   return (
     (route === 'dispatch' &&
       [
         'context',
-        'present',
-        'summary',
         'handoff',
-        'result',
         'implementation-context',
         'implementation-result',
         'delivery',
@@ -27,7 +23,6 @@ export function isNativeContextRequest(route: string, input: Record<string, unkn
     isNativeFeedbackRequest(route, input)
   );
 }
-
 export function assertNativeContextInput(input: Record<string, unknown>) {
   for (const field of [
     'id',
@@ -44,11 +39,10 @@ export function assertNativeContextInput(input: Record<string, unknown>) {
   ])
     if (Object.hasOwn(input, field)) throw new Error('native-context-binding-override');
 }
-
-/** Reject invocation plumbing at the raw command boundary, including legacy nested delivery. */
+/** Reject invocation plumbing at the raw command boundary, including nested delivery. */
 export function assertModelWorkflowInput(route: string, input: Record<string, unknown>) {
   const fields = { ...input };
-  if (route === 'dispatch' && input.action === 'inspect') delete fields.id; // historical record selection
+  if (route === 'dispatch' && input.action === 'inspect') delete fields.id; // explicit record selection
   assertNativeContextInput(fields);
   if (
     route === 'continuation' &&
@@ -59,17 +53,23 @@ export function assertModelWorkflowInput(route: string, input: Record<string, un
   )
     assertNativeContextInput(input.delivery as Record<string, unknown>);
 }
-
 export function nativeContextRequest(
   input: Record<string, unknown>,
-  owner: { id: string; retired?: unknown; reset?: unknown; supersededBy?: unknown } | undefined,
-): Record<string, unknown> & { id: string } {
+  owner:
+    | {
+        id: string;
+        reset?: unknown;
+        supersededBy?: unknown;
+      }
+    | undefined,
+): Record<string, unknown> & {
+  id: string;
+} {
   assertNativeContextInput(input);
-  if (!owner || owner.retired || owner.reset || owner.supersededBy)
+  if (!owner || owner.reset || owner.supersededBy)
     throw new Error('native-context-owner-unavailable');
   return { ...input, id: owner.id, ...(input.action === 'handoff' ? { apply: true } : {}) };
 }
-
 /** project prepared read requests, never provider content or retained effect records. */
 export function nativeContextResponse<T>(value: T, route: string, source?: string): T {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;

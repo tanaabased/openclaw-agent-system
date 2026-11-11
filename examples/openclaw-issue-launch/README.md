@@ -83,15 +83,13 @@ let record;
 const deadline = Date.now() + 300000;
 while (Date.now() < deadline) {
   record = records()[0];
-  if (record?.assessmentTurn?.runId) break;
+  if (record?.nativeTurns?.find(entry => entry.role === "assessment")?.turn.runId) break;
   await setTimeout(1000);
 }
 assert.equal(records().length, 1);
-assert.ok(record?.assessmentTurn?.runId);
-execFileSync(process.execPath, ['--import', 'tsx', process.env.GITHUB_WORKSPACE + '/scripts/wait-for-agent-run.ts', record.assessmentTurn.runId, '600000'], {stdio:'inherit'});
+assert.ok(record?.nativeTurns?.find(entry => entry.role === "assessment")?.turn.runId);
+execFileSync(process.execPath, ['--import', 'tsx', process.env.GITHUB_WORKSPACE + '/scripts/wait-for-agent-run.ts', record.nativeTurns.find(entry => entry.role === "assessment").turn.runId, '600000'], {stdio:'inherit'});
 record = records()[0];
-assert.equal(record.result, undefined);
-assert.equal(record.stageReceipt, undefined);
 assert.equal(record.intakeId, undefined);
 assert.equal(record.manualIssue.initiation.kind, 'operator');
 assert.equal(record.manualIssue.selections.mode, 'plan');
@@ -163,15 +161,13 @@ let record;
 const deadline = Date.now() + 300000;
 while (Date.now() < deadline) {
   record = records()[0];
-  if (record?.assessmentTurn?.runId) break;
+  if (record?.nativeTurns?.find(entry => entry.role === "assessment")?.turn.runId) break;
   await setTimeout(1000);
 }
 assert.equal(records().length, 1);
-assert.ok(record?.assessmentTurn?.runId);
-execFileSync(process.execPath, ['--import', 'tsx', process.env.GITHUB_WORKSPACE + '/scripts/wait-for-agent-run.ts', record.assessmentTurn.runId, '600000'], {stdio:'inherit'});
+assert.ok(record?.nativeTurns?.find(entry => entry.role === "assessment")?.turn.runId);
+execFileSync(process.execPath, ['--import', 'tsx', process.env.GITHUB_WORKSPACE + '/scripts/wait-for-agent-run.ts', record.nativeTurns.find(entry => entry.role === "assessment").turn.runId, '600000'], {stdio:'inherit'});
 record = records()[0];
-assert.equal(record.result, undefined);
-assert.equal(record.stageReceipt, undefined);
 assert.equal(record.manualIssue.pullRequest.headSha, pr.head.sha);
 assert.equal(record.manualIssue.pullRequest.authorId, pr.user.node_id);
 assert.equal(execFileSync('git', ['-C', record.worktree, 'rev-parse', 'HEAD'], {encoding:'utf8'}).trim(), pr.head.sha);
@@ -180,7 +176,7 @@ assert.equal(record.effective.model, 'aimock/gpt-5.5');
 assert.equal(record.effective.effort, 'medium');
 writeFileSync(process.env.TMPDIR + '/manual-pr-launch.json', JSON.stringify(record));
 NODE
-child_run=$(jq -er .assessmentTurn.runId "$TMPDIR/manual-pr-launch.json")
+child_run=$(jq -er '(.nativeTurns | map(select(.role == "assessment")) | last | .turn).runId' "$TMPDIR/manual-pr-launch.json")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$child_run" 600000
 
 # should send authorized work to the original pr without changing its metadata or draft state
@@ -207,10 +203,10 @@ const root = process.env.XDG_CONFIG_HOME + '/tanaab/agent-system/agent-system-di
 const before = JSON.parse(readFileSync(process.env.TMPDIR + '/manual-pr-launch.json', 'utf8'));
 const records = readdirSync(root).filter(name => name.startsWith('openclaw-dispatch-') && name.endsWith('.json')).flatMap(name => JSON.parse(readFileSync(root + '/' + name, 'utf8')).records).filter(record => record.manualIssue?.issue.nodeId === before.manualIssue.issue.nodeId);
 assert.equal(records.length, 1);
-for (const field of ['id', 'threadId', 'worktree', 'resultTurnId']) assert.equal(records[0][field], before[field]);
-assert.equal(records[0].work.delivery.pullRequest.pullRequestNodeId, before.manualIssue.issue.nodeId);
-assert.equal(records[0].work.delivery.reconciled, true);
-assert.equal(records[0].work.delivery.creationAttempted, false);
+for (const field of ['id', 'threadId', 'worktree']) assert.equal(records[0][field], before[field]);
+assert.equal(records[0].delivery.pullRequest.pullRequestNodeId, before.manualIssue.issue.nodeId);
+assert.equal(records[0].delivery.reconciled, true);
+assert.equal(records[0].delivery.creationAttempted, false);
 assert.equal(records[0].work.result.outcome, 'done');
 NODE
 openclaw agent-system automations list --json | jq -e '.status == "aligned" and (.jobs | length) == 0'

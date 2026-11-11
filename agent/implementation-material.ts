@@ -1,7 +1,7 @@
-import { nativeMaterialResponse } from './native-material.ts';
-import guidanceReference from './guidance-reference.ts';
-import type { AssessmentSelection } from './assessment-selection.ts';
 import { createHash } from 'node:crypto';
+import type { AssessmentSelection } from './assessment-selection.ts';
+import guidanceReference from './guidance-reference.ts';
+import { nativeMaterialResponse } from './native-material.ts';
 
 import type { Static } from 'typebox';
 
@@ -120,15 +120,7 @@ export default function implementationMaterial<T extends Record<string, unknown>
         guidance: guidanceReference(selection.guidance),
       };
   }
-  const resultAlias =
-    context.previousImplementationResult !== undefined &&
-    context.previousResult !== undefined &&
-    JSON.stringify(context.previousImplementationResult) === JSON.stringify(context.previousResult);
-  if (resultAlias) delete source.previousImplementationResult;
   const projected = visit(source, []) as T;
-  // canonicalize before visiting so references never depend on property insertion order.
-  if (resultAlias)
-    aliases.push({ path: ['previousImplementationResult'], from: ['previousResult'] });
   const fields: Array<{
     path: string[];
     digest: string;

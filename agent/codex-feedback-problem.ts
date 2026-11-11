@@ -6,7 +6,6 @@ export default function codexFeedbackProblem(record: DispatchRecord) {
   if (!feedback?.code) return false;
   if (
     ![
-      'dispatch-assignment-authority-revoked',
       'dispatch-issue-closed',
       'dispatch-assignment-removed',
       'dispatch-assignment-superseded',
@@ -15,8 +14,7 @@ export default function codexFeedbackProblem(record: DispatchRecord) {
     return true;
   return feedback.events.some(
     (event) =>
-      ['queued', 'prepared', 'running', 'responded'].includes(event.phase) ||
-      (event.publicationAttempted && !event.receipt) ||
+      ['queued', 'prepared', 'running'].includes(event.phase) ||
       (event.phase === 'blocked' && event.attempt && !record.nativeInactive),
   );
 }

@@ -1,3 +1,4 @@
+import { mock } from 'node:test';
 import hydrateImplementation from './implementation-material-fixture.ts';
 import type { ImplementationMaterialRead } from '../agent/implementation-material.ts';
 import assert from 'node:assert/strict';
@@ -45,10 +46,7 @@ describe('agent/delivery-announcement', () => {
           itemNodeId: 'I_3',
           repositoryOwner: 'owner',
           repositoryName: 'repo',
-          repositoryDefaultBranch: 'main',
         },
-        branch: 'task',
-        headSha: 'a'.repeat(40),
         repositoryNodeId: 'R_repo',
         expectedPullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 },
       },
@@ -96,7 +94,7 @@ describe('agent/delivery-announcement', () => {
           version: 1,
           requestedSkill: 'reply',
           defaultSkill: true,
-          observedAt: state?.composition.observedAt ?? 1,
+          observedAt: state?.composition?.observedAt ?? 1,
           skill: {
             name: 'reply',
             path: '/skills/reply/SKILL.md',
@@ -249,6 +247,33 @@ describe('agent/delivery-announcement', () => {
     await assert.rejects(run('compose'), WorkflowPolicyHeld);
     assert.equal(JSON.stringify(delivery), saved);
   });
+  for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should direct exhausted uncertainty to read-only comment reconciliation in ${runtime} without reposting`, async () => {
+      input.runtime = runtime;
+      await candidate();
+      missing = true;
+      await run('announce', { now: 100 });
+      const retained = JSON.stringify(delivery.announcement);
+      while (delivery.announcementRecovery!.status === 'retrying')
+        await recheckAnnouncement({
+          ...input,
+          now: delivery.announcementRecovery!.retryAfter!,
+        });
+      assert.equal(delivery.announcementRecovery!.status, 'exhausted');
+      const presentation = announcementPresentation(
+        delivery.announcement,
+        'https://github.com/owner/repo/issues/3',
+        undefined,
+        delivery.announcementRecovery,
+      );
+      assert.match(presentation, /automatic checks exhausted/i);
+      assert.match(presentation, /read-only reconciliation of the original comment/i);
+      assert.match(presentation, /do not compose or post a replacement/i);
+      assert.doesNotMatch(presentation, /closing association/i);
+      assert.equal(JSON.stringify(delivery.announcement), retained);
+      assert.equal((await run('announce')).status, 'announcement-blocked');
+      assert.equal(posts, 1);
+    });
   it('should retain the same draft and preview while recovering a failed prerequisite', async () => {
     await candidate();
     const saved = JSON.stringify(delivery.announcement);
@@ -281,6 +306,8 @@ describe('agent/delivery-announcement', () => {
     assert.equal(snapshots, before);
     assert.equal(posts, 1);
     assert.equal(delivery.announcement!.receipt!.nodeId, 'IC_1');
+    assert.equal(delivery.announcement!.publicText, undefined);
+    assert.equal(delivery.announcement!.publication, undefined);
   });
   it('should hold native denials and missing references while respecting provider retry guidance', async () => {
     for (const code of [
@@ -296,6 +323,15 @@ describe('agent/delivery-announcement', () => {
       };
       await run('compose', { now: 100 });
       assert.equal(announcementRecoveryAction(delivery, 86400000), 'wait');
+      assert.match(
+        announcementPresentation(
+          delivery.announcement,
+          'https://github.com/owner/repo/issues/3',
+          undefined,
+          delivery.announcementRecovery,
+        ),
+        /do not bypass a native denial/i,
+      );
       assert.equal(posts, 0);
     }
     for (const classification of [
@@ -324,6 +360,22 @@ describe('agent/delivery-announcement', () => {
         classification,
       );
       assert.equal(delivery.announcementRecovery!.retryAfter, 900100);
+      if (classification === 'permission' || classification === 'authentication') {
+        const recovery = delivery.announcementRecovery!;
+        assert.match(
+          announcementPresentation(
+            delivery.announcement,
+            'https://github.com/owner/repo/issues/3',
+            undefined,
+            {
+              ...recovery,
+              status: 'exhausted',
+              code: 'delivery-announcement-unconfirmed',
+            },
+          ),
+          /restore the indicated github access/i,
+        );
+      }
     }
   });
   for (const state of [false, true])
@@ -358,7 +410,11 @@ describe('agent/delivery-announcement', () => {
     assert.equal((await run('announce', {})).status, 'announcement-blocked');
     assert.equal(delivery.announcement?.attempted, true);
     assert.equal(delivery.announcement?.receipt, undefined);
+    assert.ok(delivery.announcement?.publicText);
+    assert.ok(delivery.announcement?.publication);
     assert.equal((await run('announce')).status, 'announced');
+    assert.equal(delivery.announcement?.publicText, undefined);
+    assert.equal(delivery.announcement?.publication, undefined);
     assert.equal(posts, 1);
   });
   it('should retain uncertainty when a completed post cannot be found', async () => {
@@ -406,13 +462,22 @@ describe('agent/delivery-announcement', () => {
     await run('announce', { digest: refreshed.digest });
     assert.match(comments[0]!.body, /Draft\./);
   });
-  it('should withhold changed skills, stale digests, and private candidate content', async () => {
+  it('should publish the exact candidate after composer and cosmetic pr metadata changes', async () => {
     await candidate();
+    const publicText = delivery.announcement!.publicText;
     skillDigest = 'b'.repeat(64);
-    await run('announce', {});
-    assert.equal(posts, 0);
-    const context = await run('compose');
-    assert.ok('digest' in context);
+    const read = input.provider.announcement;
+    input.provider.announcement = async (request) => ({
+      ...(await read(request)),
+      title: 'edited title',
+      body: 'edited description',
+    });
+    assert.equal((await run('announce', {})).status, 'announced');
+    assert.equal(posts, 1);
+    assert.ok(comments[0]!.body.includes(publicText!));
+  });
+  it('should continue to reject private candidate content', async () => {
+    await run('compose');
     await run('candidate', { publicText: 'password=secret' });
     assert.equal(posts, 0);
     assert.equal(delivery.announcement?.publicText, undefined);
@@ -424,15 +489,24 @@ describe('agent/delivery-announcement', () => {
     assert.equal(posts, 0);
     assert.equal(reads, 0);
   });
-  it('should reject edited or deleted accepted comments without replacement', async () => {
-    await candidate();
-    await run('announce', {});
-    comments[0]!.body = comments[0]!.body.replace('Keeps', 'Changes');
-    assert.equal((await run('announce')).status, 'announcement-blocked');
-    comments.length = 0;
-    assert.equal((await run('announce')).status, 'announcement-blocked');
-    assert.equal(posts, 1);
-  });
+  for (const uncertain of [false, true])
+    it(`should never replace edited or deleted announcements with ${uncertain ? 'uncertain' : 'confirmed'} publication`, async () => {
+      await candidate();
+      lost = uncertain;
+      await run('announce');
+      comments[0]!.body = comments[0]!.body.replace('Keeps', 'Changes');
+      assert.equal(
+        (await run('announce')).status,
+        uncertain ? 'announcement-blocked' : 'announced',
+      );
+      comments.length = 0;
+      assert.equal(
+        (await run('announce')).status,
+        uncertain ? 'announcement-blocked' : 'announced',
+      );
+      assert.equal(posts, 1);
+      assert.equal(Boolean(delivery.announcement!.publicText), uncertain);
+    });
   it('should expose a verified receipt for feedback suppression after a response loss', async () => {
     await candidate();
     lost = true;
@@ -452,56 +526,68 @@ describe('agent/delivery-announcement', () => {
     assert.equal(receipt.nodeId, 'IC_1');
     assert.equal(posts, 1);
   });
-  it('should present the accepted public text and distinct pending or published outcome', async () => {
+  it('should return the published announcement once and retain only receipt metadata after restart', async () => {
     const preview = await candidate();
-    const pending = announcementPresentation(
-      delivery.announcement,
-      'https://github.com/owner/repo/issues/3',
-    );
-    assert.match(pending, /announcement pending/);
-    assert.match(pending, /Keeps the issue/);
-    assert.match(preview.presentation!, /PR announcement draft by \[@posting-agent\]/);
-    assert.ok(!preview.presentation!.includes('#issuecomment-'));
-    await run('announce', {});
-    const confirmed = announcementPresentation(
-      delivery.announcement,
-      'https://github.com/owner/repo/issues/3',
-    );
-    assert.ok(confirmed.includes(delivery.announcement!.publicText!.split('\n')[0]!));
-    assert.ok(
-      confirmed.includes(
-        '[Original PR announcement ↗](https://github.com/owner/repo/issues/3#issuecomment-1) by [@posting-agent]',
-      ),
-    );
-    assert.ok(!confirmed.includes('announcement published'));
-    assert.doesNotMatch(confirmed, /before this update/);
-    const historical = announcementPresentation(
-      delivery.announcement,
-      'https://github.com/owner/repo/issues/3',
-      undefined,
-      undefined,
-      true,
-    );
-    assert.ok(historical.endsWith(confirmed));
-    assert.match(historical.split('\n')[0]!, /before this update/);
-    const repeated = await run('compose', {});
-    assert.ok('presentation' in repeated);
-    assert.match(repeated.presentation!, /Original PR announcement ↗/);
-    assert.match(repeated.presentation!, /#issuecomment-1/);
-    assert.match(repeated.presentation!, /by \[@posting-agent\]/);
-    assert.ok(repeated.presentation!.includes(delivery.announcement!.publicText!.split('\n')[0]!));
-    assert.equal(posts, 1);
-    delete delivery.announcement!.authorLogin;
-    assert.ok(
-      announcementPresentation(
-        delivery.announcement,
-        'https://github.com/owner/repo/issues/3',
-      ).includes('by author unavailable*'),
-    );
+    const text = delivery.announcement!.publicText!;
+    assert.match(preview.presentation!, /PR announcement draft/);
     assert.match(
       announcementPresentation(delivery.announcement, 'https://github.com/owner/repo/issues/3'),
-      /#issuecomment-1/,
+      /announcement pending/,
     );
+    const result = await run('announce');
+    assert.ok('presentation' in result);
+    assert.ok(result.presentation!.includes(text.split('\n')[0]!));
+    assert.match(result.presentation!, /#issuecomment-1/);
+    assert.equal(delivery.announcement!.publicText, undefined);
+    assert.equal(delivery.announcement!.publication, undefined);
+    assert.equal(delivery.announcement!.composition, undefined);
+    assert.deepEqual(delivery.announcement!.snapshot, {
+      pullRequestNodeId: 'PR_7',
+      pullRequestNumber: 7,
+      head: 'a'.repeat(40),
+    });
+    assert.deepEqual(delivery.announcement!.receipt, { nodeId: 'IC_1', databaseId: 1 });
+    assert.equal(
+      announcementPresentation(delivery.announcement, 'https://github.com/owner/repo/issues/3'),
+      '',
+    );
+    delivery = JSON.parse(JSON.stringify(delivery));
+    input.delivery = delivery;
+    const before = reads;
+    for (const operation of ['compose', 'candidate', 'announce'] as const) {
+      const repeated = await run(operation);
+      assert.equal(repeated.status, 'announced');
+      assert.ok('presentation' in repeated);
+      assert.equal(repeated.presentation, '');
+    }
+    assert.equal(posts, 1);
+    assert.equal(reads, before);
+  });
+  it('should drain confirmed content and preserve the receipt when its card renderer fails', async () => {
+    await candidate();
+    const body = delivery.announcement!.publicText!;
+    const original = String.prototype.replace;
+    const stub = mock.method(
+      String.prototype,
+      'replace',
+      function (this: string, ...args: Parameters<typeof original>) {
+        if (String(this) === body && String(args[0]) === String(/\r\n|\r/gu))
+          throw new Error('card formatter unavailable');
+        return original.apply(this, args);
+      },
+    );
+    try {
+      const result = await run('announce');
+      assert.equal(result.status, 'announced');
+      assert.ok('presentation' in result && result.presentation?.includes('#issuecomment-1'));
+      assert.equal(delivery.announcement!.publicText, undefined);
+      assert.equal(delivery.announcement!.publication, undefined);
+      assert.deepEqual(delivery.announcement!.receipt, { nodeId: 'IC_1', databaseId: 1 });
+      assert.equal((await run('announce')).status, 'announced');
+      assert.equal(posts, 1);
+    } finally {
+      stub.mock.restore();
+    }
   });
   it('should identify a later published head only for the same reconciled pr', async () => {
     await candidate();

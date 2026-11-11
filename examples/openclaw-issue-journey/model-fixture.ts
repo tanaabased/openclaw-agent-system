@@ -18,8 +18,6 @@ import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.t
 
 const prefix = 'call_notifications_';
 const identity = 'Name: Notification Tanaabot';
-const fullAssessment =
-  'Disposable issues remain open after evidence capture. Keep cleanup after evidence capture. Add the cleanup rule to the repository documentation and review the resulting diff. Documentation-only change: existing notification checks are sufficient; no test changes or runtime changes are proposed.';
 const reviewSummary =
   'Today you finish a test run with disposable issues still open. The guide would explain when to close them, so you can keep the evidence you need and leave a clean issue list. Documentation changes; existing tests will run, with no test changes proposed.';
 const dispatchStages = [
@@ -132,14 +130,11 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       result,
       dispatch,
       call,
-      Boolean(openClawAIMockToolResultText(messages, prefix + 'summary-skill')),
+      Boolean(openClawAIMockToolResultText(messages, prefix + 'plan-reply-skill')),
       false,
       {
-        fullAssessment:
-          fullAssessment + (revised ? '\nFresh issue context verified after restart.' : ''),
         reviewSummary:
           reviewSummary + (revised ? ' Fresh issue facts confirm the cleanup approach.' : ''),
-        plan: fullAssessment,
       },
       prompt.includes('leave summary pending'),
     );
@@ -177,26 +172,22 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (openClawAIMockToolResultText(messages, prefix + 'direct-assessment-skill') === undefined)
       return call('direct-assessment-skill', 'read', { path: selected.skill.path });
     const payload = {
-      version: 1,
       outcome: 'plan-ready',
       summary: 'Assess cleanup documentation only.',
-      assessment: fullAssessment,
-      fullAssessment,
-      plan: fullAssessment,
       reviewSummary,
     };
     const rejection = openClawAIMockToolResultText(messages, prefix + 'direct-assessment-invalid');
     if (rejection === undefined) {
       const malformed = assessmentRequest(context, payload);
       const incomplete: Partial<typeof payload> = { ...payload };
-      delete incomplete.plan;
+      delete incomplete.summary;
       return call('direct-assessment-invalid', 'agent_system_dispatch', {
         ...malformed,
         result: incomplete,
       });
     }
     const diagnostic = rejection.split('Received arguments:')[0]!;
-    assert.match(diagnostic, /result\.plan/u);
+    assert.match(diagnostic, /result\.summary/u);
     assert.doesNotMatch(diagnostic, /result\.questions|result\.remediation/u);
     const saved = result('direct-assessment-result');
     if (!saved) return dispatch('direct-assessment-result', assessmentRequest(context, payload));
@@ -372,11 +363,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       if (advanced.nextAction === 'next') continue;
       const stoppedAdvance = terminal(advanced);
       if (stoppedAdvance) return stoppedAdvance;
-      if (
-        ['assessment-required', 'session-created', 'working-turn-completed'].includes(
-          String(advanced.status),
-        )
-      ) {
+      if (['assessment-required', 'session-created'].includes(String(advanced.status))) {
         const assessed = result(stage('assess'));
         if (!assessed) return dispatch(stage('assess'), { action: 'assess', target: next.target });
         advanced = assessed;
@@ -384,12 +371,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       if (advanced.nextAction === 'next') continue;
       const stoppedAssessment = terminal(advanced);
       if (stoppedAssessment) return stoppedAssessment;
-      if (
-        !['assessment-pending', 'assessment-completed', 'working-turn-pending'].includes(
-          String(advanced.status),
-        )
-      )
-        return;
+      if (!['assessment-pending', 'assessment-completed'].includes(String(advanced.status))) return;
     }
     return;
   }
@@ -590,7 +572,7 @@ export const issueExampleScenario: OpenClawAIMockScenario = {
     { id: prefix + 'direct-assessment-skill', name: 'read' },
     { id: prefix + 'direct-assessment-invalid', name: 'agent_system_dispatch' },
     { id: prefix + 'feedback-skill', name: 'read' },
-    { id: prefix + 'summary-skill', name: 'read' },
+    { id: prefix + 'plan-reply-skill', name: 'read' },
     { id: prefix + 'update-skill', name: 'read' },
     ...dispatchStages.flatMap((stage) =>
       [0, 1, 2, 3].map((attempt) => ({

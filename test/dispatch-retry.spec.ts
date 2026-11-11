@@ -24,6 +24,12 @@ describe('agent/dispatch-retry', () => {
 
   it('should recheck known prerequisites and native custody at a bounded cadence', () => {
     for (const code of [
+      'model-routing-not-configured',
+      'model-routing-profile-missing',
+      'model-routing-instructions-changed',
+      'model-routing-xhigh-unjustified',
+      'dispatch-configured-project-missing',
+      'dispatch-assessment-skill-ambiguous',
       'dispatch-project-inventory-invalid',
       'dispatch-project-registration-unavailable',
       'dispatch-assessment-skill-unavailable',
@@ -55,7 +61,6 @@ describe('agent/dispatch-retry', () => {
       'delivery-branch-changed',
       'feedback-source-author-changed',
       'dispatch-turn-cancelled',
-      'dispatch-assignment-authority-revoked',
     ])
       assert.equal(dispatchFailurePhase(record, code), 'blocked');
     for (const code of [
@@ -71,6 +76,15 @@ describe('agent/dispatch-retry', () => {
     assert.equal(dispatchFailurePhase(record, 'dispatch-host-unavailable'), 'retrying');
     record.retry!.attempts = 5;
     assert.equal(dispatchFailurePhase(record, 'dispatch-host-unavailable'), 'retrying');
+  });
+  it('should reconsider retained prerequisite failures without adding migration metadata', () => {
+    const record = { blocker: 'model-routing-not-configured' } as SharedDispatchRecord;
+    assert.equal(dispatchRetryDue(record, 1), true);
+    assert.equal(record.retry, undefined);
+    record.blocker = 'dispatch-creation-denied';
+    assert.equal(dispatchRetryDue(record, 1), false);
+    record.blocker = 'unknown-error';
+    assert.equal(dispatchRetryDue(record, 1), false);
   });
   it('should cap backoff without requiring manual recovery or cycling on new codes', () => {
     const record = {} as SharedDispatchRecord;

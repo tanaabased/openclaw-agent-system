@@ -117,6 +117,28 @@ describe('agent/codex-automation-native-contract', () => {
     assert.equal(heartbeat.definition.targetThreadId, 'fixture-thread');
   });
 
+  it('should accept native prompt fingerprints without changing verified automation settings', async () => {
+    for (const kind of ['project', 'heartbeat'] as const) {
+      const contents = await capture(kind);
+      const native = parse(contents);
+      const id = native.id as string;
+      const expected = parseSavedAutomation(contents, id);
+      native.model_prompt_sha256 = 'a'.repeat(64);
+      native.native_display_metadata = { revision: 2 };
+      assert.deepEqual(parseSavedAutomation(stringify(native), id), expected);
+      native.prompt = 'Changed native prompt';
+      assert.notDeepEqual(
+        parseSavedAutomation(stringify(native), id).definition,
+        expected.definition,
+      );
+      native.prompt = 123;
+      assert.throws(
+        () => parseSavedAutomation(stringify(native), id),
+        rejectsCode('automation-saved-schema-unsupported'),
+      );
+    }
+  });
+
   it('should require structured native receipts rather than rendered view cards', async () => {
     const native = JSON.parse(await capture('native'));
     assert.equal(
@@ -144,11 +166,11 @@ describe('agent/codex-automation-native-contract', () => {
     );
   });
 
-  it('should reject constructed unknown schemas, fields, malformed toml and mismatched ids', async () => {
+  it('should reject unsupported versions, malformed owned fields, malformed toml and mismatched ids', async () => {
     const recorded = await capture('project');
     for (const contents of [
       recorded.replace('version = 1', 'version = 2'),
-      `${recorded}\nunknown = true\n`,
+      recorded.replace('status = "PAUSED"', 'status = "UNKNOWN"'),
       recorded.slice(0, 23),
     ]) {
       assert.throws(() => parseSavedAutomation(contents, 'agent-system-196-paused-fixture'));
@@ -265,6 +287,7 @@ describe('agent/codex-automations', () => {
   // fake only the native write boundary, using the captured saved shape as its template.
   async function nativeWrite(expected: NativeAutomation, id = 'fixture-native') {
     const saved = parse(await capture(expected.kind === 'cron' ? 'project' : 'heartbeat'));
+    saved.model_prompt_sha256 = 'b'.repeat(64);
     Object.assign(saved, {
       id,
       name: expected.name,
@@ -326,6 +349,46 @@ describe('agent/codex-automations', () => {
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+
+  it('should reconcile only the selected automation while leaving earlier changes pending', async () => {
+    await manifest(job() + job().replace('id: review', 'id: selected'));
+    await syncOne(deps(), 'review-native');
+    await syncOne(deps(), 'selected-native');
+    const before = await readCodexAutomations(codexHome);
+    for (const saved of before)
+      await nativeWrite({ ...saved.definition, status: 'PAUSED' }, saved.id);
+    const paused = await readCodexAutomations(codexHome);
+    const plan = await inspect();
+    assert.deepEqual(
+      plan.actions.map((item) => item.manifestId),
+      ['review', 'selected'],
+    );
+    await assert.rejects(
+      prepareCodexAutomation(pluginData, plan.digest, inputs(), deps(), 'unknown'),
+      rejectsCode('automation-action-not-found'),
+    );
+    const prepared = await prepareCodexAutomation(
+      pluginData,
+      plan.digest,
+      inputs(),
+      deps(),
+      'selected',
+    );
+    const action = plan.actions[1]!;
+    assert.deepEqual(prepared.request, { mode: action.mode, id: action.id, ...action.expected });
+    await nativeWrite(action.expected, action.id);
+    await acknowledgeCodexAutomation(pluginData, plan.digest, undefined, deps());
+    const after = await readCodexAutomations(codexHome);
+    assert.deepEqual(
+      after.find((item) => item.id === 'review-native'),
+      paused.find((item) => item.id === 'review-native'),
+    );
+    assert.equal(after.find((item) => item.id === 'selected-native')!.definition.status, 'ACTIVE');
+    assert.deepEqual(
+      (await inspect()).actions.map((item) => item.manifestId),
+      ['review'],
+    );
   });
 
   it('should rename and remove labels through native updates without replacing jobs', async () => {
@@ -689,6 +752,8 @@ describe('agent/codex-automations', () => {
       inspectCodexPickupActivation(pluginData, dependencies),
       rejectsCode('issue-pickup-paused'),
     );
+    assert.deepEqual(await inspectCodexPickupActivation(pluginData, dependencies, true), active);
+
     source.github['issue-pickup'].paused = false;
     await saveManifest();
     await reconcile();
@@ -752,6 +817,20 @@ describe('agent/codex-automations', () => {
     assert.equal(
       (await codexNotificationResetPickupAutomation(pluginData, dependencies))?.definition.status,
       'PAUSED',
+    );
+    await rm(enrollments.path);
+    assert.equal(
+      (await replaceCoordinator(resetBefore, dependencies, 'github-issue-pickup')).status,
+      'done',
+    );
+    assert.deepEqual((await enrollments.read()).records, []);
+    await assert.rejects(
+      replaceCoordinator(
+        { ...resetBefore, definition: { ...resetBefore.definition, status: 'ACTIVE' } },
+        dependencies,
+        'github-issue-pickup',
+      ),
+      /issue-pickup-enrollment-missing/,
     );
   });
 

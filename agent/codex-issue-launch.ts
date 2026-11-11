@@ -1,17 +1,17 @@
+import { Value } from 'typebox/value';
 import launchPending from './launch-pending.ts';
 import { routingInstructionsDigest } from './routing-instructions.ts';
-import { Value } from 'typebox/value';
 
 import { launchRequestSchema } from '../tools/dispatch/launch-schema.ts';
 import { automationHash } from './automation-hash.ts';
-import codexEntryContext from './codex-entry-context.ts';
 import { prepareDispatch, prepareIssueProject, recover } from './codex-dispatch-admission.ts';
-import { connectCodexGitHub, selectCodexIntake } from './codex-intake.ts';
 import type {
   CodexDispatchDependencies,
   CodexDispatchTransaction,
 } from './codex-dispatch-context.ts';
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
+import codexEntryContext from './codex-entry-context.ts';
+import { connectCodexGitHub, selectCodexIntake } from './codex-intake.ts';
 import issueLaunch from './issue-launch.ts';
 import { dispatchAdmission, managedIssueState } from './managed-issue.ts';
 import retainedIntakePolicy from './retained-intake-policy.ts';
@@ -52,7 +52,7 @@ export default async function codexIssueLaunch(
           deps,
           async () => {},
           undefined,
-          record.continuation ? 'handoff' : 'assessment',
+          record.nativeWork ? 'handoff' : 'assessment',
           false,
         );
       },

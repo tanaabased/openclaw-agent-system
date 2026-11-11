@@ -6,7 +6,7 @@ native OpenClaw and OpenClaw-hosted Codex, then verify the window allows no seco
 
 ## What Belongs Here
 
-- Native pickup enrollment, unchanged Install, and pause/resume retaining the job and chat.
+- Native pickup enrollment, unchanged Install, and pause/resume retaining the job and chat. Pickup runs independently while the assignment schedule is paused.
 - Empty, selected, and exhausted-window outcome cards through the real automation/tool boundary, with selection triggered by a due-time occurrence.
 - Model selection from a small milestone configured as a list with the default `only` policy, GitHub self-assignment despite the ordinary assigner policy, and ordinary intake receiving the pickup exception and Work mode.
 - A repeat scan preserving the single assignment, chat, and checkout.
@@ -101,11 +101,15 @@ for runtime in codex openclaw; do
   if test "$runtime" = codex; then
     openclaw gateway call models.list --params '{"agentId":"pickup-codex-tanaabot","provider":"openai","view":"all","refresh":true}' --json | jq -e 'any(.models[]; .id == "gpt-5.4-nano" and .available == true and .agentRuntime.id == "codex")'
   fi
+  stage=pause-assignment-only
+  assignment_native=$(jq -er '.jobs[] | select(.id == "github-issue-assignment") | .nativeId' "$TMPDIR/pickup-$runtime-jobs.json")
+  openclaw cron edit "$assignment_native" --disable --json | jq -e '.enabled == false'
   stage=run-pickup
   run_id=$(openclaw agent-system automations run github-issue-pickup --json | jq -er 'select(.status == "queued") | .runId | strings')
   node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-pickup "$run_id"
   openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" --arg run "$run_id" '{id:$id,runId:$run,limit:1,offset:0}')" --json > "$TMPDIR/pickup-$runtime-empty.json"
   jq -e --arg run "$run_id" 'any(.entries[]; .runId == $run and (.summary | contains("no eligible issues")))' "$TMPDIR/pickup-$runtime-empty.json"
+  openclaw cron edit "$assignment_native" --enable --json | jq -e '.enabled == true'
   stage=pause-and-resume-pickup
   if test "$runtime" = openclaw; then
     cp agent.yaml "$TMPDIR/pickup-$runtime-active.yaml"
@@ -141,10 +145,10 @@ for runtime in codex openclaw; do
   node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
   openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for worktree-ready --refresh --timeout 600 --json | jq -e '.status == "completed"'
   jq -es --arg issue "$(jq -er .node_id "$TMPDIR/pickup-$runtime-selected.json")" '[.[].records[] | select(.projectWork.pickup.issueNodeId == $issue)] | if length == 1 then .[0] else error("one pickup intake owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/pickup-$runtime-before.json"
-  run_id=$(jq -er .assessmentTurn.runId "$TMPDIR/pickup-$runtime-before.json")
+  run_id=$(jq -er '(.nativeTurns | map(select(.role == "assessment")) | last | .turn).runId' "$TMPDIR/pickup-$runtime-before.json")
   node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
   jq -es --arg issue "$(jq -er .node_id "$TMPDIR/pickup-$runtime-selected.json")" '[.[].records[] | select(.projectWork.pickup.issueNodeId == $issue)] | if length == 1 then .[0] else error("one pickup intake owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/pickup-$runtime-before.json"
-  jq -e '.sessionCreation.verified == true and (.threadId | length > 0) and (.worktree | length > 0) and .result == null and .work.delivery == null' "$TMPDIR/pickup-$runtime-before.json"
+  jq -e '.sessionCreation.verified == true and (.threadId | length > 0) and (.worktree | length > 0) and .delivery == null' "$TMPDIR/pickup-$runtime-before.json"
   conversation=$(jq -er .threadId "$TMPDIR/pickup-$runtime-before.json")
   openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json | jq -e 'any(.messages[]; .role == "assistant" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | contains("Should disposable issues close after evidence capture?")))'
   openclaw agent-system tool worktree -- list | jq -e --arg path "$(jq -er .worktree "$TMPDIR/pickup-$runtime-before.json")" '[.[] | select(.path == $path)] | length == 1'
@@ -154,7 +158,7 @@ for runtime in codex openclaw; do
   stage=verify-pickup-budget-and-evidence
   other=$(jq -er .number "$TMPDIR/pickup-$runtime-other.json")
   GH_TOKEN="$GH_TOKEN_TANAABOT" gh api "repos/tanaabased/big-test-bucket/issues/$other" | jq -e '.assignees | length == 0'
-  jq -es --slurpfile before "$TMPDIR/pickup-$runtime-before.json" '[.[].records[] | select(.projectWork.pickup.issueNodeId == $before[0].projectWork.pickup.issueNodeId)] | length == 1 and .[0].threadId == $before[0].threadId and .[0].worktree == $before[0].worktree and .[0].assessmentTurn.runId == $before[0].assessmentTurn.runId and .[0].result == $before[0].result and .[0].work.delivery == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+  jq -es --slurpfile before "$TMPDIR/pickup-$runtime-before.json" '[.[].records[] | select(.projectWork.pickup.issueNodeId == $before[0].projectWork.pickup.issueNodeId)] | length == 1 and .[0].threadId == $before[0].threadId and .[0].worktree == $before[0].worktree and (.[0] | .nativeTurns | map(select(.role == "assessment")) | last | .turn).runId == ($before[0] | .nativeTurns | map(select(.role == "assessment")) | last | .turn).runId and .[0].result == $before[0].result and .[0].delivery == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
   curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e 'if .scenario == "openclaw-project-picker" and .strictMissCount == 0 and any(.tools[]; .name == "agent_system_intake" and .callResponseCount > 0 and .resultRequestCount > 0) and any(.tools[]; .name == "agent_system_dispatch" and .resultRequestCount > 0) then . else error("pickup provider evidence incomplete: " + tojson) end'
 done
 ```

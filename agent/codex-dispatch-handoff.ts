@@ -5,7 +5,7 @@ interface CodexRuntimeIdentity {
   pluginData: string;
 }
 
-/** scheduled transport retains exact routing evidence and never performs a native handoff. */
+/** scheduled transport exposes complete runtime output without performing native effects. */
 export default function codexDispatchHandoff(runtime: CodexRuntimeIdentity) {
   return `const runtime = ${JSON.stringify({ entrypoint: runtime.entrypoint, pluginData: runtime.pluginData })};
 ${String.raw`const actions = {
@@ -16,8 +16,6 @@ ${String.raw`const actions = {
 };
 async function executeRuntime(runtimeRoute, runtimeInput) {
 if (!actions[runtimeRoute]?.includes(runtimeInput.action)) throw new Error('scheduled-runtime-action-unsupported');
-const key = 'agent-system:' + runtimeRoute + ':' + runtime.pluginData;
-store(key, null);
 let input = runtimeInput;
 const argv = ['node', runtime.entrypoint, runtimeRoute];
 argv.push(input.action);
@@ -58,8 +56,6 @@ while (true) {
   }
   if (busy) return response;
   if (result.exit_code !== 0 || !response) throw new Error('native-handoff-preparation-failed; inspect the command result and reconcile before retrying');
-  store(key, response);
-  store(key + ":observation", null);
   return response;
 }
 }
@@ -70,32 +66,12 @@ if (runtimeRoute === 'intake' && runtimeInput.action === 'scan' && response?.sta
 }`}`;
 }
 
-/** consume the exact request once, separately from host-access preparation. */
+/** carry one exact prepared request; native evidence owns reconciliation after invocation. */
 export function codexNativeHandoff(
-  pluginData: string,
-  route: 'dispatch' | 'continuation' | 'retirement' | 'feedback',
+  tool: 'create_thread' | 'send_message_to_thread' | 'set_thread_archived',
+  request: Record<string, unknown>,
 ) {
-  const key = JSON.stringify(
-    `agent-system:${['retirement', 'feedback'].includes(route) ? 'dispatch' : route}:${pluginData}`,
-  );
-  const status =
-    route === 'retirement'
-      ? 'retirement-prepared'
-      : route === 'feedback'
-        ? 'feedback-prepared'
-        : 'prepared';
-  const tool =
-    route === 'retirement'
-      ? 'set_thread_archived'
-      : route === 'dispatch'
-        ? 'create_thread'
-        : 'send_message_to_thread';
-  return `const prepared = load(${key});
-if (!prepared || prepared.status !== '${status}') throw new Error('${route}-prepared-request-unavailable');
-store(${key}, null);
-
-
-text({id: prepared.id, ${route === 'feedback' ? 'eventId: prepared.eventId, ' : ''}native: await tools.mcp__codex_app__${tool}(prepared.request)});`;
+  return `text(await tools.mcp__codex_app__${tool}(${JSON.stringify(request)}));`;
 }
 
 /** one desktop observation, then the original context invocation through normal native approval. */

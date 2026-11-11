@@ -5,7 +5,7 @@ export default function implementationHandoff(
   direct?: { publication: boolean; target?: string },
   existingPullRequest = false,
 ) {
-  // legacy questions are history, not a new request to stop the conversation.
+  // questions stay in native conversation.
   if (outcome === 'clarification-needed') outcome = undefined;
   if (outcome !== 'done')
     return {
@@ -13,7 +13,7 @@ export default function implementationHandoff(
       instruction:
         outcome === undefined
           ? 'Recheck hard implementation prerequisites before dependent work; authorization does not supply missing capabilities. Continue independently useful authorized work, but do not substitute placeholders for required behavior or report partial work as done. Keep implementation validation separate from deployment and post-merge verification; preserve the acceptance requirements without requiring merged deployment before a PR can exist.'
-          : 'The recorded implementation is unfinished. Do not request completed-work PR delivery or change the outcome to done merely to publish. Preserve useful work and lead with the actual missing prerequisite or question, who owns the next action, and the evidence needed to resume. ' +
+          : 'The implementation is unfinished. Do not request completed-work PR delivery or change the outcome to done merely to publish. Preserve useful work and lead with the actual missing prerequisite or question, who owns the next action, and the evidence needed to resume. ' +
             'Resume permitted implementation through fresh context when the prerequisite is resolved. ' +
             'For interim review, explain the partial work or show a focused diff in this conversation; do not assume a code pane or invent a partial-PR route. An incomplete-delivery refusal is not a GitHub publication failure; resolve the unfinished work instead of retrying publication.',
     };

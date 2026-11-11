@@ -1,20 +1,19 @@
-import { managedTargetUrl, dispatchAdmission } from './managed-issue.ts';
-import { hasDeliveredImplementation, nativeIssueContext } from './implementation-delivery.ts';
+import { nativeIssueContext } from './native-issue-context.ts';
+import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
 
+import { realpath } from 'node:fs/promises';
 import type { ImplementationResult } from './implementation-result.ts';
 import managedImplementationRoute from './managed-implementation-route.ts';
-import { realpath } from 'node:fs/promises';
 
-import type { AssessmentEntryDependencies } from './assessment-entry.ts';
-import assessmentOwner from './assessment-owner.ts';
-import { automationHash } from './automation-hash.ts';
-import type { OpenClawDispatchDependencies } from './openclaw-dispatch-context.ts';
-import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
-import { operatorInputEvent, nativeInputEvent } from './openclaw-session-input.ts';
-import { describeIssueSession, type DispatchCaller } from './openclaw-session-create.ts';
-import openClawSkill from './openclaw-skill.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
+import type { AssessmentEntryDependencies } from './assessment-entry.ts';
+import assessmentOwner from './assessment-owner.ts';
+import type { OpenClawDispatchDependencies } from './openclaw-dispatch-context.ts';
+import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
+import { describeIssueSession, type DispatchCaller } from './openclaw-session-create.ts';
+import { nativeInputEvent, operatorInputEvent } from './openclaw-session-input.ts';
+import openClawSkill from './openclaw-skill.ts';
 
 /** native input and binding precede repository/provider access; intake activation is unnecessary. */
 export default async function openClawEntryContext<T>(
@@ -33,7 +32,7 @@ export default async function openClawEntryContext<T>(
     result?: ImplementationResult,
   ) => Promise<T>,
 ) {
-  const assessmentRead =
+  const nativeRead =
     !!input.action &&
     typeof input.action === 'object' &&
     'action' in input.action &&
@@ -72,37 +71,14 @@ export default async function openClawEntryContext<T>(
       )
         throw new Error('assessment-managed-context-invalid');
       await describeIssueSession(request, record, deps.config());
-      const feedback = record.feedback?.events.find(
-        (event) => !event.native && event.turn?.runId === caller.runId,
-      );
       return {
         selections: record.manualIssue?.selections,
-        nativeContext:
-          !feedback && (assessmentRead || hasDeliveredImplementation(record))
-            ? nativeIssueContext(record)
-            : undefined,
-        implementationResult: feedback ? feedback.work?.result : record.work?.result,
+        nativeContext: nativeRead ? nativeIssueContext(record) : undefined,
         digest,
-        owner: { id: record.id, ...(feedback ? { eventId: feedback.id } : {}) },
+        owner: { id: record.id },
         path: await realpath(record.worktree!),
-        selection:
-          record.turnEvidence?.selection ?? record.stageReceipt?.selection ?? record.assessment,
-        evidence: record.turnEvidence?.evidence ?? record.context,
-        result: record.result,
-        receipt: record.stageReceipt,
-        entries: async (run) =>
-          journal.exclusive(async (fresh, save) => {
-            const found = assessmentOwner(
-              fresh.records,
-              (await current.store.read())?.records ?? [],
-              caller.sessionKey,
-              target,
-            );
-            if (!found || found.digest !== digest)
-              throw new Error('assessment-managed-context-changed');
-            found.record.directAssessments ??= [];
-            return run(found.record.directAssessments, save);
-          }),
+        selection: record.assessment,
+        evidence: record.context,
       };
     };
     const records = (await journal.read()).records.filter(
@@ -115,7 +91,7 @@ export default async function openClawEntryContext<T>(
     const currentTarget = admission ? managedTargetUrl(admission) : undefined;
     const nativeContextRequest =
       !!records[0] &&
-      (assessmentRead || hasDeliveredImplementation(records[0])) &&
+      nativeRead &&
       !!input.action &&
       typeof input.action === 'object' &&
       'operation' in input.action &&
@@ -164,14 +140,14 @@ export default async function openClawEntryContext<T>(
       if (
         fresh.status !== 'loaded' ||
         fresh.manifest.agent.id !== manifest.agent.id ||
-        automationHash(fresh.manifest) !== automationHash(manifest) ||
         (await realpath(fresh.scope.workspaceDir)) !== current.workspace
       )
         throw new Error('assessment-binding-changed');
       if (turn && (await nativeInput()).inputEventId !== turn.inputEventId)
         throw new Error('assessment-native-input-changed');
+      entry.manifest = fresh.manifest;
     };
-    return collect({
+    const entry: AssessmentEntryDependencies = {
       operator: input.operator,
       root: deps.root,
       currentTarget,
@@ -193,7 +169,7 @@ export default async function openClawEntryContext<T>(
         if (!deps.assessmentGit) throw new Error('assessment-git-unavailable');
         await assertCurrent();
         return deps.assessmentGit({
-          manifest,
+          manifest: entry.manifest,
           workspace: current.workspace,
           caller,
           cwd,
@@ -205,7 +181,7 @@ export default async function openClawEntryContext<T>(
         await assertCurrent();
         if (!deps.delivery) throw new Error('implementation-delivery-unavailable');
         return deps.delivery({
-          manifest,
+          manifest: entry.manifest,
           workspaceDir: current.workspace,
           worktree: path,
           caller,
@@ -216,13 +192,14 @@ export default async function openClawEntryContext<T>(
         await assertCurrent();
         if (!deps.feedbackConnect) throw new Error('assessment-provider-unavailable');
         return deps.feedbackConnect(
-          { manifest, workspaceDir: current.workspace },
+          { manifest: entry.manifest, workspaceDir: current.workspace },
           authority.signal ?? AbortSignal.timeout(60000),
         );
       },
       resolveSkill: (id) =>
         openClawSkill(request, { agentId: manifest.agent.id, key: caller.sessionKey }, id),
       managed,
-    });
+    };
+    return collect(entry);
   });
 }

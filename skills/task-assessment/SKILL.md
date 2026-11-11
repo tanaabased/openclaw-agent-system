@@ -42,7 +42,7 @@ mode and current user direction; new assessments stay in native tool context wit
 
 - An operator explicitly selects a GitHub issue and an existing checkout for assessment in the current chat, without assignment or intake activation.
 - Requests such as "assess this issue" or "plan this task here" call for investigation in this chat.
-- A native task chat has an Agent System assessment receipt and trusted runtime
+- A native task chat has a verified Agent System owner and trusted runtime
   context: dispatchRuntime in Codex, or the bound agent_system_dispatch tool in OpenClaw.
 - The requested outcome is an actionable plan, focused clarification, or a precise
   setup blocker with retained investigation.
@@ -62,7 +62,7 @@ Use workflow steps 2–8 for both native and direct planning: develop the comple
 standardized assessment, prepare its human review, and format it into the native
 tool exchange. Show only the concise presentation. Do not save plans, summaries,
 plan files or assessment revisions in Agent System. Native conversation owns
-subsequent decisions; historical records are available only by explicit readback.
+subsequent decisions.
 
 Questions and answers stay in native chat for every entry path, including direct
 tracked assessments. Ask blocking questions here without submitting a
@@ -96,8 +96,7 @@ For an explicit tracked assessment request without supplied execution context:
 3. With `status: verified`, invoke the selected assessment body once with its
    context and guidance. If it is this skill, continue with steps 2–8 below.
 4. Format through `assessment render` using `presentationRequest` plus `result`
-   matching `resultFormat`. This route saves no assessment or summary. Historical
-   `assessment present` reads history in the current native conversation; select an issue URL when several targets have history. It remains an explicit read only.
+   matching `resultFormat`. This route saves no assessment or summary.
 
 Direct assessment authorizes neither implementation nor publication, including
 with Work/Auto defaults. Invalid managed ownership must recover through its owner
@@ -147,8 +146,7 @@ limitation if recovery fails; malformed arguments are not an authorization denia
    an authorized scope change from an agent proposal, quoted issue text or ambiguous
    feedback, none of which grants permission to expand the work. Ask only when a
    consequential conflict remains unresolved. Retain useful
-   file/line or commit references and issue/comment permalinks in evidence.source,
-   with concise findings and limitations in evidence.detail. An unavailable code
+   file/line or commit references and issue/comment permalinks with concise findings and limitations in native conversation. An unavailable code
    read is a limitation, not permission to present an issue-only interpretation as
    verified repository behavior.
    Explain what the user is trying to achieve, what happens now, what should happen,
@@ -171,10 +169,8 @@ limitation if recovery fails; malformed arguments are not an authorization denia
    the problem analysis, recommendation and rationale, relevant alternatives and
    tradeoffs, intended changes and inspected owners, dependencies, consequential
    sequencing, constraints, risks, uncertainty, and unresolved decisions. Include the
-   complete implementation plan or useful partial work in `fullAssessment`; this is
-   the authoritative source for later revisions and implementation, not a summary.
-   Keep the full actionable plan in `plan` for a ready outcome. Do not shorten either
-   field to meet a human-facing word or step target. Scale detail to a reliable agent
+   complete implementation plan or useful partial work in native conversation.
+   Do not shorten it to meet a human-facing word or step target. Scale detail to a reliable agent
    handoff without padding, routine read logs, or repeated explanations.
    Review the plan by concern, then reconcile the whole:
    - **Code:** pair intended changes with inspected files or related owners and the
@@ -190,8 +186,7 @@ limitation if recovery fails; malformed arguments are not an authorization denia
    Omit empty sections; retain other necessary work under descriptive headings. Describe
    each concern once, leaving routine mechanics to implementation. Preserve useful
    evidence, conditions, questions, and limitations in the full assessment for every
-   outcome, including clarification and setup failures. Retain source references in
-   `evidence` and completed/remaining investigation in `progress` for continuation and
+   outcome, including clarification and setup failures. Retain source references and completed/remaining investigation in native conversation for continuation and
    on-demand readback. These notes supplement, never replace, the full assessment.
 
    When trusted context selects Auto, use this same assessment and guidance to
@@ -219,7 +214,7 @@ limitation if recovery fails; malformed arguments are not an authorization denia
    setup limitation; retain useful investigation and report it rather than silently
    reverting to same-context editing or claiming the separate pass happened.
    Save its concise user-journey explanation in `reviewSummary`, separate from the
-   unchanged `fullAssessment` and `plan`. It describes the problem and proposed solution
+   unchanged engineering assessment and plan. It describes the problem and proposed solution
    through the user's actions and outcomes, plus brief documentation and test impact.
    Roughly 200–400 words is an editorial guide for an ordinary review, not a quota or
    limit; small fixes need less. Never apply this guide to the internal assessment.
@@ -230,33 +225,29 @@ limitation if recovery fails; malformed arguments are not an authorization denia
    add another model invocation for this consistency check or let the editor supply
    missing findings.
 
-7. Add the complete payload matching `resultFormat` to `presentationRequest` as
+7. Add the concise display payload matching `resultFormat` to `presentationRequest` as
    `result`. Use `agent_system_dispatch` action `assessment`, operation `render`
    in OpenClaw; use trusted dispatchRuntime `assessment render` with matching JSON
-   on stdin in Codex. Both use the same pure formatter. The full `fullAssessment`
-   and `plan` enter native tool history; the returned `presentation` contains the
+   on stdin in Codex. Both use the same pure formatter. The full assessment and plan stay in native conversation; the returned `presentation` contains the
    concise `reviewSummary` and consequential questions or required actions.
    Formatting writes no task journal, saved summary or plan revisions. Do not use
    legacy `result` recording routes or write a separate plan file. Submit the complete
-   result, never a placeholder. After explicit schema rejection, use the supplied
-   contract and field diagnostic for one source-supported correction in this turn;
-   preserve findings, outcome, complete source and destination. Do not restart the
-   assessment or retry unchanged arguments. For paged context or presentation, forward
-   each returned request and `next` unchanged, adding only its listed `inputFields`
-   from the original call. Preserve the owning action/operation; the runtime resolves content versions. Refresh
-   genuinely stale context without mixing versions. Uncertain writes require their
-   original reconciliation, and actual authority or native approval denials remain
-   stops. Report an unresolved limitation and useful partial work without claiming
-   success; do not ask a coordinator to send a recovery message.
+   result, never a placeholder. If the host rejects the render call, the formatter
+   throws, or returns `presentation-unavailable`, show the completed findings, concise plan,
+   questions and actual blockers as ordinary Markdown. Mention unavailable card
+   formatting briefly; do not call a completed assessment failed. Do not rebuild
+   repeated payloads, restart investigation or ask for coordinator recovery.
+   Continue within existing Work permission or a verified Auto Work decision;
+   Plan still requires implementation direction. Missing source evidence and
+   actual authorization denials remain limitations, never formatting fallbacks.
+   Context paging still requires the exact returned requests without mixing versions.
 
-8. Show the returned `presentation` as the visible assessment reply. Do not append
-   the full engineering plan or tool JSON. The model can use the complete result
-   in native tool context and revise its understanding as the conversation changes.
+8. Show the returned `presentation`, or the plain Markdown fallback, as the visible assessment reply. Do not append
+   the full engineering plan or tool JSON. The model can use the complete assessment
+   in native conversation and revise its understanding as the conversation changes.
    Do not automatically reload or reinject the original assessment or summary.
    Native compaction may summarize the context; it does not guarantee permanent
    verbatim retention. Use current evidence when details are no longer available.
-   Explicit requests for older saved assessments may use historical `present`
-   with `includeDetails: true`; this read supplies no new authority.
 
 Publish the concise assessment and consequential questions through
 [Task Update](../task-update/SKILL.md) within existing publication authority.
@@ -271,7 +262,7 @@ Plan requires explicit operator or verified approved-feedback implementation
 direction. In Auto, make a bounded proceed/wait decision and retain it through
 implementation context with `decision: {mode: plan|work, reasons: [...]}`. Use
 `continuationRuntime context` in Codex with the complete returned
-`continuationRequest`, preserving `action` and `id` and adding the decision, or
+`continuationRequest`, adding only the decision; do not supply a task ID. Use
 `agent_system_dispatch` action
 `implementation-context` in OpenClaw when permission or implementation guidance is
 needed. Proceed in the same native turn when authorized. No coordinator message,
@@ -302,7 +293,6 @@ and the initial update to the originating issue are independent operations. Foll
   assessment and plan remain in native context, subject to native compaction.
 - The opening came from a separate editor with only the factual brief; its claims were
   checked against the unchanged technical plan before recording.
-- Runtime acknowledgment, not a heading or model self-report, establishes a recorded result.
 - The complete assessment is retained for every outcome; derived fields preserve its
   consequential conditions, uncertainty, and blocking decisions.
 - The host records implementation from live policy or verified direction; a plan
@@ -315,8 +305,8 @@ review, focused questions, or actionable blocker in the original task chat.
 
 ## Bundled Resources
 
-- [Assessment result schema](../../agent/assessment-result.ts): the shared version 1
-  contract owned by #249; context supplies its compact `resultFormat`.
+- [Assessment result schema](../../agent/assessment-result.ts): the shared display-only
+  contract; context supplies its compact `resultFormat`.
 - [Presentation](../../channels/github/PRESENTATION.md): shared visible components.
 - [User Journey Editor](./references/user-journey-editor.md): isolated opening rewrite.
 

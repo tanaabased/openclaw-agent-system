@@ -1,8 +1,12 @@
-import codexCommit from '../agent/codex-commit.ts';
+import codexCapacity from '../agent/codex-capacity.ts';
+import openClawCapacity from '../agent/openclaw-capacity.ts';
+import { issueKey } from '../agent/dispatch-pending.ts';
+import { withDispatchTask } from '../agent/dispatch-task-scope.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import codexCommit from '../agent/codex-commit.ts';
 
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import OpenClawDispatchStore, {
@@ -15,7 +19,7 @@ function pending(id = 'a'.repeat(64)) {
     intakeId: id,
     issueKey: id,
     sourceThreadId: 'agent:receiver:automation:intake',
-    phase: 'routing',
+
     createdAt: 1,
     manifestDigest: 'manifest',
   } satisfies OpenClawDispatchRecord;
@@ -23,10 +27,9 @@ function pending(id = 'a'.repeat(64)) {
 function prepared(): OpenClawDispatchRecord {
   return {
     ...pending(),
-    phase: 'creating',
+
     context: '{}',
     routing: '{}',
-    routingNote: 'selected',
     worktree: '/worktree',
     request: {
       key: 'agent:receiver:issue:one',
@@ -121,7 +124,7 @@ describe('agent/shared dispatch state', () => {
     });
     const restarted = new OpenClawDispatchStore(root, scope);
     const state = await restarted.read();
-    assert.equal(state.records[0]!.phase, 'creating');
+    assert.deepEqual(state.records[0], prepared());
   });
 
   it('should preserve recorded blockers without repairing workflow state on read', async () => {
@@ -130,21 +133,10 @@ describe('agent/shared dispatch state', () => {
       ...pending(),
       threadId: 'native-chat',
       worktree: '/worktree',
-      phase: 'blocked' as const,
-      result: {
-        version: 1 as const,
-        outcome: 'operator-setup-blocker' as const,
-        code: 'dispatch-policy-changed',
-        summary: 'Configuration changed.',
-        remediation: 'Old repair.',
-        evidence: [],
-        progress: { completed: [], remaining: [] },
-      },
+      blocker: 'native-approval-denied',
       context: '{}',
       routing: '{}',
-      routingNote: 'selected',
       effective: { status: 'verified' as const },
-      reservationVersion: 1 as const,
       project: {
         id: 'project',
         path: '/repo',
@@ -174,8 +166,7 @@ describe('agent/shared dispatch state', () => {
     const before = await readFile(store.path, 'utf8');
     const restarted = new CodexDispatchStore(root, scope);
     const recovered = (await restarted.read()).records[0]!;
-    assert.equal(recovered.phase, 'blocked');
-    assert.deepEqual(recovered.result, original.result);
+
     assert.deepEqual(recovered.request, original.request);
     assert.equal(recovered.threadId, original.threadId);
     assert.equal(recovered.worktree, original.worktree);
@@ -187,7 +178,7 @@ describe('agent/shared dispatch state', () => {
     assert.equal(await readFile(store.path, 'utf8'), before);
   });
 
-  it('should reject duplicate identities and invalid transitions before replacing valid evidence', async () => {
+  it('should reject duplicate task identities and unverified creation bindings without replacing evidence', async () => {
     const store = new OpenClawDispatchStore(root, scope);
     await store.exclusive(async (state, save) => {
       state.records.push(pending());
@@ -202,13 +193,11 @@ describe('agent/shared dispatch state', () => {
         records.push({ ...pending('d'.repeat(64)), issueKey: records[0]!.issueKey });
       },
       (records: OpenClawDispatchRecord[]) => {
-        records[0]!.phase = 'creating';
-      },
-      (records: OpenClawDispatchRecord[]) => {
         records[0] = { ...prepared(), worktree: '/different' };
       },
       (records: OpenClawDispatchRecord[]) => {
-        records[0] = { ...prepared(), phase: 'assessing' };
+        records[0] = prepared();
+        records[0].sessionCreation!.verified = true;
       },
     ]) {
       await assert.rejects(
@@ -222,29 +211,527 @@ describe('agent/shared dispatch state', () => {
     }
   });
 
-  it('should reject foreign schemas and scope rather than reset their evidence', async () => {
+  it('should reject foreign scope and invalid native requests without resetting evidence', async () => {
     const store = new OpenClawDispatchStore(root, scope);
     for (const value of [
-      { version: 1, scope: 'c'.repeat(64), records: [] },
       {
-        version: 1,
-        scope,
-        resetGeneration: 'current',
-        records: [{ ...pending(), clientThreadId: 'codex' }],
+        version: 4,
+        scope: 'c'.repeat(64),
+        records: [],
       },
       {
-        version: 1,
+        version: 4,
         scope,
         resetGeneration: 'current',
-        records: [{ ...prepared(), native: { sessionKey: 'different' } }],
+        records: [{ ...prepared(), request: { ...prepared().request, agentId: 42 } }],
+      },
+      {
+        version: 4,
+        scope,
+        resetGeneration: 'current',
+        records: [
+          { ...prepared(), request: { ...prepared().request, workspaceOverride: '/other' } },
+        ],
       },
     ]) {
       const contents = JSON.stringify(value);
       await store.file.write(contents);
-      await assert.rejects(store.read(), /dispatch-state-invalid/);
+      if (value.scope !== scope) await assert.rejects(store.read(), /dispatch-state-invalid/);
+      else {
+        const state = await store.read();
+        assert.equal(state.records.length, 0);
+        assert.equal(state.isolatedRecords?.[0]?.code, 'dispatch-task-record-invalid');
+      }
       assert.equal(await readFile(store.path, 'utf8'), contents);
     }
   });
+
+  for (const runtime of ['codex', 'openclaw'] as const) {
+    const makeStore = (root: string) =>
+      runtime === 'codex'
+        ? new CodexDispatchStore(root, scope)
+        : new OpenClawDispatchStore(root, scope);
+    const healthy = (): OpenClawDispatchRecord => ({
+      ...pending(),
+      threadId: 'healthy-chat',
+      worktree: '/healthy',
+    });
+    const damaged = () => ({
+      ...pending('d'.repeat(64)),
+      threadId: 'damaged-chat',
+      worktree: '/damaged',
+      createdAt: 'invalid',
+      feedback: { unresolved: { destination: 'original', attempted: true } },
+    });
+    const write = async (store: ReturnType<typeof makeStore>, records: unknown[], extra = {}) => {
+      const raw = { version: 4, scope, resetGeneration: 'initial', records, ...extra };
+      await store.file.write(JSON.stringify(raw));
+      return raw;
+    };
+    const task = <T>(session: string, run: () => T) => withDispatchTask(runtime, session, run);
+
+    it(`should preserve unused ${runtime} fields while reading and saving current task data`, async () => {
+      const store = makeStore(root);
+      const record = {
+        ...healthy(),
+        routingNote: { obsolete: true },
+        reservationVersion: 7,
+        reset: { at: 1, by: 'operator', retiredDisplayHint: 'unused' },
+      };
+      await write(store, [record], { oldReport: 'unused' });
+      assert.deepEqual((await store.read()).records, [record]);
+      await store.transaction(async (state, save) => {
+        state.records[0]!.context = 'current context';
+        await save();
+      });
+      const saved = JSON.parse(await readFile(store.path, 'utf8'));
+      assert.deepEqual(saved.records, [{ ...record, context: 'current context' }]);
+      assert.equal(saved.oldReport, 'unused');
+      assert.equal((await store.inspectIntake()).storage.level, 'normal');
+      await write(store, [{ ...record, reset: { at: 'not-a-time', by: 'operator' } }]);
+      assert.equal((await store.read()).isolatedRecords?.length, 1);
+    });
+
+    it(`should inspect ${runtime} intake without interpreting another task's damaged effects`, async () => {
+      const store = makeStore(root);
+      await write(store, [healthy(), damaged()]);
+      const before = await readFile(store.path, 'utf8');
+      const result = await store.inspectIntake();
+      assert.equal(result.storage.level, 'normal');
+      assert.equal(result.storage.protectedRecords['active-workflow'], 2);
+      assert.equal(result.projectPickup, undefined);
+      assert.equal(await readFile(store.path, 'utf8'), before);
+      await store.observeIntake(async (state, save) => {
+        state.run = {
+          id: 'scan',
+          automationId: 'assignments',
+          currentTimeIso: '2026-11-11T12:00:00Z',
+          actions: 0,
+        };
+        await save();
+      });
+      assert.deepEqual(JSON.parse(await readFile(store.path, 'utf8')).records, [
+        healthy(),
+        damaged(),
+      ]);
+      await assert.rejects(
+        store.exclusive(
+          async (state, save) => {
+            state.records = [];
+            await save();
+          },
+          true,
+          'intake-observation',
+        ),
+        /dispatch-intake-isolation-required/,
+      );
+      await task('healthy-chat', async () => {
+        await store.transaction(async (state, save) => {
+          state.records[0]!.context = 'independent work';
+          await save();
+        });
+      });
+      await assert.rejects(
+        task('damaged-chat', () => store.read()),
+        /dispatch-task-record-invalid/,
+      );
+      assert.deepEqual(JSON.parse(await readFile(store.path, 'utf8')).records[1], damaged());
+      for (const extra of [{ scope: 'e'.repeat(64) }, { projectPickup: { invalid: true } }]) {
+        await write(store, [healthy(), damaged()], extra);
+        await assert.rejects(store.inspectIntake(), /dispatch-state-invalid/);
+      }
+    });
+
+    it(`should keep independent ${runtime} coordinator work usable without rewriting damaged records`, async () => {
+      const store = makeStore(root);
+      const raw = await write(store, [damaged(), healthy()], { oldMetadata: 'retained' });
+      await task(healthy().sourceThreadId, () =>
+        store.transaction(async (state, save) => {
+          assert.equal(state.records.length, 1);
+          assert.equal(state.isolatedRecords?.[0]?.code, 'dispatch-task-record-invalid');
+          assert.equal(
+            (runtime === 'codex'
+              ? codexCapacity({ records: [], isolatedRecords: state.isolatedRecords }, 3)
+              : openClawCapacity({ records: [], isolatedRecords: state.isolatedRecords }, 3)
+            ).occupied,
+            1,
+          );
+          state.records[0]!.context = 'healthy progress';
+          state.records.push({
+            ...pending('f'.repeat(64)),
+            threadId: 'new-chat',
+            worktree: '/new',
+          });
+          await save();
+          state.checked = { at: 10, digest: 'a'.repeat(64) };
+          await save();
+        }),
+      );
+      const saved = JSON.parse(await readFile(store.path, 'utf8'));
+      assert.deepEqual(saved.records[0], raw.records[0]);
+      assert.equal(saved.records[1].context, 'healthy progress');
+      assert.equal(saved.records[2].threadId, 'new-chat');
+      assert.equal(saved.oldMetadata, 'retained');
+      assert.equal(saved.isolatedRecords, undefined);
+      await assert.rejects(
+        store.transaction(async (state, save) => {
+          state.records.push({ ...pending('e'.repeat(64)), worktree: '/damaged' });
+          await save();
+        }),
+        /dispatch-task-ownership-unresolved/,
+      );
+      assert.equal(JSON.parse(await readFile(store.path, 'utf8')).records.length, 3);
+    });
+
+    it(`should isolate a healthy ${runtime} task and preserve damaged records and uncertain effects`, async () => {
+      const store = makeStore(root);
+      const raw = await write(store, [healthy(), damaged()]);
+      assert.equal((await store.read()).isolatedRecords?.length, 1);
+      await task('healthy-chat', async () => {
+        assert.deepEqual((await store.read()).records, [healthy()]);
+        await store.transaction(async (state, save) => {
+          state.records[0]!.context = 'verified progress';
+          await save();
+          state.records[0]!.blocker = 'second checkpoint';
+          await save();
+        });
+      });
+      const saved = JSON.parse(await readFile(store.path, 'utf8'));
+      assert.deepEqual(saved.records[1], raw.records[1]);
+      assert.equal(saved.records[0].context, 'verified progress');
+      assert.equal(saved.records[0].blocker, 'second checkpoint');
+      await assert.rejects(
+        task('damaged-chat', () => store.read()),
+        /dispatch-task-record-invalid/,
+      );
+      await assert.rejects(
+        task('unknown-chat', () => store.read()),
+        /dispatch-task-ownership-unresolved/,
+      );
+    });
+
+    const delivery = () => ({
+      id: 'c'.repeat(64),
+      binding: {
+        repositoryId: 'repository',
+        issueId: 'damaged-issue',
+        threadId: 'damaged-chat',
+        worktree: '/damaged',
+        branch: 'damaged-branch',
+        base: 'main',
+        head: 'f'.repeat(40),
+        authorId: 'author',
+      },
+      creationAttempted: true,
+      reconciled: false,
+      title: 'original title',
+      pendingPush: { previousHead: '', head: 'f'.repeat(40) },
+    });
+
+    it(`should preserve unrelated malformed ${runtime} delivery payloads during healthy progress`, async () => {
+      const store = makeStore(root);
+      for (const payload of [
+        { ...delivery(), title: 42 },
+        { ...delivery(), body: { damaged: true } },
+        { ...delivery(), pendingPush: { previousHead: '', head: 42 } },
+        { ...delivery(), contentUpdate: { title: 42 } },
+      ]) {
+        const other = {
+          ...pending('d'.repeat(64)),
+          threadId: 'damaged-chat',
+          worktree: '/damaged',
+          delivery: payload,
+        };
+        const raw = await write(store, [healthy(), other]);
+        await store.transaction(async (state) => {
+          assert.deepEqual(state.records, [healthy()]);
+          assert.equal(state.isolatedRecords?.[0]?.id, other.id);
+        });
+        await task('healthy-chat', async () => {
+          assert.deepEqual((await store.read()).records, [healthy()]);
+          await store.transaction(async (state, save) => {
+            state.records[0]!.blocker = 'healthy progress';
+            await save();
+          });
+        });
+        const saved = JSON.parse(await readFile(store.path, 'utf8'));
+        assert.equal(saved.records[0].blocker, 'healthy progress');
+        assert.deepEqual(saved.records.slice(1), raw.records.slice(1));
+        await assert.rejects(
+          task('damaged-chat', () => store.read()),
+          /dispatch-task-record-invalid/,
+        );
+      }
+    });
+
+    it(`should reject ${runtime} delivery ownership damage and overlaps without touching payloads`, async () => {
+      const store = makeStore(root);
+      for (const binding of [
+        { ...delivery().binding, worktree: '/healthy' },
+        { ...delivery().binding, threadId: 'healthy-chat' },
+        { ...delivery().binding, branch: undefined },
+        { ...delivery().binding, worktree: 42 },
+      ]) {
+        await write(store, [
+          healthy(),
+          { ...damaged(), delivery: { ...delivery(), binding, title: 42 } },
+        ]);
+        const before = await readFile(store.path, 'utf8');
+        await assert.rejects(
+          task('healthy-chat', () =>
+            store.transaction(async () => {
+              assert.fail('unsafe effect entered');
+            }),
+          ),
+          /dispatch-task-ownership-unresolved/,
+        );
+        assert.equal(await readFile(store.path, 'utf8'), before);
+      }
+    });
+
+    it(`should isolate ${runtime} progress from collisions and broken links between unrelated records`, async () => {
+      const store = makeStore(root);
+      const third = { ...pending('f'.repeat(64)), threadId: 'third-chat', worktree: '/third' };
+      for (const pair of [
+        [damaged(), { ...third, issueKey: damaged().issueKey }],
+        [damaged(), { ...third, id: damaged().id }],
+        [{ ...damaged(), supersededBy: third.id }, third],
+      ]) {
+        const raw = await write(store, [healthy(), ...pair]);
+        await assert.rejects(store.read(), /dispatch-state-invalid/);
+        await assert.rejects(
+          store.transaction(async () => assert.fail('shared operation entered')),
+          /dispatch-state-invalid/,
+        );
+        await task('healthy-chat', () =>
+          store.transaction(async (state, save) => {
+            assert.deepEqual(state.records, [healthy()]);
+            state.records[0]!.blocker = 'independent progress';
+            await save();
+          }),
+        );
+        const saved = JSON.parse(await readFile(store.path, 'utf8'));
+        assert.equal(saved.records[0].blocker, 'independent progress');
+        assert.deepEqual(saved.records.slice(1), raw.records.slice(1));
+        const before = await readFile(store.path, 'utf8');
+        await assert.rejects(
+          task('healthy-chat', () =>
+            store.transaction(async (state, save) => {
+              state.discoveryCheckedAt = 2;
+              await save();
+            }),
+          ),
+          /dispatch-task-isolation-required/,
+        );
+        await assert.rejects(
+          task('healthy-chat', () =>
+            store.transaction(async (state, save) => {
+              state.records[0]!.worktree = '/damaged';
+              await save();
+            }),
+          ),
+          /dispatch-task-ownership-unresolved/,
+        );
+        assert.equal(await readFile(store.path, 'utf8'), before);
+      }
+    });
+
+    it(`should recheck ${runtime} dependencies after a concurrent ownership change`, async () => {
+      const store = makeStore(root);
+      const raw = await write(store, [
+        healthy(),
+        damaged(),
+        {
+          ...pending('f'.repeat(64)),
+          issueKey: damaged().issueKey,
+          threadId: 'third-chat',
+        },
+      ]);
+      let concurrent = '';
+      await assert.rejects(
+        task('healthy-chat', () =>
+          store.transaction(async (state, save) => {
+            state.records[0]!.blocker = 'must not commit';
+            raw.records[1] = { ...damaged(), worktree: '/healthy' };
+            concurrent = JSON.stringify(raw);
+            await store.file.write(concurrent);
+            await save();
+          }),
+        ),
+        /dispatch-task-ownership-unresolved/,
+      );
+      assert.equal(await readFile(store.path, 'utf8'), concurrent);
+    });
+
+    it(`should retain shared and unresolved ${runtime} ownership protections`, async () => {
+      const store = makeStore(root);
+      for (const other of [
+        { ...damaged(), worktree: '/healthy' },
+        { ...damaged(), worktree: '/unrelated/../healthy' },
+        { ...damaged(), worktree: '/healthy/nested' },
+        { ...damaged(), threadId: 'healthy-chat' },
+        { ...damaged(), issueKey: healthy().issueKey },
+        { ...damaged(), id: undefined },
+        { ...damaged(), issueKey: undefined },
+        { ...damaged(), predecessorId: healthy().id },
+        { ...damaged(), worktree: 12 },
+      ]) {
+        await write(store, [healthy(), other]);
+        const before = await readFile(store.path, 'utf8');
+        await assert.rejects(
+          task('healthy-chat', () => store.transaction(async (_state, save) => save())),
+          /dispatch-(?:state-invalid|task-ownership-unresolved)/,
+        );
+        assert.equal(await readFile(store.path, 'utf8'), before);
+      }
+      await write(store, [healthy(), damaged()], { scope: 'e'.repeat(64) });
+      await assert.rejects(
+        task('healthy-chat', () => store.read()),
+        /dispatch-state-invalid/,
+      );
+      await store.file.write('{unreadable');
+      await assert.rejects(
+        task('healthy-chat', () => store.read()),
+        /dispatch-state-invalid/,
+      );
+    });
+
+    it(`should protect ${runtime} branch and pull request ownership before effects`, async () => {
+      const store = makeStore(root);
+      const issueBranch =
+        runtime === 'codex'
+          ? { issueBranch: { attemptId: healthy().id, name: 'shared-branch', phase: 'ready' } }
+          : { adoptedLocalBranch: 'shared-branch' };
+      const otherBranch =
+        runtime === 'codex'
+          ? { issueBranch: { attemptId: damaged().id, name: 'shared-branch', phase: 'ready' } }
+          : { adoptedLocalBranch: 'shared-branch' };
+      for (const [owner, other] of [
+        [
+          { ...healthy(), ...issueBranch },
+          { ...damaged(), ...otherBranch },
+        ],
+        [
+          { ...healthy(), pullRequestLink: { pullRequestNodeId: 'same-pr', pullRequestNumber: 7 } },
+          { ...damaged(), pullRequestLink: { pullRequestNodeId: 'same-pr', pullRequestNumber: 7 } },
+        ],
+      ]) {
+        await write(store, [owner, other]);
+        const before = await readFile(store.path, 'utf8');
+        await assert.rejects(
+          task('healthy-chat', () =>
+            store.transaction(async () => {
+              assert.fail('unsafe operation entered');
+            }),
+          ),
+          /dispatch-task-ownership-unresolved/,
+        );
+        assert.equal(await readFile(store.path, 'utf8'), before);
+      }
+    });
+
+    it(`should refuse ${runtime} ownership aliases even when the outer record names differ`, async () => {
+      const store = makeStore(root);
+      const manualIssue = {
+        id: damaged().id,
+        scope,
+        receiving: { nodeId: 'receiver', login: 'receiver' },
+        repository: {
+          nodeId: 'repository',
+          databaseId: 1,
+          owner: { login: 'owner', nodeId: 'owner' },
+          name: 'repo',
+        },
+        issue: { nodeId: 'issue', databaseId: 1, number: 1 },
+        initiation: { session: 'other-coordinator' },
+        selections: { assessment: { damaged: true } },
+      };
+      const owner = { ...healthy(), issueKey: issueKey(manualIssue) };
+      await write(store, [owner, { ...damaged(), manualIssue }]);
+      const before = await readFile(store.path, 'utf8');
+      await assert.rejects(
+        task('healthy-chat', () =>
+          store.transaction(async () => {
+            assert.fail('aliased issue effect entered');
+          }),
+        ),
+        /dispatch-task-ownership-unresolved/,
+      );
+      assert.equal(await readFile(store.path, 'utf8'), before);
+    });
+
+    it(`should prohibit unrelated ${runtime} mutations through an isolated view`, async () => {
+      const store = makeStore(root);
+      await write(store, [healthy(), damaged()]);
+      const before = await readFile(store.path, 'utf8');
+      for (const change of [
+        (state: { records: unknown[]; discoveryCheckedAt?: number }) => {
+          state.records = [];
+        },
+        (state: { records: unknown[]; discoveryCheckedAt?: number }) => {
+          state.records.push(pending('f'.repeat(64)));
+        },
+        (state: { records: unknown[]; discoveryCheckedAt?: number }) => {
+          state.discoveryCheckedAt = 100;
+        },
+      ]) {
+        await assert.rejects(
+          task('healthy-chat', () =>
+            store.transaction(async (state, save) => {
+              change(state);
+              await save();
+            }),
+          ),
+          /dispatch-task-isolation-required/,
+        );
+        assert.equal(await readFile(store.path, 'utf8'), before);
+      }
+      await assert.rejects(
+        task('healthy-chat', () =>
+          store.transaction(async (state, save) => {
+            state.records[0]!.worktree = '/damaged';
+            await save();
+          }),
+        ),
+        /dispatch-task-ownership-unresolved/,
+      );
+      assert.equal(await readFile(store.path, 'utf8'), before);
+    });
+
+    it(`should preserve concurrent ${runtime} opaque updates and reject stale owner writes`, async () => {
+      const store = makeStore(root);
+      const raw = await write(store, [healthy(), damaged()]);
+      await task('healthy-chat', () =>
+        store.transaction(async (state, save) => {
+          state.records[0]!.blocker = 'progress';
+          raw.records[1] = {
+            ...damaged(),
+            feedback: { unresolved: { destination: 'new evidence', attempted: true } },
+          };
+          await store.file.write(JSON.stringify(raw));
+          await save();
+        }),
+      );
+      const saved = JSON.parse(await readFile(store.path, 'utf8'));
+      assert.deepEqual(saved.records[1], raw.records[1]);
+      await assert.rejects(
+        task('healthy-chat', () =>
+          store.transaction(async (state, save) => {
+            state.records[0]!.context = 'stale';
+            await task('healthy-chat', () =>
+              makeStore(root).transaction(async (other, commit) => {
+                other.records[0]!.context = 'fresh';
+                await commit();
+              }),
+            );
+            await save();
+          }),
+        ),
+        /private-state-snapshot-conflict/,
+      );
+      assert.equal(JSON.parse(await readFile(store.path, 'utf8')).records[0].context, 'fresh');
+    });
+  }
 
   it('should serialize competing writers and preserve the first creation intent', async () => {
     const store = new OpenClawDispatchStore(root, scope);
@@ -271,13 +758,13 @@ describe('agent/shared dispatch state', () => {
       const retained = state.records[0]!;
       retained.context = 'outer observation';
       await new OpenClawDispatchStore(root, scope).transaction(async (other, commit) => {
-        other.records[0]!.routingNote = 'inner observation';
+        other.records[0]!.blocker = 'inner observation';
         other.records.push(pending('c'.repeat(64)));
         await commit();
       });
       await save();
       assert.equal(state.records[0], retained);
-      assert.equal(retained.routingNote, 'inner observation');
+      assert.equal(retained.blocker, 'inner observation');
       assert.equal(state.records.length, 2);
     });
     assert.equal((await store.read()).records[0]!.context, 'outer observation');
@@ -316,16 +803,16 @@ describe('agent/shared dispatch state', () => {
     await store.transaction(
       async (state, save) => {
         state.records[0]!.context = undefined;
-        state.records[0]!.routingNote = 'updated';
+        state.records[0]!.blocker = 'updated';
         await save();
         await save();
-        state.records[0]!.routingNote = 'next checkpoint';
+        state.records[0]!.blocker = 'next checkpoint';
         await save();
       },
       codexCommit(1, pending().id),
     );
     const saved = (await store.read()).records[0]!;
-    assert.equal(saved.routingNote, 'next checkpoint');
+    assert.equal(saved.blocker, 'next checkpoint');
     assert.equal(Object.hasOwn(saved, 'context'), false);
   });
 

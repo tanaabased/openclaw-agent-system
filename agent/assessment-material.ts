@@ -18,14 +18,7 @@ export default function assessmentMaterial<T extends Record<string, unknown>>(
   };
   return implementationMaterial(projected, request, read, {
     purpose: 'assessment-material',
-    controls: [
-      'mode',
-      'entry',
-      'currentTurnId',
-      'previousResultDigest',
-      'previousResultTurnId',
-      'presentationRequest',
-    ],
+    controls: ['mode', 'entry', 'currentTurnId', 'presentationRequest'],
     instruction:
       'Read any remaining configured guidance through its returned requests. Follow next, concatenate pages in offset order and parse JSON. Restore paths shallowest-first, then aliases. Refresh stale context; never mix versions. Read the task itself through evidence.source.',
   });

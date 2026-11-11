@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { configuredFeedbackIdentities } from './feedback-policy.ts';
 import PrivateStateFile from '../../core/private-state-file.ts';
 import ensurePrivateStateDirectories from '../../core/ensure-private-state-directories.ts';
 import acquirePrivateStateFileLock from '../../core/private-state-file-lock.ts';
@@ -33,11 +34,13 @@ function pins(policy: GitHubNotificationPolicy, purpose: Purpose = 'all') {
   // A reserved workflow cannot cause credential access or provider lookups.
   const workflow = policy.issueAssignment;
   if (workflow) {
-    if (purpose !== 'delivery') result.push(...workflow.allowed);
-    if ((purpose === 'feedback' || purpose === 'all') && typeof workflow.feedback === 'object')
-      result.push(...workflow.feedback.allowed);
-    for (const pin of purpose === 'assignment' ? [] : (workflow.pullRequest?.recipients ?? []))
-      if (!('source' in pin)) result.push(pin);
+    if (purpose === 'feedback')
+      return configuredFeedbackIdentities(workflow.allowed, workflow.feedback);
+    if (purpose === 'assignment' || purpose === 'all') result.push(...workflow.allowed);
+    if (purpose === 'all') result.push(...(workflow.feedback?.allowed ?? []));
+    if (purpose === 'delivery' || purpose === 'all')
+      for (const pin of workflow.pullRequest?.recipients ?? [])
+        if (!('source' in pin)) result.push(pin);
   }
   return result;
 }

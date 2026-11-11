@@ -1,22 +1,24 @@
-import { managedTargetUrl, dispatchAdmission } from './managed-issue.ts';
-
+import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 import assignmentRetirement from './assignment-retirement.ts';
 import { automationHash } from './automation-hash.ts';
 import { openClawCleanupConfiguration } from './cleanup-configuration.ts';
+import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
 import reconcileOpenClawLifecycle from './openclaw-assignment-lifecycle.ts';
 import type OpenClawDispatchContext from './openclaw-dispatch-context.ts';
 import observeRetirementSession from './openclaw-retirement-observation.ts';
 import type { DispatchCaller } from './openclaw-session-create.ts';
-import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
-import type { AgentManifest } from '../manifest/types.ts';
-
 /** an operator entry records intent, then enters the same resource lifecycle as intake. */
 export default async function retireOpenClawTask(options: {
   service: OpenClawDispatchContext;
   manifest: AgentManifest;
   workspace: string;
   caller: DispatchCaller;
-  input: { id?: string; digest?: string; apply?: boolean };
+  input: {
+    id?: string;
+    digest?: string;
+    apply?: boolean;
+  };
   operator: boolean;
   authority: DispatchAuthority;
 }) {
@@ -42,20 +44,7 @@ export default async function retireOpenClawTask(options: {
     if (!id) throw new Error('dispatch-retire-selection-required');
     const record = state.records.find((entry) => entry.id === id);
     const intake = record && dispatchAdmission(record, current.admitted.records ?? []);
-    if (!record || !intake || record.sourceThreadId !== owner || record.reset)
-      throw new Error('dispatch-retire-target-mismatch');
-    if (record.retired)
-      return record.retirement?.worktreeRemovedAt === undefined ||
-        (record.retirement.archivedAt === undefined &&
-          !record.retirement.sessionUnavailableObserved)
-        ? {
-            status: 'retirement-unverified',
-            id,
-            code: 'retirement-legacy-outcome-unverified',
-            instruction:
-              'Recover native session and checkout outcomes through the owning lifecycle; the historical retired marker alone is not completion evidence.',
-          }
-        : { status: 'retired', id, retirement: record.retirement };
+    if (!record || !intake || record.reset) throw new Error('dispatch-retire-target-mismatch');
     // native identity is verified even for an already pending request; lookup failure is not success.
     await service.dependencies.credential.use(authority, (request) =>
       observeRetirementSession(request, record, manifest.agent.id, owner),

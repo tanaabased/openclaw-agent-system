@@ -9,12 +9,42 @@ import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import { selectCodexIntake } from '../agent/codex-intake.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import nativeRetirement, { type NativeRetirementTarget } from '../agent/native-retirement.ts';
+import NotificationResetStore from '../agent/notification-reset-state.ts';
 import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
 import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { dispatchParameters, dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
+
+async function pendingReset(
+  root: string,
+  scope: string,
+  runtime: 'codex' | 'openclaw',
+  workspace: string,
+  target: string,
+) {
+  const store = new NotificationResetStore(root, scope);
+  await store.exclusive(async (_record, save) =>
+    save({
+      version: 1,
+      id: 'reset',
+      runtime,
+      scope,
+      workspace,
+      agentId: 'fixture',
+      purge: true,
+      createdAt: 1,
+      phase: 'coordinator',
+      automation: JSON.stringify({ sessionKey: target }),
+      inventory: JSON.stringify({
+        records: [{ threadId: 'retained-task', worktree: '/reset-owned-checkout' }],
+      }),
+      resources: [],
+    }),
+  );
+  return store;
+}
 
 describe('agent/native retirement receipts', () => {
   let root: string;
@@ -263,6 +293,24 @@ describe('agent/native retirement runtime entries', () => {
     );
     assert.equal(credentials, 0);
     const action = { action: 'retire', native: target.key };
+    const resetScope = await intake.select(manifest, root, { resolvePolicy: false });
+    const reset = await pendingReset(
+      join(root, 'dispatch'),
+      resetScope.store.location.scope,
+      'openclaw',
+      root,
+      'agent:fixture:reset-owned',
+    );
+    await assert.rejects(
+      service.runModel(
+        manifest,
+        root,
+        caller,
+        { action: 'retire', native: 'agent:fixture:reset-owned' },
+        true,
+      ),
+      /notification-reset-resource-in-progress/,
+    );
     const preview = await service.runModel(
       manifest,
       root,
@@ -296,6 +344,8 @@ describe('agent/native retirement runtime entries', () => {
       },
     ]);
     assert.equal(await readFile(join(root, 'local-only.txt'), 'utf8'), 'unpreserved local work');
+    assert.equal((await reset.read())?.phase, 'coordinator');
+    await reset.exclusive(async (_record, _save, remove) => remove());
     const selected = await intake.select(manifest, root, { resolvePolicy: false });
     assert.equal(await selected.store.read(), undefined);
     const journal = new OpenClawDispatchStore(
@@ -308,7 +358,7 @@ describe('agent/native retirement runtime entries', () => {
         id: 'a'.repeat(64),
         issueKey: 'b'.repeat(64),
         sourceThreadId: caller.sessionKey,
-        phase: 'routing',
+
         intakeId: 'c'.repeat(64),
         createdAt: 1,
         manifestDigest: 'manifest',
@@ -375,6 +425,19 @@ describe('agent/native retirement runtime entries', () => {
     };
     const run = async (input: unknown) =>
       (await runCodexDispatch(pluginData, 'retire', input, deps)) as Record<string, unknown>;
+    const resetScope = await selectCodexIntake(pluginData, deps, { resolvePolicy: false });
+    const reset = await pendingReset(
+      pluginData,
+      resetScope.store.location.scope,
+      'codex',
+      workspace,
+      'reset-owned',
+    );
+    await assert.rejects(run({ native: 'reset-owned' }), /notification-reset-resource-in-progress/);
+    await assert.rejects(
+      run({ native: 'retained-task' }),
+      /notification-reset-resource-in-progress/,
+    );
     const preview = await run({ native: 'native' });
     assert.equal(preview?.status, 'retire-available');
     const prepared = await run({ native: 'native', apply: true });
@@ -385,6 +448,8 @@ describe('agent/native retirement runtime entries', () => {
     assert.equal((await run({ native: 'native' }))?.status, 'failed');
     archived = true;
     assert.equal((await run({ native: 'native' }))?.status, 'archived');
+    assert.equal((await reset.read())?.phase, 'coordinator');
+    await reset.exclusive(async (_record, _save, remove) => remove());
     assert.ok(
       methods.every((method) =>
         ['thread/read', 'thread/turns/list', 'thread/items/list'].includes(method),
@@ -402,7 +467,7 @@ describe('agent/native retirement runtime entries', () => {
         id: 'a'.repeat(64),
         issueKey: 'b'.repeat(64),
         sourceThreadId: 'operator',
-        phase: 'routing',
+
         intakeId: 'c'.repeat(64),
         createdAt: 1,
         manifestDigest: 'manifest',

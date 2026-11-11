@@ -1,34 +1,26 @@
-import feedbackPresentation from '../agent/feedback-presentation.ts';
-import openClawFeedbackInput from '../agent/openclaw-feedback-input.ts';
-import { verifyOpenClawWork } from '../agent/openclaw-work.ts';
 import assert from 'node:assert/strict';
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { Value } from 'typebox/value';
+import feedbackPresentation from '../agent/feedback-presentation.ts';
+import { discoverFeedback, feedbackRevision } from '../agent/feedback-source.ts';
+import openClawCapacity from '../agent/openclaw-capacity.ts';
+import { type OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
+import openClawFeedbackInput from '../agent/openclaw-feedback-input.ts';
 import {
   openclawFeedbackSchema,
   type OpenClawFeedbackEvent,
 } from '../agent/openclaw-feedback-state.ts';
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import openClawFeedback, {
   advanceFeedbackTurn,
   type OpenClawFeedbackAction,
   type OpenClawFeedbackProvider,
 } from '../agent/openclaw-feedback.ts';
-import OpenClawDispatchStore, {
-  type OpenClawDispatchRecord,
-} from '../agent/openclaw-dispatch-state.ts';
-import { discoverFeedback, feedbackRevision } from '../agent/feedback-source.ts';
-import openClawCapacity from '../agent/openclaw-capacity.ts';
-import { hasDeliveredImplementation } from '../agent/implementation-delivery.ts';
-import workflowStatus from '../agent/workflow-status.ts';
+import { verifyOpenClawWork } from '../agent/openclaw-work.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
-import {
-  reviewFixture,
-  reviewCommentFixture,
-  reviewClientFixture,
-} from './github-review-fixtures.ts';
-import { account, intakeFixture } from './github-intake-fixture.ts';
+import { intakeFixture } from './github-intake-fixture.ts';
+import { reviewCommentFixture } from './github-review-fixtures.ts';
 
 const actor = { login: 'operator', nodeId: 'U_operator', type: 'User' };
 describe('agent/openclaw-feedback', () => {
@@ -38,7 +30,7 @@ describe('agent/openclaw-feedback', () => {
     sourcePresentation?: string;
   };
   let busy: boolean, lost: boolean, uncertain: boolean, revoked: boolean, skill: boolean;
-  let sends: number, writes: number, saves: number, destination: string;
+  let sends: number, writes: number, saves: number;
   let published: { nodeId: string; databaseId: number; body: string } | undefined;
   let messages: Record<string, unknown>[];
   let terminal: boolean;
@@ -52,7 +44,6 @@ describe('agent/openclaw-feedback', () => {
     customSkills = [];
     sessionSettings = { model: 'openai/test', thinkingLevel: 'high' };
     sends = writes = saves = 0;
-    destination = '';
     published = undefined;
     messages = [];
     const fixture = intakeFixture();
@@ -71,7 +62,7 @@ describe('agent/openclaw-feedback', () => {
       intakeId: 'b'.repeat(64),
       issueKey: 'c'.repeat(64),
       sourceThreadId: 'intake',
-      phase: 'complete',
+
       createdAt: 0,
       manifestDigest: 'old-assessment-policy',
       threadId: 'issue-chat',
@@ -111,7 +102,6 @@ describe('agent/openclaw-feedback', () => {
       findOwnIssueComment: async () => published,
       createIssueComment: async (_o, _n, number, body) => {
         writes++;
-        destination = `item:${number}`;
         published = { nodeId: 'reply', databaseId: 99, body };
         if (uncertain) published = undefined;
         if (lost || uncertain) throw new Error('connection-lost');
@@ -121,7 +111,6 @@ describe('agent/openclaw-feedback', () => {
         find: async () => (published ? reviewCommentFixture(published) : undefined),
         create: async (_o, _n, number, parent, body) => {
           writes++;
-          destination = `review:${number}:${parent}`;
           published = { nodeId: 'reply', databaseId: 99, body };
           return reviewCommentFixture(published);
         },
@@ -139,16 +128,12 @@ describe('agent/openclaw-feedback', () => {
       now: Date.now(),
     });
     event = record.feedback!.events[0]!;
-    // Retained pre-native events continue through their original publication owner.
-    delete event.native;
     input = {
       record,
       event,
       sourcePresentation: feedbackPresentation(event, 'owner/repo'),
       provider,
       policy: fixture.policy,
-      workspace: root,
-      now: Date.now(),
       config: {},
       intake: {
         repository: fixture.repository,
@@ -245,16 +230,27 @@ describe('agent/openclaw-feedback', () => {
     await advanceFeedbackTurn(input);
     return action('context');
   }
-  it('should send only the native quoted comment card without workflow instructions or identifiers', async () => {
-    event.native = true;
+  it('should send only the native unquoted comment card without workflow instructions or identifiers', async () => {
+    source.body = '@receiver ask @Octo-Cat. Keep `@code` and person@example.com.';
+    event.source = JSON.stringify(source);
+    event.revision = feedbackRevision(source);
+    input.sourcePresentation = feedbackPresentation(event, 'owner/repo');
+    const original = event.source;
     await advanceFeedbackTurn(input);
     assert.equal(event.turn!.message, feedbackPresentation(event, 'owner/repo'));
-    assert.ok(event.turn!.message.split('\n').every((line) => line.startsWith('>')));
+    assert.ok(event.turn!.message.includes('[@Octo-Cat](https://github.com/Octo-Cat)'));
+    assert.ok(event.turn!.message.includes('`@code` and person@example.com'));
+    assert.ok(event.turn!.message.includes('from [@operator](https://github.com/operator)'));
+    assert.ok(event.turn!.message.includes('#issuecomment-42)'));
+    assert.ok(!event.turn!.message.startsWith('>'));
     assert.ok(!event.turn!.message.includes(record.id));
     assert.ok(!event.turn!.message.includes(event.id));
+    const context = await action('context');
+    assert.ok('source' in context);
+    assert.equal(context.source.body, source.body);
+    assert.equal(event.source, original);
   });
   it('should answer a delivered comment from a later run without execution metadata', async () => {
-    event.native = true;
     await advanceFeedbackTurn(input);
     const deliveryRunId = event.turn!.runId;
     // OpenClaw 2026.10.6 CI: consumed user has a delivery key, no runId, and no pending receipt.
@@ -286,7 +282,6 @@ describe('agent/openclaw-feedback', () => {
   });
   for (const execution of ['delivery', 'queued'] as const)
     it(`should preserve ${execution} consumption while a later native turn reads the selected feedback`, async () => {
-      event.native = true;
       await advanceFeedbackTurn(input);
       const originalRun = event.turn!.runId;
       const executionRun = execution === 'delivery' ? originalRun : 'original-queued-execution';
@@ -310,37 +305,7 @@ describe('agent/openclaw-feedback', () => {
       assert.equal(sends, 1);
       assert.equal(writes, 0);
     });
-  for (const recovery of ['context', 'reconciliation'] as const)
-    it(`should repair a prior responder-derived execution hint through ${recovery}`, async () => {
-      event.native = true;
-      await advanceFeedbackTurn(input);
-      const originalRun = event.turn!.runId;
-      (messages[0]!.__openclaw as Record<string, unknown>).runId = originalRun;
-      event.phase = 'running';
-      event.turn!.executionRunId = 'earlier-retry';
-      event.turn!.consumedByEventId = 'input';
-      record.feedback!.context = {
-        runId: 'earlier-retry',
-        eventId: event.id,
-        inputEventId: 'input',
-      };
-      input.caller.runId = 'operator-retry';
-      if (recovery === 'reconciliation') {
-        await advanceFeedbackTurn(input);
-        assert.equal(event.turn!.executionRunId, undefined);
-      }
-      assert.equal((await action('context')).status, 'verified');
-      assert.equal(event.turn!.executionRunId, undefined);
-      assert.equal(event.turn!.consumedByEventId, 'input');
-      assert.equal(
-        (await openClawFeedbackInput(record, input.caller, input.request, input.config))?.inputId,
-        'input',
-      );
-      assert.equal(sends, 1);
-      assert.equal(writes, 0);
-    });
   it('should select an exact delivered source when several comments are available', async () => {
-    event.native = true;
     await advanceFeedbackTurn(input);
     const second = structuredClone(event);
     second.id = 'd'.repeat(64);
@@ -375,13 +340,11 @@ describe('agent/openclaw-feedback', () => {
       event.id,
     );
   });
-  for (const change of ['key', 'body', 'session', 'cancelled', 'receipt', 'pending', 'legacy'])
+  for (const change of ['key', 'body', 'session', 'cancelled', 'receipt', 'pending'])
     it(`should refuse queued feedback with conflicting ${change}`, async () => {
-      event.native = true;
       await advanceFeedbackTurn(input);
       const meta = messages[0]!.__openclaw as Record<string, unknown>;
       input.caller.runId = 'queued-execution';
-      if (change === 'legacy') delete event.native;
       if (change === 'key') meta.idempotencyKey = 'different:user';
       if (change === 'body') messages[0]!.content = 'a different comment';
       if (change === 'session') input.caller.sessionId = 'replacement-session';
@@ -411,30 +374,21 @@ describe('agent/openclaw-feedback', () => {
       assert.equal(writes, 0);
     });
   it('should reuse native feedback custody for the initial task transition and preserve cancellation', async () => {
-    event.native = true;
     await start();
     const feedback = await openClawFeedbackInput(record, input.caller, input.request, input.config);
     assert.ok(feedback);
-    record.result = {
-      outcome: 'plan-ready',
-      summary: 'Existing actionable plan.',
-      fullAssessment: 'Implement the requested change.',
-    } as never;
-    record.stageReceipt = {} as never;
     const verified = await verifyOpenClawWork({
       record,
       caller: input.caller,
       operator: false,
       feedback: { inputId: feedback.inputId, message: event.source },
       mode: 'plan',
-      now: input.now,
+      now: Date.now(),
       request: input.request,
       config: input.config,
     });
     assert.equal(verified.progression.stage, 'implementation');
-    assert.equal(verified.progression.workOwner, 'issue');
     assert.equal(verified.source.inputEventId, feedback.inputId);
-    assert.equal(event.work, undefined);
     event.turn!.cancelled = true;
     await assert.rejects(
       openClawFeedbackInput(record, input.caller, input.request, input.config),
@@ -442,7 +396,6 @@ describe('agent/openclaw-feedback', () => {
     );
   });
   it('should settle consumed native input without waiting for its answer or guessing its execution', async () => {
-    event.native = true;
     const request = input.request;
     input.request = async (method, params) => {
       assert.notEqual(method, 'agent.wait', 'delivery does not wait for the responder');
@@ -465,7 +418,6 @@ describe('agent/openclaw-feedback', () => {
     assert.equal(sends, 1);
   });
   it('should keep queued native input pending until its exact consumption is verified', async () => {
-    event.native = true;
     const request = input.request;
     input.request = async (method, params) => {
       assert.notEqual(method, 'agent.wait');
@@ -488,7 +440,6 @@ describe('agent/openclaw-feedback', () => {
   });
   for (const failure of ['cancelled', 'session', 'input'] as const)
     it(`should not settle native delivery with ${failure} evidence`, async () => {
-      event.native = true;
       const request = input.request;
       input.request = async (method, params) => {
         const result = await request(method, params);
@@ -512,8 +463,7 @@ describe('agent/openclaw-feedback', () => {
       assert.equal(sends, 1);
     });
   it('should settle native delivery independently of private results and public replies', async () => {
-    event.native = true;
-    const before = structuredClone(record);
+    structuredClone(record);
     const context = await start();
     assert.equal(context.status, 'verified');
     assert.equal('resultSchema' in context, false);
@@ -521,9 +471,6 @@ describe('agent/openclaw-feedback', () => {
       'replyTarget' in context && context.replyTarget,
       'https://github.com/owner/repo/issues/3#issuecomment-42',
     );
-    assert.equal(event.work, undefined);
-    assert.equal(event.result, undefined);
-    assert.deepEqual(record.result, before.result);
     event.turn!.status = 'completed';
     busy = false;
     assert.equal((await advanceFeedbackTurn(input)).status, 'feedback-completed');
@@ -538,20 +485,9 @@ describe('agent/openclaw-feedback', () => {
       await start();
       const original = structuredClone(record.request);
       Object.assign(sessionSettings, change);
-      assert.equal((await action('context')).status, 'verified');
-      assert.equal(
-        (
-          await action('implementation-context', {
-            decision: { mode: 'work', reasons: ['Bounded revision.'], plan: 'Revise the parser.' },
-          })
-        ).status,
-        'verified',
-      );
-      assert.deepEqual(record.effective, {
-        status: 'verified',
-        model: sessionSettings.model,
-        effort: sessionSettings.thinkingLevel,
-      });
+      const context = await action('context');
+      assert.equal(context.status, 'verified');
+      assert.ok('mode' in context && context.mode === 'work');
       assert.deepEqual(record.request, original);
       assert.equal(sends, 1);
       assert.equal(writes, 0);
@@ -565,756 +501,25 @@ describe('agent/openclaw-feedback', () => {
         event.revision = feedbackRevision(source);
         const context = await start();
         assert.equal(context.status, 'verified');
-        const saved = await action('result', {
-          privateText: 'Retained plan response.',
-          reply: false,
-        });
-        assert.equal(saved.status, 'recorded');
         assert.equal(record.progression, undefined);
-        assert.equal(event.work, undefined);
         assert.equal(writes, 0);
       });
-  for (const operation of ['implementation-context', 'implementation-result'] as const)
-    it(`should route legacy ${operation} to native context without creating feedback work`, async () => {
-      await start();
-      const before = structuredClone(record.result);
-      const context = await action(operation);
-      assert.equal(context.status, 'verified');
-      assert.equal('resultSchema' in context, false);
-      assert.equal(event.work, undefined);
-      assert.deepEqual(record.result, before);
-    });
-  async function enableFeedbackWork(firstDelivery = false) {
-    record.manifestDigest = 'c'.repeat(64);
-    record.progression = { stage: 'implementation', via: 'operator' };
-    record.result = {
-      version: 1,
-      outcome: 'plan-ready',
-      summary: 'plan',
-      assessment: 'plan',
-      plan: 'plan',
-      evidence: [],
-      progress: { completed: [], remaining: [] },
-    };
-    record.work = {
-      assessmentDigest: 'a'.repeat(64),
-      delivery: {
-        id: 'b'.repeat(64),
-        binding: {
-          repositoryId: 'R',
-          issueId: 'I_issue',
-          threadId: 'issue-chat',
-          sessionId: 'session',
-          worktree: root,
-          branch: 'fix',
-          base: 'main',
-          head: 'a'.repeat(40),
-          authorId: account.nodeId,
-          policyDigest: 'c'.repeat(64),
-        },
-        title: 'fix',
-        body: 'fix',
-        creationAttempted: true,
-        reconciled: true,
-        pushedHead: 'a'.repeat(40),
-        pullRequest: { pullRequestNodeId: 'PR', pullRequestNumber: 7 },
-      },
-    };
-    if (firstDelivery) {
-      delete record.work;
-      delete record.handoff;
-      input.policy.issueAssignment!.pullRequest = { recipients: [] };
-    }
-    return start();
-  }
-  for (const [firstDelivery, lostPush] of [
-    [false, false],
-    [false, true],
-    [true, false],
-  ])
-    it(`should recover retained feedback delivery with first pr ${firstDelivery} and lost push response ${lostPush}`, async () => {
-      await enableFeedbackWork(firstDelivery);
-      let remote = firstDelivery ? '' : 'c'.repeat(40),
-        pushes = 0,
-        creates = 0;
-      let lost = lostPush;
-      const head = 'd'.repeat(40);
-      const delivery = record.work?.delivery;
-      if (delivery) {
-        delivery.binding.repositoryId = input.intake.repository.nodeId;
-        delivery.binding.authorId = account.nodeId;
-      }
-      const pr = {
-        itemNodeId: 'PR',
-        number: 7,
-        state: 'open',
-        baseRef: 'main',
-        headRef: 'fix',
-        headRepository: 'owner/repo',
-        title: 'fix',
-        body: 'Closes #3',
-      };
-      if (delivery) delivery.body = pr.body;
-      input.connectDelivery = async () => ({
-        git: async (argv) => {
-          if (argv[0] === 'branch') return 'fix';
-          if (argv[0] === 'remote') return 'git@github.com:owner/repo.git';
-          if (argv.includes('--show-toplevel')) return root;
-          if (argv[0] === 'rev-parse') return head;
-          if (argv[0] === 'rev-list') return '2';
-          if (argv[0] === 'ls-remote') return remote ? `${remote} refs/heads/fix` : '';
-          if (argv[0] === 'merge-base')
-            assert.deepEqual(argv, ['merge-base', '--is-ancestor', remote, head]);
-          if (argv[0] === 'push') {
-            pushes++;
-            remote = head;
-            if (lost) {
-              lost = false;
-              throw new Error('push-response-lost');
-            }
-          }
-          return '';
-        },
-        account: {
-          identity: account,
-          execute: async (argv, stdin) => {
-            const endpoint = argv.find((arg) => arg.startsWith('repos/'));
-            let data: unknown;
-            if (argv.includes('POST')) {
-              creates++;
-              assert.ok(firstDelivery);
-              data = pr;
-            } else if (argv.includes('graphql'))
-              data = JSON.parse(stdin!).query.startsWith('mutation')
-                ? { id: 'I_issue' }
-                : { id: 'PR', closingIssuesReferences: { nodes: [{ id: 'I_issue' }] } };
-            else if (endpoint === 'repos/owner/repo/issues/3')
-              data = { databaseId: 20, nodeId: 'I_issue', number: 3, title: 'issue' };
-            else if (endpoint === 'repos/owner/repo/pulls')
-              data = firstDelivery && !creates ? [] : [pr];
-            else if (endpoint === 'repos/owner/repo/pulls/7')
-              data = {
-                nodeId: 'PR',
-                repositoryId: input.intake.repository.nodeId,
-                headRepositoryId: input.intake.repository.nodeId,
-                headSha: remote,
-                authorId: account.nodeId,
-                baseRef: 'main',
-                headRef: 'fix',
-                state: 'open',
-                number: 7,
-              };
-            else throw new Error('unexpected request: ' + JSON.stringify(argv));
-            return {
-              exitCode: 0,
-              stdout: (argv.includes('--include') ? 'HTTP/2 200\n\n' : '') + JSON.stringify(data),
-              stderr: '',
-              timedOut: false,
-              truncated: false,
-            };
-          },
-        },
-      });
-      event.work = {
-        selection: {
-          version: 1,
-          requestedSkill: 'agent-system-task-implementation',
-          defaultSkill: true,
-          observedAt: input.now,
-          skill: {
-            name: 'agent-system-task-implementation',
-            path: join(root, 'SKILL.md'),
-            scope: 'user',
-            digest: 'f'.repeat(64),
-          },
-        },
-        result: { outcome: 'done', summary: 'Fixed.', fullResult: 'Retained completed repair.' },
-        head,
-      };
-      assert.equal(record.implementationDelivered, undefined);
-      await action('delivery', {
-        deliveryOperation: 'prepare',
-        title: 'fix',
-        body: 'Closes #3',
-      });
-      if (lostPush) {
-        await assert.rejects(
-          action('delivery', { deliveryOperation: 'publish' }),
-          /push-response-lost/u,
-        );
-        assert.equal(record.work!.delivery!.pushedHead, 'a'.repeat(40));
-        assert.equal(record.work!.delivery!.reconciled, true);
-        assert.ok(event.workDelivery);
-        input.record = record = JSON.parse(JSON.stringify(record));
-        input.event = event = record.feedback!.events[0]!;
-        const reconciled = await action('delivery', { deliveryOperation: 'reconcile' });
-        assert.equal(reconciled.status, 'ready');
-        assert.equal(event.workDelivery!.reconciled, true);
-        assert.equal(record.work!.delivery!.pushedHead, head);
-      }
-      if (lostPush) await action('delivery', { deliveryOperation: 'prepare' });
-      const outcome = await action('delivery', {
-        deliveryOperation: 'publish',
-        title: 'fix',
-        body: 'Closes #3',
-      });
-      assert.equal(outcome.status, 'published');
-      assert.equal(record.work!.delivery!.pushedHead, head);
-      assert.equal(record.work!.delivery!.pullRequest!.pullRequestNumber, 7);
-      assert.equal(record.implementationDelivered, true);
-      assert.equal(record.work!.result, undefined);
-      assert.equal(event.phase, 'running'); // source-bound feedback reply still has its own owner.
-      input.record = record = JSON.parse(JSON.stringify(record));
-      input.event = event = record.feedback!.events[0]!;
-      assert.equal(record.nativeInactive, false);
-      assert.equal(workflowStatus(record), 'active');
-      assert.equal(hasDeliveredImplementation(record), true);
-      await action('delivery', { deliveryOperation: 'prepare' });
-      await action('delivery', { deliveryOperation: 'publish' });
-      assert.equal(pushes, 1);
-      assert.equal(creates, firstDelivery ? 1 : 0);
-      assert.equal((await action('implementation-context')).status, 'verified');
-      if (!lostPush) {
-        await compose('The repair is pushed; checks are still pending.');
-        const retained = structuredClone({ work: event.work, delivery: record.work!.delivery });
-        const oldRun = event.turn!.runId;
-        const request = input.request;
-        input.request = async (method, params) =>
-          method === 'agent.wait' && params.runId === oldRun
-            ? { runId: oldRun, status: 'error', stopReason: 'aborted' }
-            : request(method, params);
-        input.operator = true;
-        input.caller.runId = 'reply-after-push';
-        messages.push({
-          role: 'user',
-          content: 'Finish the saved reply.',
-          __openclaw: {
-            id: 'reply-after-push-input',
-            idempotencyKey: 'reply-after-push:user',
-            senderIsOwner: true,
-          },
-        });
-        assert.equal((await action('context', { resume: true })).status, 'verified');
-        await action('publish');
-        assert.equal((await action('publish', {})).status, 'published');
-        assert.deepEqual({ work: event.work, delivery: record.work!.delivery }, retained);
-        assert.equal(pushes, 1);
-        assert.equal(creates, firstDelivery ? 1 : 0);
-        assert.equal(writes, 1);
-      }
-      source.body = 'Withdrawn';
-      await assert.rejects(
-        action('delivery', { deliveryOperation: 'prepare' }),
-        /feedback-source-changed/u,
-      );
-    });
-  async function compose(text = 'The existing handler preserves the original result.') {
-    await action('result', {
-      privateText: 'Full private evidence, implications, uncertainty, and answer.',
-    });
-    const selected = await action('compose');
-    assert.ok('digest' in selected);
-    await action('candidate', { publicText: text });
-  }
-  it('should project legacy reply facts without forwarding saved work machinery', async () => {
-    await start();
-    await action('result', { privateText: 'The fix is ready; hosted checks remain pending.' });
-    const selected = await action('compose');
-    assert.ok('selection' in selected);
-    event.work = {
-      selection: selected.selection,
-      result: {
-        outcome: 'done',
-        summary: 'Fixed the handler.',
-        fullResult: 'Saved transcript. '.repeat(2000),
-      },
-      head: 'b'.repeat(40),
-      pullRequest: { pullRequestNodeId: 'PR_update', pullRequestNumber: 7 },
-    };
-    const before = structuredClone(event.work);
-    const composed = await action('compose');
-    assert.ok('verifiedOutcome' in composed && 'privateResponse' in composed);
-    assert.deepEqual(composed.verifiedOutcome, {
-      implementation: { outcome: 'done', summary: 'Fixed the handler.' },
-      head: before.head,
-      delivery: before.pullRequest,
-    });
-    assert.equal(composed.privateResponse, 'The fix is ready; hosted checks remain pending.');
-    assert.deepEqual(event.work, before);
-    assert.equal(writes, 0);
-  });
-  it('should retain a completed legacy input without replaying work for its missing reply', async () => {
-    await start();
-    await action('result', { privateText: 'Retained answer.' });
-    const oldRun = event.turn!.runId;
-    event.turn!.status = 'completed';
-    busy = false;
-    assert.equal((await advanceFeedbackTurn(input)).status, 'feedback-completed');
-    assert.equal(event.phase, 'delivered');
-    assert.equal(event.result!.privateText, 'Retained answer.');
-    await advanceFeedbackTurn(input);
-    assert.equal(event.turn!.runId, oldRun);
-    assert.equal(sends, 1);
-    assert.equal(writes, 0);
-  });
-  it('should finish a retained reply after a manual stop and explicit owner follow-up', async () => {
-    await start();
-    await compose('The repair is pushed; checks are still pending.');
-    const oldRun = event.turn!.runId;
-    const request = input.request;
-    busy = false;
-    input.request = async (method, params) =>
-      method === 'agent.wait' && params.runId === oldRun
-        ? { runId: oldRun, status: 'error', stopReason: 'aborted' }
-        : request(method, params);
-    await assert.rejects(advanceFeedbackTurn(input), /dispatch-turn-cancelled/);
-    assert.equal(event.turn!.cancelled, true);
-    assert.equal(sends, 1);
-    input.caller.runId = 'operator-resume';
-    messages.push({
-      role: 'user',
-      content: 'Finish the saved feedback reply; the repair is already pushed.',
-      __openclaw: {
-        id: 'resume-input',
-        idempotencyKey: 'operator-resume:user',
-        senderIsOwner: true,
-      },
-    });
-    busy = true;
-    await assert.rejects(action('context'), /feedback-owner-caller-required/);
-    input.operator = true;
-    assert.equal((await action('context', { resume: true })).status, 'verified');
-    assert.equal(
-      event.result!.privateText,
-      'Full private evidence, implications, uncertainty, and answer.',
-    );
-    await action('publish');
-    assert.equal((await action('publish', {})).status, 'published');
-    assert.equal(writes, 1);
-    assert.equal(sends, 1);
-    assert.equal(event.ownerResumptions![0]!.previousTurn.cancelled, true);
-    record.phase = 'creating';
-    record.context = '{}';
-    record.routing = '{}';
-    record.routingNote = 'Retained fixture routing.';
-    record.effective = { status: 'verified', model: 'openai/test', effort: 'high' };
-    const journal = new OpenClawDispatchStore(root, 'd'.repeat(64));
-    await journal.exclusive(async (state, save) => {
-      state.records = [structuredClone(record)];
-      await save();
-    });
-    assert.equal(
-      (await journal.read()).records[0]!.feedback!.events[0]!.turn!.runId,
-      'operator-resume',
-    );
-    input.caller.runId = oldRun;
-    await assert.rejects(action('context', { resume: true }), /feedback-resume-unavailable/);
-  });
-  for (const failure of [
-    'nonowner',
-    'missing-input',
-    'foreign-session',
-    'active-handler',
-    'denial',
-    'changed-source',
-  ] as const)
-    it(`should preserve stopped feedback when resume has ${failure}`, async () => {
-      await start();
-      await compose();
-      const original = structuredClone(event.turn);
-      const oldRun = event.turn!.runId;
-      const request = input.request;
-      input.request = async (method, params) =>
-        method === 'agent.wait' && params.runId === oldRun
-          ? {
-              runId: oldRun,
-              status: failure === 'active-handler' ? 'timeout' : 'error',
-              ...(failure === 'denial' ? { code: 'approval-denied' } : { stopReason: 'aborted' }),
-            }
-          : request(method, params);
-      input.operator = failure !== 'nonowner';
-      input.caller.runId = 'resume-input';
-      if (failure === 'foreign-session') input.caller.sessionId = 'replacement';
-      if (failure === 'changed-source') source.body = 'Changed source.';
-      if (failure !== 'missing-input')
-        messages.push({
-          role: 'user',
-          content: 'Finish the saved reply.',
-          __openclaw: { id: 'new-input', idempotencyKey: 'resume-input:user', senderIsOwner: true },
-        });
-      await assert.rejects(
-        action('context', { resume: true }),
-        /feedback-owner|dispatch-operator-input-unverified|feedback-resume-terminal-unverified|feedback-source-changed/,
-      );
-      assert.deepEqual(event.turn, original);
-      assert.equal(event.ownerResumptions, undefined);
-      assert.equal(writes, 0);
-      assert.equal(sends, 1);
-    });
-  it('should reconcile an uncertain reply after explicit resume without another write', async () => {
-    await start();
-    await compose();
-    lost = true;
-    await assert.rejects(action('publish', {}), /connection-lost/);
-    const oldRun = event.turn!.runId;
-    const request = input.request;
-    input.request = async (method, params) =>
-      method === 'agent.wait' && params.runId === oldRun
-        ? { runId: oldRun, status: 'error', stopReason: 'aborted' }
-        : request(method, params);
-    input.operator = true;
-    input.caller.runId = 'resume-input';
-    messages.push({
-      role: 'user',
-      content: 'Finish the saved reply.',
-      __openclaw: { id: 'new-input', idempotencyKey: 'resume-input:user', senderIsOwner: true },
-    });
-    assert.equal((await action('context', { resume: true })).status, 'verified');
-    lost = false;
-    assert.equal((await action('reconcile')).status, 'published');
-    assert.equal(writes, 1);
-    assert.equal(sends, 1);
-  });
   it('should queue on a busy owner and recover a lost send without another input or session', async () => {
     busy = true;
     lost = true;
     await assert.rejects(advanceFeedbackTurn(input), /connection-lost/);
     assert.equal(event.turn?.status, 'attempted');
     lost = false;
-    await advanceFeedbackTurn(input);
+    await advanceFeedbackTurn({
+      ...input,
+      sourcePresentation: undefined,
+      authorizeInput: async () => {
+        throw new Error('source unavailable after send');
+      },
+    });
     assert.equal(sends, 1);
     assert.equal(event.turn?.status, 'consumed');
     assert.equal(openClawCapacity([record], 3).occupied, 1);
-  });
-  for (const variant of ['default', 'skill', 'inline', 'file', 'skill-inline', 'skill-file']) {
-    it(`should compose and publish issue-owned feedback with ${variant} customization`, async () => {
-      const guidance = 'Lead with the result.\nKeep the uncertainty visible.';
-      await writeFile(join(root, 'reply-guidance.md'), guidance);
-      await mkdir(join(root, 'reply'));
-      await writeFile(join(root, 'reply', 'SKILL.md'), 'Explain the result to the issue author.');
-      customSkills = [
-        {
-          name: 'custom-reply',
-          filePath: join(root, 'reply', 'SKILL.md'),
-          source: 'openclaw-workspace',
-          eligible: true,
-          modelVisible: true,
-        },
-      ];
-      input.policy.issueAssignment!.assessment = { skill: 'missing-assessment' };
-      input.policy.issueAssignment!.implementation = { skill: 'missing-implementation' };
-      input.policy.issueAssignment!.feedback = {
-        inherit: true,
-        allowed: [],
-        ...(variant.includes('skill') ? { skill: 'custom-reply' } : {}),
-        ...(variant.includes('inline')
-          ? { guidance }
-          : variant.includes('file')
-            ? { guidance: { file: 'reply-guidance.md' } }
-            : {}),
-      };
-      await start();
-      const privateText = 'Full private evidence.\nTransport remains untested.';
-      await action('result', { privateText });
-      const composed = await action('compose');
-      assert.ok('selection' in composed && composed.selection && 'digest' in composed);
-      assert.equal(
-        composed.selection.skill.name,
-        variant.includes('skill') ? 'custom-reply' : 'agent-system-github-reply',
-      );
-      assert.equal(
-        composed.selection.guidance?.content,
-        variant.includes('inline') ? guidance : undefined,
-      );
-      assert.ok('privateResponse' in composed);
-      assert.equal(composed.privateResponse, privateText);
-      assert.equal(event.composition?.skill.digest, composed.selection.skill.digest);
-      assert.equal(
-        event.composition?.guidance?.content,
-        /inline|file/u.test(variant) ? guidance : undefined,
-      );
-      if (variant.includes('file'))
-        assert.equal(composed.selection.guidance?.path, event.composition?.guidance?.path);
-      const publicText = 'Result: caller fixed. Transport remains untested.';
-      await action('candidate', { publicText });
-      await action('publish');
-      assert.equal((await action('publish', {})).status, 'published');
-      assert.equal(destination, 'item:3');
-      assert.equal(event.result!.privateText, privateText);
-      assert.ok(published!.body.includes(publicText));
-      assert.ok(!published!.body.includes(privateText));
-      await action('publish', {});
-      assert.equal(writes, 1);
-    });
-  }
-
-  for (const invalid of ['missing', 'disabled', 'hidden', 'ineligible', 'ambiguous']) {
-    it(`should recover a ${invalid} explicit reply skill without publishing a default`, async () => {
-      input.policy.issueAssignment!.feedback = {
-        inherit: true,
-        allowed: [],
-        skill: 'custom-reply',
-      };
-      const valid = {
-        name: 'custom-reply',
-        filePath: join(root, 'SKILL.md'),
-        source: 'openclaw-workspace',
-        eligible: true,
-        modelVisible: true,
-      };
-      customSkills = [{ ...valid }];
-      await start();
-      await action('result', { privateText: 'Retain the complete answer.' });
-      if (invalid === 'missing') customSkills = [];
-      if (invalid === 'disabled') customSkills[0]!.disabled = true;
-      if (invalid === 'hidden') customSkills[0]!.modelVisible = false;
-      if (invalid === 'ineligible') customSkills[0]!.eligible = false;
-      if (invalid === 'ambiguous') customSkills.push({ ...valid });
-      await assert.rejects(action('compose'), /skill/u);
-      assert.equal(event.composition, undefined);
-      assert.equal(writes, 0);
-      customSkills = [valid];
-      const corrected = await action('compose');
-      assert.ok('selection' in corrected && corrected.selection);
-      assert.equal(corrected.selection.skill.name, 'custom-reply');
-      assert.equal(event.result!.privateText, 'Retain the complete answer.');
-      assert.equal(sends, 1);
-    });
-  }
-
-  it('should retain the full private answer and publish one separately composed attributed reply', async () => {
-    const context = await start();
-    assert.equal(context.status, 'verified');
-    await compose();
-    assert.equal(writes, 0);
-    const result = await action('publish', {});
-    assert.equal(result.status, 'published');
-    assert.equal(destination, 'item:3');
-    assert.match(String(result.presentation), /Full private evidence/);
-    assert.match(
-      String(result.presentation),
-      /\[Reply ↗\]\(https:\/\/github.com\/owner\/repo\/issues\/3#issuecomment-99\) from \[@receiver\]/,
-    );
-    assert.ok(!String(result.presentation).includes('Reply published'));
-    assert.equal(writes, 1);
-    await action('publish', {});
-    assert.equal(writes, 1);
-  });
-  it('should reconcile a lost publication without another create and retain uncertainty when absent', async () => {
-    await start();
-    await compose();
-    lost = true;
-    await assert.rejects(action('publish', {}), /connection-lost/);
-    assert.equal(event.publicationAttempted, true);
-    lost = false;
-    assert.equal((await action('reconcile')).status, 'published');
-    assert.equal(writes, 1);
-    event.phase = 'responded';
-    delete event.receipt;
-    published = undefined;
-    assert.equal((await action('reconcile')).status, 'uncertain');
-    assert.equal(writes, 1);
-  });
-  for (const changed of ['issue', 'source'])
-    it(`should refresh ${changed} authorization before publishing without repeating the issue read`, async () => {
-      await start();
-      await compose();
-      const issue = intakeFixture().item;
-      let checks = 0;
-      input.reauthorize = async () => {
-        if (++checks === 2) {
-          if (changed === 'issue') issue.state = 'closed';
-          else source.body = '@receiver changed request';
-        }
-        return structuredClone(issue);
-      };
-      provider.getItem = async () => {
-        throw new Error('duplicate issue read');
-      };
-      await assert.rejects(
-        action('publish', {}),
-        changed === 'issue' ? /feedback-source-owner-changed/ : /feedback-source-changed/,
-      );
-      assert.equal(checks, 2);
-      assert.equal(writes, 0);
-    });
-  it('should reject feedback results from another native run', async () => {
-    await start();
-    input.caller.runId = 'foreign';
-    await assert.rejects(
-      action('result', { privateText: 'forged' }),
-      /feedback-owner-caller-required/,
-    );
-    assert.equal(event.result, undefined);
-  });
-  it('should retain reply authority when unrelated work settings change', async () => {
-    await start();
-    await compose();
-    input.policy.issueAssignment!.mode = 'work';
-    input.policy.issueAssignment!.implementation = { skill: 'custom:implementation' };
-    assert.equal((await action('publish', {})).status, 'published');
-    assert.equal(writes, 1);
-  });
-  it('should block changed source and explicit revocation while retaining an admitted reply through pause', async () => {
-    await start();
-    await compose();
-    const original = structuredClone(source);
-    for (const changed of [
-      { body: 'mention removed' },
-      { author: { ...actor, nodeId: 'other' } },
-      { body: '@receiver edited question' },
-    ]) {
-      Object.assign(source, changed);
-      await assert.rejects(
-        action('publish', {}),
-        /feedback-source-(?:changed|author-changed|no-longer-eligible)/,
-      );
-      Object.assign(source, original);
-    }
-    revoked = true;
-    await assert.rejects(action('publish', {}), /feedback-authority-revoked/);
-    revoked = false;
-    input.policy.issueAssignment!.feedback = { inherit: false, allowed: [] };
-    await assert.rejects(action('publish', {}), /workflow-policy-held/);
-    assert.equal(writes, 0);
-    input.policy.issueAssignment!.feedback = { inherit: true, allowed: [actor] };
-    input.policy.issueAssignment!.paused = true;
-    assert.equal((await action('publish', {})).status, 'published');
-    assert.equal(writes, 1);
-    assert.match(event.result!.privateText, /Full private/);
-  });
-  it('should require the selected skill and reject changed content or stale composition', async () => {
-    await start();
-    await action('result', { privateText: 'Complete retained response.' });
-    skill = false;
-    await assert.rejects(action('compose'), /skill-unavailable/);
-    skill = true;
-    const selection = await action('compose');
-    assert.ok('digest' in selection);
-    await assert.rejects(
-      action('candidate', { digest: '0'.repeat(64), publicText: 'wrong digest' }),
-      /feedback-binding-override/,
-    );
-    await writeFile(join(root, 'SKILL.md'), '# changed skill');
-    await assert.rejects(action('candidate', { publicText: 'reply' }), /composition-changed/);
-    event.phase = 'blocked';
-    event.code = 'feedback-composition-changed';
-    const refreshed = await action('compose');
-    assert.equal(refreshed.status, 'composition-ready');
-    assert.ok('digest' in refreshed && refreshed.digest !== selection.digest);
-    assert.equal(
-      (await action('candidate', { publicText: 'Updated reply.' })).status,
-      'candidate-recorded',
-    );
-
-    assert.equal(writes, 0);
-  });
-  it('should keep self feedback private', async () => {
-    source.author = account;
-    event.source = JSON.stringify(source);
-    const { feedbackRevision } = await import('../agent/feedback-source.ts');
-    event.revision = feedbackRevision(source);
-    await start();
-    const result = await action('result', { privateText: 'Private answer.' });
-    assert.equal('publication' in result && result.publication, 'private-only');
-    assert.equal(writes, 0);
-  });
-  it('should reject disclosure before marking any public attempt', async () => {
-    await start();
-    await compose('password=private-value');
-    await assert.rejects(action('publish'), /not safe to publish/);
-    assert.equal(event.publicationAttempted, undefined);
-    assert.equal(writes, 0);
-  });
-  it('should reply to the exact original review thread and preserve outdated code context', async () => {
-    const review = reviewFixture({ author: actor, body: '' });
-    const reply = reviewCommentFixture({
-      author: actor,
-      body: '@receiver explain the old line',
-      replyToId: 70,
-    });
-    const parent = reviewCommentFixture({ databaseId: 70, nodeId: 'parent', reviewId: 60 });
-    Object.assign(provider, { reviews: reviewClientFixture(review, [reply, parent]) });
-    provider.reviews!.getReviewComments = async () => [reply];
-    input.reauthorize = async () => intakeFixture().item;
-    provider.getItem = async (_owner, _name, number) => {
-      assert.equal(number, 4);
-      return {
-        ...intakeFixture().item,
-        itemType: 'pull-request',
-        nodeId: 'PR',
-        number: 4,
-        pullRequest: {
-          baseRef: 'main',
-          baseRepositoryDatabaseId: 10,
-          baseRepositoryNodeId: 'R_repo',
-          draft: false,
-          headRef: 'task',
-          headSha: 'a'.repeat(40),
-          merged: false,
-        },
-      };
-    };
-    record.work = {
-      assessmentDigest: 'd'.repeat(64),
-      delivery: {
-        id: 'd'.repeat(64),
-        binding: {
-          repositoryId: 'R_repo',
-          issueId: 'I_issue',
-          sessionId: 'session',
-          threadId: 'issue-chat',
-          worktree: root,
-          branch: 'task',
-          base: 'main',
-          head: 'a'.repeat(40),
-          authorId: account.nodeId,
-          policyDigest: 'd'.repeat(64),
-        },
-        title: 'delivery',
-        body: 'body',
-        creationAttempted: true,
-        reconciled: true,
-        pullRequest: { pullRequestNodeId: 'PR', pullRequestNumber: 4 },
-      },
-    };
-    record.feedback = { baseline: { PR: {} }, events: [] };
-    await discoverFeedback({
-      state: record.feedback,
-      client: provider,
-      policy: input.policy,
-      owner: 'owner',
-      name: 'repo',
-      number: 4,
-      nodeId: 'PR',
-      itemType: 'pull-request',
-      now: Date.now(),
-    });
-    event = record.feedback.events.find((e) => e.sourceId === reply.nodeId)!;
-    delete event.native;
-    input.event = event;
-    input.caller.runId = `${record.id}:feedback:${event.id}`;
-    const context = await start();
-    assert.ok('reviewContext' in context);
-    assert.match(JSON.stringify(context.reviewContext), /originalLine/);
-    await compose();
-    await action('publish', {});
-    assert.equal(destination, 'review:4:70');
-  });
-  it('should retain verified input custody when a long answer moves the input outside the history tail', async () => {
-    await start();
-    await action('result', { privateText: 'Complete response retained before composition.' });
-    messages = [];
-    assert.equal((await action('compose')).status, 'composition-ready');
-    messages = [
-      {
-        role: 'user',
-        content: 'changed input',
-        idempotencyKey: `${event.turn!.runId}:user`,
-        __openclaw: { id: 'input', idempotencyKey: `${event.turn!.runId}:user` },
-      },
-    ];
-    await assert.rejects(action('compose'), /dispatch-turn-input-mismatch/);
   });
   it('should share three slots and count a busy owner once regardless of queued comments', async () => {
     await start();
@@ -1326,7 +531,7 @@ describe('agent/openclaw-feedback', () => {
     });
     const operator = structuredClone(record);
     operator.id = 'd'.repeat(64);
-    operator.feedback = { baseline: {}, events: [], activity: { busy: true, observedAt: 1 } };
+    operator.feedback = { baseline: {}, events: [] };
     const idle = structuredClone(record);
     idle.id = 'e'.repeat(64);
     idle.feedback = { baseline: {}, events: [] };

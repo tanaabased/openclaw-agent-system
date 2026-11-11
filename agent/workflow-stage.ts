@@ -1,25 +1,18 @@
 import type { Static } from 'typebox';
 
+import {
+  defaultAssessmentSkill,
+  defaultFeedbackSkill,
+  defaultImplementationSkill,
+  type AssessmentConfiguration,
+} from '../manifest/assessment-schema.ts';
 import assessmentGuidance from './assessment-guidance.ts';
 import type { assessmentSelectionSchema } from './assessment-selection.ts';
 import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
-import {
-  defaultAssessmentSkill,
-  defaultImplementationSkill,
-  defaultFeedbackSkill,
-  type AssessmentConfiguration,
-} from '../manifest/assessment-schema.ts';
 
-export const stageResultContracts = {
-  assessment: 'assessment-result/v1',
-  implementation: 'implementation-result/v1',
-  review: 'review-result/v1',
-  feedback: 'feedback-result/v1',
-} as const;
-export type WorkflowStage = keyof typeof stageResultContracts;
+export type WorkflowStage = 'assessment' | 'implementation' | 'review' | 'feedback';
 export interface WorkflowSelection {
   stage: WorkflowStage;
-  resultContract: (typeof stageResultContracts)[WorkflowStage];
   selection: Static<typeof assessmentSelectionSchema>;
 }
 
@@ -45,7 +38,6 @@ export async function selectWorkflowStage(input: {
   const guidance = await assessmentGuidance(input.workspace, input.configuration?.guidance);
   return {
     stage: input.stage,
-    resultContract: stageResultContracts[input.stage],
     selection: {
       version: 1,
       requestedSkill,

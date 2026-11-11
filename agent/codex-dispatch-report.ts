@@ -1,27 +1,25 @@
-import { dispatchStorageNotice } from './dispatch-storage.ts';
-import { awaitingReassignment } from './assignment-retirement.ts';
-import { dispatchAdmission, type ManagedIssueState as IntakeState } from './managed-issue.ts';
-import providerErrorMessage from '../utils/provider-error-message.ts';
-import intakeDebug from './intake-debug.ts';
-import retirementNotice from './retirement-notice.ts';
-import codexFeedbackProblem from './codex-feedback-problem.ts';
-import { denialRecovery } from './codex-dispatch-denial.ts';
-import workflowStatus from './workflow-status.ts';
-import discoveryNotice from './discovery-notice.ts';
-import codexCapacity, { codexItemOccupied, codexUnresolvedRetirement } from './codex-capacity.ts';
-import workflowRecovery from './workflow-recovery.ts';
-import { automationHash } from './automation-hash.ts';
-import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
-import codexIssueNotice from './codex-issue-notice.ts';
-import intakeAutomationNotice from '../channels/github/presentation/intake-automation-notice.ts';
-import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
-import type { DispatchState } from './codex-dispatch-state.ts';
+import dispatchCreationStatus from './dispatch-creation-status.ts';
 import {
+  githubNotificationQuote,
   githubNotificationMarkdownCode as inlineCode,
   githubNotificationMarkdownText as text,
-  githubNotificationQuote,
 } from '../channels/github/presentation/card.ts';
-
+import intakeAutomationNotice from '../channels/github/presentation/intake-automation-notice.ts';
+import providerErrorMessage from '../utils/provider-error-message.ts';
+import { awaitingReassignment } from './assignment-retirement.ts';
+import { automationHash } from './automation-hash.ts';
+import codexCapacity from './codex-capacity.ts';
+import { denialRecovery } from './codex-dispatch-denial.ts';
+import type { DispatchState } from './codex-dispatch-state.ts';
+import codexFeedbackProblem from './codex-feedback-problem.ts';
+import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
+import codexIssueNotice from './codex-issue-notice.ts';
+import discoveryNotice from './discovery-notice.ts';
+import pendingDispatchAssignments from './dispatch-pending.ts';
+import { dispatchStorageNotice } from './dispatch-storage.ts';
+import { dispatchAdmission, type ManagedIssueState as IntakeState } from './managed-issue.ts';
+import retirementNotice from './retirement-notice.ts';
+import workflowStatus from './workflow-status.ts';
 /** summarize intake facts only; assessment results never become intake announcements. */
 export default function prepareDispatchReport(input: {
   state: DispatchState;
@@ -34,16 +32,13 @@ export default function prepareDispatchReport(input: {
   const { state, intake } = input;
   const storage = dispatchStorageNotice(state);
   const discovery = discoveryNotice(state.discoveryProgress);
-  const active = state.records.filter(
-    (record) => !record.retired && !record.retirement && !record.reset,
-  );
+  const active = state.records.filter((record) => !record.retirement && !record.reset);
   const retiring = state.records.filter(
-    (record) => record.retirement && !record.retired && !awaitingReassignment(record),
+    (record) => record.retirement && !awaitingReassignment(record),
   );
   const retained = state.records.filter(awaitingReassignment);
   const retirementProblems = state.records.filter(
     (record) =>
-      !record.retired &&
       !awaitingReassignment(record) &&
       record.retirement?.code &&
       (record.retirement.eligibleAt ?? 0) <= Date.parse(input.currentTimeIso) &&
@@ -54,35 +49,30 @@ export default function prepareDispatchReport(input: {
       ].includes(record.retirement.code),
   );
   const managing = active.filter((record) => record.effective && record.threadId);
-  const waitingIssues = new Set(
-    pendingDispatchAssignments(state, intake)
-      .filter(({ record }) => !record?.request)
-      .map(({ intake: item }) => issueKey(item)),
-  );
-  const historical = state.records.filter(
-    (record) =>
-      codexUnresolvedRetirement(record) &&
-      (codexItemOccupied(record) || waitingIssues.has(record.issueKey)),
-  );
-  const occupied = codexCapacity(state.records, input.slots, state.projectPickup).occupied;
-  const pending = pendingDispatchAssignments(state, intake, codexUnresolvedRetirement).length;
+  const occupied = codexCapacity(state, input.slots, state.projectPickup).occupied;
+  const pending = pendingDispatchAssignments(state, intake).length;
   const feedback = active.flatMap((record) =>
     (record.feedback?.events ?? []).map((event) => ({ record, event })),
   );
-  const sent = feedback.filter(({ event }) => event.attempt?.turnId && !event.reported);
-  const queuedFeedback = feedback.filter(({ event }) => event.phase === 'queued');
+  const queuedFeedback = feedback.filter(({ event }) =>
+    ['queued', 'prepared', 'running'].includes(event.phase),
+  );
   const feedbackProblems = active.filter(codexFeedbackProblem);
-
   const started = managing
     .filter((record) => record.dispatchedAt !== undefined && record.intakeReportedAt === undefined)
     .slice(0, 12);
   const problems = active.filter(
     (record) =>
       !record.effective &&
-      ['blocked', 'waiting', 'retrying'].includes(record.phase) &&
-      record.result?.outcome === 'operator-setup-blocker',
+      ['blocked', 'waiting', 'retrying'].includes(dispatchCreationStatus(record)) &&
+      Boolean(record.blocker),
   );
   const observations = [
+    ...(state.isolatedRecords ?? []).map((record) => ({
+      id: record.id,
+      code: record.code,
+      operation: 'task record',
+    })),
     ...(intake.blocker
       ? [
           {
@@ -94,7 +84,10 @@ export default function prepareDispatchReport(input: {
         ]
       : []),
     ...(intake.deferred ?? []).map((entry) => {
-      const candidate = JSON.parse(entry.candidate) as { repositoryPath: string; number: number };
+      const candidate = JSON.parse(entry.candidate) as {
+        repositoryPath: string;
+        number: number;
+      };
       return {
         id: 'deferred-' + entry.key,
         code: entry.code,
@@ -104,26 +97,18 @@ export default function prepareDispatchReport(input: {
           text(candidate.repositoryPath.replace('/repos/', '') + '#' + candidate.number),
       };
     }),
-    ...state.records
-      .filter(
-        (record) =>
-          !record.retirement &&
-          !record.retired &&
-          !record.continuation &&
-          record.result?.outcome === 'plan-ready' &&
-          record.retry,
-      )
-      .map((record) => ({
-        id: record.id,
-        code: record.retry!.code,
-        operation: 'implementation preparation',
-        providerDiagnostic: record.providerDiagnostic,
-      })),
     ...feedbackProblems.map((record) => ({
       id: record.id,
       code: record.feedback!.code!,
       operation: 'feedback',
     })),
+    ...feedback
+      .filter(({ event }) => event.code && event.phase !== 'delivered')
+      .map(({ record, event }) => ({
+        id: record.id + ':' + event.id,
+        code: event.code!,
+        operation: 'feedback delivery',
+      })),
     ...retirementProblems.map((record) => ({
       id: record.id,
       code: record.retirement!.code!,
@@ -135,13 +120,9 @@ export default function prepareDispatchReport(input: {
       operation:
         record.denial?.operation === 'create' ? 'native chat creation' : 'assignment preparation',
       denial: record.denial,
-      code: record.result!.outcome === 'operator-setup-blocker' ? record.result!.code : '',
+      code: record.blocker ?? '',
     })),
   ];
-  const history = historical.map((record) => ({
-    id: record.id,
-    code: record.capacityObservation?.code ?? 'dispatch-capacity-observation-required',
-  }));
   const notices = observations.map((failure) => ({
     ...failure,
     ...codexIssueNotice({
@@ -171,15 +152,13 @@ export default function prepareDispatchReport(input: {
     (entry, index) => !entry.code.startsWith('retirement-') || notices[index]!.severity !== 'info',
   );
   const health =
-    failures.length || history.length || storage.level !== 'normal'
+    failures.length || storage.level !== 'normal'
       ? automationHash({
           failures,
-          history,
           ...(storage.level !== 'normal' ? { storage: storage.key } : {}),
         })
       : '';
-  // older opaque hashes mixed historical diagnostics with failures; they cannot prove recovery.
-  const recovered = !health && state.intakeHealthVersion === 1 && Boolean(state.intakeHealth);
+  const recovered = !health && Boolean(state.intakeHealth);
   const severity = notices.some((notice) => notice.severity === 'error')
     ? 'error'
     : notices.some((notice) => notice.severity === 'warning')
@@ -213,23 +192,21 @@ export default function prepareDispatchReport(input: {
             ? '❌ Intake could not finish'
             : '⚠️ Intake needs attention'
         : started.length
-          ? `📥 Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started${sent.length ? ` · ${sent.length} feedback delivered to chats` : ''}`
-          : sent.length
-            ? `📥 Intake complete — ${sent.length} feedback item${sent.length === 1 ? '' : 's'} delivered to chats`
-            : recovered
-              ? '📥 Intake resumed'
-              : notices.length
-                ? '📥 Intake checked — retirement in progress'
-                : pending
-                  ? `📥 Intake checked — ${pending} issue${pending === 1 ? '' : 's'} pending`
-                  : '📥 Intake checked';
+          ? `📥 Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started`
+          : recovered
+            ? '📥 Intake resumed'
+            : notices.length
+              ? '📥 Intake checked — retirement in progress'
+              : pending
+                ? `📥 Intake checked — ${pending} issue${pending === 1 ? '' : 's'} pending`
+                : '📥 Intake checked';
   const lines = ['## ' + title, ''];
   if (storage.level !== 'normal' || recovered)
     lines.push(
       storage.message,
       storage.level === 'normal'
         ? 'Journal pressure is clear.'
-        : 'Reconcile retired history. New admissions pause at 32 MiB; existing tasks can continue within the emergency budget.',
+        : 'Complete pending native cleanup. New admissions pause at 32 MiB; existing tasks can continue within the emergency budget.',
       '',
     );
   if (recovered) lines.push('The earlier intake problem has cleared.', '');
@@ -238,17 +215,6 @@ export default function prepareDispatchReport(input: {
       `- **Issue:** [${issueLabel(record.intakeId ?? record.manualIssue?.id)}](codex://threads/${encodeURIComponent(record.threadId!)})`,
     );
   if (started.length) lines.push('');
-  const sentOwners = new Map<string, { record: (typeof active)[number]; count: number }>();
-  for (const { record } of sent) {
-    const owner = sentOwners.get(record.id);
-    if (owner) owner.count++;
-    else sentOwners.set(record.id, { record, count: 1 });
-  }
-  for (const { record, count } of sentOwners.values())
-    lines.push(
-      `- **Feedback delivered to chat:** [${issueLabel(record.intakeId ?? record.manualIssue?.id)}](codex://threads/${encodeURIComponent(record.threadId!)}) · ${count} item${count === 1 ? '' : 's'}`,
-    );
-  if (sent.length) lines.push('');
   for (const notice of notices.slice(0, 12)) {
     const record = state.records.find((entry) => entry.id === notice.id);
     if (notice.id === 'scan' && intakeAutomationNotice(notice.code)) {
@@ -262,7 +228,7 @@ export default function prepareDispatchReport(input: {
     lines.push(
       `- **${record ? 'Issue: ' + issueLabel(record.intakeId ?? record.manualIssue?.id) : 'Intake'}:** ${notice.summary}`,
       `  **Operation:** ${notice.operation}`,
-      `  **${notice.severity === 'info' ? 'Next step' : 'Action'}:** ${record?.denial ? 'This action remains held; unrelated eligible intake can continue.' : notice.operation === 'assignment preparation' && record?.result?.outcome === 'operator-setup-blocker' ? record.result.remediation : notice.next}`,
+      `  **${notice.severity === 'info' ? 'Next step' : 'Action'}:** ${record?.denial ? 'This action remains held; unrelated eligible intake can continue.' : notice.next}`,
       ...(record ? [`  **Status:** ${workflowStatus(record)}`] : []),
       ...(record?.denial
         ? [
@@ -285,23 +251,7 @@ export default function prepareDispatchReport(input: {
     }
   }
   if (notices.length) lines.push('');
-  if (historical.length) {
-    lines.push(
-      `**Historical reservations:** ${historical.length} unresolved.`,
-      'Unknown reservations are not evidence of running agents; verified active work consumes slots. Another creation for the same issue remains fenced until native evidence resolves its reservation.',
-      '',
-    );
-    for (const record of historical.slice(0, 12)) {
-      const code = record.capacityObservation?.code ?? 'dispatch-capacity-observation-required';
-      lines.push(
-        `- **Issue:** ${issueLabel(record.intakeId ?? record.manualIssue?.id)}`,
-        `  **Diagnostic:** ${inlineCode(code)}`,
-        `  **Action:** ${workflowRecovery(code)?.next ?? 'Inspect the native creation receipt and source history. Missing or unreadable evidence does not establish inactivity. The owning intake can retry `action:reconcile` with this retained id.'}`,
-      );
-    }
-    lines.push('');
-  }
-  if (!started.length && !sent.length && !notices.length && !historical.length && !recovered)
+  if (!started.length && !notices.length && !recovered)
     lines.push(pending ? 'Accepted assignments are waiting to start.' : quiet.message, '');
   const queuedOwners = new Set(queuedFeedback.map(({ record }) => record.id)).size;
   lines.push(
@@ -317,29 +267,17 @@ export default function prepareDispatchReport(input: {
         ? 'Pending issues will start when a slot becomes available.'
         : 'Intake will continue pending assignments on the next check.',
     );
-  const diagnostic = intakeDebug(input.debug, state.records, (record) => {
-    const item = dispatchAdmission(record, intake.records ?? []);
-    return item
-      ? item.repository.owner.login + '/' + item.repository.name + '#' + item.issue.number
-      : 'Issue';
-  });
   const operational = [githubNotificationQuote(lines.join('\n')), discovery]
     .filter(Boolean)
     .join('\n\n');
   const notify =
     Boolean(discovery) ||
     started.length > 0 ||
-    sent.length > 0 ||
     recovered ||
     (Boolean(health) && health !== state.intakeHealth);
   return {
-    response: codexHeartbeatEnvelope(
-      input.automationId,
-      [operational, diagnostic].filter(Boolean).join('\n\n'),
-      notify,
-    ),
+    response: codexHeartbeatEnvelope(input.automationId, operational, notify),
     health,
-    sent: sent.map(({ event }) => event.id),
     started: started.map((record) => record.id),
   };
 }

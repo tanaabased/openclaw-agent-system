@@ -18,7 +18,7 @@ describe('agent/codex-dispatch-state', () => {
 
   it('should initialize absent state and report malformed evidence without replacing it', async () => {
     assert.deepEqual(await store.read(), {
-      version: 1,
+      version: 4,
       scope: store.scope,
       resetGeneration: 'initial',
       records: [],
@@ -27,8 +27,11 @@ describe('agent/codex-dispatch-state', () => {
       '{"version":',
       '',
       'null',
-      '{"version":2}',
-      JSON.stringify({ version: 1, scope: 'b'.repeat(64), records: [] }),
+      JSON.stringify({
+        version: 4,
+        scope: 'b'.repeat(64),
+        records: [],
+      }),
     ]) {
       await store.file.write(contents);
       await assert.rejects(store.read(), { message: 'dispatch-state-invalid' });
@@ -44,20 +47,18 @@ describe('agent/codex-dispatch-state', () => {
     const contents = JSON.stringify({
       version: 1,
       scope: store.scope,
-      records: [
-        { retired: { at: 1, by: 'old-owner' }, result: { decision: { action: 'proceed' } } },
-      ],
+      records: [{ retired: { at: 1, by: 'old-owner' } }],
     });
     await store.file.write(contents);
-    await assert.rejects(store.read(), /notification-state-reset-required/);
+    await assert.rejects(store.read(), /dispatch-clean-start-required/);
     await assert.rejects(
       store.exclusive(async () => assert.fail('old workflows reached execution')),
-      /notification-state-reset-required/,
+      /dispatch-clean-start-required/,
     );
     assert.equal(await readFile(store.path, 'utf8'), contents);
   });
 
-  it('should reject removed workflow fields instead of repairing or replaying them', async () => {
+  it('should leave unused workflow fields inert instead of repairing or replaying them', async () => {
     const current = await store.read();
     for (const fields of [
       { compatibilityRecovery: { version: 1, codes: [] } },
@@ -71,7 +72,7 @@ describe('agent/codex-dispatch-state', () => {
             intakeId: 'b'.repeat(64),
             issueKey: 'b'.repeat(64),
             sourceThreadId: 'owner',
-            phase: 'routing',
+
             createdAt: 1,
             manifestDigest: 'manifest',
             ...fields,
@@ -79,7 +80,7 @@ describe('agent/codex-dispatch-state', () => {
         ],
       });
       await store.file.write(contents);
-      await assert.rejects(store.read(), /dispatch-state-invalid/);
+      assert.deepEqual(await store.read(), JSON.parse(contents));
       assert.equal(await readFile(store.path, 'utf8'), contents);
     }
   });
@@ -101,7 +102,7 @@ describe('agent/codex-dispatch-state', () => {
         intakeId: 'b'.repeat(64),
         issueKey: 'b'.repeat(64),
         sourceThreadId: 'intake',
-        phase: 'routing',
+
         createdAt: 1,
         manifestDigest: 'manifest',
         issueBranch: { attemptId: 'b'.repeat(64), name: '42-owned-branch', phase: 'creating' },
@@ -128,7 +129,7 @@ describe('agent/codex-dispatch-state', () => {
         issueKey: 'b'.repeat(64),
         intakeId: 'b'.repeat(64),
         sourceThreadId: 'intake',
-        phase: 'routing',
+
         createdAt: 1,
         manifestDigest: 'manifest',
         context: 'full working context',

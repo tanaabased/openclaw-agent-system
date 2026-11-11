@@ -1,20 +1,20 @@
 import assert from 'node:assert/strict';
-import { stringify } from 'yaml';
 import { Value } from 'typebox/value';
+import { stringify } from 'yaml';
 
 import { inspectAdmittedIssue } from '../agent/dispatch-assignment.ts';
-import { feedbackConversationMode } from '../agent/feedback-work.ts';
+import { feedbackConversationMode } from '../agent/feedback-conversation-mode.ts';
+import authorizeProjectAssignment, { projectWorkSchema } from '../agent/issue-pickup-authority.ts';
+import issuePickupScope from '../agent/issue-pickup-scope.ts';
 import issueProgression from '../agent/issue-progression.ts';
 import issueWorkflowMode from '../agent/issue-workflow-mode.ts';
 import liveWorkflowPolicy from '../agent/live-workflow-policy.ts';
-import authorizeProjectAssignment, { projectWorkSchema } from '../agent/issue-pickup-authority.ts';
-import issuePickupScope from '../agent/issue-pickup-scope.ts';
-import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
-import { githubNotificationRuntimeDiagnostics } from '../channels/github/notification-policy.ts';
-import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
-import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
+import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
+import { githubNotificationRuntimeDiagnostics } from '../channels/github/notification-policy.ts';
+import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import parseAgentManifest from '../manifest/parse.ts';
+import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import { baseline } from './github-intake-fixture.ts';
 import { pickupDeclaration, pickupFixture } from './issue-pickup-fixture.ts';
 
@@ -255,26 +255,19 @@ describe('github issue pickup policy', () => {
       assert.equal(liveWorkflowPolicy(manifest, runtime, intake, 'implementation'), undefined);
       const record = {
         projectWork: work,
-        result: { outcome: 'plan-ready', decision: { mode: 'plan' as const } },
+        implementationDecision: { mode: 'plan' as const, reasons: ['Plan only.'] },
       };
       assert.equal(issueWorkflowMode(f.policy, record), 'work');
       assert.equal(feedbackConversationMode(record, f.policy), 'work');
       assert.equal(
-        issueProgression(record, { mode: issueWorkflowMode(f.policy, record), now: f.input.now })
-          .status,
+        issueProgression(record, { mode: issueWorkflowMode(f.policy, record) }).status,
         'ready',
       );
       assert.equal(
-        issueProgression(
-          { ...record, continuation: { phase: 'cancelled' } },
-          { mode: 'work', now: f.input.now },
-        ).status,
+        issueProgression({ ...record, nativeWork: { cancelled: true } }, { mode: 'work' }).status,
         'stopped',
       );
-      assert.equal(
-        issueProgression({ ...record, retired: {} }, { mode: 'work', now: f.input.now }).status,
-        'stopped',
-      );
+      assert.equal(issueProgression({ ...record, reset: {} }, { mode: 'work' }).status, 'stopped');
       assert.deepEqual(f.policy.issueAssignment, before);
       assert.deepEqual(
         feedbackIdentities(f.policy.issueAssignment!.allowed, f.policy.issueAssignment!.feedback),

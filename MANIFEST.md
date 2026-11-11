@@ -708,8 +708,9 @@ Explicit operator model and effort choices each override their configured field.
 Explicit user or verified structured Complexity fixes the tier; otherwise the selected
 method assesses `low`, `medium`, `high`, or `unset`. Profiles supply model and effort,
 subject to native availability and application checks. Guidance cannot change verified
-Complexity, add operator overrides, or select models outside the configured profiles. Default fallback must be
-explicit and keeps the unresolved status.
+Complexity, add operator overrides, or select models outside the configured profiles.
+Unset complexity uses the configured default automatically and keeps the unresolved
+complexity status. Selecting default for an unconfigured work tier remains explicit.
 
 Edits affect new selections. If instructions change before they are used, the agent
 must assess the selection again. Saved creation attempts keep their selection. Follow-ups, resume, compaction, and

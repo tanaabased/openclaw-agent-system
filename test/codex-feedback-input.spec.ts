@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import codexFeedbackInput from '../agent/codex-feedback-input.ts';
 import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
+import codexFeedbackInput from '../agent/codex-feedback-input.ts';
 
 function fixture() {
   return [
@@ -8,11 +8,11 @@ function fixture() {
       id: 'issue',
       threadId: 'chat',
       sourceThreadId: 'intake',
-      continuation: { phase: 'cancelled' },
+      nativeWork: {},
       feedback: {
         events: [
-          { id: 'old', native: true, attempt: { id: 'old' } },
-          { id: 'current', native: true, attempt: { id: 'current', turnId: 'current-turn' } },
+          { id: 'old', attempt: { id: 'old' } },
+          { id: 'current', attempt: { id: 'current', turnId: 'current-turn' } },
         ],
       },
     },

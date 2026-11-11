@@ -1,11 +1,11 @@
 # OpenClaw PR Presentation Readback Example
 
-Leave an uncommitted edit after delivering a PR, then ask for the saved plan and PR
+Leave an uncommitted edit after delivering a PR, then ask for the plan and PR
 card in the same issue chat. Verify that showing them publishes no new PR or announcement.
 
 ## What Belongs Here
 
-- Readback of the saved assessment and complete PR card despite later uncommitted work.
+- The plan from native conversation and complete PR card despite later uncommitted work.
 - The original session, checkout, PR, and announcement surviving presentation; only this fixture's appended line is removed afterward.
 
 ## What Does Not Belong Here
@@ -17,8 +17,8 @@ card in the same issue chat. Verify that showing them publishes no new PR or ann
 
 ## Notes
 
-- Strict AIMock supplies the model text and tool choices. GitHub requests, chat execution, dispatch, managed Git, and saved results still run normally. Only Tanaabot is assigned; EMORI creates the test issues and comments.
-- Each job prepares its own issue, assessment, and linked PR. The coordinator has up to three passes to verify the assessment before handling initial feedback, keeping the same source revision. Refreshes target only this issue; a 24-hour schedule avoids unrelated discovery.
+- Strict AIMock supplies the model text and tool choices. GitHub requests, chat execution, dispatch, managed Git, and native conversation history still run normally. Only Tanaabot is assigned; EMORI creates the test issues and comments.
+- Each job prepares its own issue, assessment, and linked PR. Refreshes target only this issue; a 24-hour schedule avoids unrelated discovery.
 - Native operator messages use the public Gateway SDK with `operator.admin`; the enrolled dispatch device retains `operator.read` and `operator.write`. Native transcript receipts bind the input.
 - If GitHub has not yet observed the pushed head, the shared fixture checks the same delivery through at most three prepare/publish passes. Unknown failures and uncertain writes never create replacement PRs.
 
@@ -91,17 +91,17 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 60
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for worktree-ready --refresh --timeout 600 --json | tee "$TMPDIR/notification-plan.json" | jq -e '.status == "completed" and (.observation.items | length) == 1'
 conversation=$(jq -er .observation.items[0].workflow.conversation "$TMPDIR/notification-plan.json")
-assessment_run=$(jq -ers --arg key "$conversation" '[.[].records[] | select(.threadId == $key)][0].assessmentTurn.runId' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
+assessment_run=$(jq -ers --arg key "$conversation" '[.[].records[] | select(.threadId == $key)][0] | (.nativeTurns | map(select(.role == "assessment")) | last | .turn).runId' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$assessment_run" 600000
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
-run_id=$(jq -er .assessmentTurn.runId "$TMPDIR/notification-dispatch-before.json")
+run_id=$(jq -er '(.nativeTurns | map(select(.role == "assessment")) | last | .turn).runId' "$TMPDIR/notification-dispatch-before.json")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
 
 # should implement approved github direction without an extra decision and publish its linked pr
 set -o pipefail
 feedback_checkpoint() {
-  jq -cs --slurpfile receipt "$TMPDIR/notification-initial-source.json" --arg source "$(jq -r '.node_id // ""' "$TMPDIR/notification-initial-source.json")" '{source:($receipt[0] | {node_id,created_at,updated_at}),checkpoints:[.[] | {discoveryCheckedAt,discoveryCycleAt,discoveryProgress,records:[.records[] | {id,phase,blocker,assessmentTurn:(.assessmentTurn | {runId,status,consumedByEventId,replyEventId}),feedback:(.feedback | {code,startedAt,scannedTime,discoveryPending,admission,watermarks,activity,discovery:((.discovery // {}) | with_entries(.value |= {since,startedAt,reads:(.reads | to_entries | map({key,hasSource:(.value | contains($source))}))})),baselineHasSource:([.baseline[][]? | fromjson | select(.nodeId == $source)] | length),events:[.events[]? | {id,sourceId,revision,phase,code,policyHeld,turn}]} )}]}]}' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json >&2
+  jq -cs --slurpfile receipt "$TMPDIR/notification-initial-source.json" --arg source "$(jq -r '.node_id // ""' "$TMPDIR/notification-initial-source.json")" '{source:($receipt[0] | {node_id,created_at,updated_at}),checkpoints:[.[] | {discoveryCheckedAt,discoveryCycleAt,discoveryProgress,records:[.records[] | {id,nativeInactive,blocker,assessmentTurn:((.nativeTurns | map(select(.role == "assessment")) | last | .turn) | {runId,status,consumedByEventId,replyEventId}),feedback:(.feedback | {code,startedAt,scannedTime,discoveryPending,admission,watermarks,discovery:((.discovery // {}) | with_entries(.value |= {since,startedAt,reads:(.reads | to_entries | map({key,hasSource:(.value | contains($source))}))})),baselineHasSource:([.baseline[][]? | fromjson | select(.nodeId == $source)] | length),events:[.events[]? | {id,sourceId,revision,phase,code,policyHeld,turn}]} )}]}]}' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json >&2
 }
 feedback_diagnostics() {
   feedback_status=$?
@@ -125,11 +125,11 @@ for attempt in 1 2 3; do
   if test -n "$feedback_run"; then
     break
   fi
-  jq -es --slurpfile source "$TMPDIR/notification-initial-source.json" '[.[].records[] | select(.assessmentTurn.status == "completed" and .feedback.discoveryPending == false and .feedback.code == null and .feedback.activity.busy == false) | .feedback.events[]? | select(.sourceId == $source[0].node_id and (.source | fromjson).updatedAt == $source[0].updated_at)] | length == 1 and .[0].phase == "queued" and .[0].turn == null and .[0].code == null and .[0].policyHeld == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+  jq -es --slurpfile source "$TMPDIR/notification-initial-source.json" '[.[].records[].feedback.events[]? | select(.sourceId == $source[0].node_id and (.source | fromjson).updatedAt == $source[0].updated_at)] | length == 1 and .[0].phase == "queued" and .[0].turn == null and .[0].code == null and .[0].policyHeld == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 done
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$feedback_run" 600000
 jq -es '[.[].records[]] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-delivery.json"
-jq -e --slurp '.[1].progression.workOwner == "issue" and .[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[0].result == .[1].result and .[1].progression.stage == "implementation" and .[1].progression.via == "operator" and .[1].feedback.events[0].native == true and .[1].feedback.events[0].work == null and .[1].feedback.events[0].result == null and .[1].work.result.outcome == "done" and .[1].work.delivery.reconciled == true and .[1].work.delivery.binding.sessionId == .[1].sessionCreation.sessionId and .[1].work.delivery.binding.issueId == .[1].feedback.events[0].nodeId' "$TMPDIR/notification-dispatch-before.json" "$TMPDIR/notification-delivery.json"
+jq -e --slurp '.[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[1].progression.stage == "implementation" and .[1].progression.via == "operator" and .[1].delivery.reconciled == true and .[1].delivery.binding.sessionId == .[1].sessionCreation.sessionId and .[1].delivery.binding.issueId == .[1].feedback.events[0].nodeId' "$TMPDIR/notification-dispatch-before.json" "$TMPDIR/notification-delivery.json"
 
 # should capture the original issue announcements before the later operation
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-presentation/tanaabot"
@@ -140,23 +140,23 @@ openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$n
 ## Testing
 
 ```bash
-# should recover the saved plan and complete card for the same pull request despite later uncommitted edits
+# should show the conversation plan and complete card for the same pull request despite later uncommitted edits
 worktree=$(jq -er .worktree "$TMPDIR/notification-delivery.json")
 printf '%s\n' 'Uncommitted follow-up work.' >> "$worktree/README.md"
 conversation=$(jq -er .threadId "$TMPDIR/notification-delivery.json")
 session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-delivery.json")
 receipt=$(jq -er .id "$TMPDIR/notification-delivery.json")
 leaf=$(openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:1}')" --json | jq -er .sessionInfo.activeLeafEntryId)
-params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg receipt "$receipt" '{sessionKey:$key,agentId:"pr-presentation-tanaabot",sessionId:$session,message:("Operator request for managed issue " + $receipt + ": Show the saved plan and existing PR card again."),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"notification-retry"}')"
+params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg receipt "$receipt" '{sessionKey:$key,agentId:"pr-presentation-tanaabot",sessionId:$session,message:("Operator request for managed issue " + $receipt + ": Show the plan from this conversation and existing PR card again."),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"notification-retry"}')"
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; const result = await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"}); console.log(JSON.stringify(result));' "$params" | jq -e '.runId == "notification-retry"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "notification-retry" 600000
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-presentation/tanaabot"
-branch=$(jq -er .work.delivery.binding.branch "$TMPDIR/notification-delivery.json")
-openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$branch" --state all --json number | jq -e --argjson pr "$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")" 'length == 1 and .[0].number == $pr'
-jq -es --arg id "$receipt" --arg pr "$(jq -er .work.delivery.pullRequest.pullRequestNodeId "$TMPDIR/notification-delivery.json")" '[.[].records[] | select(.id == $id)] | length == 1 and .[0].work.delivery.pullRequest.pullRequestNodeId == $pr and .[0].work.delivery.reconciled == true' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+branch=$(jq -er .delivery.binding.branch "$TMPDIR/notification-delivery.json")
+openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$branch" --state all --json number | jq -e --argjson pr "$(jq -er .delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")" 'length == 1 and .[0].number == $pr'
+jq -es --arg id "$receipt" --arg pr "$(jq -er .delivery.pullRequest.pullRequestNodeId "$TMPDIR/notification-delivery.json")" '[.[].records[] | select(.id == $id)] | length == 1 and .[0].delivery.pullRequest.pullRequestNodeId == $pr and .[0].delivery.reconciled == true' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 jq -es --arg id "$receipt" '[.[].records[] | select(.id == $id)] | .[0]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-recovered.json"
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200,inputRunIds:["notification-retry"],maxChars:100000}')" --json > "$TMPDIR/notification-recovered-history.json"
-jq -e --slurpfile saved "$TMPDIR/notification-recovered.json" 'any(.messages[]; .role == "assistant" and .__openclaw.runId == "notification-retry" and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | startswith("> ") and contains("https://github.com/tanaabased/big-test-bucket/pull/" + ($saved[0].work.delivery.pullRequest.pullRequestNumber | tostring)) and (gsub("(?m)^> ?"; "") | contains($saved[0].work.delivery.announcement.publicText))))' "$TMPDIR/notification-recovered-history.json"
+jq -e --slurpfile saved "$TMPDIR/notification-recovered.json" 'any(.messages[]; .role == "assistant" and .__openclaw.runId == "notification-retry" and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | startswith("> ") and contains("https://github.com/tanaabased/big-test-bucket/pull/" + ($saved[0].delivery.pullRequest.pullRequestNumber | tostring)) and (gsub("(?m)^> ?"; "") | (contains("#issuecomment-" + ($saved[0].announcement.receipt.databaseId | tostring)) | not))))' "$TMPDIR/notification-recovered-history.json"
 openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e --arg session "$session_id" --arg cwd "$(jq -er .worktree "$TMPDIR/notification-delivery.json")" '.session.sessionId == $session and .session.spawnedCwd == $cwd'
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile before "$TMPDIR/notification-announcements.json" '[.[] | select(.user.login == "tanaabot") | .node_id] == [$before[0][] | select(.user.login == "tanaabot") | .node_id]'

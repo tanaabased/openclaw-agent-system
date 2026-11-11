@@ -40,8 +40,6 @@ describe('agent/codex-dispatch-handoff process transport', () => {
       const context = {
         runtimeRoute: 'intake',
         runtimeInput: {},
-        load: () => undefined,
-        store: () => {},
         text: (value: { exit_code: number; output: string }) => output.push(value),
         tools: {
           exec_command: async ({ cmd }: { cmd: string }) => {

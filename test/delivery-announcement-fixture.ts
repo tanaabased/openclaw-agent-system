@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 import type { DeliveryAnnouncementState } from '../agent/delivery-announcement-state.ts';
+import { announcementPublication } from '../agent/delivery-announcement.ts';
 import {
   githubNotificationPublicationComment,
   githubNotificationPublicationMarker,
@@ -87,6 +88,15 @@ export function attemptedAnnouncement(authorId: string) {
       repositoryNodeId: 'R_repo',
     },
   });
+  state.publication = JSON.stringify(
+    announcementPublication(state, {
+      lifecycleId: 'issue',
+      number: 3,
+      repositoryOwner: 'owner',
+      repositoryName: 'repo',
+      repositoryNodeId: 'R_repo',
+    }),
+  );
   return {
     state,
     body: githubNotificationPublicationComment(

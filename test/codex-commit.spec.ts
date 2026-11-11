@@ -10,14 +10,14 @@ function record(id: string): DispatchRecord {
     intakeId: id,
     issueKey: id,
     sourceThreadId: 'intake',
-    phase: 'routing',
+
     createdAt: 1,
     manifestDigest: 'manifest',
   };
 }
 function state(): DispatchState {
   return {
-    version: 1,
+    version: 4,
     scope: 'scope',
     resetGeneration: 'initial',
     records: [record('first'), record('second')],
@@ -67,7 +67,7 @@ describe('agent/codex-commit', () => {
       assert.deepEqual(merged.continuationRun, current.continuationRun);
       for (const change of [
         { context: 'changed source' },
-        { retired: { at: 2, by: 'operator' } },
+        { reset: { at: 2, by: 'operator' } },
         { handoff: { at: 2, by: 'operator', turnId: 'new turn' } },
         { issueBranch: { attemptId: 'first', name: 'other', phase: 'ready' as const } },
       ]) {
@@ -108,7 +108,7 @@ describe('agent/codex-commit', () => {
       code: 'private-state-snapshot-conflict',
       snapshotConflict: 'occurrence',
     });
-    current.records[0]!.retired = { at: 2, by: 'operator' };
+    current.records[0]!.reset = { at: 2, by: 'operator' };
     assert.throws(() => commit.reconcile(before, proposed, current), {
       code: 'private-state-snapshot-conflict',
       snapshotConflict: 'owner',
@@ -128,7 +128,7 @@ describe('agent/codex-commit', () => {
       });
     });
 
-  it('should reject a fresh branch reservation owned by another issue including retired custody', () => {
+  it('should reject a fresh branch reservation owned by another issue including reset custody', () => {
     const before = state();
     const project = {
       id: 'project',
@@ -139,7 +139,7 @@ describe('agent/codex-commit', () => {
     };
     for (const entry of before.records) entry.project = project;
     before.records[1]!.issueBranch = { attemptId: 'second', name: 'owned', phase: 'ready' };
-    before.records[1]!.retired = { at: 1, by: 'operator' };
+    before.records[1]!.reset = { at: 1, by: 'operator' };
     const proposed = structuredClone(before);
     proposed.records[0]!.issueBranch = { attemptId: 'first', name: 'owned', phase: 'planned' };
     assert.throws(() => codexCommit().validate(before, proposed), /codex-branch-owner-mismatch/);
@@ -162,10 +162,10 @@ describe('agent/codex-commit', () => {
     }
     const request = before.records[1]!.request;
     delete before.records[1]!.request;
-    before.records[0]!.phase = 'creating';
+
     const proposed = structuredClone(before);
     proposed.records[1]!.request = request;
-    proposed.records[1]!.phase = 'creating';
+
     assert.throws(() => codexCommit(1).validate(before, proposed), /dispatch-at-capacity/);
     assert.doesNotThrow(() => codexCommit(2).validate(before, proposed));
     assert.doesNotThrow(() => codexCommit(1).validate(proposed, structuredClone(proposed)));

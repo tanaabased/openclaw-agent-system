@@ -340,6 +340,94 @@ describe('scripts/wait-for-automation-run', () => {
     assert.ok(output.join('').includes('no substitute run'));
   });
 
+  it('should report only sampled records for the observed job and time window through redaction', () => {
+    for (const redactionFails of [false, true]) {
+      const output: string[] = [];
+      reportAutomationFailure('native-job', undefined, {
+        observationWindow: { fromMs: 2000, throughMs: 3000 },
+        run(command: string, args: string[], input?: string) {
+          if (command === 'openclaw') {
+            assert.deepEqual(JSON.parse(args[4]!), { id: 'native-job', limit: 10, offset: 0 });
+            return {
+              status: 0,
+              stdout: JSON.stringify({
+                hasMore: true,
+                entries: [
+                  { jobId: 'other-job', runAtMs: 2500, error: 'wrong job' },
+                  { jobId: 'native-job', runAtMs: 1999, error: 'older run' },
+                  { jobId: 'native-job', runAtMs: 3001, error: 'later run' },
+                  { jobId: 'native-job', error: 'unknown time' },
+                  {
+                    jobId: 'native-job',
+                    runAtMs: 2000,
+                    error: 'sensitive-value',
+                    summary: 'private model output',
+                  },
+                  {
+                    jobId: 'native-job',
+                    runAtMs: 3000,
+                    runId: 'second-run',
+                    errorReason: 'format',
+                  },
+                ],
+              }),
+            };
+          }
+          if (command === '/bin/sh') return { status: 0, stdout: '/ci/openclaw-gateway' };
+          if (command === process.execPath) {
+            assert.ok(input?.includes('sensitive-value'));
+            assert.ok(input?.includes('second-run'));
+            for (const excluded of [
+              'wrong job',
+              'older run',
+              'later run',
+              'unknown time',
+              'private model output',
+            ])
+              assert.ok(!input?.includes(excluded));
+            return {
+              status: redactionFails ? 1 : 0,
+              stdout: input!.replaceAll('sensitive-value', '[REDACTED]'),
+            };
+          }
+          return { status: 1, stdout: '' };
+        },
+        write: (text: string) => output.push(text),
+      });
+      const text = output.join('');
+      assert.ok(!text.includes('sensitive-value'));
+      if (redactionFails) assert.ok(text.includes('withheld'));
+      else {
+        assert.ok(text.includes('"matchingRecords":2'));
+        assert.ok(text.includes('"hasMore":true'));
+        assert.ok(text.includes('not exact occurrence attribution'));
+        assert.ok(text.includes('[REDACTED]'));
+      }
+    }
+  });
+
+  it('should report an empty diagnostic sample without substituting an older occurrence', () => {
+    const output: string[] = [];
+    reportAutomationFailure('native-job', undefined, {
+      observationWindow: { fromMs: 2000, throughMs: 3000 },
+      run(command: string, _args: string[], input?: string) {
+        if (command === 'openclaw')
+          return {
+            status: 0,
+            stdout: JSON.stringify({
+              entries: [{ jobId: 'native-job', runAtMs: 1000, error: 'old failure' }],
+            }),
+          };
+        if (command === '/bin/sh') return { status: 0, stdout: '/ci/openclaw-gateway' };
+        if (command === process.execPath) return { status: 0, stdout: input ?? '' };
+        return { status: 1, stdout: '' };
+      },
+      write: (text: string) => output.push(text),
+    });
+    assert.ok(output.join('').includes('"matchingRecords":0'));
+    assert.ok(!output.join('').includes('old failure'));
+  });
+
   it('should retain the native error and latest gateway evidence when bounding redacted output', () => {
     const output: string[] = [];
     reportAutomationFailure('native-job', 'requested-run', {

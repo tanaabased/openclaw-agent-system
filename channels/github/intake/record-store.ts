@@ -1,18 +1,19 @@
+import { join, resolve } from 'node:path';
+import { projectWorkMatches, projectWorkSchema } from '../../../agent/issue-pickup-authority.ts';
+import { assertNotificationManagement } from '../../../agent/notification-reset-state.ts';
+import { refreshStateSnapshot } from '../../../core/merge-state-snapshot.ts';
 import { providerDiagnosticSchema } from '../../../utils/provider-diagnostic.ts';
 import { repositoryScopeDecisionSchema } from '../repository-scope.ts';
-import { projectWorkSchema, projectWorkMatches } from '../../../agent/issue-pickup-authority.ts';
-import { historySoftBytes } from '../../../agent/history-state.ts';
-import { refreshStateSnapshot } from '../../../core/merge-state-snapshot.ts';
-import { assertNotificationManagement } from '../../../agent/notification-reset-state.ts';
-import { join, resolve } from 'node:path';
+const intakeCleanupBytes = 2 * 1024 * 1024;
 
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { automationHash } from '../../../agent/automation-hash.ts';
 import ensurePrivateStateDirectories from '../../../core/ensure-private-state-directories.ts';
-import PrivateStateFile from '../../../core/private-state-file.ts';
 import acquirePrivateStateFileLock from '../../../core/private-state-file-lock.ts';
+import PrivateStateFile from '../../../core/private-state-file.ts';
+import storedDataSchema from '../../../core/stored-data-schema.ts';
 import { withPrivateStateLock } from '../../../core/private-state-lock-context.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
@@ -22,21 +23,6 @@ const eventIdentity = Type.Object(
   { ...identity.properties, type: text },
   { additionalProperties: false },
 );
-// historical scope decisions are evidence only, never executable admission policy.
-const retainedRepositoryScopeSchema = Type.Union([
-  repositoryScopeDecisionSchema,
-  Type.Object(
-    {
-      ...repositoryScopeDecisionSchema.properties,
-      source: Type.Literal('allowed-repository-owners'),
-      reason: Type.Union([
-        ...repositoryScopeDecisionSchema.properties.reason.anyOf,
-        Type.Literal('identity-mismatch'),
-      ]),
-    },
-    { additionalProperties: false },
-  ),
-]);
 export const intakeRecordSchema = Type.Object(
   {
     version: Type.Literal(1),
@@ -73,7 +59,7 @@ export const intakeRecordSchema = Type.Object(
         assigned: Type.Literal(true),
         repositoryReadable: Type.Literal(true),
         ownerPinned: Type.Boolean(),
-        repositoryScope: Type.Optional(retainedRepositoryScopeSchema),
+        repositoryScope: Type.Optional(repositoryScopeDecisionSchema),
         actorPinned: Type.Literal(true),
         projectWork: Type.Optional(projectWorkSchema),
       },
@@ -91,6 +77,7 @@ export const intakeObservationSchema = Type.Object(
   {
     ...Type.Omit(intakeRecordSchema, ['evidence', 'admittedAt', 'status', 'requiresRevalidation'])
       .properties,
+    consumedThrough: Type.Optional(time),
     consumedBy: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
   },
   { additionalProperties: false },
@@ -152,6 +139,9 @@ const stateSchema = Type.Object(
   { additionalProperties: false },
 );
 export type IntakeState = Static<typeof stateSchema>;
+const storedStateSchema = storedDataSchema(stateSchema);
+// an assignment extension must never select the operator-only origin branch.
+Object.assign(storedStateSchema.properties.records.items.properties, { initiation: Type.Never() });
 
 export class IntakeError extends Error {
   constructor(readonly code: string) {
@@ -238,7 +228,7 @@ export default class IntakeRecordStore {
     try {
       const value: unknown = JSON.parse(contents);
       if (
-        !Value.Check(stateSchema, value) ||
+        !Value.Check(storedStateSchema, value) ||
         value.scope !== this.location.scope ||
         new Set(value.records.map((r) => r.id)).size !== value.records.length ||
         (value.observedAssignments ?? []).some(
@@ -316,10 +306,10 @@ export default class IntakeRecordStore {
               this.location.resetRoot ?? this.location.root,
               this.location.scope,
             );
-            if (!Value.Check(stateSchema, state) || state.scope !== this.location.scope)
+            if (!Value.Check(storedStateSchema, state) || state.scope !== this.location.scope)
               throw new IntakeError('intake-state-invalid');
             const retained = structuredClone(state);
-            if (Buffer.byteLength(JSON.stringify(retained)) > historySoftBytes) {
+            if (Buffer.byteLength(JSON.stringify(retained)) > intakeCleanupBytes) {
               const admitted = new Set(retained.records.map((record) => record.id));
               retained.observedAssignments = retained.observedAssignments?.filter(
                 (record) => record.consumedBy || !admitted.has(record.id),
@@ -339,7 +329,11 @@ export default class IntakeRecordStore {
     }
   }
 
-  async consume(observation: IntakeObservation, taskId: string): Promise<string> {
+  async consume(
+    observation: IntakeObservation,
+    taskId: string,
+    consumedThrough?: number,
+  ): Promise<string> {
     if (
       observation.scope !== this.location.scope ||
       observation.id !==
@@ -373,9 +367,14 @@ export default class IntakeRecordStore {
       };
       state.observedAssignments ??= [];
       const existing = state.observedAssignments.find((entry) => entry.id === observation.id);
-      if (existing?.consumedBy) return existing.consumedBy;
-      if (existing) existing.consumedBy = taskId;
-      else
+      if (existing?.consumedBy && existing.consumedBy !== taskId) return existing.consumedBy;
+      const advancesCutoff =
+        consumedThrough !== undefined && consumedThrough > (existing?.consumedThrough ?? -1);
+      if (existing?.consumedBy && !advancesCutoff) return existing.consumedBy;
+      if (existing) {
+        existing.consumedBy = taskId;
+        if (advancesCutoff) existing.consumedThrough = consumedThrough;
+      } else
         state.observedAssignments.push({
           version: observation.version,
           id: observation.id,
@@ -389,22 +388,27 @@ export default class IntakeRecordStore {
           assignment: observation.assignment,
           observedAt: observation.observedAt,
           consumedBy: taskId,
+          ...(consumedThrough !== undefined ? { consumedThrough } : {}),
         });
       await save(state);
       return taskId;
     });
   }
 
-  async reset(baselineAt: number): Promise<void> {
+  async reset(
+    baselineAt: number,
+    initial?: Pick<IntakeState, 'scope' | 'workspaceDir' | 'agentId' | 'account' | 'policyDigest'>,
+  ): Promise<void> {
     await this.exclusive(async (state, save) => {
-      if (!state) throw new IntakeError('intake-activation-required');
+      const baseline = state ?? initial;
+      if (!baseline) throw new IntakeError('intake-activation-required');
       await save({
         version: 1,
-        scope: state.scope,
-        workspaceDir: state.workspaceDir,
-        agentId: state.agentId,
-        account: state.account,
-        policyDigest: state.policyDigest,
+        scope: baseline.scope,
+        workspaceDir: baseline.workspaceDir,
+        agentId: baseline.agentId,
+        account: baseline.account,
+        policyDigest: baseline.policyDigest,
         baselineAt,
         records: [],
       });

@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { Value } from 'typebox/value';
-import nativeOperatorSelection from '../agent/native-operator-selection.ts';
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
 import type { ManagedIssue } from '../agent/managed-issue.ts';
-import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
+import nativeOperatorSelection from '../agent/native-operator-selection.ts';
 import { codexRecoveryModelSchema } from '../tools/dispatch/recovery-schema.ts';
+import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 
 describe('native operator task selection', () => {
   const target = 'https://github.com/owner/repo/issues/3';
@@ -19,19 +19,29 @@ describe('native operator task selection', () => {
     sourceThreadId: 'coordinator',
     threadId: 'original-chat',
   } as SharedDispatchRecord;
-  it('should retry the sole current assignment independently of retired history ordering', () => {
-    const retired = { ...original, retired: { at: 1, by: 'operator' } };
-    const waiting = { ...original, id: 'waiting', threadId: undefined, phase: 'waiting' as const };
-    for (const records of [[retired, waiting], [waiting, retired], [waiting]])
+  it('should retry the sole current assignment independently of reset history ordering', () => {
+    const reset = { ...original, reset: { at: 1, by: 'operator' } };
+    const waiting = {
+      ...original,
+      id: 'waiting',
+      threadId: undefined,
+      blocker: 'dispatch-creation-unresolved',
+    };
+    for (const records of [[reset, waiting], [waiting, reset], [waiting]])
       assert.equal(
         nativeOperatorSelection({ action: 'retry', target }, records, [issue], 'operator'),
         waiting,
       );
   });
   it('should exclude terminal owners without redirecting an exact retry to a sibling', () => {
-    const waiting = { ...original, id: 'waiting', threadId: undefined, phase: 'waiting' as const };
+    const waiting = {
+      ...original,
+      id: 'waiting',
+      threadId: undefined,
+      blocker: 'dispatch-creation-unresolved',
+    };
     const excluded: SharedDispatchRecord[] = [
-      { ...original, retired: { at: 1, by: 'operator' } },
+      { ...original, reset: { at: 1, by: 'operator' } },
       {
         ...original,
         retirement: {
@@ -40,7 +50,6 @@ describe('native operator task selection', () => {
           eligibleAt: 1,
         } as SharedDispatchRecord['retirement'],
       },
-      { ...original, reset: { at: 1, by: 'operator' } },
       { ...original, supersededBy: waiting.id },
     ];
     for (const previous of excluded) {

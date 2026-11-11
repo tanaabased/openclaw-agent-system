@@ -14,6 +14,7 @@ import { openclawIntakeAutomationId } from '../agent/openclaw-intake-policy.ts';
 import { readFile, realpath } from 'node:fs/promises';
 
 import OpenClawIntake from '../agent/openclaw-intake.ts';
+import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
 import createIntakeTool from '../tools/intake/tool.ts';
 import IssuePickupEnrollmentStore from '../agent/issue-pickup-enrollment.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -466,6 +467,18 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
               (await realpath(admitted.run.workspaceDir))
           )
             throw new AutomationError('automation-workspace-mismatch');
+          const { store } = await intakeV2.select(loaded.manifest, admitted.run.workspaceDir, {
+            resolvePolicy: false,
+          });
+          const pickup = (
+            await new OpenClawDispatchStore(
+              store.location.root,
+              store.location.scope,
+            ).inspectIntake()
+          ).projectPickup;
+          const acceptedOccurrence = Boolean(
+            pickup?.operations.some((entry) => entry.runId === admitted.run.runId),
+          );
           await sessionDispatch.use({ signal: context.abortSignal }, async (request) =>
             verifyAutomationLifecycleRun(
               automationService,
@@ -479,6 +492,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
                   throw new AutomationError('automation-native-response-invalid');
                 return result;
               },
+              acceptedOccurrence,
             ),
           );
           admitted.assertCurrent();

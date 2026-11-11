@@ -1,11 +1,10 @@
-import { implementationMaterialSchema } from '../tools/dispatch/implementation-material-schema.ts';
-import { dispatchInspectionProperties } from './dispatch-inspection.ts';
-import { issueChatTitleGuidance } from './issue-chat-title.ts';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
-import { assessmentSummaryRequestProperties } from './assessment-summary-state.ts';
-import { assessmentSchema } from './model-routing.ts';
+import { implementationMaterialSchema } from '../tools/dispatch/implementation-material-schema.ts';
 import { nativeRetirementProperties } from '../tools/dispatch/retirement-schema.ts';
+import { dispatchInspectionProperties } from './dispatch-inspection.ts';
+import { issueChatTitleGuidance } from './issue-chat-title.ts';
+import { assessmentSchema } from './model-routing.ts';
 
 const id = Type.String({ pattern: '^[a-f0-9]{64}$' });
 const digest = Type.Optional(Type.String());
@@ -52,13 +51,6 @@ const schemas = {
   }),
   reconcile: object({ id, receipt: Type.Optional(Type.Unknown()) }),
   context: object({ id, material: Type.Optional(implementationMaterialSchema) }),
-  present: object({ id, includeDetails: Type.Optional(Type.Boolean()) }),
-  summary: object({ id, ...assessmentSummaryRequestProperties }),
-  result: object({
-    id,
-    result: Type.Optional(Type.Unknown()),
-    previousResultDigest: Type.Optional(Type.String()),
-  }),
 };
 export type DispatchAction = keyof typeof schemas;
 

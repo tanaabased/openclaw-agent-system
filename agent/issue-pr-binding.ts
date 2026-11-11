@@ -13,6 +13,8 @@ export default async function bindIssuePullRequest(input: {
     localBranch?: string;
     pullRequest?: { pullRequestNodeId: string; pullRequestNumber: number };
     pendingPush?: unknown;
+    contentUpdate?: unknown;
+    contentUpdateAttempted?: boolean;
     creationAttempted: boolean;
     announcement?: DeliveryAnnouncementState;
   };
@@ -36,6 +38,7 @@ export default async function bindIssuePullRequest(input: {
     return { status: 'bound' as const, retained: true, id, pullRequest: previous.pullRequest };
   if (
     previous?.pendingPush ||
+    (previous?.contentUpdate && previous.contentUpdateAttempted !== false) ||
     (previous?.creationAttempted && !previous.pullRequest) ||
     (previous?.announcement?.attempted && !previous.announcement.receipt)
   )

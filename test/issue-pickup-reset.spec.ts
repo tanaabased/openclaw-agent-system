@@ -13,10 +13,6 @@ describe('agent/issue-pickup-reset', () => {
       const f = fixture(runtime);
       assert.equal((await f.run({ selection: await f.select() })).status, 'assigned');
       const original = structuredClone(f.state.projectPickup!);
-      original.windowAssignment = {
-        window: original.operations[0]!.window,
-        assignedAt: f.clock.now,
-      };
       original.operations.push({
         ...structuredClone(original.operations[0]!),
         id: 'scan',
@@ -28,13 +24,11 @@ describe('agent/issue-pickup-reset', () => {
       const kept = resetIssuePickup(original, [])!;
       assert.equal(kept.operations.length, 1);
       assert.deepEqual(kept.charges, original.charges);
-      assert.deepEqual(kept.windowAssignment, original.windowAssignment);
       assert.equal(pickupAuthority(kept)?.retained?.length, 1);
       assert.equal(original.operations.length, 2, 'projection must not mutate the source');
       assert.ok(Value.Check(issuePickupStateSchema, kept));
       const consumed = resetIssuePickup(original, [
         {
-          phase: 'created',
           issueKey: pickupIssueKey(original, f.item.nodeId),
           projectWork: f.work(),
         },

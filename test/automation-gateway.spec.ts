@@ -146,6 +146,58 @@ describe('agent/automation-gateway', () => {
     assert.equal(calls, 0);
   });
 
+  for (const recovery of [true, false])
+    it(`should reconnect a cold read once with recovery ${recovery}`, async () => {
+      const attempts: unknown[][] = [];
+      const unavailable = Object.assign(new Error('private endpoint'), {
+        name: 'GatewayTransportError',
+        kind: 'closed',
+        connectionDetails: {},
+      });
+      const request = createAutomationGateway(async (...args) => {
+        attempts.push(args);
+        if (attempts.length === 1 || !recovery) throw unavailable;
+        return { ok: false };
+      });
+      const pending = request('sessions.resolve', { key: 'owned', allowMissing: true });
+      if (recovery) assert.deepEqual(await pending, { ok: false });
+      else await assert.rejects(pending, { code: 'automation-gateway-unavailable' });
+      assert.equal(attempts.length, 2);
+      assert.deepEqual(attempts[0], attempts[1]);
+    });
+
+  for (const failure of ['denied', 'dispatched', 'mutation', 'lock-lost'] as const)
+    it(`should not reconnect an automation request after ${failure}`, async () => {
+      const fixture = await controlledFileLock();
+      let calls = 0;
+      const request = createAutomationGateway(async () => {
+        calls++;
+        if (failure === 'lock-lost') fixture.compromise();
+        throw failure === 'denied'
+          ? Object.assign(new Error('denied'), {
+              name: 'GatewayClientRequestError',
+              gatewayCode: 'FORBIDDEN',
+            })
+          : Object.assign(new Error('closed'), {
+              name: 'GatewayTransportError',
+              kind: 'closed',
+              connectionDetails: {},
+              code: 1006,
+              requestDispatched: failure === 'dispatched',
+            });
+      });
+      try {
+        await assert.rejects(
+          withPrivateStateLock(fixture.handle, () =>
+            request(failure === 'mutation' ? 'sessions.create' : 'sessions.resolve', {}),
+          ),
+        );
+        assert.equal(calls, 1);
+      } finally {
+        await fixture.handle.release();
+      }
+    });
+
   it('should supply exact native operator transport options and contain provider failures', async () => {
     const calls: unknown[][] = [];
     const request = createAutomationGateway(async (...args: unknown[]) => {

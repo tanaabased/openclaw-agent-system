@@ -139,14 +139,6 @@ export const issuePickupStateSchema = Type.Object(
   {
     enrollment: issuePickupEnrollmentSchema,
     timezone: text,
-    windowAssignment: Type.Optional(
-      Type.Object(
-        {
-          ...assignmentFields,
-        },
-        { additionalProperties: false },
-      ),
-    ),
     charges: Type.Optional(Type.Array(chargeSchema)),
     operations: Type.Array(pickupOperationSchema),
   },

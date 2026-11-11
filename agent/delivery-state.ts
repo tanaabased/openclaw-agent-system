@@ -50,7 +50,6 @@ export function adoptedIssueDelivery(input: {
   worktree: string;
   localBranch: string;
   head: string;
-  policyDigest: string;
   adopted: AdoptedPullRequest;
 }) {
   const { adopted, localBranch } = input;
@@ -65,7 +64,6 @@ export function adoptedIssueDelivery(input: {
       base: adopted.base,
       head: input.head,
       authorId: adopted.authorId,
-      policyDigest: input.policyDigest,
     },
     localBranch,
     adopted,

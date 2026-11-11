@@ -1,3 +1,4 @@
+import { deliveryHasEffects } from './delivery-base.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import { gitHubIssueBranchName, gitHubIssueBranchSuffix } from '../tools/git/worktree-names.ts';
 import { dispatchGit, type DispatchGit } from './codex-dispatch-project.ts';
@@ -21,57 +22,78 @@ export default async function codexIssueBranch(input: {
   const git = input.git ?? dispatchGit;
   const cwd = record.worktree;
   const current = (await git(cwd, ['branch', '--show-current'], signal)).trim();
-  if (!record.issueBranch) {
-    const delivery = record.delivery?.pullRequest ? record.delivery.binding : undefined;
-    if (delivery) {
-      if (
-        delivery.repositoryId !== intake.repository.nodeId ||
-        delivery.issueId !== intake.issue.nodeId ||
-        delivery.threadId !== record.threadId ||
-        delivery.worktree !== cwd
+  const assertAvailable = async (name: string) => {
+    if (
+      input.records.some(
+        (other) =>
+          other.id !== record.id &&
+          other.project?.commonDir === record.project!.commonDir &&
+          (other.issueBranch?.name === name ||
+            (other.delivery?.localBranch ?? other.delivery?.binding.branch) === name),
       )
-        throw new Error('codex-branch-owner-required');
-      record.issueBranch = {
-        attemptId: record.id,
-        name: record.delivery?.localBranch ?? delivery.branch,
-        phase: 'ready',
-      };
-    } else {
-      if (
-        !input.prepare ||
-        current ||
-        (await git(cwd, ['rev-parse', 'HEAD'], signal)).trim() !== record.project.commit ||
-        (await git(cwd, ['status', '--porcelain=v1'], signal)).trim()
-      )
-        throw new Error('codex-branch-owner-required');
-      const name = gitHubIssueBranchName(
-        intake.issue.number,
-        JSON.parse(record.context ?? '{}').title ?? 'issue',
-        gitHubIssueBranchSuffix(
-          input.agentId,
-          input.workspace,
-          intake.repository.nodeId,
-          intake.issue.nodeId,
-          record.id,
-        ),
-      );
-      record.issueBranch = { attemptId: record.id, name, phase: 'planned' };
+    )
+      throw new Error('codex-branch-owner-mismatch');
+    await git(cwd, ['check-ref-format', `refs/heads/${name}`], signal);
+  };
+  const delivery = record.delivery;
+  const bound = deliveryHasEffects(delivery);
+  if (delivery && bound) {
+    const { binding } = delivery;
+    if (
+      binding.repositoryId !== intake.repository.nodeId ||
+      binding.issueId !== intake.issue.nodeId ||
+      binding.threadId !== record.threadId ||
+      binding.worktree !== cwd ||
+      (!input.prepare &&
+        current !== (delivery.localBranch ?? record.issueBranch?.name ?? binding.branch))
+    )
+      throw new Error('codex-branch-owner-mismatch');
+  }
+  // Git already identifies a named branch in the verified checkout. Keep an outstanding
+  // automatic branch creation on its original attempt, and honor existing effect custody.
+  if (
+    current &&
+    (!record.issueBranch ||
+      record.issueBranch.phase === 'ready' ||
+      (record.issueBranch.phase === 'creating' && record.issueBranch.name === current))
+  ) {
+    if (record.issueBranch && record.issueBranch.attemptId !== record.id)
+      throw new Error('codex-branch-owner-mismatch');
+    await assertAvailable(current);
+    if (
+      input.prepare &&
+      !bound &&
+      (record.issueBranch?.name !== current || record.issueBranch?.phase !== 'ready')
+    ) {
+      record.issueBranch = { attemptId: record.id, name: current, phase: 'ready' };
+      await save();
     }
+    return current;
+  }
+  if (!record.issueBranch) {
+    if (
+      !input.prepare ||
+      (await git(cwd, ['rev-parse', 'HEAD'], signal)).trim() !== record.project.commit ||
+      (await git(cwd, ['status', '--porcelain=v1'], signal)).trim()
+    )
+      throw new Error('codex-branch-owner-required');
+    const name = gitHubIssueBranchName(
+      intake.issue.number,
+      JSON.parse(record.context ?? '{}').title ?? 'issue',
+      gitHubIssueBranchSuffix(
+        input.agentId,
+        input.workspace,
+        intake.repository.nodeId,
+        intake.issue.nodeId,
+        record.id,
+      ),
+    );
+    record.issueBranch = { attemptId: record.id, name, phase: 'planned' };
     await save();
   }
   const branch = record.issueBranch;
-  if (
-    branch.attemptId !== record.id ||
-    input.records.some(
-      (other) =>
-        other.id !== record.id &&
-        other.project?.commonDir === record.project!.commonDir &&
-        (other.issueBranch?.name === branch.name ||
-          (other.delivery?.localBranch ?? other.delivery?.binding.branch) === branch.name),
-    )
-  )
-    throw new Error('codex-branch-owner-mismatch');
-  await git(cwd, ['check-ref-format', `refs/heads/${branch.name}`], signal);
+  if (branch.attemptId !== record.id) throw new Error('codex-branch-owner-mismatch');
+  await assertAvailable(branch.name);
   if (branch.phase === 'ready') {
     if (current !== branch.name) throw new Error('codex-branch-owner-mismatch');
     return branch.name;

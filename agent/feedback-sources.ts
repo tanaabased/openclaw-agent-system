@@ -6,9 +6,8 @@ import type { FeedbackSourceState } from './feedback-state.ts';
 export default function feedbackSources(
   record: Parameters<typeof taskPullRequest>[0] & { id: string },
   intake: ManagedIssue,
-  feedback: FeedbackSourceState & { activity?: unknown },
+  feedback: FeedbackSourceState,
 ) {
-  delete feedback.activity;
   const pr = taskPullRequest(record);
   const sources = [
     {

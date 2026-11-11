@@ -35,7 +35,11 @@ export default function mergeStateSnapshot(
       ...Object.keys(proposed),
       ...Object.keys(current),
     ])) {
-      const value = mergeStateSnapshot(before[key], proposed[key], current[key]);
+      const value = mergeStateSnapshot(
+        Object.hasOwn(before, key) ? before[key] : undefined,
+        Object.hasOwn(proposed, key) ? proposed[key] : undefined,
+        Object.hasOwn(current, key) ? current[key] : undefined,
+      );
       if (value !== undefined)
         Object.defineProperty(result, key, {
           value,
@@ -64,6 +68,13 @@ export default function mergeStateSnapshot(
   throw Object.assign(new Error(stateSnapshotConflictCode), { code: stateSnapshotConflictCode });
 }
 
+function receiptKey(value: unknown): string | undefined {
+  if (!object(value)) return undefined;
+  if (object(value.turn) && typeof value.turn.runId === 'string') return value.turn.runId;
+  if (object(value.attempt) && typeof value.attempt.id === 'string') return value.attempt.id;
+  return undefined;
+}
+
 /** refresh a working snapshot while preserving references retained by its operation. */
 export function refreshStateSnapshot(
   target: Record<string, unknown>,
@@ -71,7 +82,7 @@ export function refreshStateSnapshot(
 ): void {
   for (const key of Object.keys(target)) if (!Object.hasOwn(source, key)) delete target[key];
   for (const [key, value] of Object.entries(source)) {
-    const old = target[key];
+    const old = Object.hasOwn(target, key) ? target[key] : undefined;
     if (object(old) && object(value)) refreshStateSnapshot(old, value);
     else if (Array.isArray(old) && Array.isArray(value) && keyed(old) && keyed(value)) {
       const retained = new Map(old.map((entry) => [entry.id, entry]));
@@ -80,6 +91,24 @@ export function refreshStateSnapshot(
         old.length,
         ...value.map((entry) => {
           const existing = retained.get(entry.id);
+          if (!existing) return structuredClone(entry);
+          refreshStateSnapshot(existing, entry);
+          return existing;
+        }),
+      );
+    } else if (
+      Array.isArray(old) &&
+      Array.isArray(value) &&
+      [...old, ...value].every((entry) => receiptKey(entry) !== undefined) &&
+      new Set(old.map(receiptKey)).size === old.length &&
+      new Set(value.map(receiptKey)).size === value.length
+    ) {
+      const retained = new Map(old.map((entry) => [receiptKey(entry), entry]));
+      old.splice(
+        0,
+        old.length,
+        ...value.map((entry) => {
+          const existing = retained.get(receiptKey(entry));
           if (!existing) return structuredClone(entry);
           refreshStateSnapshot(existing, entry);
           return existing;

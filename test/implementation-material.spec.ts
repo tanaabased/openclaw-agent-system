@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 
+import assessmentMaterial from '../agent/assessment-material.ts';
 import implementationContext from '../agent/implementation-context.ts';
 import implementationMaterial, {
   ContextMaterialError,
   type ImplementationMaterialRead,
   implementationContextBudget,
 } from '../agent/implementation-material.ts';
-import hydrateImplementation from './implementation-material-fixture.ts';
-import assessmentMaterial from '../agent/assessment-material.ts';
 import workflowFailure from '../agent/workflow-failure.ts';
+import hydrateImplementation from './implementation-material-fixture.ts';
 
 const original = () => {
   const text = 'Full engineering source: \\ "\n 🧭\u0000 '.repeat(700);
@@ -19,17 +19,7 @@ const original = () => {
       path: '/task/worktree',
       scope: 'local',
     }),
-    previousResult: {
-      outcome: 'blocked',
-      summary: 'Interrupted.',
-      fullResult: 'Distinct retained blocker.\n'.repeat(1500),
-    },
     currentRequirements: text,
-    previousImplementationResult: {
-      outcome: 'blocked',
-      summary: 'Interrupted.',
-      fullResult: 'Distinct retained blocker.\n'.repeat(1500),
-    },
     implementation: {
       skill: { name: 'implement', path: '/skills/implement/SKILL.md' },
       guidance: { content: 'Distinct selected guidance.\n'.repeat(1500) },
@@ -96,13 +86,6 @@ describe('agent/implementation-material', () => {
     assert.equal(JSON.stringify(source), snapshot);
     const fields = 'contextMaterials' in delivered ? delivered.contextMaterials?.fields : [];
     assert.ok(fields?.some(({ path }) => path.join('.') === 'currentRequirements'));
-    assert.ok(
-      !fields?.some(
-        ({ path }) =>
-          path.join('.') === 'assessment.fullAssessment' ||
-          path[0] === 'previousImplementationResult',
-      ),
-    );
   });
 
   it('should page medium-sized evidence alongside warnings without exceeding the native envelope', async () => {
@@ -123,16 +106,6 @@ describe('agent/implementation-material', () => {
       implementationMaterial(source, request, next.material as ImplementationMaterialRead),
     );
     assert.deepEqual(restored, source);
-  });
-
-  it('should preserve result aliases regardless of object property order', async () => {
-    const { previousImplementationResult, ...current } = original();
-    const source = { previousImplementationResult, ...current };
-    const response = implementationMaterial(source, request);
-    const restored = await hydrateImplementation(response, async (next) =>
-      implementationMaterial(source, request, next.material as ImplementationMaterialRead),
-    );
-    assert.deepEqual(restored, JSON.parse(JSON.stringify(source)));
   });
 
   it('should reject stale values and invalid offsets without modifying the source', () => {

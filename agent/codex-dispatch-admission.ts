@@ -1,39 +1,17 @@
-import resolveGitProtocol from '../tools/git/protocol.ts';
-import { assignmentClaimRoute } from './assignment-claim-source.ts';
-import { dispatchStoragePressure } from './dispatch-storage.ts';
-import issueWorkflowMode from './issue-workflow-mode.ts';
-import issueChatTitle from './issue-chat-title.ts';
-import {
-  managedPullRequest,
-  dispatchAdmission,
-  type ManagedIssue as IntakeRecord,
-} from './managed-issue.ts';
-import routingInstructions, {
-  assertRoutingInstructions,
-  routingInstructionsReference,
-  routingInstructionsGuidance,
-  routingInstructionsDigest,
-} from './routing-instructions.ts';
-import connectCodexGitHubAccount from './codex-github-client.ts';
-import verifyIssuePullRequest from './issue-pr-selection.ts';
-import { adoptedCodexDelivery } from './codex-delivery-state.ts';
-import codexIssueBranch from './codex-issue-branch.ts';
-import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
+import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
-
 import { workflowFeedbackAccepting } from '../channels/github/feedback-policy.ts';
-
 import assignmentCard from '../channels/github/presentation/assignment-card.ts';
-import modelRoutingCard from '../channels/github/presentation/model-routing.ts';
+import resolveGitProtocol from '../tools/git/protocol.ts';
 import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
 import resolveGitWorktreeLayout from '../tools/git/worktree-layout.ts';
 import { gitWorktreeRepositoryDirectoryName } from '../tools/git/worktree-names.ts';
+import { assignmentClaimRoute } from './assignment-claim-source.ts';
 import { automationHash } from './automation-hash.ts';
-import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import reconcileCodexCapacity from './codex-capacity-reconcile.ts';
-import codexCapacity, { codexUnresolvedRetirement } from './codex-capacity.ts';
-import { dispatchRecheckable } from './dispatch-retry.ts';
+import codexCapacity from './codex-capacity.ts';
+import { adoptedCodexDelivery } from './issue-delivery-state.ts';
 import { dispatchCheckDigest } from './codex-dispatch-check.ts';
 import {
   code,
@@ -54,18 +32,36 @@ import {
 import { failDispatch, notice } from './codex-dispatch-reporting.ts';
 import prepareDispatchRepository from './codex-dispatch-repository.ts';
 import { type DispatchRecord } from './codex-dispatch-state.ts';
+import connectCodexGitHubAccount from './codex-github-client.ts';
 import { selectCodexIntake } from './codex-intake.ts';
+import codexIssueBranch from './codex-issue-branch.ts';
 import codexSessionSettings from './codex-session-settings.ts';
 import dispatchContext from './dispatch-context.ts';
 import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
-import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
+import { dispatchRecheckable } from './dispatch-retry.ts';
 import dispatchRoutingAssessment from './dispatch-routing-assessment.ts';
+import { dispatchStoragePressure } from './dispatch-storage.ts';
+import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
+import issueChatTitle from './issue-chat-title.ts';
+import verifyIssuePullRequest from './issue-pr-selection.ts';
+import issueWorkflowMode from './issue-workflow-mode.ts';
+import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
+import {
+  dispatchAdmission,
+  managedPullRequest,
+  type ManagedIssue as IntakeRecord,
+} from './managed-issue.ts';
 import resolveModelRoutingRequest from './model-routing-request.ts';
 import { assessmentSchema } from './model-routing.ts';
-import { notificationAuthorityDigest } from './notification-authority.ts';
+import routingInstructions, {
+  assertRoutingInstructions,
+  routingInstructionsDigest,
+  routingInstructionsGuidance,
+  routingInstructionsReference,
+} from './routing-instructions.ts';
 import workflowFailure from './workflow-failure.ts';
-import { selectWorkflowStage } from './workflow-stage.ts';
-
+import deliverTaskInput from './task-input-delivery.ts';
+import { codexNativeHandoff } from './codex-dispatch-handoff.ts';
 async function verifySelectedPullRequest(
   record: DispatchRecord,
   intake: IntakeRecord,
@@ -81,7 +77,6 @@ async function verifySelectedPullRequest(
   if (record.project && record.project.commit !== selected.head)
     throw new Error('launch-pr-head-changed');
 }
-
 export async function recover(
   current: Selection,
   record: DispatchRecord,
@@ -133,7 +128,6 @@ export async function recover(
       localBranch,
       head: record.project.commit,
       adopted: record.adoptedPullRequest,
-      policyDigest: notificationAuthorityDigest(current.manifest.github?.notifications),
     });
   }
   if (record.predecessorId && acceptClaim && records) {
@@ -165,10 +159,8 @@ export async function recover(
     } else if (predecessor?.claimId || predecessor?.claimAccepted)
       throw new Error('claim-recovery-owner-unresolved');
   }
-  record.phase = record.phase === 'complete' ? 'complete' : 'assessing';
-  if (record.phase !== 'complete' && record.result?.outcome === 'operator-setup-blocker') {
-    delete record.result;
-    delete record.stageReceipt;
+  if (record.blocker !== undefined) {
+    delete record.blocker;
   }
   await save();
   if (
@@ -192,7 +184,6 @@ export async function recover(
   }
   return found;
 }
-
 async function selectClaim(
   record: DispatchRecord,
   intake: IntakeRecord,
@@ -218,7 +209,7 @@ async function selectClaim(
     turnId: tx.operatorInput?.turnId ?? state.run!.id,
     hasCapacity:
       codexCapacity(
-        state.records,
+        state,
         current.policy?.policy.maxConcurrentItems ?? 3,
         state.projectPickup,
         intake.evidence?.projectWork?.pickup?.issueNodeId,
@@ -242,10 +233,8 @@ async function selectClaim(
     nextAction: 'next' as const,
   };
 }
-
 function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
-  const attempt =
-    (record.deniedCreations?.length ?? 0) + (record.unsubmittedCreations?.length ?? 0) + 1;
+  const attempt = (record.creationRecovery?.attempts ?? 0) + 1;
   const card = assignmentCard(
     {
       emoji: '📥',
@@ -265,7 +254,6 @@ function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
   );
   return card;
 }
-
 export function unpreparedDispatch(record: DispatchRecord) {
   return (
     !record.request &&
@@ -275,18 +263,18 @@ export function unpreparedDispatch(record: DispatchRecord) {
     !record.worktree &&
     !record.effective &&
     !record.denial &&
-    !record.retired &&
     !record.retirement &&
     !record.supersededBy &&
-    !record.handoff &&
-    !record.continuation?.attempt &&
-    !record.continuation?.publicationAttempt
+    !record.handoff
   );
 }
-
 function creationRecovery(record: DispatchRecord, next: 'prepare' | 'create') {
-  const unsubmitted = record.unsubmittedCreations?.at(-1);
-  const denied = record.deniedCreations?.at(-1);
+  const unsubmitted =
+    record.creationRecovery?.latest?.kind === 'unsubmitted'
+      ? record.creationRecovery.latest
+      : undefined;
+  const denied =
+    record.creationRecovery?.latest?.kind === 'denied' ? record.creationRecovery.latest : undefined;
   const instruction =
     next === 'prepare'
       ? 'Use the current routing result to call dispatch prepare. There is no pending creation to reconcile. Native approval still applies to the next creation.'
@@ -322,7 +310,6 @@ function creationRecovery(record: DispatchRecord, next: 'prepare' | 'create') {
     };
   return {};
 }
-
 export function dispatchRoutingRequired(
   record: DispatchRecord,
   current: Selection,
@@ -359,7 +346,6 @@ export function dispatchRoutingRequired(
     },
   };
 }
-
 export async function nextDispatch(input: Record<string, unknown>, tx: CodexDispatchTransaction) {
   const { current, deps, state, admitted, activation, now, signal, save, fresh } = tx;
   const fail = (record: DispatchRecord, error: unknown) => failDispatch(record, error, tx);
@@ -378,12 +364,12 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
         !entry.cleanupPending &&
         !entry.supersededBy &&
         !entry.denial &&
-        (codexUnresolvedRetirement(entry) || entry.threadId || entry.receiptThreadId),
+        (entry.threadId || entry.receiptThreadId),
     )
     .sort((a, b) => (a.capacityObservation?.at ?? 0) - (b.capacityObservation?.at ?? 0))
     .filter(
       (entry) =>
-        (!entry.retired && !entry.retirement) ||
+        !entry.retirement ||
         !entry.capacityObservation ||
         entry.capacityObservation.at + 300000 <= now,
     )
@@ -408,18 +394,15 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
     (record) =>
       !record.denial &&
       !record.supersededBy &&
-      !record.retired &&
       !record.retirement &&
       !record.handoff &&
       record.request &&
       (!record.effective || (deps.claims && record.claimId && !record.claimAccepted)) &&
-      record.phase !== 'complete' &&
-      (record.phase !== 'blocked' ||
-        (record.result?.outcome === 'operator-setup-blocker' &&
-          record.result.code === 'dispatch-assignment-superseded')) &&
-      (record.result?.outcome !== 'operator-setup-blocker' ||
+      (dispatchCreationStatus(record) !== 'blocked' ||
+        record.blocker === 'dispatch-assignment-superseded') &&
+      (record.blocker === undefined ||
         Boolean(record.retry) ||
-        dispatchRecheckable(record.result.code)) &&
+        dispatchRecheckable(record.blocker)) &&
       (record.retryAfter ?? 0) <= now,
   )) {
     const intake = dispatchAdmission(pending, admitted.records);
@@ -467,9 +450,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
         !pending.threadId &&
         !pending.receiptThreadId &&
         !pending.clientThreadId &&
-        !pending.worktree &&
-        !pending.continuation?.attempt &&
-        !pending.continuation?.publicationAttempt
+        !pending.worktree
       ) {
         try {
           const proof = await withNative(current, deps, (native) =>
@@ -485,20 +466,22 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
           );
           if (proof) {
             await fresh();
-            (pending.unsubmittedCreations ??= []).push({
-              request: pending.request!,
-              createdAt: pending.createdAt,
-              recoveredAt: now,
-              ...(pending.continuation ? { continuation: pending.continuation } : {}),
-              turnId: proof.turnId,
-            });
-            delete pending.continuation;
+            pending.creationRecovery = {
+              attempts: (pending.creationRecovery?.attempts ?? 0) + 1,
+              denialRecovered: pending.creationRecovery?.denialRecovered,
+              latest: {
+                kind: 'unsubmitted',
+                turnId: proof.turnId,
+                createdAt: pending.createdAt,
+                recoveredAt: now,
+              },
+            };
+            delete pending.nativeWork;
             delete pending.request;
-            delete pending.result;
-            delete pending.stageReceipt;
+            delete pending.blocker;
             delete pending.retryAfter;
             delete pending.preparationTurnId;
-            pending.phase = 'routing';
+
             await save();
             continue;
           }
@@ -511,12 +494,12 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
   }
   if (['paused', 'emergency'].includes(dispatchStoragePressure(state).level))
     return { ...(await checked('at-capacity')), code: 'dispatch-storage-admission-paused' };
-  const intake = pendingDispatchAssignments(state, admitted, codexUnresolvedRetirement)
+  const intake = pendingDispatchAssignments(state, admitted)
     .filter(({ intake }) => !liveWorkflowPolicy(current.manifest, 'codex', intake))
     .find(
       ({ record, intake }) =>
         codexCapacity(
-          state.records,
+          state,
           current.policy?.policy.maxConcurrentItems ?? 3,
           state.projectPickup,
           intake.evidence?.projectWork?.pickup?.issueNodeId,
@@ -524,21 +507,19 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
         !record?.denial &&
         !record?.request &&
         (!deps.claims || record?.claimPass !== (tx.operatorInput?.turnId ?? state.run!.id)) &&
-        (record?.phase !== 'blocked' || record.intakeId !== intake.id) &&
-        (record?.result?.outcome !== 'operator-setup-blocker' ||
+        (dispatchCreationStatus(record) !== 'blocked' || record?.intakeId !== intake.id) &&
+        (!record ||
+          record.blocker === undefined ||
           Boolean(record.retry) ||
-          dispatchRecheckable(record.result.code) ||
-          (record.result.code === 'dispatch-creation-not-prepared' && unpreparedDispatch(record)) ||
+          dispatchRecheckable(record.blocker) ||
+          (record.blocker === 'dispatch-creation-not-prepared' && unpreparedDispatch(record)) ||
           record.intakeId !== intake.id) &&
         (record?.retryAfter ?? 0) <= now,
     )?.intake;
   if (!intake)
     return checked(
-      codexCapacity(
-        state.records,
-        current.policy?.policy.maxConcurrentItems ?? 3,
-        state.projectPickup,
-      ).available
+      codexCapacity(state, current.policy?.policy.maxConcurrentItems ?? 3, state.projectPickup)
+        .available
         ? 'idle'
         : 'at-capacity',
     );
@@ -546,7 +527,6 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
     (entry) =>
       !entry.reset &&
       !entry.supersededBy &&
-      !entry.retired &&
       !entry.retirement &&
       entry.issueKey === issueKey(intake),
   );
@@ -559,7 +539,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
         : {}),
       issueKey: issueKey(intake),
       sourceThreadId: activation.sourceThreadId,
-      phase: 'routing',
+
       createdAt: now,
       feedback: {
         startedAt: now,
@@ -579,7 +559,6 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
   }
   return prepareIssueProject(input, record, intake, tx);
 }
-
 export async function prepareIssueProject(
   input: Record<string, unknown>,
   record: DispatchRecord,
@@ -709,7 +688,7 @@ export async function prepareIssueProject(
     record.project = project;
     record.context = JSON.stringify(snapshot);
     record.manifestDigest = current.digest;
-    record.phase = 'routing';
+
     record.routingInstructions = await routingInstructions({
       configuration: current.manifest.models?.routing,
       workspace: current.workspace,
@@ -733,7 +712,6 @@ export async function prepareIssueProject(
         }),
         runtime: {
           nodeExecutable: process.execPath,
-          nodeVersion: process.versions.node,
           ...(process.argv0 === 'node' ? { nodeCommand: 'node' as const } : {}),
           entrypoint: resolve(process.argv[1]!),
           pluginData: tx.pluginData,
@@ -745,8 +723,7 @@ export async function prepareIssueProject(
           ),
         ),
       };
-    delete record.result;
-    delete record.stageReceipt;
+    delete record.blocker;
     await fresh();
     await save();
     return dispatchRoutingRequired(record, current, true);
@@ -766,7 +743,7 @@ export async function prepareDispatch(
   if (record.request)
     return { status: 'reconcile-required' as const, changed: false, id: record.id };
   if (
-    record.phase !== 'routing' ||
+    dispatchCreationStatus(record) !== 'routing' ||
     !record.project ||
     !record.context ||
     input.digest !==
@@ -812,64 +789,15 @@ export async function prepareDispatch(
       },
       'codex',
     );
-    if (!('candidate' in decision) || decision.candidate?.status !== 'mapped')
-      throw new Error('dispatch-routing-unresolved');
+    if (!('candidate' in decision)) throw new Error(decision.code);
     const live = await selectCodexIntake(pluginData, deps);
     const held = liveWorkflowPolicy(live.manifest, 'codex', intake);
     if (held) throw new WorkflowPolicyHeld(held);
     current.manifest = live.manifest;
     current.policy = live.policy;
-    const configuration = live.policy?.policy.issueAssignment?.assessment;
-    const selected = await selectWorkflowStage({
-      stage: 'assessment',
-      configuration,
-      workspace: current.workspace,
-      observedAt: now,
-      resolveSkill: (id) =>
-        withNative(current, deps, (native) => native.assessmentSkill(record.project!.path, id)),
-    });
-    record.assessment = selected.selection;
     record.issueMode = issueWorkflowMode(current.manifest.github?.notifications, record);
-    if (record.issueMode === 'work' || record.issueMode === 'auto') {
-      if (!record.manualIssue)
-        await (deps.activation ?? inspectCodexDispatchActivation)(
-          pluginData,
-          { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
-          false,
-          true,
-          'implementation',
-        );
-      const implementation = await selectWorkflowStage({
-        stage: 'implementation',
-        configuration: {
-          ...current.policy?.policy.issueAssignment?.implementation,
-          ...record.manualIssue?.selections?.implementation,
-        },
-        workspace: current.workspace,
-        observedAt: now,
-        resolveSkill: (id) =>
-          withNative(current, deps, (host) => host.assessmentSkill(record.project!.path, id)),
-      });
-      record.continuation = {
-        phase: 'waiting',
-        policyDigest: notificationAuthorityDigest(current.manifest.github?.notifications),
-        selection: implementation.selection,
-      };
-    }
     record.routing = JSON.stringify(decision);
     record.routingInstructions = instructions;
-    record.routingNote = modelRoutingCard({
-      routing: {
-        ...decision,
-        model: decision.candidate.model,
-        effort: decision.candidate.thinking,
-      },
-      instructions: record.routingInstructions,
-      workspace: current.workspace,
-      debug: current.manifest.debug,
-      manifestPath:
-        current.manifestSources?.['/models/routing/guidance']?.path ?? current.manifestPath,
-    });
     record.createdAt = now;
     record.preparationTurnId = tx.operatorInput?.turnId ?? state.run!.id;
     record.sourceThreadId = tx.activation.sourceThreadId;
@@ -879,10 +807,9 @@ export async function prepareDispatch(
     delete record.preparationObservation;
     delete record.retry;
     delete record.retryAfter;
-    record.reservationVersion = 1;
     delete record.capacityObservation;
     delete record.nativeInactive;
-    record.request = {
+    const request: NonNullable<DispatchRecord['request']> = {
       title: issueChatTitle(
         input.title as string,
         intake.issue.number,
@@ -900,16 +827,24 @@ export async function prepareDispatch(
         },
       },
     };
-    record.phase = 'creating';
-    await fresh();
-    await save();
+
+    await deliverTaskInput({
+      attempt: record.request,
+      prepare: async () => request,
+      retain(prepared) {
+        record.request = prepared;
+      },
+      assertCurrent: fresh,
+      save,
+    });
     return {
       status: 'prepared' as const,
       changed: true,
       id: record.id,
       request: record.request,
+      nativeHandoff: codexNativeHandoff('create_thread', request),
       instruction:
-        'Next, call native create_thread once with this request unchanged. Do not call prepare again to retrieve or reauthorize it. In a code orchestration tool, parse this response and pass its request object directly to create_thread; do not reconstruct the prompt. Reconcile only the receipt returned by that call, never one from history or another assessment, even for the same issue. If the call fails or its outcome is unknown, reconcile without a receipt; never repeat an uncertain creation.',
+        'Execute nativeHandoff exactly once in a separate functions.exec call. It contains the complete native create_thread request; do not reconstruct it or call prepare again to retrieve it. Then reconcile the original attempt using the receipt returned by that call. If execution was omitted, failed, or its outcome is unknown, reconcile without a receipt; never execute an old handoff again.',
       ...creationRecovery(record, 'create'),
     };
   } catch (error) {

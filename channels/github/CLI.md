@@ -218,12 +218,11 @@ openclaw agent-system notifications wait \
 
 Supported targets:
 
-| Target           | Selector required | Meaning                                            |
-| ---------------- | ----------------- | -------------------------------------------------- |
-| `baseline-ready` | no                | The first safe provider observation completed      |
-| `plan-ready`     | yes               | An explicitly recorded assessment has a ready plan |
-| `prepared`       | yes               | The conversation and worktree are verified         |
-| `worktree-ready` | yes               | The selected issue worktree is ready               |
+| Target           | Selector required | Meaning                                       |
+| ---------------- | ----------------- | --------------------------------------------- |
+| `baseline-ready` | no                | The first safe provider observation completed |
+| `prepared`       | yes               | The conversation and worktree are verified    |
+| `worktree-ready` | yes               | The selected issue worktree is ready          |
 
 Only the listed targets are supported; rejection and retirement are not wait targets.
 Without `--refresh`, wait observes state without advancing intake.
@@ -232,8 +231,7 @@ With `--refresh` and an issue selector, wait scans that issue but does not dispa
 work; the native coordinator must make progress. Without a selector, it requests the
 ordinary automation and waits for that run before requesting another cycle.
 
-`plan-ready` observes saved assessment history only; native planning does not have to
-record an assessment. Use `prepared` or `worktree-ready` to wait for the issue chat
+Use `prepared` or `worktree-ready` to wait for the issue chat
 and checkout, then follow planning and questions in that chat. Reply and delivery
 failures do not invalidate completed preparation.
 

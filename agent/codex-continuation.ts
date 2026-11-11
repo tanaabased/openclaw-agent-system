@@ -1,15 +1,16 @@
-import codexFeedbackInput from './codex-feedback-input.ts';
-import taskRecoveryCaller from './task-recovery-caller.ts';
+import { withDispatchTask } from './dispatch-task-scope.ts';
+import { Value } from 'typebox/value';
+import recoverCodexAnnouncement from './codex-announcement-recovery.ts';
+import codexCommit from './codex-commit.ts';
 import authorizeCodexFeedback from './codex-feedback-authority.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';
-import recoverCodexAnnouncement from './codex-announcement-recovery.ts';
-import workflowFailure from './workflow-failure.ts';
-import codexCommit from './codex-commit.ts';
+import codexFeedbackInput from './codex-feedback-input.ts';
+import codexWorkState from './codex-work-state.ts';
 import implementationMaterial from './implementation-material.ts';
-import { managedIssueState, dispatchAdmission } from './managed-issue.ts';
-import { Value } from 'typebox/value';
+import { dispatchAdmission, managedIssueState } from './managed-issue.ts';
+import taskRecoveryCaller from './task-recovery-caller.ts';
+import workflowFailure from './workflow-failure.ts';
 
-import reconcileCodexRequests from './codex-request-reconciliation.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import {
   requestSchema,
@@ -22,16 +23,24 @@ import { codexDispatchNative } from './codex-dispatch-native.ts';
 import { dispatchGit } from './codex-dispatch-project.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
 import { selectCodexIntake } from './codex-intake.ts';
-import { connectCodexThreads } from './codex-thread-client.ts';
 import codexLiveTurn from './codex-live-turn.ts';
+import { connectCodexThreads } from './codex-thread-client.ts';
 import advanceCodexWork, { prepareCodexWork } from './codex-work.ts';
 import { retainedIssueProgression } from './issue-progression.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
-import { requireWorkflowSchedule } from './workflow-result.ts';
+import { requireWorkflowSchedule } from './workflow-schedule.ts';
 
 export type { CodexContinuationDependencies } from './codex-continuation-context.ts';
 /** work mode is standing authority; these checks never ask for another stage approval. */
-export default async function runCodexContinuation(
+export default function runCodexContinuation(
+  ...args: Parameters<typeof runCodexContinuationScoped>
+) {
+  const deps = args[2] ?? {};
+  return withDispatchTask('codex', deps.threadId ?? process.env.CODEX_THREAD_ID, () =>
+    runCodexContinuationScoped(...args),
+  );
+}
+async function runCodexContinuationScoped(
   pluginData: string,
   input: unknown,
   deps: CodexContinuationDependencies = {},
@@ -136,7 +145,7 @@ export default async function runCodexContinuation(
         save,
         signal,
       };
-      if (localOwner?.feedback?.events.some((event) => event.native) && input.action !== 'cancel') {
+      if (localOwner?.feedback?.events.length && input.action !== 'cancel') {
         const found = await native.find({
           sourceThreadId: localOwner.sourceThreadId,
           prompt: localOwner.request!.prompt,
@@ -192,19 +201,18 @@ export default async function runCodexContinuation(
               throw error;
             if (
               deps.directScope &&
-              deps.directScope !== (record?.continuation?.scope ?? 'pull-request')
+              deps.directScope !== ((record && codexWorkState(record)?.scope) ?? 'pull-request')
             )
               throw error;
           }
         }
       }
       if (input.action === 'next' || input.action === 'reconcile') {
-        const receipts = await reconcileCodexRequests(context);
         for (const record of state.records) {
-          if (record.delivery?.announcement?.attempted && !record.delivery.announcement.receipt)
+          if (record.announcement?.attempted && !record.announcement.receipt)
             await recoverCodexAnnouncement(record, context);
         }
-        return receipts;
+        return { status: 'reconciled' as const };
       }
       if (!input.material) await prepareCodexWork(state, context);
       const candidates = state.records.filter((record) => record.id === input.id);

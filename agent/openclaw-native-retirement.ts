@@ -1,5 +1,6 @@
 import { automationHash } from './automation-hash.ts';
 import nativeRetirement from './native-retirement.ts';
+import assertNotificationResetRetirement from './notification-reset-retirement.ts';
 import type { OpenClawDispatchDependencies } from './openclaw-dispatch-context.ts';
 import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
 import { operatorInputEvent } from './openclaw-session-input.ts';
@@ -57,6 +58,11 @@ export default async function retireOpenClawNative(input: {
         'Archive this exact unmanaged native session using normal OpenClaw cleanup. Native archival may stop its work and enqueue checkout/local-branch reclamation; local-only work may be lost. No issue, assignment or remote branch is changed. Existing explicit cleanup intent authorizes apply; do not ask for another conversational confirmation.',
       assertCurrent: async () => {
         await authority.assertCurrent?.();
+        await assertNotificationResetRetirement(
+          deps.root,
+          selected.store.location.scope,
+          input.native,
+        );
         const fresh = await deps.intake.dependencies.manifestService.loadForAgentId(
           manifest.agent.id,
           'service',
@@ -85,6 +91,12 @@ export default async function retireOpenClawNative(input: {
         )
           throw new Error('native-retirement-target-mismatch');
         const cwd = row.spawnedCwd ?? row.workspaceDir;
+        await assertNotificationResetRetirement(
+          deps.root,
+          selected.store.location.scope,
+          input.native,
+          typeof cwd === 'string' ? cwd : undefined,
+        );
         return {
           id: input.native,
           incarnation: row.sessionId,

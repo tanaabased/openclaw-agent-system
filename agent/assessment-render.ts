@@ -1,28 +1,32 @@
-import { cardCopyInstructions } from '../channels/github/presentation/card.ts';
-import implementationMaterial from './implementation-material.ts';
-import { Value } from 'typebox/value';
+import safePresentation from '../channels/github/presentation/safe.ts';
 import { Type } from 'typebox';
+import { Value } from 'typebox/value';
+import { cardCopyInstructions } from '../channels/github/presentation/card.ts';
+import {
+  implementationContextBudget,
+  implementationMaterialSize,
+} from './implementation-material.ts';
+import { assessmentFallbackInstructions } from './assessment-instructions.ts';
 
-import type { WorkflowInstructionsPresentation } from '../channels/github/presentation/workflow-instructions.ts';
 import renderAssessmentResult, {
   assessmentContextCards,
   type AssessmentPresentationContext,
 } from '../channels/github/presentation/assessment-result.ts';
+import type { WorkflowInstructionsPresentation } from '../channels/github/presentation/workflow-instructions.ts';
 import { directAssessmentRequestSchema } from '../tools/dispatch/assessment-schema.ts';
-import { parseAssessmentSubmission } from './assessment-result.ts';
-import { replyLocator } from './reply-target.ts';
 import assessmentOwner from './assessment-owner.ts';
-import { dispatchAdmission, managedTargetUrl, type ManagedIssue } from './managed-issue.ts';
+import { parseAssessmentSubmission } from './assessment-result.ts';
+import AssessmentValidationError from './assessment-validation.ts';
 import { dispatchAssessmentContext } from './dispatch-presentation.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
-import AssessmentValidationError from './assessment-validation.ts';
+import { dispatchAdmission, managedTargetUrl, type ManagedIssue } from './managed-issue.ts';
+import { replyLocator } from './reply-target.ts';
 
 const renderRequestSchema = Type.Object(
   {
-    ...directAssessmentRequestSchema.properties,
+    ...Type.Omit(directAssessmentRequestSchema, ['material']).properties,
     ...Type.Required(Type.Pick(directAssessmentRequestSchema, ['target'])).properties,
     operation: Type.Literal('render'),
-    includeDetails: Type.Optional(Type.Literal(false)),
   },
   { additionalProperties: false },
 );
@@ -69,7 +73,7 @@ export async function renderBoundAssessment(
     context.runtime,
     record
       ? dispatchAssessmentContext(
-          { ...record, assessment: undefined, stageReceipt: undefined },
+          { ...record, assessment: undefined },
           context.workspace,
           presentation,
         )
@@ -92,49 +96,63 @@ export default function renderNativeAssessment(
     );
   const target = replyLocator(input.target);
   if (target.kind) throw new Error('assessment-render-target-invalid');
-  const submitted = parseAssessmentSubmission(input.result);
-  // Complete questions already carry their own concise review; formatting must not hide them.
-  // Older paged results also derive a review from their retained source.
-  const assessment =
-    !submitted.reviewSummary && (input.material || submitted.outcome === 'clarification-needed')
-      ? {
-          ...submitted,
-          reviewSummary: [
-            submitted.summary,
-            ...(submitted.outcome === 'operator-setup-blocker' ? [submitted.remediation] : []),
-          ].join('\n\n'),
-        }
-      : submitted;
-  if (!assessment.reviewSummary?.trim()) throw new Error('assessment-review-summary-required');
-  return implementationMaterial(
-    {
-      runtime,
-      status: 'formatted' as const,
-      retained: false as const,
-      presentation: renderAssessmentResult(assessment, {
-        issue: {
-          label: `${target.owner}/${target.name}#${target.number}`,
-          url: input.target,
-          kind: target.itemType === 'pull-request' ? 'Pull request' : 'Issue',
-        },
-        retained: false,
-        cards: context ? assessmentContextCards(context) : undefined,
-        assessmentOnly: input.assessmentOnly,
-      }),
-      instructions:
-        cardCopyInstructions +
-        " The complete assessment stays in this native tool call; Agent System has not saved it. Include the complete presentation, with all routing, decision and debug cards, in this turn's final response. Commentary or progress output does not count as final presentation. Append any Task Update publication outcome and current blocker to that final response without replacing the assessment cards or duplicating the full engineering source. Continue from native conversation and current direction; do not record or reinject this assessment. Formatting grants no implementation or publication authority. Publish the concise review through Task Update only within its existing authorization.",
-    },
-    assessmentPresentationRequest(input.target, input.assessmentOnly),
-    input.material,
-    {
-      purpose: 'assessment-presentation',
-      pagedFields: ['presentation'],
-      inputFields: ['result'],
-      instruction:
-        'Read every presentation page before displaying the result. Copy only the listed inputFields from the original native tool call into each returned page request. This pure formatter retains no source or plan. Follow next, concatenate text in offset order, parse JSON and restore each path. Show the complete presentation. Page reads do not save a plan or authorize any effect.',
-    },
-  );
+  const assessment = parseAssessmentSubmission(input.result);
+  const response = {
+    runtime,
+    status: 'formatted' as const,
+    retained: false as const,
+    presentation: safePresentation(
+      () =>
+        renderAssessmentResult(assessment, {
+          issue: {
+            label: `${target.owner}/${target.name}#${target.number}`,
+            url: input.target,
+            kind: target.itemType === 'pull-request' ? 'Pull request' : 'Issue',
+          },
+          cards: context ? assessmentContextCards(context) : undefined,
+          assessmentOnly: input.assessmentOnly,
+        }),
+      () =>
+        [
+          assessment.summary,
+          assessment.reviewSummary,
+          assessment.outcome === 'clarification-needed'
+            ? assessment.questions.join('\n\n')
+            : assessment.outcome === 'operator-setup-blocker'
+              ? `${assessment.code}: ${assessment.remediation}`
+              : '',
+          input.target,
+          input.assessmentOnly
+            ? 'Assessment only. No implementation or publication is authorized.'
+            : '',
+          assessment.decision
+            ? `Auto decision: ${assessment.decision.mode}\n${assessment.decision.reasons.join('\n')}`
+            : '',
+          'Card formatting unavailable; continue under existing authorization.',
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+    ),
+    instructions:
+      cardCopyInstructions +
+      " The complete assessment stays in native conversation; Agent System has not saved it. Include the complete presentation, with all routing, decision and debug cards, in this turn's final response. Commentary or progress output does not count as final presentation. Append any Task Update publication outcome and current blocker to that final response without replacing the assessment cards or duplicating the full engineering source. Continue from native conversation and current direction; do not record or reinject this assessment. Formatting grants no implementation or publication authority. Publish the concise review through Task Update only within its existing authorization.",
+  };
+  if (implementationMaterialSize(response) <= implementationContextBudget) return response;
+  // The authored findings already live in this native call. Never make displaying them
+  // depend on retranscribing that input into page requests or on a new persisted plan.
+  return {
+    runtime,
+    status: 'presentation-unavailable' as const,
+    retained: false as const,
+    presentation:
+      'Card formatting unavailable: the presentation exceeds the native output allowance.',
+    instructions:
+      'Present the completed assessment from this conversation and the original render input directly as ordinary Markdown, including every unanswered question and actual blocker. Do not request pages, resubmit the result, or restart assessment. ' +
+      assessmentFallbackInstructions +
+      (input.assessmentOnly
+        ? ' Assessment only. No implementation or publication is authorized.'
+        : ''),
+  };
 }
 
 export function assessmentPresentationRequest(target: string, assessmentOnly = false) {

@@ -75,7 +75,6 @@ export default async function feedbackDiscovery(input: {
           page,
         );
         comments.push(...result.comments);
-        if (comments.length > 1000) throw new Error('feedback-queue-full');
         if (!result.truncated) return { comments, truncated: false };
       }
     },
@@ -102,7 +101,6 @@ export default async function feedbackDiscovery(input: {
             page,
           );
           for (const value of result.values) members.set(value.nodeId, value);
-          if (members.size > 400) throw new Error('feedback-queue-full');
           if (result.nextPage === 1) break;
         }
         const complete = [];

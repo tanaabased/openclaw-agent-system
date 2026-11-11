@@ -1,12 +1,12 @@
-import nativeFeedbackPublication from '../agent/native-feedback-publication.ts';
 import assert from 'node:assert/strict';
-import nativeFeedbackReconciliation from '../agent/native-feedback-reconciliation.ts';
-import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
-import nativeFeedbackSource from '../agent/native-feedback-source.ts';
+import { Value } from 'typebox/value';
 import codexContextRequest from '../agent/codex-context-request.ts';
+import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
 import type { FeedbackSourceEvent } from '../agent/feedback-state.ts';
 import type { ManagedIssue } from '../agent/managed-issue.ts';
-import { Value } from 'typebox/value';
+import nativeFeedbackPublication from '../agent/native-feedback-publication.ts';
+import nativeFeedbackReconciliation from '../agent/native-feedback-reconciliation.ts';
+import nativeFeedbackSource from '../agent/native-feedback-source.ts';
 import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 
 const events = [41, 42].map((number) => ({
@@ -65,7 +65,7 @@ describe('native feedback source selection', () => {
       () =>
         nativeFeedbackPublication(
           input,
-          [{ ...record, retired: { at: 1 } } as typeof record],
+          [{ ...record, reset: { at: 1 } } as typeof record],
           [issue],
         ),
       /not-admitted/,

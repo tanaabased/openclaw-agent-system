@@ -1,4 +1,5 @@
 import notificationResetPickup from './notification-reset-pickup.ts';
+import notificationResetBaseline from './notification-reset-baseline.ts';
 import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
 import { managedPullRequest, managedIssueState, dispatchAdmission } from './managed-issue.ts';
 
@@ -53,7 +54,7 @@ export default class OpenClawNotificationReset {
 
   private async target(manifest: AgentManifest, workspaceDir: string, purge: boolean) {
     const deps = this.dependencies;
-    const { store: intake, workspace } = await deps.intake.select(manifest, workspaceDir);
+    const { store: intake, workspace, selected } = await deps.intake.select(manifest, workspaceDir);
     const scope = intake.location.scope;
     const journal = new OpenClawDispatchStore(deps.root, scope);
     const store = new NotificationResetStore(deps.root, scope);
@@ -113,12 +114,44 @@ export default class OpenClawNotificationReset {
               throw new Error('notification-reset-native-response-invalid');
             return result;
           };
-          const source = await automationThreadGateway(gateway, {
-            agentId: manifest.agent.id,
-            workspaceDir: workspace,
-            scope,
-          }).lookup(key);
-          if (!source) continue;
+          let originSessionId: string | undefined;
+          if (key === automation.sessionKey) {
+            const source = await automationThreadGateway(gateway, {
+              agentId: manifest.agent.id,
+              workspaceDir: workspace,
+              scope,
+            }).lookup(key);
+            if (!source) continue;
+          } else {
+            // ordinary origins belong to the agent, not necessarily a per-chat workspace.
+            const resolved = await gateway('sessions.resolve', {
+              key,
+              agentId: manifest.agent.id,
+              allowMissing: true,
+            });
+            if (
+              resolved.ok === false &&
+              (resolved.candidates === undefined ||
+                (Array.isArray(resolved.candidates) && resolved.candidates.length === 0))
+            )
+              continue;
+            if (
+              resolved.ok !== true ||
+              resolved.key !== key ||
+              resolved.agentId !== manifest.agent.id
+            )
+              throw new Error('notification-reset-source-owner-mismatch');
+            const { session } = await gateway('sessions.describe', { key });
+            if (
+              !nativeObject(session) ||
+              session.key !== key ||
+              session.agentId !== manifest.agent.id ||
+              typeof session.sessionId !== 'string' ||
+              !session.sessionId
+            )
+              throw new Error('notification-reset-source-observation-unavailable');
+            originSessionId = session.sessionId;
+          }
           const response = await request('chat.history', { sessionKey: key, limit: 1 });
           if (
             !nativeObject(response) ||
@@ -126,6 +159,8 @@ export default class OpenClawNotificationReset {
             !nativeObject(response.pendingInputs)
           )
             throw new Error('notification-reset-coordinator-observation-unavailable');
+          if (originSessionId && response.sessionId !== originSessionId)
+            throw new Error('notification-reset-source-observation-unavailable');
           if (response.sessionInfo.hasActiveRun !== false || response.pendingInputs.total !== 0)
             return false;
         }
@@ -184,8 +219,15 @@ export default class OpenClawNotificationReset {
       fence: (run) => intake.exclusive(() => journal.exclusive(() => run(), true)),
       snapshot: async () => {
         const records = (await journal.read()).records;
-        const state = managedIssueState(await intake.read(), records);
-        if (!state) throw new Error('notification-reset-intake-missing');
+        const state =
+          managedIssueState(await intake.read(), records) ??
+          (await notificationResetBaseline({
+            scope,
+            workspace,
+            agentId: manifest.agent.id,
+            policy: selected,
+            identity: async () => (await deps.connect(manifest, workspace)).client.identity,
+          }));
         if (state.agentId !== manifest.agent.id || state.workspaceDir !== workspace)
           throw new Error('notification-reset-scope-changed');
         const contents = { intake: state, records };
@@ -287,7 +329,7 @@ export default class OpenClawNotificationReset {
         await journal.reset(record.id);
       },
       baseline: async (record) => {
-        await intake.reset(record.baselineAt!);
+        await intake.reset(record.baselineAt!, inventory(record).intake);
       },
       coordinator: async (record, save) => {
         const expected = JSON.parse(record.automation);

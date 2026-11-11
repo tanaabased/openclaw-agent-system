@@ -1,3 +1,5 @@
+import selectFeedbackStage from '../agent/feedback-stage.ts';
+import { intakeFixture } from './github-intake-fixture.ts';
 import assert from 'node:assert/strict';
 
 import { selectWorkflowStage } from '../agent/workflow-stage.ts';
@@ -9,7 +11,38 @@ describe('agent/workflow-stage', () => {
     scope: 'user',
     digest: 'a'.repeat(64),
   };
-  it('should share trusted selection and retain a stage-specific result contract', async () => {
+  it('should reuse the selected reply composer while refreshing explicit configuration and guidance', async () => {
+    const policy = intakeFixture().policy;
+    policy.issueAssignment!.feedback = {
+      inherit: true,
+      allowed: [],
+      skill: skill.name,
+      guidance: 'original constraint',
+    };
+    let reads = 0;
+    const input = {
+      policy,
+      workflow: 'issue-assignment' as const,
+      workspace: '/unused',
+      observedAt: 1,
+      resolveSkill: async (id: string) => {
+        reads++;
+        return { ...skill, name: id };
+      },
+    };
+    const first = (await selectFeedbackStage(input)).selection;
+    policy.issueAssignment!.feedback.guidance = 'revised constraint';
+    const updated = (await selectFeedbackStage({ ...input, retained: first })).selection;
+    assert.equal(reads, 1);
+    assert.equal(updated.guidance?.content, 'revised constraint');
+    assert.deepEqual(updated.skill, first.skill);
+    policy.issueAssignment!.feedback.skill = 'different:reply';
+    const changed = (await selectFeedbackStage({ ...input, retained: first })).selection;
+    assert.equal(changed.skill.name, 'different:reply');
+    assert.equal(reads, 2);
+  });
+
+  it('should share trusted skill selection', async () => {
     for (const stage of ['assessment', 'implementation', 'review'] as const) {
       const selected = await selectWorkflowStage({
         stage,
@@ -22,7 +55,6 @@ describe('agent/workflow-stage', () => {
         },
       });
       assert.equal(selected.stage, stage);
-      assert.equal(selected.resultContract, `${stage}-result/v1`);
       assert.deepEqual(selected.selection.skill, skill);
       assert.equal(selected.selection.guidance?.content, 'Follow repository instructions.');
       assert.equal(selected.selection.defaultSkill, false);

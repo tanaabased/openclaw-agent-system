@@ -65,7 +65,7 @@ Return only these fields as text for the assessor:
   material limits or decisions. Add a brief documentation and test impact note,
   including when no changes are needed. Explain purpose, not test implementation.
 
-Do not supply `planSummary`, `plan`, or `fullAssessment`. The assessor retains the
+Do not copy the full engineering assessment or plan into the display payload. The assessor retains the
 full engineering source separately. If the brief cannot support the recommendation,
 review, or documentation/test impact, flag the gap rather than inventing work.
 

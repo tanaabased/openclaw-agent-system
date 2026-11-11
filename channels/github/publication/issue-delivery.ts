@@ -42,6 +42,12 @@ export class GitHubIssueDeliveryError extends Error {
   }
 }
 
+export type IssueAnnouncementInput = Pick<IssueDeliveryInput, 'signal' | 'adoptedPullRequest'> & {
+  item: Omit<IssueDeliveryInput['item'], 'repositoryDefaultBranch'>;
+  repositoryNodeId: string;
+  expectedPullRequest: GitHubNotificationIssueDeliveryReceipt;
+};
+
 export interface IssueDeliveryInput {
   item: {
     number: number;
@@ -335,9 +341,22 @@ export default class IssueDeliveryProvider {
   }
 
   /** verify the exact published PR before an issue announcement. */
-  async announcement(input: IssueDeliveryInput) {
-    if (!input.expectedPullRequest || !input.headSha || !input.repositoryNodeId)
+  async announcement(target: IssueAnnouncementInput) {
+    if (!target.expectedPullRequest || !target.repositoryNodeId)
       throw new Error('delivery-announcement-binding-required');
+    const observedTarget = await this.adopt(
+      { ...target, item: { ...target.item, repositoryDefaultBranch: '' } },
+      `https://github.com/${target.item.repositoryOwner}/${target.item.repositoryName}/pull/${target.expectedPullRequest.pullRequestNumber}`,
+    );
+    if (observedTarget.pullRequestNodeId !== target.expectedPullRequest.pullRequestNodeId)
+      throw new Error('delivery-announcement-pr-changed');
+    const input: IssueDeliveryInput = {
+      ...target,
+      item: { ...target.item, repositoryDefaultBranch: observedTarget.base },
+      branch: observedTarget.branch,
+      headSha: observedTarget.head,
+      adopted: observedTarget,
+    };
     const pullRequest = await this.#find(input);
     if (!pullRequest) throw new Error('delivery-announcement-pr-missing');
     await this.#verify(input, pullRequest, false);
@@ -379,7 +398,7 @@ export default class IssueDeliveryProvider {
       pullRequestNodeId: pullRequest.itemNodeId,
       pullRequestNumber: pullRequest.number,
       draft: observed.draft,
-      head: input.headSha,
+      head: observedTarget.head,
       title: requiredString(observed.title, 'pull request title', 512),
       body: boundedString(observed.body ?? '', 'pull request body', 65536),
     };

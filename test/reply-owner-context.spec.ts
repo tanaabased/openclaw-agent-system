@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 
-import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
 import type { DeliveryAnnouncementState } from '../agent/delivery-announcement-state.ts';
+import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
+import replyOwnerContext from '../agent/reply-owner-context.ts';
 import replyOwner from '../agent/reply-owner.ts';
 import type { ReplyTarget } from '../agent/reply-target.ts';
-import replyOwnerContext from '../agent/reply-owner-context.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
 describe('agent/reply-owner-context', () => {
@@ -15,7 +15,7 @@ describe('agent/reply-owner-context', () => {
       intakeId: 'admission',
       issueKey: 'issue',
       sourceThreadId: 'intake',
-      phase: 'complete',
+
       createdAt: 1,
       manifestDigest: 'manifest',
       threadId: 'chat',
@@ -64,29 +64,22 @@ describe('agent/reply-owner-context', () => {
       false,
     );
     for (const record of [
-      { ...input.record, retired: { at: 1, by: 'operator' } },
       { ...input.record, reset: { at: 1, by: 'operator' } },
+      { ...input.record, supersededBy: 'successor' },
     ])
       assert.equal(replyOwnerContext({ ...input, record }).inactive, true);
   });
-  it('should exclude saved writeups from fresh replies and progress updates', () => {
+  it('should supply current delivery evidence to replies and progress updates', () => {
     const input = fixture();
     const owner = replyOwnerContext({
       ...input,
       delivery: { pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 } },
     });
-    owner.events = [
-      {
-        id: 'old-event',
-        result: { privateText: 'OLD-FEEDBACK' },
-      },
-    ] as typeof owner.events;
     const target = { owner: 'owner', name: 'repo', number: 3 } as ReplyTarget;
     for (const purpose of [undefined, 'status-update'] as const) {
       const response = replyOwner([owner], 'chat', 'chat', target, purpose);
       assert.ok(response && 'verifiedOutcome' in response);
       assert.deepEqual(response.verifiedOutcome, { delivery: owner.deliveredPullRequest });
-      assert.doesNotMatch(JSON.stringify(response), /OLD-WORK|OLD-PLAN|OLD-FEEDBACK/);
     }
   });
   it('should keep source-bound reply ownership after clearing the current pr association', () => {
@@ -98,8 +91,19 @@ describe('agent/reply-owner-context', () => {
         ...input.record,
         pullRequestLink: null,
         feedback: {
-          events: [],
-          completed: [{ sourceId: 'comment', nodeId: 'old-pr', native: true }],
+          events: [
+            {
+              id: 'c'.repeat(64),
+              sourceId: 'comment',
+              nodeId: 'old-pr',
+              number: 7,
+              itemType: 'pull-request',
+              source: '{}',
+              revision: 'd'.repeat(64),
+              createdAt: 1,
+              phase: 'delivered',
+            },
+          ],
         },
       },
     });
@@ -119,11 +123,10 @@ describe('agent/reply-owner-context', () => {
     const input = fixture();
     const announcement = {
       authorId: input.intake.receiving.nodeId,
-      publicText: 'Both choices implemented. PR ready.',
       receipt: { nodeId: 'C_ready', databaseId: 99 },
     } as DeliveryAnnouncementState;
-    const delivery = { announcement };
-    const owner = replyOwnerContext({ ...input, delivery });
+    input.record.announcement = announcement;
+    const owner = replyOwnerContext(input);
     const destination = 'https://github.com/owner/repo/issues/3';
     const target = { owner: 'owner', name: 'repo', number: 3, destination } as ReplyTarget;
     for (const purpose of [undefined, 'status-update'] as const) {
@@ -132,7 +135,6 @@ describe('agent/reply-owner-context', () => {
       assert.deepEqual(context.verifiedOutcome.announcement, {
         destination,
         url: destination + '#issuecomment-99',
-        publicText: announcement.publicText,
       });
     }
     owner.pullRequestNumber = 7;
@@ -149,12 +151,21 @@ describe('agent/reply-owner-context', () => {
       { ...announcement, authorId: 'another-account' },
     ])
       assert.equal(
-        replyOwnerContext({ ...input, delivery: { announcement: changed } }).announcement,
+        replyOwnerContext({ ...input, record: { ...input.record, announcement: changed } })
+          .announcement,
         undefined,
       );
     assert.equal(
-      replyOwnerContext({ ...input, delivery: { announcement, announcementRecovery: {} } })
-        .announcement,
+      replyOwnerContext({
+        ...input,
+        record: {
+          ...input.record,
+          announcement,
+          announcementRecovery: { status: 'needs-attention' } as NonNullable<
+            typeof input.record.announcementRecovery
+          >,
+        },
+      }).announcement,
       undefined,
     );
   });

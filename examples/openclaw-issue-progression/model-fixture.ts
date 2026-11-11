@@ -227,11 +227,7 @@ function respond(
       if (advanced.nextAction === 'next') continue;
       const stoppedAdvance = terminal(advanced);
       if (stoppedAdvance) return stoppedAdvance;
-      if (
-        ['assessment-required', 'session-created', 'working-turn-completed'].includes(
-          String(advanced.status),
-        )
-      ) {
+      if (['assessment-required', 'session-created'].includes(String(advanced.status))) {
         const assessed = result(stage('assess'));
         if (!assessed) return dispatch(stage('assess'), { action: 'assess', target: next.target });
         advanced = assessed;
@@ -239,12 +235,7 @@ function respond(
       if (advanced.nextAction === 'next') continue;
       const stoppedAssessment = terminal(advanced);
       if (stoppedAssessment) return stoppedAssessment;
-      if (
-        !['assessment-pending', 'assessment-completed', 'working-turn-pending'].includes(
-          String(advanced.status),
-        )
-      )
-        return;
+      if (!['assessment-pending', 'assessment-completed'].includes(String(advanced.status))) return;
     }
     return;
   }
@@ -331,7 +322,7 @@ function respond(
             'Committed the requested cleanup note change through managed Git in the verified issue worktree.',
         },
       });
-    if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
+    if (saved.status !== 'native' || typeof saved.presentation !== 'string') return;
     return { content: saved.presentation };
   }
   const id =
@@ -360,7 +351,7 @@ function respond(
     result,
     dispatch,
     call,
-    Boolean(openClawAIMockToolResultText(messages, prefix + 'summary-skill')),
+    Boolean(openClawAIMockToolResultText(messages, prefix + 'plan-reply-skill')),
   );
 }
 
@@ -414,7 +405,7 @@ export function createProgressionScenario(
         id: prefix + `routing-source-${index}`,
         name: 'agent_system_github',
       })),
-      { id: prefix + 'summary-skill', name: 'read' },
+      { id: prefix + 'plan-reply-skill', name: 'read' },
       { id: prefix + 'scan', name: 'agent_system_intake' },
       ...dispatchStages.flatMap((stage) =>
         [0, 1, 2, 3].map((attempt) => ({

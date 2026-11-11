@@ -16,9 +16,8 @@ export default async function reconcileIntakeDenial(
     record.project &&
     record.context &&
     !record.preparationObservation &&
-    !record.recoveredDenials?.length &&
-    !record.deniedCreations?.length &&
-    !record.unsubmittedCreations?.length
+    !record.creationRecovery?.attempts &&
+    !record.creationRecovery?.denialRecovered
   )
     throw new Error('dispatch-denial-history-unavailable');
   const anchored = Boolean(record.preparationObservation || record.creationAfterItemId);
@@ -33,7 +32,12 @@ export default async function reconcileIntakeDenial(
     return false;
   const evidence = anchored
     ? await withNative(tx.current, tx.deps, async (native) => {
-        const denial = await native.intakeDenial(record, observingPreparation);
+        const denial = await native.intakeDenial(
+          record,
+          observingPreparation,
+          undefined,
+          tx.state.records,
+        );
         if (denial && record.request) {
           const found = await native.find({
             sourceThreadId: record.sourceThreadId,
@@ -47,39 +51,19 @@ export default async function reconcileIntakeDenial(
       })
     : undefined;
   if (!evidence) {
-    if (
-      record.result?.outcome === 'operator-setup-blocker' &&
-      record.result.code === 'dispatch-denial-history-unavailable'
-    ) {
-      delete record.result;
+    if (record.blocker === 'dispatch-denial-history-unavailable') {
+      delete record.blocker;
       delete record.retryAfter;
-      record.phase = record.request ? 'creating' : 'routing';
+
       await tx.save();
     }
     return false;
   }
   record.denial = { ...evidence, observedAt: tx.now };
-  record.phase = 'blocked';
+
   delete record.retry;
   delete record.retryAfter;
-  record.result = {
-    version: 1,
-    outcome: 'operator-setup-blocker',
-    code: 'native-approval-denied',
-    summary: 'This issue has a retained native approval denial.',
-    remediation: denialRecovery,
-    evidence: [
-      {
-        source: 'Native approval',
-        status: 'observed',
-        detail: 'Verified non-execution of ' + evidence.operation + '.',
-      },
-    ],
-    progress: {
-      completed: [],
-      remaining: ['Recover the exact denied action before retrying this issue.'],
-    },
-  };
+  record.blocker = 'native-approval-denied';
   await tx.save();
   return true;
 }

@@ -1,24 +1,16 @@
-import { selectCodexTaskOwner } from './codex-turn-task.ts';
-import { routeMaterialResponse } from './native-material.ts';
-import renderNativeAssessment, { renderBoundAssessment } from './assessment-render.ts';
-import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
-import workflowFailure from './workflow-failure.ts';
-import dispatchInspection, { dispatchInspectionSummary } from './dispatch-inspection.ts';
-import { automationHash } from './automation-hash.ts';
-import codexIssueLaunch from './codex-issue-launch.ts';
-import { managedIssueState, dispatchAdmission } from './managed-issue.ts';
+import { withDispatchTask } from './dispatch-task-scope.ts';
+import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
-import codexImplementationEntry from './codex-implementation-entry.ts';
-import runCodexDelivery from './codex-delivery.ts';
-import runCodexContinuation from './codex-continuation.ts';
-import codexAssessmentEntry from './codex-assessment-entry.ts';
-import cleanupConfiguration from './cleanup-configuration.ts';
+import renderNativeAssessment, { renderBoundAssessment } from './assessment-render.ts';
 import { nativeObject } from './automation-gateway.ts';
+import { automationHash } from './automation-hash.ts';
+import cleanupConfiguration from './cleanup-configuration.ts';
+import codexAssessmentEntry from './codex-assessment-entry.ts';
 import { codexInstanceStore } from './codex-assignment-claims.ts';
 import reconcileCodexLifecycle from './codex-assignment-lifecycle.ts';
-import reconcileCodexRetirementEffects from './codex-retirement-effects.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
-import reconcileCodexCapacity from './codex-capacity-reconcile.ts';
+import runCodexContinuation from './codex-continuation.ts';
+import runCodexDelivery from './codex-delivery.ts';
 import {
   dispatchRoutingRequired,
   nextDispatch,
@@ -26,7 +18,7 @@ import {
   recover,
   unpreparedDispatch,
 } from './codex-dispatch-admission.ts';
-import { assessDispatch, handoffDispatch, presentDispatch } from './codex-dispatch-assessment.ts';
+import { assessDispatch, handoffDispatch } from './codex-dispatch-assessment.ts';
 import {
   issueUrl,
   revalidateDispatchAssignment,
@@ -36,24 +28,47 @@ import {
 } from './codex-dispatch-context.ts';
 import reconcileIntakeDenial from './codex-dispatch-denial.ts';
 import recoverDispatch from './codex-dispatch-recovery.ts';
-import liveWorkflowPolicy from './live-workflow-policy.ts';
 import reportDispatch, { failDispatch, notice } from './codex-dispatch-reporting.ts';
 import validateDispatchRequest from './codex-dispatch-request.ts';
-import retireCodexNative from './codex-native-retirement.ts';
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
 import runCodexFeedback from './codex-feedback.ts';
+import codexImplementationEntry from './codex-implementation-entry.ts';
 import acceptCodexIntakeOccurrence from './codex-intake-occurrence.ts';
 import { codexIntakePolicy } from './codex-intake-policy.ts';
 import { connectCodexGitHub, selectCodexIntake } from './codex-intake.ts';
+import codexIssueLaunch from './codex-issue-launch.ts';
+import retireCodexNative from './codex-native-retirement.ts';
+import reconcileCodexRetirementEffects from './codex-retirement-effects.ts';
+import { selectCodexTaskOwner } from './codex-turn-task.ts';
+import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
+import dispatchInspection, { dispatchInspectionSummary } from './dispatch-inspection.ts';
 import { issueKey } from './dispatch-pending.ts';
+import liveWorkflowPolicy from './live-workflow-policy.ts';
+import { dispatchAdmission, managedIssueState } from './managed-issue.ts';
+import { routeMaterialResponse } from './native-material.ts';
 import retainedIntakePolicy from './retained-intake-policy.ts';
+import workflowFailure from './workflow-failure.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import workflowStatus from './workflow-status.ts';
-
 export { revalidateDispatchAssignment } from './codex-dispatch-context.ts';
 export type { CodexDispatchDependencies } from './codex-dispatch-context.ts';
 /** authorized scheduled dispatch only; host tools execute the one durably prepared native request. */
-export async function runCodexDispatch(
+export function runCodexDispatch(...args: Parameters<typeof runCodexDispatchScoped>) {
+  const input = args[2];
+  if (
+    args[1] === 'assessment' &&
+    input &&
+    typeof input === 'object' &&
+    'operation' in input &&
+    input.operation === 'render'
+  )
+    return runCodexDispatchScoped(...args);
+  const deps = args[3] ?? {};
+  return withDispatchTask('codex', deps.threadId ?? process.env.CODEX_THREAD_ID, () =>
+    runCodexDispatchScoped(...args),
+  );
+}
+async function runCodexDispatchScoped(
   pluginData: string,
   action: string,
   input: unknown,
@@ -128,6 +143,7 @@ export async function runCodexDispatch(
                   action: request.deliveryOperation,
                   title: request.title,
                   body: request.body,
+                  base: request.base,
                 },
               }
             : {}),
@@ -155,12 +171,16 @@ export async function runCodexDispatch(
         current.store.location.root,
         current.store.location.scope,
       );
-      let records = (await journal.read()).records;
+      let records = (
+        await withDispatchTask('codex', deps.threadId ?? process.env.CODEX_THREAD_ID, () =>
+          journal.read(),
+        )
+      ).records;
       const session = deps.threadId ?? process.env.CODEX_THREAD_ID ?? '';
       if (
         session &&
         !records.some((record) => record.threadId === session) &&
-        records.some((record) => !record.threadId && record.phase === 'creating')
+        records.some((record) => !record.threadId && dispatchCreationStatus(record) === 'creating')
       ) {
         const owner = await withNative(current, deps, (native) =>
           selectCodexTaskOwner(records, session, native.find),
@@ -198,8 +218,6 @@ export async function runCodexDispatch(
       deps,
     );
   validateDispatchRequest(action, input);
-  if (action === 'retire' && input.preview !== true)
-    await reconcileCodexRetirementEffects(pluginData, deps, true);
   if (action === 'retire' && typeof input.native === 'string')
     return retireCodexNative(
       pluginData,
@@ -210,6 +228,8 @@ export async function runCodexDispatch(
       },
       deps,
     );
+  if (action === 'retire' && input.preview !== true)
+    await reconcileCodexRetirementEffects(pluginData, deps, true);
   deps = {
     ...deps,
     claimStore: deps.claimStore ?? codexInstanceStore(pluginData),
@@ -226,7 +246,6 @@ export async function runCodexDispatch(
   }
   return executeCodexDispatch(pluginData, action, input, deps);
 }
-
 async function executeCodexDispatch(
   pluginData: string,
   action: string,
@@ -261,7 +280,7 @@ async function executeCodexDispatch(
         : records.map((record) => ({
             id: record.id,
             intakeId: record.intakeId,
-            phase: record.phase,
+            phase: dispatchCreationStatus(record),
             threadId: record.threadId,
             clientThreadId: record.clientThreadId,
             worktree: record.worktree,
@@ -271,7 +290,6 @@ async function executeCodexDispatch(
             branch: record.issueBranch?.name,
             supersededBy: record.supersededBy,
             reset: record.reset,
-            retired: record.retired,
             retirement: record.retirement && {
               reason: record.retirement.reason,
               code: record.retirement.code,
@@ -283,9 +301,7 @@ async function executeCodexDispatch(
               callId: record.denial.callId,
               turnId: record.denial.turnId,
             },
-            code:
-              record.result?.outcome === 'operator-setup-blocker' ? record.result.code : undefined,
-            implementationPreparationError: record.implementationPreparationError,
+            code: record.blocker,
             feedback: record.feedback && {
               events: record.feedback.events.map(({ id, phase, code }) => ({ id, phase, code })),
             },
@@ -298,14 +314,13 @@ async function executeCodexDispatch(
   }
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
   if (!caller) throw new Error('dispatch-native-caller-required');
-  if (action === 'present') return presentDispatch(input, current, store, caller, deps);
   if (action === 'handoff') return handoffDispatch(input, current, store, caller, deps);
   const operatorRecovery = action === 'retry-denied';
   const operatorReset = action === 'reset';
   const operatorRetire = action === 'retire';
   const operatorAction =
     operatorRecovery || operatorReset || operatorRetire || action === 'recover';
-  const childAction = action === 'context' || action === 'result' || action === 'summary';
+  const childAction = action === 'context';
   const retainedWork = childAction || action === 'reconcile' || action === 'report';
   const manualOwner =
     (childAction || operatorAction) && 'id' in input
@@ -400,7 +415,7 @@ async function executeCodexDispatch(
       if (action === 'observe-denials') {
         // reconcile anchored refusals before selecting or reclassifying any pending operation.
         for (const record of state.records.filter(
-          (entry) => !entry.supersededBy && !entry.retired && !entry.reset && !entry.retirement,
+          (entry) => !entry.supersededBy && !entry.reset && !entry.retirement,
         )) {
           try {
             await reconcileIntakeDenial(record, tx);
@@ -433,37 +448,8 @@ async function executeCodexDispatch(
       if (!record || !intake) throw new Error('dispatch-receipt-missing');
       if (record.supersededBy && action !== 'recover') throw new Error('dispatch-task-superseded');
       if (record.reset) throw new Error('dispatch-assessment-reset');
-      if (record.retired && action === 'reconcile') {
-        const observation = await withNative(current, deps, (native) =>
-          reconcileCodexCapacity(record, native, state.run!.id, now, true),
-        );
-        await save();
-        return {
-          id: record.id,
-          status: record.nativeInactive ? 'inactive' : 'waiting',
-          capacityObservation: observation,
-          nextAction: 'next',
-        };
-      }
-      if (record.retired && operatorRetire && record.sourceThreadId === activation.sourceThreadId)
-        return record.retirement?.worktreeRemovedAt === undefined ||
-          (record.retirement.archivedAt === undefined &&
-            !record.retirement.sessionUnavailableObserved)
-          ? {
-              status: 'retirement-unverified',
-              id: record.id,
-              code: 'retirement-legacy-outcome-unverified',
-              instruction:
-                'Recover native session and checkout outcomes through the owning lifecycle; the historical retired marker alone is not completion evidence.',
-            }
-          : { status: 'retired', id: record.id, retirement: record.retirement };
-      if (record.retired || (record.retirement && !operatorRetire))
-        throw new Error('dispatch-assessment-retired');
-      if (
-        record.handoff &&
-        !operatorRetire &&
-        !['context', 'result', 'summary', 'recover'].includes(action)
-      )
+      if (record.retirement && !operatorRetire) throw new Error('dispatch-assessment-retired');
+      if (record.handoff && !operatorRetire && !['context', 'recover'].includes(action))
         throw new Error('dispatch-assessment-handed-off');
       if (
         action === 'recover' ||
@@ -552,7 +538,7 @@ async function executeCodexDispatch(
           if (
             action === 'reconcile' &&
             input.receipt === undefined &&
-            record.phase === 'routing' &&
+            dispatchCreationStatus(record) === 'routing' &&
             record.context &&
             record.project &&
             record.routingInstructions &&
@@ -608,7 +594,7 @@ async function executeCodexDispatch(
             deps,
             save,
             childAction ? caller : (record.threadId ?? record.receiptThreadId),
-            action === 'summary' || record.handoff ? 'handoff' : 'assessment',
+            record.handoff ? 'handoff' : 'assessment',
             true,
             state.records,
           );

@@ -1,6 +1,6 @@
 import type { AssessmentConfiguration } from '../manifest/assessment-schema.ts';
 import type { AssessmentEntryDependencies } from './assessment-entry.ts';
-import type { nativeIssueContext } from './implementation-delivery.ts';
+import type { nativeIssueContext } from './native-issue-context.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
 import assessmentMaterial from './assessment-material.ts';
 import implementationMaterial, {

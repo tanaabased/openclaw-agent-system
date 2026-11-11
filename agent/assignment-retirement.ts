@@ -1,8 +1,6 @@
 import { Type, type Static } from 'typebox';
-
 const time = Type.Integer({ minimum: 0 });
 const text = Type.String({ minLength: 1, maxLength: 4096 });
-
 export const assignmentObservationSchema = Type.Object(
   {
     missing: Type.Literal(true),
@@ -28,7 +26,6 @@ export const assignmentObservationSchema = Type.Object(
   { additionalProperties: false },
 );
 export type AssignmentObservation = Static<typeof assignmentObservationSchema>;
-
 export const retirementSchema = Type.Object(
   {
     reason: Type.Union([
@@ -114,21 +111,20 @@ export const retirementSchema = Type.Object(
   { additionalProperties: false },
 );
 export type Retirement = Static<typeof retirementSchema>;
-
 /** retain removal receipts as scheduling and replay fences, not automatic cleanup intent. */
 export function awaitingReassignment(record: {
-  retirement?: { reason?: string; operatorRequest?: unknown };
-  retired?: unknown;
+  retirement?: {
+    reason?: string;
+    operatorRequest?: unknown;
+  };
   reset?: unknown;
 }) {
   return Boolean(
-    !record.retired &&
     !record.reset &&
     record.retirement?.reason === 'assignment-removed' &&
     !record.retirement.operatorRequest,
   );
 }
-
 /** retirement removes scheduling eligibility immediately; the deadline only delays cleanup. */
 export default function assignmentRetirement(input: {
   previous?: Retirement;
@@ -164,7 +160,7 @@ export default function assignmentRetirement(input: {
       : !previous || closureAfterRemoval || activity || previous.deadlinePending
         ? input.graceMinutes === undefined
           ? (previous?.eligibleAt ?? input.now)
-          : input.now + input.graceMinutes * 60_000
+          : input.now + input.graceMinutes * 60000
         : previous.eligibleAt,
     deadlinePending:
       !operatorRequest &&

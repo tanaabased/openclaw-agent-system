@@ -9,12 +9,11 @@ type Link = { pullRequestNodeId: string; pullRequestNumber: number };
 export default function taskPullRequest(
   record: Pick<SharedDispatchRecord, 'pullRequestLink'> & {
     delivery?: { pullRequest?: Link };
-    work?: { delivery?: { pullRequest?: Link } };
   },
 ) {
   return record.pullRequestLink !== undefined
     ? (record.pullRequestLink ?? undefined)
-    : (record.delivery?.pullRequest ?? record.work?.delivery?.pullRequest);
+    : record.delivery?.pullRequest;
 }
 
 export function isCurrentTaskPullRequest(

@@ -1,33 +1,41 @@
-import notificationResetPickup from './notification-reset-pickup.ts';
-import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
-import { managedIssueState, dispatchAdmission } from './managed-issue.ts';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
+import { defaultManagedGroup } from '../utils/managed-group-name.ts';
 import { nativeObject } from './automation-gateway.ts';
-import {
-  agentCommandAuthorityEnvironmentName,
-  agentCommandCapabilityEnvironmentName,
-} from './command-authority.ts';
 import { automationHash } from './automation-hash.ts';
-import { selectCodexIntake, type CodexIntakeDependencies } from './codex-intake.ts';
+import { readCodexAutomations, type SavedAutomation } from './codex-automation-state.ts';
 import {
   codexNotificationResetAutomation,
   codexNotificationResetPickupAutomation,
   replaceCodexNotificationCoordinator,
 } from './codex-automations.ts';
-import { readCodexAutomations, type SavedAutomation } from './codex-automation-state.ts';
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
+import {
+  connectCodexGitHub,
+  selectCodexIntake,
+  type CodexIntakeDependencies,
+} from './codex-intake.ts';
+import notificationResetBaseline from './notification-reset-baseline.ts';
 import observeResetThread from './codex-reset-observation.ts';
-import codexResetRemoved from './codex-reset-removed.ts';
-import CodexSidebarJournal, { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
-import { defaultManagedGroup } from '../utils/managed-group-name.ts';
-import { connectCodexThreads, codexThreadAdapter } from './codex-thread-client.ts';
 import codexRetirementNative from './codex-retirement-native.ts';
+import CodexSidebarJournal, { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
+import {
+  codexThreadAdapter,
+  CodexThreadRpcError,
+  connectCodexThreads,
+} from './codex-thread-client.ts';
 import waitForCodexWorktreeRemoval from './codex-worktree-removal.ts';
+import {
+  agentCommandAuthorityEnvironmentName,
+  agentCommandCapabilityEnvironmentName,
+} from './command-authority.ts';
+import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
+import { dispatchAdmission, managedIssueState } from './managed-issue.ts';
+import { notificationResetResources, type ResetInventory } from './notification-reset-inventory.ts';
+import notificationResetPickup from './notification-reset-pickup.ts';
 import NotificationResetStore, {
   type NotificationResetRecord,
 } from './notification-reset-state.ts';
-import { notificationResetResources, type ResetInventory } from './notification-reset-inventory.ts';
 import resetNotifications, {
   previewNotificationReset,
   type NotificationResetAdapter,
@@ -107,8 +115,25 @@ export default async function runCodexNotificationReset(
       const sources = new Set(parse(record).records.map(({ sourceThreadId }) => sourceThreadId));
       if ('targetThreadId' in saved.definition) sources.add(saved.definition.targetThreadId);
       for (const threadId of sources) {
-        if (!(await codexThreadAdapter(request, current.workspace).lookup(threadId))) continue;
-        const { thread } = await request('thread/read', { threadId, includeTurns: false });
+        // only the coordinator belongs to the bound workspace; manual launch origins may differ.
+        if (
+          'targetThreadId' in saved.definition &&
+          threadId === saved.definition.targetThreadId &&
+          !(await codexThreadAdapter(request, current.workspace).lookup(threadId))
+        )
+          continue;
+        let thread: unknown;
+        try {
+          ({ thread } = await request('thread/read', { threadId, includeTurns: false }));
+        } catch (error) {
+          if (
+            error instanceof CodexThreadRpcError &&
+            error.code === -32600 &&
+            error.message === `no rollout found for thread id ${threadId}`
+          )
+            continue;
+          throw error;
+        }
         if (!nativeObject(thread) || thread.id !== threadId || !nativeObject(thread.status))
           throw new Error('notification-reset-coordinator-observation-unavailable');
         if (!['idle', 'notLoaded'].includes(String(thread.status.type))) return false;
@@ -132,14 +157,7 @@ export default async function runCodexNotificationReset(
           return false;
       }
       for (const entry of parse(record).records) {
-        let thread;
-        try {
-          thread = await observeResetThread(request, entry);
-        } catch (error) {
-          if (await codexResetRemoved(request, entry, error)) continue;
-          throw error;
-        }
-        if (!thread && (await codexResetRemoved(request, entry))) continue;
+        const thread = await observeResetThread(request, entry);
         if (!entry.threadId && !entry.worktree && !entry.receiptThreadId && !thread) continue;
         if (!entry.threadId || !entry.worktree)
           throw new Error('notification-reset-native-creation-unresolved');
@@ -189,8 +207,21 @@ export default async function runCodexNotificationReset(
     fence: (run) => current.store.exclusive(() => journal.exclusive(() => run(), true)),
     snapshot: async () => {
       const records = (await journal.read()).records;
-      const state = managedIssueState(await current.store.read(), records);
-      if (!state) throw new Error('notification-reset-intake-missing');
+      const state =
+        managedIssueState(await current.store.read(), records) ??
+        (await notificationResetBaseline({
+          scope: current.store.location.scope,
+          workspace: current.workspace,
+          agentId: current.agentId,
+          policy: current.policy,
+          identity: async () =>
+            (
+              await (deps.connect ?? connectCodexGitHub)(
+                current.workspace,
+                AbortSignal.timeout(30_000),
+              )
+            ).identity,
+        }));
       if (state.agentId !== current.agentId || state.workspaceDir !== current.workspace)
         throw new Error('notification-reset-scope-changed');
       const contents = { intake: state, records };
@@ -234,7 +265,7 @@ export default async function runCodexNotificationReset(
       await journal.reset(record.id);
     },
     baseline: async (record) => {
-      await current.store.reset(record.baselineAt!);
+      await current.store.reset(record.baselineAt!, parse(record).intake);
     },
     coordinator: async (record) => {
       const before = JSON.parse(record.automation) as SavedAutomation;
@@ -337,14 +368,7 @@ export default async function runCodexNotificationReset(
         };
       }
       return withNative(async ({ request }) => {
-        let thread;
-        try {
-          thread = await observeResetThread(request, entry);
-        } catch (error) {
-          if (await codexResetRemoved(request, entry, error)) return { status: 'done' };
-          throw error;
-        }
-        if (!thread && (await codexResetRemoved(request, entry))) return { status: 'done' };
+        const thread = await observeResetThread(request, entry);
         if (!thread) throw new Error('notification-reset-native-identity-changed');
         if (thread.archived) return { status: 'done' };
         if (!(await observe(record)))

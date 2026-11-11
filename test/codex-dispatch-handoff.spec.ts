@@ -16,7 +16,12 @@ const request = {
   target: { type: 'project', projectId: 'project', environment: { type: 'worktree' } },
 };
 const target = 'https://github.com/owner/repo/issues/42';
-const prepared = { status: 'prepared', id: 'receipt', request };
+const prepared = {
+  status: 'prepared',
+  id: 'receipt',
+  request,
+  nativeHandoff: codexNativeHandoff('create_thread', request),
+};
 const routing = { status: 'routing-required', id: 'record-id', digest: 'different-digest' };
 const success = (value: unknown) => ({ exit_code: 0, output: JSON.stringify(value) });
 const access = { exit_code: 1, output: '{"code":"codex-host-access-required"}' };
@@ -28,7 +33,6 @@ function fixture(results: (Record<string, unknown> | Error)[], failCreation = fa
   const polls: Record<string, unknown>[] = [];
   const creations: unknown[] = [];
   const output: unknown[] = [];
-  const retained = new Map<string, unknown>();
   const context = {
     runtimeRoute: 'dispatch',
     runtimeInput: {} as Record<string, unknown>,
@@ -61,8 +65,6 @@ function fixture(results: (Record<string, unknown> | Error)[], failCreation = fa
         return {};
       },
     },
-    store: (key: string, value: unknown) => retained.set(key, value),
-    load: (key: string) => retained.get(key),
     text: (value: unknown) => output.push(value),
     setTimeout: (callback: () => void) => callback(),
   };
@@ -71,12 +73,14 @@ function fixture(results: (Record<string, unknown> | Error)[], failCreation = fa
     context.runtimeInput = input;
     return runInNewContext('(async () => {' + codexDispatchHandoff(runtime) + '})()', context);
   };
-  const send = (route: 'dispatch' | 'continuation' | 'retirement' | 'feedback' = 'dispatch') =>
-    runInNewContext(
-      '(async () => {' + codexNativeHandoff(runtime.pluginData, route) + '})()',
-      context,
-    );
-  return { execute, send, commands, polls, creations, output };
+  const send = (handoff = prepared.nativeHandoff) =>
+    runInNewContext('(async () => {' + handoff + '})()', {
+      tools: context.tools,
+      text: context.text,
+    });
+  const feedback = (request: { threadId: string; prompt: string }) =>
+    send(codexNativeHandoff('send_message_to_thread', request));
+  return { execute, send, feedback, commands, polls, creations, output };
 }
 
 describe('agent/codex-dispatch-handoff', () => {
@@ -119,8 +123,12 @@ describe('agent/codex-dispatch-handoff', () => {
     assert.equal(denied.creations.length, 0);
   });
 
-  it('should send complete issue and pr feedback once and reconcile its retained source', async () => {
-    for (const item of ['issues', 'pull']) {
+  it('should send exact issue, pr and inline feedback without a preceding store write', async () => {
+    for (const item of [
+      'issues/42#issuecomment-1',
+      'pull/42#issuecomment-1',
+      'pull/42#discussion_r1',
+    ]) {
       for (const fail of [false, true]) {
         const feedback = {
           status: 'feedback-prepared',
@@ -129,28 +137,59 @@ describe('agent/codex-dispatch-handoff', () => {
           request: {
             threadId: 'existing-issue-chat',
             prompt:
-              `> @pirog plan only; do not push.\n[Comment ↗](https://github.com/org/repo/${item}/42#issuecomment-1)` +
-              '\n\nCall feedback context with the retained eventId. Receipt: exact-source',
+              `> @pirog plan only; do not push.\n[Comment ↗](https://github.com/org/repo/${item})` +
+              '\n> `quoted` "text" $literal \n> line two',
           },
         };
-        const test = fixture([success(feedback), success({ status: 'delivered' })], fail);
-        await test.execute();
-        if (fail) await assert.rejects(test.send('feedback'), /native rejection/);
-        else await test.send('feedback');
+        const test = fixture([success({ status: 'delivered' })], fail);
+        if (fail) await assert.rejects(test.feedback(feedback.request), /native rejection/);
+        else await test.feedback(feedback.request);
         assert.deepEqual(JSON.parse(JSON.stringify(test.creations)), [feedback.request]);
-        await assert.rejects(test.send('feedback'), /feedback-prepared-request-unavailable/);
         await test.execute(
-          { action: 'reconcile', source: `https://github.com/org/repo/${item}/42#issuecomment-1` },
+          { action: 'reconcile', source: `https://github.com/org/repo/${item}` },
           'feedback',
         );
         const input = JSON.parse(String(test.commands.at(-1)!.cmd).split('\n')[1]!);
         assert.deepEqual(input, {
           action: 'reconcile',
-          source: `https://github.com/org/repo/${item}/42#issuecomment-1`,
+          source: `https://github.com/org/repo/${item}`,
         });
-        assert.equal(test.commands.length, 2);
+        assert.equal(test.commands.length, 1);
       }
     }
+  });
+
+  it('should preserve separate assignment and comment requests across interleaved preparation', async () => {
+    const assignment = codexNativeHandoff('create_thread', request);
+    const first = { threadId: 'first-owner', prompt: 'first source\n`quoted` $literal' };
+    const second = { threadId: 'second-owner', prompt: 'second source' };
+    const handoffs = [first, second].map((input) =>
+      codexNativeHandoff('send_message_to_thread', input),
+    );
+    const test = fixture([]);
+    await test.send(handoffs[1]!);
+    await test.send(assignment);
+    await test.send(handoffs[0]!);
+    assert.deepEqual(JSON.parse(JSON.stringify(test.creations)), [second, request, first]);
+    assert.equal(test.commands.length, 0);
+  });
+
+  it('should expose a returned native refusal without retrying or substituting another transport', async () => {
+    const refusal = { isError: true, content: [{ type: 'text', text: 'native approval denied' }] };
+    const output: unknown[] = [];
+    let calls = 0;
+    await runInNewContext('(async () => {' + prepared.nativeHandoff + '})()', {
+      text: (value: unknown) => output.push(value),
+      tools: {
+        mcp__codex_app__create_thread: async (input: unknown) => {
+          calls++;
+          assert.deepEqual(JSON.parse(JSON.stringify(input)), request);
+          return refusal;
+        },
+      },
+    });
+    assert.equal(calls, 1);
+    assert.deepEqual(output, [refusal]);
   });
 
   it('should explain missing node in supported host shell diagnostics without retrying', async () => {
@@ -198,10 +237,9 @@ describe('agent/codex-dispatch-handoff', () => {
     assert.equal(test.creations.length, 0);
     await test.send();
     assert.deepEqual(JSON.parse(JSON.stringify(test.creations)), [request]);
-    await assert.rejects(test.send(), /prepared-request-unavailable/);
   });
 
-  it('should archive the exact prepared thread once and require fresh evidence after failure', async () => {
+  it('should archive the exact prepared thread without retrying a failed native call', async () => {
     const archive = {
       status: 'retirement-prepared',
       id: 'retirement',
@@ -214,11 +252,13 @@ describe('agent/codex-dispatch-handoff', () => {
     for (const fail of [false, true]) {
       const test = fixture([success(archive)], fail);
       await test.execute();
-      await assert.rejects(test.send(), /dispatch-prepared-request-unavailable/);
-      if (fail) await assert.rejects(test.send('retirement'), /native rejection/);
-      else await test.send('retirement');
+      if (fail)
+        await assert.rejects(
+          test.send(codexNativeHandoff('set_thread_archived', archive.request)),
+          /native rejection/,
+        );
+      else await test.send(codexNativeHandoff('set_thread_archived', archive.request));
       assert.deepEqual(JSON.parse(JSON.stringify(test.creations)), [archive.request]);
-      await assert.rejects(test.send('retirement'), /retirement-prepared-request-unavailable/);
       assert.equal(test.commands.length, 1);
     }
   });
@@ -280,7 +320,7 @@ describe('agent/codex-dispatch-handoff', () => {
       { session_id: 42, output: json.slice(40, 80) },
       { exit_code: 0, output: json.slice(80) },
     ]);
-    await test.execute({ action: 'next' }, 'continuation');
+    await test.execute({ action: 'prepare', target, title: 'poem', assessment: {} });
     assert.deepEqual(
       test.polls.map((poll) => poll.session_id),
       [42, 42],
@@ -289,11 +329,12 @@ describe('agent/codex-dispatch-handoff', () => {
     assert.match(String(test.commands[0]!.cmd), /'\/plugin'\\''s runtime\.js'/u);
     assert.equal(test.creations.length, 0);
     assert.equal(test.output.length, 1);
-    await test.send('continuation');
+    assert.deepEqual(JSON.parse((test.output[0] as { output: string }).output), prepared);
+    await test.send();
     assert.deepEqual(JSON.parse(JSON.stringify(test.creations)), [request]);
   });
 
-  it('should clear old handoffs on failures and stop immediately on native rejection', async () => {
+  it('should expose runtime failures and stop immediately on native rejection', async () => {
     for (const result of [
       { exit_code: 1, output: 'native approval denied' },
       { exit_code: 0, output: 'truncated json' },
@@ -303,7 +344,6 @@ describe('agent/codex-dispatch-handoff', () => {
       const test = fixture([success(prepared), result]);
       await test.execute();
       await assert.rejects(test.execute());
-      await assert.rejects(test.send(), /prepared-request-unavailable/);
       assert.equal(test.commands.length, 2);
       assert.equal(test.creations.length, 0);
     }
@@ -323,7 +363,6 @@ describe('agent/codex-dispatch-handoff', () => {
       test.execute({ action: 'prepare', title: 'poem', assessment: {} }),
       /native rejection/,
     );
-    await assert.rejects(test.send(), /prepared-request-unavailable/);
     await test.execute({ action: 'reconcile', target });
     const input = JSON.parse(String(test.commands.at(-1)!.cmd).split('\n')[1]!);
     assert.deepEqual(input, { action: 'reconcile', target });
@@ -331,7 +370,7 @@ describe('agent/codex-dispatch-handoff', () => {
     assert.equal(test.creations.length, 0);
   });
 
-  it('should reconcile a refused creation without resending its consumed handoff', async () => {
+  it('should reconcile a refused creation without sending again', async () => {
     const test = fixture(
       [success(prepared), success({ status: 'blocked', nextAction: 'next' })],
       true,
@@ -341,27 +380,27 @@ describe('agent/codex-dispatch-handoff', () => {
     await test.execute({ action: 'reconcile', target });
     const input = JSON.parse(String(test.commands.at(-1)!.cmd).split('\n')[1]!);
     assert.deepEqual(input, { action: 'reconcile', target });
-    await assert.rejects(test.send(), /prepared-request-unavailable/);
     assert.equal(test.creations.length, 1);
   });
 
-  it('should bound busy and access retries without retaining a sendable request', async () => {
+  it('should bound busy and access retries without executing a native effect', async () => {
     for (const results of [[busy, lockBusy, busy, lockBusy], [access]]) {
       const test = fixture(results.slice());
       if (results[0] === access) await assert.rejects(test.execute(), /preparation-failed/);
       else await test.execute();
       assert.equal(test.commands.length, results.length);
-      await assert.rejects(test.send(), /prepared-request-unavailable/);
     }
   });
 
-  it('should never send twice after uncertain creation or continuation', async () => {
-    for (const route of ['dispatch', 'continuation'] as const) {
-      const test = fixture([success(prepared)], true);
-      await test.execute({ action: 'next' }, route);
-      await assert.rejects(test.send(route), /native rejection/);
-      await assert.rejects(test.send(route), /prepared-request-unavailable/);
-      assert.equal(test.creations.length, 1);
+  it('should invoke each native operation once and propagate an uncertain result without retrying', async () => {
+    for (const [tool, input] of [
+      ['create_thread', request],
+      ['send_message_to_thread', { threadId: 'child', prompt: request.prompt }],
+    ] as const) {
+      const test = fixture([], true);
+      await assert.rejects(test.send(codexNativeHandoff(tool, input)), /native rejection/);
+      assert.deepEqual(JSON.parse(JSON.stringify(test.creations)), [input]);
+      assert.equal(test.commands.length, 0);
     }
   });
 

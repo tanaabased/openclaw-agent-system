@@ -1,53 +1,19 @@
 import assert from 'node:assert/strict';
 import reconcile from '../agent/codex-capacity-reconcile.ts';
-import codexCapacity, { codexUnresolvedRetirement } from '../agent/codex-capacity.ts';
-import pending, { issueKey } from '../agent/dispatch-pending.ts';
+import codexCapacity from '../agent/codex-capacity.ts';
 import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
-import type { IntakeState, IntakeRecord } from '../channels/github/intake/record-store.ts';
 
 function record(): DispatchRecord {
   return {
-    phase: 'blocked',
     request: { prompt: 'request' },
     sourceThreadId: 'intake',
     createdAt: 1,
-    retired: { at: 2, by: 'operator' },
-  } as DispatchRecord;
+  } as unknown as DispatchRecord;
 }
 describe('agent/codex-capacity-reconcile', () => {
-  it('should preserve unresolved retirement custody without claiming inactivity or allowing duplicates', () => {
-    const owner = record();
-    const item = {
-      id: 'new',
-      scope: 'scope',
-      receiving: { nodeId: 'user' },
-      repository: { nodeId: 'repo' },
-      issue: { nodeId: 'issue' },
-      assignment: { createdAt: new Date(3).toISOString() },
-    } as IntakeRecord;
-    owner.issueKey = issueKey(item);
-    const state = { records: [owner] };
-    assert.equal(codexCapacity([owner], 3).occupied, 1);
-    assert.equal(owner.nativeInactive, undefined);
-    assert.deepEqual(
-      pending(state, { records: [item] } as IntakeState, codexUnresolvedRetirement),
-      [],
-    );
-    owner.capacityObservation = { at: 10, code: 'dispatch-capacity-native-active' };
-    assert.equal(codexCapacity([owner], 3).occupied, 1);
-    owner.nativeInactive = true;
-    assert.equal(
-      pending(state, { records: [item] } as IntakeState, codexUnresolvedRetirement).length,
-      1,
-    );
-    delete owner.nativeInactive;
-    owner.reservationVersion = 1;
-    assert.equal(codexCapacity([owner], 3).occupied, 1);
-  });
   it('should release a known ended native turn despite missing workspace files', async () => {
     const owner = {
       ...record(),
-      reservationVersion: 1 as const,
       threadId: 'child',
       worktree: '/removed',
     };
@@ -80,7 +46,6 @@ describe('agent/codex-capacity-reconcile', () => {
     ]) {
       const owner = {
         ...record(),
-        reservationVersion: 1 as const,
         threadId: 'child',
         nativeInactive: true,
       };
@@ -99,22 +64,22 @@ describe('agent/codex-capacity-reconcile', () => {
       assert.equal(codexCapacity([owner], 3).occupied, 1);
       assert.ok(owner.capacityObservation?.code);
     }
-    const owner = { ...record(), reservationVersion: 1 as const, threadId: 'child' };
+    const owner = { ...record(), threadId: 'child' };
     await reconcile(
       owner,
       {
         find: async () => {
-          throw new Error('dispatch-native-history-incomplete');
+          throw new Error('dispatch-native-history-changed');
         },
         unsubmittedCreation: async () => undefined,
       },
       'current',
       20,
     );
-    assert.equal(owner.capacityObservation?.code, 'dispatch-native-history-incomplete');
+    assert.equal(owner.capacityObservation?.code, 'dispatch-native-history-changed');
     assert.equal(codexCapacity([owner], 3).occupied, 1);
   });
-  it('should reconcile retired unknown creation only from complete non-submission evidence', async () => {
+  it('should reconcile unknown creation only from complete non-submission evidence', async () => {
     const owner = record();
     const native = {
       find: async () => {
@@ -130,7 +95,6 @@ describe('agent/codex-capacity-reconcile', () => {
     assert.equal(owner.nativeInactive, true);
     assert.equal(owner.capacityObservation?.code, 'dispatch-capacity-never-submitted');
     assert.ok(owner.request);
-    assert.ok(owner.retired);
   });
   it('should retain a discovered active reservation through restart and unreadable history', async () => {
     let owner = record();
@@ -159,7 +123,7 @@ describe('agent/codex-capacity-reconcile', () => {
       {
         find: async (input) => {
           assert.equal(input.threadId, 'discovered');
-          throw new Error('dispatch-native-history-incomplete');
+          throw new Error('dispatch-native-history-changed');
         },
         unsubmittedCreation: async () => {
           assert.fail();
@@ -172,14 +136,11 @@ describe('agent/codex-capacity-reconcile', () => {
     assert.equal(codexCapacity([owner], 3).occupied, 1);
     assert.equal(owner.nativeInactive, undefined);
   });
-  it('should release cancelled continuation capacity only after native terminal proof', async () => {
+  it('should release native chat capacity only after native terminal proof', async () => {
     const owner = {
       ...record(),
-      retired: undefined,
-      phase: 'complete' as const,
       threadId: 'child',
-      continuation: { phase: 'cancelled', attempt: {} },
-    } as DispatchRecord;
+    } as unknown as DispatchRecord;
     assert.equal(codexCapacity([owner], 3).occupied, 1);
     await reconcile(
       owner,
@@ -197,6 +158,5 @@ describe('agent/codex-capacity-reconcile', () => {
       30,
     );
     assert.equal(codexCapacity([owner], 3).occupied, 0);
-    assert.ok(owner.continuation?.attempt);
   });
 });

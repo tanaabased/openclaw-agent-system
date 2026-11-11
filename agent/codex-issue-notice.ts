@@ -31,6 +31,14 @@ const events: Record<Exclude<IssueNoticeEvent, 'failure'>, NoticeCopy> = {
 };
 
 function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
+  if (code === 'feedback-send-unresolved')
+    return {
+      severity: 'warning',
+      title: 'Comment delivery is unresolved',
+      summary:
+        'The comment is retained, but native evidence has not confirmed delivery or that no send was attempted.',
+      next: 'Reconcile the original native send. A later assignment scan can recover it only after verifying that no send occurred; do not send a duplicate manually.',
+    };
   if (code === 'assessment-render-request-invalid')
     return {
       severity: 'error',
@@ -39,7 +47,7 @@ function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
         'The assessment presentation request is invalid. This attempt produced no assessment card.',
       next: 'Use the complete returned presentationRequest with result matching resultSchema, then retry rendering in the existing chat. Preserve the assessment and current task permission.',
     };
-  if (code === 'reply-request-invalid' || code === 'reply-draft-unavailable')
+  if (code === 'reply-request-invalid')
     return {
       severity: 'error',
       title: 'The reply request could not be completed',
@@ -210,7 +218,7 @@ function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
       summary: 'This run has not verified whether more assigned work needs attention.',
       next: 'Complete the current scan and dispatch checks before reporting no updates. Keep existing chats and saved work; do not reset assignments.',
     };
-  if (code === 'dispatch-native-history-incomplete' || code === 'dispatch-native-history-changed')
+  if (code === 'dispatch-native-history-changed')
     return {
       severity: 'warning',
       title: 'Codex could not verify the chat history',
@@ -225,14 +233,6 @@ function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
       summary:
         'The filesystem denied access to private plugin state outside this chat’s writable sandbox. The tracking lock prevents concurrent updates; this is not a password failure.',
       next: 'Retry this exact runtime command once through native host approval, retaining its JSON input and fixed plugin-data path. If approval is denied, stop and report the reason. If host access still fails, inspect directory ownership and host restrictions. Do not delete the lock, change permissions, reset the issue, or create a replacement chat.',
-    };
-
-  if (code === 'dispatch-assignment-authority-revoked')
-    return {
-      severity: 'warning',
-      title: 'This assignment needs a check',
-      summary: 'The issue no longer meets the requirements for automatic assessment.',
-      next: 'Check whether the issue is still open, assigned to this agent, and authorized by the configured assigner. Keep any existing work.',
     };
 
   if (code === 'private-state-snapshot-conflict')
@@ -255,13 +255,6 @@ function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
       summary:
         'The saved record, account, repository, or chat did not match the expected identity.',
       next: 'Inspect the diagnostic and verify the account and retained work before retrying. Preserve the existing records and checkout.',
-    };
-  if (code === 'intake-permission-required')
-    return {
-      severity: 'warning',
-      title: 'Permission is needed',
-      summary: 'The requested operation needs native approval before it can continue.',
-      next: 'Review the exact operation in the native approval prompt. Approval does not by itself prove the operation succeeded.',
     };
   if (
     /provider-unavailable|github-(transient|rate|secondary|server|transport|unknown)|search-incomplete|history-incomplete/u.test(

@@ -1,21 +1,21 @@
 import assert from 'node:assert/strict';
-import prepareDispatchReport from '../agent/codex-dispatch-report.ts';
-import openclawIntakeReport from '../agent/openclaw-intake-report.ts';
 import { spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import prepareDispatchReport from '../agent/codex-dispatch-report.ts';
 import CodexDispatchStore, {
   type DispatchRecord,
   type DispatchState,
 } from '../agent/codex-dispatch-state.ts';
 import type DispatchStore from '../agent/dispatch-state.ts';
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
+import { dispatchStorageBytes, dispatchStorageNotice } from '../agent/dispatch-storage.ts';
 import OpenClawDispatchStore, {
   type OpenClawDispatchState,
 } from '../agent/openclaw-dispatch-state.ts';
-import { dispatchStorageBytes, dispatchStorageNotice } from '../agent/dispatch-storage.ts';
+import openclawIntakeReport from '../agent/openclaw-intake-report.ts';
 
 // Opt-in synthetic journal measurement. Never reads or changes installed runtime state.
 const mib = 1024 * 1024;
@@ -42,13 +42,12 @@ if (!size) {
       : new OpenClawDispatchStore(root, scope)
   ) as DispatchStore<SharedDispatchRecord>;
   try {
-    const state: DispatchState = { version: 1, scope, resetGeneration: 'initial', records: [] };
+    const state: DispatchState = { version: 4, scope, resetGeneration: 'initial', records: [] };
     const make = (index: number, length: number): DispatchRecord => ({
       id: index.toString(16).padStart(64, '0'),
       intakeId: index.toString(16).padStart(64, '0'),
       issueKey: index.toString(16).padStart(64, '0'),
       sourceThreadId: 'synthetic',
-      phase: 'routing',
       createdAt: 1,
       manifestDigest: 'manifest',
       context: 'x'.repeat(length),
@@ -70,7 +69,7 @@ if (!size) {
     await writeFile(store.path, serialized.contents, { mode: 0o600 });
     const writeStart = performance.now();
     await store.exclusive(async (current, save) => {
-      current.records[0]!.routingNote = 'existing assessment can save';
+      current.records[0]!.blocker = 'storage-benchmark-save';
       await save();
     });
     const rewriteMs = performance.now() - writeStart;
@@ -115,24 +114,6 @@ if (!size) {
         /dispatch-state-capacity/,
       );
       assert.equal(await readFile(store.path, 'utf8'), committed);
-      // A within-file-ceiling legacy journal can be read and reduced by supported reconciliation.
-      const legacy = JSON.parse(committed) as DispatchState;
-      const retired = make(9999, 96000);
-      retired.retired = { at: Date.now(), by: 'synthetic' };
-      retired.retirement = {
-        reason: 'issue-closed',
-        intakeId: retired.id,
-        at: retired.retired.at,
-        checkedAt: retired.retired.at,
-        eligibleAt: retired.retired.at,
-        archivedAt: retired.retired.at,
-        worktreeRemovedAt: retired.retired.at,
-      };
-      legacy.records.push(retired);
-      assert.ok(dispatchStorageBytes(legacy).contentBytes > 64 * mib);
-      await writeFile(store.path, JSON.stringify(legacy), { mode: 0o600 });
-      await store.reconcile();
-      assert.ok(dispatchStorageBytes(await store.read()).contentBytes < 64 * mib);
     }
     if (size === 16) {
       const intake = {
@@ -156,7 +137,6 @@ if (!size) {
       assert.match(first.response, /NOTIFY/);
       assert.doesNotMatch(first.response, /DONT_NOTIFY/);
       state.intakeHealth = first.health;
-      state.intakeHealthVersion = 1;
       assert.match(prepareDispatchReport(input).response, /DONT_NOTIFY/);
       const openState = { ...state, records: state.records } as unknown as OpenClawDispatchState;
       const openInput = {

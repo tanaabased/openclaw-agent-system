@@ -1,7 +1,6 @@
+import type { DispatchRecord } from './codex-dispatch-state.ts';
 import issuePickupCapacity from './issue-pickup-capacity.ts';
 import type { IssuePickupState } from './issue-pickup-state.ts';
-import type { DispatchRecord } from './codex-dispatch-state.ts';
-
 /** unresolved native custody reserves capacity until current native evidence releases it. */
 function reserved(record: DispatchRecord): boolean {
   if (record.retirement && record.nativeInactive !== undefined) return !record.nativeInactive;
@@ -12,24 +11,20 @@ function reserved(record: DispatchRecord): boolean {
   // Missing plans, replies, cards, and publication receipts do not determine capacity.
   return true;
 }
-
-export function codexUnresolvedRetirement(record: DispatchRecord) {
-  return Boolean(record.retired && !record.nativeInactive && reserved(record));
-}
-
 /** a conversation occupies one slot, regardless of its pending comment count. */
 export function codexItemOccupied(record: DispatchRecord): boolean {
   return reserved(record);
 }
-
 export default function codexCapacity(
-  records: DispatchRecord[],
+  state: DispatchRecord[] | { records: DispatchRecord[]; isolatedRecords?: unknown[] },
   limit: number,
   pickup?: IssuePickupState,
   excludeIssue?: string,
 ) {
   if (!Number.isSafeInteger(limit) || limit < 1) throw new Error('dispatch-capacity-invalid');
+  const records = Array.isArray(state) ? state : state.records;
+  const reserved = Array.isArray(state) ? 0 : (state.isolatedRecords?.length ?? 0);
   const occupied =
-    records.filter(codexItemOccupied).length + issuePickupCapacity(pickup, excludeIssue);
+    reserved + records.filter(codexItemOccupied).length + issuePickupCapacity(pickup, excludeIssue);
   return { occupied, available: Math.max(0, limit - occupied) };
 }

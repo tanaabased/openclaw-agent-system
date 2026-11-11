@@ -58,7 +58,7 @@ function fixtureNative(request: CodexThreadRequest) {
 }
 
 describe('agent/codex-dispatch-native', () => {
-  it('should select the current native trigger without trusting tool or assistant text', async () => {
+  it('should accept both native heartbeat formats without trusting unrelated tool or assistant text', async () => {
     const trigger = {
       type: 'userMessage',
       content: [
@@ -80,11 +80,39 @@ describe('agent/codex-dispatch-native', () => {
       assert.equal(params.turnId, 'current-turn');
       return { data: [{ turnId: 'current-turn', item }] };
     });
-    assert.deepEqual(await native.occurrence('intake'), {
+    const expected = {
       id: 'current-turn',
       automationId: 'issue-assignments',
       currentTimeIso: '2026-10-12T17:00:00.123Z',
-    });
+    };
+    assert.deepEqual(await native.occurrence('intake'), expected);
+    const nativeTrigger = {
+      type: 'functionCallOutput',
+      namespace: 'codex_app',
+      name: 'automation_update',
+      output: trigger.content[0]!.text,
+    };
+    item = nativeTrigger;
+    assert.deepEqual(await native.occurrence('intake'), expected);
+    const textOutput = [{ type: 'input_text', text: nativeTrigger.output }];
+    item = { ...nativeTrigger, output: textOutput };
+    assert.deepEqual(await native.occurrence('intake'), expected);
+    for (const invalid of [
+      { ...nativeTrigger, namespace: 'other' },
+      { ...nativeTrigger, name: 'exec_command' },
+      { ...nativeTrigger, type: 'agentMessage' },
+      { ...nativeTrigger, output: 'Quoted trigger: ' + nativeTrigger.output },
+      { ...nativeTrigger, output: { text: nativeTrigger.output } },
+      { ...nativeTrigger, namespace: 'other', output: textOutput },
+      { ...nativeTrigger, output: [...textOutput, { type: 'input_image', image_url: 'image' }] },
+      {
+        ...nativeTrigger,
+        output: nativeTrigger.output.replace(expected.currentTimeIso, 'invalid'),
+      },
+    ]) {
+      item = invalid;
+      await assert.rejects(native.occurrence('intake'), /dispatch-native-occurrence-unavailable/);
+    }
     for (const type of ['agentMessage', 'functionCallOutput']) {
       item = { ...trigger, type };
       await assert.rejects(native.occurrence('intake'), /dispatch-native-occurrence-unavailable/);
@@ -237,6 +265,19 @@ describe('agent/codex-dispatch-native', () => {
   it('should recognize only the exact native creation source and prompt', () => {
     const thread = { turns: [{ items: [creation] }] };
     assert.equal(matchesDispatchCreation(thread, 'intake', input.prompt), true);
+    for (const nativeOutput of [
+      { text: output, truncated: false },
+      [{ type: 'input_text', text: output }],
+      output.replaceAll('\n  ', '\n    '),
+    ])
+      assert.equal(
+        matchesDispatchCreation(
+          { turns: [{ items: [{ ...creation, output: nativeOutput }] }] },
+          'intake',
+          input.prompt,
+        ),
+        true,
+      );
     assert.equal(matchesDispatchCreation(thread, 'other', input.prompt), false);
     assert.equal(matchesDispatchCreation(thread, 'intake', 'different'), false);
     for (const item of [
@@ -244,6 +285,8 @@ describe('agent/codex-dispatch-native', () => {
       { ...creation, namespace: 'other' },
       { ...creation, name: 'read_file' },
       { ...creation, output: 'Quoted:\n' + output },
+      { ...creation, output: { text: output, truncated: true } },
+      { ...creation, output: [{ type: 'input_text', text: output.replace('intake', 'other') }] },
     ])
       assert.equal(
         matchesDispatchCreation({ turns: [{ items: [item] }] }, 'intake', input.prompt),

@@ -1,3 +1,4 @@
+import codexWorkState from './codex-work-state.ts';
 import nativeTaskInstructions from './native-task-instructions.ts';
 import implementationContext from './implementation-context.ts';
 import assessmentReviewContext from './assessment-review-context.ts';
@@ -9,7 +10,7 @@ import type { DispatchRecord } from './codex-dispatch-state.ts';
 import type { ManagedIssue } from './managed-issue.ts';
 import workflowRecovery from './workflow-recovery.ts';
 
-/** Prepare the issue branch and skill context under the controller's verified native binding. */
+/** Prepare the issue branch and skill context under the verified native task binding. */
 export default async function codexWorkContext(
   record: DispatchRecord,
   context: Pick<
@@ -24,19 +25,20 @@ export default async function codexWorkContext(
 ) {
   const { current, git, signal, save, deps } = context;
   const { admitted, selection } = verified;
-  const work = record.continuation!;
-  if (!readOnly)
-    await codexIssueBranch({
-      record,
-      records: context.records,
-      intake: admitted,
-      workspace: current.workspace,
-      agentId: current.manifest.agent.id,
-      git,
-      signal,
-      save,
-      prepare: true,
-    });
+  const work = codexWorkState(record)!;
+  const issueBranch = readOnly
+    ? record.issueBranch?.name
+    : await codexIssueBranch({
+        record,
+        records: context.records,
+        intake: admitted,
+        workspace: current.workspace,
+        agentId: current.manifest.agent.id,
+        git,
+        signal,
+        save,
+        prepare: true,
+      });
   if (!readOnly && context.operatorInput && deps.directScope) work.scope = deps.directScope;
   if (!readOnly) await save();
   return {
@@ -48,7 +50,7 @@ export default async function codexWorkContext(
       scope: work.scope,
     }),
     issueStage: record.progression?.stage ?? 'planning',
-    issueBranch: record.issueBranch?.name,
+    issueBranch,
     adoptedPullRequest: record.adoptedPullRequest,
     assignmentObservation: record.assignmentObservation,
     assignmentWarning:
@@ -59,7 +61,6 @@ export default async function codexWorkContext(
     effective: record.effective,
     continuationRequest: { action: 'context' as const, id: record.id },
     deliveryPrepareRequest: { action: 'prepare' as const, id: record.id },
-    binding: work.binding,
     instructions: nativeTaskInstructions('codex'),
   };
 }

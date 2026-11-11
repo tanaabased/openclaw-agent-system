@@ -1,17 +1,16 @@
-import guidanceReference from './guidance-reference.ts';
-import workflowFailure from './workflow-failure.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
-import type { SharedDispatchRecord } from './dispatch-state.ts';
 import { nativeAssessmentInstructions } from './assessment-instructions.ts';
 import { assessmentPresentationRequest } from './assessment-render.ts';
 import { assessmentResultFormat } from './assessment-result.ts';
+import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
+import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { feedbackInputContext } from './feedback-input.ts';
 import selectFeedbackStage from './feedback-stage.ts';
+import guidanceReference from './guidance-reference.ts';
 import { retainedIssueProgression } from './issue-progression.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
+import workflowFailure from './workflow-failure.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
-
 /** read usable turn context without assessment writes, consumption receipts, or execution grants. */
 export default async function taskTurnContext(input: {
   runtime: 'codex' | 'openclaw';
@@ -22,12 +21,13 @@ export default async function taskTurnContext(input: {
   stage: string;
   resolveSkill(id: string): Promise<CodexAssessmentSkill>;
   feedback?: ReturnType<typeof feedbackInputContext>;
-  feedbackLimitation?: { code: string };
+  feedbackLimitation?: {
+    code: string;
+  };
   now?: number;
 }) {
   const { record, manifest, workspace, resolveSkill, feedback } = input;
-  if (record.retired || record.reset || record.supersededBy)
-    throw new Error('native-context-owner-unavailable');
+  if (record.reset || record.supersededBy) throw new Error('native-context-owner-unavailable');
   const policy = manifest.github?.notifications;
   const contextLimitations: Array<{
     scope: 'assessment' | 'implementation' | 'reply';

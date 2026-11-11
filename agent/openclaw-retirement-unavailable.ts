@@ -11,7 +11,7 @@ export default async function observeUnavailableRetirementSession(input: {
   request: DispatchRequest;
 }) {
   const { record, agentId, owner, request } = input;
-  const intent = retirementSessionIdentity(record, agentId);
+  const intent = retirementSessionIdentity(record);
   if (
     ![
       'retirement-session-identity-unresolved',
@@ -20,12 +20,16 @@ export default async function observeUnavailableRetirementSession(input: {
     ].includes(input.code) ||
     !intent ||
     !record.worktree ||
-    intent.cwd !== record.worktree ||
-    record.sourceThreadId !== owner
+    intent.cwd !== record.worktree
   )
     return undefined;
   const key = intent.key;
-  if (key === owner || (record.threadId && key !== record.threadId) || intent.agentId !== agentId)
+  if (
+    key === owner ||
+    key === record.sourceThreadId ||
+    (record.threadId && key !== record.threadId) ||
+    intent.agentId !== agentId
+  )
     return undefined;
   if (!key) return 'identity-unresolved' as const;
   const description = await request('sessions.describe', { key }).then(

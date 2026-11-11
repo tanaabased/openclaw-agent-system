@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 
 import codexCapacity, { codexItemOccupied } from '../agent/codex-capacity.ts';
 import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
+import { pickupIssueKey } from '../agent/issue-pickup-capacity.ts';
 import openClawCapacity, { openClawItemOccupied } from '../agent/openclaw-capacity.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
-import { pickupIssueKey } from '../agent/issue-pickup-capacity.ts';
 import fixture from './issue-pickup-selection-fixture.ts';
 
 describe('issue pickup capacity handoff', () => {
@@ -49,7 +49,7 @@ describe('issue pickup capacity handoff', () => {
       const f = fixture(runtime);
       f.policy.maxConcurrentItems = 1;
       const selection = await f.select();
-      f.state.records.push({ issueKey: 'ordinary', phase: 'assessing', request: {} });
+      f.state.records.push({ issueKey: 'ordinary', request: {} });
       assert.equal((await f.run({ selection })).status, 'at-capacity');
       assert.equal(f.effects.writes, 0);
       assert.deepEqual(f.state.projectPickup!.operations, []);
@@ -66,14 +66,13 @@ describe('issue pickup capacity handoff', () => {
       const owner = {
         issueKey: pickupIssueKey(pickup, f.item.nodeId),
         projectWork: f.work(),
-        phase: 'complete',
+
         request: {},
         nativeInactive: true,
-        continuation: {
-          phase: 'clarification-needed',
+        nativeWork: {
           result: { outcome: 'clarification-needed' },
         },
-        work: { result: { outcome: 'clarification-needed' } },
+        work: {},
       };
       const capacity = () =>
         runtime === 'codex'
@@ -87,14 +86,12 @@ describe('issue pickup capacity handoff', () => {
       assert.deepEqual(capacity(), { occupied: 0, available: 1 });
 
       owner.nativeInactive = false;
-      owner.phase = 'assessing';
       assert.deepEqual(capacity(), { occupied: 1, available: 0 });
       f.policy.maxConcurrentItems = 1;
       f.clock.now += 86400000;
       f.tx.runId = `scan-${f.clock.now}`;
       assert.equal((await f.run()).status, 'at-capacity');
 
-      owner.phase = 'complete';
       owner.nativeInactive = true;
       const next = { ...structuredClone(f.item), nodeId: 'I_next', number: 99, assignees: [] };
       f.items.set(next.number, next);
@@ -118,7 +115,6 @@ describe('issue pickup capacity handoff', () => {
         'assigned',
       );
       assert.equal(f.effects.writes, 2);
-      assert.equal(owner.continuation.phase, 'clarification-needed');
       assert.deepEqual(capacity(), { occupied: 0, available: 1 });
     });
   }

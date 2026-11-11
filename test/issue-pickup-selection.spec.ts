@@ -15,6 +15,21 @@ import fixture from './issue-pickup-selection-fixture.ts';
 
 describe('agent/issue-pickup', () => {
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should finish an accepted selection after pause and preserve it across a new paused run in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      const selection = await f.select();
+      const originalRun = f.tx.runId;
+      const operation = structuredClone(f.state.projectPickup!.operations);
+      f.policy.issuePickup!.paused = true;
+      f.tx.runId = 'new-paused-run';
+      assert.equal((await f.run()).status, 'paused');
+      assert.deepEqual(f.state.projectPickup!.operations, operation);
+      assert.equal(f.effects.writes, 0);
+      f.tx.runId = originalRun;
+      assert.equal((await f.run({ selection })).status, 'assigned');
+      assert.equal(f.effects.writes, 1);
+    });
+
     it(`should stop on shared authentication failure before comparing repositories in ${runtime}`, async () => {
       const f = fixture(runtime);
       f.addRepository('other');
@@ -661,13 +676,12 @@ describe('agent/issue-pickup', () => {
     it(`should enforce one assignment per window after intake and completion in ${runtime}`, async () => {
       const f = fixture(runtime);
       await f.run({ selection: await f.select() });
-      const work = f.work();
       f.state.records.push({
         issueKey: pickupIssueKey(f.state.projectPickup!, f.item.nodeId),
-        projectWork: work,
-        phase: 'complete',
-        retired: {},
+        projectWork: f.work(),
       });
+      await f.run();
+      f.state.records.splice(0);
       f.item.assignees = [];
       f.client.discoverProject = async () => {
         throw new Error('allowance is already consumed');
@@ -687,9 +701,9 @@ describe('agent/issue-pickup', () => {
       f.state.records.push({
         issueKey: pickupIssueKey(f.state.projectPickup!, f.item.nodeId),
         projectWork: f.work(),
-        phase: 'complete',
-        retired: {},
       });
+      await f.run();
+      f.state.records.splice(0);
       f.item.assignees = [];
       f.clock.now += 86400000;
       f.tx.runId = 'tomorrow';
@@ -837,7 +851,7 @@ describe('agent/issue-pickup', () => {
       assert.equal(f.effects.writes, 0);
       f.policy.routing = ['owner/*'];
       f.policy.maxConcurrentItems = 1;
-      f.state.records.push({ issueKey: 'busy', phase: 'running', request: {} });
+      f.state.records.push({ issueKey: 'busy', request: {} });
       assert.equal((await f.run()).status, 'at-capacity');
       f.state.records = [];
       f.tx.runId = 'later-scan';
@@ -1001,20 +1015,6 @@ describe('agent/issue-pickup', () => {
     assert.equal(f.effects.writes, 1);
   });
 
-  it('should preserve an unattributable legacy assignment fence through the open window', async () => {
-    const f = fixture();
-    await f.run();
-    const state = f.state.projectPickup!;
-    state.windowAssignment = { window: state.operations[0]!.window, assignedAt: f.clock.now };
-    state.operations = [];
-    f.policy.issuePickup!.projects[0]!.limit = 3;
-    assert.equal((await f.run()).status, 'allowance-reached');
-    assert.equal(f.effects.writes, 0);
-    f.clock.now += 86_400_000;
-    f.tx.runId = 'tomorrow';
-    assert.equal((await f.run()).status, 'selection-required');
-  });
-
   it('should preserve provider eligibility when recovering an uncertain assignment', async () => {
     for (const reason of ['closed', 'archived', 'disabled'] as const) {
       const f = fixture();
@@ -1056,14 +1056,13 @@ describe('agent/issue-pickup', () => {
     assert.equal(pickupCapacity(pickup, f.item.nodeId), 0);
     f.state.records.push({
       projectWork: f.work(),
-      phase: 'assessing',
+
       issueKey: pickupIssueKey(pickup, f.item.nodeId),
       request: {},
     });
     assert.equal(pickupCapacity(pickup), 0);
     assert.equal((await f.run()).status, 'allowance-reached');
     delete f.state.records[0]!.request;
-    f.state.records[0]!.result = { outcome: 'clarification-needed' };
     assert.equal(pickupCapacity(pickup), 0);
     f.clock.now += 86400000;
     f.tx.runId = `scan-${f.clock.now}`;
@@ -1181,14 +1180,13 @@ describe('agent/issue-pickup', () => {
     }
   });
 
-  it('should not transfer a new pickup into an older retired assignment of the same issue', async () => {
+  it('should not transfer a new pickup into an older reset assignment of the same issue', async () => {
     const f = fixture();
     await f.run({ selection: await f.select() });
     const work = f.work();
     work.pickup = { ...work.pickup!, assignmentNodeId: 'E_old' };
     f.state.records.push({
-      phase: 'complete',
-      retired: {},
+      reset: {},
       projectWork: work,
       issueKey: pickupIssueKey(f.state.projectPickup!, f.item.nodeId),
     });

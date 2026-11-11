@@ -3,9 +3,9 @@ import { Value } from 'typebox/value';
 
 import codexContextRequest from '../agent/codex-context-request.ts';
 import {
+  assertModelWorkflowInput,
   nativeContextRequest,
   nativeContextResponse,
-  assertModelWorkflowInput,
 } from '../agent/native-context-request.ts';
 import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 
@@ -56,23 +56,8 @@ describe('native current-task context inputs', () => {
     }
   });
 
-  it('should resolve result and readback ownership inside both native adapters', async () => {
+  it('should resolve implementation result ownership inside both native adapters', async () => {
     const requests = [
-      { action: 'present' },
-      { action: 'summary', operation: 'candidate', publicText: 'A concise proposal.' },
-      {
-        action: 'result',
-        result: {
-          version: 1,
-          outcome: 'plan-ready',
-          summary: 'Ready.',
-          assessment: 'Small change.',
-          fullAssessment: 'Change one line and verify the output.',
-          plan: 'Change and verify.',
-          evidence: [],
-          progress: { completed: [], remaining: [] },
-        },
-      },
       {
         action: 'implementation-result',
         implementationResult: {
@@ -167,7 +152,7 @@ describe('native current-task context inputs', () => {
     }
     for (const owner of [
       undefined,
-      { id: 'old', retired: true },
+      { id: 'old', reset: true },
       { id: 'old', reset: true },
       { id: 'old', supersededBy: 'new' },
     ])

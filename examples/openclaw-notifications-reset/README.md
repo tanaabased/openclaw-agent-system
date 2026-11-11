@@ -19,6 +19,8 @@ assignment baseline, and restores enabled intake alongside paused pickup.
 - Setup creates one real assessment, closes its issue, removes its worktree publicly, and observes retirement before reset. The surviving consumed-assignment tracking makes reset verification meaningful without depending on the full retirement/fresh-assignment journey.
 - Strict AIMock reuses the existing assessment protocol. The Gateway, native coordinator, reset command, automation, and receipts remain real.
 - A disposable milestone enrolls paused pickup without running another model turn. Assignment/allowance retention and partial recovery stay in controlled source coverage.
+- Missing-journal recovery and retirement during an interrupted reset are covered by runtime adapter tests: preview stays read-only, confirmation creates an empty current-time baseline without scanning, and unrelated native retirement remains available. This installed scenario does not remove its journal or interrupt reset.
+- Ordinary-origin acceptance requires a retained task launched from the agent's main chat without per-chat `workspaceDir`: reset must wait while that origin has active work or pending input, then finish without archiving the origin. An actual coordinator in another workspace must still be rejected. Controlled adapter tests cover these cases; this installed scenario does not create a manual-launch origin.
 - One 61-second setup wait observes retirement; zero cleanup grace does not bypass the lifecycle observation interval. Reset diagnostics preserve safe phase/operation details and keep raw provider errors private.
 - CI owns its disposable issue, workspaces/state, and SSH registration. Only Tanaabot is assigned. Scoped refreshes and a 24-hour schedule isolate discovery; cleanup stops the Gateway before external changes.
 
@@ -97,7 +99,7 @@ number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for worktree-ready --timeout 600 --json | tee "$TMPDIR/notification-plan.json" | jq -e '.status == "completed" and (.observation.items | length) == 1'
 conversation=$(jq -er .observation.items[0].workflow.conversation "$TMPDIR/notification-plan.json")
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
-run_id=$(jq -er .assessmentTurn.runId "$TMPDIR/notification-dispatch-before.json")
+run_id=$(jq -er '(.nativeTurns | map(select(.role == "assessment")) | last | .turn).runId' "$TMPDIR/notification-dispatch-before.json")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 # reconcile native completion before a later run selects feedback for this issue
 reconcile_run=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")

@@ -168,7 +168,7 @@ export default async function createIssueSession(input: {
     await guard();
     creation.verified = true;
     record.threadId = params.key;
-    record.phase = 'created';
+
     delete record.blocker;
     delete record.failureStage;
     await save();

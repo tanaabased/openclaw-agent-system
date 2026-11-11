@@ -1,5 +1,5 @@
-import type { DispatchRecord } from './codex-dispatch-state.ts';
 import type codexContinuationNative from './codex-continuation-native.ts';
+import type { DispatchRecord } from './codex-dispatch-state.ts';
 
 /** Reuse the exact native-send receipt; delegated feedback is never an operator input. */
 export default async function codexFeedbackInput(
@@ -12,7 +12,6 @@ export default async function codexFeedbackInput(
   const candidates = records.flatMap((record) =>
     record.threadId === caller
       ? (record.feedback?.events ?? []).flatMap((event) =>
-          event.native &&
           event.attempt &&
           (selectedEventId
             ? event.id === selectedEventId

@@ -1,56 +1,60 @@
+import { withDispatchTask } from './dispatch-task-scope.ts';
+import process from 'node:process';
 import { Value } from 'typebox/value';
-import WorkflowRequestError from './workflow-request-error.ts';
-import { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
+import CodexAssignmentClaims, { codexInstanceStore } from './codex-assignment-claims.ts';
 import codexContextRequest from './codex-context-request.ts';
-import codexNativeMaterial, { codexNativeRuntimeResult } from './codex-native-material.ts';
-import codexNativeInventory, { assertNoNativeInventory } from './codex-native-inventory.ts';
-import { nativeMaterialResponse } from './native-material.ts';
+import runCodexContinuation from './codex-continuation.ts';
+import runCodexDelivery, { CodexDeliveryFailure } from './codex-delivery.ts';
 import { codexDispatchResponse } from './codex-dispatch-binding.ts';
-import { nativeContextResponse, assertModelWorkflowInput } from './native-context-request.ts';
-import workflowFailure, { workflowFailureScope } from './workflow-failure.ts';
+import { codexWorkObservationHandoff } from './codex-dispatch-handoff.ts';
+import runCodexFeedback from './codex-feedback.ts';
+import codexNativeInventory, { assertNoNativeInventory } from './codex-native-inventory.ts';
+import codexNativeMaterial, { codexNativeRuntimeResult } from './codex-native-material.ts';
+import assertCodexNodeVersion, { CodexNodeVersionError } from './codex-node-version.ts';
+import runCodexNotificationReset from './codex-notification-reset.ts';
+import codexPermission from './codex-permission.ts';
+import codexRuntimeRequest from './codex-runtime-request.ts';
+import { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
+import codexTurnContext, { codexCurrentTurnContext } from './codex-turn-context.ts';
+import contextMaterialTransport from './context-material-transport.ts';
+import { operateInstanceIdentity } from './instance-identity.ts';
 import IssuePickupFailure from './issue-pickup-failure.ts';
 import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
-import runCodexNotificationReset from './codex-notification-reset.ts';
-import runCodexFeedback from './codex-feedback.ts';
-import codexRuntimeRequest from './codex-runtime-request.ts';
-import contextMaterialTransport from './context-material-transport.ts';
-import runCodexContinuation from './codex-continuation.ts';
-import { codexWorkObservationHandoff } from './codex-dispatch-handoff.ts';
-import runCodexDelivery, { CodexDeliveryFailure } from './codex-delivery.ts';
-import process from 'node:process';
-import assertCodexNodeVersion, { CodexNodeVersionError } from './codex-node-version.ts';
-import codexPermission from './codex-permission.ts';
-import codexTurnContext, { codexCurrentTurnContext } from './codex-turn-context.ts';
-import CodexAssignmentClaims, { codexInstanceStore } from './codex-assignment-claims.ts';
-import { operateInstanceIdentity } from './instance-identity.ts';
+import { assertModelWorkflowInput, nativeContextResponse } from './native-context-request.ts';
+import { nativeMaterialResponse } from './native-material.ts';
+import workflowFailure, { workflowFailureScope } from './workflow-failure.ts';
+import WorkflowRequestError from './workflow-request-error.ts';
 
+import { IntakeError } from '../channels/github/intake/record-store.ts';
+import { runCodexDispatch } from './codex-dispatch.ts';
 import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
 import codexHostAccess from './codex-host-access.ts';
-import codexIssueNotice from './codex-issue-notice.ts';
-import workflowNoticeInstructions from './workflow-notice-instructions.ts';
-import { runCodexDispatch } from './codex-dispatch.ts';
 import {
   inspectCodexIntake,
   runCodexIntake,
   runCodexIssuePickup,
   selectCodexIntake,
 } from './codex-intake.ts';
-import { IntakeError } from '../channels/github/intake/record-store.ts';
+import codexIssueNotice from './codex-issue-notice.ts';
+import workflowNoticeInstructions from './workflow-notice-instructions.ts';
 
+import { CodexAutomationError } from './codex-automation-state.ts';
 import {
   acknowledgeCodexAutomation,
   cancelCodexAutomation,
+  codexAutomationRunGap,
   inspectCodexAutomations,
   listCodexAutomations,
-  codexAutomationRunGap,
   prepareCodexAutomation,
   reconcileCodexAutomationRetirements,
   syncCodexAutomationThreads,
 } from './codex-automations.ts';
-import { CodexAutomationError } from './codex-automation-state.ts';
 import codexModelRouting from './codex-model-routing.ts';
 import { RoutingError } from './model-routing.ts';
 
+import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
+import { createCodexSessionContext } from './codex-context.ts';
+import { CodexSetupError, inspectCodexSetup, installCodexSetup } from './codex-setup.ts';
 import {
   bindCodexWorkspace,
   inspectCodexWorkspaceBinding,
@@ -58,9 +62,6 @@ import {
   unbindCodexWorkspace,
   type CodexWorkspacePreview,
 } from './codex-workspace-binding.ts';
-import { createCodexSessionContext } from './codex-context.ts';
-import { CodexSetupError, inspectCodexSetup, installCodexSetup } from './codex-setup.ts';
-import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 
 interface SessionStartInput {
   hook_event_name?: unknown;
@@ -336,7 +337,10 @@ async function readWorkflowCommand(route: string, args: string[]) {
   return { ...result, modelSource };
 }
 
-export async function runCodexRuntime(args = process.argv.slice(2)): Promise<void> {
+export function runCodexRuntime(args = process.argv.slice(2)): Promise<void> {
+  return withDispatchTask('codex', process.env.CODEX_THREAD_ID, () => runScopedCodexRuntime(args));
+}
+async function runScopedCodexRuntime(args: string[]): Promise<void> {
   materialInput = undefined;
   const command = args[0];
   if (command === 'permission-request') {
@@ -449,7 +453,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   if (command === 'dispatch') {
     if (args[1] === '--help') {
       process.stdout.write(
-        'Usage: dispatch <action> [<operation>] --plugin-data <path>\nRequest data is JSON on stdin with a matching or omitted action: inspect, observe-denials, next, prepare, reconcile, context, present, result, handoff, report, retry-denied, reset, retire, recover, or launch context|prepare|reconcile, assessment context|render|result|present and implementation context|result|present|prepare|publish|reconcile|delivery-present. direct implementation collects an authorized plan and existing checkout, then uses the same configured implementation context as managed work. Direct assessment uses an explicit issue target and existing checkout path in the current chat without assignment or intake activation; it never authorizes implementation or publication. Handoff previews the planning-to-implementation transition under live policy or native user direction; implementation includes ordinary PR delivery. Native scheduled dispatch requires authorized activation. each new operator issue-launch request attempts additive self-assignment and creates an independent task through normal dispatch; retries retain their original attempt. Standalone Codex launch accepts pullRequest for an existing same-repository PR. Operator-only recover uses the issue target or explicit chat and pullRequest to preserve old work and reserve one successor for Task Launch. It resolves bindings internally; preview:true is optional. Operator-only retry-denied requires a paused schedule and verified native rejection. Operator-only reset preserves a completed assessment whose recorded native turn finished, with no later turn, and permits reassessment only after a new assignment event. operator-only retire accepts an exact owned task, including open assigned work, and enters the existing safe retirement lifecycle immediately without eligibility wait or grace. native ownership, active execution and shared-resource protection still apply. Dirty files and local-only commits may be discarded; incomplete archival or reclamation resumes on a later invocation. Verified cleanup removes local task records and copied history. Operator actions resolve task and effect bindings internally: select the issue target or explicit chat, use preview:true for optional inspection, and omit preview to apply. Never supply IDs or digests. retry-denied accepts renewAuthorization:true only for explicitly renewed operator direction. Assessment results never authorize implementation.\n',
+        'Usage: dispatch <action> [<operation>] --plugin-data <path>\nRequest data is JSON on stdin with a matching or omitted action: inspect, observe-denials, next, prepare, reconcile, context, handoff, report, retry-denied, reset, retire, recover, or launch context|prepare|reconcile, assessment context|render and implementation context|result|prepare|publish|reconcile|delivery-present. direct implementation collects an authorized plan and existing checkout, then uses the same configured implementation context as managed work. Direct assessment uses an explicit issue target and existing checkout path in the current chat without assignment or intake activation; it never authorizes implementation or publication. Handoff previews the planning-to-implementation transition under live policy or native user direction; implementation includes ordinary PR delivery. Native scheduled dispatch requires authorized activation. each new operator issue-launch request attempts additive self-assignment and creates an independent task through normal dispatch; retries retain their original attempt. Standalone Codex launch accepts pullRequest for an existing same-repository PR. Operator-only recover uses the issue target or explicit chat and pullRequest to preserve old work and reserve one successor for Task Launch. It resolves bindings internally; preview:true is optional. Operator-only retry-denied requires a paused schedule and verified native rejection. Operator-only reset preserves a completed assessment whose recorded native turn finished, with no later turn, and permits reassessment only after a new assignment event. operator-only retire accepts an exact owned task, including open assigned work, and enters the existing safe retirement lifecycle immediately without eligibility wait or grace. native ownership, active execution and shared-resource protection still apply. Dirty files and local-only commits may be discarded; incomplete archival or reclamation resumes on a later invocation. Verified cleanup removes local task records and copied history. Operator actions resolve task and effect bindings internally: select the issue target or explicit chat, use preview:true for optional inspection, and omit preview to apply. Never supply IDs or digests. retry-denied accepts renewAuthorization:true only for explicitly renewed operator direction. Assessment results never authorize implementation.\n',
       );
       return;
     }
@@ -469,9 +473,6 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
         'prepare',
         'reconcile',
         'context',
-        'present',
-        'result',
-        'summary',
         'handoff',
         'report',
         'retry-denied',
@@ -617,7 +618,11 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     // interface retains its resource/readback inputs; it has no native caller to resolve.
     if (nativeCaller) {
       assertNoNativeInventory(request);
-      if (Object.keys(request).some((key) => key !== 'id' || !['run', 'runs'].includes(action!)))
+      if (
+        Object.keys(request).some(
+          (key) => key !== 'id' || !['run', 'runs', 'prepare'].includes(action!),
+        )
+      )
         throw new Error('automation-model-request-invalid');
     } else if (
       Object.keys(request).some(
@@ -637,6 +642,8 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
         !Value.Check(sidebarReceiptSchema, request.placementReceipt))
     )
       throw new Error('invalid automation request');
+    if (request.id !== undefined && (typeof request.id !== 'string' || !request.id.trim()))
+      throw new Error('expected a manifest automation id');
     if (action === 'run' || action === 'runs') {
       if (typeof request.id !== 'string') throw new Error('expected a manifest automation id');
       writeJson(await codexAutomationRunGap(pluginData, request.id, action));
@@ -666,7 +673,15 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
       if (action === 'threads-sync')
         writeJson(await syncCodexAutomationThreads(pluginData, request.digest, inputs));
       else if (action === 'prepare')
-        writeJson(await prepareCodexAutomation(pluginData, request.digest, inputs));
+        writeJson(
+          await prepareCodexAutomation(
+            pluginData,
+            request.digest,
+            inputs,
+            {},
+            request.id as string | undefined,
+          ),
+        );
       else if (action === 'acknowledge')
         writeJson(await acknowledgeCodexAutomation(pluginData, request.digest, request.receipt));
       else if (action === 'cancel')
@@ -681,7 +696,16 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
       if (typeof prepared.digest !== 'string') throw new Error('automation-native-plan-required');
       if (action === 'threads-sync')
         writeJson(await syncCodexAutomationThreads(pluginData, prepared.digest, inputs));
-      else writeJson(await prepareCodexAutomation(pluginData, prepared.digest, inputs));
+      else
+        writeJson(
+          await prepareCodexAutomation(
+            pluginData,
+            prepared.digest,
+            inputs,
+            {},
+            request.id as string | undefined,
+          ),
+        );
     } else if (action === 'acknowledge' || action === 'cancel') {
       const prepared = await codexNativeRuntimeResult(pluginData, 'automations', [
         'prepare',

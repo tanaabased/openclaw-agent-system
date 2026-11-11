@@ -107,7 +107,7 @@ number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for worktree-ready --timeout 600 --json | tee "$TMPDIR/notification-plan.json" | jq -e '.status == "completed" and (.observation.items | length) == 1'
 conversation=$(jq -er .observation.items[0].workflow.conversation "$TMPDIR/notification-plan.json")
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
-run_id=$(jq -er .assessmentTurn.runId "$TMPDIR/notification-dispatch-before.json")
+run_id=$(jq -er '(.nativeTurns | map(select(.role == "assessment")) | last | .turn).runId' "$TMPDIR/notification-dispatch-before.json")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 # reconcile native completion before a later run selects feedback for this issue
 reconcile_run=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
@@ -125,7 +125,7 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-issue-assignment-policy/tanaabot"
 sleep 61
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
-jq -es --slurpfile before "$TMPDIR/notification-dispatch-before.json" '[.[].records[] | select(.id == $before[0].id)] | length == 1 and (.[0] | .assignmentObservation.missing == true and .assignmentObservation.code == "assignment-removal-unapproved" and .assignmentObservation.event.actor.login == "emoriwan" and .retirement == null and .retired == null and .threadId == $before[0].threadId and .worktree == $before[0].worktree and .progression == $before[0].progression and .result == $before[0].result)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+jq -es --slurpfile before "$TMPDIR/notification-dispatch-before.json" '[.[].records[] | select(.id == $before[0].id)] | length == 1 and (.[0] | .assignmentObservation.missing == true and .assignmentObservation.code == "assignment-removal-unapproved" and .assignmentObservation.event.actor.login == "emoriwan" and .retirement == null and .threadId == $before[0].threadId and .worktree == $before[0].worktree and .progression == $before[0].progression)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
 openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session.archived != true and .session.archivedAt == null'
 test -d "$(jq -er .worktree "$TMPDIR/notification-dispatch-before.json")"

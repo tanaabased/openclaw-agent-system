@@ -55,21 +55,21 @@ describe('channels/github/presentation/feedback', () => {
         },
       }),
       [
-        '>   @tanaabot Please check [the build](https://github.com/tanaabased/example/actions).',
-        '>',
-        '> ## Notes',
-        '>',
-        '> - Keep `code` exact.',
-        '> - Ask @octocat about #12.  ',
-        '>',
-        '> > Quoted context',
-        '>',
-        '> ```ts',
-        '> const mention = "@tanaabot";',
-        '> ```',
-        '>',
-        '> &nbsp;  ',
-        '> *[Comment ↗](https://github.com/tanaabased/openclaw-agent-system/issues/46#issuecomment-123) from [@pirog](https://github.com/pirog)*',
+        '  [@tanaabot](https://github.com/tanaabot) Please check [the build](https://github.com/tanaabased/example/actions).',
+        '',
+        '## Notes',
+        '',
+        '- Keep `code` exact.',
+        '- Ask [@octocat](https://github.com/octocat) about #12.  ',
+        '',
+        '> Quoted context',
+        '',
+        '```ts',
+        'const mention = "@tanaabot";',
+        '```',
+        '',
+        '&nbsp;  ',
+        '*[Comment ↗](https://github.com/tanaabased/openclaw-agent-system/issues/46#issuecomment-123) from [@pirog](https://github.com/pirog)*',
       ].join('\n'),
     );
   });
@@ -108,16 +108,16 @@ describe('channels/github/presentation/feedback', () => {
       );
       assert.ok(!draft.includes(url));
     }
-    const legacy = githubCommentCard({
+    const missingAuthor = githubCommentCard({
       body: 'Original text.',
       label: 'Plan assessment',
       connector: 'by',
       publication: { url },
     });
-    assert.ok(legacy.includes('by author unavailable*'));
+    assert.ok(missingAuthor.includes('by author unavailable*'));
   });
 
-  it('should keep all provider line endings inside the comment quote', () => {
+  it('should preserve provider content and normalize line endings without outer quotes', () => {
     const presentation = githubNotificationCommentPresentation({
       author: { label: 'pirog', url: 'https://github.com/pirog' },
       body: '@tanaabot first\r\n\r\nsecond\rthird',
@@ -126,13 +126,15 @@ describe('channels/github/presentation/feedback', () => {
         url: 'https://github.com/example/repo/pull/12#issuecomment-91',
       },
     });
-    assert.ok(presentation.includes('> @tanaabot first\n>\n> second\n> third'));
-    assert.ok(presentation.split('\n').every((line) => line.startsWith('>')));
+    assert.ok(
+      presentation.includes('[@tanaabot](https://github.com/tanaabot) first\n\nsecond\nthird'),
+    );
     assert.ok(
       presentation.includes(
         '[Comment ↗](https://github.com/example/repo/pull/12#issuecomment-91) from [@pirog]',
       ),
     );
+    assert.ok(!presentation.startsWith('>'));
   });
 });
 

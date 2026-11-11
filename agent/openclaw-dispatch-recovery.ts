@@ -1,13 +1,14 @@
-import recoverIssueTask, { pendingRecoveryFeedback } from './issue-task-recovery.ts';
-import openClawEntryContext from './openclaw-entry-context.ts';
-import { observeRetiringSession } from './openclaw-retirement-observation.ts';
 import IssueDeliveryProvider from '../channels/github/publication/issue-delivery.ts';
-import type OpenClawDispatchContext from './openclaw-dispatch-context.ts';
-import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
-import { automationHash } from './automation-hash.ts';
-import type { DispatchCaller } from './openclaw-session-create.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
+import { automationHash } from './automation-hash.ts';
+import recoverIssueTask, { pendingRecoveryFeedback } from './issue-task-recovery.ts';
+import type OpenClawDispatchContext from './openclaw-dispatch-context.ts';
+import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import openClawEntryContext from './openclaw-entry-context.ts';
+import openClawNativeTurns from './openclaw-native-turns.ts';
+import { observeRetiringSession } from './openclaw-retirement-observation.ts';
+import type { DispatchCaller } from './openclaw-session-create.ts';
 
 /** native input and session observation adapt the shared recovery, never create a second lifecycle. */
 export default async function recoverOpenClawTask(options: {
@@ -46,16 +47,8 @@ export default async function recoverOpenClawTask(options: {
         if (!selected) throw new Error('dispatch-recovery-owner-missing');
         const verified = await service.validate(manifest, workspace, selected, true);
         const { intake } = verified;
-        const delivery = record.work?.delivery;
-        const execution = record;
-        const turns = [
-          execution?.firstTurn,
-          execution?.assessmentTurn,
-          execution?.decisionTurn,
-          execution?.summaryRecovery?.turn,
-          execution?.work?.turn,
-          execution?.work?.deliveryTurn,
-        ];
+        const delivery = record.delivery;
+        const turns = openClawNativeTurns(record).map(({ turn }) => turn);
         return recoverIssueTask<OpenClawDispatchRecord>({
           record,
           state,
@@ -100,7 +93,7 @@ export default async function recoverOpenClawTask(options: {
             pendingPush: Boolean(delivery?.pendingPush),
             uncertainPrCreation: Boolean(delivery?.creationAttempted && !delivery.pullRequest),
             uncertainAnnouncement: Boolean(
-              delivery?.announcement?.attempted && !delivery.announcement.receipt,
+              record.announcement?.attempted && !record.announcement.receipt,
             ),
             pendingFeedback: record.feedback?.events.some(pendingRecoveryFeedback),
             assignmentClaim: Boolean(

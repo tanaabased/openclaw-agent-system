@@ -15,8 +15,7 @@ describe('agent/feedback-sources', () => {
       pullRequestLink: { pullRequestNodeId: 'current', pullRequestNumber: 8 },
     };
     const checkpoint = { since: 1, startedAt: 2, reads: { 'comments:1': '{}' } };
-    const feedback: FeedbackSourceState & { activity?: { busy: boolean; observedAt: number } } = {
-      activity: { busy: true, observedAt: 1 },
+    const feedback: FeedbackSourceState = {
       baseline: { old: { comment: 'retained revision' } },
       events: [
         {
@@ -28,18 +27,7 @@ describe('agent/feedback-sources', () => {
           source: '{"body":"accepted input"}',
           revision: 'd'.repeat(64),
           createdAt: 1,
-          policyDigest: 'e'.repeat(64),
           phase: 'prepared',
-          publicationAttempted: true,
-        },
-      ],
-      completed: [
-        {
-          id: 'a'.repeat(64),
-          sourceId: 'comment',
-          revision: 'b'.repeat(64),
-          nodeId: 'old',
-          receipt: { nodeId: 'reply', databaseId: 10 },
         },
       ],
       discovery: { old: checkpoint, current: checkpoint, issue: checkpoint },
@@ -59,10 +47,9 @@ describe('agent/feedback-sources', () => {
     );
     assert.deepEqual(Object.keys(feedback.discovery!), ['current', 'issue']);
     assert.deepEqual(Object.keys(feedback.discoveryStalls!), ['current', 'owner']);
-    assert.equal(feedback.activity, undefined);
     assert.equal(feedback.lastSource, undefined);
     assert.equal(feedback.code, undefined);
-    for (const key of ['baseline', 'events', 'completed', 'watermarks'] as const)
+    for (const key of ['baseline', 'events', 'watermarks'] as const)
       assert.deepEqual(feedback[key], before[key]);
     assert.deepEqual(record.delivery.pullRequest, previous);
   });

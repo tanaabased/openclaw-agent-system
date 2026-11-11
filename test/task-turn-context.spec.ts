@@ -1,10 +1,10 @@
-import { intakeFixture } from './github-intake-fixture.ts';
-import assessmentMaterial from '../agent/assessment-material.ts';
 import assert from 'node:assert/strict';
+import assessmentMaterial from '../agent/assessment-material.ts';
+import { intakeFixture } from './github-intake-fixture.ts';
 
-import type { AgentManifest } from '../manifest/types.ts';
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
 import taskTurnContext from '../agent/task-turn-context.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 
 describe('agent/task-turn-context', () => {
   for (const runtime of ['codex', 'openclaw'] as const) {
@@ -179,7 +179,7 @@ describe('agent/task-turn-context', () => {
     });
 
   it('should reject inactive owners before reading configured skills', async () => {
-    for (const inactive of [{ retired: {} }, { reset: {} }, { supersededBy: 'other' }]) {
+    for (const inactive of [{ reset: {} }, { supersededBy: 'other' }]) {
       await assert.rejects(
         taskTurnContext({
           runtime: 'codex',

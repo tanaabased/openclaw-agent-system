@@ -39,6 +39,7 @@ export async function verifyAutomationLifecycleRun(
   run: AutomationLifecycleRun,
   expectedId?: string,
   request?: AutomationGateway,
+  acceptedOccurrence = false,
 ): Promise<void> {
   const { context, store } = await service.scope(manifest, run.workspaceDir);
   const records = (await store.read()).records.filter(({ nativeId }) => nativeId === run.jobId);
@@ -51,13 +52,15 @@ export async function verifyAutomationLifecycleRun(
     !record ||
     (expectedId !== undefined && record.id !== expectedId) ||
     !declared ||
-    !declared.enabled ||
+    (!acceptedOccurrence && !declared.enabled) ||
     declared.payload.kind !== 'prompt' ||
     !declared.runtimes.includes('openclaw') ||
     record.pending ||
     record.retired ||
     record.removed ||
-    record.hash !== effectiveAutomation(declared, context).hash ||
+    !(acceptedOccurrence ? [true, false] : [declared.enabled]).some(
+      (enabled) => record.hash === effectiveAutomation({ ...declared, enabled }, context).hash,
+    ) ||
     !record.nativeHash
   )
     throw new AutomationError('automation-lifecycle-unverified');
@@ -76,8 +79,10 @@ export async function verifyAutomationLifecycleRun(
     native.id !== run.jobId ||
     native.declarationKey !== record.marker ||
     native.agentId !== run.agentId ||
-    native.enabled !== true ||
-    nativeAutomationHash(native) !== record.nativeHash
+    (!acceptedOccurrence && native.enabled !== true) ||
+    !(acceptedOccurrence ? [true, false] : [native.enabled]).some(
+      (enabled) => nativeAutomationHash({ ...native, enabled }) === record.nativeHash,
+    )
   )
     throw new AutomationError('automation-lifecycle-drift');
 }

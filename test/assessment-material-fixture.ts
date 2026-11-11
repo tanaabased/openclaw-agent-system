@@ -68,8 +68,6 @@ export function hostedAssessmentContextFixture() {
       },
       'openclaw',
     ),
-    routingNote:
-      'Requested aimock/gpt-5.5 / medium; session settings are verified at creation, not model execution.',
     effective: { model: 'aimock/gpt-5.5', thinkingLevel: 'medium', workspace },
     executionEffort: 'unverified',
     evidence: dispatchContext(

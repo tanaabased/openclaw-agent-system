@@ -1,29 +1,30 @@
-import taskPullRequest from './task-pull-request.ts';
-import { dispatchStorageNotice } from './dispatch-storage.ts';
-import { awaitingReassignment } from './assignment-retirement.ts';
-import intakeDebug from './intake-debug.ts';
-import retirementNotice from './retirement-notice.ts';
-import workflowRecovery from './workflow-recovery.ts';
-import workflowStatus from './workflow-status.ts';
-import { automationHash } from './automation-hash.ts';
-import dispatchCapacity from './openclaw-capacity.ts';
-import pendingAssignments from './dispatch-pending.ts';
-import intakeAutomationNotice from '../channels/github/presentation/intake-automation-notice.ts';
-import type { OpenClawDispatchState, OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import { intakeRemediation, type IntakeState } from '../channels/github/intake/record-store.ts';
 import {
+  githubNotificationQuote,
   githubNotificationMarkdownCode as inlineCode,
   githubNotificationMarkdownText as text,
-  githubNotificationQuote,
 } from '../channels/github/presentation/card.ts';
-
+import intakeAutomationNotice from '../channels/github/presentation/intake-automation-notice.ts';
+import { awaitingReassignment } from './assignment-retirement.ts';
+import { automationHash } from './automation-hash.ts';
+import pendingAssignments from './dispatch-pending.ts';
+import { dispatchStorageNotice } from './dispatch-storage.ts';
+import dispatchCapacity from './openclaw-capacity.ts';
+import type { OpenClawDispatchRecord, OpenClawDispatchState } from './openclaw-dispatch-state.ts';
+import retirementNotice from './retirement-notice.ts';
+import taskPullRequest from './task-pull-request.ts';
+import workflowRecovery from './workflow-recovery.ts';
+import workflowStatus from './workflow-status.ts';
 export interface IntakeObservation {
   status: 'ready' | 'blocked';
   changed: boolean;
   code?: string;
-  diagnostic?: { phase: string; elapsedMs: number; reason: string };
+  diagnostic?: {
+    phase: string;
+    elapsedMs: number;
+    reason: string;
+  };
 }
-
 /** presentation metadata never selects work, releases capacity, or proves delivery. */
 export default function openclawIntakeReport(input: {
   state: OpenClawDispatchState;
@@ -34,23 +35,14 @@ export default function openclawIntakeReport(input: {
 }) {
   const { state, intake, observation } = input;
   const storage = dispatchStorageNotice(state);
-  const active = state.records.filter(
-    (record) => !record.retired && !record.retirement && !record.reset,
-  );
+  const active = state.records.filter((record) => !record.retirement && !record.reset);
   const retiring = state.records.filter(
-    (record) =>
-      record.retirement && !record.retired && !record.reset && !awaitingReassignment(record),
+    (record) => record.retirement && !record.reset && !awaitingReassignment(record),
   );
   const retained = state.records.filter(awaitingReassignment);
   const retirementPending = retiring.length;
   const retirementNotices = state.records
-    .filter(
-      (record) =>
-        !record.reset &&
-        !record.retired &&
-        record.retirement?.code &&
-        !awaitingReassignment(record),
-    )
+    .filter((record) => !record.reset && record.retirement?.code && !awaitingReassignment(record))
     .map((record) => {
       const code = record.retirement!.code!;
       return {
@@ -62,11 +54,12 @@ export default function openclawIntakeReport(input: {
       };
     });
   const managing = active.filter((record) => record.sessionCreation?.verified && record.threadId);
-  const capacity = dispatchCapacity(state.records, input.slots, state.projectPickup);
+  const capacity = dispatchCapacity(state, input.slots, state.projectPickup);
   const started = managing.filter((record) => record.intakeReportedAt === undefined).slice(0, 12);
   const pending =
     intake && observation.status === 'ready' ? pendingAssignments(state, intake).length : undefined;
   const failures = [
+    ...(state.isolatedRecords ?? []).map(({ id, code }) => ({ id, code })),
     ...(storage.level !== 'normal' ? [{ id: 'storage', code: storage.key }] : []),
     ...retirementNotices
       .filter(({ notice }) => notice.severity !== 'info')
@@ -86,9 +79,7 @@ export default function openclawIntakeReport(input: {
         (record) =>
           record.blocker &&
           !record.handoff &&
-          !record.result &&
           (!record.sessionCreation?.verified ||
-            record.failureStage === 'first-turn' ||
             (record.failureStage === 'assessment-turn' &&
               record.blocker.startsWith('dispatch-turn-'))),
       )
@@ -96,22 +87,17 @@ export default function openclawIntakeReport(input: {
   ].sort((a, b) => (a.id + a.code).localeCompare(b.id + b.code));
   const problems = failures.map(({ id, code }) => id + ':' + code);
   const recovered = (state.intakeReport?.problems ?? []).filter((problem) => {
-    if (problem.endsWith(':retirement-legacy-unverified') || problems.includes(problem))
-      return false;
+    if (problems.includes(problem)) return false;
     const id = problem.slice(0, problem.indexOf(':'));
     if (id === 'storage') return storage.level === 'normal';
     if (id === 'intake') return observation.status === 'ready';
     if (id.startsWith('deferred-')) return true;
     if (id.startsWith('feedback-'))
       return Boolean(active.find((record) => record.id === id.slice(9) && !record.feedback?.code));
-    const retired = state.records.find(
-      (entry) => entry.id === id && (entry.retirement || entry.retired),
-    );
+    const retired = state.records.find((entry) => entry.id === id && entry.retirement);
     if (retired)
       return (
-        !retired.retirement?.code ||
-        Boolean(retired.retired) ||
-        retirementNotice(retired.retirement.code)?.severity === 'info'
+        !retired.retirement?.code || retirementNotice(retired.retirement.code)?.severity === 'info'
       );
     const record = active.find((entry) => entry.id === id);
     return Boolean(record && !record.blocker);
@@ -123,17 +109,9 @@ export default function openclawIntakeReport(input: {
     capacity,
   };
   const fingerprint = automationHash(fingerprintFacts);
-  const previousProblems = state.intakeReport?.problems ?? [];
-  const reclassifiedOnly =
-    previousProblems.some((p) => p.endsWith(':retirement-legacy-unverified')) &&
-    JSON.stringify(previousProblems.filter((p) => !p.endsWith(':retirement-legacy-unverified'))) ===
-      JSON.stringify(problems) &&
-    state.intakeReport?.fingerprint ===
-      automationHash({ ...fingerprintFacts, problems: previousProblems });
   const changed =
     started.length > 0 ||
-    (!reclassifiedOnly &&
-      fingerprint !== state.intakeReport?.fingerprint &&
+    (fingerprint !== state.intakeReport?.fingerprint &&
       (Boolean(state.intakeReport) || problems.length > 0 || Boolean(pending)));
   const automationNotice = intakeAutomationNotice(observation.code ?? '');
   const title =
@@ -162,7 +140,7 @@ export default function openclawIntakeReport(input: {
       storage.message,
       storage.level === 'normal'
         ? 'Journal pressure is clear.'
-        : 'Reconcile retired history. New admissions pause at 32 MiB; existing tasks can continue within the emergency budget.',
+        : 'Complete pending native cleanup. New admissions pause at 32 MiB; existing tasks can continue within the emergency budget.',
       '',
     );
   const label = (record: OpenClawDispatchRecord) => {
@@ -302,11 +280,6 @@ export default function openclawIntakeReport(input: {
     fingerprint,
     problems,
     started: started.map((record) => record.id),
-    response: [
-      githubNotificationQuote(lines.join('\n')),
-      intakeDebug(input.debug, state.records, label),
-    ]
-      .filter(Boolean)
-      .join('\n\n'),
+    response: githubNotificationQuote(lines.join('\n')),
   };
 }

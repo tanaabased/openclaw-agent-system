@@ -2,17 +2,17 @@ import assert from 'node:assert/strict';
 
 import { createCliStyles } from '../cli/output.ts';
 
-import { issueKey } from '../agent/dispatch-pending.ts';
 import assignmentIntakePolicy from '../agent/assignment-intake-policy.ts';
-import OpenClawNotifications from '../agent/openclaw-notifications.ts';
+import { issueKey } from '../agent/dispatch-pending.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
+import OpenClawNotifications from '../agent/openclaw-notifications.ts';
 import workflowStatus from '../agent/workflow-status.ts';
-import type { IntakeState } from '../channels/github/intake/record-store.ts';
 import refresh from '../channels/github/cli/refresh.ts';
 import status from '../channels/github/cli/status.ts';
 import wait from '../channels/github/cli/wait.ts';
+import type { IntakeState } from '../channels/github/intake/record-store.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import { intakeFixture, baseline } from './github-intake-fixture.ts';
+import { baseline, intakeFixture } from './github-intake-fixture.ts';
 
 const selector = { itemType: 'issue' as const, repository: 'owner/repo', number: 3 };
 function fixture() {
@@ -137,7 +137,7 @@ function record(): OpenClawDispatchRecord {
     intakeId: 'intake',
     issueKey: 'b'.repeat(64),
     sourceThreadId: 'coordinator',
-    phase: 'routing',
+
     createdAt: baseline,
     manifestDigest: 'digest',
   };
@@ -237,52 +237,39 @@ describe('agent/openclaw-notifications', () => {
     assert.equal(JSON.stringify(result).includes('policyDigest'), false);
   });
 
-  it('should keep saved implementation questions out of native activity status', async () => {
+  it('should report native activity without implementation progress records', async () => {
     const f = fixture();
     const item = {
       ...record(),
+      threadId: 'issue-chat',
       issueKey: issueKey(f.state!.records[0]!),
-      phase: 'complete',
-      result: { outcome: 'plan-ready' },
-      work: {
-        assessmentDigest: 'a'.repeat(64),
-        result: {
-          outcome: 'clarification-needed',
-          summary: 'Need input.',
-          fullResult: 'Partial work.',
-          questions: ['Which caller?'],
-        },
-      },
+
+      work: {},
     } as OpenClawDispatchRecord;
     f.records.push(item);
     const result = await f.service.inspect(f.manifest, '/workspace', selector);
     assert.equal(result.items[0]?.workflow?.phase, 'native-unobserved');
     assert.equal(result.items[0]?.waitingReason, undefined);
-    assert.equal(item.result!.outcome, 'plan-ready');
     assert.equal(f.requests, 0);
   });
 
-  it('should use the shared workflow status for implementation and delivery without mutating old records', async () => {
+  it('should use the shared workflow status for implementation and delivery without mutating task records', async () => {
     const f = fixture();
     const item = {
       ...record(),
+      threadId: 'issue-chat',
       issueKey: issueKey(f.state!.records[0]!),
-      phase: 'complete',
-      result: { outcome: 'plan-ready' },
+
       work: {
-        assessmentDigest: 'a'.repeat(64),
         implementation: { runId: 'original', inputEventId: 'original-input' },
       },
     } as OpenClawDispatchRecord;
     f.records.push(item);
-    for (const outcome of [undefined, 'done'] as const) {
-      if (outcome) item.work!.result = { outcome, summary: 'Done.', fullResult: 'Checked.' };
-      const before = structuredClone(item);
-      const result = await f.service.inspect(f.manifest, '/workspace', selector);
-      assert.equal(result.items[0]?.workflow?.phase, 'native-unobserved');
-      assert.equal(result.items[0]?.workflow?.phase, workflowStatus(item));
-      assert.deepEqual(item, before);
-    }
+    const before = structuredClone(item);
+    const result = await f.service.inspect(f.manifest, '/workspace', selector);
+    assert.equal(result.items[0]?.workflow?.phase, 'native-unobserved');
+    assert.equal(result.items[0]?.workflow?.phase, workflowStatus(item));
+    assert.deepEqual(item, before);
     assert.equal(f.requests, 0);
   });
 
@@ -320,22 +307,23 @@ describe('agent/openclaw-notifications', () => {
     f.records.push({
       ...record(),
       issueKey: issueKey(f.state!.records[0]!),
-      phase: 'complete',
-      result: {
-        version: 1,
-        outcome: 'plan-ready',
-        summary: 'summary',
-        assessment: 'assessment',
-        plan: 'plan',
-        evidence: [],
-        progress: { completed: [], remaining: [] },
+
+      worktree: '/worktree',
+      threadId: 'issue-chat',
+      sessionCreation: {
+        attempted: true,
+        verified: true,
+        sessionId: 'session',
+        sourceSessionId: 'coordinator',
+        sourceRunId: 'run',
+        sourceToolCallId: 'tool',
       },
     });
     assert.equal(
       (
         await f.service.wait(f.manifest, '/workspace', {
           selector,
-          target: 'plan-ready',
+          target: 'prepared',
           timeoutMs: 10,
           refresh: false,
         })
@@ -408,17 +396,18 @@ describe('agent/openclaw-notifications', () => {
     }
   });
 
-  it('should distinguish creation uncertainty preparation assessment and retained plan completion', async () => {
+  it('should distinguish creation uncertainty from verified native preparation', async () => {
     const f = fixture();
     const r = record();
+    r.request = {} as NonNullable<typeof r.request>;
     r.issueKey = issueKey(f.state!.records[0]!);
     f.records.push(r);
-    r.phase = 'creating';
+
     assert.equal(
       (await f.service.inspect(f.manifest, '/workspace')).items[0]?.workflow?.phase,
       'creating',
     );
-    r.phase = 'created';
+
     r.worktree = '/worktree';
     r.threadId = 'issue-chat';
     r.sessionCreation = {
@@ -429,7 +418,7 @@ describe('agent/openclaw-notifications', () => {
       sessionId: 'session',
       verified: true,
     };
-    let result = await f.service.wait(f.manifest, '/workspace', {
+    const result = await f.service.wait(f.manifest, '/workspace', {
       selector,
       target: 'prepared',
       timeoutMs: 1,
@@ -437,39 +426,14 @@ describe('agent/openclaw-notifications', () => {
     });
     assert.equal(result.status, 'completed');
     assert.equal(result.observation.items[0]?.workflow?.conversation, 'issue-chat');
-    r.phase = 'assessing';
-    result = await f.service.wait(f.manifest, '/workspace', {
-      selector,
-      target: 'plan-ready',
-      timeoutMs: 1,
-      refresh: false,
-    });
-    assert.equal(result.status, 'timed-out');
-    r.phase = 'complete';
-    r.result = {
-      version: 1,
-      outcome: 'plan-ready',
-      summary: 'summary',
-      assessment: 'assessment',
-      plan: 'plan',
-      evidence: [],
-      progress: { completed: [], remaining: [] },
-    };
-    result = await f.service.wait(f.manifest, '/workspace', {
-      selector,
-      target: 'plan-ready',
-      timeoutMs: 1,
-      refresh: false,
-    });
-    assert.equal(result.status, 'completed');
   });
 
-  it('should observe native preparation independently of failed replies and historical results', async () => {
+  it('should observe native preparation independently of failed replies', async () => {
     const f = fixture();
     const r: OpenClawDispatchRecord = {
       ...record(),
       issueKey: issueKey(f.state!.records[0]!),
-      phase: 'created',
+
       worktree: '/worktree',
       threadId: 'issue-chat',
       sessionCreation: {
@@ -481,7 +445,6 @@ describe('agent/openclaw-notifications', () => {
         verified: true,
       },
       feedback: { baseline: {}, events: [], code: 'feedback-publication-failed' },
-      blocker: 'historical-assessment-failed',
     };
     f.records.push(r);
     const before = structuredClone(r);
@@ -495,15 +458,7 @@ describe('agent/openclaw-notifications', () => {
       assert.equal(result.status, 'completed');
       assert.equal(result.observation.items[0]?.failureCode, undefined);
       assert.equal(result.observation.items[0]?.reasonCode, 'feedback-publication-failed');
-      assert.equal(result.observation.items[0]?.assessmentOutcome, undefined);
     }
-    const historical = await f.service.wait(f.manifest, '/workspace', {
-      selector,
-      target: 'plan-ready',
-      timeoutMs: 1,
-      refresh: false,
-    });
-    assert.equal(historical.status, 'timed-out');
     assert.deepEqual(r, before);
   });
 
@@ -512,7 +467,7 @@ describe('agent/openclaw-notifications', () => {
     f.records.push({
       ...record(),
       issueKey: issueKey(f.state!.records[0]!),
-      phase: 'blocked',
+
       blocker: 'dispatch-native-session-diverged',
     });
     const blocked = await f.service.wait(f.manifest, '/workspace', {
@@ -559,7 +514,7 @@ describe('agent/openclaw-notifications', () => {
     assert.equal(result.runId, undefined);
     await f.service.wait(f.manifest, '/workspace', {
       selector,
-      target: 'plan-ready',
+      target: 'prepared',
       timeoutMs: 2500,
       refresh: true,
     });
@@ -599,7 +554,7 @@ describe('agent/openclaw-notifications', () => {
         f.records.push({
           ...record(),
           issueKey: issueKey(f.state!.records[0]!),
-          phase: 'created',
+
           worktree: '/worktree',
           threadId: 'issue-chat',
           sessionCreation: {
@@ -637,28 +592,28 @@ describe('agent/openclaw-notifications', () => {
       f.records.push({
         ...record(),
         issueKey: issueKey(f.state!.records[0]!),
-        phase: 'complete',
-        result: {
-          version: 1,
-          outcome: 'plan-ready',
-          summary: 'summary',
-          assessment: 'assessment',
-          plan: 'plan',
-          evidence: [],
-          progress: { completed: [], remaining: [] },
+
+        worktree: '/worktree',
+        threadId: 'issue-chat',
+        sessionCreation: {
+          attempted: true,
+          verified: true,
+          sessionId: 'session',
+          sourceSessionId: 'coordinator',
+          sourceRunId: 'run',
+          sourceToolCallId: 'tool',
         },
       });
       return 'completed';
     };
     const result = await f.service.wait(f.manifest, '/workspace', {
       selector,
-      target: 'plan-ready',
+      target: 'prepared',
       timeoutMs: 10_000,
       refresh: true,
     });
     assert.equal(result.status, 'completed');
     assert.equal(result.observation.items[0]?.workflow?.phase, 'native-unobserved');
-    assert.equal(result.observation.items[0]?.assessmentOutcome, 'plan-ready');
     assert.equal(requests, 2);
     assert.equal(inspections, 2);
   });
@@ -675,7 +630,7 @@ describe('agent/openclaw-notifications', () => {
     };
     const result = await f.service.wait(f.manifest, '/workspace', {
       selector,
-      target: 'plan-ready',
+      target: 'prepared',
       timeoutMs: 3000,
       refresh: true,
     });
@@ -693,7 +648,7 @@ describe('agent/openclaw-notifications', () => {
     };
     const result = await f.service.wait(f.manifest, '/workspace', {
       selector,
-      target: 'plan-ready',
+      target: 'prepared',
       timeoutMs: 3000,
       refresh: true,
     });

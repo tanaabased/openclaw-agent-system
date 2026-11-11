@@ -153,6 +153,8 @@ export default function codexRetirementNative(request: CodexThreadRequest) {
           if (
             [
               'userMessage',
+              'functionCallOutput',
+              'hookPrompt',
               'agentMessage',
               'reasoning',
               'plan',

@@ -145,8 +145,8 @@ export function createAutomationGateway(call: AutomationGatewayCaller): Automati
       'sessions.patch',
     ].includes(method);
     const signal = method === 'sessions.create' ? privateStateLockSignal() : undefined;
-    try {
-      return await call(
+    const invoke = () =>
+      call(
         method,
         method === 'sessions.create' ? { timeout: String(openclawSessionCreateTimeoutMs) } : {},
         params,
@@ -164,7 +164,20 @@ export function createAutomationGateway(call: AutomationGatewayCaller): Automati
           ...(readOnly ? { sharedStateMode: 'read-only' as const } : {}),
         },
       );
+    try {
+      try {
+        return await invoke();
+      } catch (error) {
+        const { default: automationGatewayUnavailable } =
+          await import('./automation-gateway-unavailable.ts');
+        // Cold installation may overlap the Gateway's plugin/config reload. Reconnect
+        // once for a read that never reached it; never replay a mutation or a denial.
+        if (!readOnly || !automationGatewayUnavailable(error)) throw error;
+        assertPrivateStateLocksHeld();
+        return await invoke();
+      }
     } catch (error) {
+      assertPrivateStateLocksHeld();
       const { default: automationGatewayDiagnostic } =
         await import('./automation-gateway-diagnostic.ts');
       const { default: automationGatewayUnavailable } =

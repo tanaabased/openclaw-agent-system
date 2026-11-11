@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { GitHubWorkEventClientError } from './work-event-api-client.ts';
 import { githubCommentCard } from '../presentation/comment.ts';
+import mentionLinks from '../presentation/mention-links.ts';
 import { githubNotificationMarkdownCode as inlineCode } from '../presentation/card.ts';
 import {
   admitGitHubComment,
@@ -254,21 +255,24 @@ export function reviewFeedbackPresentation(comment: GitHubReviewFeedback): strin
   const lines: string[] = [];
   if (receipt.kind === 'review')
     lines.push(
-      `Review summary${receipt.summarySelected ? '' : ' (unchanged context)'}:\n${review.body || '(empty summary)'}`,
+      `Review summary${receipt.summarySelected ? '' : ' (unchanged context)'}:\n${mentionLinks(review.body) || '(empty summary)'}`,
     );
   for (const finding of context.findings) {
     lines.push(
-      `${finding.body}\n\n[${inlineCode(finding.path)} ↗](${finding.url}) · reviewed commit ${inlineCode(finding.originalCommitId.slice(0, 7))}\nCurrent line: ${finding.line ?? 'unavailable or outdated'}; original line: ${finding.originalLine ?? 'unavailable'}; side: ${finding.side ? inlineCode(finding.side) : 'unavailable'}\n\n${reviewDiffPreview(finding)}`,
+      `${mentionLinks(finding.body)}\n\n[${inlineCode(finding.path)} ↗](${finding.url}) · reviewed commit ${inlineCode(finding.originalCommitId.slice(0, 7))}\nCurrent line: ${finding.line ?? 'unavailable or outdated'}; original line: ${finding.originalLine ?? 'unavailable'}; side: ${finding.side ? inlineCode(finding.side) : 'unavailable'}\n\n${reviewDiffPreview(finding)}`,
     );
   }
-  return githubCommentCard({
-    body: lines.join('\n\n'),
-    author: {
-      label: comment.author!.login,
-      url: `https://github.com/${encodeURIComponent(comment.author!.login)}`,
+  return githubCommentCard(
+    {
+      body: lines.join('\n\n'),
+      author: {
+        label: comment.author!.login,
+        url: `https://github.com/${encodeURIComponent(comment.author!.login)}`,
+      },
+      label: 'Review comment',
+      connector: 'from',
+      publication: { url: sourceUrl },
     },
-    label: 'Review comment',
-    connector: 'from',
-    publication: { url: sourceUrl },
-  });
+    { style: 'unquoted' },
+  );
 }

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 
+import dispatchContext from '../agent/dispatch-context.ts';
 import type { AgentSystemCliResult } from '../api/types.ts';
+import { githubCommentPageSize } from '../channels/github/provider/issue-comment-client.ts';
 import GitHubWorkEventClient, {
   GitHubWorkEventClientError,
 } from '../channels/github/provider/work-event-client.ts';
@@ -8,8 +10,6 @@ import {
   githubNotificationPublicationMarker,
   githubNotificationPublicationTarget,
 } from '../channels/github/publication/publication-contract.ts';
-import { githubCommentPageSize } from '../channels/github/provider/issue-comment-client.ts';
-import dispatchContext from '../agent/dispatch-context.ts';
 import retryGitHubRead from '../core/github-read-retry.ts';
 
 function response(body: unknown, link?: string): AgentSystemCliResult {
@@ -784,7 +784,7 @@ describe('channels/github/provider/work-event-client', () => {
     assert.ok(requests[1]?.some((value) => value.includes('[0:12001]')));
   });
 
-  for (const intent of ['pull-request-handoff', 'assessment-summary'] as const) {
+  for (const intent of ['pull-request-handoff', 'status-update'] as const) {
     it(`should reconcile and publish ${intent} without putting bodies in argv`, async () => {
       const publicationMarker = githubNotificationPublicationMarker(
         githubNotificationPublicationTarget({

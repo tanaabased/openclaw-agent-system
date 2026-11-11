@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 
-import codexContinuationNative from '../agent/codex-continuation-native.ts';
-import type { CodexContinuationState } from '../agent/codex-continuation-state.ts';
+import codexContinuationNative, {
+  type CodexNativeAttempt,
+} from '../agent/codex-continuation-native.ts';
 
 // constructed protocol cases; the authorized desktop pilot owns live native evidence.
 describe('agent/codex-continuation-native', () => {
-  const attempt: NonNullable<CodexContinuationState['attempt']> = {
+  const attempt: CodexNativeAttempt = {
     id: 'a'.repeat(64),
     sourceTurnId: 'scan',
     beforeTurnId: 'assessment',
@@ -148,6 +149,10 @@ describe('agent/codex-continuation-native', () => {
       arguments?: Record<string, unknown>;
       error?: { message: string };
       result?: unknown;
+      outputObject?: boolean;
+      outputArray?: boolean;
+      outputWhitespace?: boolean;
+      outputTruncated?: boolean;
     } = {},
   ) {
     const call = {
@@ -179,6 +184,12 @@ describe('agent/codex-continuation-native', () => {
         ...(options.items ?? []),
       ],
     };
+    const escape = (value: string) =>
+      value.replace(/&/gu, '&amp;').replace(/</gu, '&lt;').replace(/>/gu, '&gt;');
+    const prompt = options.prompt ?? attempt.request.prompt;
+    const delegation = options.outputWhitespace
+      ? `<codex_delegation>\n    <source_thread_id>source</source_thread_id>\n    <input>${escape(prompt)}</input>\n</codex_delegation>`
+      : `<codex_delegation>\n  <source_thread_id>source</source_thread_id>\n  <input>${escape(prompt)}</input>\n</codex_delegation>`;
     const steered = {
       ...implementation,
       id: 'assessment',
@@ -187,10 +198,14 @@ describe('agent/codex-continuation-native', () => {
           type: 'functionCallOutput',
           namespace: 'codex_app',
           name: 'send_message_to_thread',
-          output:
-            '<codex_delegation>\n  <source_thread_id>source</source_thread_id>\n  <input>' +
-            (options.prompt ?? attempt.request.prompt) +
-            '</input>\n</codex_delegation>',
+          output: options.outputObject
+            ? {
+                text: delegation,
+                truncated: options.outputTruncated ?? false,
+              }
+            : options.outputArray
+              ? [{ type: 'input_text', text: delegation }]
+              : delegation,
         },
       ],
     };
@@ -295,6 +310,37 @@ describe('agent/codex-continuation-native', () => {
     assert.deepEqual(await fixture({ sameTurn: true, prompt: 'different' })('source', attempt), {
       status: 'uncertain',
     });
+  });
+  it('should verify structured native output while matching exact source and prompt', async () => {
+    assert.deepEqual(await fixture({ sameTurn: true, outputArray: true })('source', attempt), {
+      status: 'verified',
+      turnId: 'assessment',
+      ended: false,
+    });
+    assert.deepEqual(
+      await fixture({ sameTurn: true, outputArray: true, prompt: 'different' })('source', attempt),
+      { status: 'uncertain' },
+    );
+    assert.deepEqual(
+      await fixture({ sameTurn: true, outputObject: true, outputWhitespace: true })(
+        'source',
+        attempt,
+      ),
+      {
+        status: 'verified',
+        turnId: 'assessment',
+        ended: false,
+      },
+    );
+    assert.deepEqual(
+      await fixture({ sameTurn: true, outputObject: true, outputTruncated: true })(
+        'source',
+        attempt,
+      ),
+      {
+        status: 'uncertain',
+      },
+    );
   });
   it('should reconcile a send from its recorded owner after the coordinator is replaced', async () => {
     assert.equal(

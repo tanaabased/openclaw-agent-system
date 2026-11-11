@@ -106,13 +106,10 @@ export default function selectionFixture(runtime: 'codex' | 'openclaw' = 'codex'
     projectPickup?: IssuePickupState;
     records: Array<{
       projectWork?: ProjectWork;
-      retired?: object;
+      reset?: object;
       issueKey: string;
-      phase: string;
       request?: object;
       progression?: { stage: string };
-      result?: { outcome: string };
-      continuation?: { phase: string; result?: { outcome: string }; scope?: 'local' };
     }>;
   } = { records: [] };
   const identity = { instanceId: '22222222-2222-4222-8222-222222222222', displayName: 'fixture' };

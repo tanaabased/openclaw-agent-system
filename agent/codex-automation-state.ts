@@ -85,11 +85,11 @@ const savedSchema = Type.Union([
       ]),
       cwds: Type.Array(text, { minItems: 1, maxItems: 1 }),
     },
-    { additionalProperties: false },
+    { additionalProperties: true },
   ),
   Type.Object(
     { ...savedCommon, kind: Type.Literal('heartbeat'), target_thread_id: text },
-    { additionalProperties: false },
+    { additionalProperties: true },
   ),
 ]);
 

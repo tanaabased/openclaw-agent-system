@@ -10,9 +10,18 @@ describe('agent/launch-pending', () => {
     const record = { threadId: 'native-chat', sessionCreation: { verified: true as const } };
     assert.equal(launchPending(record), true);
     for (const status of ['accepted', 'consumed', 'completed'])
-      assert.equal(launchPending({ ...record, assessmentTurn: { runId: 'run', status } }), false);
+      assert.equal(
+        launchPending({
+          ...record,
+          nativeTurns: [{ role: 'assessment', turn: { runId: 'run', status } }],
+        }),
+        false,
+      );
     assert.equal(
-      launchPending({ ...record, assessmentTurn: { runId: 'run', status: 'attempted' } }),
+      launchPending({
+        ...record,
+        nativeTurns: [{ role: 'assessment', turn: { runId: 'run', status: 'attempted' } }],
+      }),
       true,
     );
   });

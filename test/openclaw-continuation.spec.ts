@@ -6,20 +6,16 @@ import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts
 function delivered() {
   return {
     id: 'issue',
-    phase: 'complete',
+
     request: { key: 'chat', agentId: 'agent' },
     sessionCreation: { verified: true },
-    assessmentTurn: { status: 'completed' },
     progression: { stage: 'implementation', via: 'work' },
-    result: { outcome: 'plan-ready' },
-    work: {
-      result: { outcome: 'done', summary: 'Done.', fullResult: 'Checked.' },
-      turn: { status: 'completed', runId: 'implementation', message: 'Work.' },
-      delivery: {
-        pullRequest: { pullRequestNumber: 7 },
-        reconciled: true,
-      },
+    delivery: {
+      pullRequest: { pullRequestNumber: 7 },
+      reconciled: true,
     },
+    work: {},
+    nativeTurns: [{ role: 'assessment', turn: { status: 'completed' } }],
   } as OpenClawDispatchRecord;
 }
 
@@ -27,7 +23,6 @@ describe('agent/openclaw-continuation', () => {
   it('should leave delivered work idle regardless of missing card or announcement outcomes', async () => {
     const record = delivered();
     record.handoff = { at: 1, by: 'chat', turnId: 'old' };
-    record.decisionTurn = { status: 'attempted', runId: 'old-decision', message: 'Decide.' };
     const before = structuredClone(record);
     const result = await advanceOpenClawWork({
       record,
@@ -44,43 +39,36 @@ describe('agent/openclaw-continuation', () => {
     assert.deepEqual(record, before);
   });
 
-  it('should reconcile only the already submitted delivery turn after verified delivery', () => {
+  it('should reconcile only the already submitted initial turn', () => {
     const record = delivered();
-    record.work!.deliveryTurn = { status: 'accepted', runId: 'delivery', message: 'Deliver.' };
-    assert.equal(openClawWorkSlot(record), 'deliveryTurn');
-    record.work!.deliveryTurn.status = 'completed';
+    const turn = { status: 'accepted' as const, runId: 'initial', message: 'Assess.' };
+    record.nativeTurns!.push({ role: 'assessment', turn });
+    assert.equal(openClawWorkSlot(record), 'native');
+    record.nativeTurns!.at(-1)!.turn.status = 'completed';
     assert.equal(openClawWorkSlot(record), undefined);
   });
 
   it('should not turn missing results or publication into a new request', () => {
     const record = delivered();
-    record.work!.delivery!.reconciled = false;
-    assert.equal(openClawWorkSlot(record), undefined);
-    delete record.work!.result;
+    record.delivery!.reconciled = false;
     assert.equal(openClawWorkSlot(record), undefined);
   });
 
   it('should not let an announcement failure hold unfinished initial publication', () => {
     const record = delivered();
-    record.work!.delivery!.reconciled = false;
-    record.work!.delivery!.announcement = { code: 'delivery-announcement-denied' } as NonNullable<
-      NonNullable<typeof record.work>['delivery']
-    >['announcement'];
+    record.delivery!.reconciled = false;
+    record.announcement = { code: 'delivery-announcement-denied' } as NonNullable<
+      typeof record.announcement
+    >;
     assert.equal(openClawWorkSlot(record), undefined);
   });
 
-  it('should leave a later human revision outside automatic continuation while retaining its history', () => {
+  it('should leave inactive native turns stopped', () => {
     const record = delivered();
-    const previous = record.work!.result!;
-    delete record.work!.result;
-    record.work!.resultHistory = [{ result: previous }];
-    assert.equal(openClawWorkSlot(record), undefined);
-    assert.equal(record.work!.resultHistory[0]!.result, previous);
-  });
-
-  it('should preserve native cancellation as a stop', () => {
-    const record = delivered();
-    record.work!.code = 'dispatch-turn-cancelled';
+    record.nativeTurns!.push({
+      role: 'assessment',
+      turn: { status: 'accepted', runId: 'stopped', message: 'Assess.', inactive: true },
+    });
     assert.equal(openClawWorkSlot(record), undefined);
   });
 });

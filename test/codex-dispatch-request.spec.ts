@@ -8,6 +8,7 @@ describe('agent/codex-dispatch-request', () => {
   it('should reject unknown actions, extra authority, missing ids, and malformed selections', () => {
     for (const [action, input] of [
       ['toString', {}],
+      ['result', { id: 'a'.repeat(64), result: 'obsolete assessment result' }],
       ['inspect', { id: 'other' }],
       ['observe-denials', { denial: 'model claim' }],
       ['context', {}],
@@ -19,9 +20,8 @@ describe('agent/codex-dispatch-request', () => {
     ] as const)
       assert.throws(() => validateDispatchRequest(action, input), /dispatch-request-invalid/);
   });
-  it('should preserve owner validation of native receipts and assessment results', () => {
+  it('should preserve owner validation of native receipts', () => {
     validateDispatchRequest('reconcile', { id: 'a'.repeat(64), receipt: { unexpected: true } });
-    validateDispatchRequest('result', { id: 'a'.repeat(64), result: 'invalid owner value' });
     validateDispatchRequest('next', {});
     validateDispatchRequest('observe-denials', {});
     validateDispatchRequest('retry-denied', {

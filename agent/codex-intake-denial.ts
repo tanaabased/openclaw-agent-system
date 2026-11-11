@@ -56,21 +56,24 @@ export function matchesDeniedPreparation(
   }
 }
 
+type DenialRecord = Pick<
+  DispatchRecord,
+  | 'id'
+  | 'sourceThreadId'
+  | 'preparationObservation'
+  | 'request'
+  | 'preparationTurnId'
+  | 'creationAfterItemId'
+  | 'context'
+>;
+
 /** observe native non-execution, never model claims or an error string from an executed command. */
 export default async function intakeDenial(
   request: CodexThreadRequest,
-  record: Pick<
-    DispatchRecord,
-    | 'id'
-    | 'sourceThreadId'
-    | 'preparationObservation'
-    | 'request'
-    | 'preparationTurnId'
-    | 'creationAfterItemId'
-    | 'context'
-  >,
+  record: DenialRecord,
   observingPreparation = false,
   recoveryCallId?: string,
+  otherRecords: DenialRecord[] = [],
 ): Promise<Omit<IntakeDenial, 'observedAt'> | undefined> {
   const anchor = record.request ? undefined : record.preparationObservation;
   const threadId = anchor?.sourceThreadId ?? record.sourceThreadId;
@@ -100,6 +103,7 @@ export default async function intakeDenial(
     }
   if (!found) throw new Error('dispatch-denial-history-unavailable');
   const items: Record<string, unknown>[] = [];
+  const boundaries = new Map<string, string[]>();
   for (const observedTurn of turns.reverse()) {
     const entries = await dispatchHistoryPages(request, 'thread/items/list', {
       threadId,
@@ -118,29 +122,60 @@ export default async function intakeDenial(
       ids.add(entry.item.id);
       return { ...entry.item, observedTurn };
     });
+    boundaries.set(
+      observedTurn,
+      allItems.map((item) => item.id as string),
+    );
     const boundary =
       observedTurn === turnId ? allItems.findIndex((item) => item.id === afterItemId) : -1;
     if (observedTurn === turnId && boundary < 0)
       throw new Error('dispatch-denial-history-unavailable');
     items.push(...allItems.slice(boundary + 1));
   }
-  const matches = (item: Record<string, unknown>) =>
-    anchor
+  const matchesRecord = (item: Record<string, unknown>, candidate: DenialRecord) => {
+    const preparation = candidate.request ? undefined : candidate.preparationObservation;
+    return preparation
       ? item.type === 'commandExecution' &&
-        matchesDeniedPreparation(
-          item.command,
-          record.id,
-          anchor,
-          record.context ? JSON.parse(record.context).source : undefined,
-        )
-      : item.type === 'mcpToolCall' &&
-        item.server === 'codex_app' &&
-        item.tool === 'create_thread' &&
-        automationHash(item.arguments) === automationHash(record.request);
+          matchesDeniedPreparation(
+            item.command,
+            candidate.id,
+            preparation,
+            candidate.context ? JSON.parse(candidate.context).source : undefined,
+          )
+      : Boolean(candidate.request) &&
+          item.type === 'mcpToolCall' &&
+          item.server === 'codex_app' &&
+          item.tool === 'create_thread' &&
+          automationHash(item.arguments) === automationHash(candidate.request);
+  };
+  const matches = (item: Record<string, unknown>) => matchesRecord(item, record);
+  const belongsElsewhere = (item: Record<string, unknown>) => {
+    if (matches(item)) return false;
+    const owners = otherRecords.filter((candidate) => {
+      if (candidate.id === record.id) return false;
+      const preparation = candidate.request ? undefined : candidate.preparationObservation;
+      const source = preparation?.sourceThreadId ?? candidate.sourceThreadId;
+      const turn = preparation?.turnId ?? candidate.preparationTurnId;
+      const after = preparation?.afterItemId ?? candidate.creationAfterItemId;
+      const ids = turn && boundaries.get(turn);
+      return (
+        source === threadId &&
+        turn === item.observedTurn &&
+        after &&
+        ids &&
+        ids.indexOf(after) >= 0 &&
+        ids.indexOf(item.id as string) > ids.indexOf(after) &&
+        matchesRecord(item, candidate)
+      );
+    });
+    return owners.length === 1;
+  };
   const denied = items.filter(
     (item) =>
       codexTurnApprovalDenied([item]) &&
-      (recoveryCallId === undefined || (item.id === recoveryCallId && matches(item))),
+      (recoveryCallId === undefined
+        ? !belongsElsewhere(item)
+        : item.id === recoveryCallId && matches(item)),
   );
   if (!denied.length) {
     if (recoveryCallId !== undefined) throw new Error('dispatch-denial-unverified');
@@ -152,7 +187,7 @@ export default async function intakeDenial(
       throw new Error('dispatch-denial-execution-unresolved');
     return;
   }
-  // any other refused effect leaves workflow scope unknown; no prose-based scope inference.
+  // Only exact retained native operations narrow a denial; unrecognized effects remain ambiguous.
   if (
     denied.length !== 1 ||
     !matches(denied[0]!) ||

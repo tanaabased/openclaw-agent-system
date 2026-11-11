@@ -252,7 +252,25 @@ describe('codex retirement native evidence', () => {
           nextCursor: null,
         };
       return {
-        data: (params.turnId === 'current' || !item ? [message] : [message, item]).map((item) => ({
+        data: (params.turnId === 'current' || !item
+          ? [message]
+          : [
+              message,
+              {
+                id: 'trigger',
+                type: 'functionCallOutput',
+                namespace: 'codex_app',
+                name: 'automation_update',
+                output: '<heartbeat>scheduled input</heartbeat>',
+              },
+              {
+                id: 'hook',
+                type: 'hookPrompt',
+                fragments: [{ hookRunId: 'hook-run', text: 'context' }],
+              },
+              item,
+            ]
+        ).map((item) => ({
           turnId: params.turnId,
           item,
         })),
@@ -261,15 +279,26 @@ describe('codex retirement native evidence', () => {
     };
   }
   it('should prove non-submission from completed native history without trusting prose', async () => {
-    assert.equal(
-      await nativeRetirement(history()).archiveOutcome(
-        'owner',
-        'child',
-        { at: 105000, turnId: 'prepared' },
-        'current',
-      ),
-      'unsubmitted',
-    );
+    for (const input of [
+      undefined,
+      { id: 'user', type: 'userMessage', content: [] },
+      {
+        id: 'input',
+        type: 'functionCallOutput',
+        name: 'automation_update',
+        namespace: 'codex_app',
+        output: 'input',
+      },
+    ])
+      assert.equal(
+        await nativeRetirement(history(input)).archiveOutcome(
+          'owner',
+          'child',
+          { at: 105000, turnId: 'prepared' },
+          'current',
+        ),
+        'unsubmitted',
+      );
   });
   it('should keep missing and unreadable archive arguments unresolved', async () => {
     for (const args of [undefined, {}, { archived: true }]) {
