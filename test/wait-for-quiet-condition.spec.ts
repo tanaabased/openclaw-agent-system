@@ -29,6 +29,8 @@ describe('examples/openclaw-notifications-scheduling/wait-condition', () => {
         };
       }) as never,
       report: () => assert.fail('successful observation must not report failure'),
+      fetchDiagnostics: async () =>
+        assert.fail('successful observation must not fetch diagnostics'),
     });
     assert.equal(reads, 2);
   });
@@ -56,6 +58,22 @@ describe('examples/openclaw-notifications-scheduling/wait-condition', () => {
             status: 0,
             stdout: JSON.stringify({ id: 'native', state, payload: 'must not be retained' }),
           })) as never,
+          fetchDiagnostics: async () => ({
+            requests: [
+              {
+                status: 503,
+                matched: false,
+                intakeCondition: {
+                  phase: 'assignment-search',
+                  reason: 'discovery-budget-exhausted',
+                  elapsedMs: 20000,
+                },
+                checks: { model: true },
+                messages: 'must not be retained',
+                results: 'must not be retained',
+              },
+            ],
+          }),
           report: (
             nativeId: string,
             runId: string | undefined,
@@ -76,6 +94,19 @@ describe('examples/openclaw-notifications-scheduling/wait-condition', () => {
       assert.deepEqual(report.observationWindow, { fromMs: 2000, throughMs: 2000 });
       const observation = JSON.parse(report.evidence[0]!.split(': ').slice(1).join(': '));
       assert.deepEqual(observation, { due: 2000, state });
+      const payload = JSON.parse(report.evidence[1]!.split(': ').slice(1).join(': '));
+      assert.deepEqual(payload.requests, [
+        {
+          status: 503,
+          matched: false,
+          intakeCondition: {
+            phase: 'assignment-search',
+            reason: 'discovery-budget-exhausted',
+            elapsedMs: 20000,
+          },
+          checks: { model: true },
+        },
+      ]);
       assert.ok(!JSON.stringify(reports).includes('must not be retained'));
     }
   });
@@ -95,6 +126,9 @@ describe('examples/openclaw-notifications-scheduling/wait-condition', () => {
         })) as never,
         report: () => {
           reported = true;
+        },
+        fetchDiagnostics: async () => {
+          throw new Error('mock unavailable');
         },
       }),
       /observation deadline/,

@@ -14,6 +14,10 @@ export async function waitForQuietCondition(
     now = Date.now,
     sleep = (ms) => setTimeout(ms),
     report = reportAutomationFailure,
+    fetchDiagnostics = () =>
+      fetch('http://127.0.0.1:4010/proof/diagnostics', {
+        signal: AbortSignal.timeout(5000),
+      }).then((response) => response.json()),
   } = {},
 ) {
   assert.ok(nativeId && Number.isSafeInteger(due) && due > 0);
@@ -54,9 +58,31 @@ export async function waitForQuietCondition(
     }
     throw new Error('scheduled condition did not finish before the observation deadline');
   } catch (error) {
+    const throughMs = now();
+    const evidence = [
+      'scheduled condition observation: ' + JSON.stringify({ due, state: observation }),
+    ];
+    try {
+      const diagnostics = await fetchDiagnostics();
+      evidence.push(
+        'scheduled payload diagnostics: ' +
+          JSON.stringify({
+            requests: diagnostics.requests
+              ?.slice(0, 6)
+              .map(({ status, matched, intakeCondition, checks }) => ({
+                status,
+                matched,
+                intakeCondition,
+                checks,
+              })),
+          }),
+      );
+    } catch {
+      evidence.push('scheduled payload diagnostics: unavailable');
+    }
     report(nativeId, undefined, {
-      observationWindow: { fromMs: due, throughMs: now() },
-      evidence: ['scheduled condition observation: ' + JSON.stringify({ due, state: observation })],
+      observationWindow: { fromMs: due, throughMs },
+      evidence,
     });
     throw error;
   }

@@ -16,6 +16,7 @@ interface OpenClawAIMockDiagnostics {
     path: string;
     status: number;
     matched: boolean;
+    intakeCondition?: ReturnType<typeof intakeConditionDiagnostic>;
     toolCalls: Array<{ id: string | undefined; name: string | undefined }>;
     checks: {
       model: boolean;
@@ -26,6 +27,39 @@ interface OpenClawAIMockDiagnostics {
     };
     results: Array<{ callId: string | undefined; content: string }>;
   }>;
+}
+
+/** Extract only generated condition diagnostics, never the surrounding prompt or provider text. */
+function intakeConditionDiagnostic(request: ChatCompletionRequest) {
+  for (const message of (request.messages ?? [])
+    .filter((item) => item.role === 'user')
+    .slice(-4)
+    .reverse()) {
+    const text = getTextContent(message.content) ?? '';
+    const failure =
+      /The (dispatch|intake) condition failed \(([a-z][a-z0-9-]{0,100})\) after (\d{1,12}) ms\./u.exec(
+        text,
+      );
+    if (failure) return { phase: failure[1], reason: failure[2], elapsedMs: Number(failure[3]) };
+    const match = /Intake check: (\{[^\n]{1,4096}?\})\. /u.exec(text);
+    if (!match) continue;
+    try {
+      const value = JSON.parse(match[1]!);
+      const label = (input: unknown) =>
+        typeof input === 'string' && /^[a-z][a-z0-9-]{0,100}$/u.test(input) ? input : undefined;
+      return {
+        phase: label(value.phase),
+        reason: label(value.reason),
+        elapsedMs:
+          Number.isSafeInteger(value.elapsedMs) && value.elapsedMs >= 0
+            ? value.elapsedMs
+            : undefined,
+      };
+    } catch {
+      // A malformed diagnostic must not expose the rest of the prompt.
+    }
+  }
+  return undefined;
 }
 
 function requestChecks(scenario: OpenClawAIMockScenario, entry: JournalEntry) {
@@ -109,6 +143,9 @@ export default function openClawAIMockDiagnostics(
       path: entry.path,
       status: entry.response.status,
       matched: entry.response.fixture !== null,
+      ...(intakeConditionDiagnostic(entry.body as ChatCompletionRequest)
+        ? { intakeCondition: intakeConditionDiagnostic(entry.body as ChatCompletionRequest) }
+        : {}),
       toolCalls: (entry.body?.messages ?? [])
         .flatMap((message) => message.tool_calls ?? [])
         .slice(-3)

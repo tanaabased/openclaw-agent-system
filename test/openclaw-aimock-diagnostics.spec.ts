@@ -6,6 +6,39 @@ import resolveScenario from '../scripts/example-model-scenarios.ts';
 type Entry = Parameters<typeof diagnostics>[1][number];
 
 describe('scripts/aimock-diagnostics', () => {
+  it('should retain only condition diagnostics from an unexpected scheduled payload', () => {
+    for (const [content, expected] of [
+      [
+        'Intake check: {"phase":"assignment-search","reason":"discovery-budget-exhausted","elapsedMs":20000,"extra":"private-data"}. private-instructions',
+        { phase: 'assignment-search', reason: 'discovery-budget-exhausted', elapsedMs: 20000 },
+      ],
+      [
+        'The dispatch condition failed (dispatch-condition-invalid) after 17 ms. private-instructions',
+        { phase: 'dispatch', reason: 'dispatch-condition-invalid', elapsedMs: 17 },
+      ],
+      [
+        'Intake check: {"phase":"private data","reason":"private data","elapsedMs":-1}. private-instructions',
+        {},
+      ],
+      ['Intake check: {invalid}. private-instructions', undefined],
+    ] as const) {
+      const result = diagnostics(resolveScenario('openclaw-project-picker'), [
+        {
+          method: 'POST',
+          path: '/responses',
+          response: { fixture: null, status: 503 },
+          body: { model: 'gpt-5.5', messages: [{ role: 'user', content }] },
+        },
+      ]);
+      const condition = result.requests?.[0]?.intakeCondition;
+      assert.deepEqual(condition && JSON.parse(JSON.stringify(condition)), expected);
+      assert.doesNotMatch(
+        JSON.stringify(result),
+        /private-data|private data|private-instructions/u,
+      );
+    }
+  });
+
   it('should stay concise when the mock has no failures', () => {
     assert.deepEqual(diagnostics(resolveScenario('os-execution'), []), {
       scenario: 'os-execution',
