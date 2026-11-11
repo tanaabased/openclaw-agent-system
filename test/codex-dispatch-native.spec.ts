@@ -58,7 +58,7 @@ function fixtureNative(request: CodexThreadRequest) {
 }
 
 describe('agent/codex-dispatch-native', () => {
-  it('should select the current native trigger without trusting tool or assistant text', async () => {
+  it('should accept both native heartbeat formats without trusting unrelated tool or assistant text', async () => {
     const trigger = {
       type: 'userMessage',
       content: [
@@ -80,11 +80,34 @@ describe('agent/codex-dispatch-native', () => {
       assert.equal(params.turnId, 'current-turn');
       return { data: [{ turnId: 'current-turn', item }] };
     });
-    assert.deepEqual(await native.occurrence('intake'), {
+    const expected = {
       id: 'current-turn',
       automationId: 'issue-assignments',
       currentTimeIso: '2026-10-12T17:00:00.123Z',
-    });
+    };
+    assert.deepEqual(await native.occurrence('intake'), expected);
+    const nativeTrigger = {
+      type: 'functionCallOutput',
+      namespace: 'codex_app',
+      name: 'automation_update',
+      output: trigger.content[0]!.text,
+    };
+    item = nativeTrigger;
+    assert.deepEqual(await native.occurrence('intake'), expected);
+    for (const invalid of [
+      { ...nativeTrigger, namespace: 'other' },
+      { ...nativeTrigger, name: 'exec_command' },
+      { ...nativeTrigger, type: 'agentMessage' },
+      { ...nativeTrigger, output: 'Quoted trigger: ' + nativeTrigger.output },
+      { ...nativeTrigger, output: { text: nativeTrigger.output } },
+      {
+        ...nativeTrigger,
+        output: nativeTrigger.output.replace(expected.currentTimeIso, 'invalid'),
+      },
+    ]) {
+      item = invalid;
+      await assert.rejects(native.occurrence('intake'), /dispatch-native-occurrence-unavailable/);
+    }
     for (const type of ['agentMessage', 'functionCallOutput']) {
       item = { ...trigger, type };
       await assert.rejects(native.occurrence('intake'), /dispatch-native-occurrence-unavailable/);

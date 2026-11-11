@@ -169,11 +169,20 @@ export function codexDispatchNative(request: CodexThreadRequest) {
       const entry = Array.isArray(items.data) && items.data[0];
       const item = nativeObject(entry) && entry.turnId === turn.id && entry.item;
       const content = nativeObject(item) && item.type === 'userMessage' && item.content;
-      const text = Array.isArray(content) && content[0];
+      const part = Array.isArray(content) && content[0];
+      const text =
+        nativeObject(item) &&
+        item.type === 'functionCallOutput' &&
+        item.namespace === 'codex_app' &&
+        item.name === 'automation_update'
+          ? item.output
+          : nativeObject(part) && part.type === 'text'
+            ? part.text
+            : undefined;
       const match =
-        nativeObject(text) && text.type === 'text' && typeof text.text === 'string'
+        typeof text === 'string'
           ? /^<heartbeat>\s*<automation_id>([^<]+)<\/automation_id>\s*<current_time_iso>([^<]+)<\/current_time_iso>/u.exec(
-              text.text,
+              text,
             )
           : null;
       if (!match || !Number.isFinite(Date.parse(match[2]!)))
