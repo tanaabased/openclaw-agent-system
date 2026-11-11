@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import assignmentCard from '../channels/github/presentation/assignment-card.ts';
 import githubNotificationMessage, {
   githubNotificationMarkdownCode,
   githubNotificationMarkdownText,
@@ -30,6 +31,47 @@ describe('channels/github/presentation', () => {
       '> ## Title\n>\n> - One\n>   - Two\n>\n> ```ts\n>   code();  \n> ```\n>\n> > Author quote',
     );
   });
+
+  it('should render assigned issues with a plain attribution and source line', () => {
+    assert.equal(
+      assignmentCard({
+        emoji: '📥',
+        item: {
+          kind: 'Issue',
+          label: 'tanaabased/openclaw-agent-system#675',
+          url: 'https://github.com/tanaabased/openclaw-agent-system/issues/675',
+        },
+        sender: { label: 'pirog', url: 'https://github.com/pirog' },
+      }),
+      [
+        '---',
+        '[@pirog](https://github.com/pirog) · [tanaabased/openclaw-agent-system#675](https://github.com/tanaabased/openclaw-agent-system/issues/675)',
+        '',
+        'assigned you to tanaabased/openclaw-agent-system#675.',
+        '',
+        '---',
+      ].join('\n'),
+    );
+  });
+
+  it('should keep request cards in the quoted notification style', () => {
+    assert.equal(
+      assignmentCard({
+        emoji: '📥',
+        item: {
+          kind: 'Issue',
+          label: 'tanaabased/openclaw-agent-system#675',
+          url: 'https://github.com/tanaabased/openclaw-agent-system/issues/675',
+        },
+      }),
+      [
+        '> ## 📥 Issue requested',
+        '>',
+        '> You requested [tanaabased/openclaw-agent-system#675](https://github.com/tanaabased/openclaw-agent-system/issues/675).',
+      ].join('\n'),
+    );
+  });
+
   it('should render one compact card with labeled facts', () => {
     assert.equal(
       githubNotificationMessage({

@@ -1,4 +1,8 @@
-import { githubNotificationMarkdownText, githubNotificationQuote } from './card.ts';
+import {
+  githubNotificationMarkdownText,
+  githubNotificationQuote,
+  githubNotificationSeparatedMessage,
+} from './card.ts';
 
 export interface GitHubNotificationCommentEventProjection {
   author: {
@@ -27,7 +31,10 @@ export interface GitHubCommentCardInput {
 }
 
 /** wrap exact public prose once; only confirmed sources receive a comment link. */
-export function githubCommentCard(input: GitHubCommentCardInput): string {
+export function githubCommentCard(
+  input: GitHubCommentCardInput,
+  { style = 'quoted' }: { style?: 'quoted' | 'separated' } = {},
+): string {
   const label =
     'url' in input.publication
       ? `[${input.label} ↗](${input.publication.url})`
@@ -35,20 +42,26 @@ export function githubCommentCard(input: GitHubCommentCardInput): string {
   const author = input.author
     ? `[@${githubNotificationMarkdownText(input.author.label)}](${input.author.url})`
     : 'author unavailable';
+  if (style === 'separated') {
+    return githubNotificationSeparatedMessage(`${author} · ${label}`, input.body);
+  }
   return githubNotificationQuote(
     `${input.body}\n\n&nbsp;  \n*${label} ${input.connector} ${author}*`,
   );
 }
 
-/** quote an admitted comment without rewriting its author prose or mentions. */
+/** preserve an admitted comment while exposing its verified source. */
 export function githubNotificationCommentPresentation(
   projection: GitHubNotificationCommentEventProjection,
 ): string {
-  return githubCommentCard({
-    body: projection.body,
-    author: projection.author,
-    label: 'Comment',
-    connector: 'from',
-    publication: { url: projection.item.url },
-  });
+  return githubCommentCard(
+    {
+      body: projection.body,
+      author: projection.author,
+      label: 'Comment',
+      connector: 'from',
+      publication: { url: projection.item.url },
+    },
+    { style: 'separated' },
+  );
 }
