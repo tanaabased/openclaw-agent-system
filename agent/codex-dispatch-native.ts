@@ -126,7 +126,8 @@ export function codexDispatchNative(request: CodexThreadRequest) {
       record: Parameters<typeof intakeDenial>[1],
       observingPreparation = false,
       recoveryCallId?: string,
-    ) => intakeDenial(request, record, observingPreparation, recoveryCallId),
+      otherRecords?: Parameters<typeof intakeDenial>[4],
+    ) => intakeDenial(request, record, observingPreparation, recoveryCallId, otherRecords),
     async intakeBoundary(threadId: string, turnId: string) {
       const items = await dispatchHistoryPages(request, 'thread/items/list', {
         threadId,

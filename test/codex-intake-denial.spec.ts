@@ -258,6 +258,84 @@ describe('agent/codex-intake-denial', () => {
     );
   });
 
+  it('should scope an initial denial to its exact retained operation without holding another task', async () => {
+    const other = { ...record, id: otherReceiptId };
+    const otherDenied = {
+      ...denied,
+      id: 'other-denial',
+      command: command.replace(receiptId, otherReceiptId),
+    };
+    const native = async (method: string) =>
+      method === 'thread/turns/list'
+        ? { data: [{ id: 'original' }], nextCursor: null }
+        : {
+            data: [boundary, otherDenied].map((item) => ({ turnId: 'original', item })),
+            nextCursor: null,
+          };
+    assert.equal(await intakeDenial(native, record, false, undefined, [other]), undefined);
+    assert.equal(
+      (await intakeDenial(native, other, false, undefined, [record]))?.callId,
+      'other-denial',
+    );
+    await assert.rejects(intakeDenial(native, record), /denial-scope-unresolved/);
+    await assert.rejects(
+      intakeDenial(native, record, false, undefined, [
+        {
+          ...other,
+          sourceThreadId: 'foreign',
+          preparationObservation: { ...anchor, sourceThreadId: 'foreign' },
+        },
+      ]),
+      /denial-scope-unresolved/,
+    );
+    await assert.rejects(
+      intakeDenial(native, record, false, undefined, [
+        { ...other, preparationObservation: { ...anchor, afterItemId: 'missing' } },
+      ]),
+      /denial-scope-unresolved/,
+    );
+  });
+
+  it('should keep a different exact creation refusal local to its retained request', async () => {
+    const other = {
+      id: otherReceiptId,
+      sourceThreadId: 'intake',
+      preparationTurnId: 'original',
+      creationAfterItemId: 'routing',
+      request: { prompt: 'other issue' },
+    } as Parameters<typeof intakeDenial>[1];
+    const refused = {
+      id: 'other-create',
+      type: 'mcpToolCall',
+      server: 'codex_app',
+      tool: 'create_thread',
+      arguments: other.request,
+      status: 'failed',
+      error: { message: 'user rejected MCP tool call' },
+    };
+    const native = async (method: string) =>
+      method === 'thread/turns/list'
+        ? { data: [{ id: 'original' }], nextCursor: null }
+        : {
+            data: [boundary, denied, refused].map((item) => ({ turnId: 'original', item })),
+            nextCursor: null,
+          };
+    assert.equal(
+      (await intakeDenial(native, record, false, undefined, [other]))?.callId,
+      'refusal',
+    );
+    assert.equal(
+      (await intakeDenial(native, other, false, undefined, [record]))?.callId,
+      'other-create',
+    );
+    await assert.rejects(
+      intakeDenial(native, record, false, undefined, [
+        { ...other, request: { ...other.request!, prompt: 'changed' } },
+      ]),
+      /denial-scope-unresolved/,
+    );
+  });
+
   it('should reverify an already held receipt without making another issue denial its recovery gate', async () => {
     const other = {
       ...denied,

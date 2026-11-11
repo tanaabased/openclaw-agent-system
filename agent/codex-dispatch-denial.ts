@@ -32,7 +32,12 @@ export default async function reconcileIntakeDenial(
     return false;
   const evidence = anchored
     ? await withNative(tx.current, tx.deps, async (native) => {
-        const denial = await native.intakeDenial(record, observingPreparation);
+        const denial = await native.intakeDenial(
+          record,
+          observingPreparation,
+          undefined,
+          tx.state.records,
+        );
         if (denial && record.request) {
           const found = await native.find({
             sourceThreadId: record.sourceThreadId,
