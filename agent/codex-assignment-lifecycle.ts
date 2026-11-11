@@ -84,12 +84,7 @@ export default async function reconcileCodexLifecycle(
     if (!admitted) throw new Error('dispatch-policy-reconciliation-required');
     return await store.exclusive(async (state, save, signal) => {
       const target = manual && state.records.find((record) => record.id === manual.id);
-      if (
-        manual &&
-        (!target ||
-          target.sourceThreadId !== activation.sourceThreadId ||
-          target.retirement?.operatorRequest?.targetId !== target.id)
-      )
+      if (manual && (!target || target.retirement?.operatorRequest?.targetId !== target.id))
         throw new Error('dispatch-retire-target-mismatch');
       let prepared:
         | {
@@ -106,7 +101,6 @@ export default async function reconcileCodexLifecycle(
         admitted: admitted.records,
         policy: current.policy!,
         client,
-        owner: activation.sourceThreadId,
         targetId: manual?.id,
         now,
         save,

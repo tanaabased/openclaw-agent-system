@@ -890,7 +890,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(deferred.retirement?.worktreeRemovalAttemptedAt, undefined);
   });
 
-  it('should retire only the closed owner after its deadline and preserve active sibling work', async () => {
+  it('should retire old coordinator tasks after replacement and preserve active sibling work', async () => {
     const { items } = await assignments(2, 2);
     const first = await next();
     await prepare(first);
@@ -924,15 +924,22 @@ describe('agent/openclaw issue dispatch', () => {
         status: input.verifyOnly ? 'preserved' : 'removed',
       };
     };
+    const replacement = { ...coordinator, sessionKey: 'agent:receiver:automation:replacement' };
+    service.dependencies.coordinator = async () => replacement.sessionKey;
+    await assert.rejects(
+      service.run(manifest, root, coordinator, { action: 'next' }),
+      /dispatch-intake-caller-required/,
+    );
     items[0]!.state = 'closed';
     service.dependencies.now = () => baseline + 180_001;
-    await service.run(manifest, root, { ...coordinator, runId: 'close' }, { action: 'next' });
+    await service.run(manifest, root, { ...replacement, runId: 'close' }, { action: 'next' });
     const pending = await record(closed.threadId);
     assert.equal(pending.retirement?.reason, 'issue-closed');
+    assert.equal(pending.sourceThreadId, closed.sourceThreadId);
     assert.ok(pending);
     assert.deepEqual(effects, []);
     service.dependencies.now = () => pending.retirement!.eligibleAt;
-    await service.run(manifest, root, { ...coordinator, runId: 'cleanup' }, { action: 'next' });
+    await service.run(manifest, root, { ...replacement, runId: 'cleanup' }, { action: 'next' });
     assert.deepEqual(effects, [
       ['verify', closed.worktree!],
       ['remove', closed.worktree!],
@@ -951,18 +958,19 @@ describe('agent/openclaw issue dispatch', () => {
       calls.filter((call) => call.method === 'sessions.patch').map(({ params }) => params.key),
       [closed.threadId],
     );
-    await service.run(manifest, root, { ...coordinator, runId: 'again' }, { action: 'next' });
+    await service.run(manifest, root, { ...replacement, runId: 'again' }, { action: 'next' });
     assert.equal(effects.length, 2);
   });
 
   for (const protection of ['none', 'running', 'pinned', 'dirty', 'invalid-config'] as const) {
-    it(`should attempt manual retirement immediately with native protection: ${protection}`, async () => {
+    it(`should retire old coordinator tasks manually with native protection: ${protection}`, async () => {
       await assignments(1, 1);
       const first = await next();
       await prepare(first);
       await assess(first.id);
       await completeAssessment(first.id);
       const before = structuredClone(await record());
+      service.dependencies.coordinator = async () => 'agent:receiver:automation:replacement';
       const operator = {
         ...coordinator,
         sessionKey: 'agent:receiver:operator',

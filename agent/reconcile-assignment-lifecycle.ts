@@ -37,7 +37,6 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
   admitted: IntakeRecord[];
   policy: NonNullable<ReturnType<typeof assignmentIntakePolicy>>;
   client: GitHubNotificationIntakeClient;
-  owner: string;
   targetId?: string;
   budget?: DiscoveryBudget;
   now: number;
@@ -65,9 +64,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
   const graceMinutes = configuration.status === 'ready' ? configuration.graceMinutes : undefined;
   const latest = new Map(input.admitted.map((item) => [issueKey(item), item]));
   const selected = input.records
-    .filter(
-      (record) => !record.supersededBy && !record.reset && record.sourceThreadId === input.owner,
-    )
+    .filter((record) => !record.supersededBy && !record.reset)
     .filter((record) => !input.targetId || record.id === input.targetId)
     .filter(
       (record) =>

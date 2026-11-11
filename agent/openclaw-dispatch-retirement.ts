@@ -44,8 +44,7 @@ export default async function retireOpenClawTask(options: {
     if (!id) throw new Error('dispatch-retire-selection-required');
     const record = state.records.find((entry) => entry.id === id);
     const intake = record && dispatchAdmission(record, current.admitted.records ?? []);
-    if (!record || !intake || record.sourceThreadId !== owner || record.reset)
-      throw new Error('dispatch-retire-target-mismatch');
+    if (!record || !intake || record.reset) throw new Error('dispatch-retire-target-mismatch');
     // native identity is verified even for an already pending request; lookup failure is not success.
     await service.dependencies.credential.use(authority, (request) =>
       observeRetirementSession(request, record, manifest.agent.id, owner),
