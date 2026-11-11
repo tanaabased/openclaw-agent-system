@@ -4,7 +4,6 @@ import {
   assertPrivateStateLocksHeld,
   privateStateLockSignal,
 } from '../core/private-state-lock-context.ts';
-import automationGatewayUnavailable from './automation-gateway-unavailable.ts';
 import type { AutomationGatewayDiagnostic } from './automation-gateway-diagnostic.ts';
 import { openclawSessionCreateTimeoutMs } from './openclaw-session-timeout.ts';
 
@@ -169,6 +168,8 @@ export function createAutomationGateway(call: AutomationGatewayCaller): Automati
       try {
         return await invoke();
       } catch (error) {
+        const { default: automationGatewayUnavailable } =
+          await import('./automation-gateway-unavailable.ts');
         // Cold installation may overlap the Gateway's plugin/config reload. Reconnect
         // once for a read that never reached it; never replay a mutation or a denial.
         if (!readOnly || !automationGatewayUnavailable(error)) throw error;
@@ -179,6 +180,8 @@ export function createAutomationGateway(call: AutomationGatewayCaller): Automati
       assertPrivateStateLocksHeld();
       const { default: automationGatewayDiagnostic } =
         await import('./automation-gateway-diagnostic.ts');
+      const { default: automationGatewayUnavailable } =
+        await import('./automation-gateway-unavailable.ts');
       const diagnostic = automationGatewayDiagnostic(
         method,
         error,
