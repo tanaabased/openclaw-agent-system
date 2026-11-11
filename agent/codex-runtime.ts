@@ -1,3 +1,4 @@
+import { withDispatchTask } from './dispatch-task-scope.ts';
 import process from 'node:process';
 import { Value } from 'typebox/value';
 import CodexAssignmentClaims, { codexInstanceStore } from './codex-assignment-claims.ts';
@@ -336,7 +337,10 @@ async function readWorkflowCommand(route: string, args: string[]) {
   return { ...result, modelSource };
 }
 
-export async function runCodexRuntime(args = process.argv.slice(2)): Promise<void> {
+export function runCodexRuntime(args = process.argv.slice(2)): Promise<void> {
+  return withDispatchTask('codex', process.env.CODEX_THREAD_ID, () => runScopedCodexRuntime(args));
+}
+async function runScopedCodexRuntime(args: string[]): Promise<void> {
   materialInput = undefined;
   const command = args[0];
   if (command === 'permission-request') {

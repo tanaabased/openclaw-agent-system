@@ -1,3 +1,4 @@
+import { withDispatchTask } from './dispatch-task-scope.ts';
 import {
   deliveryBaseSchema,
   deliveryHasEffects,
@@ -160,7 +161,13 @@ export async function codexDeliveryAttachment(
   );
 }
 /** publication runs only through an explicitly approved native command; preparation is read-only. */
-export default async function runCodexDelivery(
+export default function runCodexDelivery(...args: Parameters<typeof runCodexDeliveryScoped>) {
+  const deps = args[2] ?? {};
+  return withDispatchTask('codex', deps.threadId ?? process.env.CODEX_THREAD_ID, () =>
+    runCodexDeliveryScoped(...args),
+  );
+}
+async function runCodexDeliveryScoped(
   pluginData: string,
   request: unknown,
   deps: CodexDeliveryDependencies = {},

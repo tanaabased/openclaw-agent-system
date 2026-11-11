@@ -1,7 +1,9 @@
+import dispatchOwnershipSchema from './dispatch-ownership-schema.ts';
+import { dispatchTaskSession } from './dispatch-task-scope.ts';
 import { issueDeliveryStateSchema } from './issue-delivery-state.ts';
 import { deliveryAnnouncementStateSchema } from './delivery-announcement-state.ts';
 import { announcementRecoverySchema } from './delivery-announcement-recovery.ts';
-import { join } from 'node:path';
+import { isAbsolute, join, resolve, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { Type, type Static, type TObject, type TSchema } from 'typebox';
 import { Value } from 'typebox/value';
@@ -215,16 +217,21 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
   readonly file: PrivateStateFile;
   readonly schema: ReturnType<typeof dispatchStateSchema<R>>;
   readonly path: string;
+  readonly envelopeSchema: ReturnType<typeof dispatchStateSchema<R>>;
+  readonly ownershipSchema: TObject;
   constructor(
     readonly root: string,
     readonly scope: string,
     readonly contract: {
       runtime: 'codex' | 'openclaw';
-      recordSchema: TSchema;
+      recordSchema: TObject;
       validRecord(record: R): boolean;
     },
   ) {
     this.schema = dispatchStateSchema<R>(contract.recordSchema);
+    this.envelopeSchema = dispatchStateSchema<R>(Type.Unknown());
+    this.ownershipSchema = dispatchOwnershipSchema(contract.recordSchema);
+
     this.path = join(root, contract.runtime + '-dispatch-' + scope + '.json');
     this.file = new PrivateStateFile({
       path: this.path,
@@ -234,9 +241,13 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
       maximumBytes: dispatchStorageLimits.file,
     });
   }
-  private validate(state: unknown): asserts state is DispatchState<R> {
+  private validateEnvelope(state: unknown): asserts state is DispatchState<R> {
+    if (!Value.Check(this.envelopeSchema, state) || state.scope !== this.scope)
+      throw new Error('dispatch-state-invalid');
+  }
+  private validateShared(state: unknown): asserts state is DispatchState<R> {
     if (
-      !Value.Check(this.schema, state) ||
+      !Value.Check(this.envelopeSchema, state) ||
       state.scope !== this.scope ||
       (state.openclawPasses !== undefined &&
         (this.contract.runtime !== 'openclaw' ||
@@ -286,26 +297,193 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
               (predecessor) =>
                 predecessor.id === r.predecessorId &&
                 (predecessor.supersededBy !== r.id || predecessor.issueKey !== r.issueKey),
-            )) ||
-          Boolean(r.intakeId) === Boolean(r.manualIssue) ||
-          (r.manualIssue &&
-            (r.manualIssue.id !== r.id ||
-              r.manualIssue.scope !== this.scope ||
-              r.manualIssue.initiation.session !== r.sourceThreadId ||
-              issueKey(r.manualIssue) !== r.issueKey)) ||
-          (!r.cleanupPending &&
-            ((r.request && (!r.context || !r.routing || !r.routingNote)) ||
-              (r.handoff && (!r.request || !r.threadId || !r.worktree)))),
-      ) ||
-      state.records.some((r) => !r.cleanupPending && !validNativeDispatchRecord(r)) ||
-      state.records.some((r) => r.reset && !r.threadId) ||
-      state.records.some((r) =>
-        r.cleanupPending ? !validPendingRetirement(r) : !this.contract.validRecord(r),
+            )),
       )
     )
       throw new Error('dispatch-state-invalid');
   }
-  async read(): Promise<DispatchState<R>> {
+  private validRecord(r: R): boolean {
+    return (
+      Value.Check(this.contract.recordSchema, r) &&
+      !(
+        Boolean(r.intakeId) === Boolean(r.manualIssue) ||
+        (r.manualIssue &&
+          (r.manualIssue.id !== r.id ||
+            r.manualIssue.scope !== this.scope ||
+            r.manualIssue.initiation.session !== r.sourceThreadId ||
+            issueKey(r.manualIssue) !== r.issueKey)) ||
+        (!r.cleanupPending &&
+          ((r.request && (!r.context || !r.routing || !r.routingNote)) ||
+            (r.handoff && (!r.request || !r.threadId || !r.worktree)))) ||
+        (!r.cleanupPending && !validNativeDispatchRecord(r)) ||
+        (r.reset && !r.threadId) ||
+        (r.cleanupPending ? !validPendingRetirement(r) : !this.contract.validRecord(r))
+      )
+    );
+  }
+  private validate(state: unknown): asserts state is DispatchState<R> {
+    if (!Value.Check(this.schema, state)) throw new Error('dispatch-state-invalid');
+    this.validateShared(state);
+    if (state.records.some((r) => !this.validRecord(r))) throw new Error('dispatch-state-invalid');
+  }
+  private project(raw: unknown): DispatchState<R> {
+    try {
+      this.validate(raw);
+      return raw;
+    } catch (error) {
+      const session = dispatchTaskSession(this.contract.runtime);
+      if (!session) throw error;
+      if (!Value.Check(this.envelopeSchema, raw) || raw.scope !== this.scope)
+        throw new Error('dispatch-state-invalid', { cause: error });
+      const records = raw.records;
+      if (
+        records.some(
+          (record) =>
+            !record || typeof record !== 'object' || !Value.Check(this.ownershipSchema, record),
+        )
+      )
+        throw new Error('dispatch-task-ownership-unresolved', { cause: error });
+      const owners = records.filter((record) => record.threadId === session);
+      if (owners.length !== 1)
+        throw new Error('dispatch-task-ownership-unresolved', { cause: error });
+      const owner = owners[0]!;
+      if (!this.validRecord(owner))
+        throw new Error('dispatch-task-record-invalid', { cause: error });
+      this.assertIndependent(owner, records);
+      return { ...raw, records: [owner] };
+    }
+  }
+  private assertIndependent(owner: R, records: R[]) {
+    const native = (r: R) => {
+      const value = r as R & {
+        clientThreadId?: string;
+        receiptThreadId?: string;
+        request?: { key?: string };
+        sessionCreation?: { sessionId?: string };
+      };
+      return [
+        r.threadId,
+        value.clientThreadId,
+        value.receiptThreadId,
+        value.request?.key,
+        r.delivery?.binding.threadId,
+        value.sessionCreation?.sessionId,
+      ].filter(Boolean);
+    };
+    const paths = (r: R) => {
+      const value = r as R & {
+        project?: { path: string };
+        request?: { cwd?: string };
+        repositoryPreparation?: { checkout?: string };
+      };
+      const paths = [
+        r.worktree,
+        value.request?.cwd,
+        value.repositoryPreparation?.checkout,
+        r.delivery?.binding.worktree,
+      ].filter((value): value is string => Boolean(value));
+      if (paths.some((path) => !isAbsolute(path)))
+        throw new Error('dispatch-task-ownership-unresolved');
+      return paths.map((path) => resolve(path));
+    };
+    const branch = (r: R) => {
+      const value = r as R & {
+        project?: { commonDir: string };
+        issueBranch?: { name: string };
+        adoptedLocalBranch?: string;
+      };
+      return {
+        common: value.project?.commonDir,
+        names: [
+          value.issueBranch?.name,
+          value.adoptedLocalBranch,
+          r.delivery?.localBranch,
+          r.delivery?.binding?.branch,
+          r.adoptedPullRequest?.branch,
+          r.manualIssue?.pullRequest?.headRef,
+        ].filter(Boolean),
+      };
+    };
+    const identities = (r: R) => {
+      const value = r as R & { worktreeAttemptId?: string; issueBranch?: { attemptId: string } };
+      return [r.id, value.worktreeAttemptId, value.issueBranch?.attemptId].filter(Boolean);
+    };
+    const issues = (r: R) => [r.issueKey, r.manualIssue && issueKey(r.manualIssue)].filter(Boolean);
+    const pullRequests = (r: R) =>
+      [
+        r.pullRequestLink?.pullRequestNodeId,
+        r.adoptedPullRequest?.pullRequestNodeId,
+        r.delivery?.pullRequest?.pullRequestNodeId,
+        r.delivery?.adopted?.pullRequestNodeId,
+        r.manualIssue?.pullRequest && r.manualIssue.issue.nodeId,
+      ].filter(Boolean);
+    for (const other of records) {
+      if (other === owner) continue;
+      const left = branch(owner),
+        right = branch(other);
+      if (
+        ((other.request || 'sessionCreation' in other) && !other.threadId) ||
+        identities(owner).some((value) => identities(other).includes(value)) ||
+        issues(owner).some((value) => issues(other).includes(value)) ||
+        (other.intakeId && other.intakeId === owner.intakeId) ||
+        [other.predecessorId, other.supersededBy].includes(owner.id) ||
+        [owner.predecessorId, owner.supersededBy].includes(other.id) ||
+        pullRequests(owner).some((value) => pullRequests(other).includes(value)) ||
+        native(owner).some((value) => native(other).includes(value)) ||
+        paths(owner).some((left) =>
+          paths(other).some(
+            (right) =>
+              left === right || left.startsWith(right + sep) || right.startsWith(left + sep),
+          ),
+        ) ||
+        (left.names.some((value) => right.names.includes(value)) &&
+          (!left.common || !right.common || left.common === right.common))
+      )
+        throw new Error('dispatch-task-ownership-unresolved');
+    }
+  }
+  private restore(
+    proposed: DispatchState<R>,
+    snapshot: { raw: DispatchState<R>; state: DispatchState<R> },
+  ) {
+    if (snapshot.raw === snapshot.state) {
+      this.validate(proposed);
+      return proposed;
+    }
+    const owner = snapshot.state.records[0]!;
+    if (
+      proposed.records.length !== 1 ||
+      proposed.records[0]?.id !== owner.id ||
+      !isDeepStrictEqual({ ...proposed, records: [] }, { ...snapshot.state, records: [] })
+    )
+      throw new Error('dispatch-task-isolation-required');
+    const record = proposed.records[0]!;
+    if (!this.validRecord(record)) throw new Error('dispatch-task-record-invalid');
+    if (
+      [
+        'threadId',
+        'issueKey',
+        'intakeId',
+        'manualIssue',
+        'sourceThreadId',
+        'reset',
+        'retirement',
+        'cleanupPending',
+        'supersededBy',
+        'predecessorId',
+      ].some((key) => !isDeepStrictEqual(record[key as keyof R], owner[key as keyof R]))
+    )
+      throw new Error('dispatch-task-isolation-required');
+    if (!owner.request && record.request) throw new Error('dispatch-task-isolation-required');
+    const restored = {
+      ...proposed,
+      records: snapshot.raw.records.map((r) => (r.id === owner.id ? record : r)),
+    };
+    this.validateEnvelope(restored);
+    this.assertIndependent(record, restored.records);
+    return restored;
+  }
+  private async snapshot() {
     const contents = await this.file.read();
     let state: unknown = { version: 4, scope: this.scope, resetGeneration: 'initial', records: [] };
     if (contents !== undefined) {
@@ -319,8 +497,11 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
       throw new Error(
         'dispatch-clean-start-required: stop writers and perform the reviewed clean start before using this runtime',
       );
-    this.validate(state);
-    return state;
+    const projected = this.project(state);
+    return { raw: state as DispatchState<R>, state: projected };
+  }
+  async read(): Promise<DispatchState<R>> {
+    return (await this.snapshot()).state;
   }
   retainRetirementEffects(state: DispatchState<R>, effects: RetirementEffect[]) {
     if (!effects.length) return;
@@ -399,7 +580,6 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
             options.reconcile?.(before, state, current);
             const merged = mergeStateSnapshot(before, state, current) as DispatchState<R>;
             options.validate?.(current, merged);
-            this.validate(merged);
             if (!isDeepStrictEqual(current, merged)) {
               refreshStateSnapshot(current, merged);
               await save();
@@ -467,20 +647,25 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     try {
       return await withPrivateStateLock(guard, async () => {
         await assertNotificationManagement(this.root, this.scope);
-        const state = await this.read();
+        let snapshot = await this.snapshot();
+        const state = structuredClone(snapshot.state);
         let committed = structuredClone(state);
         const save = async () => {
           guard.assertHeld();
           await assertNotificationManagement(this.root, this.scope);
-          const current = await this.read();
+          const freshSnapshot = await this.snapshot();
+          const current = freshSnapshot.state;
           if (current.resetGeneration !== committed.resetGeneration)
             throw new Error('notification-reset-stale-operation');
-          if (!isDeepStrictEqual(current, committed)) throw new Error(stateSnapshotConflictCode);
+          if (
+            !isDeepStrictEqual(current, committed) ||
+            !isDeepStrictEqual(freshSnapshot.raw, snapshot.raw)
+          )
+            throw new Error(stateSnapshotConflictCode);
           const retained = structuredClone(state);
-          this.validate(retained);
-          const originalBytes = dispatchStorageBytes(retained).contentBytes;
+          const originalBytes = dispatchStorageBytes(this.restore(retained, snapshot)).contentBytes;
           const pressure = originalBytes > dispatchSoftBytes;
-          if (this.contract.runtime === 'openclaw') {
+          if (this.contract.runtime === 'openclaw' && snapshot.raw === snapshot.state) {
             for (const pass of retained.openclawPasses ?? []) {
               if (pass.completed) continue;
               const started = intakePassStarted(
@@ -503,20 +688,20 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
               }
             }
           }
-          this.validate(retained);
           const admission = retained.records.some((record) => {
             if (record.retirement || record.reset) return false;
             const previous = committed.records.find((entry) => entry.id === record.id);
             return !previous || (!previous.request && Boolean(record.request));
           });
-          assertDispatchStorage(retained, admission);
-          this.validate(retained);
-          const reclaimed = originalBytes - dispatchStorageBytes(retained).contentBytes;
+          const reclaimed =
+            originalBytes - dispatchStorageBytes(this.restore(retained, snapshot)).contentBytes;
           if (reclaimed > 0) retained.storageReclaimedBytes = reclaimed;
-          const contents = assertDispatchStorage(retained, admission);
+          const contents = assertDispatchStorage(this.restore(retained, snapshot), admission);
           await this.file.write(contents);
           refreshStateSnapshot(state, retained);
-          committed = JSON.parse(contents) as DispatchState<R>;
+          const raw = JSON.parse(contents) as DispatchState<R>;
+          snapshot = { raw, state: this.project(raw) };
+          committed = structuredClone(snapshot.state);
         };
         return run(state, save, guard.signal);
       });

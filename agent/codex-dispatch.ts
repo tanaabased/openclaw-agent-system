@@ -1,3 +1,4 @@
+import { withDispatchTask } from './dispatch-task-scope.ts';
 import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
 import renderNativeAssessment, { renderBoundAssessment } from './assessment-render.ts';
@@ -52,7 +53,22 @@ import workflowStatus from './workflow-status.ts';
 export { revalidateDispatchAssignment } from './codex-dispatch-context.ts';
 export type { CodexDispatchDependencies } from './codex-dispatch-context.ts';
 /** authorized scheduled dispatch only; host tools execute the one durably prepared native request. */
-export async function runCodexDispatch(
+export function runCodexDispatch(...args: Parameters<typeof runCodexDispatchScoped>) {
+  const input = args[2];
+  if (
+    args[1] === 'assessment' &&
+    input &&
+    typeof input === 'object' &&
+    'operation' in input &&
+    input.operation === 'render'
+  )
+    return runCodexDispatchScoped(...args);
+  const deps = args[3] ?? {};
+  return withDispatchTask('codex', deps.threadId ?? process.env.CODEX_THREAD_ID, () =>
+    runCodexDispatchScoped(...args),
+  );
+}
+async function runCodexDispatchScoped(
   pluginData: string,
   action: string,
   input: unknown,
@@ -155,7 +171,11 @@ export async function runCodexDispatch(
         current.store.location.root,
         current.store.location.scope,
       );
-      let records = (await journal.read()).records;
+      let records = (
+        await withDispatchTask('codex', deps.threadId ?? process.env.CODEX_THREAD_ID, () =>
+          journal.read(),
+        )
+      ).records;
       const session = deps.threadId ?? process.env.CODEX_THREAD_ID ?? '';
       if (
         session &&

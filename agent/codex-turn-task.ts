@@ -1,3 +1,4 @@
+import { withDispatchTask } from './dispatch-task-scope.ts';
 import { omit } from 'lodash-es';
 import resolveGitProtocol from '../tools/git/protocol.ts';
 import codexAssessmentSkill from './codex-assessment-skill.ts';
@@ -136,7 +137,10 @@ export async function selectCodexTurnTask(
   };
 }
 /** read the bound journal and native receipts without discovery, reconciliation, or writes. */
-export async function readCodexTaskOwner(pluginData: string, turn: Turn) {
+export function readCodexTaskOwner(pluginData: string, turn: Turn) {
+  return withDispatchTask('codex', turn.threadId, () => readScopedTaskOwner(pluginData, turn));
+}
+async function readScopedTaskOwner(pluginData: string, turn: Turn) {
   const current = await selectCodexIntake(
     pluginData,
     {},
