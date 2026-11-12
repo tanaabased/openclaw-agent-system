@@ -287,11 +287,16 @@ for (const scenario of [
     stage: string,
     selectedScenario = scenario,
   ) {
-    const stopped = structuredClone(input);
-    append(stopped, stage, compositionTimeout);
-    assert.deepEqual(await response(stopped, selectedScenario), {
-      content: `notification-delivery-stopped: ${JSON.stringify(compositionTimeout)}`,
-    });
+    for (const obstacle of [
+      compositionTimeout,
+      { status: 'announcement-blocked', code: 'github-delivery-github-request' },
+    ]) {
+      const stopped = structuredClone(input);
+      append(stopped, stage, obstacle);
+      assert.deepEqual(await response(stopped, selectedScenario), {
+        content: `notification-delivery-stopped: ${JSON.stringify(obstacle)}`,
+      });
+    }
   }
 
   async function verifyCompositionRecovery(

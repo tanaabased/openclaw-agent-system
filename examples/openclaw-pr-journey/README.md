@@ -13,8 +13,7 @@ publish a reply. Verify that another scan repeats none of the completed actions.
 ## What Does Not Belong Here
 
 - Initial-turn delivery without feedback: [default Work](../openclaw-issue-work/README.md), [custom Work](../openclaw-issue-work-custom/README.md), and [Auto Work](../openclaw-issue-auto-work/README.md).
-- Recipient preview and operator updates: [PR recipient preview](../openclaw-pr-recipients/README.md) and [PR operator update](../openclaw-pr-update/README.md).
-- Saved plan/card readback after dirty edits: [PR presentation readback](../openclaw-pr-presentation/README.md).
+- Recipient preview, dirty-checkout card readback, and operator updates: [PR operator update](../openclaw-pr-update/README.md).
 - Other feedback conditions: [PR collaborator reconciliation](../openclaw-pr-collaboration/README.md), [PR discovery recovery](../openclaw-pr-discovery/README.md), [PR reply recovery](../openclaw-pr-reply-recovery/README.md).
 - Mode transitions and implementation clarification: [progression](../openclaw-issue-progression/README.md). Inline review-thread processing and replacement-coordinator recovery remain separate acceptance work.
 

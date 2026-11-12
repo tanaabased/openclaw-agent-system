@@ -128,7 +128,11 @@ function isPendingDelivery(result: Record<string, unknown>) {
 }
 
 function deliveryObstacle(result: Record<string, unknown>): FixtureResponse | undefined {
-  if (!['blocked', 'waiting', 'needs-attention', 'retrying'].includes(String(result.status)))
+  if (
+    !['blocked', 'waiting', 'needs-attention', 'retrying', 'announcement-blocked'].includes(
+      String(result.status),
+    )
+  )
     return;
   return {
     content: `notification-delivery-stopped: ${JSON.stringify({ status: result.status, code: result.code, providerDiagnostic: result.providerDiagnostic })}`,

@@ -14,8 +14,7 @@ on the existing PR.
 ## What Does Not Belong Here
 
 - Ordinary assignment, initial delivery, and uninterrupted feedback: [PR journey](../openclaw-pr-journey/README.md).
-- Recipient preview and operator updates: [PR recipient preview](../openclaw-pr-recipients/README.md) and [PR operator update](../openclaw-pr-update/README.md).
-- Saved plan/card readback after dirty edits: [PR presentation readback](../openclaw-pr-presentation/README.md).
+- Recipient preview, dirty-checkout card readback, and operator updates: [PR operator update](../openclaw-pr-update/README.md).
 - Other feedback conditions: [PR collaborator reconciliation](../openclaw-pr-collaboration/README.md), [PR reply recovery](../openclaw-pr-reply-recovery/README.md).
 - Mode transitions and implementation clarification: [progression](../openclaw-issue-progression/README.md). Inline review-thread processing and replacement-coordinator recovery remain separate acceptance work.
 
