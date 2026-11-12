@@ -1,19 +1,20 @@
 import assert from 'node:assert/strict';
+import renderNativeAssessment from '../agent/tasks/assessment/assessment-render.ts';
 
 import assessmentMaterial from '../agent/tasks/assessment/assessment-material.ts';
-import taskTurnContext from '../agent/tasks/context/task-turn-context.ts';
 import openclawTurnContext from '../agent/tasks/context/openclaw-turn-context.ts';
+import taskTurnContext from '../agent/tasks/context/task-turn-context.ts';
 import type { OpenClawDispatchRecord } from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
-import {
+import implementationMaterial, {
   implementationMaterialSize,
   type ImplementationMaterialRead,
 } from '../agent/tasks/implementation/implementation-material.ts';
-import { hostedAssessmentContextFixture } from './assessment-material-fixture.ts';
 import { issuePickupScenario } from '../examples/openclaw-project-picker/model-fixture.ts';
-import nativeMaterialFixture from './native-material-fixture.ts';
+import { hostedAssessmentContextFixture } from './assessment-material-fixture.ts';
+import nativeMaterialFixture from './codex-native-material-fixture.ts';
 
-describe('issue pickup model transport', () => {
-  it('should deliver context above the former cutoff intact through the native host', async () => {
+describe('codex native material transport', () => {
+  it('should deliver context above the former cutoff intact through codex tool output', async () => {
     const context = {
       ...hostedAssessmentContextFixture(),
       project: { path: '/workspace/' + 'nested/'.repeat(400) },
@@ -32,6 +33,18 @@ describe('issue pickup model transport', () => {
         assert.equal(complete.instructions, context.instructions);
       },
       minimumPages: 0,
+    });
+  });
+  it('should reconstruct paged material through codex without truncating the authored response', async () => {
+    const privateResponse = 'Complete authored reply. '.repeat(1000);
+    const request = { action: 'reply', operation: 'compose' };
+    const context = { status: 'composition-ready', runtime: 'openclaw', privateResponse };
+    await nativeMaterialFixture({
+      request,
+      run: (input) =>
+        implementationMaterial(context, request, input.material as ImplementationMaterialRead),
+      verify: (complete) => assert.equal(complete.privateResponse, privateResponse),
+      minimumPages: 2,
     });
   });
   it('should inspect the issue from injected native context without a bootstrap call', async () => {
@@ -90,5 +103,38 @@ describe('issue pickup model transport', () => {
       finalText: 'Should disposable issues close after evidence capture?',
     });
     assert.equal(sourceReads, 1);
+  });
+  it('should deliver a complete fallback through codex tool output', async () => {
+    const partial = {
+      summary: 'Assess only.',
+      reviewSummary: 'A concise review.',
+    };
+    const source = {
+      ...partial,
+      outcome: 'clarification-needed',
+      reviewSummary: 'Choose the intended experience.',
+      questions: Array.from(
+        { length: 5 },
+        (_, i) => `Question ${i}: ` + 'important detail '.repeat(700),
+      ),
+    };
+    const request = {
+      action: 'assessment',
+      operation: 'render',
+      target: 'https://github.com/owner/repo/issues/3',
+      result: source,
+    };
+    await nativeMaterialFixture({
+      request,
+      run: (input) => renderNativeAssessment(input, 'openclaw'),
+      minimumPages: 0,
+      verify: (output) => {
+        assert.equal(output.retained, false);
+        assert.equal(output.status, 'presentation-unavailable');
+        assert.equal(output.contextMaterials, undefined);
+        assert.match(String(output.instructions), /every unanswered question/);
+        assert.match(String(output.instructions), /ordinary Markdown/);
+      },
+    });
   });
 });

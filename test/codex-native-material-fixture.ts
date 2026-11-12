@@ -18,7 +18,7 @@ import withToolSearch from '../scripts/aimock-tool-search.ts';
 
 import type { OpenClawAIMockScenario } from '../scripts/aimock-scenario.ts';
 
-/** Exercise real native output limits with synthetic credentials and isolated chat state. */
+/** exercise codex app-server transport with synthetic credentials and isolated chat state. */
 export default async function nativeMaterialFixture(input: {
   request: Record<string, unknown>;
   run(request: Record<string, unknown>, tool?: string): unknown | Promise<unknown>;

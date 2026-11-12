@@ -15,13 +15,12 @@ import {
   type AssessmentSubmission,
 } from '../agent/tasks/assessment/assessment-result.ts';
 import assessmentSkillSource from '../agent/tasks/assessment/assessment-skill-source.ts';
-import type { SharedDispatchRecord } from '../agent/tasks/dispatch/dispatch-state.ts';
 import { nativeIssueContext } from '../agent/tasks/context/native-issue-context.ts';
+import type { SharedDispatchRecord } from '../agent/tasks/dispatch/dispatch-state.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
 import hydrateImplementation from './implementation-material-fixture.ts';
-import nativeMaterialFixture from './native-material-fixture.ts';
 const target = 'https://github.com/owner/repo/issues/3';
 const ready = {
   outcome: 'plan-ready',
@@ -101,41 +100,10 @@ describe('agent/assessment-entry', () => {
         assert.deepEqual(complete.resultFormat, assessmentResultFormat);
         assert.equal(typeof complete.instructions, 'string');
       };
-      if (runtime === 'openclaw')
-        await nativeMaterialFixture({ request, run, verify, minimumPages: 0 });
-      else verify(await hydrateImplementation(await run(request), run));
+      verify(await hydrateImplementation(await run(request), run));
       await assert.rejects(readdir(deps.root), { code: 'ENOENT' });
     });
 
-  it('should deliver a complete fallback through the real native tool output limit', async () => {
-    const partial = {
-      summary: ready.summary,
-      reviewSummary: ready.reviewSummary,
-    };
-    const source = {
-      ...partial,
-      outcome: 'clarification-needed',
-      reviewSummary: 'Choose the intended experience.',
-      questions: Array.from(
-        { length: 5 },
-        (_, i) => `Question ${i}: ` + 'important detail '.repeat(700),
-      ),
-    };
-    const request = { action: 'assessment', operation: 'render', target, result: source };
-    await nativeMaterialFixture({
-      request,
-      run: (input) => renderNativeAssessment(input, 'openclaw'),
-      minimumPages: 0,
-      verify: (output) => {
-        assert.equal(output.retained, false);
-        assert.equal(output.status, 'presentation-unavailable');
-        assert.equal(output.contextMaterials, undefined);
-        assert.match(String(output.instructions), /every unanswered question/);
-        assert.match(String(output.instructions), /ordinary Markdown/);
-      },
-    });
-    await assert.rejects(readdir(deps.root), { code: 'ENOENT' });
-  });
   for (const runtime of ['codex', 'openclaw'] as const) {
     it(`should preserve delivered ${runtime} planning facts when skill lookup fails`, async () => {
       deps.binding.runtime = runtime;

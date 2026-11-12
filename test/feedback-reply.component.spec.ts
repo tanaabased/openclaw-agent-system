@@ -2,26 +2,26 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { feedbackRevision } from '../agent/tasks/feedback/feedback-source.ts';
 import {
   bindNativeMaterial,
   nativeMaterialResponse,
 } from '../agent/tasks/context/native-material.ts';
+import { feedbackRevision } from '../agent/tasks/feedback/feedback-source.ts';
 import replyOwnPublications from '../agent/tasks/feedback/reply-own-publications.ts';
 
-import assessmentSkillSource from '../agent/tasks/assessment/assessment-skill-source.ts';
-import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
-import runCodexFeedback from '../agent/tasks/feedback/codex-feedback.ts';
-import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
+import OpenClawIntake from '../agent/openclaw-intake.ts';
+import assessmentSkillSource from '../agent/tasks/assessment/assessment-skill-source.ts';
+import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
+import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import { issueKey } from '../agent/tasks/dispatch/dispatch-pending.ts';
+import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
+import OpenClawDispatch from '../agent/tasks/dispatch/openclaw-dispatch.ts';
+import runCodexFeedback from '../agent/tasks/feedback/codex-feedback.ts';
+import type { FeedbackProvider } from '../agent/tasks/feedback/feedback-provider.ts';
 import feedbackReply, {
   type FeedbackReplyDependencies,
 } from '../agent/tasks/feedback/feedback-reply.ts';
-import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
-import OpenClawDispatch from '../agent/tasks/dispatch/openclaw-dispatch.ts';
-import type { FeedbackProvider } from '../agent/tasks/feedback/feedback-provider.ts';
-import OpenClawIntake from '../agent/openclaw-intake.ts';
 import replyOwner, { type ReplyOwner } from '../agent/tasks/feedback/reply-owner.ts';
 import ReplyStore from '../agent/tasks/feedback/reply-store.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -33,7 +33,6 @@ import {
 } from './github-review-fixtures.ts';
 
 import hydrateImplementation from './implementation-material-fixture.ts';
-import nativeMaterialFixture from './native-material-fixture.ts';
 const url = 'https://github.com/owner/repo/issues/3';
 describe('agent/feedback-reply', () => {
   let root: string, deps: FeedbackReplyDependencies, provider: FeedbackProvider;
@@ -221,8 +220,7 @@ describe('agent/feedback-reply', () => {
       const run = (read: Record<string, unknown>) => feedbackReply(read, deps);
       const verify = (complete: Record<string, unknown>) =>
         assert.equal(complete.privateResponse, privateText);
-      if (runtime === 'openclaw') await nativeMaterialFixture({ request, run, verify });
-      else verify(await hydrateImplementation(await run(request), run));
+      verify(await hydrateImplementation(await run(request), run));
       const drafts = await new ReplyStore(deps.root, deps.binding).read();
       assert.equal(drafts.length, 1);
       assert.equal(drafts[0]!.privateText, privateText);
@@ -258,9 +256,7 @@ describe('agent/feedback-reply', () => {
         });
         assert.equal('contextMaterials' in complete, false);
       };
-      if (runtime === 'openclaw')
-        await nativeMaterialFixture({ request, run, verify, minimumPages: 0 });
-      else verify(await run(request));
+      verify(await run(request));
       assert.deepEqual(await new ReplyStore(deps.root, deps.binding).read(), []);
       assert.equal(writes, 0);
     });
