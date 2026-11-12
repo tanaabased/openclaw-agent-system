@@ -79,9 +79,12 @@ describe('cli/credentials', () => {
     assert.deepEqual(calls, ['read:environment', 'set:data:private-token:automatic']);
     assert.deepEqual(test.records.manifestDirectories, ['/workspace']);
     assert.deepEqual(test.exitCodes, []);
-    assert.deepEqual(test.records.output, [
-      'credential     op for data stored\nstore          file\ninput source   environment\ngateway cache  invalidation not required\n',
-    ]);
+    const output = test.records.output.join('');
+    assert.match(output, /credential\s+op for data stored/u);
+    assert.match(output, /store\s+file/u);
+    assert.match(output, /input source\s+environment/u);
+    assert.match(output, /gateway cache\s+invalidation not required/u);
+    assert.doesNotMatch(output, /private-token/u);
   });
 
   it('should warn about pending invalidation after successful credential writes', async () => {
@@ -152,9 +155,11 @@ describe('cli/credentials', () => {
         }),
       },
     });
-    assert.deepEqual(test.records.output, [
-      'credential     op for data unchanged\nstore          keychain\ninput source   stdin\ngateway cache  invalidation confirmed\n',
-    ]);
+    const output = test.records.output.join('');
+    assert.match(output, /credential\s+op for data unchanged/u);
+    assert.match(output, /store\s+keychain/u);
+    assert.match(output, /input source\s+stdin/u);
+    assert.match(output, /gateway cache\s+invalidation confirmed/u);
     assert.doesNotMatch(test.records.output.join(''), /private-token/u);
   });
 

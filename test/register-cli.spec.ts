@@ -495,9 +495,8 @@ describe('cli/command-family-fixtures', () => {
   for (const [index, argv] of leaves.entries()) {
     it(`should preserve ordered human and machine output for ${argv.slice(0, 3).join(' ')}`, async () => {
       for (const debug of [false, true]) {
-        for (const json of [false, true]) {
-          const machine =
-            json && (!['tool', 'credentials'].includes(argv[0]!) || argv[1] === 'cache');
+        const supportsJson = !['tool', 'credentials'].includes(argv[0]!) || argv[1] === 'cache';
+        for (const machine of supportsJson ? [false, true] : [false]) {
           const f = createProgram(undefined, {
             automations,
             backupService: new BackupFixture(),

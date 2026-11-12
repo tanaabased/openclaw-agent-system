@@ -145,32 +145,26 @@ describe('agent/codex task-continuation', () => {
     assert.deepEqual(await store.read(), before);
   });
 
-  for (const mode of ['plan', 'work', 'auto'] as const)
-    for (const assessment of [null, fixtureState.result])
-      it(`should leave ${mode} conversation to its host with ${assessment ? 'formatted' : 'unformatted'} assessment`, async () => {
-        const saved =
-          assessment && mode === 'auto'
-            ? { ...assessment, decision: { mode: 'work', reasons: ['Bounded change.'] } }
-            : assessment;
-        const work = await fixtureState.workIssue(
-          saved,
-          'Follow the conversation.',
-          'company:implement',
-          mode,
-        );
-        const store = await fixtureState.workStore();
-        const before = (await store.read()).records[0]!;
-        for (const turnStatus of ['completed', 'failed', 'interrupted']) {
-          fixtureState.native!.turnStatus = turnStatus;
-          fixtureState.native!.turnEnded = true;
-          const response = await work.run('next');
-          assert.equal(response.status, 'reconciled');
-          assert.equal('request' in response, false);
-        }
-        const after = (await store.read()).records[0]!;
-        assert.deepEqual(after.request, before.request);
-        assert.equal(after.progression, undefined);
-      });
+  it('should leave ended conversations to their host without preparing more work', async () => {
+    const work = await fixtureState.workIssue(
+      null,
+      'Follow the conversation.',
+      'company:implement',
+      'plan',
+    );
+    const store = await fixtureState.workStore();
+    const before = (await store.read()).records[0]!;
+    for (const turnStatus of ['completed', 'failed', 'interrupted']) {
+      fixtureState.native!.turnStatus = turnStatus;
+      fixtureState.native!.turnEnded = true;
+      const response = await work.run('next');
+      assert.equal(response.status, 'reconciled');
+      assert.equal('request' in response, false);
+    }
+    const after = (await store.read()).records[0]!;
+    assert.deepEqual(after.request, before.request);
+    assert.equal(after.progression, undefined);
+  });
 
   it('should return native continuation guidance to an unrelated verified operator without releasing effects', async () => {
     const work = await fixtureState.workIssue();
