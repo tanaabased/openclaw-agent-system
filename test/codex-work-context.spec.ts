@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
-import codexWorkContext from '../agent/codex-work-context.ts';
+import codexWorkContext from '../agent/tasks/implementation/codex-work-context.ts';
 import {
   implementationReviewInstructions,
   taskScopeInstructions,

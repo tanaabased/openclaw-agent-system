@@ -11,14 +11,14 @@ import cleanupConfiguration from '../agent/cleanup-configuration.ts';
 import CodexAssignmentClaims, { codexInstanceStore } from '../agent/codex-assignment-claims.ts';
 import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
 import { codexItemOccupied } from '../agent/codex-capacity.ts';
-import codexContinuationNative from '../agent/codex-continuation-native.ts';
+import codexContinuationNative from '../agent/tasks/implementation/codex-continuation-native.ts';
 import runCodexContinuation, {
   type CodexContinuationDependencies,
-} from '../agent/codex-continuation.ts';
+} from '../agent/tasks/implementation/codex-continuation.ts';
 import codexDirectInput from '../agent/codex-direct-input.ts';
 import { codexWorkObservationHandoff } from '../agent/codex-dispatch-handoff.ts';
 import connectCodexGitHubAccount from '../agent/codex-github-client.ts';
-import codexImplementationEntry from '../agent/codex-implementation-entry.ts';
+import codexImplementationEntry from '../agent/tasks/implementation/codex-implementation-entry.ts';
 import codexLiveTurn from '../agent/codex-live-turn.ts';
 import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
 import { feedbackRevision } from '../agent/feedback-source.ts';

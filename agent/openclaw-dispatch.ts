@@ -14,8 +14,10 @@ import {
   assertDispatchModelRequest,
   type dispatchParameters,
 } from '../tools/dispatch/tool-schema.ts';
-import assessmentMaterial from './assessment-material.ts';
-import renderNativeAssessment, { renderBoundAssessment } from './assessment-render.ts';
+import assessmentMaterial from './tasks/assessment/assessment-material.ts';
+import renderNativeAssessment, {
+  renderBoundAssessment,
+} from './tasks/assessment/assessment-render.ts';
 import discoveryCheckpoint from './discovery-checkpoint.ts';
 import discoveryNotice from './discovery-notice.ts';
 import dispatchInspection, { dispatchInspectionSummary } from './dispatch-inspection.ts';
@@ -27,7 +29,7 @@ import {
 import feedbackContextMaterial from './feedback-context-material.ts';
 import implementationMaterial, {
   type ImplementationMaterialRead,
-} from './implementation-material.ts';
+} from './tasks/implementation/implementation-material.ts';
 import issueLaunch from './issue-launch.ts';
 import launchPending from './launch-pending.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
@@ -49,7 +51,7 @@ import nativeFeedbackReconciliation from './native-feedback-reconciliation.ts';
 import nativeFeedbackSource from './native-feedback-source.ts';
 import { nativeMaterialResponse } from './native-material.ts';
 import nativeOperatorSelection from './native-operator-selection.ts';
-import openClawAssessmentEntry from './openclaw-assessment-entry.ts';
+import openClawAssessmentEntry from './tasks/assessment/openclaw-assessment-entry.ts';
 import reconcileOpenClawLifecycle from './openclaw-assignment-lifecycle.ts';
 import dispatchCapacity from './openclaw-capacity.ts';
 import OpenClawDispatchAdmission from './openclaw-dispatch-admission.ts';
@@ -69,7 +71,7 @@ import OpenClawDispatchStore, {
 import openClawEntryContext from './openclaw-entry-context.ts';
 import { resolveOpenClawTurnFeedback } from './openclaw-feedback-input.ts';
 import { applyOpenClawFeedbackScans, scanOpenClawFeedback } from './openclaw-feedback-scan.ts';
-import openClawImplementationEntry from './openclaw-implementation-entry.ts';
+import openClawImplementationEntry from './tasks/implementation/openclaw-implementation-entry.ts';
 import { sameIntakeRun } from './openclaw-intake-pass.ts';
 import openClawNativeMaterial from './openclaw-native-material.ts';
 import retireOpenClawNative from './openclaw-native-retirement.ts';

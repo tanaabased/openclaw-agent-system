@@ -1,15 +1,17 @@
 import { withDispatchTask } from './dispatch-task-scope.ts';
 import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
-import renderNativeAssessment, { renderBoundAssessment } from './assessment-render.ts';
+import renderNativeAssessment, {
+  renderBoundAssessment,
+} from './tasks/assessment/assessment-render.ts';
 import { nativeObject } from './automation-gateway.ts';
 import { automationHash } from './automation-hash.ts';
 import cleanupConfiguration from './cleanup-configuration.ts';
-import codexAssessmentEntry from './codex-assessment-entry.ts';
+import codexAssessmentEntry from './tasks/assessment/codex-assessment-entry.ts';
 import { codexInstanceStore } from './codex-assignment-claims.ts';
 import reconcileCodexLifecycle from './codex-assignment-lifecycle.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
-import runCodexContinuation from './codex-continuation.ts';
+import runCodexContinuation from './tasks/implementation/codex-continuation.ts';
 import runCodexDelivery from './tasks/delivery/codex-delivery.ts';
 import {
   dispatchRoutingRequired,
@@ -18,7 +20,7 @@ import {
   recover,
   unpreparedDispatch,
 } from './codex-dispatch-admission.ts';
-import { assessDispatch, handoffDispatch } from './codex-dispatch-assessment.ts';
+import { assessDispatch, handoffDispatch } from './tasks/assessment/codex-dispatch-assessment.ts';
 import {
   issueUrl,
   revalidateDispatchAssignment,
@@ -32,7 +34,7 @@ import reportDispatch, { failDispatch, notice } from './codex-dispatch-reporting
 import validateDispatchRequest from './codex-dispatch-request.ts';
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
 import runCodexFeedback from './codex-feedback.ts';
-import codexImplementationEntry from './codex-implementation-entry.ts';
+import codexImplementationEntry from './tasks/implementation/codex-implementation-entry.ts';
 import acceptCodexIntakeOccurrence from './codex-intake-occurrence.ts';
 import { codexIntakePolicy } from './codex-intake-policy.ts';
 import { connectCodexGitHub } from './codex-github-client.ts';

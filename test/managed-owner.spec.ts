@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import assessmentOwner from '../agent/assessment-owner.ts';
+import assessmentOwner from '../agent/tasks/assessment/assessment-owner.ts';
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
 import managedOwner from '../agent/managed-owner.ts';
 import replyOwnerContext from '../agent/reply-owner-context.ts';

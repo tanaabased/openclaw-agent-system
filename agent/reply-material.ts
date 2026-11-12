@@ -1,6 +1,6 @@
 import implementationMaterial, {
   type ImplementationMaterialRead,
-} from './implementation-material.ts';
+} from './tasks/implementation/implementation-material.ts';
 
 /** Deliver complete composer and progress inputs through their existing authorized read owner. */
 export default function replyMaterial<T extends Record<string, unknown>>(

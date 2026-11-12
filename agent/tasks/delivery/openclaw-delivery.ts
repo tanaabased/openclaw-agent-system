@@ -30,7 +30,7 @@ import { realpath } from 'node:fs/promises';
 
 import { automationHash } from '../../automation-hash.ts';
 import type { OpenClawDispatchRecord } from '../../openclaw-dispatch-state.ts';
-import type { OpenClawWorkAction } from '../../openclaw-work.ts';
+import type { OpenClawWorkAction } from '../implementation/openclaw-work.ts';
 
 import IssueDeliveryProvider, {
   type IssueDeliveryInput,

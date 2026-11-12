@@ -9,7 +9,7 @@ import {
   type FixtureResponse,
 } from '@copilotkit/aimock';
 
-import { assessmentPresentationSchema } from '../../agent/assessment-result.ts';
+import { assessmentPresentationSchema } from '../../agent/tasks/assessment/assessment-result.ts';
 import { dispatchModelParameters } from '../../tools/dispatch/tool-schema.ts';
 import { Value } from 'typebox/value';
 

@@ -4,8 +4,8 @@ import resolveGitProtocol from '../tools/git/protocol.ts';
 import {
   codexSkillResolver,
   type default as codexAssessmentSkill,
-} from './codex-assessment-skill.ts';
-import codexContinuationNative from './codex-continuation-native.ts';
+} from './tasks/assessment/codex-assessment-skill.ts';
+import codexContinuationNative from './tasks/implementation/codex-continuation-native.ts';
 import { codexDispatchNative, type DispatchNativeThread } from './codex-dispatch-native.ts';
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';

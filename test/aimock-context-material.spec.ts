@@ -5,7 +5,7 @@ import { Value } from 'typebox/value';
 
 import implementationMaterial, {
   type ImplementationMaterialRead,
-} from '../agent/implementation-material.ts';
+} from '../agent/tasks/implementation/implementation-material.ts';
 import contextMaterialTransport from '../agent/context-material-transport.ts';
 import contextMaterialExchange from '../scripts/aimock-context-material.ts';
 import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';

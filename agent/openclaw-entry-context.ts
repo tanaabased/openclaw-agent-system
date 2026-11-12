@@ -3,13 +3,13 @@ import { nativeIssueContext } from './native-issue-context.ts';
 import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
 
 import { realpath } from 'node:fs/promises';
-import type { ImplementationResult } from './implementation-result.ts';
-import managedImplementationRoute from './managed-implementation-route.ts';
+import type { ImplementationResult } from './tasks/implementation/implementation-result.ts';
+import managedImplementationRoute from './tasks/implementation/managed-implementation-route.ts';
 
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import type { AssessmentEntryDependencies } from './assessment-entry.ts';
-import assessmentOwner from './assessment-owner.ts';
+import type { AssessmentEntryDependencies } from './tasks/assessment/assessment-entry.ts';
+import assessmentOwner from './tasks/assessment/assessment-owner.ts';
 import type { OpenClawTaskDependencies } from './openclaw-dispatch-context.ts';
 import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
 import { describeIssueSession, type DispatchCaller } from './openclaw-session-create.ts';

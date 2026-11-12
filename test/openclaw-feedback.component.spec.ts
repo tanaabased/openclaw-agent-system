@@ -16,7 +16,7 @@ import openClawFeedback, {
   type OpenClawFeedbackAction,
   type OpenClawFeedbackProvider,
 } from '../agent/openclaw-feedback.ts';
-import { verifyOpenClawWork } from '../agent/openclaw-work.ts';
+import { verifyOpenClawWork } from '../agent/tasks/implementation/openclaw-work.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
 import { intakeFixture } from './github-intake-fixture.ts';

@@ -1,6 +1,6 @@
 import { retainOpenClawTurnInput } from '../agent/openclaw-turn-binding.ts';
 import assert from 'node:assert/strict';
-import { ContextMaterialError } from '../agent/implementation-material.ts';
+import { ContextMaterialError } from '../agent/tasks/implementation/implementation-material.ts';
 
 import type {
   OpenClawPluginApi,

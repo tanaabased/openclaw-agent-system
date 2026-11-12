@@ -1,6 +1,6 @@
-import type { AssessmentSelection } from './assessment-selection.ts';
+import type { AssessmentSelection } from './tasks/assessment/assessment-selection.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
-import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
+import type { CodexAssessmentSkill } from './tasks/assessment/codex-assessment-skill.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 
 /** the conversation owner selects composition independently of feedback admission. */

@@ -1,6 +1,6 @@
 import { Type, type Static } from 'typebox';
 
-import { assessmentSelectionSchema } from '../../assessment-selection.ts';
+import { assessmentSelectionSchema } from '../assessment/assessment-selection.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 export const deliveryAnnouncementStateSchema = Type.Object(

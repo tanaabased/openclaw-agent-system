@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { recoverRetainedAnnouncement } from '../agent/tasks/delivery/delivery-announcement.ts';
 import { feedbackRevision } from '../agent/feedback-source.ts';
 import manualPullRequest from '../agent/manual-pull-request.ts';
-import { openClawWorkSlot } from '../agent/openclaw-continuation.ts';
+import { openClawWorkSlot } from '../agent/tasks/implementation/openclaw-continuation.ts';
 import { authorizeFeedback, type OpenClawFeedbackProvider } from '../agent/openclaw-feedback.ts';
 import { account, fixturePullRequest, intakeFixture } from './github-intake-fixture.ts';
 

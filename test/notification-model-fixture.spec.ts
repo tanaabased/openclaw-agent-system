@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import implementationMaterial, {
   type ImplementationMaterialRead,
-} from '../agent/implementation-material.ts';
+} from '../agent/tasks/implementation/implementation-material.ts';
 import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
 import nativeTaskInstructions from '../agent/native-task-instructions.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
@@ -14,11 +14,11 @@ import { matchFixture, type ChatCompletionRequest } from '@copilotkit/aimock';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import renderNativeAssessment from '../agent/assessment-render.ts';
+import renderNativeAssessment from '../agent/tasks/assessment/assessment-render.ts';
 import {
   assessmentResultContextSchema,
   assessmentResultFormat,
-} from '../agent/assessment-result.ts';
+} from '../agent/tasks/assessment/assessment-result.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
 import openclawTurnContext from '../agent/openclaw-turn-context.ts';
 import {

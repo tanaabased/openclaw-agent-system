@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { codexSkillResolver } from '../agent/codex-assessment-skill.ts';
+import { codexSkillResolver } from '../agent/tasks/assessment/codex-assessment-skill.ts';
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
 import { openClawSkillResolver } from '../agent/openclaw-skill.ts';
 import taskTurnContext from '../agent/task-turn-context.ts';

@@ -3,9 +3,9 @@ import {
   type PrivateStateContention,
 } from '../core/private-state-file-lock.ts';
 import { providerDiagnostic, type ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
-import AssessmentValidationError from './assessment-validation.ts';
+import AssessmentValidationError from './tasks/assessment/assessment-validation.ts';
 import WorkflowRequestError from './workflow-request-error.ts';
-import { ContextMaterialError } from './implementation-material.ts';
+import { ContextMaterialError } from './tasks/implementation/implementation-material.ts';
 
 /** preserve public codes and bounded provider evidence through wrapped runtime failures. */
 export default function workflowFailure(error: unknown, fallback: string) {

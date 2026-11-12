@@ -226,7 +226,7 @@ try {
     'dist/codex/codex-runtime.js',
     'hooks/hooks.json',
     'index.ts',
-    'agent/assessment-result.ts',
+    'agent/tasks/assessment/assessment-result.ts',
     'agent/automation-report.schema.json',
     'bin/agent-system-ssh',
     'bin/agent-system-ssh-keygen',

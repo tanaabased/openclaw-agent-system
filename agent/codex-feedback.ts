@@ -7,7 +7,7 @@ import { type GitHubCanonicalFeedback } from '../channels/github/provider/review
 import { implementationMaterialSchema } from '../tools/dispatch/implementation-material-schema.ts';
 import { automationHash } from './automation-hash.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
-import codexContinuationNative from './codex-continuation-native.ts';
+import codexContinuationNative from './tasks/implementation/codex-continuation-native.ts';
 import type { CodexDispatchDependencies } from './codex-dispatch-context.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
 import unsubmittedNativeRequest from './codex-dispatch-unsubmitted.ts';

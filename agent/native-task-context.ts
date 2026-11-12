@@ -1,16 +1,16 @@
 import type { AssessmentConfiguration } from '../manifest/assessment-schema.ts';
-import type { AssessmentEntryDependencies } from './assessment-entry.ts';
+import type { AssessmentEntryDependencies } from './tasks/assessment/assessment-entry.ts';
 import type { nativeIssueContext } from './native-issue-context.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
-import assessmentMaterial from './assessment-material.ts';
+import assessmentMaterial from './tasks/assessment/assessment-material.ts';
 import implementationMaterial, {
   type ImplementationMaterialRead,
-} from './implementation-material.ts';
-import { nativeAssessmentInstructions } from './assessment-instructions.ts';
+} from './tasks/implementation/implementation-material.ts';
+import { nativeAssessmentInstructions } from './tasks/assessment/assessment-instructions.ts';
 import nativeTaskInstructions from './native-task-instructions.ts';
-import { assessmentResultContextSchema } from './assessment-result.ts';
-import { assessmentPresentationRequest } from './assessment-render.ts';
-import type { AssessmentSelection } from './assessment-selection.ts';
+import { assessmentResultContextSchema } from './tasks/assessment/assessment-result.ts';
+import { assessmentPresentationRequest } from './tasks/assessment/assessment-render.ts';
+import type { AssessmentSelection } from './tasks/assessment/assessment-selection.ts';
 import workflowFailure from './workflow-failure.ts';
 
 /** Refresh native conversation inputs without creating stages, saving plans, or changing receipts. */

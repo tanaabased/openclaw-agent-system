@@ -14,7 +14,7 @@ import type { RegisteredAgentSystemTool } from '../../api/types.ts';
 import type AgentManifestService from '../../manifest/service.ts';
 import { intakeParameters } from './tool-schema.ts';
 import { nativeMaterialResponse } from '../../agent/native-material.ts';
-import type { ImplementationMaterialRead } from '../../agent/implementation-material.ts';
+import type { ImplementationMaterialRead } from '../../agent/tasks/implementation/implementation-material.ts';
 
 /** No caller-selected identity or credential route; scan admission belongs to V2 policy. */
 export default function createIntakeTool(

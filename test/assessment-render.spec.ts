@@ -7,17 +7,17 @@ import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
 import renderNativeAssessment, {
   assessmentPresentationRequest,
   renderBoundAssessment,
-} from '../agent/assessment-render.ts';
-import type { AssessmentSubmission } from '../agent/assessment-result.ts';
-import assessmentReviewContext from '../agent/assessment-review-context.ts';
-import AssessmentValidationError from '../agent/assessment-validation.ts';
+} from '../agent/tasks/assessment/assessment-render.ts';
+import type { AssessmentSubmission } from '../agent/tasks/assessment/assessment-result.ts';
+import assessmentReviewContext from '../agent/tasks/assessment/assessment-review-context.ts';
+import AssessmentValidationError from '../agent/tasks/assessment/assessment-validation.ts';
 import { runCodexDispatch } from '../agent/codex-dispatch.ts';
 import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
 import implementationMaterial, {
   implementationContextBudget,
   implementationMaterialSize,
   type ImplementationMaterialRead,
-} from '../agent/implementation-material.ts';
+} from '../agent/tasks/implementation/implementation-material.ts';
 import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import hydrateImplementation from './implementation-material-fixture.ts';

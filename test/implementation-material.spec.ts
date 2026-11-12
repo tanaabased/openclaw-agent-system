@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 
-import assessmentMaterial from '../agent/assessment-material.ts';
-import implementationContext from '../agent/implementation-context.ts';
+import assessmentMaterial from '../agent/tasks/assessment/assessment-material.ts';
+import implementationContext from '../agent/tasks/implementation/implementation-context.ts';
 import implementationMaterial, {
   ContextMaterialError,
   type ImplementationMaterialRead,
   implementationContextBudget,
-} from '../agent/implementation-material.ts';
+} from '../agent/tasks/implementation/implementation-material.ts';
 import workflowFailure from '../agent/workflow-failure.ts';
 import hydrateImplementation from './implementation-material-fixture.ts';
 

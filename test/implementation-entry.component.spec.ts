@@ -5,14 +5,16 @@ import { join } from 'node:path';
 import { nativeIssueContext } from '../agent/native-issue-context.ts';
 import hydrateImplementation from './implementation-material-fixture.ts';
 
-import assessmentEntry, { type AssessmentEntryDependencies } from '../agent/assessment-entry.ts';
-import renderNativeAssessment from '../agent/assessment-render.ts';
-import assessmentSkillSource from '../agent/assessment-skill-source.ts';
+import assessmentEntry, {
+  type AssessmentEntryDependencies,
+} from '../agent/tasks/assessment/assessment-entry.ts';
+import renderNativeAssessment from '../agent/tasks/assessment/assessment-render.ts';
+import assessmentSkillSource from '../agent/tasks/assessment/assessment-skill-source.ts';
 import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
 import { DirectEntryStore } from '../agent/direct-entry-store.ts';
 import implementationEntryDelivery from '../agent/tasks/delivery/implementation-entry-delivery.ts';
-import { implementationEntriesSchema } from '../agent/implementation-entry-state.ts';
-import implementationEntry from '../agent/implementation-entry.ts';
+import { implementationEntriesSchema } from '../agent/tasks/implementation/implementation-entry-state.ts';
+import implementationEntry from '../agent/tasks/implementation/implementation-entry.ts';
 import {
   implementationReviewInstructions,
   taskScopeInstructions,
@@ -753,7 +755,7 @@ describe('agent/native-implementation-entry', () => {
   it('should implement in an ordinary codex chat without activation, native creation or managed tools', async () => {
     const { bindCodexWorkspace } = await import('../agent/codex-workspace-binding.ts');
     const { default: codexImplementationEntry } =
-      await import('../agent/codex-implementation-entry.ts');
+      await import('../agent/tasks/implementation/codex-implementation-entry.ts');
     const home = join(root, 'codex'),
       data = join(root, 'plugin');
     await mkdir(home);

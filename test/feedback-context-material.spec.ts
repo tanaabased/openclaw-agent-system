@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import feedbackContextMaterial from '../agent/feedback-context-material.ts';
-import type { ImplementationMaterialRead } from '../agent/implementation-material.ts';
+import type { ImplementationMaterialRead } from '../agent/tasks/implementation/implementation-material.ts';
 import hydrateImplementation from './implementation-material-fixture.ts';
 
 describe('agent/feedback-context-material', () => {

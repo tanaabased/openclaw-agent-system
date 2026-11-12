@@ -6,7 +6,7 @@ import { feedbackRevision } from '../agent/feedback-source.ts';
 import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
 import replyOwnPublications from '../agent/reply-own-publications.ts';
 
-import assessmentSkillSource from '../agent/assessment-skill-source.ts';
+import assessmentSkillSource from '../agent/tasks/assessment/assessment-skill-source.ts';
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import runCodexFeedback from '../agent/codex-feedback.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';

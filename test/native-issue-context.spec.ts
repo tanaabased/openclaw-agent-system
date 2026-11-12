@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import type { AssessmentEntryDependencies } from '../agent/assessment-entry.ts';
+import type { AssessmentEntryDependencies } from '../agent/tasks/assessment/assessment-entry.ts';
 import { codexItemOccupied } from '../agent/codex-capacity.ts';
 import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
 import { nativeIssueContext } from '../agent/native-issue-context.ts';
-import managedImplementationRoute from '../agent/managed-implementation-route.ts';
+import managedImplementationRoute from '../agent/tasks/implementation/managed-implementation-route.ts';
 import { openClawItemOccupied } from '../agent/openclaw-capacity.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
 

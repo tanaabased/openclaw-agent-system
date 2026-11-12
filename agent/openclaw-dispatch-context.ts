@@ -33,7 +33,7 @@ import type { AgentManifest } from '../manifest/types.ts';
 import GitCommandError from '../tools/git/command-error.ts';
 import type TrustedGitWorktreeService from '../tools/git/trusted-worktree-service.ts';
 import GitWorktreeConflict from '../tools/git/worktree-conflict.ts';
-import AssessmentValidationError from './assessment-validation.ts';
+import AssessmentValidationError from './tasks/assessment/assessment-validation.ts';
 import type AssignmentClaimStore from './assignment-claim-store.ts';
 import { inspectFeedbackAssignment } from './assignment-feedback-reactivation.ts';
 import { automationHash } from './automation-hash.ts';
@@ -45,7 +45,7 @@ import {
 import { feedbackConversationMode } from './feedback-conversation-mode.ts';
 import { feedbackInputContext } from './feedback-input.ts';
 import authorizeFeedback from './feedback-source-context.ts';
-import { ContextMaterialError } from './implementation-material.ts';
+import { ContextMaterialError } from './tasks/implementation/implementation-material.ts';
 import { retainedIssueProgression } from './issue-progression.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import {

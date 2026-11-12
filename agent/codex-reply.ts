@@ -1,7 +1,7 @@
 import { withDispatchTask } from './dispatch-task-scope.ts';
 import { parseReplyRequest } from '../tools/dispatch/reply-schema.ts';
-import codexAssessmentSkill from './codex-assessment-skill.ts';
-import codexContinuationNative from './codex-continuation-native.ts';
+import codexAssessmentSkill from './tasks/assessment/codex-assessment-skill.ts';
+import codexContinuationNative from './tasks/implementation/codex-continuation-native.ts';
 import codexReplyInput from './codex-direct-input.ts';
 import { withNative } from './codex-dispatch-context.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';

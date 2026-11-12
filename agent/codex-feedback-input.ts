@@ -1,4 +1,4 @@
-import type codexContinuationNative from './codex-continuation-native.ts';
+import type codexContinuationNative from './tasks/implementation/codex-continuation-native.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
 
 /** Reuse the exact native-send receipt; delegated feedback is never an operator input. */

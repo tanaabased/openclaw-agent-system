@@ -127,7 +127,7 @@
   "codexTools": {
     "managedPaths": [
       ".codex-plugin",
-      "agent/assessment-result.ts",
+      "agent/tasks/assessment/assessment-result.ts",
       "assets",
       "channels/github/PRESENTATION.md",
       "dist/codex",

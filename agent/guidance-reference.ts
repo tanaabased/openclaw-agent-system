@@ -1,4 +1,4 @@
-import type { AssessmentGuidance } from './assessment-guidance.ts';
+import type { AssessmentGuidance } from './tasks/assessment/assessment-guidance.ts';
 
 /** file validation and receipts stay with their owners; native tools read the content. */
 export default function guidanceReference(guidance: AssessmentGuidance) {

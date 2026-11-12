@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { mock } from 'node:test';
 
-import { renderBoundAssessment } from '../agent/assessment-render.ts';
+import { renderBoundAssessment } from '../agent/tasks/assessment/assessment-render.ts';
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
 import assignmentCard from '../channels/github/presentation/assignment-card.ts';
 import {

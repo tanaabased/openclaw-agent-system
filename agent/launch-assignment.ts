@@ -2,7 +2,7 @@ import type { IntakeObservation } from '../channels/github/intake/record-store.t
 import type IntakeRecordStore from '../channels/github/intake/record-store.ts';
 import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
-import type { AssessmentEntryDependencies } from './assessment-entry.ts';
+import type { AssessmentEntryDependencies } from './tasks/assessment/assessment-entry.ts';
 import { automationHash } from './automation-hash.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { OperatorIssue } from './managed-issue.ts';

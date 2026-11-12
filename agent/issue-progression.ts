@@ -1,5 +1,5 @@
 import { Type, type Static } from 'typebox';
-import { assessmentDecisionMode } from './assessment-result.ts';
+import { assessmentDecisionMode } from './tasks/assessment/assessment-result.ts';
 export const issueProgressionSchema = Type.Object(
   {
     stage: Type.Literal('implementation'),

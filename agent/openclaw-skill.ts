@@ -1,5 +1,5 @@
 import { basename, isAbsolute } from 'node:path';
-import assessmentSkillSource from './assessment-skill-source.ts';
+import assessmentSkillSource from './tasks/assessment/assessment-skill-source.ts';
 import { sessionObject } from './openclaw-session-create.ts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 /** resolve one exact eligible skill from the enrolled native catalog. */

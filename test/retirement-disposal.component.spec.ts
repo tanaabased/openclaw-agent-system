@@ -7,7 +7,7 @@ import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import { DirectEntryStore } from '../agent/direct-entry-store.ts';
 import type DispatchStore from '../agent/dispatch-state.ts';
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
-import { implementationEntriesSchema } from '../agent/implementation-entry-state.ts';
+import { implementationEntriesSchema } from '../agent/tasks/implementation/implementation-entry-state.ts';
 import type { ManagedIssue } from '../agent/managed-issue.ts';
 import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
 import pendingRetirement from '../agent/pending-retirement.ts';

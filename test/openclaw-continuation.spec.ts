@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 
-import advanceOpenClawWork, { openClawWorkSlot } from '../agent/openclaw-continuation.ts';
+import advanceOpenClawWork, {
+  openClawWorkSlot,
+} from '../agent/tasks/implementation/openclaw-continuation.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
 
 function delivered() {

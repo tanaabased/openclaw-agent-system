@@ -23,7 +23,7 @@ import { privateStateFileLockBusyErrorCode } from '../core/private-state-file-lo
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import type { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
-import assessmentReviewContext from './assessment-review-context.ts';
+import assessmentReviewContext from './tasks/assessment/assessment-review-context.ts';
 import {
   dispatchFailurePhase,
   dispatchFailureStatus,
@@ -32,8 +32,11 @@ import {
 } from './dispatch-retry.ts';
 import selectFeedbackStage from './feedback-stage.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
-import { issueAssessmentAction, selectOpenClawAssessment } from './openclaw-assessment.ts';
-import advanceOpenClawWork from './openclaw-continuation.ts';
+import {
+  issueAssessmentAction,
+  selectOpenClawAssessment,
+} from './tasks/assessment/openclaw-assessment.ts';
+import advanceOpenClawWork from './tasks/implementation/openclaw-continuation.ts';
 import openClawDelivery, { presentOpenClawDelivery } from './tasks/delivery/openclaw-delivery.ts';
 import openClawDeliveryRecovery from './tasks/delivery/openclaw-delivery-recovery.ts';
 import {
@@ -53,7 +56,7 @@ import openClawFeedback, {
 } from './openclaw-feedback.ts';
 import { describeIssueSession, type DispatchCaller } from './openclaw-session-create.ts';
 import openClawSkill from './openclaw-skill.ts';
-import openClawWorkAction, { verifyOpenClawWork } from './openclaw-work.ts';
+import openClawWorkAction, { verifyOpenClawWork } from './tasks/implementation/openclaw-work.ts';
 import workflowFailure from './workflow-failure.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';

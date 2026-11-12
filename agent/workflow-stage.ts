@@ -6,9 +6,9 @@ import {
   defaultImplementationSkill,
   type AssessmentConfiguration,
 } from '../manifest/assessment-schema.ts';
-import assessmentGuidance from './assessment-guidance.ts';
-import type { assessmentSelectionSchema } from './assessment-selection.ts';
-import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
+import assessmentGuidance from './tasks/assessment/assessment-guidance.ts';
+import type { assessmentSelectionSchema } from './tasks/assessment/assessment-selection.ts';
+import type { CodexAssessmentSkill } from './tasks/assessment/codex-assessment-skill.ts';
 
 export type WorkflowStage = 'assessment' | 'implementation' | 'review' | 'feedback';
 export interface WorkflowSelection {

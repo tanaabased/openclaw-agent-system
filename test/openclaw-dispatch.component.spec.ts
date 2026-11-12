@@ -9,7 +9,7 @@ import {
   retainAnnouncementFailure,
   retainedAnnouncementPublication,
 } from '../agent/tasks/delivery/delivery-announcement-recovery.ts';
-import { implementationContextBudget } from '../agent/implementation-material.ts';
+import { implementationContextBudget } from '../agent/tasks/implementation/implementation-material.ts';
 import { pendingRecoveryFeedback } from '../agent/issue-task-recovery.ts';
 import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
 import {
@@ -41,8 +41,8 @@ import {
   assessmentResultFormat,
   type AssessmentResult,
   type AssessmentSubmission,
-} from '../agent/assessment-result.ts';
-import type { AssessmentSelection } from '../agent/assessment-selection.ts';
+} from '../agent/tasks/assessment/assessment-result.ts';
+import type { AssessmentSelection } from '../agent/tasks/assessment/assessment-selection.ts';
 import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
 import type { ClaimClient } from '../agent/assignment-claim.ts';
 import DiscoveryBudget, { DiscoveryPaused } from '../agent/discovery-budget.ts';

@@ -3,12 +3,12 @@ import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
 
 import { realpath } from 'node:fs/promises';
 import connectCodexGitHubAccount, { connectCodexGitHub } from './codex-github-client.ts';
-import type { ImplementationResult } from './implementation-result.ts';
-import managedImplementationRoute from './managed-implementation-route.ts';
+import type { ImplementationResult } from './tasks/implementation/implementation-result.ts';
+import managedImplementationRoute from './tasks/implementation/managed-implementation-route.ts';
 
-import type { AssessmentEntryDependencies } from './assessment-entry.ts';
-import assessmentOwner from './assessment-owner.ts';
-import codexAssessmentSkill from './codex-assessment-skill.ts';
+import type { AssessmentEntryDependencies } from './tasks/assessment/assessment-entry.ts';
+import assessmentOwner from './tasks/assessment/assessment-owner.ts';
+import codexAssessmentSkill from './tasks/assessment/codex-assessment-skill.ts';
 import codexDirectInput from './codex-direct-input.ts';
 import { withNative } from './codex-dispatch-context.ts';
 import { dispatchGit } from './codex-dispatch-project.ts';

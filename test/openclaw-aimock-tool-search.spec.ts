@@ -1,6 +1,6 @@
 import implementationMaterial, {
   type ImplementationMaterialRead,
-} from '../agent/implementation-material.ts';
+} from '../agent/tasks/implementation/implementation-material.ts';
 import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
 import nativeTaskInstructions from '../agent/native-task-instructions.ts';
 import assert from 'node:assert/strict';
@@ -17,7 +17,7 @@ import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 import {
   assessmentResultContextSchema,
   assessmentResultFormat,
-} from '../agent/assessment-result.ts';
+} from '../agent/tasks/assessment/assessment-result.ts';
 
 function request(prompt = githubExampleTanaabotPrompt): ChatCompletionRequest {
   return {

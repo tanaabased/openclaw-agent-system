@@ -1,5 +1,5 @@
 import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
-import { assessmentTurnMessage } from './openclaw-assessment.ts';
+import { assessmentTurnMessage } from './tasks/assessment/openclaw-assessment.ts';
 import { nativeTurnFor } from './openclaw-native-turns.ts';
 import type { OpenClawTurn } from './openclaw-turn-state.ts';
 

@@ -32,7 +32,7 @@ import { assessmentSchema } from './model-routing.ts';
 import recoverOpenClawAnnouncement from './tasks/delivery/openclaw-announcement-recovery.ts';
 import reconcileOpenClawLifecycle from './openclaw-assignment-lifecycle.ts';
 import dispatchCapacity from './openclaw-capacity.ts';
-import { openClawWorkSlot } from './openclaw-continuation.ts';
+import { openClawWorkSlot } from './tasks/implementation/openclaw-continuation.ts';
 import {
   openClawDispatchFailureCode,
   type default as OpenClawDispatchContext,

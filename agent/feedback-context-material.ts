@@ -1,6 +1,6 @@
 import implementationMaterial, {
   type ImplementationMaterialRead,
-} from './implementation-material.ts';
+} from './tasks/implementation/implementation-material.ts';
 
 /** page complete verified feedback through the same transport as assessment and implementation. */
 export default function feedbackContextMaterial<T extends Record<string, unknown>>(

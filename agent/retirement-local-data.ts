@@ -1,5 +1,5 @@
 import { DirectEntryStore } from './direct-entry-store.ts';
-import { implementationEntriesSchema } from './implementation-entry-state.ts';
+import { implementationEntriesSchema } from './tasks/implementation/implementation-entry-state.ts';
 import type { ManagedIssue } from './managed-issue.ts';
 import ReplyStore, { type ReplyBinding } from './reply-store.ts';
 import {

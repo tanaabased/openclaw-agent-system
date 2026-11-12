@@ -1,7 +1,7 @@
 import type { Static } from 'typebox';
 
 import { maximumGitHubNotificationReplyLength } from '../channels/github/publication/limits.ts';
-import type { assessmentSelectionSchema } from './assessment-selection.ts';
+import type { assessmentSelectionSchema } from './tasks/assessment/assessment-selection.ts';
 
 /** both native entry paths supply the same composer inputs, without transferring authority. */
 export default function feedbackComposition<Source, Outcome>(input: {

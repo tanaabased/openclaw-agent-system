@@ -4,8 +4,8 @@ import IntakeRecordStore, {
   type IntakeObservation,
 } from '../channels/github/intake/record-store.ts';
 
-import type { AssessmentEntryDependencies } from '../agent/assessment-entry.ts';
-import assessmentOwner from '../agent/assessment-owner.ts';
+import type { AssessmentEntryDependencies } from '../agent/tasks/assessment/assessment-entry.ts';
+import assessmentOwner from '../agent/tasks/assessment/assessment-owner.ts';
 import { inspectAdmittedIssue, inspectContinuedIssue } from '../agent/dispatch-assignment.ts';
 import pendingDispatchAssignments from '../agent/dispatch-pending.ts';
 import issueLaunch from '../agent/issue-launch.ts';

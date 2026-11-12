@@ -12,7 +12,7 @@ import IssueDeliveryProvider, {
 import { issuePullRequestRecipients } from '../channels/github/pull-request-recipients.ts';
 import repositoryScope from '../channels/github/repository-scope.ts';
 import { launchRequestSchema, type LaunchRequest } from '../tools/dispatch/launch-schema.ts';
-import type { AssessmentEntryDependencies } from './assessment-entry.ts';
+import type { AssessmentEntryDependencies } from './tasks/assessment/assessment-entry.ts';
 import { automationHash } from './automation-hash.ts';
 import { githubOrigin } from './codex-dispatch-project.ts';
 import dispatchContext from './dispatch-context.ts';

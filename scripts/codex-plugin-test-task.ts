@@ -275,7 +275,7 @@ try {
   for (const path of [
     'dist/codex/codex-runtime.js',
     'hooks/hooks.json',
-    'agent/assessment-result.ts',
+    'agent/tasks/assessment/assessment-result.ts',
     'channels/github/PRESENTATION.md',
     'tools/dispatch/README.md',
   ]) {

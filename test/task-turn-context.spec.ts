@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import assessmentMaterial from '../agent/assessment-material.ts';
+import assessmentMaterial from '../agent/tasks/assessment/assessment-material.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';

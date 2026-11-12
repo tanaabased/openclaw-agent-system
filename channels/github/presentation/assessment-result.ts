@@ -1,4 +1,7 @@
-import { assessmentDecisionMode, type AssessmentResult } from '../../../agent/assessment-result.ts';
+import {
+  assessmentDecisionMode,
+  type AssessmentResult,
+} from '../../../agent/tasks/assessment/assessment-result.ts';
 import redactFeedback from '../../../agent/feedback-redaction.ts';
 import type { RoutingDecision } from '../../../agent/model-routing.ts';
 import type { RoutingInstructions } from '../../../agent/routing-instructions.ts';

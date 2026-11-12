@@ -1,5 +1,5 @@
 import { Type, type Static } from 'typebox';
-import { codexWorkStateSchema } from './codex-work-state.ts';
+import { codexWorkStateSchema } from './tasks/implementation/codex-work-state.ts';
 
 import { codexFeedbackSchema } from './codex-feedback-state.ts';
 import DispatchStore, {

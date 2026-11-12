@@ -3,7 +3,7 @@ import process from 'node:process';
 import { Value } from 'typebox/value';
 import CodexAssignmentClaims, { codexInstanceStore } from './codex-assignment-claims.ts';
 import codexContextRequest from './codex-context-request.ts';
-import runCodexContinuation from './codex-continuation.ts';
+import runCodexContinuation from './tasks/implementation/codex-continuation.ts';
 import runCodexDelivery, { CodexDeliveryFailure } from './tasks/delivery/codex-delivery.ts';
 import { codexDispatchResponse } from './codex-dispatch-binding.ts';
 import { codexWorkObservationHandoff } from './codex-dispatch-handoff.ts';

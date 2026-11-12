@@ -1,6 +1,6 @@
 import { cardCopyInstructions } from '../../../channels/github/presentation/card.ts';
 import replyMaterial from '../../reply-material.ts';
-import type { ImplementationMaterialRead } from '../../implementation-material.ts';
+import type { ImplementationMaterialRead } from '../implementation/implementation-material.ts';
 import taskUpdateInstructions from '../../task-update-instructions.ts';
 import isFilesystemAccessError from '../../../utils/is-filesystem-access-error.ts';
 

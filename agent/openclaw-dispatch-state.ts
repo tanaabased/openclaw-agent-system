@@ -6,7 +6,7 @@ import { nativeTurnSchema } from './openclaw-native-turns.ts';
 import DispatchStore, { dispatchRecordProperties, type DispatchState } from './dispatch-state.ts';
 import { openclawFeedbackSchema } from './openclaw-feedback-state.ts';
 import { type OpenClawTurn } from './openclaw-turn-state.ts';
-import { openclawWorkStateSchema } from './openclaw-work-state.ts';
+import { openclawWorkStateSchema } from './tasks/implementation/openclaw-work-state.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const sessionCreationRequestSchema = Type.Object(

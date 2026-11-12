@@ -9,7 +9,7 @@ import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
 import PrivateStateFile from '../core/private-state-file.ts';
 import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 import { statusUpdateSchema } from '../tools/dispatch/reply-schema.ts';
-import { assessmentSelectionSchema } from './assessment-selection.ts';
+import { assessmentSelectionSchema } from './tasks/assessment/assessment-selection.ts';
 import { automationHash } from './automation-hash.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import type { AssessmentResult } from '../agent/assessment-result.ts';
+import type { AssessmentResult } from '../agent/tasks/assessment/assessment-result.ts';
 import type { RoutingInstructions } from '../agent/routing-instructions.ts';
 import renderAssessmentResult from '../channels/github/presentation/assessment-result.ts';
 import modelRoutingCard from '../channels/github/presentation/model-routing.ts';

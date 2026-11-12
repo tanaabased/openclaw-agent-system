@@ -1,6 +1,6 @@
 import { mock } from 'node:test';
 import hydrateImplementation from './implementation-material-fixture.ts';
-import type { ImplementationMaterialRead } from '../agent/implementation-material.ts';
+import type { ImplementationMaterialRead } from '../agent/tasks/implementation/implementation-material.ts';
 import assert from 'node:assert/strict';
 
 import { Value } from 'typebox/value';

@@ -10,7 +10,7 @@ import unsubmittedCreation from './codex-dispatch-unsubmitted.ts';
 
 import { nativeObject } from './automation-gateway.ts';
 import { automationHash } from './automation-hash.ts';
-import codexAssessmentSkill from './codex-assessment-skill.ts';
+import codexAssessmentSkill from './tasks/assessment/codex-assessment-skill.ts';
 import { CodexThreadRpcError, type CodexThreadRequest } from './codex-thread-client.ts';
 
 export interface DispatchNativeThread {

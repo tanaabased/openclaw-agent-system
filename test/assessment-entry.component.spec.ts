@@ -3,13 +3,18 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import renderNativeAssessment from '../agent/assessment-render.ts';
+import renderNativeAssessment from '../agent/tasks/assessment/assessment-render.ts';
 import { conversationExampleScenario } from '../examples/openclaw-issue-conversation/model-fixture.ts';
 
-import assessmentEntry, { type AssessmentEntryDependencies } from '../agent/assessment-entry.ts';
-import assessmentOwner from '../agent/assessment-owner.ts';
-import { assessmentResultFormat, type AssessmentSubmission } from '../agent/assessment-result.ts';
-import assessmentSkillSource from '../agent/assessment-skill-source.ts';
+import assessmentEntry, {
+  type AssessmentEntryDependencies,
+} from '../agent/tasks/assessment/assessment-entry.ts';
+import assessmentOwner from '../agent/tasks/assessment/assessment-owner.ts';
+import {
+  assessmentResultFormat,
+  type AssessmentSubmission,
+} from '../agent/tasks/assessment/assessment-result.ts';
+import assessmentSkillSource from '../agent/tasks/assessment/assessment-skill-source.ts';
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
 import { nativeIssueContext } from '../agent/native-issue-context.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -466,7 +471,8 @@ describe('agent/native-assessment-entry', () => {
           : 'a'.repeat(40);
   it('should assess in an ordinary codex chat without activation, native creation or managed tools', async () => {
     const { bindCodexWorkspace } = await import('../agent/codex-workspace-binding.ts');
-    const { default: codexAssessmentEntry } = await import('../agent/codex-assessment-entry.ts');
+    const { default: codexAssessmentEntry } =
+      await import('../agent/tasks/assessment/codex-assessment-entry.ts');
     const { runCodexDispatch } = await import('../agent/codex-dispatch.ts');
     const home = join(root, 'codex'),
       data = join(root, 'plugin');

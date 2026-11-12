@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 
-import assessmentMaterial from '../agent/assessment-material.ts';
+import assessmentMaterial from '../agent/tasks/assessment/assessment-material.ts';
 import taskTurnContext from '../agent/task-turn-context.ts';
 import openclawTurnContext from '../agent/openclaw-turn-context.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
 import {
   implementationMaterialSize,
   type ImplementationMaterialRead,
-} from '../agent/implementation-material.ts';
+} from '../agent/tasks/implementation/implementation-material.ts';
 import { hostedAssessmentContextFixture } from './assessment-material-fixture.ts';
 import { issuePickupScenario } from '../examples/openclaw-project-picker/model-fixture.ts';
 import nativeMaterialFixture from './native-material-fixture.ts';

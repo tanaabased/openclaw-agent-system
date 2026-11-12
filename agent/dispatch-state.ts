@@ -19,7 +19,7 @@ import PrivateStateFile from '../core/private-state-file.ts';
 import storedDataSchema from '../core/stored-data-schema.ts';
 import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 import { providerDiagnosticSchema } from '../utils/provider-diagnostic.ts';
-import { assessmentSelectionSchema } from './assessment-selection.ts';
+import { assessmentSelectionSchema } from './tasks/assessment/assessment-selection.ts';
 import { assignmentObservationSchema, retirementSchema } from './assignment-retirement.ts';
 import {
   adoptedPullRequestSchema,

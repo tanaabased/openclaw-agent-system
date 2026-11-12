@@ -1,9 +1,9 @@
 import selectReplyDraft from './reply-selection.ts';
 import { cardCopyInstructions } from '../channels/github/presentation/card.ts';
 
-import assessmentGuidance from './assessment-guidance.ts';
+import assessmentGuidance from './tasks/assessment/assessment-guidance.ts';
 import { automationHash } from './automation-hash.ts';
-import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
+import type { CodexAssessmentSkill } from './tasks/assessment/codex-assessment-skill.ts';
 import feedbackComposition from './feedback-composition.ts';
 import { feedbackResponseInstructions } from './feedback-presentation.ts';
 import replyMaterial from './reply-material.ts';

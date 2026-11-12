@@ -2,7 +2,7 @@ import { deliveryBaseSchema } from '../../agent/tasks/delivery/delivery-base.ts'
 import { Type, type Static, type TProperties } from 'typebox';
 import { Value } from 'typebox/value';
 import { dispatchInspectionProperties } from '../../agent/dispatch-inspection.ts';
-import { implementationResultSchema } from '../../agent/implementation-result.ts';
+import { implementationResultSchema } from '../../agent/tasks/implementation/implementation-result.ts';
 import { issueChatTitleGuidance } from '../../agent/issue-chat-title.ts';
 import { implementationDecisionSchema } from '../../agent/issue-progression.ts';
 import { assessmentSchema } from '../../agent/model-routing.ts';

@@ -1,8 +1,8 @@
 import type { AgentManifest } from '../manifest/types.ts';
-import { nativeAssessmentInstructions } from './assessment-instructions.ts';
-import { assessmentPresentationRequest } from './assessment-render.ts';
-import { assessmentResultFormat } from './assessment-result.ts';
-import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
+import { nativeAssessmentInstructions } from './tasks/assessment/assessment-instructions.ts';
+import { assessmentPresentationRequest } from './tasks/assessment/assessment-render.ts';
+import { assessmentResultFormat } from './tasks/assessment/assessment-result.ts';
+import type { CodexAssessmentSkill } from './tasks/assessment/codex-assessment-skill.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { feedbackInputContext } from './feedback-input.ts';
 import selectFeedbackStage from './feedback-stage.ts';

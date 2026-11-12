@@ -7,7 +7,7 @@ import openClawNativeMaterial, {
 } from '../agent/openclaw-native-material.ts';
 import implementationMaterial, {
   type ImplementationMaterialRead,
-} from '../agent/implementation-material.ts';
+} from '../agent/tasks/implementation/implementation-material.ts';
 import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 
 async function* receipts(values: unknown[]) {

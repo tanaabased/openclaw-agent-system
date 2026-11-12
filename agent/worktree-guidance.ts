@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 
 import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
 
-import assessmentGuidance from './assessment-guidance.ts';
+import assessmentGuidance from './tasks/assessment/assessment-guidance.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import type { AgentSystemHookContext } from '../core/agent-hook-context.ts';
 import isManagedWorktreeWorkspace from '../tools/git/worktree-workspace.ts';
