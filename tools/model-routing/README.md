@@ -38,17 +38,17 @@ and configured routing guidance.
 
 ### Parameters
 
-| Parameter                | Type             | Required             | Default             | Description                                                                                                                                                                       |
-| ------------------------ | ---------------- | -------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `action`                 | string           | yes                  | none                | `inspect` or `resolve`.                                                                                                                                                           |
-| `assessment.complexity`  | string           | for `resolve`        | none                | `low`, `medium`, `high`, or `unset`.                                                                                                                                              |
-| `assessment.reason`      | string           | for `resolve`        | none                | Nonempty single-line explanation, at most 400 characters.                                                                                                                         |
-| `assessment.xhighReason` | string           | when selecting xhigh | none                | Concrete justification, at most 400 characters.                                                                                                                                   |
-| `context`                | string or object | for `resolve`        | none                | Task evidence as text or `{title, body}`. Title must be nonempty and body must be text; combined text, including two separating newlines, is limited to 18,000 characters.        |
-| `evidence`               | object           | no                   | content assessment  | `{complexity, source}` for explicit/verified Complexity. Source is `user`, `native`, or `body fallback`. The assessment must agree.                                               |
-| `fallback`               | string           | no                   | default for `unset` | `default` selects the configured default when work tiers are omitted. Unset complexity uses the default automatically.                                                            |
-| `overrides.effort`       | string           | no                   | profile effort      | Explicit `none`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `adaptive`, `max`, or `ultra`; Codex does not map `off` or `adaptive`. Native controls remain authoritative. |
-| `overrides.model`        | string           | no                   | profile model       | Explicit provider-qualified model; standalone Codex also accepts native model ids.                                                                                                |
+| Parameter                | Type             | Required                                     | Default             | Description                                                                                                                                                                       |
+| ------------------------ | ---------------- | -------------------------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `action`                 | string           | yes                                          | none                | `inspect` or `resolve`.                                                                                                                                                           |
+| `assessment.complexity`  | string           | for `resolve`                                | none                | `low`, `medium`, `high`, or `unset`.                                                                                                                                              |
+| `assessment.reason`      | string           | for `resolve`                                | none                | Nonempty single-line explanation, at most 400 characters.                                                                                                                         |
+| `assessment.xhighReason` | string           | when overriding a non-xhigh profile to xhigh | none                | Concrete justification, at most 400 characters. Configured xhigh profiles need no additional justification.                                                                       |
+| `context`                | string or object | for `resolve`                                | none                | Task evidence as text or `{title, body}`. Title must be nonempty and body must be text; combined text, including two separating newlines, is limited to 18,000 characters.        |
+| `evidence`               | object           | no                                           | content assessment  | `{complexity, source}` for explicit/verified Complexity. Source is `user`, `native`, or `body fallback`. The assessment must agree.                                               |
+| `fallback`               | string           | no                                           | default for `unset` | `default` selects the configured default when work tiers are omitted. Unset complexity uses the default automatically.                                                            |
+| `overrides.effort`       | string           | no                                           | profile effort      | Explicit `none`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `adaptive`, `max`, or `ultra`; Codex does not map `off` or `adaptive`. Native controls remain authoritative. |
+| `overrides.model`        | string           | no                                           | profile model       | Explicit provider-qualified model; standalone Codex also accepts native model ids.                                                                                                |
 
 `inspect` accepts only `action`. Unknown fields are rejected. Partial work-tier declarations are invalid; a classified tier absent from a default-only workspace requires `fallback: "default"`.
 
@@ -71,8 +71,8 @@ Resolve unset complexity using the configured default:
 ```
 
 Inspection returns the profiles, routing instructions, and digests identifying their
-current versions. Pass those digests when resolving an assessment. If profiles or
-guidance changed, assess again. Missing profiles or a missing workspace binding report
+current versions. Do not pass digests to `resolve`; the runtime reads the bound configuration.
+Missing profiles or a missing workspace binding report
 unavailable; invalid inputs and unsupported selections return errors without a substitute.
 
 Resolution returns `resolved` or `unresolved`, the selected profile, reasoning, and

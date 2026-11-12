@@ -130,11 +130,14 @@
       "agent/tasks/assessment/assessment-result.ts",
       "assets",
       "channels/github/PRESENTATION.md",
+      "CODEX.md",
       "dist/codex",
       "hooks",
       "package.json",
       "skills",
-      "tools/dispatch/README.md"
+      "tools/dispatch/README.md",
+      "tools/google/README.md",
+      "tools/model-routing/README.md"
     ]
   },
   "peerDependencies": {

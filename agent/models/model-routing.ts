@@ -59,7 +59,7 @@ export class RoutingError extends Error {
 export const modelRoutingRubric = [
   'Use the shared model-neutral rubric: low means established, localized work with little uncertainty; medium means interacting concerns or meaningful investigation; high means novel, architectural or cross-system reasoning with substantial uncertainty. Consider correctness risk, not just size.',
   'Explicit user Complexity or verified metadata determines the tier. Otherwise read the issue and make a labeled content assessment; bounded source reading is allowed before the issue chat exists. Use unset if no tier is defensible; the runtime selects the configured default automatically. Work size informs scope and decomposition only: 13 merits review and 21 normally splitting; neither upgrades the model.',
-  'Use model and effort from the configured profile, never a built-in tier mapping. Automatic efforts are the manifest schema values. Supply a concrete xhighReason when the selected profile, classifier profile, or explicit selection uses xhigh. No fallback model chains or infrastructure-driven escalation.',
+  'Use model and effort from the configured profile, never a built-in tier mapping. Automatic efforts are the manifest schema values. Honor a configured xhigh effort without another justification. Supply a concrete xhighReason when an explicit effort override changes a non-xhigh profile to xhigh, or when the classifier uses xhigh. No fallback model chains or infrastructure-driven escalation.',
 ].join('\n\n');
 
 export const modelRoutingReportGuidance =
