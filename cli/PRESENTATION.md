@@ -25,7 +25,10 @@ on partial failure, use the same human projection.
 
 Put unquoted literal names and labeled identifiers in the detail column:
 `name: ISSUE ASSIGNMENTS; mode: persistent; thread: ***9c31; outcome: reused`.
-Preserve configured thread names exactly. Without one, use the automation's
+Doctor uses the returned scheduler-derived `automationName`, uppercase without
+emoji, with an automation-ID fallback when no scheduler name is available. Never
+use a destination chat name as the Doctor job identity. Install preserves
+configured thread names exactly. Without one, use the automation's
 machine id as uppercase words, such as `BACKUP DRIVE NIGHTLY`, not `Automation`.
 Do not display a masked automation declaration id that merely repeats its name.
 Show a masked native thread only when one exists; command jobs have no thread.

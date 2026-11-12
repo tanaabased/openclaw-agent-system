@@ -1136,7 +1136,11 @@ describe('agent/codex-automations', () => {
       ({ id }) => id === 'replacement',
     )!;
     assert.equal(beforeRename.definition.name, 'fixture: review');
-    for (const label of ['🔄 NIGHTLY REFRESH', '🔄 RENAMED', undefined]) {
+    for (const [label, expectedName] of [
+      ['🔄 NIGHTLY REFRESH', 'NIGHTLY REFRESH'],
+      ['🔄 RENAMED', 'RENAMED'],
+      [undefined, 'FIXTURE: REVIEW'],
+    ]) {
       await manifest(
         job(
           `    thread: { id: activity, name: Activity }\n${label ? `    display-name: "${label}"\n` : ''}`,
@@ -1154,9 +1158,11 @@ describe('agent/codex-automations', () => {
       await prepareCodexAutomation(pluginData, plan.digest, inputs(), dependencies);
       await nativeWrite(action.expected, action.id);
       await acknowledgeCodexAutomation(pluginData, plan.digest, undefined, dependencies);
+      const readback = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+      assert.equal(readback.status, 'aligned');
       assert.equal(
-        (await inspectCodexAutomations(pluginData, inputs(), dependencies)).status,
-        'aligned',
+        readback.findings.find(({ id }) => id === 'review')?.automationName,
+        expectedName,
       );
       assert.equal(creates, 1);
       assert.deepEqual([...conversations.values()], [{ id: 'thread-1', name: 'Activity' }]);
@@ -1395,6 +1401,10 @@ describe('agent/codex-automations', () => {
     assert.ok(
       healthy.findings.some(({ id, code }) => id === 'review' && code === 'automation-healthy'),
     );
+    assert.equal(
+      healthy.findings.find(({ id }) => id === 'review')?.automationName,
+      'FIXTURE: REVIEW',
+    );
     assert.deepEqual(healthy.conversations?.[0]?.settings, {
       requested: { model: 'selected', effort: 'high' },
       observed: { model: 'selected', effort: 'high' },
@@ -1405,6 +1415,7 @@ describe('agent/codex-automations', () => {
       const drift = await inspectCodexAutomations(pluginData, inputs(), dependencies);
       const finding = drift.findings.find(({ code }) => code === 'automation-thread-model-drift');
       assert.equal(finding?.id, 'review');
+      assert.equal(finding?.automationName, 'FIXTURE: REVIEW');
       assert.deepEqual(finding?.settings, {
         requested: { model: 'selected', effort: 'high' },
         observed: { model: 'selected', effort: 'high', [dimension]: 'different' },
