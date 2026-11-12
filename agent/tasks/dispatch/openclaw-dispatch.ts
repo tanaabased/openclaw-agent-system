@@ -597,6 +597,15 @@ export default class OpenClawDispatch {
           workspace,
           debug: manifest.debug,
           workflow: manifest.github?.notifications?.issueAssignment,
+          repositoryDefault: async (admitted) => {
+            const client = await this.dependencies.connect(
+              { manifest, workspaceDir: workspace },
+              authority.signal ?? new AbortController().signal,
+            );
+            return (
+              await client.getRepository(admitted.repository.owner.login, admitted.repository.name)
+            ).defaultBranch;
+          },
         });
       }
       return renderNativeAssessment(input, 'openclaw');

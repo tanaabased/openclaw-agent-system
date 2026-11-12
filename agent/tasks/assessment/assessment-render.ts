@@ -15,10 +15,10 @@ import renderAssessmentResult, {
 import type { WorkflowInstructionsPresentation } from '../../../channels/github/presentation/workflow-instructions.ts';
 import { directAssessmentRequestSchema } from '../../../tools/dispatch/assessment-schema.ts';
 import assessmentOwner from './assessment-owner.ts';
+import { assessmentGitContext, type AssessmentGitRecord } from './assessment-git-context.ts';
 import { parseAssessmentSubmission } from './assessment-result.ts';
 import AssessmentValidationError from './assessment-validation.ts';
 import { dispatchAssessmentContext } from '../dispatch/dispatch-presentation.ts';
-import type { SharedDispatchRecord } from '../dispatch/dispatch-state.ts';
 import { dispatchAdmission, managedTargetUrl, type ManagedIssue } from '../managed-issue.ts';
 import { replyLocator } from '../feedback/reply-target.ts';
 
@@ -36,12 +36,13 @@ export async function renderBoundAssessment(
   input: unknown,
   context: {
     runtime: 'codex' | 'openclaw';
-    records: SharedDispatchRecord[];
+    records: AssessmentGitRecord[];
     admitted: ManagedIssue[];
     session: string;
     workspace: string;
     debug?: boolean;
     workflow?: WorkflowInstructionsPresentation['workflow'];
+    repositoryDefault?(admitted: ManagedIssue): Promise<string | undefined>;
   },
 ) {
   if (input && typeof input === 'object' && !Array.isArray(input) && !('target' in input)) {
@@ -63,10 +64,22 @@ export async function renderBoundAssessment(
     number: target.number,
   });
   const record = owner?.record;
+  const admitted = record && dispatchAdmission(record, context.admitted);
+  const git =
+    context.debug && record && admitted
+      ? await assessmentGitContext(
+          record,
+          admitted,
+          () => context.repositoryDefault?.(admitted) ?? Promise.resolve(undefined),
+        )
+      : context.debug
+        ? { checkoutStartingPoint: {}, prBase: 'unknown' }
+        : undefined;
   const presentation = {
     workspace: context.workspace,
     debug: context.debug,
     workflow: context.workflow ?? {},
+    git,
   };
   return renderNativeAssessment(
     input,
@@ -109,7 +122,12 @@ export default function renderNativeAssessment(
             url: input.target,
             kind: target.itemType === 'pull-request' ? 'Pull request' : 'Issue',
           },
-          cards: context ? assessmentContextCards(context) : undefined,
+          cards: context
+            ? assessmentContextCards({
+                ...context,
+                git: context.git ?? { checkoutStartingPoint: {}, prBase: 'unknown' },
+              })
+            : undefined,
           assessmentOnly: input.assessmentOnly,
         }),
       () =>

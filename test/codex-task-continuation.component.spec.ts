@@ -23,6 +23,42 @@ import hydrateImplementation from './implementation-material-fixture.ts';
 
 describe('agent/codex task-continuation', () => {
   const fixtureState = codexDispatchFixture();
+  it('should show the original checkout and effective base through the codex assessment adapter', async () => {
+    await writeFile(
+      join(fixtureState.workspace, 'agent.yaml'),
+      JSON.stringify({ ...fixtureState.manifest, debug: true }),
+    );
+    await fixtureState.prepare();
+    fixtureState.created();
+    fixtureState.fixture.repository.defaultBranch = 'release';
+    const child = { threadId: 'issue-thread' };
+    const known = await fixtureState.renderAssessment(fixtureState.result, child);
+    assert.match(
+      String(known.presentation),
+      new RegExp(`${fixtureState.commit} \\(origin/main\\)`),
+    );
+    assert.match(String(known.presentation), /PR base.*`release`/);
+    const failed = await fixtureState.renderAssessment(fixtureState.result, {
+      ...child,
+      connect: async () => {
+        throw Error('optional metadata unavailable');
+      },
+    });
+    assert.match(String(failed.presentation), new RegExp(fixtureState.commit));
+    assert.match(String(failed.presentation), /PR base.*`unknown`/);
+    await writeFile(
+      join(fixtureState.workspace, 'agent.yaml'),
+      JSON.stringify({ ...fixtureState.manifest, debug: false }),
+    );
+    const hidden = await fixtureState.renderAssessment(fixtureState.result, {
+      ...child,
+      connect: async () => {
+        assert.fail('debug off must not connect');
+      },
+    });
+    assert.doesNotMatch(String(hidden.presentation), /Checkout starting point|PR base/);
+  });
+
   it('should keep revised plans and questions inside the issue while releasing its slot', async () => {
     const prepared = await fixtureState.prepare();
     fixtureState.created();

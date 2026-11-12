@@ -207,6 +207,15 @@ async function runCodexDispatchScoped(
           workspace: current.workspace,
           debug: current.manifest.debug,
           workflow: current.manifest.github?.notifications?.issueAssignment,
+          repositoryDefault: async (admitted) => {
+            const client = await (deps.connect ?? connectCodexGitHub)(
+              current.workspace,
+              new AbortController().signal,
+            );
+            return (
+              await client.getRepository(admitted.repository.owner.login, admitted.repository.name)
+            ).defaultBranch;
+          },
         },
       );
     }

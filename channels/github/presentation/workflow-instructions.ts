@@ -17,6 +17,10 @@ export interface WorkflowInstructionsSelection {
 
 export interface WorkflowInstructionsPresentation {
   debug?: boolean;
+  git?: {
+    checkoutStartingPoint: { commit?: string; ref?: string };
+    prBase?: string;
+  };
   manifestPath?: string;
   workflow?: {
     assessment?: AssessmentConfiguration;
@@ -156,6 +160,15 @@ export function workflowConfigurationCard(
   return debugCard({
     debug: true,
     context: 'Configured workflow',
+    facts: input.git && [
+      {
+        label: 'Checkout starting point',
+        value: githubNotificationMarkdownCode(
+          `${input.git.checkoutStartingPoint.commit ?? 'unknown'} (${input.git.checkoutStartingPoint.ref ?? 'unknown'})`,
+        ),
+      },
+      { label: 'PR base', value: githubNotificationMarkdownCode(input.git.prBase ?? 'unknown') },
+    ],
     detail: [
       'Configured skills and guidance; this is not proof that a skill ran or its instructions were followed.',
       ...sections,

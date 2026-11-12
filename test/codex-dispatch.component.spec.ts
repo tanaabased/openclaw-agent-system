@@ -89,6 +89,7 @@ describe('agent/codex dispatch', () => {
       join(fixtureState.workspace, 'agent.yaml'),
       JSON.stringify({
         ...fixtureState.manifest,
+        debug: true,
         github: { ...fixtureState.manifest.github, routing: [], 'max-concurrent-items': 1 },
       }),
     );
@@ -138,6 +139,17 @@ describe('agent/codex dispatch', () => {
       const recovered = await fixtureState.request('launch', { operation: 'reconcile', target });
       assert.equal(recovered.destination, parallel.id);
     }
+    const shown = await fixtureState.renderAssessment(fixtureState.result, {
+      threadId: parallel.id,
+      connect: async () => {
+        assert.fail('adopted base needs no optional lookup');
+      },
+    });
+    assert.match(
+      String(shown.presentation),
+      new RegExp(`${fixtureState.commit} \\(origin/collaborator-work\\)`),
+    );
+    assert.match(String(shown.presentation), /PR base.*`release`/);
     const intake = await fixtureState.request(
       'next',
       { projects: fixtureState.projects },

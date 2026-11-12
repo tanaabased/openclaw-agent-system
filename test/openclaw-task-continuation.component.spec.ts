@@ -36,6 +36,52 @@ import openclawDispatchFixture from './openclaw-dispatch-fixture.ts';
 
 describe('agent/openclaw task-continuation', () => {
   const fixtureState = openclawDispatchFixture();
+  it('should show independent checkout and base facts through the openclaw assessment adapter', async () => {
+    fixtureState.manifest.debug = true;
+    const input = await fixtureState.next();
+    await fixtureState.prepare(input);
+    fixtureState.fixture.repository.defaultBranch = 'release';
+    const knownBase = await fixtureState.renderAssessment(input.id);
+    assert.ok('presentation' in knownBase);
+    assert.match(String(knownBase.presentation), /Checkout starting point.*unknown/);
+    assert.match(String(knownBase.presentation), /PR base.*`release`/);
+    const connect = fixtureState.service.dependencies.connect;
+    fixtureState.service.dependencies.connect = async () => {
+      throw Error('optional metadata unavailable');
+    };
+    const failed = await fixtureState.renderAssessment(input.id);
+    assert.ok('presentation' in failed);
+    assert.match(String(failed.presentation), /PR base.*`unknown`/);
+    const { journal } = await fixtureState.service.scope(fixtureState.manifest, fixtureState.root);
+    await journal.transaction(async (state, save) => {
+      state.records[0]!.adoptedPullRequest = {
+        pullRequestNodeId: 'PR_selected',
+        pullRequestNumber: 7,
+        head: 'a'.repeat(40),
+        branch: 'feature/selected',
+        base: 'stable',
+        authorId: 'U_collaborator',
+        title: 'Selected work',
+        body: '',
+      };
+      await save();
+    });
+    const before = await fixtureState.record();
+    const known = await fixtureState.renderAssessment(input.id);
+    assert.ok('presentation' in known);
+    assert.match(
+      String(known.presentation),
+      new RegExp(`${'a'.repeat(40)} \\(feature/selected\\)`),
+    );
+    assert.match(String(known.presentation), /PR base.*`stable`/);
+    assert.deepEqual(await fixtureState.record(), before);
+    fixtureState.manifest.debug = false;
+    const hidden = await fixtureState.renderAssessment(input.id);
+    assert.ok('presentation' in hidden);
+    assert.doesNotMatch(String(hidden.presentation), /Checkout starting point|PR base/);
+    fixtureState.service.dependencies.connect = connect;
+  });
+
   it('should link the current pr through native dispatch without operator input and refuse association changes', async () => {
     const id = await fixtureState.readyWork('work');
     const who = fixtureState.assessor(id);
