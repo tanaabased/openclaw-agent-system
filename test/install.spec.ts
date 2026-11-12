@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
 
-import {
-  AutomationError,
-  createAutomationGateway,
-} from '../agent/automations/automation-gateway.ts';
+import { createAutomationGateway } from '../agent/automations/automation-gateway.ts';
+import { AutomationError } from '../agent/automations/automation-errors.ts';
 import { cliDiagnosticContext } from '../core/cli-diagnostic-context.ts';
 import ansis from 'ansis';
 

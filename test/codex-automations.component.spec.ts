@@ -19,13 +19,12 @@ import { join, resolve } from 'node:path';
 import { parse, stringify } from 'smol-toml';
 
 import { automationHash } from '../agent/automation-hash.ts';
-import { AutomationError } from '../agent/automations/automation-gateway.ts';
+import { AutomationError } from '../agent/automations/automation-errors.ts';
 import type {
   AutomationThread,
   AutomationThreadAdapter,
 } from '../agent/automations/automation-threads.ts';
 import {
-  inspectCodexPickupActivation,
   acknowledgeCodexAutomation,
   replaceCodexNotificationCoordinator,
   codexNotificationResetAutomation,
@@ -37,8 +36,9 @@ import {
   prepareCodexAutomation,
   reconcileCodexAutomationRetirements,
   syncCodexAutomationThreads,
-  type CodexAutomationDependencies,
 } from '../agent/automations/codex-automations.ts';
+import { type CodexAutomationDependencies } from '../agent/automations/codex-automation-snapshot.ts';
+import { inspectCodexPickupActivation } from '../agent/automations/codex-automation-activation.ts';
 import codexAutomationSchedule from '../agent/automations/codex-automation-schedule.ts';
 import {
   parseSavedAutomation,
@@ -724,6 +724,17 @@ describe('agent/codex-automations', () => {
       );
     const first = (await enrollments.read()).records[0]!;
     assert.deepEqual(first.enrollment, priorEnrollment.enrollment);
+    let bindingReads = 0;
+    const inspection = await inspectCodexAutomations(pluginData, inputs(), {
+      ...dependencies,
+      inspectBinding: async (root) => {
+        bindingReads++;
+        assert.equal(bindingReads, 1, 'planning must retain its selected binding');
+        return inspectCodexWorkspaceBinding(root);
+      },
+    });
+    assert.equal(inspection.status, 'aligned');
+    assert.equal(bindingReads, 1);
     const active = await inspectCodexPickupActivation(pluginData, dependencies);
     assert.equal(active.nativeId, first.nativeId);
     await checkCodexActivationIsolation(

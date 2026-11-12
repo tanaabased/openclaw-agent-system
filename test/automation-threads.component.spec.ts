@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 
-import { AutomationError, nativeObject } from '../agent/automations/automation-gateway.ts';
+import { nativeObject } from '../agent/automations/automation-gateway.ts';
+import { AutomationError } from '../agent/automations/automation-errors.ts';
 import AutomationThreads, {
-  automationThreadSelection,
   AutomationThreadSettingsError,
   type AutomationThread,
   type AutomationThreadSettings,
 } from '../agent/automations/automation-threads.ts';
+import { automationThreadSelection } from '../agent/automations/automation-thread-selection.ts';
 import normalizeAutomations, { type ResolvedAutomation } from '../manifest/automation-schema.ts';
 import automationThreadGateway from '../agent/automations/automation-thread-gateway.ts';
 import { GatewayClientRequestError } from '@openclaw/gateway-client';

@@ -1,4 +1,4 @@
-import { automationThreadSelection } from '../agent/automations/automation-threads.ts';
+import { automationThreadSelection } from '../agent/automations/automation-thread-selection.ts';
 import assert from 'node:assert/strict';
 import IssuePickupFailure from '../agent/issue-pickup-failure.ts';
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
@@ -22,7 +22,8 @@ import doctorAgentSystem from '../cli/doctor.ts';
 import AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';
 import openclawIntakeJobs from '../agent/automations/openclaw-intake-policy.ts';
 import { automationPatch, projectAutomation } from '../agent/automations/automation-projection.ts';
-import { AutomationError, type NativeAutomation } from '../agent/automations/automation-gateway.ts';
+import { type NativeAutomation } from '../agent/automations/automation-gateway.ts';
+import { AutomationError } from '../agent/automations/automation-errors.ts';
 import { intakeLocation } from '../channels/github/intake/record-store.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';

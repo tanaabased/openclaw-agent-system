@@ -13,10 +13,10 @@ import type { NativeAutomation } from '../agent/automations/codex-automation-sta
 import {
   acknowledgeCodexAutomation,
   inspectCodexAutomations,
-  inspectCodexDispatchActivation,
   prepareCodexAutomation,
   syncCodexAutomationThreads,
 } from '../agent/automations/codex-automations.ts';
+import { inspectCodexDispatchActivation } from '../agent/automations/codex-automation-activation.ts';
 import { codexQuietHeartbeatInstructions } from '../agent/codex-heartbeat.ts';
 import {
   codexIntakeJobs,

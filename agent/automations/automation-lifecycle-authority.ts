@@ -2,11 +2,8 @@ import { createHash } from 'node:crypto';
 
 import type AutomationService from './automation-service.ts';
 import type { NotificationScheduler } from './automation-readiness.ts';
-import {
-  AutomationError,
-  listNativeAutomations,
-  type AutomationGateway,
-} from './automation-gateway.ts';
+import { listNativeAutomations, type AutomationGateway } from './automation-gateway.ts';
+import { AutomationError } from './automation-errors.ts';
 import { effectiveAutomation, nativeAutomationHash } from './automation-projection.ts';
 import openclawIntakeJobs from './openclaw-intake-policy.ts';
 import type { AgentManifest } from '../../manifest/types.ts';

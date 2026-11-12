@@ -10,11 +10,11 @@ import { mkdtemp, realpath, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import {
-  AutomationError,
   createAutomationGateway,
   type AutomationGateway,
   type NativeAutomation,
 } from '../agent/automations/automation-gateway.ts';
+import { AutomationError } from '../agent/automations/automation-errors.ts';
 import openclawIntakeJobs from '../agent/automations/openclaw-intake-policy.ts';
 import {
   automationPatch,

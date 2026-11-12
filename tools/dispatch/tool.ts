@@ -11,9 +11,8 @@ import workflowNoticeInstructions from '../../agent/tasks/workflow-notice-instru
 import WorkflowRequestError from '../../agent/tasks/workflow-request-error.ts';
 
 import type AutomationService from '../../agent/automations/automation-service.ts';
-import AutomationThreads, {
-  automationThreadSelection,
-} from '../../agent/automations/automation-threads.ts';
+import AutomationThreads from '../../agent/automations/automation-threads.ts';
+import { automationThreadSelection } from '../../agent/automations/automation-thread-selection.ts';
 import OpenClawDispatch, {
   openClawDispatchFailureCode,
   type OpenClawDispatchDependencies,

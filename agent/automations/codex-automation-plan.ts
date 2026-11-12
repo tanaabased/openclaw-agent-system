@@ -3,19 +3,17 @@ import { realpath } from 'node:fs/promises';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import {
-  automationThreadSelection,
-  type AutomationThreadModelObservation,
-} from './automation-threads.ts';
+import { type AutomationThreadModelObservation } from './automation-threads.ts';
+import { automationThreadSelection } from './automation-thread-selection.ts';
 import { automationHash } from '../automation-hash.ts';
 import codexAutomationSchedule from './codex-automation-schedule.ts';
 import {
-  CodexAutomationError,
   effortSchema,
   nativeAutomationSchema,
   type NativeAutomation,
   type SavedAutomation,
 } from './codex-automation-state.ts';
+import { CodexAutomationError } from './automation-errors.ts';
 import automationContent from '../../manifest/automation-content.ts';
 import type { ResolvedAutomation } from '../../manifest/automation-schema.ts';
 

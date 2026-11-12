@@ -4,7 +4,6 @@ import { omit } from 'lodash-es';
 import reconcileIssuePickup from './issue-pickup-reconcile.ts';
 import workflowFailure from './tasks/workflow-failure.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
-import type { AgentSystemLifecycleFinding } from '../core/lifecycle-registry.ts';
 import issuePickupReport from './issue-pickup-report.ts';
 import { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
 import codexCapacity, { codexItemOccupied } from './tasks/dispatch/codex-capacity.ts';
@@ -13,7 +12,6 @@ import IssuePickupEnrollmentStore from './issue-pickup-enrollment.ts';
 import {
   issuePickupAutomationId,
   issuePickupConfigurationCode,
-  issuePickupErrorCode,
 } from './automations/issue-pickup-jobs.ts';
 import issuePickup, { pickupAuthority, type PickupInput } from './issue-pickup.ts';
 import type { IssuePickupClient } from '../channels/github/provider/issue-pickup-client.ts';
@@ -34,11 +32,11 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import codexIssueNotice from './codex-issue-notice.ts';
-import { CodexAutomationError } from './automations/codex-automation-state.ts';
+import { CodexAutomationError } from './automations/automation-errors.ts';
 import {
   inspectCodexDispatchActivation,
   inspectCodexPickupActivation,
-} from './automations/codex-automations.ts';
+} from './automations/codex-automation-activation.ts';
 import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
 import IntakeRecordStore, {
   IntakeError,
@@ -519,42 +517,4 @@ export async function prepareCodexPickupEnrollment(
       reconcile: (record, commit) => reconcileIssuePickup(state, save, record, commit),
     }),
   );
-}
-
-export async function inspectCodexPickup(
-  pluginData: string,
-  deps: CodexIntakeDependencies = {},
-): Promise<AgentSystemLifecycleFinding[]> {
-  const current = await selectCodexTaskContext(pluginData, deps, { inspectionOnly: true });
-  const policy = current.policy?.policy;
-  if (!policy?.issuePickup) return [];
-  let code: string | undefined = issuePickupConfigurationCode(policy);
-  try {
-    if (!code) {
-      const record = await new IssuePickupEnrollmentStore(
-        codexInstanceStore(pluginData).root,
-      ).inspect(policy, 'codex', current.store.location.scope);
-      const native = await inspectCodexPickupActivation(pluginData, {
-        codexHome: current.codexHome,
-        inspectBinding: deps.inspectBinding,
-      });
-      if (record.nativeId !== native.nativeId) code = 'issue-pickup-enrollment-changed';
-    }
-  } catch (error) {
-    code = issuePickupErrorCode(error);
-  }
-  return [
-    {
-      component: 'github-intake',
-      status: code ? ('drift' as const) : ('healthy' as const),
-      code: code ?? 'issue-pickup-ready',
-      message: code ?? 'Issue pickup enrollment and native schedule are ready.',
-      ...(code
-        ? {
-            remediation:
-              'Check the designated installation, cadence and window, then run Install and acknowledge its native pickup job. Preserve pending pickup work.',
-          }
-        : {}),
-    },
-  ];
 }

@@ -3,7 +3,7 @@ import { pickupInputSchema } from '../agent/issue-pickup.ts';
 import assert from 'node:assert/strict';
 
 import issuePickupJobs from '../agent/automations/issue-pickup-jobs.ts';
-import { automationThreadSelection } from '../agent/automations/automation-threads.ts';
+import { automationThreadSelection } from '../agent/automations/automation-thread-selection.ts';
 import { issuePickupPolicyDigest } from '../agent/issue-pickup-authority.ts';
 import parse from '../manifest/parse.ts';
 import { pickupDeclaration } from './issue-pickup-fixture.ts';

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { AutomationError } from '../agent/automations/automation-gateway.ts';
+import { AutomationError } from '../agent/automations/automation-errors.ts';
 import automationGatewayDiagnostic from '../agent/automations/automation-gateway-diagnostic.ts';
 import presentCliCommand from '../cli/presentation.ts';
 import credentialsCache from '../cli/credentials-cache.ts';

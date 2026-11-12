@@ -1,4 +1,4 @@
-import { AutomationError } from '../agent/automations/automation-gateway.ts';
+import { AutomationError } from '../agent/automations/automation-errors.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import { redactedErrorMessage } from '../core/logger.ts';
 import type { CliNotice } from './output.ts';

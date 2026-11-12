@@ -20,7 +20,7 @@ import type {
   GitHubNotificationItemContextClient,
 } from '../../../channels/github/provider/work-event-types.ts';
 import type CodexAssignmentClaims from './codex-assignment-claims.ts';
-import type { inspectCodexDispatchActivation } from '../../automations/codex-automations.ts';
+import type { inspectCodexDispatchActivation } from '../../automations/codex-automation-activation.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
 import { type DispatchGit } from './codex-dispatch-project.ts';
 import type prepareDispatchRepository from './codex-dispatch-repository.ts';

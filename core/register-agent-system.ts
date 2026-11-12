@@ -45,11 +45,8 @@ import registerAgentCommandSecurity from '../agent/command-security.ts';
 import AutomationService from '../agent/automations/automation-service.ts';
 import automationGatewayDiagnostic from '../agent/automations/automation-gateway-diagnostic.ts';
 import gatewayErrorDiagnostic from '../utils/gateway-error-diagnostic.ts';
-import {
-  AutomationError,
-  nativeObject,
-  requestAutomationGateway,
-} from '../agent/automations/automation-gateway.ts';
+import { nativeObject, requestAutomationGateway } from '../agent/automations/automation-gateway.ts';
+import { AutomationError } from '../agent/automations/automation-errors.ts';
 import BoundCommandService from '../agent/bound-command-service.ts';
 import AgentCommandAuthority from '../agent/command-authority.ts';
 import AgentDoctorService from '../agent/doctor-service.ts';

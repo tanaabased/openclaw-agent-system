@@ -41,7 +41,7 @@ import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
 import workflowNoticeInstructions from './tasks/workflow-notice-instructions.ts';
 
-import { CodexAutomationError } from './automations/codex-automation-state.ts';
+import { CodexAutomationError } from './automations/automation-errors.ts';
 import {
   acknowledgeCodexAutomation,
   cancelCodexAutomation,

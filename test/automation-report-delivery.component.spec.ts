@@ -14,7 +14,7 @@ import {
 import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
 import { sessionDispatchRequest } from '../credentials/session-dispatch-client.ts';
 import registerAutomationReportHooks from '../core/automation-report-hook.ts';
-import { AutomationError } from '../agent/automations/automation-gateway.ts';
+import { AutomationError } from '../agent/automations/automation-errors.ts';
 
 const input: AutomationReportInput = {
   id: 'backup',

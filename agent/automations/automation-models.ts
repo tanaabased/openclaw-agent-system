@@ -1,7 +1,7 @@
 import { Value } from 'typebox/value';
 
-import { automationThreadSelection } from './automation-threads.ts';
-import { AutomationError } from './automation-gateway.ts';
+import { automationThreadSelection } from './automation-thread-selection.ts';
+import { AutomationError } from './automation-errors.ts';
 import {
   projectRoutingProfile,
   selectRoutingOverrides,

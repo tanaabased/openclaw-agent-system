@@ -27,7 +27,7 @@ import { githubWorktreeRemote } from '../../../tools/git/worktree-remote.ts';
 import type abortableDelay from '../../../utils/abortable-delay.ts';
 import { nativeObject } from '../../automations/automation-gateway.ts';
 import { automationHash } from '../../automation-hash.ts';
-import { inspectCodexDispatchActivation } from '../../automations/codex-automations.ts';
+import { inspectCodexDispatchActivation } from '../../automations/codex-automation-activation.ts';
 import codexCommit from '../../codex-commit.ts';
 import { adoptedCodexDelivery, type IssueDeliveryState } from './issue-delivery-state.ts';
 import { revalidateDispatchAssignment } from '../dispatch/codex-dispatch-context.ts';

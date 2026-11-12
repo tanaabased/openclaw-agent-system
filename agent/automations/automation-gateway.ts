@@ -1,10 +1,10 @@
+import { AutomationError } from './automation-errors.ts';
 import type { callGatewayFromCli } from 'openclaw/plugin-sdk/gateway-runtime';
 
 import {
   assertPrivateStateLocksHeld,
   privateStateLockSignal,
 } from '../../core/private-state-lock-context.ts';
-import type { AutomationGatewayDiagnostic } from './automation-gateway-diagnostic.ts';
 import { openclawSessionCreateTimeoutMs } from '../openclaw-session-timeout.ts';
 
 export type AutomationGateway = (
@@ -22,20 +22,6 @@ export type AutomationGateway = (
     | 'cron.runs',
   params: Record<string, unknown>,
 ) => Promise<Record<string, unknown>>;
-
-export class AutomationError extends Error {
-  automationId?: string;
-
-  constructor(
-    readonly code: string,
-    readonly diagnostic?: AutomationGatewayDiagnostic,
-  ) {
-    super(
-      `Automation operation failed (${code}).` +
-        (diagnostic?.reason ? ` ${diagnostic.method}: ${diagnostic.reason}.` : ''),
-    );
-  }
-}
 
 export function nativeObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);

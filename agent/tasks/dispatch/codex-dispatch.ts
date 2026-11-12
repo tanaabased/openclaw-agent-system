@@ -8,7 +8,7 @@ import cleanupConfiguration from '../../cleanup-configuration.ts';
 import codexAssessmentEntry from '../assessment/codex-assessment-entry.ts';
 import { codexInstanceStore } from './codex-assignment-claims.ts';
 import reconcileCodexLifecycle from './codex-assignment-lifecycle.ts';
-import { inspectCodexDispatchActivation } from '../../automations/codex-automations.ts';
+import { inspectCodexDispatchActivation } from '../../automations/codex-automation-activation.ts';
 import runCodexContinuation from '../implementation/codex-continuation.ts';
 import runCodexDelivery from '../delivery/codex-delivery.ts';
 import {

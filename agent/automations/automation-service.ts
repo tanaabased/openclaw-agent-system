@@ -11,7 +11,6 @@ import openclawIntakeJobs from './openclaw-intake-policy.ts';
 import { issuePickupAutomationId, issuePickupErrorCode } from './issue-pickup-jobs.ts';
 
 import {
-  AutomationError,
   isOperatorAutomationGateway,
   listNativeAutomations,
   nativeAutomation,
@@ -22,6 +21,7 @@ import {
   type AutomationGateway,
   type NativeAutomation,
 } from './automation-gateway.ts';
+import { AutomationError } from './automation-errors.ts';
 import {
   automationPatch,
   effectiveAutomation,
@@ -34,9 +34,8 @@ import automationThreadGateway from './automation-thread-gateway.ts';
 import AutomationThreads, {
   automationSettingsMessage,
   AutomationThreadSettingsError,
-  automationThreadNames,
-  automationThreadSelection,
 } from './automation-threads.ts';
+import { automationThreadNames, automationThreadSelection } from './automation-thread-selection.ts';
 import AutomationStore, {
   automationHash,
   type AutomationLedger,

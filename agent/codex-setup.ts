@@ -2,7 +2,8 @@ import { delimiter } from 'node:path';
 import { codexInstanceStore } from './tasks/dispatch/codex-assignment-claims.ts';
 import instanceIdentity from './instance-identity.ts';
 
-import { inspectCodexIntake, inspectCodexPickup } from './codex-intake.ts';
+import { inspectCodexIntake } from './codex-intake.ts';
+import { inspectCodexPickup } from './automations/codex-pickup-readiness.ts';
 import { inspectCodexAutomations } from './automations/codex-automations.ts';
 import type { CodexAutomationInputs } from './automations/codex-automation-plan.ts';
 import runCodexSetupProcess from './codex-process-runner.ts';

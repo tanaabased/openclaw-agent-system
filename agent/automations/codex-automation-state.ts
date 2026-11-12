@@ -1,3 +1,4 @@
+import { CodexAutomationError } from './automation-errors.ts';
 import { constants } from 'node:fs';
 import { lstat, open, readdir, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -5,17 +6,6 @@ import { join } from 'node:path';
 import { parse } from 'smol-toml';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
-
-export class CodexAutomationError extends Error {
-  automationId?: string;
-  override name = 'CodexAutomationError';
-  constructor(
-    readonly code: string,
-    message = code,
-  ) {
-    super(message);
-  }
-}
 
 const text = Type.String({ minLength: 1, pattern: '^[^\\u0000]+$' });
 export const effortSchema = Type.Union(

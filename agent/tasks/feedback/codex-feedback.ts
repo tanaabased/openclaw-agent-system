@@ -6,7 +6,7 @@ import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
 import { type GitHubCanonicalFeedback } from '../../../channels/github/provider/review-feedback.ts';
 import { implementationMaterialSchema } from '../../../tools/dispatch/implementation-material-schema.ts';
 import { automationHash } from '../../automation-hash.ts';
-import { inspectCodexDispatchActivation } from '../../automations/codex-automations.ts';
+import { inspectCodexDispatchActivation } from '../../automations/codex-automation-activation.ts';
 import codexContinuationNative from '../implementation/codex-continuation-native.ts';
 import type { CodexDispatchDependencies } from '../dispatch/codex-dispatch-context.ts';
 import { codexDispatchNative } from '../dispatch/codex-dispatch-native.ts';
