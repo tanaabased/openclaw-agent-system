@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 import type { NotificationResetRecord } from '../agent/notification-reset-state.ts';
-import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
+import type { OpenClawDispatchRecord } from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import observeResetUnresolved from '../agent/openclaw-reset-unresolved.ts';
 
 describe('agent/openclaw-reset-unresolved', () => {

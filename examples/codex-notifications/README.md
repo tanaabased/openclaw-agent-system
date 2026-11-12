@@ -20,6 +20,8 @@ conversation remains usable independently of the schedule.
 
 ## Notes
 
+- **Checkout diagnostics (native desktop acceptance):** in Codex and OpenClaw, start from a known branch or tag with a different PR base and inspect the initial debug card. Require separate **Checkout starting point** and **PR base** facts: original commit plus known source name, and effective target branch. Continue after a commit or working-branch change and confirm neither replaces the original source. Repeat with an existing PR's non-default base, missing source metadata, and a failed optional metadata read; independently known facts remain visible and unavailable pieces say `unknown` without blocking work. With debug off, no new facts or diagnostic lookup should appear. Later authorized base changes remain allowed. Component cases cover controlled metadata; native rendering remains unverified until host evidence is captured.
+
 - **Repaired preparation (native desktop acceptance):** fail preparation with an unsupported Codex model provider, correct the profile, and let normal intake resume the same assignment after its retry deadline. Repeat after resolving ambiguous saved project selection, repairing local Git configuration, replacing an unsuitable saved checkout, clearing a fetch lock, or restoring safe checkout permissions. Recheck repository preparation after local disk/I/O repair; preserve existing attempt ownership and provider retry delays. Require one native creation without reassignment or reset; an actual denied or uncertain creation must remain protected. Component tests cover recovery and retry classification; these desktop checks remain unrun until native receipts are captured.
 - **Fresh skill discovery (native desktop acceptance):** in a feedback turn, require the configured active-stage and reply skills in the same usable context. Change the selected skill before the next turn and verify fresh discovery; a missing stage skill must leave verified task facts and an available reply skill usable. Run the same journey in OpenClaw. Component tests measure one successful catalog read per context request in both runtimes; installed context consumption does not independently prove that request count.
 
@@ -32,6 +34,8 @@ conversation remains usable independently of the schedule.
 - Native acceptance below is an inventory of separate installed/manual checks, not coverage executed by this README. Keep results, app/plugin revision, time, redacted source IDs, and actual native receipts in issue or PR evidence.
 
 ### Native Acceptance Inventory
+
+- **Feedback delivery notices:** in a native scheduled occurrence, deliver one approved issue comment and one comment on its linked PR. Require the final intake report to acknowledge the verified deliveries with accurate counts and the owning issue chat link, even when the remaining queue is empty. Re-read the same occurrence, then run a quiet scan; preserve the cached response without a second notification and announce no delivery again. Prepared, uncertain, and denied sends must not appear as successful. Withhold or fail final report publication and verify the issue still consumes the feedback once and continues work without another send. Controlled components cover both runtimes; these headless checks do not establish native Codex scheduling or final report delivery.
 
 - **Native scheduled trigger:** run assignment intake from the installed desktop scheduler and verify its current occurrence reaches a completed scan and report. Capture the native trigger shape and app/plugin revisions; both legacy user-message and `codex_app.automation_update` tool-output heartbeats must retain the same occurrence binding. Controlled reader tests cover string and text-array output and rejection of unrelated tool output; they do not establish a successful scheduled run. For interrupted creation, feedback sends, and retirement, input-only tool output and hook prompts must not prevent recovery, while actual calls and denials retain their existing safeguards. OpenClaw uses its own native scheduler adapter.
 
@@ -311,6 +315,14 @@ plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/retired-repository-scope" \
   | jq -e '.manifest.status == "invalid" and any(.manifest.diagnostics[]; .code == "github-repository-owners-removed" and (.message | contains("github.routing")))'
+test ! -d "$CODEX_HOME/automations"
+
+# should reject retired pickup spellings before binding or activation
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/fixtures/retired-pickup" \
+  | jq -e '.manifest.status == "invalid" and any(.manifest.diagnostics[]; .code == "github-project-pickup-removed") and any(.manifest.diagnostics[]; .code == "github-routing-project-pickup-removed")'
 test ! -d "$CODEX_HOME/automations"
 
 # should validate routed multi-repository pickup and reject copied native inventory

@@ -1,24 +1,26 @@
 import notificationResetPickup from './notification-reset-pickup.ts';
 import notificationResetBaseline from './notification-reset-baseline.ts';
-import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
-import { managedPullRequest, managedIssueState, dispatchAdmission } from './managed-issue.ts';
+import { issuePickupAutomationId } from './automations/issue-pickup-jobs.ts';
+import { managedPullRequest, managedIssueState, dispatchAdmission } from './tasks/managed-issue.ts';
 
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 import { withNotificationResetDiagnostic } from './notification-reset-diagnostic.ts';
 import { lstat } from 'node:fs/promises';
 import type { AgentManifest } from '../manifest/types.ts';
 import type OpenClawIntake from './openclaw-intake.ts';
-import type AutomationService from './automation-service.ts';
+import type AutomationService from './automations/automation-service.ts';
 import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
 import type TrustedGitWorktreeService from '../tools/git/trusted-worktree-service.ts';
 import type { ConnectedGitHubAccountClient } from '../core/github-account-client.ts';
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
-import automationThreadGateway from './automation-thread-gateway.ts';
+import automationThreadGateway from './automations/automation-thread-gateway.ts';
 import observeResetUnresolved from './openclaw-reset-unresolved.ts';
-import { listNativeAutomations, nativeObject } from './automation-gateway.ts';
-import { openclawIntakeAutomationId } from './openclaw-intake-policy.ts';
-import observeRetirementSession from './openclaw-retirement-observation.ts';
-import OpenClawDispatchStore, { type OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import { listNativeAutomations, nativeObject } from './automations/automation-gateway.ts';
+import { openclawIntakeAutomationId } from './automations/openclaw-intake-policy.ts';
+import observeRetirementSession from './tasks/retirement/openclaw-retirement-observation.ts';
+import OpenClawDispatchStore, {
+  type OpenClawDispatchRecord,
+} from './tasks/dispatch/openclaw-dispatch-state.ts';
 import NotificationResetStore, {
   type NotificationResetRecord,
 } from './notification-reset-state.ts';

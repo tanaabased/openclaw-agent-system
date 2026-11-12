@@ -128,7 +128,11 @@ function isPendingDelivery(result: Record<string, unknown>) {
 }
 
 function deliveryObstacle(result: Record<string, unknown>): FixtureResponse | undefined {
-  if (!['blocked', 'waiting', 'needs-attention', 'retrying'].includes(String(result.status)))
+  if (
+    !['blocked', 'waiting', 'needs-attention', 'retrying', 'announcement-blocked'].includes(
+      String(result.status),
+    )
+  )
     return;
   return {
     content: `notification-delivery-stopped: ${JSON.stringify({ status: result.status, code: result.code, providerDiagnostic: result.providerDiagnostic })}`,
@@ -635,13 +639,16 @@ function respond(
     if (published.status !== 'published' || typeof published.presentation !== 'string') return;
     return { content: published.presentation };
   }
+  const explicitOperatorId = /Operator request for managed issue ([a-f0-9]{64}):/u.exec(
+    prompt,
+  )?.[1];
   const id =
     (currentFacts(messages, false).stage === 'assessment'
       ? currentFacts(messages, false).receipt
       : undefined) ??
     /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
   let automaticId: string | undefined;
-  if (id) {
+  if (id && !explicitOperatorId) {
     const context = currentFacts(messages);
     assert.equal(
       context.status,
@@ -686,8 +693,7 @@ function respond(
       return published;
     automaticId = id;
   }
-  const operatorId =
-    automaticId ?? /Operator request for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1];
+  const operatorId = automaticId ?? explicitOperatorId;
   if (operatorId) {
     const selectedPr =
       /Bind existing PR (https:\/\/github\.com\/[^\s]+\/pull\/[1-9][0-9]*)\./u.exec(prompt)?.[1];
@@ -723,24 +729,26 @@ function respond(
     const retry = prompt.includes(
       'Show the plan from this conversation and existing PR card again.',
     );
+    const preserveMetadata = prompt.includes('Preserve its title, body, base and draft state.');
     const title = update
       ? 'Document disposable notification fixture cleanup and verification'
       : 'Document disposable notification fixture cleanup';
     const body = update
       ? 'Document closing disposable test issues and verifying the retained delivery after follow-up commits.'
       : 'Document closing disposable test issues after their evidence is captured.';
+    const publicationContent = preserveMetadata ? {} : { title, body };
     let published = result('delivery-publish');
     if (!retry) {
       const nativeWork = update;
       const context = nativeWork ? currentFacts(messages) : result('work-context');
       if (!context)
         return dispatch('work-context', {
+          action: 'implementation-context',
           ...(automaticId
             ? {
-                action: 'implementation-context',
                 decision: { mode: 'work', reasons: ['The current cleanup scope is clear.'] },
               }
-            : { action: 'implementation', operation: 'context' }),
+            : {}),
         });
       const path = nativeWork ? context.worktree : context.project?.path;
       if (!path) return;
@@ -818,16 +826,14 @@ function respond(
         return dispatch('delivery-prepare', {
           action: 'delivery',
           operation: 'prepare',
-          title,
-          body,
+          ...publicationContent,
         });
       if (prepared.status !== 'prepared') return;
       if (!published)
         return dispatch('delivery-publish', {
           action: 'delivery',
           operation: 'publish',
-          title,
-          body,
+          ...publicationContent,
         });
       for (let index = 0; index < 3 && isPendingDelivery(published); index++) {
         const receipt = published.pullRequest as Record<string, unknown> | undefined;
@@ -842,8 +848,7 @@ function respond(
           return dispatch(prepareStage, {
             action: 'delivery',
             operation: 'prepare',
-            title,
-            body,
+            ...publicationContent,
           });
         if (retained.status !== 'prepared') return;
         const publishStage = `delivery-link-publish-${index}`;
@@ -852,8 +857,7 @@ function respond(
           return dispatch(publishStage, {
             action: 'delivery',
             operation: 'publish',
-            title,
-            body,
+            ...publicationContent,
           });
         published = reconciled;
       }
@@ -861,7 +865,7 @@ function respond(
         throw new Error(`notification-delivery-reconciliation-exhausted: ${published.code}`);
       if (published.status !== 'published') return deliveryObstacle(published);
     }
-    if (!retry && !update) {
+    if (!retry && !update && !preserveMetadata) {
       if (options.explicitInitialLink) assert.equal(typeof published?.url, 'string');
       const linked = result('delivery-association');
       if (!linked)
@@ -904,7 +908,7 @@ function respond(
             'Publication retained. Presentation intentionally deferred for recovery coverage.',
         };
     }
-    if (!retry) {
+    if (!retry && !preserveMetadata) {
       const repeated = result('delivery-repeat');
       if (!repeated)
         return dispatch('delivery-repeat', {
@@ -923,7 +927,9 @@ function respond(
     return {
       content: [
         presented.presentation,
-        !retry && !update ? result('delivery-announce')?.presentation : undefined,
+        !retry && !update && !preserveMetadata
+          ? result('delivery-announce')?.presentation
+          : undefined,
       ]
         .filter(Boolean)
         .join('\n\n'),
@@ -1029,4 +1035,5 @@ export function createPRExampleScenario(
 
 export const prExampleScenario = createPRExampleScenario('openclaw-pr-journey', {
   initialQuestion: true,
+  incorporateCollaborator: true,
 });

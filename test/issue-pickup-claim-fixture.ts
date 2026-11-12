@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
+import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
 import GitHubAssignmentClaimClient from '../channels/github/provider/assignment-claim-client.ts';
 import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
 import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';

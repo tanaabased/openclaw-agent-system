@@ -1,7 +1,7 @@
 import WorkspaceBackupService, {
   BackupPruneError,
   type BackupPruneResult,
-} from '../agent/backup-service.ts';
+} from '../agent/backup/backup-service.ts';
 import backupPrune from '../cli/backup-prune.ts';
 import { createCliStyles, type CliNotice, writeCliDiagnosticNotices } from '../cli/output.ts';
 import presentCliCommand from '../cli/presentation.ts';

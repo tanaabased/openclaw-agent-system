@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import issueLaunchTarget from '../agent/issue-launch-target.ts';
+import issueLaunchTarget from '../agent/tasks/dispatch/issue-launch-target.ts';
 
 describe('agent/issue-launch-target', () => {
   it('should resolve supported references to the same issue', () => {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 
-import AgentLifecycleApproval from '../agent/lifecycle-approval.ts';
+import AgentLifecycleApproval from '../agent/lifecycle/lifecycle-approval.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 

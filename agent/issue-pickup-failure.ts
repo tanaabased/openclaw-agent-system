@@ -1,5 +1,5 @@
 import issuePickupReport from './issue-pickup-report.ts';
-import workflowFailure from './workflow-failure.ts';
+import workflowFailure from './tasks/workflow-failure.ts';
 
 /** preserve a thrown failure and format it without reading tracking state again. */
 export default class IssuePickupFailure extends Error {

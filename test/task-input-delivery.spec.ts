@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import deliverTaskInput from '../agent/task-input-delivery.ts';
+import deliverTaskInput from '../agent/tasks/context/task-input-delivery.ts';
 
 describe('agent/task-input-delivery', () => {
   it('should retain exact input before a lost send and reconcile without preparing or sending again', async () => {

@@ -1,7 +1,7 @@
 import { Type } from 'typebox';
 import { implementationMaterialSchema } from './implementation-material-schema.ts';
 
-import { assessmentPresentationSchema } from '../../agent/assessment-result.ts';
+import { assessmentPresentationSchema } from '../../agent/tasks/assessment/assessment-result.ts';
 
 export const directAssessmentRequestSchema = Type.Object(
   {

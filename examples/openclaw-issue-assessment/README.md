@@ -11,7 +11,7 @@ implementing changes, or publishing to GitHub.
 
 ## What Does Not Belong Here
 
-- Notification activation, admission, or automatic progression: [issue journey](../openclaw-issue-journey/README.md).
+- Notification activation, admission, or automatic progression: [issue journey](../openclaw-issue-conversation/README.md).
 - Managed assessment revision and readback: [conversation continuity](../openclaw-issue-conversation/README.md).
 - Reply composition/publication: [direct GitHub reply](../openclaw-github-reply/README.md).
 
@@ -92,6 +92,8 @@ params=$(jq -nc --arg target "$target" --arg checkout "$checkout" '{sessionKey:"
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-manual-assessment"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-manual-assessment 600000
 openclaw gateway call chat.history --params '{"sessionKey":"agent:issue-assessment-tanaabot:manual-assessment","limit":200}' --json | jq -e 'any(.messages[]; .role == "assistant" and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | test("disposable (test )?issues"; "i") and test("close|cleanup"; "i") and test("evidence"; "i") and (contains("Documentation-only change:") | not)))'
+# should leave assignment intake paused after the explicit task operation
+openclaw agent-system automations list --json | jq -e '.status == "aligned" and any(.jobs[]; .id == "github-issue-assignment" and .nativeEnabled == false)'
 number=$(jq -er .number "$TMPDIR/notification-manual-issue.json")
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/emori"
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e 'length == 0'

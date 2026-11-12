@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { feedbackConversationMode } from '../agent/feedback-conversation-mode.ts';
+import { feedbackConversationMode } from '../agent/tasks/feedback/feedback-conversation-mode.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
 describe('agent/feedback-conversation-mode', () => {

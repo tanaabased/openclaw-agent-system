@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import resolveGitProtocol from '../tools/git/protocol.ts';
-import nativeTaskInstructions from './native-task-instructions.ts';
-import taskUpdateInstructions from './task-update-instructions.ts';
+import nativeTaskInstructions from './tasks/context/native-task-instructions.ts';
+import taskUpdateInstructions from './tasks/feedback/task-update-instructions.ts';
 
 import type { AgentModelsConfiguration } from '../manifest/models-schema.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -11,8 +11,8 @@ import codexRuntimeInstructions from './codex-runtime-instructions.ts';
 import {
   inspectCodexWorkspaceBinding,
   type CodexWorkspaceBindingInspection,
-} from './codex-workspace-binding.ts';
-import { projectRoutingProfile } from './model-routing.ts';
+} from './identity/codex-workspace-binding.ts';
+import { projectRoutingProfile } from './models/model-routing.ts';
 
 export const codexContextVersion = 1;
 export const codexRuntimeRelativePath = 'dist/codex/codex-runtime.js';

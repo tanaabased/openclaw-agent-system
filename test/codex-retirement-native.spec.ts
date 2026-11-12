@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import nativeRetirement from '../agent/codex-retirement-native.ts';
+import nativeRetirement from '../agent/tasks/retirement/codex-retirement-native.ts';
 import type { CodexThreadRequest } from '../agent/codex-thread-client.ts';
 
 describe('codex retirement native evidence', () => {

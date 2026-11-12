@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { Value } from 'typebox/value';
 
-import { dispatchRecordSchema } from '../agent/codex-dispatch-state.ts';
-import dispatchOwnershipSchema from '../agent/dispatch-ownership-schema.ts';
-import { openclawDispatchRecordSchema } from '../agent/openclaw-dispatch-state.ts';
+import { dispatchRecordSchema } from '../agent/tasks/dispatch/codex-dispatch-state.ts';
+import dispatchOwnershipSchema from '../agent/tasks/dispatch/dispatch-ownership-schema.ts';
+import { openclawDispatchRecordSchema } from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 
 for (const [runtime, schema] of [
   ['codex', dispatchRecordSchema],

@@ -8,6 +8,24 @@ function diagnosticCodes(source: string): Set<string> {
 }
 
 describe('manifest/parse', () => {
+  it('should strictly decode backup keys without changing literal patterns', () => {
+    const parsed = parseAgentManifest(
+      'schema-version: 1\nagent: { id: tanaabot }\nbackup:\n  git-ignore: true\n  include: [MEMORY.md, memory/**]\n  exclude: []\n',
+    );
+    assert.equal(parsed.status, 'valid');
+    if (parsed.status === 'valid')
+      assert.deepEqual(parsed.manifest.backup, {
+        gitIgnore: true,
+        include: ['MEMORY.md', 'memory/**'],
+        exclude: [],
+      });
+    assert.equal(
+      parseAgentManifest('schema-version: 1\nagent: { id: tanaabot }\nbackup: { retention: 3 }\n')
+        .status,
+      'invalid',
+    );
+  });
+
   it('should accept only boolean debug and keep it off when omitted', () => {
     for (const debug of [undefined, false, true]) {
       const parsed = parseAgentManifest(

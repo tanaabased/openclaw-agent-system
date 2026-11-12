@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { Value } from 'typebox/value';
 
-import codexContextRequest from '../agent/codex-context-request.ts';
+import codexContextRequest from '../agent/tasks/context/codex-context-request.ts';
 import {
   assertModelWorkflowInput,
   nativeContextRequest,
   nativeContextResponse,
-} from '../agent/native-context-request.ts';
+} from '../agent/tasks/context/native-context-request.ts';
 import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 
 describe('native current-task context inputs', () => {

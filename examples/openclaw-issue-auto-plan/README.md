@@ -11,13 +11,13 @@ to complete a local change without publishing a PR.
 
 ## What Does Not Belong Here
 
-- Uninterrupted Auto Work and clarification: [progression](../openclaw-issue-progression/README.md). Interrupted decisions: [decision recovery](../openclaw-issue-decision-recovery/README.md).
-- Work-to-PR: [default Work](../openclaw-issue-work/README.md), [custom Work](../openclaw-issue-work-custom/README.md), and [Auto Work](../openclaw-issue-auto-work/README.md).
+- Interrupted decision recovery remains in focused component coverage.
+- Work and Auto Work delivery: [initial-turn delivery](../openclaw-issue-work-custom/README.md).
 
 ## Notes
 
 - Strict AIMock chooses Plan; native source verification, stage ownership, clarification, and Git effects remain real. This does not prove genuine model judgment or desktop rendering.
-- The Plan/continuation contract is adapted from #434 (`a17b4f7`, authored by `emoriwan`); the existing interrupted Work-decision journey remains independent.
+- The Plan/continuation contract is adapted from #434 (`a17b4f7`, authored by `emoriwan`).
 - Each refresh targets only this disposable issue. Cleanup stops the Gateway before closing the issue and removing its exact SSH key.
 
 ## Setup

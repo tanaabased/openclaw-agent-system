@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import feedbackSources from '../agent/feedback-sources.ts';
-import type { FeedbackSourceState } from '../agent/feedback-state.ts';
-import type { ManagedIssue } from '../agent/managed-issue.ts';
+import feedbackSources from '../agent/tasks/feedback/feedback-sources.ts';
+import type { FeedbackSourceState } from '../agent/tasks/feedback/feedback-state.ts';
+import type { ManagedIssue } from '../agent/tasks/managed-issue.ts';
 
 describe('agent/feedback-sources', () => {
   const intake = { issue: { nodeId: 'issue', number: 3 } } as ManagedIssue;

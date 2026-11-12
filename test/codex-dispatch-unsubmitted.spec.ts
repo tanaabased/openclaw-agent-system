@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import unsubmittedCreation from '../agent/codex-dispatch-unsubmitted.ts';
+import unsubmittedCreation from '../agent/tasks/dispatch/codex-dispatch-unsubmitted.ts';
 import type { CodexThreadRequest } from '../agent/codex-thread-client.ts';
 
 describe('agent/codex-dispatch-unsubmitted', () => {

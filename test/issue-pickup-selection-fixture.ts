@@ -9,7 +9,7 @@ import type {
   GitHubAssignmentEvent,
   GitHubCanonicalWorkItem,
 } from '../channels/github/provider/work-item.ts';
-import type { ClaimStore } from '../agent/assignment-claim.ts';
+import type { ClaimStore } from '../agent/tasks/dispatch/assignment-claim.ts';
 import { pickupFixture } from './issue-pickup-fixture.ts';
 import { baseline } from './github-intake-fixture.ts';
 

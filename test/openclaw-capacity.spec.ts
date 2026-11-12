@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
-import openClawCapacity from '../agent/openclaw-capacity.ts';
-import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
+import openClawCapacity from '../agent/tasks/dispatch/openclaw-capacity.ts';
+import type { OpenClawDispatchRecord } from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 
 describe('agent/openclaw-capacity', () => {
   for (const [limit, occupied, available] of [

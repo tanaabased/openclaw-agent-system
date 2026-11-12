@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import codexCapacity from '../agent/codex-capacity.ts';
-import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
+import codexCapacity from '../agent/tasks/dispatch/codex-capacity.ts';
+import type { DispatchRecord } from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 
 const record = () => ({ id: 'issue', request: {} }) as DispatchRecord;
 

@@ -1,6 +1,6 @@
 import { mock } from 'node:test';
 import hydrateImplementation from './implementation-material-fixture.ts';
-import type { ImplementationMaterialRead } from '../agent/implementation-material.ts';
+import type { ImplementationMaterialRead } from '../agent/tasks/implementation/implementation-material.ts';
 import assert from 'node:assert/strict';
 
 import { Value } from 'typebox/value';
@@ -10,16 +10,16 @@ import deliveryAnnouncement, {
   announcementPresentation,
   reconcileAnnouncement,
   recheckAnnouncement,
-} from '../agent/delivery-announcement.ts';
-import { deliveryAnnouncementStateSchema } from '../agent/delivery-announcement-state.ts';
+} from '../agent/tasks/delivery/delivery-announcement.ts';
+import { deliveryAnnouncementStateSchema } from '../agent/tasks/delivery/delivery-announcement-state.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import {
   announcementRecoveryAction,
   announcementRecoverySchema,
   type AnnouncementDelivery,
-} from '../agent/delivery-announcement-recovery.ts';
+} from '../agent/tasks/delivery/delivery-announcement-recovery.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
-import { WorkflowPolicyHeld } from '../agent/live-workflow-policy.ts';
+import { WorkflowPolicyHeld } from '../agent/tasks/live-workflow-policy.ts';
 
 describe('agent/delivery-announcement', () => {
   let input: Parameters<typeof deliveryAnnouncement>[0];

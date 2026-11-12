@@ -1,5 +1,5 @@
-import type { RoutingDecision } from '../../../agent/model-routing.ts';
-import type { RoutingInstructions } from '../../../agent/routing-instructions.ts';
+import type { RoutingDecision } from '../../../agent/models/model-routing.ts';
+import type { RoutingInstructions } from '../../../agent/models/routing-instructions.ts';
 import workflowInstructions, {
   fileLink,
   type WorkflowInstructionsPresentation,

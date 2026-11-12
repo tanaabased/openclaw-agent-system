@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import assessmentMaterial from '../agent/assessment-material.ts';
-import { assessmentResultFormat } from '../agent/assessment-result.ts';
-import type { ImplementationMaterialRead } from '../agent/implementation-material.ts';
+import assessmentMaterial from '../agent/tasks/assessment/assessment-material.ts';
+import { assessmentResultFormat } from '../agent/tasks/assessment/assessment-result.ts';
+import type { ImplementationMaterialRead } from '../agent/tasks/implementation/implementation-material.ts';
 import assessmentContextFixture, {
   hostedAssessmentContextFixture,
 } from './assessment-material-fixture.ts';

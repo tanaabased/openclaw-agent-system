@@ -1,5 +1,5 @@
-import type AgentLifecycleApproval from '../../agent/lifecycle-approval.ts';
-import createLifecycleTool from '../../agent/lifecycle-tool.ts';
+import type AgentLifecycleApproval from '../../agent/lifecycle/lifecycle-approval.ts';
+import createLifecycleTool from '../../agent/lifecycle/lifecycle-tool.ts';
 import { doctorParameters } from './tool-schema.ts';
 
 export default function createDoctorTool(approval: () => AgentLifecycleApproval) {

@@ -24,16 +24,9 @@ jobs:
         example:
           - openclaw-issue-intake
           - openclaw-issue-assessment-recovery
-          - openclaw-issue-feedback-policy
           - openclaw-issue-assignment-policy
-          - openclaw-issue-reactivation
-          - openclaw-issue-journey
           - openclaw-issue-conversation
-          - openclaw-issue-progression
-          - openclaw-issue-decision-recovery
-          - openclaw-issue-work
           - openclaw-issue-work-custom
-          - openclaw-issue-auto-work
           - openclaw-issue-auto-plan
     steps:
       - name: Checkout code
@@ -66,9 +59,9 @@ jobs:
             version-injector .codex-plugin/plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
             version-injector openclaw.plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
             bun run format:write
-            bun run build
       - name: Check prepared plugin
         run: |
+          bun run build
           bun run plugin:check
           bun run format:check
       - name: Pack prepared plugin

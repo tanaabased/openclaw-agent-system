@@ -5,10 +5,13 @@ import { Value } from 'typebox/value';
 
 import implementationMaterial, {
   type ImplementationMaterialRead,
-} from '../agent/implementation-material.ts';
-import contextMaterialTransport from '../agent/context-material-transport.ts';
+} from '../agent/tasks/implementation/implementation-material.ts';
+import contextMaterialTransport from '../agent/tasks/context/context-material-transport.ts';
 import contextMaterialExchange from '../scripts/aimock-context-material.ts';
-import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
+import {
+  bindNativeMaterial,
+  nativeMaterialResponse,
+} from '../agent/tasks/context/native-material.ts';
 import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 
 describe('aimock context material', () => {

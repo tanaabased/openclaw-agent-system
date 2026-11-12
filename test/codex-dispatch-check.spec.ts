@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
-import requireDispatchCheck, { dispatchCheckDigest } from '../agent/codex-dispatch-check.ts';
-import type { DispatchRecord, DispatchState } from '../agent/codex-dispatch-state.ts';
+import requireDispatchCheck, {
+  dispatchCheckDigest,
+} from '../agent/tasks/dispatch/codex-dispatch-check.ts';
+import type {
+  DispatchRecord,
+  DispatchState,
+} from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import type { IntakeState } from '../channels/github/intake/record-store.ts';
 
 describe('agent/codex-dispatch-check', () => {

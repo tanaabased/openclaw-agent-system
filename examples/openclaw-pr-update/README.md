@@ -1,24 +1,24 @@
 # OpenClaw PR Operator Update Example
 
-After one delivered PR, accept an explicit operator request to add a follow-up commit and update its title and body, then retain the same PR and issue announcement.
+After one delivered PR, preview its reviewers and read its plan and card with a dirty checkout, then accept operator follow-up commits and title/body updates while retaining the same PR and issue announcement.
 
 ## What Belongs Here
 
+- Reviewer preview from current configuration without requesting a review, and plan/card readback with uncommitted edits without another announcement.
 - Native operator binding to the exact retained PR without changing earlier publication receipts, then operator-driven changes to committed content and PR title/body.
 - An advanced pushed head with unchanged issue, chat, checkout, PR identity, feedback receipts, and announcement.
 
 ## What Does Not Belong Here
 
-- Live recipient preview: [PR recipient preview](../openclaw-pr-recipients/README.md).
 - Ordinary assignment, initial delivery, and uninterrupted feedback: [PR journey](../openclaw-pr-journey/README.md).
-- Saved plan/card readback after dirty edits: [PR presentation readback](../openclaw-pr-presentation/README.md).
-- Other feedback conditions: [PR collaborator reconciliation](../openclaw-pr-collaboration/README.md), [PR discovery recovery](../openclaw-pr-discovery/README.md), [PR reply recovery](../openclaw-pr-reply-recovery/README.md).
-- Mode transitions and implementation clarification: [progression](../openclaw-issue-progression/README.md). Inline review-thread processing and replacement-coordinator recovery remain separate acceptance work.
+- Collaborator reconciliation and uninterrupted feedback: [PR journey](../openclaw-pr-journey/README.md).
+- Mode transitions and implementation clarification: [progression](../openclaw-issue-auto-plan/README.md). Inline review-thread processing and replacement-coordinator recovery remain separate acceptance work.
 
 ## Notes
 
 - Strict AIMock supplies the model text and tool choices. GitHub requests, chat execution, dispatch, managed Git, and native conversation history still run normally. Only Tanaabot is assigned; EMORI creates the test issues and comments.
 - Each job prepares its own issue, assessment, and linked PR. Refreshes target only this issue; a 24-hour schedule avoids unrelated discovery.
+- The reviewer manifest and uncommitted readback edit are restored before the follow-up commits.
 - The first follow-up also invokes `delivery bind` on its exact retained PR in the real agent/tool loop; this adds one tool call, no chat, model turn, or provider fixture. Missing-receipt adoption and replacement remain component/native acceptance below.
 - Operator follow-ups use the current turn’s retained task facts with intake scheduling disabled, without an implementation-context call or another handoff. Delivery preserves the same PR and announcement, and each turn displays the refreshed PR card.
 - A second operator revision proves that completion does not freeze later edits; both revisions preserve the initial feedback-owned implementation history.
@@ -160,6 +160,50 @@ openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$n
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-update/tanaabot"
 native=$(openclaw agent-system automations list --json | jq -er '.jobs[] | select(.id == "github-issue-assignment") | .nativeId')
 openclaw cron edit "$native" --disable --json | jq -e '.enabled == false'
+
+# should prepare delivery with a newly configured compact reviewer without requesting a review
+cd "$GITHUB_WORKSPACE/examples/openclaw-pr-update/tanaabot"
+cp agent.yaml "$TMPDIR/notification-pre-reviewer.yaml"
+trap 'cp "$TMPDIR/notification-pre-reviewer.yaml" "$GITHUB_WORKSPACE/examples/openclaw-pr-update/tanaabot/agent.yaml"' EXIT
+node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import {parseDocument} from "yaml"; const doc=parseDocument(readFileSync("agent.yaml","utf8")); doc.setIn(["github","issue-assignment","reviewers"],["@emoriwan"]); writeFileSync("agent.yaml",String(doc));'
+conversation=$(jq -er .threadId "$TMPDIR/notification-delivery.json")
+session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-delivery.json")
+receipt=$(jq -er .id "$TMPDIR/notification-delivery.json")
+leaf=$(openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:1}')" --json | jq -er .sessionInfo.activeLeafEntryId)
+params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg receipt "$receipt" '{sessionKey:$key,agentId:"pr-update-tanaabot",sessionId:$session,message:("Operator request for managed issue " + $receipt + ": Preview reviewer delivery without publishing."),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"notification-reviewer-preview"}')"
+node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; const result = await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"}); console.log(JSON.stringify(result));' "$params" | jq -e '.runId == "notification-reviewer-preview"'
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "notification-reviewer-preview" 600000
+cp "$TMPDIR/notification-pre-reviewer.yaml" agent.yaml
+trap - EXIT
+pr=$(jq -er .delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/pulls/$pr/requested_reviewers" --jq '.users' | jq -e 'length == 0'
+
+# should show the conversation plan and complete card for the same pull request despite later uncommitted edits
+worktree=$(jq -er .worktree "$TMPDIR/notification-delivery.json")
+restore_readback_edit() {
+  node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; const p=process.argv[1]; const text=readFileSync(p,"utf8"); const suffix="Uncommitted follow-up work.\n"; if(!text.endsWith(suffix)) throw new Error("fixture line missing"); writeFileSync(p,text.slice(0,-suffix.length));' "$worktree/README.md"
+}
+printf '%s\n' 'Uncommitted follow-up work.' >> "$worktree/README.md"
+trap restore_readback_edit EXIT
+conversation=$(jq -er .threadId "$TMPDIR/notification-delivery.json")
+session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-delivery.json")
+receipt=$(jq -er .id "$TMPDIR/notification-delivery.json")
+leaf=$(openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:1}')" --json | jq -er .sessionInfo.activeLeafEntryId)
+params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg receipt "$receipt" '{sessionKey:$key,agentId:"pr-update-tanaabot",sessionId:$session,message:("Operator request for managed issue " + $receipt + ": Show the plan from this conversation and existing PR card again."),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"notification-retry"}')"
+node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; const result = await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"}); console.log(JSON.stringify(result));' "$params" | jq -e '.runId == "notification-retry"'
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "notification-retry" 600000
+cd "$GITHUB_WORKSPACE/examples/openclaw-pr-update/tanaabot"
+branch=$(jq -er .delivery.binding.branch "$TMPDIR/notification-delivery.json")
+openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$branch" --state all --json number | jq -e --argjson pr "$(jq -er .delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")" 'length == 1 and .[0].number == $pr'
+jq -es --arg id "$receipt" --arg pr "$(jq -er .delivery.pullRequest.pullRequestNodeId "$TMPDIR/notification-delivery.json")" '[.[].records[] | select(.id == $id)] | length == 1 and .[0].delivery.pullRequest.pullRequestNodeId == $pr and .[0].delivery.reconciled == true' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+jq -es --arg id "$receipt" '[.[].records[] | select(.id == $id)] | .[0]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-recovered.json"
+openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200,inputRunIds:["notification-retry"],maxChars:100000}')" --json > "$TMPDIR/notification-recovered-history.json"
+jq -e --slurpfile saved "$TMPDIR/notification-recovered.json" 'any(.messages[]; .role == "assistant" and .__openclaw.runId == "notification-retry" and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | startswith("> ") and contains("https://github.com/tanaabased/big-test-bucket/pull/" + ($saved[0].delivery.pullRequest.pullRequestNumber | tostring)) and (gsub("(?m)^> ?"; "") | (contains("#issuecomment-" + ($saved[0].announcement.receipt.databaseId | tostring)) | not))))' "$TMPDIR/notification-recovered-history.json"
+openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e --arg session "$session_id" --arg cwd "$(jq -er .worktree "$TMPDIR/notification-delivery.json")" '.session.sessionId == $session and .session.spawnedCwd == $cwd'
+number=$(jq -er .number "$TMPDIR/notification-issue.json")
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile before "$TMPDIR/notification-announcements.json" '[.[] | select(.user.login == "tanaabot") | .node_id] == [$before[0][] | select(.user.login == "tanaabot") | .node_id]'
+restore_readback_edit
+trap - EXIT
 
 # should update the existing pr after a follow-up commit without another announcement
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-update/tanaabot"

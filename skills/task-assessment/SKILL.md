@@ -305,7 +305,7 @@ review, focused questions, or actionable blocker in the original task chat.
 
 ## Bundled Resources
 
-- [Assessment result schema](../../agent/assessment-result.ts): the shared display-only
+- [Assessment result schema](../../agent/tasks/assessment/assessment-result.ts): the shared display-only
   contract; context supplies its compact `resultFormat`.
 - [Presentation](../../channels/github/PRESENTATION.md): shared visible components.
 - [User Journey Editor](./references/user-journey-editor.md): isolated opening rewrite.

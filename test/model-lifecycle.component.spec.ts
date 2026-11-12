@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { resolveAllowedModelRef as resolveOpenClawAllowedModelRef } from 'openclaw/plugin-sdk/agent-runtime';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
-import parseModelCatalogRows from '../agent/model-catalog.ts';
+import parseModelCatalogRows from '../agent/models/model-catalog.ts';
 import createModelLifecycleContribution, {
   type ModelLifecycleDependencies,
-} from '../agent/model-lifecycle.ts';
+} from '../agent/models/model-lifecycle.ts';
 import { configuredAgentValue } from '../core/configured-agents.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import type { AgentManifest } from '../manifest/types.ts';

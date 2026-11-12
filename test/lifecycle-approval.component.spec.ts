@@ -10,13 +10,16 @@ import { join } from 'node:path';
 
 import AgentLifecycleApproval, {
   type LifecycleAutomationAuthorization,
-} from '../agent/lifecycle-approval.ts';
-import AgentInstallService from '../agent/install-service.ts';
-import AgentDoctorService from '../agent/doctor-service.ts';
-import SetupLifecycleService from '../agent/setup-lifecycle.ts';
+} from '../agent/lifecycle/lifecycle-approval.ts';
+import AgentInstallService from '../agent/lifecycle/install-service.ts';
+import AgentDoctorService from '../agent/lifecycle/doctor-service.ts';
+import SetupLifecycleService from '../agent/lifecycle/setup-lifecycle.ts';
 import AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';
 import AgentManifestService from '../manifest/service.ts';
-import { lifecycleToolNames, type LifecycleToolName } from '../agent/lifecycle-tool-contract.ts';
+import {
+  lifecycleToolNames,
+  type LifecycleToolName,
+} from '../agent/lifecycle/lifecycle-tool-contract.ts';
 
 const roots: string[] = [];
 const manifest = `schema-version: 1

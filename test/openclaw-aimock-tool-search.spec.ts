@@ -1,8 +1,11 @@
 import implementationMaterial, {
   type ImplementationMaterialRead,
-} from '../agent/implementation-material.ts';
-import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
-import nativeTaskInstructions from '../agent/native-task-instructions.ts';
+} from '../agent/tasks/implementation/implementation-material.ts';
+import {
+  bindNativeMaterial,
+  nativeMaterialResponse,
+} from '../agent/tasks/context/native-material.ts';
+import nativeTaskInstructions from '../agent/tasks/context/native-task-instructions.ts';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
@@ -17,7 +20,7 @@ import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 import {
   assessmentResultContextSchema,
   assessmentResultFormat,
-} from '../agent/assessment-result.ts';
+} from '../agent/tasks/assessment/assessment-result.ts';
 
 function request(prompt = githubExampleTanaabotPrompt): ChatCompletionRequest {
   return {
@@ -452,7 +455,7 @@ describe('scripts/aimock-tool-search', () => {
       project: { path: '/tmp/owned' },
       implementation: { defaultSkill: true, skill: { path: '/fixture/SKILL.md' } },
     };
-    const contextRequest = { action: 'implementation', operation: 'context' };
+    const contextRequest = { action: 'implementation-context' };
     const receipts: unknown[] = [];
     const materialResponse = (value: unknown, args: Record<string, unknown>) => {
       const projected = {

@@ -11,8 +11,8 @@ Activate notification intake, exclude fixture assignments through repository rou
 
 ## What Does Not Belong Here
 
-- Other assessment presentation and ordinary issue feedback: [issue planning](../openclaw-issue-journey/README.md). Implementation and PR feedback: [PR delivery](../openclaw-pr-journey/README.md).
-- Restart recovery: [assessment recovery](../openclaw-issue-assessment-recovery/README.md). Unassigned-issue feedback: [reactivation](../openclaw-issue-reactivation/README.md). Coordinator/tracking reset: [reset](../openclaw-notifications-reset/README.md). Resource reconciliation: [retirement](../openclaw-notifications-retirement/README.md).
+- Other assessment presentation and ordinary issue feedback: [issue planning](../openclaw-issue-conversation/README.md). Implementation and PR feedback: [PR delivery](../openclaw-pr-journey/README.md).
+- Restart recovery: [assessment recovery](../openclaw-issue-assessment-recovery/README.md). Unassigned-issue feedback: [reactivation](../openclaw-issue-assignment-policy/README.md). Coordinator/tracking reset: [reset](../openclaw-notifications-retirement/README.md). Resource reconciliation: [retirement](../openclaw-notifications-retirement/README.md).
 - Scheduler controls: [scheduling](../openclaw-notifications-scheduling/README.md). Unavailable-assignment recovery: [assignment policy](../openclaw-issue-assignment-policy/README.md).
 
 ## Notes

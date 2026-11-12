@@ -3,7 +3,7 @@ import { chmod, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import codexAssessmentSkill from '../agent/codex-assessment-skill.ts';
+import codexAssessmentSkill from '../agent/tasks/assessment/codex-assessment-skill.ts';
 import codexHostAccess from '../agent/codex-host-access.ts';
 
 describe('agent/codex-assessment-skill', () => {

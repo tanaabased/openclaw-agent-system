@@ -3,8 +3,12 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
-import { CodexSetupError, inspectCodexSetup, installCodexSetup } from '../agent/codex-setup.ts';
+import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
+import {
+  CodexSetupError,
+  inspectCodexSetup,
+  installCodexSetup,
+} from '../agent/lifecycle/codex-setup.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 
 describe('agent/codex-setup', () => {

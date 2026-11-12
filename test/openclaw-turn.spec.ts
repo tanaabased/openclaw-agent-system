@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
+import type { OpenClawDispatchRecord } from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import type { OpenClawTurn } from '../agent/openclaw-turn-state.ts';
 import { consumedInputEvent, reconcileOpenClawTurn } from '../agent/openclaw-turn.ts';
 

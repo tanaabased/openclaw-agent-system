@@ -1,5 +1,5 @@
 import { Type, type Static, type TSchema } from 'typebox';
-import WorkflowRequestError from '../../agent/workflow-request-error.ts';
+import WorkflowRequestError from '../../agent/tasks/workflow-request-error.ts';
 import { Value } from 'typebox/value';
 import { implementationMaterialSchema } from './implementation-material-schema.ts';
 

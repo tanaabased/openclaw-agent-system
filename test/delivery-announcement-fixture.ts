@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
-import type { DeliveryAnnouncementState } from '../agent/delivery-announcement-state.ts';
-import { announcementPublication } from '../agent/delivery-announcement.ts';
+import type { DeliveryAnnouncementState } from '../agent/tasks/delivery/delivery-announcement-state.ts';
+import { announcementPublication } from '../agent/tasks/delivery/delivery-announcement.ts';
 import {
   githubNotificationPublicationComment,
   githubNotificationPublicationMarker,

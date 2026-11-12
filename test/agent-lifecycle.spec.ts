@@ -4,7 +4,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import createAgentLifecycleContribution, {
   type AgentLifecycleDependencies,
-} from '../agent/lifecycle.ts';
+} from '../agent/identity/lifecycle.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 

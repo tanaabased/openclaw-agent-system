@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import { SetupCommandError, type SetupCommandResult } from '../agent/setup-runner.ts';
-import SetupLifecycleService from '../agent/setup-lifecycle.ts';
-import type SetupCommandService from '../agent/setup-command-service.ts';
+import { SetupCommandError, type SetupCommandResult } from '../agent/lifecycle/setup-runner.ts';
+import SetupLifecycleService from '../agent/lifecycle/setup-lifecycle.ts';
+import type SetupCommandService from '../agent/lifecycle/setup-command-service.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import { normalizeAgentSetup, type AgentSetupRuntime } from '../manifest/setup-schema.ts';
 

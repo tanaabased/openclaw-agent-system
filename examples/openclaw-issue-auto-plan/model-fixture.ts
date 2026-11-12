@@ -1,4 +1,4 @@
-import { createProgressionScenario } from '../openclaw-issue-progression/model-fixture.ts';
+import { createProgressionScenario } from './progression-model.ts';
 
 export const autoPlanScenario = createProgressionScenario(
   'openclaw-issue-auto-plan',

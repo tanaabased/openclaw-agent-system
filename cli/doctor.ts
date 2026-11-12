@@ -1,6 +1,6 @@
 import presentCliCommand from './presentation.ts';
 import loadCommandManifest from './load-command-manifest.ts';
-import type AgentDoctorService from '../agent/doctor-service.ts';
+import type AgentDoctorService from '../agent/lifecycle/doctor-service.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import lifecycleDetails from './lifecycle-details.ts';
 import { type CliOutput, type CliStyles, writeCliJson, writeCliLifecycleTable } from './output.ts';

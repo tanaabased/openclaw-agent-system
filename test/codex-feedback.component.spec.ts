@@ -1,13 +1,17 @@
 import assert from 'node:assert/strict';
-import { pendingRecoveryFeedback } from '../agent/issue-task-recovery.ts';
+import { pendingRecoveryFeedback } from '../agent/tasks/dispatch/issue-task-recovery.ts';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { parseCleanupConfiguration } from '../agent/cleanup-configuration.ts';
-import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
-import { runCodexDispatch, type CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
-import { scanCodexFeedback } from '../agent/codex-feedback-scan.ts';
+import reconcileCodexLifecycle from '../agent/tasks/dispatch/codex-assignment-lifecycle.ts';
+import {
+  runCodexDispatch,
+  type CodexDispatchDependencies,
+} from '../agent/tasks/dispatch/codex-dispatch.ts';
+import { scanCodexFeedback } from '../agent/tasks/feedback/codex-feedback-scan.ts';
+import reportDispatch from '../agent/tasks/dispatch/codex-dispatch-reporting.ts';
 import discoveryCheckpoint from '../agent/discovery-checkpoint.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import commentProviderFixture from './github-comment-provider-fixture.ts';
@@ -16,10 +20,13 @@ import hydrateImplementation, { type Field } from './implementation-material-fix
 import { attemptedAnnouncement } from './delivery-announcement-fixture.ts';
 
 import { automationHash } from '../agent/automation-hash.ts';
-import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
-import runCodexFeedback, { type CodexFeedbackDependencies } from '../agent/codex-feedback.ts';
-import { runCodexIntake, selectCodexIntake } from '../agent/codex-intake.ts';
-import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
+import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
+import runCodexFeedback, {
+  type CodexFeedbackDependencies,
+} from '../agent/tasks/feedback/codex-feedback.ts';
+import { runCodexIntake } from '../agent/codex-intake.ts';
+import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
+import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
 import { account, baseline, intakeFixture } from './github-intake-fixture.ts';
 import {
   reviewClientFixture,
@@ -98,7 +105,7 @@ describe('agent/codex-feedback', () => {
       assertActive: async () => {},
       connect: async () => fixture.client,
     });
-    const current = await selectCodexIntake(pluginData, { codexHome });
+    const current = await selectCodexTaskContext(pluginData, { codexHome });
     const admitted = (await current.store.read())!.records[0]!;
     store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     await store.exclusive(async (state, save) => {
@@ -407,7 +414,7 @@ describe('agent/codex-feedback', () => {
         PR_other: { since: baseline, startedAt: baseline + 1, reads: {} },
       };
       const before = structuredClone(owner.feedback!);
-      const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+      const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
       const provider = await deps.feedbackConnect!(current.workspace, new AbortController().signal);
       provider.comments.reviews = {
         listReviews: async () => ({ values: [], nextPage: 1 }),
@@ -478,7 +485,7 @@ describe('agent/codex-feedback', () => {
   for (const association of ['relinked', 'unlinked'] as const) {
     it(`should discard ${association} pr scratch durably without querying the old source`, async () => {
       await prepare();
-      const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+      const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
       await store.exclusive(async (state, save) => {
         const owner = state.records[0]!;
         owner.pullRequestLink =
@@ -549,7 +556,7 @@ describe('agent/codex-feedback', () => {
       id: 'e'.repeat(64),
       sourceThreadId: 'changed-owner',
     });
-    const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+    const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
     const visits: string[] = [];
     const scans = await scanCodexFeedback({
       state,
@@ -584,7 +591,7 @@ describe('agent/codex-feedback', () => {
       await save();
     });
     occurrence++;
-    const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+    const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
     const scans = await scanCodexFeedback({
       state: await store.read(),
       current,
@@ -622,7 +629,7 @@ describe('agent/codex-feedback', () => {
       const first = state.records[0]!;
       const peer = { ...structuredClone(first), id: 'e'.repeat(64) };
       state.records.push(peer);
-      const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+      const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
       const provider = await deps.feedbackConnect!(current.workspace, new AbortController().signal);
       const raw = {
         nodeId: 'IC_human',
@@ -672,6 +679,53 @@ describe('agent/codex-feedback', () => {
     });
   }
 
+  async function feedbackReport(fresh = true) {
+    const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
+    return store.exclusive(async (state, save) => {
+      const input = {
+        automationId: 'automation',
+        currentTimeIso: new Date(baseline).toISOString(),
+      };
+      if (fresh) state.run = { id: `report-${occurrence}`, ...input, actions: 12 };
+      return reportDispatch(input, {
+        state,
+        admitted: (await current.store.read())!,
+        intakeStore: current.store,
+        now: baseline + 70000 + occurrence,
+        slots: 2,
+        save,
+      });
+    });
+  }
+  it('should report verified feedback once without making report publication a prerequisite for work', async () => {
+    const ref = await prepare();
+    const prepared = await feedbackReport();
+    assert.ok('response' in prepared && typeof prepared.response === 'string');
+    assert.doesNotMatch(prepared.response, /Feedback delivered to chat/);
+    assert.equal((await store.read()).records[0]!.feedback!.events[0]!.intakeReportedAt, undefined);
+    sent = true;
+    turn = 'feedback';
+    await call('context', ref, true);
+    const delivered = (await store.read()).records[0]!.feedback!.events[0]!;
+    assert.equal(delivered.phase, 'delivered');
+    assert.equal(delivered.intakeReportedAt, undefined);
+    // no final report is published; issue work already consumed its native input.
+    occurrence++;
+    const report = await feedbackReport();
+    assert.ok('response' in report && typeof report.response === 'string');
+    assert.match(
+      report.response,
+      /Feedback delivered to chat:.*owner\/repo#3.*codex:\/\/threads\/child.*1 item/,
+    );
+    assert.doesNotMatch(report.response, /DONT_NOTIFY|nothing new to report/);
+    assert.deepEqual(await feedbackReport(false), report);
+    const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
+    store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const repeated = await feedbackReport();
+    assert.ok('response' in repeated && typeof repeated.response === 'string');
+    assert.doesNotMatch(repeated.response, /Feedback delivered to chat/);
+    assert.equal((await call('next')).status, 'idle');
+  });
   async function prepare(author = commenter, body = '@receiver explain this') {
     await call('next');
     comments.push({
@@ -799,6 +853,13 @@ describe('agent/codex-feedback', () => {
         outcome === 'denied' ? 'continuation-native-approval-denied' : 'feedback-send-unresolved',
       );
       if (outcome !== 'denied') assert.equal((await call('reconcile', ref)).status, 'uncertain');
+      const report = await feedbackReport();
+      assert.ok('response' in report && typeof report.response === 'string');
+      assert.doesNotMatch(report.response, /Feedback delivered to chat/);
+      assert.equal(
+        (await store.read()).records[0]!.feedback!.events[0]!.intakeReportedAt,
+        undefined,
+      );
     });
   }
 
@@ -1607,7 +1668,7 @@ describe('agent/codex-feedback', () => {
   it('should retain admitted feedback when discovery configuration is removed', async () => {
     await prepare();
     const manifestPath = join(root, 'workspace', 'agent.yaml');
-    const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+    const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
     await writeFile(
       manifestPath,
       JSON.stringify({

@@ -94,7 +94,7 @@ chunks, headings, bare arrays, concatenated objects, and NDJSON do not define ca
 Configure the saved chat through the [command automation guidance](./MANIFEST.md#automations).
 
 The authoritative machine-readable schema ships at
-[`agent/automation-report.schema.json`](./agent/automation-report.schema.json) in
+[`agent/automations/automation-report.schema.json`](./agent/automations/automation-report.schema.json) in
 `@tanaab/openclaw-agent-system`. It is generated from the same definition used for
 validation. This is a data format, not a supported TypeScript module import.
 

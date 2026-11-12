@@ -1,4 +1,4 @@
-import { memorySecretProviderAlias } from '../agent/memory-configuration-plan.ts';
+import { memorySecretProviderAlias } from '../agent/lifecycle/memory-configuration-plan.ts';
 
 export interface MemorySecretProviderRequest {
   ids: string[];

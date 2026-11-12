@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   implementationContextBudget,
   implementationMaterialSize,
-} from '../agent/implementation-material.ts';
+} from '../agent/tasks/implementation/implementation-material.ts';
 
 export type Field = {
   path: string[];

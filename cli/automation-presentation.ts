@@ -1,4 +1,4 @@
-import type AutomationService from '../agent/automation-service.ts';
+import type AutomationService from '../agent/automations/automation-service.ts';
 import type { AgentSystemLifecycleFinding } from '../core/lifecycle-registry.ts';
 import {
   type CliLifecycleLine,

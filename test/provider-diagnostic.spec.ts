@@ -1,7 +1,7 @@
 import githubCredentialRejected from '../credentials/github-rejection.ts';
 import OpCache from '../environment/op-cache.ts';
-import AgentDoctorService from '../agent/doctor-service.ts';
-import createAgentLifecycleContribution from '../agent/lifecycle.ts';
+import AgentDoctorService from '../agent/lifecycle/doctor-service.ts';
+import createAgentLifecycleContribution from '../agent/identity/lifecycle.ts';
 import AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';
 import doctorAgentSystem from '../cli/doctor.ts';
 import GitHubAccountClient, { GitHubAccountClientError } from '../core/github-account-client.ts';

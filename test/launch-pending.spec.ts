@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import launchPending from '../agent/launch-pending.ts';
+import launchPending from '../agent/tasks/dispatch/launch-pending.ts';
 
 describe('agent/launch-pending', () => {
   it('should finish codex launch on verified native creation without a saved assessment', () => {

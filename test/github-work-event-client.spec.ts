@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import dispatchContext from '../agent/dispatch-context.ts';
+import dispatchContext from '../agent/tasks/dispatch/dispatch-context.ts';
 import type { AgentSystemCliResult } from '../api/types.ts';
 import { githubCommentPageSize } from '../channels/github/provider/issue-comment-client.ts';
 import GitHubWorkEventClient, {

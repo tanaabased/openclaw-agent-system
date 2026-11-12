@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import type { DispatchState } from '../agent/codex-dispatch-state.ts';
+import type { DispatchState } from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import {
   dispatchStorageBytes,
   dispatchStorageLevel,
   dispatchStorageNotice,
   dispatchStorageViolation,
-} from '../agent/dispatch-storage.ts';
+} from '../agent/tasks/dispatch/dispatch-storage.ts';
 
 const mib = 1024 * 1024;
 describe('agent/dispatch storage', () => {

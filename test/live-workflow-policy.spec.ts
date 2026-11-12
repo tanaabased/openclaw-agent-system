@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import liveWorkflowPolicy from '../agent/live-workflow-policy.ts';
+import liveWorkflowPolicy from '../agent/tasks/live-workflow-policy.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import { intakeFixture } from './github-intake-fixture.ts';

@@ -1,10 +1,15 @@
+import {
+  selectOpenClawTaskContext,
+  type OpenClawTaskContextDependencies,
+  type OpenClawTaskContext,
+} from './tasks/context/openclaw-task-context.ts';
 import { omit } from 'lodash-es';
 import { realpath } from 'node:fs/promises';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type { IssuePickupClient } from '../channels/github/provider/issue-pickup-client.ts';
-import AssignmentClaimStore from './assignment-claim-store.ts';
+import AssignmentClaimStore from './tasks/dispatch/assignment-claim-store.ts';
 import DiscoveryBudget from './discovery-budget.ts';
-import { assertDispatchStorage } from './dispatch-storage.ts';
+import { assertDispatchStorage } from './tasks/dispatch/dispatch-storage.ts';
 import type { IssuePickupAuthority } from './issue-pickup-authority.ts';
 import type IssuePickupEnrollmentStore from './issue-pickup-enrollment.ts';
 import IssuePickupFailure from './issue-pickup-failure.ts';
@@ -12,17 +17,14 @@ import {
   issuePickupAutomationId,
   issuePickupConfigurationCode,
   issuePickupErrorCode,
-} from './issue-pickup-jobs.ts';
+} from './automations/issue-pickup-jobs.ts';
 import reconcileIssuePickup from './issue-pickup-reconcile.ts';
 import issuePickupReport from './issue-pickup-report.ts';
 import issuePickup, { pickupAuthority, type PickupInput } from './issue-pickup.ts';
-import openClawCapacity, { openClawItemOccupied } from './openclaw-capacity.ts';
-import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
+import openClawCapacity, { openClawItemOccupied } from './tasks/dispatch/openclaw-capacity.ts';
+import OpenClawDispatchStore from './tasks/dispatch/openclaw-dispatch-state.ts';
 
-import IntakeRecordStore, {
-  IntakeError,
-  intakeLocation,
-} from '../channels/github/intake/record-store.ts';
+import { IntakeError } from '../channels/github/intake/record-store.ts';
 import scanAssignments from '../channels/github/intake/scan-assignments.ts';
 import {
   githubNotificationRuntimeBlocker,
@@ -32,17 +34,12 @@ import type { GitHubNotificationIntakeClient } from '../channels/github/provider
 import type { GitHubNotificationItemSelector } from '../channels/github/provider/work-item.ts';
 import { cliDiagnosticContext } from '../core/cli-diagnostic-context.ts';
 import type { AgentSystemLifecycleContribution } from '../core/lifecycle-registry.ts';
-import type AgentManifestService from '../manifest/service.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import assignmentIntakePolicy from './assignment-intake-policy.ts';
+import assignmentIntakePolicy from './automations/assignment-intake-policy.ts';
 
-export interface OpenClawIntakeDependencies {
+export interface OpenClawIntakeDependencies extends OpenClawTaskContextDependencies {
   issuePickup?: IssuePickupAuthority;
   pickupStore?: IssuePickupEnrollmentStore;
-  root: string;
-  resetRoot?: string;
-  namespace: string;
-  manifestService: Pick<AgentManifestService, 'loadForAgentId'>;
   connect(
     input: { manifest: AgentManifest; workspaceDir: string },
     signal: AbortSignal,
@@ -61,26 +58,8 @@ export interface OpenClawIntakeDependencies {
 /** Workflow admission only. No sessions, assessment results, V1 files or publication. */
 export default class OpenClawIntake {
   constructor(readonly dependencies: OpenClawIntakeDependencies) {}
-  async select(
-    manifest: AgentManifest,
-    workspaceDir: string,
-    options: { resolvePolicy?: boolean } = {},
-  ) {
-    const workspace = await realpath(workspaceDir);
-    const selected =
-      options.resolvePolicy === false ? undefined : assignmentIntakePolicy(manifest, 'openclaw');
-    const store = new IntakeRecordStore(
-      intakeLocation({
-        runtime: 'openclaw',
-        root: this.dependencies.root,
-        namespace: this.dependencies.namespace,
-        workspaceDir: workspace,
-        agentId: manifest.agent.id,
-        resetRoot: this.dependencies.resetRoot,
-      }),
-    );
-    await new GitHubIdentityCache(store.location).hydrate(manifest.github?.notifications);
-    return { selected, store, workspace };
+  select(manifest: AgentManifest, workspaceDir: string, options: { resolvePolicy?: boolean } = {}) {
+    return selectOpenClawTaskContext(this.dependencies, manifest, workspaceDir, options);
   }
   async readiness(
     manifest: AgentManifest,
@@ -334,12 +313,36 @@ export default class OpenClawIntake {
     selector?: GitHubNotificationItemSelector,
     budget = new DiscoveryBudget(20000, signal),
   ) {
+    return this.#run(
+      manifest,
+      () => this.select(manifest, workspaceDir),
+      action,
+      signal,
+      selector,
+      budget,
+    );
+  }
+  /** reuse this check's selected context; admission and commit guards still read live authority. */
+  check(
+    manifest: AgentManifest,
+    current: OpenClawTaskContext,
+    signal: AbortSignal | undefined,
+    budget: DiscoveryBudget,
+  ) {
+    return this.#run(manifest, async () => current, 'check', signal, undefined, budget);
+  }
+  async #run(
+    manifest: AgentManifest,
+    select: () => Promise<OpenClawTaskContext>,
+    action: 'check' | 'scan' | 'activate',
+    signal: AbortSignal | undefined,
+    selector: GitHubNotificationItemSelector | undefined,
+    budget: DiscoveryBudget,
+  ) {
     const started = budget.clock();
     signal?.throwIfAborted();
     const deadline = AbortSignal.timeout(action === 'check' ? 25000 : 120000);
-    const { selected, store, workspace } = await budget.read('intake-scope', () =>
-      this.select(manifest, workspaceDir),
-    );
+    const { selected, store, workspace } = await budget.read('intake-scope', select);
     if (!selected) throw new IntakeError('intake-policy-disabled');
     const assertCurrent = async () => {
       signal?.throwIfAborted();
@@ -353,6 +356,7 @@ export default class OpenClawIntake {
         (await realpath(fresh.scope.workspaceDir)) !== workspace
       )
         throw new IntakeError('intake-workspace-binding-changed');
+      return fresh;
     };
     await assertCurrent();
     if (action !== 'activate') {
@@ -392,15 +396,12 @@ export default class OpenClawIntake {
       now: (this.dependencies.now ?? Date.now)(),
       activate: action === 'activate',
       selector,
-      assertCurrent,
-      readPolicy: async () => {
+      assertCurrent: async () => {
         await assertCurrent();
-        const live = await this.dependencies.manifestService.loadForAgentId(
-          manifest.agent.id,
-          'service',
-        );
-        const policy =
-          live.status === 'loaded' ? assignmentIntakePolicy(live.manifest, 'openclaw') : undefined;
+      },
+      readPolicy: async () => {
+        const live = await assertCurrent();
+        const policy = assignmentIntakePolicy(live.manifest, 'openclaw');
         if (!policy) throw new IntakeError('intake-policy-disabled');
         return policy;
       },

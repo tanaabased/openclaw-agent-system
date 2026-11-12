@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
-import applyFeedbackScans from '../agent/apply-feedback-scans.ts';
-import feedbackDiscoveryOwner from '../agent/feedback-discovery-owner.ts';
+import applyFeedbackScans from '../agent/tasks/feedback/apply-feedback-scans.ts';
+import feedbackDiscoveryOwner from '../agent/tasks/feedback/feedback-discovery-owner.ts';
 
 describe('agent/apply-feedback-scans', () => {
   const owner = () => ({

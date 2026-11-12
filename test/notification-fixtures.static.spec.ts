@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
+import openclawIntakeJobs from '../agent/automations/openclaw-intake-policy.ts';
 import repositoryScope from '../channels/github/repository-scope.ts';
 import parseAgentManifest from '../manifest/parse.ts';
 
@@ -21,28 +21,16 @@ describe('examples/openclaw-notifications-scheduling fixture isolation', () => {
 });
 
 for (const id of [
-  'openclaw-issue-journey',
   'openclaw-issue-conversation',
   'openclaw-pr-journey',
-  'openclaw-issue-work',
   'openclaw-issue-work-custom',
-  'openclaw-issue-auto-work',
   'openclaw-issue-auto-plan',
-  'openclaw-pr-recipients',
   'openclaw-pr-update',
-  'openclaw-pr-presentation',
-  'openclaw-pr-collaboration',
   'openclaw-pr-discovery',
-  'openclaw-pr-reply-recovery',
   'openclaw-issue-intake',
   'openclaw-issue-assessment-recovery',
-  'openclaw-issue-feedback-policy',
   'openclaw-issue-assignment-policy',
-  'openclaw-issue-reactivation',
   'openclaw-notifications-retirement',
-  'openclaw-notifications-reset',
-  'openclaw-issue-progression',
-  'openclaw-issue-decision-recovery',
   'openclaw-notifications-scheduling',
 ]) {
   describe(`examples/${id} fixture configuration`, () => {
@@ -62,15 +50,11 @@ for (const id of [
       assert.deepEqual(policy?.runtimes, ['openclaw']);
       assert.equal(
         policy?.issueAssignment?.mode,
-        id === 'openclaw-issue-auto-work'
-          ? 'auto'
-          : ['openclaw-issue-work', 'openclaw-issue-work-custom'].includes(id)
-            ? 'work'
-            : 'plan',
+        id === 'openclaw-issue-work-custom' ? 'work' : 'plan',
       );
       assert.deepEqual(policy?.issueAssignment?.pullRequest?.recipients, [
         { source: 'assignment-actor', roles: ['assignee'] },
-        ...(['openclaw-issue-journey', 'openclaw-issue-conversation'].includes(id)
+        ...(id === 'openclaw-issue-conversation'
           ? [{ login: 'tanaabot', nodeId: '', reference: '@tanaabot', roles: ['reviewer'] }]
           : []),
       ]);

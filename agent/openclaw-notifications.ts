@@ -1,4 +1,4 @@
-import dispatchCreationStatus from './dispatch-creation-status.ts';
+import dispatchCreationStatus from './tasks/dispatch/dispatch-creation-status.ts';
 import {
   evaluateGitHubNotificationWait,
   type GitHubNotificationItemSelector,
@@ -13,14 +13,16 @@ import {
 } from '../channels/github/notification-policy.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import abortableDelay from '../utils/abortable-delay.ts';
-import { type default as assignmentIntakePolicy } from './assignment-intake-policy.ts';
-import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
-import { dispatchStorageNotice } from './dispatch-storage.ts';
+import { type default as assignmentIntakePolicy } from './automations/assignment-intake-policy.ts';
+import pendingDispatchAssignments, { issueKey } from './tasks/dispatch/dispatch-pending.ts';
+import { dispatchStorageNotice } from './tasks/dispatch/dispatch-storage.ts';
 import type { IssuePickupState } from './issue-pickup-state.ts';
-import type { ManagedIssueState as IntakeState } from './managed-issue.ts';
-import dispatchCapacity from './openclaw-capacity.ts';
-import OpenClawDispatchStore, { type OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
-import workflowStatus from './workflow-status.ts';
+import type { ManagedIssueState as IntakeState } from './tasks/managed-issue.ts';
+import dispatchCapacity from './tasks/dispatch/openclaw-capacity.ts';
+import OpenClawDispatchStore, {
+  type OpenClawDispatchRecord,
+} from './tasks/dispatch/openclaw-dispatch-state.ts';
+import workflowStatus from './tasks/workflow-status.ts';
 export type NotificationRefreshResult = GitHubNotificationRefreshResult;
 interface Dependencies {
   root: string;

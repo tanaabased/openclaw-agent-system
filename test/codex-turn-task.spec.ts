@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
-import codexContinuationNative from '../agent/codex-continuation-native.ts';
-import { selectCodexTurnTask } from '../agent/codex-turn-task.ts';
+import type { DispatchRecord } from '../agent/tasks/dispatch/codex-dispatch-state.ts';
+import codexContinuationNative from '../agent/tasks/implementation/codex-continuation-native.ts';
+import { selectCodexTurnTask } from '../agent/tasks/context/codex-turn-task.ts';
 
 const record = {
   id: 'a'.repeat(64),

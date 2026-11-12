@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 
-import readCodexTurnTask, { type readCodexTaskOwner } from '../agent/codex-turn-task.ts';
-import { codexCurrentTurnContext } from '../agent/codex-turn-context.ts';
+import readCodexTurnTask, {
+  type readCodexTaskOwner,
+} from '../agent/tasks/context/codex-turn-task.ts';
+import { codexCurrentTurnContext } from '../agent/tasks/context/codex-turn-context.ts';
 import type { connectCodexThreads } from '../agent/codex-thread-client.ts';
 
 describe('agent/codex-task-context', () => {

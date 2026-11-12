@@ -1,9 +1,9 @@
 import { resolve } from 'node:path';
 
-import type WorkspaceBackupService from '../agent/backup-service.ts';
-import { BackupCleanupError, type BackupCleanupResult } from '../agent/backup-cleanup.ts';
-import { BackupError, backupDefaultOutput } from '../agent/backup-types.ts';
-import { canonicalBackupPath } from '../agent/backup-selection.ts';
+import type WorkspaceBackupService from '../agent/backup/backup-service.ts';
+import { BackupCleanupError, type BackupCleanupResult } from '../agent/backup/backup-cleanup.ts';
+import { BackupError, backupDefaultOutput } from '../agent/backup/backup-types.ts';
+import { canonicalBackupPath } from '../agent/backup/backup-selection.ts';
 import {
   assertBackupLocationOwner,
   loadBackupManifest,

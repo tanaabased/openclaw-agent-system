@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { runInNewContext } from 'node:vm';
 
-import { codexWorkObservationHandoff } from '../agent/codex-dispatch-handoff.ts';
+import { codexWorkObservationHandoff } from '../agent/tasks/dispatch/codex-dispatch-handoff.ts';
 
 const pending = {
   status: 'observation-required',

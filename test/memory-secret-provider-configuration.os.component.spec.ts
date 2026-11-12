@@ -9,8 +9,8 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import {
   createMemorySecretProviderConfiguration,
   isAgentSystemMemorySecretProvider,
-} from '../agent/memory-secret-provider-configuration.ts';
-import createMemoryConfigurationPlan from '../agent/memory-configuration-plan.ts';
+} from '../agent/lifecycle/memory-secret-provider-configuration.ts';
+import createMemoryConfigurationPlan from '../agent/lifecycle/memory-configuration-plan.ts';
 import resolvePackageDirectory from '../core/package-directory.ts';
 
 const temporaryRoots: string[] = [];

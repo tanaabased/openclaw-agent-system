@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 
 import {
-  AutomationError,
   isOperatorAutomationGateway,
   createAutomationGateway,
   listNativeAutomations,
   nativeAutomation,
   nativeAutomationRun,
   nativeAutomationHistory,
-} from '../agent/automation-gateway.ts';
+} from '../agent/automations/automation-gateway.ts';
+import { AutomationError } from '../agent/automations/automation-errors.ts';
 import { privateStateFileLockLostErrorCode } from '../core/private-state-file-lock.ts';
 import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 import { controlledFileLock } from './private-state-file-lock-fixture.ts';

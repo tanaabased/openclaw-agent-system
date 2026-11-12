@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import AgentSystemToolError from '../api/error.ts';
-import { repositoryPreparationFailure } from '../agent/dispatch-retry.ts';
+import { repositoryPreparationFailure } from '../agent/tasks/dispatch/dispatch-retry.ts';
 import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
 
 import type { AgentManifest } from '../manifest/types.ts';

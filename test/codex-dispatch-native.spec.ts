@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { realpath } from 'node:fs/promises';
 
 import type { CodexThreadRequest } from '../agent/codex-thread-client.ts';
-import { codexDispatchNative, matchesDispatchCreation } from '../agent/codex-dispatch-native.ts';
+import {
+  codexDispatchNative,
+  matchesDispatchCreation,
+} from '../agent/tasks/dispatch/codex-dispatch-native.ts';
 
 const output =
   '<codex_delegation>\n  <source_thread_id>intake</source_thread_id>\n  <input>Assess &lt;issue&gt; &amp; retain.</input>\n</codex_delegation>';

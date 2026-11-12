@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import automationOperation, { type AutomationCommandOptions } from '../cli/automation-output.ts';
 import { writeBackupDiagnostics, writeBackupFailure } from '../cli/backup-output.ts';
-import { BackupError } from '../agent/backup-types.ts';
+import { BackupError } from '../agent/backup/backup-types.ts';
 import { createCliStyles } from '../cli/output.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 

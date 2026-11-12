@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import assessmentGuidance from '../agent/assessment-guidance.ts';
+import assessmentGuidance from '../agent/tasks/assessment/assessment-guidance.ts';
 import codexHostAccess from '../agent/codex-host-access.ts';
 
 describe('agent/assessment-guidance', () => {

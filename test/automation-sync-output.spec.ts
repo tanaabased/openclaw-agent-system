@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import ansis from 'ansis';
 import stringWidth from 'fast-string-width';
 
-import type { AutomationError } from '../agent/automation-gateway.ts';
+import type { AutomationError } from '../agent/automations/automation-errors.ts';
 import { createCliStyles } from '../cli/output.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import {

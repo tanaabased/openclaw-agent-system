@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import { cliDiagnosticContext } from '../core/cli-diagnostic-context.ts';
 import doctorAgentSystem from '../cli/doctor.ts';
-import type { AgentDoctorResult } from '../agent/doctor-service.ts';
+import type { AgentDoctorResult } from '../agent/lifecycle/doctor-service.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import { createCliStyles } from '../cli/output.ts';
 import { doctorFindings } from './lifecycle-presentation-fixtures.ts';

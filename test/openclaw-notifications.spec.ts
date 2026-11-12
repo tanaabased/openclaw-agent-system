@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 
 import { createCliStyles } from '../cli/output.ts';
 
-import assignmentIntakePolicy from '../agent/assignment-intake-policy.ts';
-import { issueKey } from '../agent/dispatch-pending.ts';
-import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
+import assignmentIntakePolicy from '../agent/automations/assignment-intake-policy.ts';
+import { issueKey } from '../agent/tasks/dispatch/dispatch-pending.ts';
+import type { OpenClawDispatchRecord } from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import OpenClawNotifications from '../agent/openclaw-notifications.ts';
-import workflowStatus from '../agent/workflow-status.ts';
+import workflowStatus from '../agent/tasks/workflow-status.ts';
 import refresh from '../channels/github/cli/refresh.ts';
 import status from '../channels/github/cli/status.ts';
 import wait from '../channels/github/cli/wait.ts';

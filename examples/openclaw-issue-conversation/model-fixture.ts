@@ -5,7 +5,7 @@ import { setTimeout } from 'node:timers/promises';
 
 import { getTextContent, type Fixture } from '@copilotkit/aimock';
 
-import { issueExampleScenario } from '../openclaw-issue-journey/model-fixture.ts';
+import { issueExampleScenario } from './issue-model.ts';
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 
 const queueHold: Fixture = {

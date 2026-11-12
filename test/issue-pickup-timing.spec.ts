@@ -5,8 +5,8 @@ import { runInNewContext } from 'node:vm';
 
 import timing from '../channels/github/issue-pickup-timing.ts';
 import decode, { issuePickupConfigurationCode } from '../channels/github/issue-pickup-schema.ts';
-import scheduleCondition from '../agent/automation-schedule-condition.ts';
-import codexSchedule from '../agent/codex-automation-schedule.ts';
+import scheduleCondition from '../agent/automations/automation-schedule-condition.ts';
+import codexSchedule from '../agent/automations/codex-automation-schedule.ts';
 import { pickupFixture } from './issue-pickup-fixture.ts';
 import duration from '../manifest/duration.ts';
 import timeOfDay from '../manifest/time-of-day.ts';

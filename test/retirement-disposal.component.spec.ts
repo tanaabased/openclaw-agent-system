@@ -2,19 +2,22 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { IssueDeliveryState } from '../agent/issue-delivery-state.ts';
-import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
-import { DirectEntryStore } from '../agent/direct-entry-store.ts';
-import type DispatchStore from '../agent/dispatch-state.ts';
-import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
-import { implementationEntriesSchema } from '../agent/implementation-entry-state.ts';
-import type { ManagedIssue } from '../agent/managed-issue.ts';
-import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
-import pendingRetirement from '../agent/pending-retirement.ts';
-import reconcileRetirementEffects from '../agent/reconcile-retirement-effects.ts';
-import ReplyStore, { type ReplyDraft } from '../agent/reply-store.ts';
-import { retirementDeliveryEffects, type RetirementEffect } from '../agent/retirement-effects.ts';
-import retirementLocalData from '../agent/retirement-local-data.ts';
+import type { IssueDeliveryState } from '../agent/tasks/delivery/issue-delivery-state.ts';
+import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
+import { DirectEntryStore } from '../agent/tasks/direct-entry-store.ts';
+import type DispatchStore from '../agent/tasks/dispatch/dispatch-state.ts';
+import type { SharedDispatchRecord } from '../agent/tasks/dispatch/dispatch-state.ts';
+import { implementationEntriesSchema } from '../agent/tasks/implementation/implementation-entry-state.ts';
+import type { ManagedIssue } from '../agent/tasks/managed-issue.ts';
+import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
+import pendingRetirement from '../agent/tasks/retirement/pending-retirement.ts';
+import reconcileRetirementEffects from '../agent/tasks/retirement/reconcile-retirement-effects.ts';
+import ReplyStore, { type ReplyDraft } from '../agent/tasks/feedback/reply-store.ts';
+import {
+  retirementDeliveryEffects,
+  type RetirementEffect,
+} from '../agent/tasks/retirement/retirement-effects.ts';
+import retirementLocalData from '../agent/tasks/retirement/retirement-local-data.ts';
 import { githubNotificationPublicationComment } from '../channels/github/publication/publication-contract.ts';
 import { account, intakeFixture } from './github-intake-fixture.ts';
 

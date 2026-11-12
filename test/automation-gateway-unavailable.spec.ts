@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import automationGatewayUnavailable from '../agent/automation-gateway-unavailable.ts';
+import automationGatewayUnavailable from '../agent/automations/automation-gateway-unavailable.ts';
 
 const transport = (fields: Record<string, unknown>) =>
   Object.assign(new Error('secret connection details'), {

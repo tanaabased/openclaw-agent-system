@@ -1,7 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import assert from 'node:assert/strict';
 
-import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
+import openclawIntakeJobs from '../agent/automations/openclaw-intake-policy.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 

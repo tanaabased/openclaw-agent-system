@@ -5,9 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
-import type { DispatchGit } from '../agent/codex-dispatch-project.ts';
-import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
-import codexIssueBranch from '../agent/codex-issue-branch.ts';
+import type { DispatchGit } from '../agent/tasks/dispatch/codex-dispatch-project.ts';
+import type { DispatchRecord } from '../agent/tasks/dispatch/codex-dispatch-state.ts';
+import codexIssueBranch from '../agent/tasks/dispatch/codex-issue-branch.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 
 const execute = promisify(execFile);

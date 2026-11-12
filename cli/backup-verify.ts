@@ -1,7 +1,7 @@
 import presentCliCommand from './presentation.ts';
 import { dirname, resolve } from 'node:path';
 
-import type WorkspaceBackupService from '../agent/backup-service.ts';
+import type WorkspaceBackupService from '../agent/backup/backup-service.ts';
 import {
   assertBackupArchiveLocation,
   assertBackupLocationOwner,

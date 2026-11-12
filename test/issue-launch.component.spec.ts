@@ -4,14 +4,17 @@ import IntakeRecordStore, {
   type IntakeObservation,
 } from '../channels/github/intake/record-store.ts';
 
-import type { AssessmentEntryDependencies } from '../agent/assessment-entry.ts';
-import assessmentOwner from '../agent/assessment-owner.ts';
-import { inspectAdmittedIssue, inspectContinuedIssue } from '../agent/dispatch-assignment.ts';
-import pendingDispatchAssignments from '../agent/dispatch-pending.ts';
-import issueLaunch from '../agent/issue-launch.ts';
-import { dispatchAdmission } from '../agent/managed-issue.ts';
-import managedOwner from '../agent/managed-owner.ts';
-import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
+import type { AssessmentEntryDependencies } from '../agent/tasks/assessment/assessment-entry.ts';
+import assessmentOwner from '../agent/tasks/assessment/assessment-owner.ts';
+import {
+  inspectAdmittedIssue,
+  inspectContinuedIssue,
+} from '../agent/tasks/dispatch/dispatch-assignment.ts';
+import pendingDispatchAssignments from '../agent/tasks/dispatch/dispatch-pending.ts';
+import issueLaunch from '../agent/tasks/dispatch/issue-launch.ts';
+import { dispatchAdmission } from '../agent/tasks/managed-issue.ts';
+import managedOwner from '../agent/tasks/managed-owner.ts';
+import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import type { LaunchRequest } from '../tools/dispatch/launch-schema.ts';
 import { baseline, fixturePullRequest, intakeFixture } from './github-intake-fixture.ts';
 
@@ -473,7 +476,7 @@ describe('agent/issue-launch', () => {
 
   it('should keep a prior automatic reservation as the assignment owner while launching independently', async () => {
     const { automationHash } = await import('../agent/automation-hash.ts');
-    const { issueKey } = await import('../agent/dispatch-pending.ts');
+    const { issueKey } = await import('../agent/tasks/dispatch/dispatch-pending.ts');
     const intakeId = automationHash([
       journal.scope,
       fixture.repository.nodeId,

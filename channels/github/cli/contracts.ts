@@ -1,4 +1,4 @@
-import type { dispatchStorageNotice } from '../../../agent/dispatch-storage.ts';
+import type { dispatchStorageNotice } from '../../../agent/tasks/dispatch/dispatch-storage.ts';
 import type { IntakeRecord } from '../intake/record-store.ts';
 import type { GitHubNotificationRuntimeDiagnostic } from '../notification-policy.ts';
 import {

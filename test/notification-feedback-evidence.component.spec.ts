@@ -4,12 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-for (const scenario of [
-  'openclaw-pr-journey',
-  'openclaw-pr-discovery',
-  'openclaw-pr-collaboration',
-  'openclaw-pr-reply-recovery',
-]) {
+for (const scenario of ['openclaw-pr-journey', 'openclaw-pr-discovery']) {
   describe(`examples/${scenario} retained feedback evidence`, () => {
     it('should permit only verified consumption on the earlier feedback event', async () => {
       const source = await readFile(`examples/${scenario}/README.md`, 'utf8');
@@ -43,6 +38,7 @@ for (const scenario of [
       const valid = execute(after);
       assert.equal(valid.status, 0, valid.stderr);
       assert.equal(execute(after, after).status, 0);
+      assert.equal(execute({ ...after, intakeReportedAt: 1 }).status, 0);
       assert.equal(
         execute(after, {
           ...before,
@@ -67,9 +63,8 @@ for (const scenario of [
 }
 
 for (const [scenario, itemType] of [
-  ['openclaw-issue-journey', 'issue'],
+  ['openclaw-issue-assignment-policy', 'issue'],
   ['openclaw-pr-journey', 'pull-request'],
-  ['openclaw-issue-reactivation', 'issue'],
 ]) {
   describe(`examples/${scenario} feedback evidence`, () => {
     it('should inspect only its requested run while rejecting real duplicate responses', async () => {
@@ -105,13 +100,7 @@ for (const [scenario, itemType] of [
           encoding: 'utf8',
         });
       try {
-        const summaries =
-          itemType === 'issue'
-            ? [
-                'summary',
-                ...(scenario === 'openclaw-issue-reactivation' ? ['refreshed-summary'] : []),
-              ]
-            : [];
+        const summaries = itemType === 'issue' ? ['summary'] : [];
         await write('feedback', {
           feedback: {
             events: [
@@ -163,17 +152,6 @@ for (const [scenario, itemType] of [
         });
         const valid = execute();
         assert.equal(valid.status, 0, valid.stderr);
-        if (scenario === 'openclaw-issue-journey') {
-          await write('feedback-history', {
-            requestedRunId: 'current',
-            messages: [{ ...incoming, content: providerSource.body }, answer],
-          });
-          assert.notEqual(execute().status, 0);
-          await write('feedback-history', {
-            requestedRunId: 'current',
-            messages: [incoming, prior, prior, prior, answer],
-          });
-        }
         await write('feedback-replies', [
           ...replies,
           { node_id: 'unexpected-reply', user: { login: 'tanaabot' }, body: 'Public answer.' },

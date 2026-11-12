@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import codexContinuationNative, {
   type CodexNativeAttempt,
-} from '../agent/codex-continuation-native.ts';
+} from '../agent/tasks/implementation/codex-continuation-native.ts';
 
 // constructed protocol cases; the authorized desktop pilot owns live native evidence.
 describe('agent/codex-continuation-native', () => {

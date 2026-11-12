@@ -3,7 +3,7 @@ import { Value } from 'typebox/value';
 import {
   implementationResultSchema,
   implementationPresentation,
-} from '../agent/implementation-result.ts';
+} from '../agent/tasks/implementation/implementation-result.ts';
 
 describe('agent/implementation-result', () => {
   const report = {

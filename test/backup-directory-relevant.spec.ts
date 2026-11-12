@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { dirname, matchesGlob } from 'node:path';
 
-import backupDirectoryRelevant from '../agent/backup-directory-relevant.ts';
+import backupDirectoryRelevant from '../agent/backup/backup-directory-relevant.ts';
 
 describe('agent/backup-directory-relevant', () => {
   it('should keep root brace alternatives from reaching unrelated directories', () => {

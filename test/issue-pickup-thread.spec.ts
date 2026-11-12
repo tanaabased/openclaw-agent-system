@@ -2,8 +2,8 @@ import { Value } from 'typebox/value';
 import { pickupInputSchema } from '../agent/issue-pickup.ts';
 import assert from 'node:assert/strict';
 
-import issuePickupJobs from '../agent/issue-pickup-jobs.ts';
-import { automationThreadSelection } from '../agent/automation-threads.ts';
+import issuePickupJobs from '../agent/automations/issue-pickup-jobs.ts';
+import { automationThreadSelection } from '../agent/automations/automation-thread-selection.ts';
 import { issuePickupPolicyDigest } from '../agent/issue-pickup-authority.ts';
 import parse from '../manifest/parse.ts';
 import { pickupDeclaration } from './issue-pickup-fixture.ts';
@@ -32,7 +32,7 @@ describe('issue pickup conversation selection', () => {
               runtimes: [runtime],
               routing: ['owner/*'],
               'issue-assignment': { allowed: [{ login: 'operator', 'node-id': 'U_operator' }] },
-              [runtime === 'codex' ? 'project-pickup' : 'issue-pickup']: {
+              'issue-pickup': {
                 ...pickupDeclaration,
 
                 thread,

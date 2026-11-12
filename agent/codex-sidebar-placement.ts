@@ -1,5 +1,5 @@
 import managedGroupName, { defaultManagedGroup } from '../utils/managed-group-name.ts';
-import { nativeObject } from './automation-gateway.ts';
+import { nativeObject } from './automations/automation-gateway.ts';
 
 export interface SidebarSection {
   sectionId: string;

@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict';
-import reactivateAssignmentFeedback from '../agent/assignment-feedback-reactivation.ts';
-import assignmentRetirement from '../agent/assignment-retirement.ts';
+import reactivateAssignmentFeedback from '../agent/tasks/feedback/assignment-feedback-reactivation.ts';
+import assignmentRetirement from '../agent/tasks/retirement/assignment-retirement.ts';
 import {
   parseCleanupConfiguration,
   type CleanupConfiguration,
 } from '../agent/cleanup-configuration.ts';
-import pendingAssignments, { issueKey } from '../agent/dispatch-pending.ts';
-import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
-import type { FeedbackSourceState } from '../agent/feedback-state.ts';
-import type { OperatorIssue } from '../agent/managed-issue.ts';
-import reconcile from '../agent/reconcile-assignment-lifecycle.ts';
-import workflowStatus from '../agent/workflow-status.ts';
+import pendingAssignments, { issueKey } from '../agent/tasks/dispatch/dispatch-pending.ts';
+import type { SharedDispatchRecord } from '../agent/tasks/dispatch/dispatch-state.ts';
+import type { FeedbackSourceState } from '../agent/tasks/feedback/feedback-state.ts';
+import type { OperatorIssue } from '../agent/tasks/managed-issue.ts';
+import reconcile from '../agent/tasks/dispatch/reconcile-assignment-lifecycle.ts';
+import workflowStatus from '../agent/tasks/workflow-status.ts';
 import type { IntakeRecord, IntakeState } from '../channels/github/intake/record-store.ts';
 import commentProviderFixture from './github-comment-provider-fixture.ts';
 import {

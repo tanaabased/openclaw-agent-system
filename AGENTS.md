@@ -81,7 +81,7 @@
 
 ## GitHub notification messages
 
-- Keep standalone Codex intake reports strictly about the current assignment scan and work creation: started items, pending assignments, capacity, and intake obstacles. After verified creation, plans, questions, assessment errors, and implementation progress belong in the individual issue. Retain issue-to-destination records for routing and capacity without publishing a lifecycle feed.
+- Keep standalone Codex intake reports strictly about the current assignment scan and work creation: started items, newly verified feedback delivery with issue-chat links, pending assignments, capacity, and intake obstacles. After verified creation, plans, questions, assessment errors, and implementation progress belong in the individual issue. Retain issue-to-destination records for routing and capacity without publishing a lifecycle feed.
 - Never make admission, dispatch, or duplicate prevention depend on copied notification text or proof of final-message delivery. Verify native creation independently; notification wording is advisory.
 
 - Keep provider primitives independent of runtime workflow ownership. Native runtime adapters own scheduling, authority, durable routing, dispatch, continuation, and publication; keep those concerns out of assignment scan state.

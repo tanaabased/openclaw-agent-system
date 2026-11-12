@@ -4,24 +4,44 @@ import {
   automationReportCardValid,
   automationReportInstructionsFor,
   default as automationReport,
-} from '../agent/automation-report.ts';
-import type AutomationReportStore from '../agent/automation-report-store.ts';
-import type { AutomationReportRecord } from '../agent/automation-report-store.ts';
+} from '../agent/automations/automation-report.ts';
+import type AutomationReportStore from '../agent/automations/automation-report-store.ts';
+import type { AutomationReportRecord } from '../agent/automations/automation-report-store.ts';
 
 /** only retained native run identities select a formatter turn; prompt prose never does. */
 export default function registerAutomationReportHooks(
-  api: Pick<OpenClawPluginApi, 'on'>,
+  api: Pick<OpenClawPluginApi, 'on' | 'logger'>,
   store: AutomationReportStore,
   reconcile: (id?: string) => Promise<void>,
 ) {
-  async function selected(context: {
-    runId?: string;
-    agentId?: string;
-    sessionKey?: string;
-    sessionId?: string;
-  }): Promise<AutomationReportRecord | undefined> {
-    if (!context.runId || !/^[a-f0-9-]{36}$/.test(context.runId)) return;
+  async function selected(
+    context: {
+      runId?: string;
+      agentId?: string;
+      sessionKey?: string;
+      sessionId?: string;
+    },
+    hook?: string,
+  ): Promise<AutomationReportRecord | undefined> {
+    if (!context.runId || !/^[a-f0-9-]{36}$/.test(context.runId)) {
+      if (hook)
+        api.logger.debug?.(
+          `automation report hook: ${JSON.stringify({ hook, runIdValid: false })}`,
+        );
+      return;
+    }
     const record = await store.read(context.runId);
+    if (hook)
+      api.logger.debug?.(
+        `automation report hook: ${JSON.stringify({
+          hook,
+          runId: context.runId,
+          recordFound: Boolean(record),
+          agentMatches: Boolean(record && record.target.agentId === context.agentId),
+          sessionKeyMatches: Boolean(record && record.target.sessionKey === context.sessionKey),
+          sessionIdMatches: Boolean(record && record.target.sessionId === context.sessionId),
+        })}`,
+      );
     if (
       !record ||
       record.target.agentId !== context.agentId ||
@@ -32,7 +52,7 @@ export default function registerAutomationReportHooks(
     return record;
   }
   api.on('before_prompt_build', async (_event, context) => {
-    const record = await selected(context);
+    const record = await selected(context, 'before_prompt_build');
     if (!record) return;
     await store.update(record.executionId, (current) => {
       current.guarded = true;
@@ -68,9 +88,22 @@ export default function registerAutomationReportHooks(
     });
   });
   api.on('before_agent_finalize', async (event, context) => {
-    const record = await selected({ ...context, runId: context.runId ?? event.runId });
-    if (!record || automationReportCardValid(event.lastAssistantMessage ?? '', record.input))
-      return;
+    const record = await selected(
+      { ...context, runId: context.runId ?? event.runId },
+      'before_agent_finalize',
+    );
+    if (!record) return;
+    const valid = automationReportCardValid(event.lastAssistantMessage ?? '', record.input);
+    api.logger.debug?.(
+      `automation report hook: ${JSON.stringify({
+        hook: 'finalize-validation',
+        runId: record.executionId,
+        responsePresent: Boolean(event.lastAssistantMessage),
+        valid,
+        correctionRequested: !valid,
+      })}`,
+    );
+    if (valid) return;
     // one bounded correction pass, never a repair loop or a transcript rewrite.
     return {
       action: 'revise',

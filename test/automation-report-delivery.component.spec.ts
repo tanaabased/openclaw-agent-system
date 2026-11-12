@@ -5,16 +5,16 @@ import { mkdtemp, realpath, rm } from 'node:fs/promises';
 
 import deliverAutomationReport, {
   reconcileAutomationReport,
-} from '../agent/automation-report-delivery.ts';
-import AutomationReportStore from '../agent/automation-report-store.ts';
+} from '../agent/automations/automation-report-delivery.ts';
+import AutomationReportStore from '../agent/automations/automation-report-store.ts';
 import {
   prepareLegacyAutomationReport,
   type AutomationReportInput,
-} from '../agent/automation-report.ts';
+} from '../agent/automations/automation-report.ts';
 import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
 import { sessionDispatchRequest } from '../credentials/session-dispatch-client.ts';
 import registerAutomationReportHooks from '../core/automation-report-hook.ts';
-import { AutomationError } from '../agent/automation-gateway.ts';
+import { AutomationError } from '../agent/automations/automation-errors.ts';
 
 const input: AutomationReportInput = {
   id: 'backup',
@@ -63,6 +63,7 @@ describe('agent/automation-report-delivery', () => {
   ) {
     const calls: string[] = [];
     const messages: string[] = [];
+    const diagnostics: string[] = [];
     const replies: unknown[] = [];
     const stages: { first: string; instruction: string; corrected: string; saved: string[] }[] = [];
     let selections = 0;
@@ -85,6 +86,7 @@ describe('agent/automation-report-delivery', () => {
     const hooks = new Map<string, Hook>();
     registerAutomationReportHooks(
       {
+        logger: { debug: (message: string) => diagnostics.push(message) },
         on: (name: string, fn: Hook) => {
           hooks.set(name, fn);
         },
@@ -277,6 +279,7 @@ describe('agent/automation-report-delivery', () => {
       recover,
       calls,
       messages,
+      diagnostics,
       store,
       hooks,
       stages,
@@ -303,6 +306,12 @@ describe('agent/automation-report-delivery', () => {
       const record = await f.store.read(executionId);
       assert.ok(record?.input.presentation && record.input.presentation.kind !== 'fallback');
       const expected = record.input.presentation.body;
+      const validation = f.diagnostics
+        .map((line) => JSON.parse(line.slice('automation report hook: '.length)))
+        .filter((event) => event.hook === 'finalize-validation');
+      assert.equal(validation[0].correctionRequested, true);
+      assert.equal(validation.at(-1).valid, correction === 'valid');
+      assert.ok(!f.diagnostics.join('\n').includes('Source saved.'));
       const stage = f.stages[0]!;
       assert.notEqual(stage.first, expected);
       assert.equal(stage.corrected, expected);

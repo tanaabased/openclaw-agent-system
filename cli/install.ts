@@ -1,7 +1,7 @@
 import { formatErrorMessage } from 'openclaw/plugin-sdk/error-runtime';
 
-import { AutomationError } from '../agent/automation-gateway.ts';
-import { retainAutomationGatewayDiagnostic } from '../agent/automation-gateway-diagnostic.ts';
+import { AutomationError } from '../agent/automations/automation-errors.ts';
+import { retainAutomationGatewayDiagnostic } from '../agent/automations/automation-gateway-diagnostic.ts';
 import { retainSessionDispatchDiagnostic } from '../credentials/session-dispatch-diagnostic.ts';
 
 import { manifestNotices, lifecycleWarningNotice } from './diagnostic-notices.ts';
@@ -12,7 +12,7 @@ import confirmSetupInstall, { type SetupConsentOptions } from './setup-consent.t
 import {
   AgentInstallError,
   type default as AgentInstallService,
-} from '../agent/install-service.ts';
+} from '../agent/lifecycle/install-service.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import {
   type CliOutput,
@@ -27,7 +27,7 @@ import {
   AgentSystemLifecycleError,
   type AgentSystemLifecycleWarning,
 } from '../core/lifecycle-registry.ts';
-import { selectedSetupPhases } from '../agent/install-options.ts';
+import { selectedSetupPhases } from '../agent/lifecycle/install-options.ts';
 
 export interface InstallAgentSystemOptions extends Pick<
   SetupConsentOptions,

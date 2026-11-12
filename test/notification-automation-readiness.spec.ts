@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict';
 
-import type { AutomationGateway } from '../agent/automation-gateway.ts';
+import type { AutomationGateway } from '../agent/automations/automation-gateway.ts';
 import notificationAutomationReadiness, {
   type NotificationScheduler,
-} from '../agent/automation-readiness.ts';
+} from '../agent/automations/automation-readiness.ts';
 import {
   effectiveAutomation,
   nativeAutomationHash,
   projectAutomation,
-} from '../agent/automation-projection.ts';
-import AutomationStore, { type AutomationRecord } from '../agent/automation-store.ts';
-import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
+} from '../agent/automations/automation-projection.ts';
+import AutomationStore, { type AutomationRecord } from '../agent/automations/automation-store.ts';
+import openclawIntakeJobs from '../agent/automations/openclaw-intake-policy.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 

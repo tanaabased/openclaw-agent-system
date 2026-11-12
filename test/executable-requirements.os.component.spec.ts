@@ -3,7 +3,7 @@ import { chmod, mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import AgentDoctorService from '../agent/doctor-service.ts';
+import AgentDoctorService from '../agent/lifecycle/doctor-service.ts';
 import defineAgentSystemCliTool from '../api/define-cli-tool.ts';
 import {
   requiredToolExecutables,

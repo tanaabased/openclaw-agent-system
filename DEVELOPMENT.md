@@ -146,7 +146,7 @@ Full `bun run validate` is optional comprehensive validation, not a routine pre-
 Classify each assertion by what it proves, not its filename or test runner:
 
 - **Unit tests** execute an owned function or small code unit with controlled inputs and assert its outputs, decisions, or boundary calls. Reading fixture data does not change the category. Renderer snapshots and parser rejection cases can be valid unit tests.
-- **Component tests** exercise cooperating units through real process, filesystem, or platform boundaries. Installed OpenClaw journeys belong in the GitHub Actions-only Leia examples.
+- **Component tests** exercise real cooperation among owned units with external boundaries injected. Use real process, filesystem, or platform boundaries only when those boundaries are part of the contract. Installed runtime journeys belong in the GitHub Actions-only Leia examples.
 - **Static checks** inspect source, configuration, documentation, or artifacts without exercising the behavior they describe. They establish an invariant, not successful runtime execution.
 
 Keep a static check only when breaking its rule would affect correctness, compatibility,

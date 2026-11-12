@@ -1,21 +1,22 @@
+import type { FeedbackProvider } from '../agent/tasks/feedback/feedback-provider.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { recoverRetainedAnnouncement } from '../agent/delivery-announcement.ts';
-import { feedbackRevision } from '../agent/feedback-source.ts';
-import manualPullRequest from '../agent/manual-pull-request.ts';
-import { openClawWorkSlot } from '../agent/openclaw-continuation.ts';
-import { authorizeFeedback, type OpenClawFeedbackProvider } from '../agent/openclaw-feedback.ts';
+import { recoverRetainedAnnouncement } from '../agent/tasks/delivery/delivery-announcement.ts';
+import { feedbackRevision } from '../agent/tasks/feedback/feedback-source.ts';
+import manualPullRequest from '../agent/tasks/dispatch/manual-pull-request.ts';
+import { openClawWorkSlot } from '../agent/tasks/implementation/openclaw-continuation.ts';
+import { authorizeFeedback } from '../agent/tasks/feedback/openclaw-feedback.ts';
 import { account, fixturePullRequest, intakeFixture } from './github-intake-fixture.ts';
 
 import announcementFixture from './delivery-announcement-fixture.ts';
 
-import selectFeedbackStage from '../agent/feedback-stage.ts';
+import selectFeedbackStage from '../agent/tasks/feedback/feedback-stage.ts';
 import openClawSkill from '../agent/openclaw-skill.ts';
 
-import openClawDelivery from '../agent/openclaw-delivery.ts';
-import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
+import openClawDelivery from '../agent/tasks/delivery/openclaw-delivery.ts';
+import type { OpenClawDispatchRecord } from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 
 const response = (value: unknown) => ({
@@ -125,6 +126,12 @@ describe('agent/openclaw-delivery', () => {
             if (argv[0] === 'rev-parse')
               return argv.some((arg) => arg.startsWith('refs/agent-system/pr/')) ? remote : head;
             if (argv[0] === 'status') return dirty ? ' M file' : '';
+            if (argv[0] === 'for-each-ref') return '';
+            if (
+              argv[0] === 'ls-remote' &&
+              ['refs/heads/release/2.x', 'refs/heads/earlier-target'].includes(argv.at(-1)!)
+            )
+              return `${'d'.repeat(40)}\t${argv.at(-1)}`;
             if (argv[0] === 'rev-list') return '1';
             if (argv[0] === 'remote') return 'git@github.com:owner/repo.git';
             if (argv[0] === 'ls-remote') return remote ? `${remote}\trefs/heads/task-branch` : '';
@@ -450,7 +457,7 @@ describe('agent/openclaw-delivery', () => {
       source: JSON.stringify(source),
       revision: feedbackRevision(source),
     };
-    const provider: OpenClawFeedbackProvider = {
+    const provider: FeedbackProvider = {
       ...fixture.client,
       getItem: async () => item,
       getItemContext: async () => ({

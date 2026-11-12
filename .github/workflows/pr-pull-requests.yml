@@ -23,12 +23,8 @@ jobs:
       matrix:
         example:
           - openclaw-pr-journey
-          - openclaw-pr-recipients
           - openclaw-pr-update
-          - openclaw-pr-presentation
-          - openclaw-pr-collaboration
           - openclaw-pr-discovery
-          - openclaw-pr-reply-recovery
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -60,9 +56,9 @@ jobs:
             version-injector .codex-plugin/plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
             version-injector openclaw.plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
             bun run format:write
-            bun run build
       - name: Check prepared plugin
         run: |
+          bun run build
           bun run plugin:check
           bun run format:check
       - name: Pack prepared plugin

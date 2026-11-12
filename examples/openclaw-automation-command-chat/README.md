@@ -35,6 +35,7 @@ reports through the real Gateway response path.
 # should create one reporting chat per runtime for both command declarations
 export OPENAI_API_KEY=agent-system-aimock-test
 export COMMAND_CHAT_EVIDENCE_PATH="$TMPDIR/command-chat-model.jsonl"
+export COMMAND_CHAT_HOOK_TRACE_PATH="$TMPDIR/command-chat-hooks.jsonl"
 # mock catalog discovery without changing the provider route's supported runtimes.
 export NODE_OPTIONS="--import=$GITHUB_WORKSPACE/examples/openclaw-automation-command-chat/catalog-fixture.mjs"
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --model openai/gpt-5.5
@@ -42,6 +43,7 @@ openclaw-aimock prepare --scenario openclaw-automation-command-chat
 openclaw config set models.mode merge
 openclaw config set memory.search.enabled false --strict-json
 openclaw config set plugins.entries.codex.config.codexDynamicToolsLoading direct
+openclaw config set plugins.entries.codex.config.appServer.command "$GITHUB_WORKSPACE/examples/openclaw-automation-command-chat/codex-hook-trace.mjs"
 openclaw config set plugins.entries.codex.config.appServer.args '["-c","openai_base_url=\"http://127.0.0.1:4010/v1\"","app-server","--listen","stdio://"]' --strict-json
 openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true --strict-json
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
@@ -64,7 +66,7 @@ jq -e 'any(.models[]; .provider == "openai" and .id == "gpt-5.5" and .available 
 
 ```bash
 # should retain both mock-formatted reports without rerunning their commands
-trap 'result=$?; if test "$result" -ne 0; then cat "$TMPDIR/command-chat-model.jsonl" >&2 || true; curl --silent --show-error --max-time 5 http://127.0.0.1:4010/proof/diagnostics >&2 || true; curl --silent --show-error --max-time 5 http://127.0.0.1:4010/proof/evidence >&2 || true; fi; exit "$result"' EXIT
+trap 'result=$?; if test "$result" -ne 0; then grep -F "automation report hook:" "$(openclaw-gateway log-path)" | tail -n 60 >&2 || true; cat "$TMPDIR/command-chat-model.jsonl" >&2 || true; cat "$TMPDIR/command-chat-hooks.jsonl" >&2 || true; curl --silent --show-error --max-time 5 http://127.0.0.1:4010/proof/diagnostics >&2 || true; curl --silent --show-error --max-time 5 http://127.0.0.1:4010/proof/evidence >&2 || true; fi; exit "$result"' EXIT
 for runtime in openclaw codex; do
   workspace="$GITHUB_WORKSPACE/examples/openclaw-automation-command-chat"
   model=aimock/gpt-5.5

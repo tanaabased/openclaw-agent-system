@@ -1,7 +1,7 @@
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
-import { nativeObject } from './automation-gateway.ts';
+import { nativeObject } from './automations/automation-gateway.ts';
 import type { NotificationResetRecord } from './notification-reset-state.ts';
-import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import type { OpenClawDispatchRecord } from './tasks/dispatch/openclaw-dispatch-state.ts';
 
 /** fresh reset observes native activity without reconstructing obsolete creation receipts. */
 export default async function observeResetUnresolved(

@@ -19,7 +19,7 @@ import { dirname, join } from 'node:path';
 import createSetupCommandRunner, {
   SetupCommandError,
   type SetupExecutionContext,
-} from '../agent/setup-runner.ts';
+} from '../agent/lifecycle/setup-runner.ts';
 import type { AgentSetupCommand, AgentSetupShell } from '../manifest/setup-schema.ts';
 
 type HostRunner = Parameters<typeof createSetupCommandRunner>[0]['runCommandWithTimeout'];

@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { dispatchTaskSession, withDispatchTask } from '../agent/dispatch-task-scope.ts';
+import {
+  dispatchTaskSession,
+  withDispatchTask,
+} from '../agent/tasks/dispatch/dispatch-task-scope.ts';
 
 describe('agent/dispatch-task-scope', () => {
   it('should restrict the scope to its native runtime and clear missing callers', () => {

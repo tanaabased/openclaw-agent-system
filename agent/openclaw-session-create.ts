@@ -5,8 +5,8 @@ import { validateSessionsCreateParams } from '@openclaw/gateway-protocol';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import { buildAgentMainSessionKey } from 'openclaw/plugin-sdk/routing';
 
-import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
-import sessionSettings from './session-settings.ts';
+import type { OpenClawDispatchRecord } from './tasks/dispatch/openclaw-dispatch-state.ts';
+import sessionSettings from './models/session-settings.ts';
 import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
 import type { DispatchAuthority, DispatchRequest } from '../credentials/session-dispatch.ts';
 

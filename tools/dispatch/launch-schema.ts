@@ -1,8 +1,8 @@
-import { issueChatTitleGuidance } from '../../agent/issue-chat-title.ts';
+import { issueChatTitleGuidance } from '../../agent/tasks/dispatch/issue-chat-title.ts';
 import { Type, type Static } from 'typebox';
 
 import { assessmentConfigurationSchema } from '../../manifest/assessment-schema.ts';
-import { assessmentSchema, selectedProfileSchema } from '../../agent/model-routing.ts';
+import { assessmentSchema, selectedProfileSchema } from '../../agent/models/model-routing.ts';
 
 export const launchRequestSchema = Type.Object(
   {

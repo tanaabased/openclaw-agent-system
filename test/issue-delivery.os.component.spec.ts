@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
-import publishIssueDelivery from '../agent/publish-issue-delivery.ts';
+import publishIssueDelivery from '../agent/tasks/delivery/publish-issue-delivery.ts';
 
 const execute = promisify(execFile);
 

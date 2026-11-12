@@ -12,7 +12,7 @@ import {
 } from './load.ts';
 import readManifestFile from './read-file.ts';
 import type { AgentManifest, ManifestDiagnostic } from './types.ts';
-import resolveAgentId, { type AgentRuntimeContext } from '../agent/resolve-id.ts';
+import resolveAgentId, { type AgentRuntimeContext } from '../agent/identity/resolve-id.ts';
 
 export type {
   AgentManifestLoadResult,

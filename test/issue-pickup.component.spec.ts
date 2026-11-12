@@ -3,13 +3,10 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import {
-  runCodexIntake,
-  selectCodexIntake,
-  type CodexIntakeDependencies,
-} from '../agent/codex-intake.ts';
-import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
-import issueWorkflowMode from '../agent/issue-workflow-mode.ts';
+import { runCodexIntake, type CodexIntakeDependencies } from '../agent/codex-intake.ts';
+import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
+import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
+import issueWorkflowMode from '../agent/tasks/issue-workflow-mode.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import {
   issuePickupPolicyDigest,
@@ -71,7 +68,7 @@ describe('issue pickup native intake adapters', () => {
         connect: async () => f.client,
       };
       await runCodexIntake(data, true, deps);
-      const selected = await selectCodexIntake(data, deps);
+      const selected = await selectCodexTaskContext(data, deps);
       scope = selected.store.location.scope;
       run = () => runCodexIntake(data, false, deps);
       read = async () => (await selected.store.read())!.records;

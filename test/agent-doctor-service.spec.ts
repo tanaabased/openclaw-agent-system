@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import AgentDoctorService from '../agent/doctor-service.ts';
+import AgentDoctorService from '../agent/lifecycle/doctor-service.ts';
 
 const input = {
   runtime: 'openclaw' as const,

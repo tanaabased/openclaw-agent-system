@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { Value } from 'typebox/value';
-import codexContextRequest from '../agent/codex-context-request.ts';
-import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
-import type { FeedbackSourceEvent } from '../agent/feedback-state.ts';
-import type { ManagedIssue } from '../agent/managed-issue.ts';
-import nativeFeedbackPublication from '../agent/native-feedback-publication.ts';
-import nativeFeedbackReconciliation from '../agent/native-feedback-reconciliation.ts';
-import nativeFeedbackSource from '../agent/native-feedback-source.ts';
+import codexContextRequest from '../agent/tasks/context/codex-context-request.ts';
+import type { SharedDispatchRecord } from '../agent/tasks/dispatch/dispatch-state.ts';
+import type { FeedbackSourceEvent } from '../agent/tasks/feedback/feedback-state.ts';
+import type { ManagedIssue } from '../agent/tasks/managed-issue.ts';
+import nativeFeedbackPublication from '../agent/tasks/feedback/native-feedback-publication.ts';
+import nativeFeedbackReconciliation from '../agent/tasks/feedback/native-feedback-reconciliation.ts';
+import nativeFeedbackSource from '../agent/tasks/feedback/native-feedback-source.ts';
 import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 
 const events = [41, 42].map((number) => ({

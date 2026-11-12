@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import taskPullRequest, {
   isCurrentTaskPullRequest,
   setTaskPullRequestLink,
-} from '../agent/task-pull-request.ts';
-import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
+} from '../agent/tasks/delivery/task-pull-request.ts';
+import type { SharedDispatchRecord } from '../agent/tasks/dispatch/dispatch-state.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
 describe('agent/task-pull-request', () => {

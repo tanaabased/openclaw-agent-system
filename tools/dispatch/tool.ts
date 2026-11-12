@@ -1,24 +1,25 @@
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import { Value } from 'typebox/value';
 import codexIssueNotice from '../../agent/codex-issue-notice.ts';
-import contextMaterialTransport from '../../agent/context-material-transport.ts';
-import { dispatchFailurePhase } from '../../agent/dispatch-retry.ts';
-import nativeTaskInstructions from '../../agent/native-task-instructions.ts';
+import contextMaterialTransport from '../../agent/tasks/context/context-material-transport.ts';
+import { dispatchFailurePhase } from '../../agent/tasks/dispatch/dispatch-retry.ts';
+import nativeTaskInstructions from '../../agent/tasks/context/native-task-instructions.ts';
 import openClawConditionCheck from '../../agent/openclaw-condition-check.ts';
 import { readOpenClawTurnInput } from '../../agent/openclaw-turn-binding.ts';
-import workflowFailure, { workflowFailureScope } from '../../agent/workflow-failure.ts';
-import workflowNoticeInstructions from '../../agent/workflow-notice-instructions.ts';
-import WorkflowRequestError from '../../agent/workflow-request-error.ts';
+import workflowFailure, { workflowFailureScope } from '../../agent/tasks/workflow-failure.ts';
+import workflowNoticeInstructions from '../../agent/tasks/workflow-notice-instructions.ts';
+import WorkflowRequestError from '../../agent/tasks/workflow-request-error.ts';
 
-import type AutomationService from '../../agent/automation-service.ts';
-import AutomationThreads, { automationThreadSelection } from '../../agent/automation-threads.ts';
+import type AutomationService from '../../agent/automations/automation-service.ts';
+import AutomationThreads from '../../agent/automations/automation-threads.ts';
+import { automationThreadSelection } from '../../agent/automations/automation-thread-selection.ts';
 import OpenClawDispatch, {
   openClawDispatchFailureCode,
   type OpenClawDispatchDependencies,
-} from '../../agent/openclaw-dispatch.ts';
+} from '../../agent/tasks/dispatch/openclaw-dispatch.ts';
 import openclawIntakeJobs, {
   openclawIntakeAutomationId,
-} from '../../agent/openclaw-intake-policy.ts';
+} from '../../agent/automations/openclaw-intake-policy.ts';
 import type OpenClawIntake from '../../agent/openclaw-intake.ts';
 import type { DispatchCaller } from '../../agent/openclaw-session-create.ts';
 import AgentSystemToolError from '../../api/error.ts';
@@ -67,6 +68,7 @@ export default function createDispatchTool(input: {
   claimStore?: OpenClawDispatchDependencies['claimStore'];
   claims?: OpenClawDispatchDependencies['claims'];
   intake: OpenClawIntake;
+  taskContext: OpenClawDispatchDependencies['taskContext'];
   connect: OpenClawDispatchDependencies['connect'];
   automations: AutomationService;
   manifestService: Pick<AgentManifestService, 'loadForAgentId'>;
@@ -93,6 +95,7 @@ export default function createDispatchTool(input: {
     config: input.config,
     credential: input.credential,
     intake: input.intake,
+    taskContext: input.taskContext,
     worktrees: input.worktrees,
     connect: input.connect,
     delivery: input.delivery,

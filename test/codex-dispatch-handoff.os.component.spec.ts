@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 
-import codexDispatchHandoff from '../agent/codex-dispatch-handoff.ts';
+import codexDispatchHandoff from '../agent/tasks/dispatch/codex-dispatch-handoff.ts';
 
 describe('agent/codex-dispatch-handoff process transport', () => {
   it('should reuse the saved launcher after removing its original node installation', async () => {

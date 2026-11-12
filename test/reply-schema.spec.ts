@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
-import codexReply from '../agent/codex-reply.ts';
-import openClawReply from '../agent/openclaw-reply.ts';
+import codexReply from '../agent/tasks/feedback/codex-reply.ts';
+import openClawReply from '../agent/tasks/feedback/openclaw-reply.ts';
 import { parseReplyRequest } from '../tools/dispatch/reply-schema.ts';
 
 describe('tools/dispatch/reply-schema', () => {

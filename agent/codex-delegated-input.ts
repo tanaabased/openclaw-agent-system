@@ -1,4 +1,4 @@
-import { nativeObject } from './automation-gateway.ts';
+import { nativeObject } from './automations/automation-gateway.ts';
 import codexToolOutputText from './codex-tool-output-text.ts';
 
 /** Decode native delegation output without normalizing the source or input itself. */

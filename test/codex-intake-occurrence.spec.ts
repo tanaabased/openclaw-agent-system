@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import type CodexDispatchStore from '../agent/codex-dispatch-state.ts';
+import type CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import acceptOccurrence from '../agent/codex-intake-occurrence.ts';
 
 describe('codex intake occurrence', () => {

@@ -4,9 +4,9 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import createMemoryLifecycleContribution, {
   type MemoryLifecycleDependencies,
-} from '../agent/memory-lifecycle.ts';
-import { memorySecretProviderAlias } from '../agent/memory-configuration-plan.ts';
-import type { MemoryStatus } from '../agent/memory-status.ts';
+} from '../agent/lifecycle/memory-lifecycle.ts';
+import { memorySecretProviderAlias } from '../agent/lifecycle/memory-configuration-plan.ts';
+import type { MemoryStatus } from '../agent/lifecycle/memory-status.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 
 const manifest: AgentManifest = {

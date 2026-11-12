@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import taskUpdate, { type TaskUpdateDraft } from '../agent/task-update.ts';
+import taskUpdate, { type TaskUpdateDraft } from '../agent/tasks/feedback/task-update.ts';
 
 function fixture() {
   const draft: TaskUpdateDraft = {};

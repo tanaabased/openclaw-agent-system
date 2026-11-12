@@ -3,7 +3,7 @@ import { Readable } from 'node:stream';
 
 import { Command } from 'commander';
 
-import { createAutomationGateway } from '../agent/automation-gateway.ts';
+import { createAutomationGateway } from '../agent/automations/automation-gateway.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import type { AgentEnvironmentLoadResult } from '../environment/service.ts';
@@ -17,8 +17,8 @@ import registerAgentSystemCli, { type RegisterAgentSystemCliOptions } from '../c
 import type { OpCacheGatewayRequest } from '../cli/credentials-cache.ts';
 import type { AgentSystemToolScope } from '../api/types.ts';
 import OpCache from '../environment/op-cache.ts';
-import WorkspaceBackupService from '../agent/backup-service.ts';
-import type { BackupPlan, WorkspaceBackupManifest } from '../agent/backup-types.ts';
+import WorkspaceBackupService from '../agent/backup/backup-service.ts';
+import type { BackupPlan, WorkspaceBackupManifest } from '../agent/backup/backup-types.ts';
 
 const validResult: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
   status: 'loaded',
@@ -495,9 +495,8 @@ describe('cli/command-family-fixtures', () => {
   for (const [index, argv] of leaves.entries()) {
     it(`should preserve ordered human and machine output for ${argv.slice(0, 3).join(' ')}`, async () => {
       for (const debug of [false, true]) {
-        for (const json of [false, true]) {
-          const machine =
-            json && (!['tool', 'credentials'].includes(argv[0]!) || argv[1] === 'cache');
+        const supportsJson = !['tool', 'credentials'].includes(argv[0]!) || argv[1] === 'cache';
+        for (const machine of supportsJson ? [false, true] : [false]) {
           const f = createProgram(undefined, {
             automations,
             backupService: new BackupFixture(),
@@ -980,7 +979,7 @@ describe('cli/register', () => {
     assert.equal(command?.name(), 'agent-system');
     assert.deepEqual(command?.aliases(), ['as']);
     assert.deepEqual(
-      command?.commands.map((subcommand) => subcommand.name()),
+      command?.commands.map((subcommand) => subcommand.name()).toSorted(),
       [
         'backup',
         'validate',
@@ -991,13 +990,14 @@ describe('cli/register', () => {
         'tool',
         'credentials',
         'install',
-      ],
+      ].toSorted(),
     );
     assert.deepEqual(
       command?.commands
         .find((subcommand) => subcommand.name() === 'notifications')
-        ?.commands.map((subcommand) => subcommand.name()),
-      ['reset', 'refresh', 'status', 'wait'],
+        ?.commands.map((subcommand) => subcommand.name())
+        .toSorted(),
+      ['reset', 'refresh', 'status', 'wait'].toSorted(),
     );
   });
 

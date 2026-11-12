@@ -10,7 +10,7 @@ import { maximumManifestBytes } from '../manifest/read-bytes.ts';
 import readManifestFile from '../manifest/read-file.ts';
 import AgentManifestService from '../manifest/service.ts';
 import { normalizeAgentSetup } from '../manifest/setup-schema.ts';
-import setupStepApplies from '../agent/setup-runtime.ts';
+import setupStepApplies from '../agent/lifecycle/setup-runtime.ts';
 
 describe('manifest/setup-file', () => {
   let root: string;

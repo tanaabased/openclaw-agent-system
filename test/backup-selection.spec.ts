@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 
-import { safeBackupLink } from '../agent/backup-archive.ts';
-import { resolveBackupConfiguration, safeBackupRelativePath } from '../agent/backup-selection.ts';
+import { safeBackupLink } from '../agent/backup/backup-archive.ts';
+import {
+  resolveBackupConfiguration,
+  safeBackupRelativePath,
+} from '../agent/backup/backup-selection.ts';
 
 describe('agent/backup-selection', () => {
   it('should resolve defaults and replace or clear manifest lists', () => {

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import ansis from 'ansis';
 import stringWidth from 'fast-string-width';
 
-import { BackupCleanupError, type BackupCleanupResult } from '../agent/backup-cleanup.ts';
+import { BackupCleanupError, type BackupCleanupResult } from '../agent/backup/backup-cleanup.ts';
 import backupCleanup from '../cli/backup-cleanup.ts';
 import { createCliStyles } from '../cli/output.ts';
 import type { AgentCommandBinding } from '../agent/command-authority.ts';

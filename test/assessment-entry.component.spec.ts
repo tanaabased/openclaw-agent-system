@@ -3,20 +3,24 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import renderNativeAssessment from '../agent/assessment-render.ts';
+import renderNativeAssessment from '../agent/tasks/assessment/assessment-render.ts';
 import { conversationExampleScenario } from '../examples/openclaw-issue-conversation/model-fixture.ts';
 
-import assessmentEntry, { type AssessmentEntryDependencies } from '../agent/assessment-entry.ts';
-import assessmentOwner from '../agent/assessment-owner.ts';
-import { assessmentResultFormat, type AssessmentSubmission } from '../agent/assessment-result.ts';
-import assessmentSkillSource from '../agent/assessment-skill-source.ts';
-import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
-import { nativeIssueContext } from '../agent/native-issue-context.ts';
+import assessmentEntry, {
+  type AssessmentEntryDependencies,
+} from '../agent/tasks/assessment/assessment-entry.ts';
+import assessmentOwner from '../agent/tasks/assessment/assessment-owner.ts';
+import {
+  assessmentResultFormat,
+  type AssessmentSubmission,
+} from '../agent/tasks/assessment/assessment-result.ts';
+import assessmentSkillSource from '../agent/tasks/assessment/assessment-skill-source.ts';
+import { nativeIssueContext } from '../agent/tasks/context/native-issue-context.ts';
+import type { SharedDispatchRecord } from '../agent/tasks/dispatch/dispatch-state.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
 import hydrateImplementation from './implementation-material-fixture.ts';
-import nativeMaterialFixture from './native-material-fixture.ts';
 const target = 'https://github.com/owner/repo/issues/3';
 const ready = {
   outcome: 'plan-ready',
@@ -96,41 +100,10 @@ describe('agent/assessment-entry', () => {
         assert.deepEqual(complete.resultFormat, assessmentResultFormat);
         assert.equal(typeof complete.instructions, 'string');
       };
-      if (runtime === 'openclaw')
-        await nativeMaterialFixture({ request, run, verify, minimumPages: 0 });
-      else verify(await hydrateImplementation(await run(request), run));
+      verify(await hydrateImplementation(await run(request), run));
       await assert.rejects(readdir(deps.root), { code: 'ENOENT' });
     });
 
-  it('should deliver a complete fallback through the real native tool output limit', async () => {
-    const partial = {
-      summary: ready.summary,
-      reviewSummary: ready.reviewSummary,
-    };
-    const source = {
-      ...partial,
-      outcome: 'clarification-needed',
-      reviewSummary: 'Choose the intended experience.',
-      questions: Array.from(
-        { length: 5 },
-        (_, i) => `Question ${i}: ` + 'important detail '.repeat(700),
-      ),
-    };
-    const request = { action: 'assessment', operation: 'render', target, result: source };
-    await nativeMaterialFixture({
-      request,
-      run: (input) => renderNativeAssessment(input, 'openclaw'),
-      minimumPages: 0,
-      verify: (output) => {
-        assert.equal(output.retained, false);
-        assert.equal(output.status, 'presentation-unavailable');
-        assert.equal(output.contextMaterials, undefined);
-        assert.match(String(output.instructions), /every unanswered question/);
-        assert.match(String(output.instructions), /ordinary Markdown/);
-      },
-    });
-    await assert.rejects(readdir(deps.root), { code: 'ENOENT' });
-  });
   for (const runtime of ['codex', 'openclaw'] as const) {
     it(`should preserve delivered ${runtime} planning facts when skill lookup fails`, async () => {
       deps.binding.runtime = runtime;
@@ -465,9 +438,10 @@ describe('agent/native-assessment-entry', () => {
           ? workspace
           : 'a'.repeat(40);
   it('should assess in an ordinary codex chat without activation, native creation or managed tools', async () => {
-    const { bindCodexWorkspace } = await import('../agent/codex-workspace-binding.ts');
-    const { default: codexAssessmentEntry } = await import('../agent/codex-assessment-entry.ts');
-    const { runCodexDispatch } = await import('../agent/codex-dispatch.ts');
+    const { bindCodexWorkspace } = await import('../agent/identity/codex-workspace-binding.ts');
+    const { default: codexAssessmentEntry } =
+      await import('../agent/tasks/assessment/codex-assessment-entry.ts');
+    const { runCodexDispatch } = await import('../agent/tasks/dispatch/codex-dispatch.ts');
     const home = join(root, 'codex'),
       data = join(root, 'plugin');
     await mkdir(home);
@@ -555,7 +529,8 @@ describe('agent/native-assessment-entry', () => {
   });
   it('should require a verified openclaw operator and remain assessment-only under work defaults', async () => {
     const { default: OpenClawIntake } = await import('../agent/openclaw-intake.ts');
-    const { default: OpenClawDispatch } = await import('../agent/openclaw-dispatch.ts');
+    const { default: OpenClawDispatch } =
+      await import('../agent/tasks/dispatch/openclaw-dispatch.ts');
     const fixture = intakeFixture();
     const provider = {
       ...fixture.client,
@@ -579,25 +554,27 @@ describe('agent/native-assessment-entry', () => {
       },
     };
     const calls: string[] = [];
+    const intake = new OpenClawIntake({
+      root: join(root, 'intake'),
+      namespace: root,
+      connect: async () => provider,
+      manifestService: {
+        loadForAgentId: async () => ({
+          status: 'loaded' as const,
+          manifest,
+          scope: { agentId: 'receiver', workspaceDir: workspace },
+          path: join(workspace, 'agent.yaml'),
+          digest: 'manifest',
+          diagnostics: [],
+          validationChecks: [],
+        }),
+      },
+    });
     const service = new OpenClawDispatch({
       root: join(root, 'dispatch'),
       config: () => ({}),
-      intake: new OpenClawIntake({
-        root: join(root, 'intake'),
-        namespace: root,
-        connect: async () => provider,
-        manifestService: {
-          loadForAgentId: async () => ({
-            status: 'loaded' as const,
-            manifest,
-            scope: { agentId: 'receiver', workspaceDir: workspace },
-            path: join(workspace, 'agent.yaml'),
-            digest: 'manifest',
-            diagnostics: [],
-            validationChecks: [],
-          }),
-        },
-      }),
+      intake,
+      taskContext: intake.dependencies,
       connect: async () => provider,
       assessmentGit: ({ cwd, argv }) => git(cwd, argv),
       feedbackConnect: async () => provider as never,

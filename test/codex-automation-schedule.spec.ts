@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import compile from '../agent/codex-automation-schedule.ts';
+import compile from '../agent/automations/codex-automation-schedule.ts';
 import normalize from '../manifest/automation-schedule.ts';
 
 const now = new Date('2026-10-24T12:00:00Z');

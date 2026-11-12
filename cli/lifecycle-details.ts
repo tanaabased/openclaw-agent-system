@@ -1,8 +1,8 @@
-import { openclawIntakeAutomationId } from '../agent/openclaw-intake-policy.ts';
+import { openclawIntakeAutomationId } from '../agent/automations/openclaw-intake-policy.ts';
 import {
   automationSettingsMessage,
   type AutomationThreadModelObservation,
-} from '../agent/automation-threads.ts';
+} from '../agent/automations/automation-threads.ts';
 import type { AgentSystemLifecyclePresentationItem } from '../core/lifecycle-presentation.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 

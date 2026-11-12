@@ -21,9 +21,12 @@ import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
 import { pack } from 'tar-stream';
 
-import WorkspaceBackupService, { BackupPruneError } from '../agent/backup-service.ts';
-import { writeWorkspaceArchive } from '../agent/backup-archive.ts';
-import type { OpenClawSnapshotManifest, WorkspaceBackupManifest } from '../agent/backup-types.ts';
+import WorkspaceBackupService, { BackupPruneError } from '../agent/backup/backup-service.ts';
+import { writeWorkspaceArchive } from '../agent/backup/backup-archive.ts';
+import type {
+  OpenClawSnapshotManifest,
+  WorkspaceBackupManifest,
+} from '../agent/backup/backup-types.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import backupPrune from '../cli/backup-prune.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';

@@ -2,21 +2,23 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { nativeIssueContext } from '../agent/native-issue-context.ts';
+import { nativeIssueContext } from '../agent/tasks/context/native-issue-context.ts';
 import hydrateImplementation from './implementation-material-fixture.ts';
 
-import assessmentEntry, { type AssessmentEntryDependencies } from '../agent/assessment-entry.ts';
-import renderNativeAssessment from '../agent/assessment-render.ts';
-import assessmentSkillSource from '../agent/assessment-skill-source.ts';
+import assessmentEntry, {
+  type AssessmentEntryDependencies,
+} from '../agent/tasks/assessment/assessment-entry.ts';
+import renderNativeAssessment from '../agent/tasks/assessment/assessment-render.ts';
+import assessmentSkillSource from '../agent/tasks/assessment/assessment-skill-source.ts';
 import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
-import { DirectEntryStore } from '../agent/direct-entry-store.ts';
-import implementationEntryDelivery from '../agent/implementation-entry-delivery.ts';
-import { implementationEntriesSchema } from '../agent/implementation-entry-state.ts';
-import implementationEntry from '../agent/implementation-entry.ts';
+import { DirectEntryStore } from '../agent/tasks/direct-entry-store.ts';
+import implementationEntryDelivery from '../agent/tasks/delivery/implementation-entry-delivery.ts';
+import { implementationEntriesSchema } from '../agent/tasks/implementation/implementation-entry-state.ts';
+import implementationEntry from '../agent/tasks/implementation/implementation-entry.ts';
 import {
   implementationReviewInstructions,
   taskScopeInstructions,
-} from '../agent/native-task-instructions.ts';
+} from '../agent/tasks/context/native-task-instructions.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
@@ -583,127 +585,175 @@ describe('agent/implementation-entry', () => {
       });
     });
   });
-  it('should recover lost push and pr responses through the same persisted publication without repeated effects', async () => {
-    const context = await call('context', { scope: 'pull-request' });
-    assert.ok('id' in context && typeof context.id === 'string');
-    const result = await call('result', { result: ready });
-    assert.equal('handoff' in result && result.handoff?.next, 'delivery');
-    let remote = '',
-      pushes = 0,
-      creates = 0,
-      lostPush = true,
-      lostCreate = true;
-    let receipt: { pullRequestNodeId: string; pullRequestNumber: number } | undefined;
-    deps.connectDelivery = async () => ({
-      account: {
-        identity: { login: 'agent', nodeId: 'U_agent' },
-        execute: async () => {
-          throw new Error('unexpected provider transport');
-        },
-      },
-      git: async (argv) => {
-        if (argv[0] === 'branch') return 'task';
-        if (argv[0] === 'check-ref-format' || argv[0] === 'status') return '';
-        if (argv[0] === 'rev-list') return '1';
-        if (argv[0] === 'remote') return 'git@github.com:owner/repo.git';
-        if (argv[0] === 'ls-remote') return remote ? `${remote} refs/heads/task` : '';
-        if (argv[0] === 'push') {
-          pushes++;
-          remote = 'a'.repeat(40);
-          if (lostPush) {
-            lostPush = false;
-            throw new Error('lost-push-response');
-          }
-          return '';
-        }
-        return argv.includes('--show-toplevel') ? root : 'a'.repeat(40);
-      },
-    });
-    const store = () =>
-      new DirectEntryStore(deps.root, deps.binding, implementationEntriesSchema, 'implementation');
-    const provider = {
-      inspect: async () => receipt,
-      publish: async (
-        publication: Parameters<
-          NonNullable<Parameters<typeof implementationEntryDelivery>[0]['provider']>['publish']
-        >[0],
-      ) => {
-        if (!receipt) {
-          await publication.beforeCreate?.();
-          creates++;
-          receipt = { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 };
-          if (lostCreate) {
-            lostCreate = false;
-            throw new Error('lost-create-response');
-          }
-        }
-        await publication.checkpoint?.(receipt);
-        return receipt;
-      },
-    };
-    const perform = (deliveryOperation: 'prepare' | 'publish' | 'reconcile') =>
-      store().exclusive(async (entries, save) =>
-        implementationEntryDelivery({
-          entry: entries[0]!,
-          action: {
-            action: 'implementation',
-            operation: 'delivery',
-            deliveryOperation,
-            title: 'Implement handler',
-            body: 'Verified change. Closes #3',
+  for (const base of [undefined, 'release'])
+    it(`should recover lost publication responses on the ${base ? 'explicit' : 'default'} base without repeated effects`, async () => {
+      const context = await call('context', { scope: 'pull-request' });
+      assert.ok('id' in context && typeof context.id === 'string');
+      const result = await call('result', { result: ready });
+      assert.equal('handoff' in result && result.handoff?.next, 'delivery');
+      let head = 'a'.repeat(40),
+        body = 'Verified change. Closes #3',
+        publishedBody = body,
+        updates = 0,
+        lostUpdate = true,
+        remote = '',
+        pushes = 0,
+        creates = 0,
+        lostPush = true,
+        lostCreate = true;
+      let receipt: { pullRequestNodeId: string; pullRequestNumber: number } | undefined;
+      deps.connectDelivery = async () => ({
+        account: {
+          identity: { login: 'agent', nodeId: 'U_agent' },
+          execute: async () => {
+            throw new Error('unexpected provider transport');
           },
-          deps,
-          save,
-          provider,
-        }),
+        },
+        git: async (argv) => {
+          if (argv[0] === 'branch') return 'task';
+          if (argv[0] === 'check-ref-format' || argv[0] === 'status') return '';
+          if (argv[0] === 'rev-list') return '1';
+          if (argv[0] === 'remote') return 'git@github.com:owner/repo.git';
+          if (argv[0] === 'for-each-ref') return '';
+          if (argv[0] === 'ls-remote')
+            return argv.at(-1) === 'refs/heads/release'
+              ? `${'c'.repeat(40)} refs/heads/release`
+              : remote
+                ? `${remote} refs/heads/task`
+                : '';
+          if (argv[0] === 'push') {
+            pushes++;
+            remote = head;
+            if (lostPush) {
+              lostPush = false;
+              throw new Error('lost-push-response');
+            }
+            return '';
+          }
+          return argv.includes('--show-toplevel') ? root : head;
+        },
+      });
+      const store = () =>
+        new DirectEntryStore(
+          deps.root,
+          deps.binding,
+          implementationEntriesSchema,
+          'implementation',
+        );
+      const provider = {
+        inspect: async () => receipt,
+        publish: async (
+          publication: Parameters<
+            NonNullable<Parameters<typeof implementationEntryDelivery>[0]['provider']>['publish']
+          >[0],
+        ) => {
+          assert.equal(publication.item.repositoryDefaultBranch, base ?? 'main');
+          if (!receipt) {
+            await publication.beforeCreate?.();
+            creates++;
+            receipt = { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 };
+            if (lostCreate) {
+              lostCreate = false;
+              throw new Error('lost-create-response');
+            }
+          }
+          if (publication.contentUpdate?.body && publication.contentUpdate.body !== publishedBody) {
+            await publication.beforeUpdate?.({
+              title: publication.contentUpdate.title ?? publication.title!,
+              body: publication.contentUpdate.body,
+            });
+            updates++;
+            publishedBody = publication.contentUpdate.body;
+            if (lostUpdate) {
+              lostUpdate = false;
+              throw new Error('lost-update-response');
+            }
+          }
+          await publication.checkpoint?.(receipt);
+          return receipt;
+        },
+      };
+      const perform = (deliveryOperation: 'prepare' | 'publish' | 'reconcile') =>
+        store().exclusive(async (entries, save) =>
+          implementationEntryDelivery({
+            entry: entries[0]!,
+            action: {
+              action: 'implementation',
+              operation: 'delivery',
+              deliveryOperation,
+              ...(deliveryOperation === 'prepare' && base ? { base } : {}),
+              title: 'Implement handler',
+              body,
+            },
+            deps,
+            save,
+            provider,
+          }),
+        );
+      const prepared = await perform('prepare');
+      assert.equal('digest' in prepared, false);
+      assert.equal('base' in prepared && prepared.base, base ?? 'main');
+      assert.equal(await store().exclusive(async (entries) => entries[0]!.delivery), undefined);
+      const publishPrepared = () =>
+        store().exclusive(async (entries, save) =>
+          implementationEntryDelivery({
+            entry: entries[0]!,
+            action: parseDirectImplementationRequest(
+              codexRuntimeRequest(
+                'dispatch',
+                ['implementation', 'publish', '--plugin-data', '/private/plugin'],
+                JSON.parse(JSON.stringify(prepared)),
+              ).request,
+            ),
+            deps,
+            save,
+            provider,
+          }),
+        );
+      await assert.rejects(publishPrepared(), /lost-push-response/);
+      await assert.rejects(publishPrepared(), /lost-create-response/);
+      const delivered = await perform('reconcile');
+      assert.equal(delivered.status, 'delivered');
+      assert.equal(pushes, 1);
+      assert.equal(creates, 1);
+      await publishPrepared();
+      assert.equal(pushes, 1);
+      assert.equal(creates, 1);
+      assert.equal(
+        await store().exclusive(async (entries) => entries[0]!.delivery?.reconciled),
+        true,
       );
-    const prepared = await perform('prepare');
-    assert.equal('digest' in prepared, false);
-    assert.equal(await store().exclusive(async (entries) => entries[0]!.delivery), undefined);
-    const publishPrepared = () =>
-      store().exclusive(async (entries, save) =>
-        implementationEntryDelivery({
-          entry: entries[0]!,
-          action: parseDirectImplementationRequest(
-            codexRuntimeRequest(
-              'dispatch',
-              ['implementation', 'publish', '--plugin-data', '/private/plugin'],
-              JSON.parse(JSON.stringify(prepared)),
-            ).request,
-          ),
-          deps,
-          save,
-          provider,
-        }),
+      head = 'b'.repeat(40);
+      body = 'Updated verified change. Closes #3';
+      assert.equal((await perform('prepare')).status, 'prepared');
+      await assert.rejects(perform('publish'), /lost-update-response/);
+      body = 'A different update must wait';
+      await assert.rejects(perform('publish'), /delivery-content-changed/);
+      body = 'Updated verified change. Closes #3';
+      assert.equal((await perform('reconcile')).status, 'delivered');
+      assert.equal(pushes, 2);
+      assert.equal(creates, 1);
+      assert.equal(updates, 1);
+      assert.equal(publishedBody, body);
+      assert.equal(
+        await store().exclusive(async (entries) => entries[0]!.delivery?.binding.head),
+        head,
       );
-    await assert.rejects(publishPrepared(), /lost-push-response/);
-    await assert.rejects(publishPrepared(), /lost-create-response/);
-    const delivered = await perform('reconcile');
-    assert.equal(delivered.status, 'delivered');
-    assert.equal(pushes, 1);
-    assert.equal(creates, 1);
-    await publishPrepared();
-    assert.equal(pushes, 1);
-    assert.equal(creates, 1);
-    assert.equal(
-      await store().exclusive(async (entries) => entries[0]!.delivery?.reconciled),
-      true,
-    );
-    const receiptBeforeRestriction = await store().exclusive(async (entries) =>
-      structuredClone(entries[0]!.delivery),
-    );
-    deps.turnId = 'stop-publication';
-    deps.inputId = 'restriction-input';
-    const stopped = await call('context', { scope: 'local' });
-    assert.equal('publicationAuthorized' in stopped && stopped.publicationAuthorized, false);
-    assert.deepEqual(
-      await store().exclusive(async (entries) => entries[0]!.delivery),
-      receiptBeforeRestriction,
-    );
-    await assert.rejects(publishPrepared(), /implementation-publication-not-authorized/);
-    assert.equal(pushes, 1);
-    assert.equal(creates, 1);
-  });
+      const receiptBeforeRestriction = await store().exclusive(async (entries) =>
+        structuredClone(entries[0]!.delivery),
+      );
+      deps.turnId = 'stop-publication';
+      deps.inputId = 'restriction-input';
+      const stopped = await call('context', { scope: 'local' });
+      assert.equal('publicationAuthorized' in stopped && stopped.publicationAuthorized, false);
+      assert.deepEqual(
+        await store().exclusive(async (entries) => entries[0]!.delivery),
+        receiptBeforeRestriction,
+      );
+      await assert.rejects(publishPrepared(), /implementation-publication-not-authorized/);
+      assert.equal(pushes, 2);
+      assert.equal(creates, 1);
+    });
 
   it('should reject invalid explicit overrides without falling back to the default', async () => {
     deps.manifest.github = {
@@ -742,9 +792,9 @@ describe('agent/native-implementation-entry', () => {
           ? workspace
           : 'a'.repeat(40);
   it('should implement in an ordinary codex chat without activation, native creation or managed tools', async () => {
-    const { bindCodexWorkspace } = await import('../agent/codex-workspace-binding.ts');
+    const { bindCodexWorkspace } = await import('../agent/identity/codex-workspace-binding.ts');
     const { default: codexImplementationEntry } =
-      await import('../agent/codex-implementation-entry.ts');
+      await import('../agent/tasks/implementation/codex-implementation-entry.ts');
     const home = join(root, 'codex'),
       data = join(root, 'plugin');
     await mkdir(home);
@@ -829,7 +879,8 @@ describe('agent/native-implementation-entry', () => {
   });
   it('should require a verified openclaw operator and retain explicit local scope under work defaults', async () => {
     const { default: OpenClawIntake } = await import('../agent/openclaw-intake.ts');
-    const { default: OpenClawDispatch } = await import('../agent/openclaw-dispatch.ts');
+    const { default: OpenClawDispatch } =
+      await import('../agent/tasks/dispatch/openclaw-dispatch.ts');
     const fixture = intakeFixture();
     const provider = {
       ...fixture.client,
@@ -853,25 +904,27 @@ describe('agent/native-implementation-entry', () => {
       },
     };
     const calls: string[] = [];
+    const intake = new OpenClawIntake({
+      root: join(root, 'intake'),
+      namespace: root,
+      connect: async () => provider,
+      manifestService: {
+        loadForAgentId: async () => ({
+          status: 'loaded' as const,
+          manifest,
+          scope: { agentId: 'receiver', workspaceDir: workspace },
+          path: join(workspace, 'agent.yaml'),
+          digest: 'manifest',
+          diagnostics: [],
+          validationChecks: [],
+        }),
+      },
+    });
     const service = new OpenClawDispatch({
       root: join(root, 'dispatch'),
       config: () => ({}),
-      intake: new OpenClawIntake({
-        root: join(root, 'intake'),
-        namespace: root,
-        connect: async () => provider,
-        manifestService: {
-          loadForAgentId: async () => ({
-            status: 'loaded' as const,
-            manifest,
-            scope: { agentId: 'receiver', workspaceDir: workspace },
-            path: join(workspace, 'agent.yaml'),
-            digest: 'manifest',
-            diagnostics: [],
-            validationChecks: [],
-          }),
-        },
-      }),
+      intake,
+      taskContext: intake.dependencies,
       connect: async () => provider,
       assessmentGit: ({ cwd, argv }) => git(cwd, argv),
       feedbackConnect: async () => provider as never,

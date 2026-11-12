@@ -1,6 +1,6 @@
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
-import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import type { OpenClawDispatchRecord } from './tasks/dispatch/openclaw-dispatch-state.ts';
 import { describeIssueSession, sessionObject } from './openclaw-session-create.ts';
 
 /** native activity includes operator work; queued feedback never creates another session. */

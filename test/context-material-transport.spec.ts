@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 
-import contextMaterialTransport from '../agent/context-material-transport.ts';
+import contextMaterialTransport from '../agent/tasks/context/context-material-transport.ts';
 import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
 import implementationMaterial, {
   type ImplementationMaterialRead,
-} from '../agent/implementation-material.ts';
+} from '../agent/tasks/implementation/implementation-material.ts';
 
 describe('agent/context-material-transport', () => {
   for (const runtime of ['codex', 'openclaw'] as const)

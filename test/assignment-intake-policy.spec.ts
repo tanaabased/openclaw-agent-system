@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 
-import assignmentIntakePolicy from '../agent/assignment-intake-policy.ts';
-import retainedIntakePolicy from '../agent/retained-intake-policy.ts';
+import assignmentIntakePolicy from '../agent/automations/assignment-intake-policy.ts';
+import retainedIntakePolicy from '../agent/tasks/retained-intake-policy.ts';
 import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
-import { codexIntakeJobs } from '../agent/codex-intake-policy.ts';
-import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
+import { codexIntakeJobs } from '../agent/automations/codex-intake-policy.ts';
+import openclawIntakeJobs from '../agent/automations/openclaw-intake-policy.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 

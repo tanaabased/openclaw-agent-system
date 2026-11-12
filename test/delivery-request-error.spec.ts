@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import invalidDeliveryRequest from '../tools/dispatch/delivery-request-error.ts';
 import { assertDispatchModelRequest } from '../tools/dispatch/tool-schema.ts';
-import { assertModelWorkflowInput } from '../agent/native-context-request.ts';
+import { assertModelWorkflowInput } from '../agent/tasks/context/native-context-request.ts';
 
 describe('delivery request diagnostics', () => {
   it('should give a valid minimal correction for openclaw linking without echoing input', () => {

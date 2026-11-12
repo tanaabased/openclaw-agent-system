@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 
-import codexCapacity, { codexItemOccupied } from '../agent/codex-capacity.ts';
-import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
+import codexCapacity, { codexItemOccupied } from '../agent/tasks/dispatch/codex-capacity.ts';
+import type { DispatchRecord } from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import { pickupIssueKey } from '../agent/issue-pickup-capacity.ts';
-import openClawCapacity, { openClawItemOccupied } from '../agent/openclaw-capacity.ts';
-import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
+import openClawCapacity, {
+  openClawItemOccupied,
+} from '../agent/tasks/dispatch/openclaw-capacity.ts';
+import type { OpenClawDispatchRecord } from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import fixture from './issue-pickup-selection-fixture.ts';
 
 describe('issue pickup capacity handoff', () => {

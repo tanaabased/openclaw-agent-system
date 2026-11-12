@@ -3,8 +3,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, open, realpath } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 
-import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
-import { nativeObject } from './automation-gateway.ts';
+import { inspectCodexWorkspaceBinding } from './identity/codex-workspace-binding.ts';
+import { nativeObject } from './automations/automation-gateway.ts';
 import { resolveToolExecutable } from '../api/cli-runner.ts';
 
 /** native hook trust delegates execution to this installed runtime, not to a second operation policy. */

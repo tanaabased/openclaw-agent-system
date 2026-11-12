@@ -9,8 +9,11 @@ import type {
   AgentSetupConfiguration,
   AgentSetupRuntime,
 } from '../manifest/setup-schema.ts';
-import setupStepApplies from '../agent/setup-runtime.ts';
-import { selectedSetupPhases, type InstallSetupOptions } from '../agent/install-options.ts';
+import setupStepApplies from '../agent/lifecycle/setup-runtime.ts';
+import {
+  selectedSetupPhases,
+  type InstallSetupOptions,
+} from '../agent/lifecycle/install-options.ts';
 import {
   createCliStyles,
   writeCliDiagnosticNotices,

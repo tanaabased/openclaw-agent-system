@@ -63,9 +63,9 @@ jobs:
             version-injector .codex-plugin/plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
             version-injector openclaw.plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
             bun run format:write
-            bun run build
       - name: Check prepared plugin
         run: |
+          bun run build
           bun run plugin:check
           bun run format:check
       - name: Pack prepared plugin

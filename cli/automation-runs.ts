@@ -1,4 +1,4 @@
-import type { AutomationHistoryOptions } from '../agent/automation-gateway.ts';
+import type { AutomationHistoryOptions } from '../agent/automations/automation-gateway.ts';
 import automationOperation, { type AutomationCommandOptions } from './automation-output.ts';
 
 export default async function automationRuns(

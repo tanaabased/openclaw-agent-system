@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import routingInstructions, {
   assertRoutingInstructions,
   routingInstructionsDigest,
-} from '../agent/routing-instructions.ts';
-import { inspectModelRouting, resolveModelRouting } from '../agent/model-routing.ts';
+} from '../agent/models/routing-instructions.ts';
+import { inspectModelRouting, resolveModelRouting } from '../agent/models/model-routing.ts';
 
 const workspace = '/bound';
 describe('agent/routing-instructions', () => {

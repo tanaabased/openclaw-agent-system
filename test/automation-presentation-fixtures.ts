@@ -1,5 +1,5 @@
-import { AutomationError } from '../agent/automation-gateway.ts';
-import type AutomationService from '../agent/automation-service.ts';
+import { AutomationError } from '../agent/automations/automation-errors.ts';
+import type AutomationService from '../agent/automations/automation-service.ts';
 import automationList from '../cli/automation-list.ts';
 import automationRun from '../cli/automation-run.ts';
 import automationRuns from '../cli/automation-runs.ts';

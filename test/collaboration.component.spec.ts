@@ -5,10 +5,12 @@ import { join } from 'node:path';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
-import planCollaboration, { collaborationConfiguration } from '../agent/collaboration-plan.ts';
+import planCollaboration, {
+  collaborationConfiguration,
+} from '../agent/lifecycle/collaboration-plan.ts';
 import createCollaborationLifecycleContribution, {
   discoverCollaborationMembers,
-} from '../agent/collaboration-lifecycle.ts';
+} from '../agent/lifecycle/collaboration-lifecycle.ts';
 
 function select(config: OpenClawConfig, selection: unknown) {
   config.plugins ??= {};

@@ -1,14 +1,14 @@
-import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
-import { assessmentTurnMessage } from './openclaw-assessment.ts';
+import type { ManagedIssue as IntakeRecord } from './tasks/managed-issue.ts';
+import { assessmentTurnMessage } from './tasks/assessment/openclaw-assessment.ts';
 import { nativeTurnFor } from './openclaw-native-turns.ts';
 import type { OpenClawTurn } from './openclaw-turn-state.ts';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
-import deliverOpenClawTaskInput from './openclaw-task-input.ts';
+import deliverOpenClawTaskInput from './tasks/context/openclaw-task-input.ts';
 
 import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
-import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import type { OpenClawDispatchRecord } from './tasks/dispatch/openclaw-dispatch-state.ts';
 import { verifyEmptyIssueSession } from './openclaw-session-create.ts';
 
 /** one persisted attempt; recovery reads exact input custody and transcript ownership, never resends. */

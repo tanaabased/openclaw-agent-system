@@ -6,8 +6,8 @@ import {
   agentCommandAuthorityEnvironmentName,
   agentCommandCapabilityEnvironmentName,
 } from '../agent/command-authority.ts';
-import { BackupError, backupDefaultOutput } from '../agent/backup-types.ts';
-import { canonicalBackupPath } from '../agent/backup-selection.ts';
+import { BackupError, backupDefaultOutput } from '../agent/backup/backup-types.ts';
+import { canonicalBackupPath } from '../agent/backup/backup-selection.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import isPathContained from '../utils/is-path-contained.ts';
 import { formatManifestFailure } from '../core/logger.ts';

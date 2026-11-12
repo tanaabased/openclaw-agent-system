@@ -51,7 +51,8 @@ database=$(cat "$TMPDIR/backup-agent-ready")
 test -s "$database-wal"
 openclaw agent-system backup create --json | tee "$TMPDIR/backup-created.json" | jq -e '.status == "created" and .coverage.openclawState == "captured"'
 archive=$(jq -er .archive "$TMPDIR/backup-created.json")
-openclaw agent-system backup verify "$archive" --json | jq -e '.status == "verified" and .agentId == "backup-tanaabot" and .coverage.openclawState == "captured"'
+package_version=$(tar -xOf "$AGENT_SYSTEM_PACKAGE" package/package.json | jq -er .version)
+openclaw agent-system backup verify "$archive" --json | jq -e --arg version "$package_version" '.status == "verified" and .agentId == "backup-tanaabot" and .coverage.openclawState == "captured" and .snapshot.agentSystemVersion == $version'
 git check-ignore "$archive"
 kill "$fixture_pid"
 wait "$fixture_pid" || true

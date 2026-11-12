@@ -1,4 +1,4 @@
-import { issuePickupAutomationId } from '../../../agent/issue-pickup-jobs.ts';
+import { issuePickupAutomationId } from '../../../agent/automations/issue-pickup-jobs.ts';
 import { notificationResetDiagnostic } from '../../../agent/notification-reset-diagnostic.ts';
 import { automationHash } from '../../../agent/automation-hash.ts';
 import type { Readable } from 'node:stream';

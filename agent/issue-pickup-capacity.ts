@@ -1,5 +1,5 @@
 import { automationHash } from './automation-hash.ts';
-import type { IssueWorkflowState } from './workflow-status.ts';
+import type { IssueWorkflowState } from './tasks/workflow-status.ts';
 import type { ProjectWork } from './issue-pickup-authority.ts';
 import { type PickupOperation, type IssuePickupState } from './issue-pickup-state.ts';
 

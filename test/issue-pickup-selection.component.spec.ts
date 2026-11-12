@@ -1,9 +1,9 @@
-import { withDispatchTask } from '../agent/dispatch-task-scope.ts';
+import { withDispatchTask } from '../agent/tasks/dispatch/dispatch-task-scope.ts';
 import { omit } from 'lodash-es';
 import type { RepositoryRoute } from '../channels/github/repository-scope.ts';
 import type { Static } from 'typebox';
 import type { issuePickupSchema } from '../channels/github/issue-pickup-schema.ts';
-import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
+import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
 import IssuePickupEnrollmentStore from '../agent/issue-pickup-enrollment.ts';
 import assert from 'node:assert/strict';
 import IssuePickupFailure from '../agent/issue-pickup-failure.ts';
@@ -12,18 +12,18 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import codexCapacity from '../agent/codex-capacity.ts';
-import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
+import codexCapacity from '../agent/tasks/dispatch/codex-capacity.ts';
+import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import {
   prepareCodexPickupEnrollment,
   runCodexIntake,
   runCodexIssuePickup,
-  selectCodexIntake,
   type CodexIntakeDependencies,
 } from '../agent/codex-intake.ts';
-import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
-import openClawCapacity from '../agent/openclaw-capacity.ts';
-import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
+import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
+import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
+import openClawCapacity from '../agent/tasks/dispatch/openclaw-capacity.ts';
+import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import { issuePickupPolicyDigest } from '../agent/issue-pickup-authority.ts';
 import type { PickupInput } from '../agent/issue-pickup.ts';
@@ -32,8 +32,8 @@ import parseAgentManifest from '../manifest/parse.ts';
 import { baseline } from './github-intake-fixture.ts';
 import selectionFixture from './issue-pickup-selection-fixture.ts';
 import pickupClaims from './issue-pickup-claim-fixture.ts';
-import CodexAssignmentClaims from '../agent/codex-assignment-claims.ts';
-import OpenClawAssignmentClaims from '../agent/openclaw-assignment-claims.ts';
+import CodexAssignmentClaims from '../agent/tasks/dispatch/codex-assignment-claims.ts';
+import OpenClawAssignmentClaims from '../agent/tasks/dispatch/openclaw-assignment-claims.ts';
 import GitHubIssuePickupClient from '../channels/github/provider/issue-pickup-client.ts';
 import GitHubWorkEventApiClient, {
   GitHubWorkEventClientError,
@@ -164,7 +164,7 @@ describe('issue pickup selection through native journals', () => {
         },
       };
       await runCodexIntake(data, true, deps);
-      const selected = await selectCodexIntake(data, deps);
+      const selected = await selectCodexTaskContext(data, deps);
       scope = selected.store.location.scope;
       journal = new CodexDispatchStore(data, scope);
       const enrollment = await prepareCodexPickupEnrollment(data, deps);

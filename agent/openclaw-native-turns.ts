@@ -1,5 +1,5 @@
 import { Type, type Static } from 'typebox';
-import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import type { OpenClawDispatchRecord } from './tasks/dispatch/openclaw-dispatch-state.ts';
 import { issueTurnSchema } from './openclaw-turn-state.ts';
 
 export const nativeTurnSchema = Type.Object(

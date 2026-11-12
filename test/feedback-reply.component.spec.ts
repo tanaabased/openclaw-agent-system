@@ -2,23 +2,28 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { feedbackRevision } from '../agent/feedback-source.ts';
-import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
-import replyOwnPublications from '../agent/reply-own-publications.ts';
+import {
+  bindNativeMaterial,
+  nativeMaterialResponse,
+} from '../agent/tasks/context/native-material.ts';
+import { feedbackRevision } from '../agent/tasks/feedback/feedback-source.ts';
+import replyOwnPublications from '../agent/tasks/feedback/reply-own-publications.ts';
 
-import assessmentSkillSource from '../agent/assessment-skill-source.ts';
-import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
-import runCodexFeedback from '../agent/codex-feedback.ts';
-import { selectCodexIntake } from '../agent/codex-intake.ts';
-import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
-import { issueKey } from '../agent/dispatch-pending.ts';
-import feedbackReply, { type FeedbackReplyDependencies } from '../agent/feedback-reply.ts';
-import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
-import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
-import type { OpenClawFeedbackProvider } from '../agent/openclaw-feedback.ts';
+import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
-import replyOwner, { type ReplyOwner } from '../agent/reply-owner.ts';
-import ReplyStore from '../agent/reply-store.ts';
+import assessmentSkillSource from '../agent/tasks/assessment/assessment-skill-source.ts';
+import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
+import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
+import { issueKey } from '../agent/tasks/dispatch/dispatch-pending.ts';
+import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
+import OpenClawDispatch from '../agent/tasks/dispatch/openclaw-dispatch.ts';
+import runCodexFeedback from '../agent/tasks/feedback/codex-feedback.ts';
+import type { FeedbackProvider } from '../agent/tasks/feedback/feedback-provider.ts';
+import feedbackReply, {
+  type FeedbackReplyDependencies,
+} from '../agent/tasks/feedback/feedback-reply.ts';
+import replyOwner, { type ReplyOwner } from '../agent/tasks/feedback/reply-owner.ts';
+import ReplyStore from '../agent/tasks/feedback/reply-store.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { account, intakeFixture } from './github-intake-fixture.ts';
 import {
@@ -28,10 +33,9 @@ import {
 } from './github-review-fixtures.ts';
 
 import hydrateImplementation from './implementation-material-fixture.ts';
-import nativeMaterialFixture from './native-material-fixture.ts';
 const url = 'https://github.com/owner/repo/issues/3';
 describe('agent/feedback-reply', () => {
-  let root: string, deps: FeedbackReplyDependencies, provider: OpenClawFeedbackProvider;
+  let root: string, deps: FeedbackReplyDependencies, provider: FeedbackProvider;
   let selections: number, writes: number, lost: boolean, hidden: boolean;
   let postedNumber: number | undefined;
   let posted: { nodeId: string; databaseId: number; body: string } | undefined;
@@ -216,8 +220,7 @@ describe('agent/feedback-reply', () => {
       const run = (read: Record<string, unknown>) => feedbackReply(read, deps);
       const verify = (complete: Record<string, unknown>) =>
         assert.equal(complete.privateResponse, privateText);
-      if (runtime === 'openclaw') await nativeMaterialFixture({ request, run, verify });
-      else verify(await hydrateImplementation(await run(request), run));
+      verify(await hydrateImplementation(await run(request), run));
       const drafts = await new ReplyStore(deps.root, deps.binding).read();
       assert.equal(drafts.length, 1);
       assert.equal(drafts[0]!.privateText, privateText);
@@ -253,9 +256,7 @@ describe('agent/feedback-reply', () => {
         });
         assert.equal('contextMaterials' in complete, false);
       };
-      if (runtime === 'openclaw')
-        await nativeMaterialFixture({ request, run, verify, minimumPages: 0 });
-      else verify(await run(request));
+      verify(await run(request));
       assert.deepEqual(await new ReplyStore(deps.root, deps.binding).read(), []);
       assert.equal(writes, 0);
     });
@@ -1208,6 +1209,26 @@ describe('agent/feedback-reply', () => {
     await call('reconcile', { ...reply });
     assert.equal(writes, 1);
   });
+  for (const runtime of ['codex', 'openclaw'] as const) {
+    for (const [text, expected] of [
+      ['Checked, @AUTHOR.', 'Checked, @AUTHOR.'],
+      ['Checked the flow.', '@author\n\nChecked the flow.'],
+    ]) {
+      it(`should attribute ${JSON.stringify(text).toLowerCase()} without rewriting prose in ${runtime}`, async () => {
+        deps.binding.runtime = runtime;
+        const composed = await call('compose', {
+          target: `${url}#issuecomment-42`,
+          privateText: 'Supplied answer.',
+        });
+        await call('candidate', { ...selection(composed), publicText: text });
+        assert.equal((await call('publish', selection(composed))).status, 'published');
+        assert.ok(posted!.body.startsWith(`${expected}\n\n<!-- agent-system-github-publication:`));
+        assert.equal((await call('reconcile', selection(composed))).status, 'published');
+        assert.equal(writes, 1);
+      });
+    }
+  }
+
   it('should retain real comment attribution and reject binding overrides and substituted destinations', async () => {
     const composed = await call('compose', {
       target: `${url}#issuecomment-42`,
@@ -1782,7 +1803,7 @@ describe('agent/feedback-reply', () => {
     assert.equal(writes, 2);
     assert.equal(postedNumber, 4);
     assert.ok(posted?.body.includes(':status-update:'));
-    const selected = await selectCodexIntake(pluginData, nativeDeps, { resolvePolicy: false });
+    const selected = await selectCodexTaskContext(pluginData, nativeDeps, { resolvePolicy: false });
     await independentAdapterComments(
       direct,
       new CodexDispatchStore(pluginData, selected.store.location.scope),
@@ -1812,6 +1833,7 @@ describe('agent/feedback-reply', () => {
       root: deps.root,
       config: () => ({}),
       intake,
+      taskContext: intake.dependencies,
       connect: async () => provider,
       worktrees: {
         prepareGitHub: async () => {

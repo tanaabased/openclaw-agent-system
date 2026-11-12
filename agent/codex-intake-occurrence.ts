@@ -1,5 +1,5 @@
-import type { codexDispatchNative } from './codex-dispatch-native.ts';
-import type CodexDispatchStore from './codex-dispatch-state.ts';
+import type { codexDispatchNative } from './tasks/dispatch/codex-dispatch-native.ts';
+import type CodexDispatchStore from './tasks/dispatch/codex-dispatch-state.ts';
 
 type State = Pick<Awaited<ReturnType<CodexDispatchStore['read']>>, 'run' | 'checked'>;
 type Occurrence = Awaited<ReturnType<ReturnType<typeof codexDispatchNative>['occurrence']>>;

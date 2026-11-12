@@ -4,7 +4,7 @@ import automationReport, {
   automationReportCardValid,
   prepareLegacyAutomationReport as prepareAutomationReport,
   type AutomationReportInput,
-} from '../agent/automation-report.ts';
+} from '../agent/automations/automation-report.ts';
 
 const input: AutomationReportInput = {
   id: 'backup',

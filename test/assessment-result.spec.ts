@@ -4,8 +4,8 @@ import { Value } from 'typebox/value';
 import {
   assessmentResultContextSchema,
   parseAssessmentSubmission,
-} from '../agent/assessment-result.ts';
-import AssessmentValidationError from '../agent/assessment-validation.ts';
+} from '../agent/tasks/assessment/assessment-result.ts';
+import AssessmentValidationError from '../agent/tasks/assessment/assessment-validation.ts';
 import { assertDispatchModelRequest } from '../tools/dispatch/tool-schema.ts';
 
 describe('agent/assessment-result', () => {

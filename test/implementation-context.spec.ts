@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import implementationContext from '../agent/implementation-context.ts';
+import implementationContext from '../agent/tasks/implementation/implementation-context.ts';
 
 describe('agent/implementation-context', () => {
   for (const runtime of ['codex', 'openclaw'] as const)

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import reconcile from '../agent/codex-capacity-reconcile.ts';
-import codexCapacity from '../agent/codex-capacity.ts';
-import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
+import reconcile from '../agent/tasks/dispatch/codex-capacity-reconcile.ts';
+import codexCapacity from '../agent/tasks/dispatch/codex-capacity.ts';
+import type { DispatchRecord } from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 
 function record(): DispatchRecord {
   return {

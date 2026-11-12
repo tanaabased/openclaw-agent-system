@@ -1,36 +1,37 @@
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { defaultManagedGroup } from '../utils/managed-group-name.ts';
-import { nativeObject } from './automation-gateway.ts';
+import { nativeObject } from './automations/automation-gateway.ts';
 import { automationHash } from './automation-hash.ts';
-import { readCodexAutomations, type SavedAutomation } from './codex-automation-state.ts';
+import {
+  readCodexAutomations,
+  type SavedAutomation,
+} from './automations/codex-automation-state.ts';
 import {
   codexNotificationResetAutomation,
   codexNotificationResetPickupAutomation,
   replaceCodexNotificationCoordinator,
-} from './codex-automations.ts';
-import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
-import {
-  connectCodexGitHub,
-  selectCodexIntake,
-  type CodexIntakeDependencies,
-} from './codex-intake.ts';
+} from './automations/codex-automations.ts';
+import CodexDispatchStore, { type DispatchRecord } from './tasks/dispatch/codex-dispatch-state.ts';
+import { type CodexIntakeDependencies } from './codex-intake.ts';
+import { connectCodexGitHub } from './codex-github-client.ts';
+import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import notificationResetBaseline from './notification-reset-baseline.ts';
 import observeResetThread from './codex-reset-observation.ts';
-import codexRetirementNative from './codex-retirement-native.ts';
+import codexRetirementNative from './tasks/retirement/codex-retirement-native.ts';
 import CodexSidebarJournal, { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
 import {
   codexThreadAdapter,
   CodexThreadRpcError,
   connectCodexThreads,
 } from './codex-thread-client.ts';
-import waitForCodexWorktreeRemoval from './codex-worktree-removal.ts';
+import waitForCodexWorktreeRemoval from './tasks/retirement/codex-worktree-removal.ts';
 import {
   agentCommandAuthorityEnvironmentName,
   agentCommandCapabilityEnvironmentName,
 } from './command-authority.ts';
-import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
-import { dispatchAdmission, managedIssueState } from './managed-issue.ts';
+import { issuePickupAutomationId } from './automations/issue-pickup-jobs.ts';
+import { dispatchAdmission, managedIssueState } from './tasks/managed-issue.ts';
 import { notificationResetResources, type ResetInventory } from './notification-reset-inventory.ts';
 import notificationResetPickup from './notification-reset-pickup.ts';
 import NotificationResetStore, {
@@ -79,7 +80,7 @@ export default async function runCodexNotificationReset(
     throw new Error('notification-reset-options-invalid');
   if (!input.all && !input.agent?.length)
     throw new Error('notification-reset-explicit-bound-agent-required');
-  const current = await selectCodexIntake(pluginData, deps, { inspectionOnly: true });
+  const current = await selectCodexTaskContext(pluginData, deps, { inspectionOnly: true });
   if (!input.all && (input.agent?.length !== 1 || input.agent[0] !== current.agentId))
     throw new Error('notification-reset-explicit-bound-agent-required');
   const journal = new CodexDispatchStore(pluginData, current.store.location.scope);

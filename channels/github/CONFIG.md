@@ -158,10 +158,9 @@ versions are rejected. GitHub CLI-only configuration does not require this field
 
 ## `github.issue-pickup`
 
-`github.project-pickup` remains a deprecated input alias with the same settings.
-Declare only one key; supplying both is an error. Routing workflow `project-pickup`
-is also accepted as a deprecated alias for `issue-pickup`. Both aliases work in
-OpenClaw and standalone Codex; use the new spellings in maintained configuration.
+Use `github.issue-pickup` and routing workflow `issue-pickup` in OpenClaw and
+standalone Codex. The retired `project-pickup` spellings are rejected; rename them
+without changing the settings or the `projects` list.
 
 Declares pickup policy for one or more repositories, with optional milestone restrictions. It requires `issue-assignment`
 and each repository must be included by `routing`.

@@ -5,9 +5,11 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
+import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
 import IssuePickupEnrollmentStore from '../agent/issue-pickup-enrollment.ts';
-import issuePickupJobs, { issuePickupConfigurationCode } from '../agent/issue-pickup-jobs.ts';
+import issuePickupJobs, {
+  issuePickupConfigurationCode,
+} from '../agent/automations/issue-pickup-jobs.ts';
 import parseAgentManifest from '../manifest/parse.ts';
 import selectionFixture from './issue-pickup-selection-fixture.ts';
 

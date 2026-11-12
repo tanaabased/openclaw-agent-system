@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import planAgentInstall from '../agent/plan-install.ts';
+import planAgentInstall from '../agent/identity/plan-install.ts';
 
 const desired = {
   agentId: 'data',

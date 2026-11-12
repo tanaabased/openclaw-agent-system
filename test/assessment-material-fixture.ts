@@ -1,12 +1,12 @@
-import { assessmentPresentationRequest } from '../agent/assessment-render.ts';
-import dispatchContext from '../agent/dispatch-context.ts';
-import resolveModelRoutingRequest from '../agent/model-routing-request.ts';
+import { assessmentPresentationRequest } from '../agent/tasks/assessment/assessment-render.ts';
+import dispatchContext from '../agent/tasks/dispatch/dispatch-context.ts';
+import resolveModelRoutingRequest from '../agent/models/model-routing-request.ts';
 import {
   nativeRoutingMetadata,
   routingMetadata,
 } from '../channels/github/provider/routing-metadata.ts';
-import { nativeAssessmentInstructions } from '../agent/assessment-instructions.ts';
-import { assessmentResultContextSchema } from '../agent/assessment-result.ts';
+import { nativeAssessmentInstructions } from '../agent/tasks/assessment/assessment-instructions.ts';
+import { assessmentResultContextSchema } from '../agent/tasks/assessment/assessment-result.ts';
 
 export default function assessmentContextFixture(runtime: 'openclaw' | 'codex' = 'openclaw') {
   return {

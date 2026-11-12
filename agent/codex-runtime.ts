@@ -1,44 +1,47 @@
-import { withDispatchTask } from './dispatch-task-scope.ts';
+import { withDispatchTask } from './tasks/dispatch/dispatch-task-scope.ts';
 import process from 'node:process';
 import { Value } from 'typebox/value';
-import CodexAssignmentClaims, { codexInstanceStore } from './codex-assignment-claims.ts';
-import codexContextRequest from './codex-context-request.ts';
-import runCodexContinuation from './codex-continuation.ts';
-import runCodexDelivery, { CodexDeliveryFailure } from './codex-delivery.ts';
-import { codexDispatchResponse } from './codex-dispatch-binding.ts';
-import { codexWorkObservationHandoff } from './codex-dispatch-handoff.ts';
-import runCodexFeedback from './codex-feedback.ts';
+import CodexAssignmentClaims, {
+  codexInstanceStore,
+} from './tasks/dispatch/codex-assignment-claims.ts';
+import codexContextRequest from './tasks/context/codex-context-request.ts';
+import runCodexContinuation from './tasks/implementation/codex-continuation.ts';
+import runCodexDelivery, { CodexDeliveryFailure } from './tasks/delivery/codex-delivery.ts';
+import { codexDispatchResponse } from './tasks/dispatch/codex-dispatch-binding.ts';
+import { codexWorkObservationHandoff } from './tasks/dispatch/codex-dispatch-handoff.ts';
+import runCodexFeedback from './tasks/feedback/codex-feedback.ts';
 import codexNativeInventory, { assertNoNativeInventory } from './codex-native-inventory.ts';
-import codexNativeMaterial, { codexNativeRuntimeResult } from './codex-native-material.ts';
+import codexNativeMaterial, {
+  codexNativeRuntimeResult,
+} from './tasks/context/codex-native-material.ts';
 import assertCodexNodeVersion, { CodexNodeVersionError } from './codex-node-version.ts';
 import runCodexNotificationReset from './codex-notification-reset.ts';
 import codexPermission from './codex-permission.ts';
 import codexRuntimeRequest from './codex-runtime-request.ts';
 import { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
-import codexTurnContext, { codexCurrentTurnContext } from './codex-turn-context.ts';
-import contextMaterialTransport from './context-material-transport.ts';
-import { operateInstanceIdentity } from './instance-identity.ts';
+import codexTurnContext, { codexCurrentTurnContext } from './tasks/context/codex-turn-context.ts';
+import contextMaterialTransport from './tasks/context/context-material-transport.ts';
+import { operateInstanceIdentity } from './identity/instance-identity.ts';
 import IssuePickupFailure from './issue-pickup-failure.ts';
-import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
-import { assertModelWorkflowInput, nativeContextResponse } from './native-context-request.ts';
-import { nativeMaterialResponse } from './native-material.ts';
-import workflowFailure, { workflowFailureScope } from './workflow-failure.ts';
-import WorkflowRequestError from './workflow-request-error.ts';
+import { issuePickupAutomationId } from './automations/issue-pickup-jobs.ts';
+import {
+  assertModelWorkflowInput,
+  nativeContextResponse,
+} from './tasks/context/native-context-request.ts';
+import { nativeMaterialResponse } from './tasks/context/native-material.ts';
+import workflowFailure, { workflowFailureScope } from './tasks/workflow-failure.ts';
+import WorkflowRequestError from './tasks/workflow-request-error.ts';
 
 import { IntakeError } from '../channels/github/intake/record-store.ts';
-import { runCodexDispatch } from './codex-dispatch.ts';
+import { runCodexDispatch } from './tasks/dispatch/codex-dispatch.ts';
 import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
 import codexHostAccess from './codex-host-access.ts';
-import {
-  inspectCodexIntake,
-  runCodexIntake,
-  runCodexIssuePickup,
-  selectCodexIntake,
-} from './codex-intake.ts';
+import { inspectCodexIntake, runCodexIntake, runCodexIssuePickup } from './codex-intake.ts';
+import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
-import workflowNoticeInstructions from './workflow-notice-instructions.ts';
+import workflowNoticeInstructions from './tasks/workflow-notice-instructions.ts';
 
-import { CodexAutomationError } from './codex-automation-state.ts';
+import { CodexAutomationError } from './automations/automation-errors.ts';
 import {
   acknowledgeCodexAutomation,
   cancelCodexAutomation,
@@ -48,20 +51,20 @@ import {
   prepareCodexAutomation,
   reconcileCodexAutomationRetirements,
   syncCodexAutomationThreads,
-} from './codex-automations.ts';
-import codexModelRouting from './codex-model-routing.ts';
-import { RoutingError } from './model-routing.ts';
+} from './automations/codex-automations.ts';
+import codexModelRouting from './models/codex-model-routing.ts';
+import { RoutingError } from './models/model-routing.ts';
 
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import { createCodexSessionContext } from './codex-context.ts';
-import { CodexSetupError, inspectCodexSetup, installCodexSetup } from './codex-setup.ts';
+import { CodexSetupError, inspectCodexSetup, installCodexSetup } from './lifecycle/codex-setup.ts';
 import {
   bindCodexWorkspace,
   inspectCodexWorkspaceBinding,
   previewCodexWorkspace,
   unbindCodexWorkspace,
   type CodexWorkspacePreview,
-} from './codex-workspace-binding.ts';
+} from './identity/codex-workspace-binding.ts';
 
 interface SessionStartInput {
   hook_event_name?: unknown;
@@ -316,7 +319,11 @@ async function readWorkflowCommand(route: string, args: string[]) {
     route === 'dispatch' &&
     ['next', 'launch', 'retire'].includes(String(result.request.action))
   ) {
-    await selectCodexIntake(result.pluginData, {}, { resolvePolicy: false, inspectionOnly: true });
+    await selectCodexTaskContext(
+      result.pluginData,
+      {},
+      { resolvePolicy: false, inspectionOnly: true },
+    );
     const inventory = await codexNativeInventory();
     if (result.request.action === 'next')
       result.request = {

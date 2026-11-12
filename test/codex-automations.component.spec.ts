@@ -1,4 +1,4 @@
-import { codexInstanceStore } from '../agent/codex-assignment-claims.ts';
+import { codexInstanceStore } from '../agent/tasks/dispatch/codex-assignment-claims.ts';
 import IssuePickupEnrollmentStore from '../agent/issue-pickup-enrollment.ts';
 import selectionFixture from './issue-pickup-selection-fixture.ts';
 import checkCodexActivationIsolation from './codex-activation-fixture.ts';
@@ -19,10 +19,12 @@ import { join, resolve } from 'node:path';
 import { parse, stringify } from 'smol-toml';
 
 import { automationHash } from '../agent/automation-hash.ts';
-import { AutomationError } from '../agent/automation-gateway.ts';
-import type { AutomationThread, AutomationThreadAdapter } from '../agent/automation-threads.ts';
+import { AutomationError } from '../agent/automations/automation-errors.ts';
+import type {
+  AutomationThread,
+  AutomationThreadAdapter,
+} from '../agent/automations/automation-threads.ts';
 import {
-  inspectCodexPickupActivation,
   acknowledgeCodexAutomation,
   replaceCodexNotificationCoordinator,
   codexNotificationResetAutomation,
@@ -34,24 +36,25 @@ import {
   prepareCodexAutomation,
   reconcileCodexAutomationRetirements,
   syncCodexAutomationThreads,
-  type CodexAutomationDependencies,
-} from '../agent/codex-automations.ts';
-import codexAutomationSchedule from '../agent/codex-automation-schedule.ts';
+} from '../agent/automations/codex-automations.ts';
+import { type CodexAutomationDependencies } from '../agent/automations/codex-automation-snapshot.ts';
+import { inspectCodexPickupActivation } from '../agent/automations/codex-automation-activation.ts';
+import codexAutomationSchedule from '../agent/automations/codex-automation-schedule.ts';
 import {
   parseSavedAutomation,
   parseAutomationReceipt,
   readCodexAutomations,
   type NativeAutomation,
   type SavedAutomation,
-} from '../agent/codex-automation-state.ts';
+} from '../agent/automations/codex-automation-state.ts';
 import {
   bindCodexWorkspace,
   inspectCodexWorkspaceBinding,
-} from '../agent/codex-workspace-binding.ts';
+} from '../agent/identity/codex-workspace-binding.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 import { prepareCodexPickupEnrollment, inspectCodexIntake } from '../agent/codex-intake.ts';
 import normalizeAutomationSchedule from '../manifest/automation-schedule.ts';
-import { inspectCodexSetup, installCodexSetup } from '../agent/codex-setup.ts';
+import { inspectCodexSetup, installCodexSetup } from '../agent/lifecycle/codex-setup.ts';
 
 const capture = (name: string) =>
   readFile(resolve('fixtures', `codex-automation-${name}.approved.txt`), 'utf8');
@@ -278,6 +281,25 @@ describe('agent/codex-automations', () => {
     const bytes = await readFile(path, 'utf8');
     return { path, bytes, ledger: JSON.parse(bytes) };
   }
+  async function unrelatedDamagedLedger() {
+    const binding = { workspace, codexHome: join(root, 'other-codex'), agentId: 'fixture' };
+    const scope = automationHash({
+      runtime: 'codex',
+      profile: binding.codexHome,
+      workspaceDir: workspace,
+      agentId: binding.agentId,
+    });
+    const path = join(pluginData, `codex-automations-${scope}.json`);
+    const contents = JSON.stringify({
+      version: 1,
+      scope,
+      binding,
+      records: 'damaged',
+      pending: { broken: true },
+    });
+    await writeFile(path, contents, { mode: 0o600 });
+    return { path, contents };
+  }
   async function manifest(declaration = job()) {
     await writeFile(
       join(workspace, 'agent.yaml'),
@@ -349,6 +371,70 @@ describe('agent/codex-automations', () => {
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+
+  it('should isolate damaged payloads belonging to another codex installation', async () => {
+    const expected = await inspect();
+    const { path, contents } = await unrelatedDamagedLedger();
+    assert.deepEqual(await inspect(), expected);
+    assert.equal(await readFile(path, 'utf8'), contents);
+  });
+
+  it('should reject damaged current, retained and ambiguous automation ownership', async () => {
+    for (const binding of [
+      { workspace, codexHome, agentId: 'fixture' },
+      { workspace: join(root, 'prior-workspace'), codexHome, agentId: 'prior-agent' },
+      undefined,
+    ]) {
+      const scope = binding
+        ? automationHash({
+            runtime: 'codex',
+            profile: binding.codexHome,
+            workspaceDir: binding.workspace,
+            agentId: binding.agentId,
+          })
+        : 'a'.repeat(64);
+      const path = join(pluginData, `codex-automations-${scope}.json`);
+      await writeFile(path, JSON.stringify({ version: 1, scope, binding, records: 'damaged' }), {
+        mode: 0o600,
+      });
+      await assert.rejects(inspect(), rejectsCode('automation-ownership-invalid'));
+      await rm(path);
+    }
+    const alias = join(root, 'home-alias');
+    await symlink(codexHome, alias);
+    const binding = { workspace, codexHome: alias, agentId: 'fixture' };
+    const scope = automationHash({
+      runtime: 'codex',
+      profile: alias,
+      workspaceDir: workspace,
+      agentId: binding.agentId,
+    });
+    const path = join(pluginData, `codex-automations-${scope}.json`);
+    await writeFile(path, JSON.stringify({ version: 1, scope, binding, records: 'damaged' }), {
+      mode: 0o600,
+    });
+    await assert.rejects(inspect(), rejectsCode('automation-ownership-invalid'));
+  });
+
+  it('should reject unrelated ledgers with unverified ownership envelopes', async () => {
+    const binding = { workspace, codexHome: join(root, 'other-codex'), agentId: 'fixture' };
+    const scope = automationHash({
+      runtime: 'codex',
+      profile: binding.codexHome,
+      workspaceDir: workspace,
+      agentId: binding.agentId,
+    });
+    const path = join(pluginData, `codex-automations-${scope}.json`);
+    for (const damaged of [
+      { version: 999, scope, binding, records: [] },
+      { version: 1, scope: 'a'.repeat(64), binding, records: [] },
+      { version: 1, scope, binding: { ...binding, agentId: 'wrong-agent' }, records: [] },
+      { version: 1, scope, binding: { codexHome: binding.codexHome }, records: [] },
+    ]) {
+      await writeFile(path, JSON.stringify(damaged), { mode: 0o600 });
+      await assert.rejects(inspect(), rejectsCode('automation-ownership-invalid'));
+    }
   });
 
   it('should reconcile only the selected automation while leaving earlier changes pending', async () => {
@@ -554,22 +640,7 @@ describe('agent/codex-automations', () => {
         },
       },
     };
-    const saveManifest = (legacy = false) =>
-      writeFile(
-        join(workspace, 'agent.yaml'),
-        JSON.stringify(
-          legacy
-            ? {
-                ...source,
-                github: {
-                  ...source.github,
-                  'issue-pickup': undefined,
-                  'project-pickup': source.github['issue-pickup'],
-                },
-              }
-            : source,
-        ),
-      );
+    const saveManifest = () => writeFile(join(workspace, 'agent.yaml'), JSON.stringify(source));
     await saveManifest();
     const conversations = new Map<
       string,
@@ -688,7 +759,7 @@ describe('agent/codex-automations', () => {
     assert.ok(sameChatReplacement.expected.kind === 'heartbeat');
     assert.equal(sameChatReplacement.expected.targetThreadId, legacyChat);
     await nativeWrite({ ...legacyPickup.definition, status: 'ACTIVE' }, legacyPickup.id);
-    await saveManifest(true);
+    await saveManifest();
     await syncThreads(dependencies);
     await reconcile();
     const installedPickup = (await readCodexAutomations(codexHome)).find(
@@ -721,6 +792,18 @@ describe('agent/codex-automations', () => {
       );
     const first = (await enrollments.read()).records[0]!;
     assert.deepEqual(first.enrollment, priorEnrollment.enrollment);
+    let bindingReads = 0;
+    const inspection = await inspectCodexAutomations(pluginData, inputs(), {
+      ...dependencies,
+      inspectBinding: async (root) => {
+        bindingReads++;
+        assert.equal(bindingReads, 1, 'planning must retain its selected binding');
+        return inspectCodexWorkspaceBinding(root);
+      },
+    });
+    assert.equal(inspection.status, 'aligned');
+    assert.equal(bindingReads, 1);
+    await unrelatedDamagedLedger();
     const active = await inspectCodexPickupActivation(pluginData, dependencies);
     assert.equal(active.nativeId, first.nativeId);
     await checkCodexActivationIsolation(

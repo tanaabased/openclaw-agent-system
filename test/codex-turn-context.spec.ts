@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 
-import taskTurnContext from '../agent/task-turn-context.ts';
-import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
+import taskTurnContext from '../agent/tasks/context/task-turn-context.ts';
+import type { SharedDispatchRecord } from '../agent/tasks/dispatch/dispatch-state.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 
-import codexTurnContext, { codexCurrentTurnContext } from '../agent/codex-turn-context.ts';
-import type { CodexWorkspaceBindingInspection } from '../agent/codex-workspace-binding.ts';
+import codexTurnContext, {
+  codexCurrentTurnContext,
+} from '../agent/tasks/context/codex-turn-context.ts';
+import type { CodexWorkspaceBindingInspection } from '../agent/identity/codex-workspace-binding.ts';
 
 const bound = {
   status: 'bound',

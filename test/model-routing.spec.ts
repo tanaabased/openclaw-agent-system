@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 
-import { inspectModelRouting, resolveModelRouting, RoutingError } from '../agent/model-routing.ts';
-import resolveModelRoutingRequest from '../agent/model-routing-request.ts';
+import {
+  inspectModelRouting,
+  resolveModelRouting,
+  RoutingError,
+} from '../agent/models/model-routing.ts';
+import resolveModelRoutingRequest from '../agent/models/model-routing-request.ts';
 import type { AgentModelsConfiguration } from '../manifest/models-schema.ts';
 
 const profiles: AgentModelsConfiguration = {

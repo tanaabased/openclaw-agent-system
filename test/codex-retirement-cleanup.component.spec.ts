@@ -3,9 +3,9 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import cleanup from '../agent/codex-retirement-cleanup.ts';
-import nativeRetirement from '../agent/codex-retirement-native.ts';
-import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
+import cleanup from '../agent/tasks/retirement/codex-retirement-cleanup.ts';
+import nativeRetirement from '../agent/tasks/retirement/codex-retirement-native.ts';
+import type { DispatchRecord } from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 
 describe('codex retirement cleanup', () => {
   let root: string;

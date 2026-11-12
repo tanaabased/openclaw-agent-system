@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import intakeDenial, { matchesDeniedPreparation } from '../agent/codex-intake-denial.ts';
-import type { PreparationObservation } from '../agent/codex-dispatch-state.ts';
+import type { PreparationObservation } from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 
 const anchor: PreparationObservation = {
   sourceThreadId: 'intake',

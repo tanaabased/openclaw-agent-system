@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import selectFeedbackStage from '../agent/feedback-stage.ts';
+import selectFeedbackStage from '../agent/tasks/feedback/feedback-stage.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 
 const skill = {

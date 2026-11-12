@@ -6,8 +6,8 @@ import {
   nativeAutomationHistory,
   nativeAutomationRun,
   type AutomationGateway,
-} from '../agent/automation-gateway.ts';
-import { nativeAutomationHash } from '../agent/automation-projection.ts';
+} from '../agent/automations/automation-gateway.ts';
+import { nativeAutomationHash } from '../agent/automations/automation-projection.ts';
 
 interface RpcCapture {
   method: Parameters<AutomationGateway>[0];

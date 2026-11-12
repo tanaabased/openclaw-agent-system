@@ -1,4 +1,4 @@
-import feedbackDiscoveryOwner from './feedback-discovery-owner.ts';
+import feedbackDiscoveryOwner from './tasks/feedback/feedback-discovery-owner.ts';
 
 /** compare-and-save each observation without replacing concurrently advanced workflow state. */
 export default async function discoveryCheckpoint<R extends { id: string; feedback?: F }, F>(

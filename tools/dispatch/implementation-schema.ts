@@ -1,10 +1,10 @@
-import { deliveryBaseSchema } from '../../agent/delivery-base.ts';
+import { deliveryBaseSchema } from '../../agent/tasks/delivery/delivery-base.ts';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { implementationMaterialSchema } from './implementation-material-schema.ts';
 
-import { implementationResultSchema } from '../../agent/implementation-result.ts';
-import WorkflowRequestError from '../../agent/workflow-request-error.ts';
+import { implementationResultSchema } from '../../agent/tasks/implementation/implementation-result.ts';
+import WorkflowRequestError from '../../agent/tasks/workflow-request-error.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096, pattern: '\\S' });
 export const directImplementationRequestSchema = Type.Object(

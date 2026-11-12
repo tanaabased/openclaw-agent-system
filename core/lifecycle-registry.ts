@@ -4,12 +4,15 @@ import {
   type SessionDispatchDiagnostic,
 } from '../credentials/session-dispatch-diagnostic.ts';
 import { withProviderDiagnostic, type ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
-import type SetupLifecycleService from '../agent/setup-lifecycle.ts';
-import type { AutomationThreadModelObservation } from '../agent/automation-threads.ts';
-import setupStepApplies from '../agent/setup-runtime.ts';
+import type SetupLifecycleService from '../agent/lifecycle/setup-lifecycle.ts';
+import type { AutomationThreadModelObservation } from '../agent/automations/automation-threads.ts';
+import setupStepApplies from '../agent/lifecycle/setup-runtime.ts';
 import type { AgentSetupRuntime } from '../manifest/setup-schema.ts';
 import type { AgentManifest, ManifestDiagnostic } from '../manifest/types.ts';
-import { selectedSetupPhases, type InstallSetupOptions } from '../agent/install-options.ts';
+import {
+  selectedSetupPhases,
+  type InstallSetupOptions,
+} from '../agent/lifecycle/install-options.ts';
 
 export interface AgentSystemLifecycleContext {
   manifest: AgentManifest;

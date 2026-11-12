@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import waitForCodexWorktreeRemoval from '../agent/codex-worktree-removal.ts';
+import waitForCodexWorktreeRemoval from '../agent/tasks/retirement/codex-worktree-removal.ts';
 
 describe('agent/codex-worktree-removal', () => {
   const missing = () => {

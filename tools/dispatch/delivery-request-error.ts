@@ -1,4 +1,4 @@
-import WorkflowRequestError from '../../agent/workflow-request-error.ts';
+import WorkflowRequestError from '../../agent/tasks/workflow-request-error.ts';
 
 /** Describe the selected operation without echoing submitted values or ownership selectors. */
 export default function invalidDeliveryRequest(

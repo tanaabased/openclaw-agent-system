@@ -86,6 +86,80 @@ export default defineConfig([
     },
   },
   {
+    files: [
+      'agent/tasks/delivery/delivery-base.ts',
+      'agent/tasks/delivery/delivery-preparation.ts',
+      'agent/tasks/delivery/delivery-state.ts',
+      'agent/tasks/delivery/issue-delivery-state.ts',
+      'agent/tasks/delivery/publish-issue-delivery.ts',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: restrictedBuiltinImports,
+          patterns: [
+            {
+              group: ['**/codex-*', '**/openclaw-*'],
+              message: 'Shared delivery rules and publication must not depend on native adapters.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: [
+      'agent/tasks/context/*.ts',
+      'agent/tasks/delivery/codex-delivery.ts',
+      'agent/tasks/dispatch/codex-dispatch-context.ts',
+      'agent/tasks/feedback/codex-feedback*.ts',
+      'agent/tasks/context/codex-entry-context.ts',
+      'agent/tasks/feedback/codex-reply.ts',
+      'agent/tasks/context/openclaw-entry-context.ts',
+      'agent/tasks/feedback/openclaw-reply.ts',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: restrictedBuiltinImports,
+          patterns: [
+            {
+              group: ['**/codex-intake.ts', '**/openclaw-intake.ts'],
+              message:
+                'Task selection and task operations must not depend on assignment scan services.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: [
+      'agent/models/model-routing.ts',
+      'agent/models/model-configuration-plan.ts',
+      'agent/models/model-catalog.ts',
+      'agent/identity/plan-install.ts',
+      'agent/lifecycle/setup-runtime.ts',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: restrictedBuiltinImports,
+          patterns: [
+            {
+              group: ['**/codex-*', '**/openclaw-*', '**/tasks/**'],
+              message:
+                'Lifecycle and model decisions must not depend on native adapters or task orchestration.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['test/**/*.{js,mjs,cjs,ts,tsx}', '**/*.{spec,test}.{js,mjs,cjs,ts,tsx}'],
     languageOptions: {
       globals: globals.mocha,

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import workflowStatus from '../agent/workflow-status.ts';
+import workflowStatus from '../agent/tasks/workflow-status.ts';
 
 describe('agent/workflow-status', () => {
   it('should use native evidence for current conversation activity', () => {

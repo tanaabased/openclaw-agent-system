@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
-import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
-import { resolveOpenClawTurnFeedback } from '../agent/openclaw-feedback-input.ts';
+import type { OpenClawDispatchRecord } from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
+import { resolveOpenClawTurnFeedback } from '../agent/tasks/feedback/openclaw-feedback-input.ts';
 
 describe('agent/openclaw-turn-feedback', () => {
   const caller = { sessionKey: 'chat', sessionId: 'session', runId: 'execution' };

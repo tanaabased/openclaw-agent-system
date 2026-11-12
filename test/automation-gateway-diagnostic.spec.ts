@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 
 import automationGatewayDiagnostic, {
   retainAutomationGatewayDiagnostic,
-} from '../agent/automation-gateway-diagnostic.ts';
-import { AutomationError } from '../agent/automation-gateway.ts';
+} from '../agent/automations/automation-gateway-diagnostic.ts';
+import { AutomationError } from '../agent/automations/automation-errors.ts';
 
 describe('agent/automation-gateway-diagnostic', () => {
   it('should retain bounded opt-in rejection evidence without credentials payloads or arbitrary details', () => {

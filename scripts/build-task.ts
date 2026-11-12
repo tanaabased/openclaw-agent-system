@@ -1,11 +1,11 @@
 import { format, resolveConfig } from 'prettier';
 
-import { automationReportSchema } from '../agent/automation-report-schema.ts';
+import { automationReportSchema } from '../agent/automations/automation-report-schema.ts';
 
 await Bun.write(
-  'agent/automation-report.schema.json',
+  'agent/automations/automation-report.schema.json',
   await format(JSON.stringify(automationReportSchema), {
-    ...(await resolveConfig('agent/automation-report.schema.json')),
+    ...(await resolveConfig('agent/automations/automation-report.schema.json')),
     parser: 'json',
   }),
 );

@@ -3,8 +3,8 @@ import {
   BackupPruneError,
   type BackupPruneResult,
   type default as WorkspaceBackupService,
-} from '../agent/backup-service.ts';
-import { BackupError } from '../agent/backup-types.ts';
+} from '../agent/backup/backup-service.ts';
+import { BackupError } from '../agent/backup/backup-types.ts';
 import {
   assertBackupLocationOwner,
   loadBackupManifest,

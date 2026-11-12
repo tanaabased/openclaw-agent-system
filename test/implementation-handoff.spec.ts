@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import implementationHandoff from '../agent/implementation-handoff.ts';
+import implementationHandoff from '../agent/tasks/implementation/implementation-handoff.ts';
 
 describe('agent/implementation-handoff', () => {
   for (const runtime of ['codex', 'openclaw'] as const) {

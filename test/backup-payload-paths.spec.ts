@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import backupPayloadPaths from '../agent/backup-payload-paths.ts';
+import backupPayloadPaths from '../agent/backup/backup-payload-paths.ts';
 
 describe('agent/backup-payload-paths', () => {
   it('should retain selected files and structural parents without inventing siblings', () => {

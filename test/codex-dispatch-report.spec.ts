@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
-import prepareDispatchReport from '../agent/codex-dispatch-report.ts';
-import type { DispatchRecord, DispatchState } from '../agent/codex-dispatch-state.ts';
-import { issueKey } from '../agent/dispatch-pending.ts';
+import prepareDispatchReport from '../agent/tasks/dispatch/codex-dispatch-report.ts';
+import type {
+  DispatchRecord,
+  DispatchState,
+} from '../agent/tasks/dispatch/codex-dispatch-state.ts';
+import { issueKey } from '../agent/tasks/dispatch/dispatch-pending.ts';
 import type { IntakeRecord, IntakeState } from '../channels/github/intake/record-store.ts';
 
 const state: DispatchState = {
@@ -283,7 +286,7 @@ describe('agent/codex-dispatch-report', () => {
     assert.match(recovered.response, /Intake resumed/);
     assert.equal(recovered.health, '');
   });
-  it('should report queued feedback counts without a delivery lifecycle feed', () => {
+  it('should distinguish queued feedback from verified delivery', () => {
     const record = {
       id: 'owner',
       intakeId: 'assignment',
@@ -296,6 +299,7 @@ describe('agent/codex-dispatch-report', () => {
         events: [
           {
             id: 'sent',
+            phase: 'prepared',
             attempt: { turnId: 'native-turn' },
           },
           { id: 'unsent', phase: 'queued' },
@@ -310,12 +314,66 @@ describe('agent/codex-dispatch-report', () => {
       state: { ...state, records: [record] },
     });
     assert.doesNotMatch(first.response, /feedback item delivered to chats/);
-    assert.match(first.response, /Queued feedback:\*\* 3 items across 1 issue/);
+    assert.match(first.response, /Queued feedback:\*\* 4 items across 1 issue/);
     assert.match(first.response, /feedback-send-unresolved/);
     assert.match(first.response, /NOTIFY/);
     assert.notEqual(first.health, '');
     assert.match(first.response, /Slots:\*\* 1\/3 occupied/);
     assert.doesNotMatch(first.response, /PRIVATE|PUBLIC/);
+  });
+  it('should acknowledge unreported issue and pr deliveries with accurate counts and chat links', () => {
+    const records = ['one', 'two'].map((id, index) => ({
+      id,
+      intakeId: id,
+      threadId: `chat-${id}`,
+      intakeReportedAt: 1,
+      effective: { status: 'verified' },
+      dispatchedAt: 1,
+      feedback: {
+        baseline: {},
+        events: [
+          { id: `issue-${id}`, phase: 'delivered', itemType: 'issue' },
+          ...(index ? [] : [{ id: 'pr', phase: 'delivered', itemType: 'pull-request', number: 7 }]),
+          { id: 'old', phase: 'delivered', intakeReportedAt: 0 },
+          { id: 'uncertain', phase: 'prepared', attempt: { turnId: 'possible' } },
+          { id: 'denied', phase: 'blocked', code: 'continuation-native-approval-denied' },
+        ],
+      },
+    })) as DispatchRecord[];
+    const current = {
+      ...input,
+      state: { ...state, records },
+      intake: {
+        ...intake,
+        records: records.map((record, index) => ({
+          id: record.id,
+          repository: { owner: { login: 'owner' }, name: 'repo' },
+          issue: { number: index + 3 },
+        })) as IntakeRecord[],
+      },
+    };
+    const before = structuredClone(records);
+    const first = prepareDispatchReport(current);
+    assert.equal(first.delivered.length, 3);
+    assert.match(
+      first.response,
+      /Feedback delivered to chat:\*\* \[owner\/repo#3\]\(codex:\/\/threads\/chat-one\) · 2 items/,
+    );
+    assert.match(
+      first.response,
+      /Feedback delivered to chat:\*\* \[owner\/repo#4\]\(codex:\/\/threads\/chat-two\) · 1 item/,
+    );
+    assert.doesNotMatch(first.response, /DONT_NOTIFY|nothing new to report/);
+    assert.deepEqual(records, before);
+    for (const record of records)
+      for (const event of record.feedback!.events)
+        if (first.delivered.some((entry) => entry.id === record.id && entry.eventId === event.id))
+          event.intakeReportedAt = 2;
+    current.state.intakeHealth = first.health;
+    const repeated = prepareDispatchReport(current);
+    assert.deepEqual(repeated.delivered, []);
+    assert.doesNotMatch(repeated.response, /Feedback delivered to chat/);
+    assert.match(repeated.response, /DONT_NOTIFY/);
   });
   it('should distinguish failed intake state from a temporary provider warning', () => {
     const report = prepareDispatchReport({

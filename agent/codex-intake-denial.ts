@@ -1,12 +1,15 @@
-import { nativeObject } from './automation-gateway.ts';
+import { nativeObject } from './automations/automation-gateway.ts';
 import { automationHash } from './automation-hash.ts';
-import { dispatchHistoryPages, nativeHistoryPages } from './codex-dispatch-history.ts';
-import validateDispatchRequest from './codex-dispatch-request.ts';
+import {
+  dispatchHistoryPages,
+  nativeHistoryPages,
+} from './tasks/dispatch/codex-dispatch-history.ts';
+import validateDispatchRequest from './tasks/dispatch/codex-dispatch-request.ts';
 import type {
   DispatchRecord,
   IntakeDenial,
   PreparationObservation,
-} from './codex-dispatch-state.ts';
+} from './tasks/dispatch/codex-dispatch-state.ts';
 import type { CodexThreadRequest } from './codex-thread-client.ts';
 import codexTurnApprovalDenied from './codex-turn-approval.ts';
 import providerErrorMessage from '../utils/provider-error-message.ts';

@@ -13,7 +13,7 @@ same-repository draft PR through an authorized update to that original PR.
 
 ## What Does Not Belong Here
 
-- Scheduled intake: [issue journey](../openclaw-issue-journey/README.md).
+- Scheduled intake: [issue journey](../openclaw-issue-conversation/README.md).
 - Assessment in an existing chat: [direct assessment](../openclaw-issue-assessment/README.md).
 - Work/Auto and PR delivery permutations beyond this continuation: their existing journeys and component fixtures.
 
@@ -129,7 +129,7 @@ NODE
 openclaw agent-system automations list --json | jq -e '.status == "aligned" and (.jobs | length) == 0'
 ```
 
-## Existing PR continuation
+## Testing Existing PR Continuation
 
 ```bash
 # should prepare one disposable same-repository draft pr by another author
@@ -207,7 +207,6 @@ for (const field of ['id', 'threadId', 'worktree']) assert.equal(records[0][fiel
 assert.equal(records[0].delivery.pullRequest.pullRequestNodeId, before.manualIssue.issue.nodeId);
 assert.equal(records[0].delivery.reconciled, true);
 assert.equal(records[0].delivery.creationAttempted, false);
-assert.equal(records[0].work.result.outcome, 'done');
 NODE
 openclaw agent-system automations list --json | jq -e '.status == "aligned" and (.jobs | length) == 0'
 ```

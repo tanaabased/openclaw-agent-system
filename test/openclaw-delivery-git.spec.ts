@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import executeOpenClawDeliveryGit from '../core/openclaw-delivery-git.ts';
-import workflowFailure from '../agent/workflow-failure.ts';
+import workflowFailure from '../agent/tasks/workflow-failure.ts';
 import { createGitToolDefinition } from '../tools/git/tool.ts';
 import type AgentSystemToolRuntime from '../api/runtime.ts';
 
