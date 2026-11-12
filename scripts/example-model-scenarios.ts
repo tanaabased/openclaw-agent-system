@@ -1,4 +1,3 @@
-import { resetExampleScenario } from '../examples/openclaw-notifications-reset/model-fixture.ts';
 import { issuePickupScenario } from '../examples/openclaw-project-picker/model-fixture.ts';
 import { openClawCollaborationScenario } from '../examples/openclaw-collaboration/model-fixture.ts';
 import { automationRecoveryScenario } from '../examples/openclaw-automation-recovery/model-fixture.ts';
@@ -55,7 +54,6 @@ const scenarios = new Map<string, OpenClawAIMockScenario>([
   [assessmentRecoveryExampleScenario.id, assessmentRecoveryExampleScenario],
   [assignmentPolicyExampleScenario.id, assignmentPolicyExampleScenario],
   [retirementExampleScenario.id, retirementExampleScenario],
-  [resetExampleScenario.id, resetExampleScenario],
   [nativeRetirementScenario.id, nativeRetirementScenario],
 ]);
 

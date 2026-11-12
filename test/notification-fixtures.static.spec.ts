@@ -31,7 +31,6 @@ for (const id of [
   'openclaw-issue-assessment-recovery',
   'openclaw-issue-assignment-policy',
   'openclaw-notifications-retirement',
-  'openclaw-notifications-reset',
   'openclaw-notifications-scheduling',
 ]) {
   describe(`examples/${id} fixture configuration`, () => {

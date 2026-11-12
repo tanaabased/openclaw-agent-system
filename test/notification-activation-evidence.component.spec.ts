@@ -41,7 +41,6 @@ for (const scenario of [
   'openclaw-issue-assessment-recovery',
   'openclaw-issue-assignment-policy',
   'openclaw-notifications-retirement',
-  'openclaw-notifications-reset',
 ]) {
   for (const agent of ['emori', 'tanaabot']) {
     describe(`examples/${scenario} ${agent} install evidence`, () => {

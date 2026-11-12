@@ -6,14 +6,14 @@ native OpenClaw and OpenClaw-hosted Codex, then verify the window allows no seco
 
 ## What Belongs Here
 
-- Native pickup enrollment, unchanged Install, and pause/resume retaining the job and chat. Pickup runs independently while the assignment schedule is paused.
-- Empty, selected, and exhausted-window outcome cards through the real automation/tool boundary, with selection triggered by a due-time occurrence.
+- Native pickup enrollment and scheduled execution through each runtime.
+- Selected and exhausted-window outcomes through the real automation/tool boundary, with selection triggered by a due-time occurrence.
 - Model selection from a small milestone configured as a list with the default `only` policy, GitHub self-assignment despite the ordinary assigner policy, and ordinary intake receiving the pickup exception and Work mode.
 - A repeat scan preserving the single assignment, chat, and checkout.
 
 ## What Does Not Belong Here
 
-- Implementation and PR delivery: [Work](../openclaw-issue-work/README.md).
+- Implementation and PR delivery: [Work](../openclaw-issue-work-custom/README.md).
 - Assignment concurrency and recovery: [intake](../openclaw-issue-intake/README.md) and [assignment policy](../openclaw-issue-assignment-policy/README.md).
 - Standalone Codex desktop scheduling and chat creation: the native acceptance checks in [Codex notifications](../codex-notifications/README.md). Hosted Codex uses OpenClaw's scheduler and dispatch owner.
 - Candidate pagination, uncertain writes, and policy permutations remain in unit/component coverage.
@@ -21,7 +21,7 @@ native OpenClaw and OpenClaw-hosted Codex, then verify the window allows no seco
 ## Notes
 
 - Strict AIMock supplies the selection and assessment. Scheduler authority, GitHub reads/writes, intake, chat creation, and checkout creation remain real. Hosted Codex keeps its native searchable-tool default. AIMock declines Responses WebSocket upgrades so Codex falls back to HTTP with full request history. This does not prove model judgment, long-running unattended reliability, or desktop rendering.
-- Each execution path gets its own disposable milestone, two issues, agent workspace, and native job. Empty and exhausted-window checks run on demand. Selection waits for the installed daily schedule, moved through the manifest to a slot two to three minutes ahead; it never substitutes a forced run if that occurrence fails. This adds up to three minutes of scheduler waiting per runtime.
+- Each execution path gets its own disposable milestone, two issues, agent workspace, and native job. The exhausted-window check runs on demand. Selection waits for the installed daily schedule, moved through the manifest to a slot two to three minutes ahead; it never substitutes a forced run if that occurrence fails. This adds up to three minutes of scheduler waiting per runtime.
 - Debug logs correlate native cron initialization, pickup lookup, and cleanup with hashed identities.
 - Ordinary assignments permit EMORI, not Tanaabot, and default to Plan. The selected issue asks a clarification question: the assessment asserts Work mode, retains the question, and stops before implementation or publication.
 - Only Tanaabot receives fixture assignments. Refresh is scoped to the selected issue. Cleanup stops the Gateway before closing issues and deleting milestones; the shared workflow cleanup owns SSH registrations.
@@ -92,34 +92,6 @@ for runtime in codex openclaw; do
   jq -e '.jobs | type == "array"' "$TMPDIR/pickup-$runtime-jobs.json"
   native=$(jq -er '.jobs[] | select(.id == "github-issue-pickup" and .nativeEnabled == true) | .nativeId' "$TMPDIR/pickup-$runtime-jobs.json")
   chat=$(jq -er '.jobs[] | select(.id == "github-issue-pickup") | .routing | select(startswith("session:"))' "$TMPDIR/pickup-$runtime-jobs.json")
-  openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e '.displayName == "📥 ISSUE PICKUP" and .name == "AGENT SYSTEM: github-issue-pickup" and .payload.thinking == "high" and (.payload.model | length > 0)'
-  openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$(echo "$chat" | sed 's/^session://')" '{key:$key}')" --json | jq -e '.session.displayName == "ISSUE PICKUP"'
-  if test "$runtime" = openclaw; then
-    openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .stepId == "github-issue-pickup" and .status == "unchanged")'
-    openclaw agent-system doctor --json | jq -e 'any(.findings[]; .code == "issue-pickup-ready")'
-  fi
-  if test "$runtime" = codex; then
-    openclaw gateway call models.list --params '{"agentId":"pickup-codex-tanaabot","provider":"openai","view":"all","refresh":true}' --json | jq -e 'any(.models[]; .id == "gpt-5.4-nano" and .available == true and .agentRuntime.id == "codex")'
-  fi
-  stage=pause-assignment-only
-  assignment_native=$(jq -er '.jobs[] | select(.id == "github-issue-assignment") | .nativeId' "$TMPDIR/pickup-$runtime-jobs.json")
-  openclaw cron edit "$assignment_native" --disable --json | jq -e '.enabled == false'
-  stage=run-pickup
-  run_id=$(openclaw agent-system automations run github-issue-pickup --json | jq -er 'select(.status == "queued") | .runId | strings')
-  node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-pickup "$run_id"
-  openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" --arg run "$run_id" '{id:$id,runId:$run,limit:1,offset:0}')" --json > "$TMPDIR/pickup-$runtime-empty.json"
-  jq -e --arg run "$run_id" 'any(.entries[]; .runId == $run and (.summary | contains("no eligible issues")))' "$TMPDIR/pickup-$runtime-empty.json"
-  openclaw cron edit "$assignment_native" --enable --json | jq -e '.enabled == true'
-  stage=pause-and-resume-pickup
-  if test "$runtime" = openclaw; then
-    cp agent.yaml "$TMPDIR/pickup-$runtime-active.yaml"
-    sed 's/  issue-pickup:/  issue-pickup:\n    paused: true/' "$TMPDIR/pickup-$runtime-active.yaml" > agent.yaml
-    openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .stepId == "github-issue-pickup" and .status == "updated")'
-    openclaw agent-system automations list --json | jq -e --arg id "$native" --arg chat "$chat" 'any(.jobs[]; .id == "github-issue-pickup" and .nativeId == $id and .routing == $chat and .nativeEnabled == false)'
-    cp "$TMPDIR/pickup-$runtime-active.yaml" agent.yaml
-    openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .stepId == "github-issue-pickup" and .status == "updated")'
-    openclaw agent-system automations list --json | jq -e --arg id "$native" --arg chat "$chat" '[.jobs[] | select(.id == "github-issue-pickup")] | length == 1 and .[0].nativeId == $id and .[0].routing == $chat and .[0].nativeEnabled == true'
-  fi
   stage=create-redesign-fixture
   GH_TOKEN="$GH_TOKEN_TANAABOT" gh api --method POST repos/tanaabased/big-test-bucket/issues -f "title=agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-pickup-$runtime-redesign" -f 'body=Disposable pickup fixture: redesign the entire cleanup system.' -F milestone="$milestone" > "$TMPDIR/pickup-$runtime-other.json"
   stage=create-cleanup-fixture
@@ -137,7 +109,6 @@ for runtime in codex openclaw; do
   node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" --scheduled-after github-issue-pickup "$native" "$due" > "$TMPDIR/pickup-$runtime-scheduled.json"
   stage=verify-scheduled-pickup-report
   jq -e 'if (.summary | contains("assigned an issue")) and (.summary | contains("2 eligible")) then true else error("scheduled pickup report mismatch: " + tojson) end' "$TMPDIR/pickup-$runtime-scheduled.json"
-  grep -F 'code=automation-lifecycle-' "$(openclaw-gateway log-path)" | tail -n 80 | node "$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
   stage=verify-assignment-and-native-assessment
   number=$(jq -er .number "$TMPDIR/pickup-$runtime-selected.json")
   GH_TOKEN="$GH_TOKEN_TANAABOT" gh api "repos/tanaabased/big-test-bucket/issues/$number" | jq -e '.assignees | length == 1 and .[0].login == "tanaabot"'

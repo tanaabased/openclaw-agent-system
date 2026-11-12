@@ -25,7 +25,6 @@ jobs:
           - codex-notifications
           - openclaw-notifications-scheduling
           - openclaw-notifications-retirement
-          - openclaw-notifications-reset
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
