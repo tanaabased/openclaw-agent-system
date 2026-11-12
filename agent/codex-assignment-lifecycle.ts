@@ -22,7 +22,7 @@ import retainedIntakePolicy from './retained-intake-policy.ts';
 import retirementConsumption from './retirement-consumption.ts';
 import retirementEffects from './retirement-effects.ts';
 import retirementLocalData from './retirement-local-data.ts';
-import taskPullRequest from './task-pull-request.ts';
+import taskPullRequest from './tasks/delivery/task-pull-request.ts';
 /** lifecycle reconciliation belongs to the existing native intake occurrence, before feedback selection. */
 export default async function reconcileCodexLifecycle(
   pluginData: string,

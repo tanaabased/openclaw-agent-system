@@ -4,7 +4,7 @@ import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { FeedbackSourceState } from './feedback-state.ts';
 import issueLaunchTarget from './issue-launch-target.ts';
 import { dispatchAdmission, managedPullRequest, type ManagedIssue } from './managed-issue.ts';
-import taskPullRequest from './task-pull-request.ts';
+import taskPullRequest from './tasks/delivery/task-pull-request.ts';
 import workflowStatus from './workflow-status.ts';
 export const dispatchInspectionProperties = {
   id: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),

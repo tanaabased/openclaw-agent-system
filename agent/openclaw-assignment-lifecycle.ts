@@ -19,7 +19,7 @@ import replyOwnPublications from './reply-own-publications.ts';
 import retirementConsumption from './retirement-consumption.ts';
 import retirementEffects from './retirement-effects.ts';
 import retirementLocalData from './retirement-local-data.ts';
-import taskPullRequest from './task-pull-request.ts';
+import taskPullRequest from './tasks/delivery/task-pull-request.ts';
 import workflowFailure from './workflow-failure.ts';
 export default async function reconcileOpenClawLifecycle(input: {
   service: Pick<OpenClawDispatchContext, 'scope' | 'dependencies'>;

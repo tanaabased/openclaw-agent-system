@@ -10,7 +10,7 @@ import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { assignmentClaimRoute } from './assignment-claim-source.ts';
 import { automationHash } from './automation-hash.ts';
-import { announcementRecoveryAction } from './delivery-announcement-recovery.ts';
+import { announcementRecoveryAction } from './tasks/delivery/delivery-announcement-recovery.ts';
 import DiscoveryBudget from './discovery-budget.ts';
 import discoveryCheckpoint from './discovery-checkpoint.ts';
 import dispatchContext from './dispatch-context.ts';
@@ -29,7 +29,7 @@ import {
 } from './managed-issue.ts';
 import resolveModelRoutingRequest from './model-routing-request.ts';
 import { assessmentSchema } from './model-routing.ts';
-import recoverOpenClawAnnouncement from './openclaw-announcement-recovery.ts';
+import recoverOpenClawAnnouncement from './tasks/delivery/openclaw-announcement-recovery.ts';
 import reconcileOpenClawLifecycle from './openclaw-assignment-lifecycle.ts';
 import dispatchCapacity from './openclaw-capacity.ts';
 import { openClawWorkSlot } from './openclaw-continuation.ts';
@@ -52,7 +52,7 @@ import {
   routingInstructionsGuidance,
   routingInstructionsReference,
 } from './routing-instructions.ts';
-import taskPullRequest from './task-pull-request.ts';
+import taskPullRequest from './tasks/delivery/task-pull-request.ts';
 import workflowFailure from './workflow-failure.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import workflowStatus from './workflow-status.ts';

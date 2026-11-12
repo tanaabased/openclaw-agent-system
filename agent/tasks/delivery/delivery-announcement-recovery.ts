@@ -1,14 +1,14 @@
 import taskPullRequest from './task-pull-request.ts';
-import type { SharedDispatchRecord } from './dispatch-state.ts';
+import type { SharedDispatchRecord } from '../../dispatch-state.ts';
 import { Type, type Static } from 'typebox';
 
-import { automationHash } from './automation-hash.ts';
-import { dispatchRetryDeadline, dispatchRetryLimit } from './dispatch-retry.ts';
+import { automationHash } from '../../automation-hash.ts';
+import { dispatchRetryDeadline, dispatchRetryLimit } from '../../dispatch-retry.ts';
 import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
-import { managedPullRequest, type ManagedIssue } from './managed-issue.ts';
-import workflowFailure from './workflow-failure.ts';
-import { providerDiagnosticSchema } from '../utils/provider-diagnostic.ts';
-import type { IssueAnnouncementInput } from '../channels/github/publication/issue-delivery.ts';
+import { managedPullRequest, type ManagedIssue } from '../../managed-issue.ts';
+import workflowFailure from '../../workflow-failure.ts';
+import { providerDiagnosticSchema } from '../../../utils/provider-diagnostic.ts';
+import type { IssueAnnouncementInput } from '../../../channels/github/publication/issue-delivery.ts';
 
 const time = Type.Integer({ minimum: 0 });
 export const announcementRecoverySchema = Type.Object(

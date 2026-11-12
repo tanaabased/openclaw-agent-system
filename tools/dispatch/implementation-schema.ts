@@ -1,4 +1,4 @@
-import { deliveryBaseSchema } from '../../agent/delivery-base.ts';
+import { deliveryBaseSchema } from '../../agent/tasks/delivery/delivery-base.ts';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { implementationMaterialSchema } from './implementation-material-schema.ts';

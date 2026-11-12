@@ -1,5 +1,5 @@
 import { automationHash } from './automation-hash.ts';
-import type { AdoptedPullRequest } from './delivery-state.ts';
+import type { AdoptedPullRequest } from './tasks/delivery/delivery-state.ts';
 import type { FeedbackEvent } from './codex-feedback-state.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { ManagedIssue } from './managed-issue.ts';

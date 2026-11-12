@@ -2,15 +2,15 @@ import { deliveryHasEffects, selectDeliveryBase, verifyDeliveryCommits } from '.
 import { realpath } from 'node:fs/promises';
 import type { Static } from 'typebox';
 
-import IssueDeliveryProvider from '../channels/github/publication/issue-delivery.ts';
-import { gitRemoteIdentity } from '../tools/git/worktree-remote.ts';
-import type { directImplementationRequestSchema } from '../tools/dispatch/implementation-schema.ts';
-import type { AssessmentEntryDependencies } from './assessment-entry.ts';
-import { automationHash } from './automation-hash.ts';
+import IssueDeliveryProvider from '../../../channels/github/publication/issue-delivery.ts';
+import { gitRemoteIdentity } from '../../../tools/git/worktree-remote.ts';
+import type { directImplementationRequestSchema } from '../../../tools/dispatch/implementation-schema.ts';
+import type { AssessmentEntryDependencies } from '../../assessment-entry.ts';
+import { automationHash } from '../../automation-hash.ts';
 import deliveryBindingChange from './delivery-binding-change.ts';
-import type { ImplementationEntry } from './implementation-entry-state.ts';
+import type { ImplementationEntry } from '../../implementation-entry-state.ts';
 import publishIssueDelivery from './publish-issue-delivery.ts';
-import { replyLocator } from './reply-target.ts';
+import { replyLocator } from '../../reply-target.ts';
 
 /** reuse the publication owner and receipts without synthesizing an intake assignment. */
 export default async function implementationEntryDelivery(input: {

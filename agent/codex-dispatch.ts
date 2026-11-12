@@ -10,7 +10,7 @@ import { codexInstanceStore } from './codex-assignment-claims.ts';
 import reconcileCodexLifecycle from './codex-assignment-lifecycle.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import runCodexContinuation from './codex-continuation.ts';
-import runCodexDelivery from './codex-delivery.ts';
+import runCodexDelivery from './tasks/delivery/codex-delivery.ts';
 import {
   dispatchRoutingRequired,
   nextDispatch,

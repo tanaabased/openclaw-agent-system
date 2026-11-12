@@ -1,4 +1,4 @@
-import taskPullRequest from './task-pull-request.ts';
+import taskPullRequest from './tasks/delivery/task-pull-request.ts';
 import { managedPullRequest, type ManagedIssue } from './managed-issue.ts';
 import type { FeedbackSourceState } from './feedback-state.ts';
 

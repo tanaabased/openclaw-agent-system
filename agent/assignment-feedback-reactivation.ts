@@ -3,7 +3,7 @@ import feedbackOwnPublications from './feedback-own-publications.ts';
 import type DiscoveryBudget from './discovery-budget.ts';
 import { workflowFeedbackAccepting } from '../channels/github/feedback-policy.ts';
 import type { GitHubNotificationPublicationClient } from '../channels/github/provider/work-event-client.ts';
-import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
+import type { DeliveryAnnouncementState } from './tasks/delivery/delivery-announcement-state.ts';
 import type assignmentIntakePolicy from './assignment-intake-policy.ts';
 import { inspectActiveIssue, inspectContinuedIssue } from './dispatch-assignment.ts';
 import repositoryScope from '../channels/github/repository-scope.ts';

@@ -1,8 +1,8 @@
 import dispatchOwnershipSchema from './dispatch-ownership-schema.ts';
 import { dispatchTaskSession } from './dispatch-task-scope.ts';
-import { issueDeliveryStateSchema } from './issue-delivery-state.ts';
-import { deliveryAnnouncementStateSchema } from './delivery-announcement-state.ts';
-import { announcementRecoverySchema } from './delivery-announcement-recovery.ts';
+import { issueDeliveryStateSchema } from './tasks/delivery/issue-delivery-state.ts';
+import { deliveryAnnouncementStateSchema } from './tasks/delivery/delivery-announcement-state.ts';
+import { announcementRecoverySchema } from './tasks/delivery/delivery-announcement-recovery.ts';
 import { isAbsolute, join, resolve, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { Type, type Static, type TObject, type TSchema } from 'typebox';
@@ -21,7 +21,10 @@ import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 import { providerDiagnosticSchema } from '../utils/provider-diagnostic.ts';
 import { assessmentSelectionSchema } from './assessment-selection.ts';
 import { assignmentObservationSchema, retirementSchema } from './assignment-retirement.ts';
-import { adoptedPullRequestSchema, deliveryPullRequestSchema } from './delivery-state.ts';
+import {
+  adoptedPullRequestSchema,
+  deliveryPullRequestSchema,
+} from './tasks/delivery/delivery-state.ts';
 import { issueKey } from './dispatch-pending.ts';
 import {
   assertDispatchStorage,

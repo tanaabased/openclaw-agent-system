@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import publishIssueDelivery from '../agent/publish-issue-delivery.ts';
+import publishIssueDelivery from '../agent/tasks/delivery/publish-issue-delivery.ts';
 import IssueDeliveryProvider, {
   type IssueDeliveryInput,
 } from '../channels/github/publication/issue-delivery.ts';

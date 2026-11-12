@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { recoverRetainedAnnouncement } from '../agent/delivery-announcement.ts';
+import { recoverRetainedAnnouncement } from '../agent/tasks/delivery/delivery-announcement.ts';
 import { feedbackRevision } from '../agent/feedback-source.ts';
 import manualPullRequest from '../agent/manual-pull-request.ts';
 import { openClawWorkSlot } from '../agent/openclaw-continuation.ts';
@@ -14,7 +14,7 @@ import announcementFixture from './delivery-announcement-fixture.ts';
 import selectFeedbackStage from '../agent/feedback-stage.ts';
 import openClawSkill from '../agent/openclaw-skill.ts';
 
-import openClawDelivery from '../agent/openclaw-delivery.ts';
+import openClawDelivery from '../agent/tasks/delivery/openclaw-delivery.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 

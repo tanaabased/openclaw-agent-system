@@ -10,14 +10,14 @@ import deliveryAnnouncement, {
   announcementPresentation,
   reconcileAnnouncement,
   recheckAnnouncement,
-} from '../agent/delivery-announcement.ts';
-import { deliveryAnnouncementStateSchema } from '../agent/delivery-announcement-state.ts';
+} from '../agent/tasks/delivery/delivery-announcement.ts';
+import { deliveryAnnouncementStateSchema } from '../agent/tasks/delivery/delivery-announcement-state.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import {
   announcementRecoveryAction,
   announcementRecoverySchema,
   type AnnouncementDelivery,
-} from '../agent/delivery-announcement-recovery.ts';
+} from '../agent/tasks/delivery/delivery-announcement-recovery.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import { WorkflowPolicyHeld } from '../agent/live-workflow-policy.ts';
 

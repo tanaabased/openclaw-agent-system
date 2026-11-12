@@ -12,7 +12,7 @@ import { dispatchStorageNotice } from './dispatch-storage.ts';
 import dispatchCapacity from './openclaw-capacity.ts';
 import type { OpenClawDispatchRecord, OpenClawDispatchState } from './openclaw-dispatch-state.ts';
 import retirementNotice from './retirement-notice.ts';
-import taskPullRequest from './task-pull-request.ts';
+import taskPullRequest from './tasks/delivery/task-pull-request.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import workflowStatus from './workflow-status.ts';
 export interface IntakeObservation {

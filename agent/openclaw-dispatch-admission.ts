@@ -3,7 +3,7 @@ import type { Static } from 'typebox';
 import { assignmentClaimRoute } from './assignment-claim-source.ts';
 import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
 import issueChatTitle from './issue-chat-title.ts';
-import verifyIssuePullRequest from './issue-pr-selection.ts';
+import verifyIssuePullRequest from './tasks/delivery/issue-pr-selection.ts';
 import { dispatchAdmission, managedPullRequest } from './managed-issue.ts';
 import { nativeTurnFor } from './openclaw-native-turns.ts';
 import openClawRoutingInstructions from './openclaw-routing-instructions.ts';

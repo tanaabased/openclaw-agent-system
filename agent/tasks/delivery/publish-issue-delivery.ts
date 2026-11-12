@@ -1,6 +1,6 @@
-import type IssueDeliveryProvider from '../channels/github/publication/issue-delivery.ts';
-import type { IssueDeliveryInput } from '../channels/github/publication/issue-delivery.ts';
-import { gitRemoteIdentity } from '../tools/git/worktree-remote.ts';
+import type IssueDeliveryProvider from '../../../channels/github/publication/issue-delivery.ts';
+import type { IssueDeliveryInput } from '../../../channels/github/publication/issue-delivery.ts';
+import { gitRemoteIdentity } from '../../../tools/git/worktree-remote.ts';
 
 interface DeliveryState {
   creationAttempted: boolean;

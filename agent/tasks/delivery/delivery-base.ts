@@ -1,6 +1,6 @@
 import { Type } from 'typebox';
 
-import { gitRemoteIdentity } from '../tools/git/worktree-remote.ts';
+import { gitRemoteIdentity } from '../../../tools/git/worktree-remote.ts';
 import type { IssueDeliveryState } from './issue-delivery-state.ts';
 
 export const deliveryBaseSchema = Type.String({

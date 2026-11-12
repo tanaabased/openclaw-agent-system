@@ -4,7 +4,7 @@ import { Value } from 'typebox/value';
 import CodexAssignmentClaims, { codexInstanceStore } from './codex-assignment-claims.ts';
 import codexContextRequest from './codex-context-request.ts';
 import runCodexContinuation from './codex-continuation.ts';
-import runCodexDelivery, { CodexDeliveryFailure } from './codex-delivery.ts';
+import runCodexDelivery, { CodexDeliveryFailure } from './tasks/delivery/codex-delivery.ts';
 import { codexDispatchResponse } from './codex-dispatch-binding.ts';
 import { codexWorkObservationHandoff } from './codex-dispatch-handoff.ts';
 import runCodexFeedback from './codex-feedback.ts';

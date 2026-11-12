@@ -2,7 +2,7 @@ import { Type, type Static } from 'typebox';
 import type { IssueDeliveryInput } from '../channels/github/publication/issue-delivery.ts';
 import { automationHash } from './automation-hash.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
-import { announcementPublication } from './delivery-announcement.ts';
+import { announcementPublication } from './tasks/delivery/delivery-announcement.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import { managedPullRequest, type ManagedIssue } from './managed-issue.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';

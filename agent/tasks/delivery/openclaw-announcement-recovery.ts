@@ -1,11 +1,11 @@
-import isFilesystemAccessError from '../utils/is-filesystem-access-error.ts';
+import isFilesystemAccessError from '../../../utils/is-filesystem-access-error.ts';
 import { retainAnnouncementFailure } from './delivery-announcement-recovery.ts';
 import { recoverRetainedAnnouncement } from './delivery-announcement.ts';
-import type OpenClawDispatchContext from './openclaw-dispatch-context.ts';
-import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
-import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
-import type { AgentManifest } from '../manifest/types.ts';
-import type { DispatchCaller } from './openclaw-session-create.ts';
+import type OpenClawDispatchContext from '../../openclaw-dispatch-context.ts';
+import type { OpenClawDispatchRecord } from '../../openclaw-dispatch-state.ts';
+import type { DispatchAuthority } from '../../../credentials/session-dispatch.ts';
+import type { AgentManifest } from '../../../manifest/types.ts';
+import type { DispatchCaller } from '../../openclaw-session-create.ts';
 
 /** Recheck an uncertain announcement independently of completed execution turns. */
 export default async function recoverOpenClawAnnouncement(

@@ -1,6 +1,6 @@
 import { withDispatchTask } from './dispatch-task-scope.ts';
 import { Value } from 'typebox/value';
-import recoverCodexAnnouncement from './codex-announcement-recovery.ts';
+import recoverCodexAnnouncement from './tasks/delivery/codex-announcement-recovery.ts';
 import codexCommit from './codex-commit.ts';
 import authorizeCodexFeedback from './codex-feedback-authority.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';
@@ -18,7 +18,7 @@ import {
   type CodexWorkContext,
 } from './codex-continuation-context.ts';
 import codexContinuationNative from './codex-continuation-native.ts';
-import runCodexDelivery from './codex-delivery.ts';
+import runCodexDelivery from './tasks/delivery/codex-delivery.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
 import { dispatchGit } from './codex-dispatch-project.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';

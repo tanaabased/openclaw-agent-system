@@ -13,7 +13,7 @@ import type { AssessmentEntryDependencies } from './assessment-entry.ts';
 import { automationHash } from './automation-hash.ts';
 import { DirectEntryStore } from './direct-entry-store.ts';
 import implementationContext from './implementation-context.ts';
-import implementationEntryDelivery from './implementation-entry-delivery.ts';
+import implementationEntryDelivery from './tasks/delivery/implementation-entry-delivery.ts';
 import { implementationEntriesSchema } from './implementation-entry-state.ts';
 import implementationHandoff from './implementation-handoff.ts';
 import { implementationPresentation } from './implementation-result.ts';

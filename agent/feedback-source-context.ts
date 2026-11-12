@@ -1,4 +1,4 @@
-import taskPullRequest from './task-pull-request.ts';
+import taskPullRequest from './tasks/delivery/task-pull-request.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import type { GitHubNotificationProviderClient } from '../channels/github/provider/work-event-types.ts';
 import type { GitHubCanonicalWorkItem } from '../channels/github/provider/work-item.ts';

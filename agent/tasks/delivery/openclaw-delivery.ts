@@ -1,17 +1,17 @@
 import { deliveryHasEffects, selectDeliveryBase, verifyDeliveryCommits } from './delivery-base.ts';
 import { retainedAnnouncementPublication } from './delivery-announcement-recovery.ts';
-import codexIssueNotice from './codex-issue-notice.ts';
-import invalidDeliveryRequest from '../tools/dispatch/delivery-request-error.ts';
+import codexIssueNotice from '../../codex-issue-notice.ts';
+import invalidDeliveryRequest from '../../../tools/dispatch/delivery-request-error.ts';
 import taskPullRequest, { isCurrentTaskPullRequest } from './task-pull-request.ts';
 import {
   managedPullRequest,
   managedTargetUrl,
   type ManagedIssue as IntakeRecord,
-} from './managed-issue.ts';
+} from '../../managed-issue.ts';
 import bindIssuePullRequest from './issue-pr-binding.ts';
 import { adoptedIssueDelivery } from './delivery-state.ts';
-import { retainedIssueProgression } from './issue-progression.ts';
-import workflowStatus from './workflow-status.ts';
+import { retainedIssueProgression } from '../../issue-progression.ts';
+import workflowStatus from '../../workflow-status.ts';
 import deliveryBindingChange from './delivery-binding-change.ts';
 import publishIssueDelivery from './publish-issue-delivery.ts';
 import deliveryAnnouncement, {
@@ -20,22 +20,22 @@ import deliveryAnnouncement, {
   deliveryCompletionInstructions,
 } from './delivery-announcement.ts';
 import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
-import GitHubIssueCommentClient from '../channels/github/provider/issue-comment-client.ts';
-import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
+import GitHubIssueCommentClient from '../../../channels/github/provider/issue-comment-client.ts';
+import GitHubWorkEventApiClient from '../../../channels/github/provider/work-event-api-client.ts';
 import { realpath } from 'node:fs/promises';
 
-import { automationHash } from './automation-hash.ts';
-import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
-import type { OpenClawWorkAction } from './openclaw-work.ts';
+import { automationHash } from '../../automation-hash.ts';
+import type { OpenClawDispatchRecord } from '../../openclaw-dispatch-state.ts';
+import type { OpenClawWorkAction } from '../../openclaw-work.ts';
 
 import IssueDeliveryProvider, {
   type IssueDeliveryInput,
-} from '../channels/github/publication/issue-delivery.ts';
-import resolvePullRequestRecipients from '../channels/github/pull-request-recipients.ts';
-import { githubNotificationPullRequestOpenedCard } from '../channels/github/presentation/pull-request-opened.ts';
-import type { GitHubPullRequestRecipient } from '../channels/github/workflow-policy.ts';
-import type { ConnectedGitHubAccountClient } from '../core/github-account-client.ts';
-import { gitRemoteIdentity } from '../tools/git/worktree-remote.ts';
+} from '../../../channels/github/publication/issue-delivery.ts';
+import resolvePullRequestRecipients from '../../../channels/github/pull-request-recipients.ts';
+import { githubNotificationPullRequestOpenedCard } from '../../../channels/github/presentation/pull-request-opened.ts';
+import type { GitHubPullRequestRecipient } from '../../../channels/github/workflow-policy.ts';
+import type { ConnectedGitHubAccountClient } from '../../../core/github-account-client.ts';
+import { gitRemoteIdentity } from '../../../tools/git/worktree-remote.ts';
 
 export interface OpenClawDeliveryConnection {
   account: Pick<

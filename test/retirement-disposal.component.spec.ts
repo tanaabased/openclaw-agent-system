@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { IssueDeliveryState } from '../agent/issue-delivery-state.ts';
+import type { IssueDeliveryState } from '../agent/tasks/delivery/issue-delivery-state.ts';
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import { DirectEntryStore } from '../agent/direct-entry-store.ts';
 import type DispatchStore from '../agent/dispatch-state.ts';

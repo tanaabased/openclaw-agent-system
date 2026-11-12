@@ -11,7 +11,7 @@ import { assignmentClaimRoute } from './assignment-claim-source.ts';
 import { automationHash } from './automation-hash.ts';
 import reconcileCodexCapacity from './codex-capacity-reconcile.ts';
 import codexCapacity from './codex-capacity.ts';
-import { adoptedCodexDelivery } from './issue-delivery-state.ts';
+import { adoptedCodexDelivery } from './tasks/delivery/issue-delivery-state.ts';
 import { dispatchCheckDigest } from './codex-dispatch-check.ts';
 import {
   code,
@@ -43,7 +43,7 @@ import dispatchRoutingAssessment from './dispatch-routing-assessment.ts';
 import { dispatchStoragePressure } from './dispatch-storage.ts';
 import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
 import issueChatTitle from './issue-chat-title.ts';
-import verifyIssuePullRequest from './issue-pr-selection.ts';
+import verifyIssuePullRequest from './tasks/delivery/issue-pr-selection.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import {

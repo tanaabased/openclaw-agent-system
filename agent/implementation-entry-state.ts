@@ -2,7 +2,7 @@ import { Type, type Static } from 'typebox';
 
 import { assessmentSelectionSchema } from './assessment-selection.ts';
 import { issueProgressionSchema } from './issue-progression.ts';
-import { issueDeliveryStateSchema } from './issue-delivery-state.ts';
+import { issueDeliveryStateSchema } from './tasks/delivery/issue-delivery-state.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });

@@ -37,7 +37,7 @@ import hydrateImplementation from './implementation-material-fixture.ts';
 
 import properLockfile from 'proper-lockfile';
 
-import runCodexDelivery from '../agent/codex-delivery.ts';
+import runCodexDelivery from '../agent/tasks/delivery/codex-delivery.ts';
 import type { DispatchNativeThread } from '../agent/codex-dispatch-native.ts';
 import CodexDispatchStore, { type DispatchRecord } from '../agent/codex-dispatch-state.ts';
 import { runCodexDispatch, type CodexDispatchDependencies } from '../agent/codex-dispatch.ts';

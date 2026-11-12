@@ -1,4 +1,4 @@
-import { automationHash } from './automation-hash.ts';
+import { automationHash } from '../../automation-hash.ts';
 import type { AdoptedPullRequest } from './delivery-state.ts';
 import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
 

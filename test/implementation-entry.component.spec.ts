@@ -10,7 +10,7 @@ import renderNativeAssessment from '../agent/assessment-render.ts';
 import assessmentSkillSource from '../agent/assessment-skill-source.ts';
 import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
 import { DirectEntryStore } from '../agent/direct-entry-store.ts';
-import implementationEntryDelivery from '../agent/implementation-entry-delivery.ts';
+import implementationEntryDelivery from '../agent/tasks/delivery/implementation-entry-delivery.ts';
 import { implementationEntriesSchema } from '../agent/implementation-entry-state.ts';
 import implementationEntry from '../agent/implementation-entry.ts';
 import {

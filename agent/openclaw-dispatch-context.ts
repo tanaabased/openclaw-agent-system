@@ -52,7 +52,7 @@ import {
 } from './managed-issue.ts';
 import { assertNotificationManagement } from './notification-reset-state.ts';
 import type OpenClawAssignmentClaims from './openclaw-assignment-claims.ts';
-import { type OpenClawDeliveryConnection } from './openclaw-delivery.ts';
+import { type OpenClawDeliveryConnection } from './tasks/delivery/openclaw-delivery.ts';
 import OpenClawDispatchStore, {
   type OpenClawDispatchRecord,
   type OpenClawDispatchState,

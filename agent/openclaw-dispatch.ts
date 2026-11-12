@@ -5,7 +5,7 @@ import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 import { stateSnapshotConflictCode } from '../core/merge-state-snapshot.ts';
 import { privateStateFileLockBusyErrorCode } from '../core/private-state-file-lock.ts';
-import openClawDeliveryRecovery from './openclaw-delivery-recovery.ts';
+import openClawDeliveryRecovery from './tasks/delivery/openclaw-delivery-recovery.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { launchRequestSchema } from '../tools/dispatch/launch-schema.ts';

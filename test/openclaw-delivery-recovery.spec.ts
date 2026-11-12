@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import openClawDeliveryRecovery from '../agent/openclaw-delivery-recovery.ts';
+import openClawDeliveryRecovery from '../agent/tasks/delivery/openclaw-delivery-recovery.ts';
 import { attemptedAnnouncement } from './delivery-announcement-fixture.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 

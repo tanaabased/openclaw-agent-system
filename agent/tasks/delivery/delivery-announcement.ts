@@ -1,10 +1,10 @@
-import { cardCopyInstructions } from '../channels/github/presentation/card.ts';
-import replyMaterial from './reply-material.ts';
-import type { ImplementationMaterialRead } from './implementation-material.ts';
-import taskUpdateInstructions from './task-update-instructions.ts';
-import isFilesystemAccessError from '../utils/is-filesystem-access-error.ts';
+import { cardCopyInstructions } from '../../../channels/github/presentation/card.ts';
+import replyMaterial from '../../reply-material.ts';
+import type { ImplementationMaterialRead } from '../../implementation-material.ts';
+import taskUpdateInstructions from '../../task-update-instructions.ts';
+import isFilesystemAccessError from '../../../utils/is-filesystem-access-error.ts';
 
-import { automationHash } from './automation-hash.ts';
+import { automationHash } from '../../automation-hash.ts';
 import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
 import {
   announcementBinding,
@@ -14,22 +14,22 @@ import {
   type AnnouncementDelivery,
   type AnnouncementRecovery,
 } from './delivery-announcement-recovery.ts';
-import type { ManagedIssue } from './managed-issue.ts';
-import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
-import GitHubIssueCommentClient from '../channels/github/provider/issue-comment-client.ts';
+import type { ManagedIssue } from '../../managed-issue.ts';
+import { WorkflowPolicyHeld } from '../../live-workflow-policy.ts';
+import GitHubIssueCommentClient from '../../../channels/github/provider/issue-comment-client.ts';
 import GitHubWorkEventApiClient, {
   GitHubWorkEventClientError,
-} from '../channels/github/provider/work-event-api-client.ts';
-import redactFeedback from './feedback-redaction.ts';
-import type { GitHubNotificationCommentPublicationInput } from '../channels/github/publication/comment-publisher.ts';
-import { githubNotificationPublicationText } from '../channels/github/publication/publication-contract.ts';
+} from '../../../channels/github/provider/work-event-api-client.ts';
+import redactFeedback from '../../feedback-redaction.ts';
+import type { GitHubNotificationCommentPublicationInput } from '../../../channels/github/publication/comment-publisher.ts';
+import { githubNotificationPublicationText } from '../../../channels/github/publication/publication-contract.ts';
 import IssueDeliveryProvider, {
   type IssueAnnouncementInput,
-} from '../channels/github/publication/issue-delivery.ts';
-import type { GitHubNotificationPublicationClient } from '../channels/github/provider/work-event-client.ts';
-import { githubCommentCard } from '../channels/github/presentation/comment.ts';
-import publicResponsePresentation from '../channels/github/presentation/public-response.ts';
-import taskUpdate from './task-update.ts';
+} from '../../../channels/github/publication/issue-delivery.ts';
+import type { GitHubNotificationPublicationClient } from '../../../channels/github/provider/work-event-client.ts';
+import { githubCommentCard } from '../../../channels/github/presentation/comment.ts';
+import publicResponsePresentation from '../../../channels/github/presentation/public-response.ts';
+import taskUpdate from '../../task-update.ts';
 
 type CommentClient = Pick<
   GitHubNotificationPublicationClient,

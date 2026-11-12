@@ -1,4 +1,4 @@
-import { automationHash } from './automation-hash.ts';
+import { automationHash } from '../../automation-hash.ts';
 import { Type, type Static } from 'typebox';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });

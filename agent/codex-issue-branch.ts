@@ -1,4 +1,4 @@
-import { deliveryHasEffects } from './delivery-base.ts';
+import { deliveryHasEffects } from './tasks/delivery/delivery-base.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import { gitHubIssueBranchName, gitHubIssueBranchSuffix } from '../tools/git/worktree-names.ts';
 import { dispatchGit, type DispatchGit } from './codex-dispatch-project.ts';

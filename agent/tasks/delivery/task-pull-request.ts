@@ -1,7 +1,7 @@
-import type { SharedDispatchRecord } from './dispatch-state.ts';
-import type { ManagedIssue } from './managed-issue.ts';
-import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
-import { replyLocator } from './reply-target.ts';
+import type { SharedDispatchRecord } from '../../dispatch-state.ts';
+import type { ManagedIssue } from '../../managed-issue.ts';
+import type { GitHubNotificationIntakeClient } from '../../../channels/github/provider/work-event-types.ts';
+import { replyLocator } from '../../reply-target.ts';
 
 type Link = { pullRequestNodeId: string; pullRequestNumber: number };
 

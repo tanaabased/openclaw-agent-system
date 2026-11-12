@@ -23,7 +23,7 @@ import runCodexDelivery, {
   codexDeliveryAttachment,
   CodexDeliveryFailure,
   type CodexDeliveryDependencies,
-} from '../agent/codex-delivery.ts';
+} from '../agent/tasks/delivery/codex-delivery.ts';
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import { runCodexIntake, selectCodexIntake } from '../agent/codex-intake.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';

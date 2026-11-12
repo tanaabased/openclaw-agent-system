@@ -15,7 +15,7 @@ import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
 import type { DispatchGit } from './codex-dispatch-project.ts';
 import { type DirectEntryBinding } from './direct-entry-store.ts';
 import type { nativeIssueContext } from './native-issue-context.ts';
-import type { OpenClawDeliveryConnection } from './openclaw-delivery.ts';
+import type { OpenClawDeliveryConnection } from './tasks/delivery/openclaw-delivery.ts';
 import type { OpenClawFeedbackProvider } from './openclaw-feedback.ts';
 import { replyLocator } from './reply-target.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';

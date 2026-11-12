@@ -11,7 +11,7 @@ import type codexLiveTurn from './codex-live-turn.ts';
 import {
   type default as runCodexDelivery,
   type CodexDeliveryDependencies,
-} from './codex-delivery.ts';
+} from './tasks/delivery/codex-delivery.ts';
 
 import {
   type CodexDispatchSelection,

@@ -8,7 +8,7 @@ import { automationHash } from '../agent/automation-hash.ts';
 import {
   retainAnnouncementFailure,
   retainedAnnouncementPublication,
-} from '../agent/delivery-announcement-recovery.ts';
+} from '../agent/tasks/delivery/delivery-announcement-recovery.ts';
 import { implementationContextBudget } from '../agent/implementation-material.ts';
 import { pendingRecoveryFeedback } from '../agent/issue-task-recovery.ts';
 import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';

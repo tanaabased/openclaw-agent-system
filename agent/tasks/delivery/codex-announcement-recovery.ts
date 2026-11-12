@@ -1,14 +1,14 @@
-import codexHostAccess from './codex-host-access.ts';
+import codexHostAccess from '../../codex-host-access.ts';
 import {
   announcementRecoveryAction,
   retainAnnouncementFailure,
 } from './delivery-announcement-recovery.ts';
 import { recoverRetainedAnnouncement } from './delivery-announcement.ts';
-import { dispatchAdmission } from './managed-issue.ts';
-import { inspectIssueIdentity } from './dispatch-assignment.ts';
-import connectCodexGitHubAccount from './codex-github-client.ts';
-import type { DispatchRecord } from './codex-dispatch-state.ts';
-import type { CodexWorkContext } from './codex-continuation-context.ts';
+import { dispatchAdmission } from '../../managed-issue.ts';
+import { inspectIssueIdentity } from '../../dispatch-assignment.ts';
+import connectCodexGitHubAccount from '../../codex-github-client.ts';
+import type { DispatchRecord } from '../../codex-dispatch-state.ts';
+import type { CodexWorkContext } from '../../codex-continuation-context.ts';
 
 /** Recover one uncertain announcement without entering implementation or sending a model turn. */
 export default async function recoverCodexAnnouncement(

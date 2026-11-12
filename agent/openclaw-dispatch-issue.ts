@@ -13,7 +13,7 @@ import {
 } from './openclaw-feedback-input.ts';
 import { nativeTurnFor } from './openclaw-native-turns.ts';
 import { nativeInputEvent, operatorInputEvent } from './openclaw-session-input.ts';
-import taskPullRequest, { isCurrentTaskPullRequest } from './task-pull-request.ts';
+import taskPullRequest, { isCurrentTaskPullRequest } from './tasks/delivery/task-pull-request.ts';
 import workflowStatus from './workflow-status.ts';
 
 import type { Static } from 'typebox';
@@ -34,8 +34,8 @@ import selectFeedbackStage from './feedback-stage.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import { issueAssessmentAction, selectOpenClawAssessment } from './openclaw-assessment.ts';
 import advanceOpenClawWork from './openclaw-continuation.ts';
-import openClawDelivery, { presentOpenClawDelivery } from './openclaw-delivery.ts';
-import openClawDeliveryRecovery from './openclaw-delivery-recovery.ts';
+import openClawDelivery, { presentOpenClawDelivery } from './tasks/delivery/openclaw-delivery.ts';
+import openClawDeliveryRecovery from './tasks/delivery/openclaw-delivery-recovery.ts';
 import {
   type default as OpenClawDispatchContext,
   openClawDispatchFailureCode,

@@ -16,7 +16,7 @@ import { feedbackInputContext } from './feedback-input.ts';
 import authorizeFeedback from './feedback-source-context.ts';
 import { retainedIssueProgression } from './issue-progression.ts';
 import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
-import taskPullRequest from './task-pull-request.ts';
+import taskPullRequest from './tasks/delivery/task-pull-request.ts';
 import taskTurnContext from './task-turn-context.ts';
 import workflowFailure from './workflow-failure.ts';
 type Turn = {

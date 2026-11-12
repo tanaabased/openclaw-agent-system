@@ -8,7 +8,7 @@ import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import { selectedOpenClawFeedback } from './openclaw-feedback-input.ts';
 import { nativeTurnFor } from './openclaw-native-turns.ts';
 import { feedbackTarget } from './reply-target.ts';
-import taskPullRequest from './task-pull-request.ts';
+import taskPullRequest from './tasks/delivery/task-pull-request.ts';
 import type taskTurnContext from './task-turn-context.ts';
 /** native session/incarnation/run identities select retained facts; explicit tools verify authority. */
 export default function openclawTurnContext(

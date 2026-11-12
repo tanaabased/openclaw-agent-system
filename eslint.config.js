@@ -86,6 +86,29 @@ export default defineConfig([
     },
   },
   {
+    files: [
+      'agent/tasks/delivery/delivery-base.ts',
+      'agent/tasks/delivery/delivery-binding-change.ts',
+      'agent/tasks/delivery/delivery-state.ts',
+      'agent/tasks/delivery/issue-delivery-state.ts',
+      'agent/tasks/delivery/publish-issue-delivery.ts',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: restrictedBuiltinImports,
+          patterns: [
+            {
+              group: ['**/codex-*', '**/openclaw-*'],
+              message: 'Shared delivery rules and publication must not depend on native adapters.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['test/**/*.{js,mjs,cjs,ts,tsx}', '**/*.{spec,test}.{js,mjs,cjs,ts,tsx}'],
     languageOptions: {
       globals: globals.mocha,
