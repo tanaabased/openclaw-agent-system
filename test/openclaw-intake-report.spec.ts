@@ -12,6 +12,62 @@ function state(): OpenClawDispatchState {
 }
 
 describe('agent/openclaw-intake-report', () => {
+  it('should acknowledge only new verified deliveries and leave report bookkeeping to the caller', () => {
+    const journal = state();
+    const records = ['one', 'two'].map((id, index) => ({
+      id,
+      intakeId: id,
+      threadId: `chat-${id}`,
+      sessionCreation: { verified: true },
+      intakeReportedAt: 1,
+      feedback: {
+        baseline: {},
+        events: [
+          { id: `issue-${id}`, phase: 'delivered', itemType: 'issue' },
+          ...(index ? [] : [{ id: 'pr', phase: 'delivered', itemType: 'pull-request', number: 7 }]),
+          { id: 'old', phase: 'delivered', intakeReportedAt: 0 },
+          { id: 'uncertain', phase: 'running', turn: { status: 'accepted' } },
+          { id: 'denied', phase: 'blocked', code: 'continuation-native-approval-denied' },
+        ],
+      },
+    })) as unknown as OpenClawDispatchState['records'];
+    journal.records = records;
+    const input = {
+      state: journal,
+      slots: 3,
+      observation: { status: 'ready' as const, changed: false },
+      intake: {
+        records: records.map((record, index) => ({
+          id: record.id,
+          repository: { owner: { login: 'owner' }, name: 'repo' },
+          issue: { number: index + 3 },
+        })),
+      } as NonNullable<Parameters<typeof openclawIntakeReport>[0]['intake']>,
+    };
+    const before = structuredClone(records);
+    const first = openclawIntakeReport(input);
+    assert.equal(first.changed, true);
+    assert.equal(first.delivered.length, 3);
+    assert.match(first.response, /3 feedback items delivered/);
+    assert.match(
+      first.response,
+      /Feedback delivered to chat:\*\* \[owner\/repo#3\]\(\/chat\?session=chat-one\) · 2 items/,
+    );
+    assert.match(
+      first.response,
+      /Feedback delivered to chat:\*\* \[owner\/repo#4\]\(\/chat\?session=chat-two\) · 1 item/,
+    );
+    assert.deepEqual(records, before);
+    for (const record of records)
+      for (const event of record.feedback!.events)
+        if (first.delivered.some((entry) => entry.id === record.id && entry.eventId === event.id))
+          event.intakeReportedAt = 2;
+    journal.intakeReport = { ...first, runId: 'first' };
+    const repeated = openclawIntakeReport(input);
+    assert.equal(repeated.changed, false);
+    assert.deepEqual(repeated.delivered, []);
+    assert.doesNotMatch(repeated.response, /Feedback delivered to chat/);
+  });
   it('should count dormant owners separately without warning or starting them', () => {
     const journal = state();
     const record = {

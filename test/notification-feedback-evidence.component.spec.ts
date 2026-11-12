@@ -38,6 +38,7 @@ for (const scenario of ['openclaw-pr-journey', 'openclaw-pr-discovery']) {
       const valid = execute(after);
       assert.equal(valid.status, 0, valid.stderr);
       assert.equal(execute(after, after).status, 0);
+      assert.equal(execute({ ...after, intakeReportedAt: 1 }).status, 0);
       assert.equal(
         execute(after, {
           ...before,

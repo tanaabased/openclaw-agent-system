@@ -1,3 +1,4 @@
+import { GatewayClientRequestError } from '@openclaw/gateway-client';
 import assert from 'node:assert/strict';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -1664,6 +1665,76 @@ describe('agent/openclaw task-feedback', () => {
     );
   });
 
+  it('should never report a refused native feedback send as delivered', async () => {
+    await fixtureState.feedbackOwner();
+    await fixtureState.acknowledgeReport();
+    fixtureState.onSend = () => {
+      throw new GatewayClientRequestError({ code: 'FORBIDDEN', message: 'native send refused' });
+    };
+    await fixtureState.service.run(
+      fixtureState.manifest,
+      fixtureState.root,
+      fixtureState.coordinator,
+      { action: 'next' },
+    );
+    const event = (await fixtureState.record()).feedback!.events[0]!;
+    assert.notEqual(event.phase, 'delivered');
+    const report = await fixtureState.service.run(
+      fixtureState.manifest,
+      fixtureState.root,
+      { ...fixtureState.coordinator, runId: 'denied-feedback-report' },
+      { action: 'report' },
+    );
+    assert.ok('response' in report);
+    assert.doesNotMatch(report.response, /Feedback delivered to chat/);
+    assert.equal((await fixtureState.record()).feedback!.events[0]!.intakeReportedAt, undefined);
+  });
+  it('should report a verified feedback delivery once across report retries and fixtureState.service restart', async () => {
+    await fixtureState.feedbackOwner();
+    await fixtureState.acknowledgeReport();
+    fixtureState.consumeSend = true;
+    await fixtureState.service.run(
+      fixtureState.manifest,
+      fixtureState.root,
+      fixtureState.coordinator,
+      { action: 'next' },
+    );
+    const delivered = (await fixtureState.record()).feedback!.events[0]!;
+    assert.equal(delivered.phase, 'delivered');
+    assert.equal(delivered.intakeReportedAt, undefined);
+    const before = fixtureState.sends().length;
+    const caller = { ...fixtureState.coordinator, runId: 'delivery-report' };
+    const first = await fixtureState.service.run(fixtureState.manifest, fixtureState.root, caller, {
+      action: 'report',
+    });
+    assert.ok('response' in first);
+    assert.match(
+      first.response,
+      /Feedback delivered to chat:.*owner\/repo#3.*chat\?session=.*1 item/,
+    );
+    assert.ok((await fixtureState.record()).feedback!.events[0]!.intakeReportedAt !== undefined);
+    const retry = await fixtureState.service.run(fixtureState.manifest, fixtureState.root, caller, {
+      action: 'report',
+    });
+    assert.ok('response' in retry);
+    assert.equal(retry.response, first.response);
+    fixtureState.service = new OpenClawDispatch(fixtureState.service.dependencies);
+    const repeated = await fixtureState.service.run(
+      fixtureState.manifest,
+      fixtureState.root,
+      { ...caller, runId: 'quiet-report' },
+      { action: 'report' },
+    );
+    assert.ok('response' in repeated);
+    assert.equal(repeated.response, '');
+    await fixtureState.service.run(
+      fixtureState.manifest,
+      fixtureState.root,
+      fixtureState.coordinator,
+      { action: 'next' },
+    );
+    assert.equal(fixtureState.sends().length, before);
+  });
   it('should stop reconciling consumed feedback while native conversation remains active', async () => {
     await fixtureState.feedbackOwner();
     fixtureState.consumeSend = true;
@@ -1812,6 +1883,15 @@ describe('agent/openclaw task-feedback', () => {
       { action: 'next' },
     );
     assert.equal((await fixtureState.record()).feedback!.events[0]!.turn?.status, 'attempted');
+    const report = await fixtureState.service.run(
+      fixtureState.manifest,
+      fixtureState.root,
+      { ...fixtureState.coordinator, runId: 'uncertain-report' },
+      { action: 'report' },
+    );
+    assert.ok('response' in report);
+    assert.doesNotMatch(report.response, /Feedback delivered to chat/);
+    assert.equal((await fixtureState.record()).feedback!.events[0]!.intakeReportedAt, undefined);
     fixtureState.loseSend = false;
     fixtureState.service = new OpenClawDispatch(fixtureState.service.dependencies);
     await fixtureState.service.run(

@@ -57,6 +57,13 @@ export default function openclawIntakeReport(input: {
       };
     });
   const managing = active.filter((record) => record.sessionCreation?.verified && record.threadId);
+  const delivered = active.flatMap((record) =>
+    record.threadId
+      ? (record.feedback?.events ?? [])
+          .filter((event) => event.phase === 'delivered' && event.intakeReportedAt === undefined)
+          .map((event) => ({ record, event }))
+      : [],
+  );
   const capacity = dispatchCapacity(state, input.slots, state.projectPickup);
   const started = managing.filter((record) => record.intakeReportedAt === undefined).slice(0, 12);
   const pending =
@@ -114,6 +121,7 @@ export default function openclawIntakeReport(input: {
   const fingerprint = automationHash(fingerprintFacts);
   const changed =
     started.length > 0 ||
+    delivered.length > 0 ||
     (fingerprint !== state.intakeReport?.fingerprint &&
       (Boolean(state.intakeReport) || problems.length > 0 || Boolean(pending)));
   const automationNotice = intakeAutomationNotice(observation.code ?? '');
@@ -126,17 +134,19 @@ export default function openclawIntakeReport(input: {
           : '⚠️ Intake checked — some items need attention'
         : started.length
           ? `📥 Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started`
-          : recovered.length
-            ? recovered.some((problem) =>
-                state.records.some(
-                  (record) => problem.startsWith(record.id + ':') && record.retirement,
-                ),
-              )
-              ? '📥 Retirement blocker cleared'
-              : '📥 Intake resumed'
-            : retirementNotices.length
-              ? '📥 Intake checked — retirement in progress'
-              : '📥 Intake checked';
+          : delivered.length
+            ? `📥 Intake complete — ${delivered.length} feedback item${delivered.length === 1 ? '' : 's'} delivered to chats`
+            : recovered.length
+              ? recovered.some((problem) =>
+                  state.records.some(
+                    (record) => problem.startsWith(record.id + ':') && record.retirement,
+                  ),
+                )
+                ? '📥 Retirement blocker cleared'
+                : '📥 Intake resumed'
+              : retirementNotices.length
+                ? '📥 Intake checked — retirement in progress'
+                : '📥 Intake checked';
   const lines = ['## ' + title, ''];
   if (storage.level !== 'normal' || recovered.some((entry) => entry.startsWith('storage:')))
     lines.push(
@@ -157,6 +167,14 @@ export default function openclawIntakeReport(input: {
       `- **Issue:** [${text(label(record))}](/chat?session=${encodeURIComponent(record.threadId!)})`,
     );
   if (started.length) lines.push('');
+  for (const record of active) {
+    const count = delivered.filter((entry) => entry.record === record).length;
+    if (count)
+      lines.push(
+        `- **Feedback delivered to chat:** [${text(label(record))}](/chat?session=${encodeURIComponent(record.threadId!)}) · ${count} item${count === 1 ? '' : 's'}`,
+      );
+  }
+  if (delivered.length) lines.push('');
   for (const failure of failures.slice(0, 12)) {
     if (failure.id === 'storage') continue;
     const notice = intakeAutomationNotice(failure.code);
@@ -282,6 +300,7 @@ export default function openclawIntakeReport(input: {
     changed,
     fingerprint,
     problems,
+    delivered: delivered.map(({ record, event }) => ({ id: record.id, eventId: event.id })),
     started: started.map((record) => record.id),
     response: githubNotificationQuote(lines.join('\n')),
   };

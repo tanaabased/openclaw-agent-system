@@ -99,6 +99,10 @@ export default async function reportDispatch(
   });
   for (const record of state.records)
     if (report.started.includes(record.id)) record.intakeReportedAt = now;
+  for (const record of state.records)
+    for (const event of record.feedback?.events ?? [])
+      if (report.delivered.some((entry) => entry.id === record.id && entry.eventId === event.id))
+        event.intakeReportedAt = now;
   if (state.discoveryProgress) state.discoveryProgress.reported = state.discoveryProgress.pending;
   state.intakeHealth = report.health;
   // this is a report attempt, not proof of delivery; prose never gates new assignments.

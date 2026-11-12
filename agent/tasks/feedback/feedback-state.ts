@@ -22,6 +22,7 @@ export const feedbackSourceEventSchema = Type.Object(
       Type.Literal('delivered'),
       Type.Literal('blocked'),
     ]),
+    intakeReportedAt: Type.Optional(Type.Integer({ minimum: 0 })),
     code: Type.Optional(text),
   },
   { additionalProperties: false },

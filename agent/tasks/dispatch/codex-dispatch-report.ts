@@ -54,6 +54,10 @@ export default function prepareDispatchReport(input: {
   const feedback = active.flatMap((record) =>
     (record.feedback?.events ?? []).map((event) => ({ record, event })),
   );
+  const delivered = feedback.filter(
+    ({ record, event }) =>
+      record.threadId && event.phase === 'delivered' && event.intakeReportedAt === undefined,
+  );
   const queuedFeedback = feedback.filter(({ event }) =>
     ['queued', 'prepared', 'running'].includes(event.phase),
   );
@@ -193,13 +197,15 @@ export default function prepareDispatchReport(input: {
             : '⚠️ Intake needs attention'
         : started.length
           ? `📥 Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started`
-          : recovered
-            ? '📥 Intake resumed'
-            : notices.length
-              ? '📥 Intake checked — retirement in progress'
-              : pending
-                ? `📥 Intake checked — ${pending} issue${pending === 1 ? '' : 's'} pending`
-                : '📥 Intake checked';
+          : delivered.length
+            ? `📥 Intake complete — ${delivered.length} feedback item${delivered.length === 1 ? '' : 's'} delivered to chats`
+            : recovered
+              ? '📥 Intake resumed'
+              : notices.length
+                ? '📥 Intake checked — retirement in progress'
+                : pending
+                  ? `📥 Intake checked — ${pending} issue${pending === 1 ? '' : 's'} pending`
+                  : '📥 Intake checked';
   const lines = ['## ' + title, ''];
   if (storage.level !== 'normal' || recovered)
     lines.push(
@@ -215,6 +221,14 @@ export default function prepareDispatchReport(input: {
       `- **Issue:** [${issueLabel(record.intakeId ?? record.manualIssue?.id)}](codex://threads/${encodeURIComponent(record.threadId!)})`,
     );
   if (started.length) lines.push('');
+  for (const record of active) {
+    const count = delivered.filter((entry) => entry.record === record).length;
+    if (count)
+      lines.push(
+        `- **Feedback delivered to chat:** [${issueLabel(record.intakeId ?? record.manualIssue?.id)}](codex://threads/${encodeURIComponent(record.threadId!)}) · ${count} item${count === 1 ? '' : 's'}`,
+      );
+  }
+  if (delivered.length) lines.push('');
   for (const notice of notices.slice(0, 12)) {
     const record = state.records.find((entry) => entry.id === notice.id);
     if (notice.id === 'scan' && intakeAutomationNotice(notice.code)) {
@@ -251,7 +265,7 @@ export default function prepareDispatchReport(input: {
     }
   }
   if (notices.length) lines.push('');
-  if (!started.length && !notices.length && !recovered)
+  if (!started.length && !delivered.length && !notices.length && !recovered)
     lines.push(pending ? 'Accepted assignments are waiting to start.' : quiet.message, '');
   const queuedOwners = new Set(queuedFeedback.map(({ record }) => record.id)).size;
   lines.push(
@@ -273,11 +287,13 @@ export default function prepareDispatchReport(input: {
   const notify =
     Boolean(discovery) ||
     started.length > 0 ||
+    delivered.length > 0 ||
     recovered ||
     (Boolean(health) && health !== state.intakeHealth);
   return {
     response: codexHeartbeatEnvelope(input.automationId, operational, notify),
     health,
+    delivered: delivered.map(({ record, event }) => ({ id: record.id, eventId: event.id })),
     started: started.map((record) => record.id),
   };
 }

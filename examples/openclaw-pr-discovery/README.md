@@ -220,7 +220,7 @@ jq -e --slurpfile before "$TMPDIR/notification-feedback-retained.json" '.feedbac
 jq -e --slurp '
   (.[0].feedback.events[0]) as $before |
   (.[1].feedback.events[0]) as $after |
-  if $after == ($before + {phase:"delivered",turn:($before.turn + {status:"consumed",consumedByEventId:$after.turn.consumedByEventId})})
+  if ($after | del(.intakeReportedAt)) == (($before | del(.intakeReportedAt)) + {phase:"delivered",turn:($before.turn + {status:"consumed",consumedByEventId:$after.turn.consumedByEventId})})
     and $after.turn.consumedByEventId != null
     and ($before.turn.consumedByEventId == null or $before.turn.consumedByEventId == $after.turn.consumedByEventId)
     and $after.turn.failed != true and $after.turn.cancelled != true
