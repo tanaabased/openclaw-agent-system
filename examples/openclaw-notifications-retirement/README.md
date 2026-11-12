@@ -211,7 +211,7 @@ test ! -e "$worktree"
 openclaw agent-system tool worktree -- list | jq -e --arg path "$worktree" 'all(.[]; .path != $path)'
 ```
 
-## Reset
+## Testing Reset
 
 ```bash
 # should enroll paused pickup after retirement while retaining consumed assignment evidence
@@ -265,10 +265,8 @@ openclaw agent-system notifications status --agent retirement-tanaabot --json | 
 GitHub issues, PRs, branches, and SSH registrations persist beyond the runner. Quiesce the Gateway once before disposing of those resources; the runner owns local files and the mock process.
 
 ```bash
-# should stop the isolated gateway
+# should stop the isolated gateway before deleting the disposable pickup milestone
 openclaw-gateway stop --timeout 340
-
-# should delete the disposable pickup milestone after native work stops
 milestone=$(cat "$TMPDIR/reset-milestone")
 GH_TOKEN="$GH_TOKEN_TANAABOT" gh api --method DELETE "repos/tanaabased/big-test-bucket/milestones/$milestone"
 

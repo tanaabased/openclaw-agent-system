@@ -122,7 +122,7 @@ git -C "$worktree" show HEAD | grep -F 'Retain sanitized evidence before cleanup
 jq -e 'all(.[] | select(.user.login == "tanaabot"); (.body | contains("Evidence first")) and (.body | contains("Live interpretation remains untested")))' "$TMPDIR/notification-comments.json"
 ```
 
-## Auto Work
+## Testing Auto Work
 
 ```bash
 # should create an issue as emori and assign it as tanaabot after the safe intake baseline under auto mode

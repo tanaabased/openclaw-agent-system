@@ -102,7 +102,7 @@ node --input-type=module -e 'import assert from "node:assert/strict"; import {re
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0'
 ```
 
-## Status Update
+## Testing Status Update
 
 This adds a status draft, a later authorized publication and an already-current
 request in the same chat. These three turns prove native input, retained publication

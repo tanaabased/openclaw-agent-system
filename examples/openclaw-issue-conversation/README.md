@@ -226,7 +226,7 @@ NODE
 
 ```
 
-## Status Update
+## Testing Status Update
 
 This adds a status draft, a later authorized publication and an already-current
 request in the same chat. These three turns prove native input, retained publication
