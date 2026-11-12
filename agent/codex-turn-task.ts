@@ -1,7 +1,10 @@
 import { withDispatchTask } from './dispatch-task-scope.ts';
 import { omit } from 'lodash-es';
 import resolveGitProtocol from '../tools/git/protocol.ts';
-import codexAssessmentSkill from './codex-assessment-skill.ts';
+import {
+  codexSkillResolver,
+  type default as codexAssessmentSkill,
+} from './codex-assessment-skill.ts';
 import codexContinuationNative from './codex-continuation-native.ts';
 import { codexDispatchNative, type DispatchNativeThread } from './codex-dispatch-native.ts';
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
@@ -259,12 +262,12 @@ export default async function readCodexTurnTask(
       stage: owner.stage,
       feedback,
       feedbackLimitation,
-      resolveSkill: async (id) =>
-        (deps.skill ?? codexAssessmentSkill)(
-          (await connect()).request,
-          facts.worktree ?? workspace,
-          id,
-        ),
+      resolveSkill: deps.skill
+        ? async (id) => deps.skill!((await connect()).request, facts.worktree ?? workspace, id)
+        : codexSkillResolver(
+            async (method, params) => (await connect()).request(method, params),
+            facts.worktree ?? workspace,
+          ),
     });
     await assertCurrent();
     return { ...facts, ...context };

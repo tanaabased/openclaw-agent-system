@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import AgentSystemToolError from '../api/error.ts';
+import { repositoryPreparationFailure } from '../agent/dispatch-retry.ts';
+import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
 
 import type { AgentManifest } from '../manifest/types.ts';
 import TrustedGitWorktreeService from '../tools/git/trusted-worktree-service.ts';
@@ -25,6 +28,7 @@ const manifest: AgentManifest = {
 function fixture(
   options: {
     deny?: boolean;
+    failure?: Error;
     listed?: boolean;
     listedBranch?: string;
     listedWorkId?: string;
@@ -102,6 +106,7 @@ function fixture(
         };
       },
       async prepare(_context, input) {
+        if (options.failure) throw options.failure;
         events.push('prepare');
         prepared.push(input);
         return {
@@ -182,6 +187,43 @@ function fixture(
 }
 
 describe('tools/git/trusted-worktree-service', () => {
+  it('should retain recoverable preparation causes through the real tool wrapper without unwrapping denial', async () => {
+    const input = {
+      agentId: 'data',
+      cloneUrl: 'https://github.com/owner/repo.git',
+      defaultBranch: 'main',
+      itemDatabaseId: 3,
+      itemNumber: 42,
+      itemType: 'issue' as const,
+      repositoryDatabaseId: 7,
+      title: 'repair',
+    };
+    for (const [failure, expected] of [
+      [
+        new RepositoryPreparationError('repository-path-unsafe', '/workspace/data'),
+        'repository-path-unsafe',
+      ],
+      [Object.assign(new Error('disk full'), { code: 'ENOSPC' }), 'repository-io-unavailable'],
+    ] as const) {
+      const { service } = fixture({ failure });
+      await assert.rejects(service.prepareGitHub(input), (error: unknown) => {
+        assert.ok(error instanceof AgentSystemToolError);
+        assert.equal(error.code, 'execution_failed');
+        const recovered = repositoryPreparationFailure(error);
+        assert.ok(recovered instanceof Error);
+        assert.equal(recovered.message, expected);
+        return true;
+      });
+    }
+    const { service } = fixture({ deny: true });
+    await assert.rejects(service.prepareGitHub(input), (error: unknown) => {
+      assert.ok(error instanceof AgentSystemToolError);
+      assert.equal(error.code, 'approval_denied');
+      assert.equal(repositoryPreparationFailure(error), error);
+      return true;
+    });
+  });
+
   it('should bind preparation inspection and cleanup to the same assignment attempt', async () => {
     const input = {
       agentId: 'data',

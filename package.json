@@ -115,6 +115,7 @@
     "test:all": "bun run build && node --import tsx ./node_modules/mocha/bin/mocha.js --timeout 10000 --reporter ./scripts/test-timing-reporter.cjs --exclude \"test/**/*.stress.spec.ts\" \"test/**/*.spec.ts\"",
     "test:codex-plugin": "node --import tsx scripts/codex-plugin-test-task.ts",
     "test:component": "bun run build && node --import tsx ./node_modules/mocha/bin/mocha.js --timeout 10000 --reporter ./scripts/test-timing-reporter.cjs --exclude \"test/**/*.os.component.spec.ts\" \"test/**/*.component.spec.ts\"",
+    "test:focused": "bun scripts/test-focused-task.ts",
     "test:os": "node --import tsx ./node_modules/mocha/bin/mocha.js --timeout 10000 --reporter ./scripts/test-timing-reporter.cjs \"test/**/*.os.component.spec.ts\"",
     "test:release": "node --import tsx scripts/release-test-task.ts",
     "test:static": "node --import tsx ./node_modules/mocha/bin/mocha.js --timeout 10000 --reporter ./scripts/test-timing-reporter.cjs \"test/**/*.static.spec.ts\"",

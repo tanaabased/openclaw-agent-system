@@ -8,6 +8,33 @@ export default async function openClawSkill(
   expected: { agentId: string; key: string },
   id: string,
 ) {
+  return openClawSkillResolver(request, expected)(id);
+}
+
+/** keep discovery local to one context request; selected files are still read independently. */
+export function openClawSkillResolver(
+  request: DispatchRequest,
+  expected: { agentId: string; key: string },
+) {
+  let catalog: ReturnType<typeof readCatalog> | undefined;
+  return async (id: string) => {
+    const skills = await (catalog ??= readCatalog(request, expected).catch((error) => {
+      catalog = undefined;
+      throw error;
+    }));
+    return selectSkill(skills, id);
+  };
+}
+
+async function readCatalog(request: DispatchRequest, expected: { agentId: string; key: string }) {
+  const report = sessionObject(
+    await request('skills.status', { agentId: expected.agentId, sessionKey: expected.key }),
+  );
+  if (!Array.isArray(report.skills)) throw new Error('dispatch-assessment-skill-discovery-invalid');
+  return report.skills;
+}
+
+async function selectSkill(skills: unknown[], id: string) {
   const name = [
     'agent-system:agent-system-github-reply',
     'agent-system:agent-system-task-assessment',
@@ -15,11 +42,7 @@ export default async function openClawSkill(
   ].includes(id)
     ? id.split(':').at(-1)!
     : id;
-  const report = sessionObject(
-    await request('skills.status', { agentId: expected.agentId, sessionKey: expected.key }),
-  );
-  if (!Array.isArray(report.skills)) throw new Error('dispatch-assessment-skill-discovery-invalid');
-  const matches = report.skills
+  const matches = skills
     .map(sessionObject)
     .filter(
       (entry) =>

@@ -117,7 +117,8 @@
 ## Validation
 
 - Keep Mocha `describe` and `it` descriptions fully lowercase. Preserve required casing only in test inputs, commands, and expected contract values.
-- Run the narrowest relevant checks while iterating, then `bun run validate` before handing off implementation changes. It runs lint, typechecking, the build-backed `test:all` suite, and plugin checks; `bun run test` alone is the fast unit-only alias.
+- For implementation changes, run all inexpensive unit and static tests, then applicable lint, type checks, and focused component tests covering changed behavior and affected callers. Include both runtime adapters when shared behavior changes; build artifacts when selected tests consume them. Use `bun run test:focused [--build] <component files>` for explicit selections.
+- Do not routinely run full `bun run validate` before push or handoff. Keep it as the comprehensive option for a concrete unresolved risk that focused checks cannot cover, or explicit operator direction. Retain passing evidence until relevant inputs change. Documentation-only changes need relevant checks, not automatic behavioral suites. Report focused local checks separately from full component/OS coverage in PR CI.
 - Run `bun run test:release` when package contents, compatibility metadata, or release wiring change.
 - When behavior crosses installed-plugin, public CLI, Gateway, agent, or hook boundaries, add or update the owning Leia material. Change its workflow matrix entry only when scenario selection changes; keep detailed rules in `examples/AGENTS.md`.
 - Never run Leia material or other operational tests from `examples/` locally. They are GitHub Actions-only, including when isolated state would be available.

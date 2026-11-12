@@ -66,7 +66,7 @@ import { type IntakeObservation } from './openclaw-intake-report.ts';
 import type OpenClawIntake from './openclaw-intake.ts';
 import { nativeTurnFor } from './openclaw-native-turns.ts';
 import { type DispatchCaller } from './openclaw-session-create.ts';
-import openClawSkill from './openclaw-skill.ts';
+import { openClawSkillResolver } from './openclaw-skill.ts';
 import openclawTurnContext from './openclaw-turn-context.ts';
 import retainedIntakePolicy from './retained-intake-policy.ts';
 import taskTurnContext from './task-turn-context.ts';
@@ -451,10 +451,11 @@ export default class OpenClawDispatchContext {
       stage,
       feedback,
       feedbackLimitation,
-      resolveSkill: (id) =>
-        this.dependencies.credential.use(nativeAuthority, (request) =>
-          openClawSkill(request, { agentId: binding.agentId!, key: binding.sessionKey! }, id),
-        ),
+      resolveSkill: openClawSkillResolver(
+        (method, params) =>
+          this.dependencies.credential.use(nativeAuthority, (request) => request(method, params)),
+        { agentId: binding.agentId!, key: binding.sessionKey! },
+      ),
       now: this.dependencies.now?.(),
     });
     await assertCurrent();

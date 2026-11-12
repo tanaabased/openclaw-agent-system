@@ -262,7 +262,11 @@ export default class OpenClawDispatchCoordinator {
         !record.reset &&
         (continuationStatus(record) ||
           (record.blocker &&
-            dispatchRetryDue(record, (this.context.dependencies.now ?? Date.now)()))),
+            dispatchRetryDue(
+              record,
+              (this.context.dependencies.now ?? Date.now)(),
+              record.failureStage === 'worktree' && !record.request,
+            ))),
     );
     const storagePaused = ['paused', 'emergency'].includes(dispatchStoragePressure(state).level);
     const pending = (storagePaused ? [] : pendingAssignments(state, current.admitted))
@@ -395,7 +399,7 @@ export default class OpenClawDispatchCoordinator {
         record.reset ||
         record.handoff ||
         !record.blocker ||
-        !dispatchRetryDue(record, now)
+        !dispatchRetryDue(record, now, record.failureStage === 'worktree' && !record.request)
       )
         continue;
       delete record.blocker;

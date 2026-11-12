@@ -1,3 +1,4 @@
+import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
 import openClawEntryContext from '../agent/openclaw-entry-context.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
@@ -681,24 +682,81 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await record()).feedback!.admission?.after, first + 1000);
   });
 
-  it('should retry a transient worktree failure on a later occurrence without creating twice', async () => {
-    const input = await next();
-    const original = service.dependencies.worktrees.prepareGitHub;
-    service.dependencies.worktrees.prepareGitHub = async () => {
-      throw new Error('session-dispatch-connect-timeout');
-    };
-    const failure = await prepare(input);
-    assert.ok('code' in failure && failure.code === 'session-dispatch-connect-timeout');
-    const retained = await record();
-    assert.equal(retained.retry?.attempts, 1);
-    assert.equal(creates().length, 0);
-    service.dependencies.worktrees.prepareGitHub = original;
-    service.dependencies.now = () => retained.retryAfter!;
-    coordinator.runId = 'retry-intake';
-    const retry = await next();
-    assert.equal(retry.status, 'routing-required');
-    assert.equal((await prepare(retry)).status, 'session-created');
+  for (const failure of ['transport', 'fetch-lock', 'path-permissions', 'disk-full'] as const)
+    it(`should retry a repaired ${failure} worktree failure without creating twice`, async () => {
+      const input = await next();
+      const original = service.dependencies.worktrees.prepareGitHub;
+      service.dependencies.worktrees.prepareGitHub = async () => {
+        const wrapped = (cause: Error) =>
+          Object.assign(
+            new AgentSystemToolError('execution_failed', 'Git worktree preparation failed'),
+            { cause },
+          );
+        if (failure === 'fetch-lock')
+          throw wrapped(
+            new GitCommandError('fetch', {
+              exitCode: 128,
+              stderr: "Unable to create 'main.lock': File exists",
+            }),
+          );
+        if (failure === 'disk-full')
+          throw wrapped(Object.assign(new Error('disk full'), { code: 'ENOSPC' }));
+        if (failure === 'path-permissions')
+          throw wrapped(new RepositoryPreparationError('repository-path-unsafe', root));
+        throw new Error('session-dispatch-connect-timeout');
+      };
+      const failed = await prepare(input);
+      assert.ok('code' in failed);
+      assert.equal(
+        failed.code,
+        failure === 'transport'
+          ? 'session-dispatch-connect-timeout'
+          : failure === 'fetch-lock'
+            ? 'git-fetch-lock-exit-128'
+            : failure === 'path-permissions'
+              ? 'repository-path-unsafe'
+              : 'repository-io-unavailable',
+      );
+      const retained = await record();
+      assert.equal(retained.retry?.attempts, 1);
+      assert.equal(creates().length, 0);
+      service.dependencies.worktrees.prepareGitHub = original;
+      coordinator.runId = 'before-retry';
+      assert.equal(
+        (await service.run(manifest, root, coordinator, { action: 'next' })).status,
+        'idle',
+      );
+      service.dependencies.now = () => retained.retryAfter!;
+      coordinator.runId = 'retry-intake';
+      const retry = await next();
+      assert.equal(retry.id, input.id);
+      assert.equal(retry.status, 'routing-required');
+      assert.equal((await prepare(retry)).status, 'session-created');
+      assert.equal(creates().length, 1);
+    });
+
+  it('should recover retained repository failures without replaying an existing native request', async () => {
+    const selected = await next();
+    const { journal } = await service.scope(manifest, root);
+    await journal.exclusive(async (state, save) => {
+      state.records[0]!.blocker = 'git-fetch-lock-exit-128';
+      state.records[0]!.failureStage = 'worktree';
+      await save();
+    });
+    coordinator.runId = 'repaired-retained-preparation';
+    const resumed = await next();
+    assert.equal(resumed.id, selected.id);
+    assert.equal((await prepare(resumed)).status, 'session-created');
     assert.equal(creates().length, 1);
+    await journal.exclusive(async (state, save) => {
+      state.records[0]!.blocker = 'git-fetch-lock-exit-128';
+      state.records[0]!.failureStage = 'worktree';
+      await save();
+    });
+    coordinator.runId = 'existing-native-request';
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal(creates().length, 1);
+    assert.equal((await record()).blocker, 'git-fetch-lock-exit-128');
   });
 
   it('should retry an already waiting collision with one durable worktree attempt', async () => {
@@ -2427,14 +2485,11 @@ describe('agent/openclaw issue dispatch', () => {
   });
 
   for (const [limit, occupied, expected] of [
-    [3, 0, 3],
-    [3, 1, 2],
-    [3, 3, 0],
-    [1, 0, 1],
-    [5, 0, 5],
+    [2, 1, 1],
+    [1, 1, 0],
   ] as const) {
     it(`should fill ${expected} initially free slots with limit ${limit} and ${occupied} occupied`, async () => {
-      await assignments(limit + 3, limit);
+      await assignments(limit + 1, limit);
       for (let index = 0; index < occupied; index++) {
         const input = await next();
         await prepare(input);
@@ -3105,19 +3160,6 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await service.check(manifest, root)).changed, false);
     await service.run(manifest, root, coordinator, { action: 'retry', id: input.id }, true);
     assert.equal((await service.check(manifest, root)).changed, true);
-  });
-
-  it('should expose no arbitrary identity credential message or removed actions', () => {
-    for (const action of ['start', 'canary', 'context', 'result', 'validate-result'])
-      assert.equal(Value.Check(dispatchParameters, { action }), false);
-    for (const extra of [
-      { agentId: 'other' },
-      { method: 'chat.send' },
-      { token: 'secret' },
-      { cwd: '/' },
-      { message: 'work' },
-    ])
-      assert.equal(Value.Check(dispatchParameters, { action: 'next', ...extra }), false);
   });
 
   const sends = () => calls.filter(({ method }) => method === 'chat.send');

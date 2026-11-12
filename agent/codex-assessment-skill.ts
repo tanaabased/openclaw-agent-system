@@ -18,7 +18,23 @@ export default async function codexAssessmentSkill(
   cwd: string,
   id: string,
 ): Promise<CodexAssessmentSkill> {
-  const selected = normalizeAssessmentSkillId(id);
+  return codexSkillResolver(request, cwd)(id);
+}
+
+/** keep discovery local to one context request; selected files are still read independently. */
+export function codexSkillResolver(request: CodexThreadRequest, cwd: string) {
+  let catalog: ReturnType<typeof readCatalog> | undefined;
+  return async (id: string): Promise<CodexAssessmentSkill> => {
+    const selected = normalizeAssessmentSkillId(id);
+    const skills = await (catalog ??= readCatalog(request, cwd).catch((error) => {
+      catalog = undefined;
+      throw error;
+    }));
+    return selectSkill(skills, selected);
+  };
+}
+
+async function readCatalog(request: CodexThreadRequest, cwd: string) {
   const response = await request('skills/list', { cwds: [cwd], forceReload: true });
   const entries = Array.isArray(response.data)
     ? response.data.filter((entry) => nativeObject(entry) && entry.cwd === cwd)
@@ -31,7 +47,11 @@ export default async function codexAssessmentSkill(
     !Array.isArray(entry.errors)
   )
     throw new Error('dispatch-assessment-skill-discovery-invalid');
-  const matches = entry.skills.filter(
+  return entry.skills;
+}
+
+async function selectSkill(skills: unknown[], selected: string) {
+  const matches = skills.filter(
     (skill) =>
       nativeObject(skill) &&
       typeof skill.name === 'string' &&

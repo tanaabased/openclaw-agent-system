@@ -643,6 +643,106 @@ describe('agent/codex-dispatch', () => {
       assert.equal(records[0]!.blocker, undefined);
     });
 
+  it('should resume the same assignment after correcting an unsupported model provider', async () => {
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({
+        ...manifest,
+        models: { ...models, medium: { model: 'anthropic/claude-sonnet-4', effort: 'high' } },
+      }),
+    );
+    const selected = await next();
+    const failed = await request('prepare', {
+      id: selected.id,
+      digest: selected.digest,
+      title: 'repair contained behavior',
+      assessment: { complexity: 'medium', reason: 'Bounded work.' },
+    });
+    assert.equal(failed.code, 'codex-model-provider-unsupported');
+    const before = ((await readDispatchState()).records as DispatchRecord[])[0]!;
+    assert.equal(before.request, undefined);
+    assert.ok(before.retryAfter);
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
+    assert.equal((await next()).status, 'idle');
+    now = before.retryAfter;
+    const resumed = await next();
+    assert.equal(resumed.status, 'routing-required');
+    assert.equal(resumed.id, selected.id);
+    const prepared = await request('prepare', {
+      id: resumed.id,
+      digest: resumed.digest,
+      title: 'repair contained behavior',
+      assessment: { complexity: 'medium', reason: 'Bounded work.' },
+    });
+    assert.equal(prepared.status, 'prepared');
+    assert.equal((prepared.request as { model: string }).model, 'gpt-6.1-sol');
+    assert.equal(((await readDispatchState()).records as DispatchRecord[]).length, 1);
+  });
+
+  it('should resume the same assignment after resolving ambiguous saved projects', async () => {
+    const original = projects;
+    projects = [...original, { ...(original[0] as object), projectId: 'duplicate-project' }];
+    const failed = await next();
+    assert.equal(failed.code, 'dispatch-project-ambiguous');
+    const before = ((await readDispatchState()).records as DispatchRecord[])[0]!;
+    assert.equal(before.request, undefined);
+    assert.ok(before.retryAfter);
+    projects = original;
+    now = before.retryAfter;
+    const resumed = await next();
+    assert.equal(resumed.status, 'routing-required');
+    assert.equal(resumed.id, before.id);
+    assert.equal(((await readDispatchState()).records as DispatchRecord[]).length, 1);
+  });
+
+  for (const failure of ['inventory', 'workspace', 'fetch-lock'] as const) {
+    it(`should resume the same assignment after repairing local ${failure} preparation`, async () => {
+      const originalGit = deps.git!;
+      deps.git = async (cwd, argv, signal) => {
+        if (
+          (failure === 'inventory' && argv[0] === 'remote') ||
+          (failure === 'fetch-lock' && argv[0] === 'fetch')
+        )
+          throw Object.assign(new Error('dispatch-project-git-unavailable'), {
+            providerDiagnostic: providerDiagnostic('git', 'git-command', 'unknown', {
+              providerMessage:
+                failure === 'inventory'
+                  ? 'fatal: bad config line 1 in file .git/config'
+                  : "Unable to create 'main.lock': File exists",
+            }),
+          });
+        if (failure === 'workspace' && argv.includes('--is-bare-repository')) return 'true';
+        return originalGit(cwd, argv, signal);
+      };
+      const failed = await next();
+      assert.equal(
+        failed.code,
+        failure === 'inventory'
+          ? 'dispatch-project-inventory-unavailable'
+          : failure === 'workspace'
+            ? 'dispatch-project-workspace-required'
+            : 'dispatch-project-git-unavailable',
+      );
+      const before = ((await readDispatchState()).records as DispatchRecord[])[0]!;
+      assert.equal(before.request, undefined);
+      assert.ok(before.retryAfter);
+      deps.git = originalGit;
+      assert.equal((await next()).status, 'idle');
+      now = before.retryAfter;
+      const resumed = await next();
+      assert.equal(resumed.status, 'routing-required');
+      assert.equal(resumed.id, before.id);
+      const prepared = await request('prepare', {
+        id: resumed.id,
+        digest: resumed.digest,
+        title: 'repair contained behavior',
+        assessment: { complexity: 'medium', reason: 'Bounded work.' },
+      });
+      assert.equal(prepared.status, 'prepared');
+      assert.equal(((await readDispatchState()).records as DispatchRecord[]).length, 1);
+    });
+  }
+
   it('should identify missing routing configuration before preparing a native chat', async () => {
     await writeFile(
       join(workspace, 'agent.yaml'),
@@ -2922,8 +3022,22 @@ describe('agent/codex-dispatch', () => {
             : git(cwd, argv, signal);
         const result = await next();
         assert.equal(preparations, managed ? 1 : 0);
-        assert.equal(result.status, broken && !managed ? 'waiting' : 'routing-required');
-        if (broken && !managed) assert.equal(result.code, 'dispatch-project-workspace-required');
+        assert.equal(result.status, broken && !managed ? 'retrying' : 'routing-required');
+        if (broken && !managed) {
+          assert.equal(result.code, 'dispatch-project-workspace-required');
+          const retained = ((await readDispatchState()).records as DispatchRecord[])[0]!;
+          assert.equal(retained.request, undefined);
+          assert.ok(retained.retryAfter && retained.retryAfter > now);
+          now = retained.retryAfter;
+          assert.equal((await next()).status, 'retrying');
+          assert.equal(preparations, 0);
+          deps.git = git;
+          now = ((await readDispatchState()).records as DispatchRecord[])[0]!.retryAfter!;
+          const resumed = await next();
+          assert.equal(resumed.status, 'routing-required');
+          assert.equal(resumed.id, result.id);
+          assert.equal(preparations, 0);
+        }
       });
     }
   }

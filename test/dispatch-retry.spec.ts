@@ -3,6 +3,7 @@ import {
   dispatchFailurePhase,
   dispatchFailureStatus,
   dispatchRetryDue,
+  repositoryPreparationFailure,
   scheduleDispatchRetry,
 } from '../agent/dispatch-retry.ts';
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
@@ -28,9 +29,13 @@ describe('agent/dispatch-retry', () => {
       'model-routing-profile-missing',
       'model-routing-instructions-changed',
       'model-routing-xhigh-unjustified',
+      'codex-model-provider-unsupported',
       'dispatch-configured-project-missing',
       'dispatch-assessment-skill-ambiguous',
       'dispatch-project-inventory-invalid',
+      'dispatch-project-ambiguous',
+      'dispatch-project-inventory-unavailable',
+      'dispatch-project-workspace-required',
       'dispatch-project-registration-unavailable',
       'dispatch-assessment-skill-unavailable',
       'dispatch-assessment-guidance-unreadable',
@@ -51,6 +56,117 @@ describe('agent/dispatch-retry', () => {
       );
       assert.equal(record.retry, undefined);
       assert.equal(record.retryAfter, undefined);
+    }
+  });
+
+  it('should recheck unclassified local inventory failures without retrying arbitrary failures', () => {
+    const record = {} as SharedDispatchRecord;
+    const diagnostic = providerDiagnostic('git', 'git-command', 'unknown', {
+      providerMessage: 'fatal: bad config line 1 in file .git/config',
+      retryAfterMs: 600000,
+    });
+    for (const now of [0, 600000, 1200000]) {
+      assert.equal(
+        scheduleDispatchRetry(
+          record,
+          'dispatch-project-inventory-unavailable',
+          {
+            cause: { providerDiagnostic: diagnostic },
+          },
+          now,
+        ),
+        true,
+      );
+      assert.equal(record.retryAfter, now + 600000);
+      assert.deepEqual(record.providerDiagnostic, diagnostic);
+    }
+    for (const code of ['unclassified-failure', 'dispatch-creation-denied']) {
+      assert.equal(
+        scheduleDispatchRetry(record, code, { providerDiagnostic: diagnostic }, 0),
+        false,
+      );
+      assert.equal(record.retryAfter, undefined);
+    }
+  });
+
+  it('should recheck repository failures only within preparation and retain provider backoff', () => {
+    const diagnostic = providerDiagnostic('git', 'git-command', 'unknown');
+    for (const code of [
+      'dispatch-project-git-unavailable',
+      'repository-git-unavailable',
+      'git-fetch-lock-exit-128',
+      'git-clone-disk-full-exit-128',
+      'git-worktree-preparation-unknown-exit-1',
+      'repository-path-unsafe',
+      'repository-path-missing',
+      'repository-io-unavailable',
+      'repository-clone-interrupted',
+      'repository-workspace-interrupted',
+      'dispatch-project-path-unsafe',
+      'dispatch-starting-ref-invalid',
+    ]) {
+      const record = { blocker: code } as SharedDispatchRecord;
+      assert.equal(dispatchRetryDue(record, 1), false);
+      assert.equal(dispatchRetryDue(record, 1, true), true);
+      const error = code.includes('git') ? { providerDiagnostic: diagnostic } : undefined;
+      assert.equal(scheduleDispatchRetry(record, code, error, 0), false);
+      for (const now of [0, 300000, 600000]) {
+        assert.equal(scheduleDispatchRetry(record, code, error, now, true), true);
+        assert.equal(record.retryAfter, now + 300000);
+      }
+    }
+    for (const code of [
+      'repository-identity-conflict',
+      'repository-path-conflict',
+      'repository-preparation-changed',
+      'git-worktree-owner-mismatch',
+      'git-worktree-branch-exists',
+      'git-worktree-path-occupied',
+      'launch-pr-head-changed',
+      'dispatch-operation-cancelled',
+      'dispatch-creation-denied',
+      'unclassified-failure',
+    ]) {
+      const record = { blocker: code } as SharedDispatchRecord;
+      assert.equal(dispatchRetryDue(record, 1, true), false);
+      assert.equal(scheduleDispatchRetry(record, code, undefined, 0, true), false);
+    }
+    const record = {} as SharedDispatchRecord;
+    const error = {
+      providerDiagnostic: providerDiagnostic('git', 'git-command', 'rate-limit', {
+        resetAt: 900000,
+      }),
+    };
+    assert.equal(scheduleDispatchRetry(record, 'git-fetch-unknown-exit-128', error, 0, true), true);
+    assert.equal(record.retryAfter, 900000);
+  });
+
+  it('should retain repairable filesystem failures without masking host access or authority errors', () => {
+    for (const code of [
+      'ENOSPC',
+      'EDQUOT',
+      'EROFS',
+      'EMFILE',
+      'ENFILE',
+      'EIO',
+      'EBUSY',
+      'ENOENT',
+      'EEXIST',
+      'ENOTDIR',
+    ]) {
+      const original = Object.assign(new Error('local I/O failed'), { code });
+      const error = repositoryPreparationFailure(original) as Error;
+      assert.equal(error.message, 'repository-io-unavailable');
+      assert.equal(error.cause, original);
+    }
+    for (const code of [
+      'EPERM',
+      'EACCES',
+      'repository-identity-conflict',
+      'dispatch-creation-denied',
+    ]) {
+      const error = Object.assign(new Error(code), { code });
+      assert.equal(repositoryPreparationFailure(error), error);
     }
   });
 
@@ -78,9 +194,18 @@ describe('agent/dispatch-retry', () => {
     assert.equal(dispatchFailurePhase(record, 'dispatch-host-unavailable'), 'retrying');
   });
   it('should reconsider retained prerequisite failures without adding migration metadata', () => {
-    const record = { blocker: 'model-routing-not-configured' } as SharedDispatchRecord;
-    assert.equal(dispatchRetryDue(record, 1), true);
-    assert.equal(record.retry, undefined);
+    const record = {} as SharedDispatchRecord;
+    for (const blocker of [
+      'model-routing-not-configured',
+      'codex-model-provider-unsupported',
+      'dispatch-project-ambiguous',
+      'dispatch-project-inventory-unavailable',
+      'dispatch-project-workspace-required',
+    ]) {
+      record.blocker = blocker;
+      assert.equal(dispatchRetryDue(record, 1), true);
+      assert.equal(record.retry, undefined);
+    }
     record.blocker = 'dispatch-creation-denied';
     assert.equal(dispatchRetryDue(record, 1), false);
     record.blocker = 'unknown-error';

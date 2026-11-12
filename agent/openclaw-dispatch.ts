@@ -18,7 +18,11 @@ import renderNativeAssessment, { renderBoundAssessment } from './assessment-rend
 import discoveryCheckpoint from './discovery-checkpoint.ts';
 import discoveryNotice from './discovery-notice.ts';
 import dispatchInspection, { dispatchInspectionSummary } from './dispatch-inspection.ts';
-import { dispatchFailurePhase, scheduleDispatchRetry } from './dispatch-retry.ts';
+import {
+  dispatchFailurePhase,
+  repositoryPreparationFailure,
+  scheduleDispatchRetry,
+} from './dispatch-retry.ts';
 import feedbackContextMaterial from './feedback-context-material.ts';
 import implementationMaterial, {
   type ImplementationMaterialRead,
@@ -112,15 +116,26 @@ export default class OpenClawDispatch {
     error: unknown,
     stage?: OpenClawDispatchRecord['failureStage'],
   ) {
-    const code = openClawDispatchFailureCode(error);
+    let failure = error;
+    let code = openClawDispatchFailureCode(failure);
     let status: 'blocked' | 'waiting' | 'retrying' = 'waiting';
     await store.exclusive(async (state, save) => {
       const record = state.records.find((entry) => entry.id === id);
       if (record) {
+        if (stage === 'worktree' && !record.request) {
+          failure = repositoryPreparationFailure(error);
+          code = openClawDispatchFailureCode(failure);
+        }
         record.blocker = code;
-        scheduleDispatchRetry(record, code, error, (this.dependencies.now ?? Date.now)());
+        scheduleDispatchRetry(
+          record,
+          code,
+          failure,
+          (this.dependencies.now ?? Date.now)(),
+          stage === 'worktree' && !record.request,
+        );
         if (stage) record.failureStage = stage;
-        status = dispatchFailurePhase(record, code, error);
+        status = dispatchFailurePhase(record, code, failure);
         await save();
       }
     }, true);
@@ -128,7 +143,7 @@ export default class OpenClawDispatch {
       status,
       id,
       nextAction: 'next' as const,
-      ...workflowFailure(error, code),
+      ...workflowFailure(failure, code),
       ...(stage ? { stage } : {}),
       ...(error instanceof IssueSessionMismatchError ? { mismatchedField: error.field } : {}),
     };

@@ -137,7 +137,9 @@ shows DevGuard policy audit records rather than the plugin logger stream.
 
 ## Testing
 
-Run the narrowest relevant check while iterating, then complete the repository-only suite before handoff.
+For implementation changes, run all inexpensive unit and static tests, then the applicable lint, type checks, and component tests covering the changed behavior and affected callers. Include both runtime adapters for shared behavior. Build artifacts when the selected tests consume them, and retain passing results until relevant inputs change. Documentation-only changes need relevant checks rather than automatic behavioral suites.
+
+Full `bun run validate` is optional comprehensive validation, not a routine pre-push or handoff requirement. Use it for a concrete unresolved risk that focused checks cannot cover, or when explicitly requested. PR CI retains full component and OS coverage; report local selection and CI results separately.
 
 ### Verification Categories
 
@@ -173,6 +175,15 @@ bun run test
 ```
 
 The Mocha suites keep behavior-focused specifications flat in [`test/`](./test/). `bun run test` remains the fast unit alias; `bun run test:all` builds the helper artifacts and runs all ordinary source tests. Use `bun run test:unit` for deterministic in-process behavior, `bun run test:static` for repository invariants, `bun run test:component` for portable component checks, and `bun run test:os` for native component contracts.
+
+Select explicit component files with `bun run test:focused`; appending files to `test:component` does not narrow its full-suite glob. Add `--build` when those tests consume built artifacts; it builds once before the selected files. An optional `--grep` narrows cases within those files. Missing files, no file selection, and zero matching tests fail rather than falling back to the full suite.
+
+```sh
+bun run test:unit
+bun run test:static
+bun run test:focused test/task-turn-skills.component.spec.ts
+bun run test:focused --build test/codex-dispatch.component.spec.ts test/openclaw-dispatch.component.spec.ts
+```
 
 Portable components use `*.component.spec.ts`; native process, permission, symlink, and socket checks use `*.os.component.spec.ts`. CI runs units and portable components on Ubuntu and native components on both Ubuntu and macOS. Mixed files remain components until their deterministic cases are extracted. Installed-runtime acceptance stays in Leia examples.
 
