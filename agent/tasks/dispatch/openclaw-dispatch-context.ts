@@ -1,6 +1,7 @@
 import {
   selectOpenClawTaskContext,
   type OpenClawTaskContextDependencies,
+  type OpenClawTaskContext,
 } from '../context/openclaw-task-context.ts';
 import { withDispatchTask } from './dispatch-task-scope.ts';
 import { realpath } from 'node:fs/promises';
@@ -131,7 +132,7 @@ export interface OpenClawTaskDependencies {
   }): Promise<OpenClawDeliveryConnection>;
 }
 export interface OpenClawDispatchDependencies extends OpenClawTaskDependencies {
-  intake: Pick<OpenClawIntake, 'run' | 'inspect' | 'readiness'>;
+  intake: Pick<OpenClawIntake, 'run' | 'check' | 'inspect' | 'readiness'>;
 }
 export function openClawDispatchFailureCode(error: unknown): string {
   if (error instanceof ContextMaterialError) return error.code;
@@ -166,12 +167,10 @@ export function openClawDispatchFailureCode(error: unknown): string {
 }
 export default class OpenClawDispatchContext {
   constructor(readonly dependencies: OpenClawDispatchDependencies) {}
-  async scope(manifest: AgentManifest, workspace: string) {
-    const current = await selectOpenClawTaskContext(
-      this.dependencies.taskContext,
-      manifest,
-      workspace,
-    );
+  async scope(manifest: AgentManifest, workspace: string, selection?: OpenClawTaskContext) {
+    const current =
+      selection ??
+      (await selectOpenClawTaskContext(this.dependencies.taskContext, manifest, workspace));
     await assertNotificationManagement(this.dependencies.root, current.store.location.scope);
     const journal = new OpenClawDispatchStore(this.dependencies.root, current.store.location.scope);
     const admitted = managedIssueState(await current.store.read(), (await journal.read()).records);
@@ -488,12 +487,15 @@ export default class OpenClawDispatchContext {
       workspace,
     );
     const journal = new OpenClawDispatchStore(this.dependencies.root, current.store.location.scope);
-    const state = managedIssueState(await current.store.read(), (await journal.read()).records);
+    const dispatchState = await journal.read();
+    const state = managedIssueState(await current.store.read(), dispatchState.records);
     if (!state) throw new Error('dispatch-intake-record-missing');
     return {
       ...current,
+      context: current,
+      dispatchState,
       selected: current.selected ?? retainedIntakePolicy(manifest, state, 'openclaw'),
-      journal: new OpenClawDispatchStore(this.dependencies.root, current.store.location.scope),
+      journal,
     };
   }
   async observe(manifest: AgentManifest, workspace: string): Promise<IntakeObservation> {

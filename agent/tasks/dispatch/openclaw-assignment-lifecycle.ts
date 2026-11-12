@@ -44,16 +44,6 @@ export default async function reconcileOpenClawLifecycle(input: {
   const current = await read('lifecycle-scope', () => service.scope(manifest, workspace));
   current.policy.policy.issueAssignment!.allowed =
     manifest.github?.notifications?.issueAssignment?.allowed ?? [];
-  const manualTarget =
-    input.targetId &&
-    (await current.journal.read()).records.find(
-      (record) => record.id === input.targetId && record.manualIssue,
-    );
-  const owner = manualTarget
-    ? manualTarget.sourceThreadId
-    : await read('lifecycle-coordinator', () =>
-        service.dependencies.coordinator(manifest, workspace),
-      );
   const feedbackBudget = input.budget ?? new DiscoveryBudget();
   const now = (service.dependencies.now ?? Date.now)();
   const snapshot = await current.journal.read();
@@ -65,6 +55,14 @@ export default async function reconcileOpenClawLifecycle(input: {
     )
   )
     return;
+  const manualTarget =
+    input.targetId &&
+    snapshot.records.find((record) => record.id === input.targetId && record.manualIssue);
+  const owner = manualTarget
+    ? manualTarget.sourceThreadId
+    : await read('lifecycle-coordinator', () =>
+        service.dependencies.coordinator(manifest, workspace),
+      );
   input.budget?.check();
   const client = await read('lifecycle-connection', () =>
     service.dependencies.connect(

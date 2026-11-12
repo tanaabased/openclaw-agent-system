@@ -1,6 +1,7 @@
 import {
   selectOpenClawTaskContext,
   type OpenClawTaskContextDependencies,
+  type OpenClawTaskContext,
 } from './tasks/context/openclaw-task-context.ts';
 import { omit } from 'lodash-es';
 import { realpath } from 'node:fs/promises';
@@ -312,12 +313,36 @@ export default class OpenClawIntake {
     selector?: GitHubNotificationItemSelector,
     budget = new DiscoveryBudget(20000, signal),
   ) {
+    return this.#run(
+      manifest,
+      () => this.select(manifest, workspaceDir),
+      action,
+      signal,
+      selector,
+      budget,
+    );
+  }
+  /** reuse this check's selected context; admission and commit guards still read live authority. */
+  check(
+    manifest: AgentManifest,
+    current: OpenClawTaskContext,
+    signal: AbortSignal | undefined,
+    budget: DiscoveryBudget,
+  ) {
+    return this.#run(manifest, async () => current, 'check', signal, undefined, budget);
+  }
+  async #run(
+    manifest: AgentManifest,
+    select: () => Promise<OpenClawTaskContext>,
+    action: 'check' | 'scan' | 'activate',
+    signal: AbortSignal | undefined,
+    selector: GitHubNotificationItemSelector | undefined,
+    budget: DiscoveryBudget,
+  ) {
     const started = budget.clock();
     signal?.throwIfAborted();
     const deadline = AbortSignal.timeout(action === 'check' ? 25000 : 120000);
-    const { selected, store, workspace } = await budget.read('intake-scope', () =>
-      this.select(manifest, workspaceDir),
-    );
+    const { selected, store, workspace } = await budget.read('intake-scope', select);
     if (!selected) throw new IntakeError('intake-policy-disabled');
     const assertCurrent = async () => {
       signal?.throwIfAborted();
@@ -331,6 +356,7 @@ export default class OpenClawIntake {
         (await realpath(fresh.scope.workspaceDir)) !== workspace
       )
         throw new IntakeError('intake-workspace-binding-changed');
+      return fresh;
     };
     await assertCurrent();
     if (action !== 'activate') {
@@ -370,15 +396,12 @@ export default class OpenClawIntake {
       now: (this.dependencies.now ?? Date.now)(),
       activate: action === 'activate',
       selector,
-      assertCurrent,
-      readPolicy: async () => {
+      assertCurrent: async () => {
         await assertCurrent();
-        const live = await this.dependencies.manifestService.loadForAgentId(
-          manifest.agent.id,
-          'service',
-        );
-        const policy =
-          live.status === 'loaded' ? assignmentIntakePolicy(live.manifest, 'openclaw') : undefined;
+      },
+      readPolicy: async () => {
+        const live = await assertCurrent();
+        const policy = assignmentIntakePolicy(live.manifest, 'openclaw');
         if (!policy) throw new IntakeError('intake-policy-disabled');
         return policy;
       },

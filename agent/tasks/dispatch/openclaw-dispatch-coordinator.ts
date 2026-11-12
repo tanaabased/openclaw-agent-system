@@ -42,6 +42,8 @@ import type OpenClawDispatchIssue from './openclaw-dispatch-issue.ts';
 import { type OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import {
   applyOpenClawFeedbackScans,
+  openClawFeedbackRecords,
+  type OpenClawFeedbackScan,
   scanOpenClawFeedback,
 } from '../feedback/openclaw-feedback-scan.ts';
 import { sameIntakeRun } from '../../openclaw-intake-pass.ts';
@@ -101,14 +103,14 @@ export default class OpenClawDispatchCoordinator {
     );
     const intake =
       observation ??
-      (await this.context.dependencies.intake.run(
+      (await this.context.dependencies.intake.check(
         manifest,
-        workspace,
-        'check',
-        reporting.selected.digest,
+        reporting.context,
         signal,
-        undefined,
-        budget.fork(7000),
+        // reserve time for existing work only when there is work to inspect or recover.
+        reporting.dispatchState.records.length || reporting.dispatchState.retirementEffects?.length
+          ? budget.fork(7000)
+          : budget,
       ));
     const assignmentAt = budget.clock();
     let lifecycleFailure: string | undefined;
@@ -181,30 +183,33 @@ export default class OpenClawDispatchCoordinator {
     });
     const intakeFailure = intake.status !== 'ready' ? intake.code : undefined;
     const current = await budget.read('workspace-scope', () =>
-      this.context.scope(manifest, workspace),
-    );
-    const sourceThreadId = await budget.read('coordinator-binding', () =>
-      this.context.dependencies.coordinator(manifest, current.workspace),
+      this.context.scope(manifest, workspace, reporting.context),
     );
     const cycleAt = state.discoveryCycleAt ?? (this.context.dependencies.now ?? Date.now)();
     const previousCodes = new Map(
       state.records.map((record) => [record.id, record.feedback?.code]),
     );
-    const scans = await scanOpenClawFeedback({
-      service: {
-        dependencies: this.context.dependencies,
-        scope: (...args) => this.context.scope(...args),
-        validate: this.validate,
-      },
-      state,
-      manifest,
-      workspace: current.workspace,
-      sourceThreadId,
-      authority: { signal: budget.signal },
-      budget,
-      now: (this.context.dependencies.now ?? Date.now)(),
-      checkpoint: (scan) => discoveryCheckpoint(current.journal, scan, undefined, false),
-    });
+    let scans: OpenClawFeedbackScan[] = [];
+    if (openClawFeedbackRecords(state).length) {
+      const sourceThreadId = await budget.read('coordinator-binding', () =>
+        this.context.dependencies.coordinator(manifest, current.workspace),
+      );
+      scans = await scanOpenClawFeedback({
+        service: {
+          dependencies: this.context.dependencies,
+          scope: (...args) => this.context.scope(...args),
+          validate: this.validate,
+        },
+        state,
+        manifest,
+        workspace: current.workspace,
+        sourceThreadId,
+        authority: { signal: budget.signal },
+        budget,
+        now: (this.context.dependencies.now ?? Date.now)(),
+        checkpoint: (scan) => discoveryCheckpoint(current.journal, scan, undefined, false),
+      });
+    }
     applyOpenClawFeedbackScans(state.records, scans);
     const feedbackAt = budget.clock();
     const owners = state.records.filter(

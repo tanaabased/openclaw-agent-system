@@ -7516,6 +7516,80 @@ describe('agent/openclaw issue dispatch', () => {
     assert.ok('records' in missing);
     assert.deepEqual(missing.records, []);
   });
+  it('should allow a quiet empty intake check to finish after seven seconds without inspecting feedback', async () => {
+    const current = await service.scope(manifest, root);
+    await current.store.exclusive(async (state, save) => {
+      state!.records = [];
+      await save(state!);
+    });
+    manifest.github!.notifications!.routing = ['!*/*'];
+    await service.check(manifest, root);
+    let clock = 0;
+    let reads = 0;
+    const manifests = fixtureIntake.dependencies.manifestService;
+    const load = manifests.loadForAgentId.bind(manifests);
+    manifests.loadForAgentId = async (...args) => {
+      if (++reads === 1) clock += 8000;
+      return load(...args);
+    };
+    service.dependencies.coordinator = async () => {
+      assert.fail('an empty check has no conversation to inspect');
+    };
+    service.dependencies.feedbackConnect = async () => {
+      assert.fail('an empty check has no feedback to inspect');
+    };
+    const budget = new DiscoveryBudget(20000, undefined, () => clock);
+    const result = await openClawConditionCheck(
+      (budget) => service.check(manifest, root, undefined, undefined, undefined, budget),
+      undefined,
+      budget,
+    );
+    assert.equal(result.outcome, 'unchanged');
+    const script = openclawIntakeJobs(manifest).find((job) => job.id === 'github-issue-assignment')!
+      .internalOpenClaw!.trigger!.script;
+    let fire: boolean | undefined;
+    await runInNewContext('(async()=>{' + script + '})()', {
+      agent_system_dispatch: async () => result,
+      json: (value: { fire: boolean }) => {
+        fire = value.fire;
+      },
+    });
+    assert.equal(fire, false, 'the native condition must leave the model payload quiet');
+    assert.equal(result.more, false);
+    assert.equal('code' in result ? result.code : undefined, undefined);
+    assert.equal((await current.journal.read()).records.length, 0);
+    assert.equal(
+      calls.some(({ method }) => method === 'sessions.create' || method === 'chat.send'),
+      false,
+    );
+  });
+
+  it('should refresh authority between checks and before committing a reused-context scan', async () => {
+    const current = await service.scope(manifest, root);
+    const before = (await current.store.read())!.records;
+    const manifests = fixtureIntake.dependencies.manifestService;
+    const load = manifests.loadForAgentId.bind(manifests);
+    let moved = false;
+    manifests.loadForAgentId = async (...args) => {
+      const loaded = await load(...args);
+      return loaded.status === 'loaded' && moved
+        ? { ...loaded, scope: { ...loaded.scope, workspaceDir: '/tmp' } }
+        : loaded;
+    };
+    const discover = fixture.client.discoverAssigned;
+    fixture.client.discoverAssigned = async (...args) => {
+      const result = await discover(...args);
+      moved = true;
+      return result;
+    };
+    const result = await service.check(manifest, root);
+    assert.equal(result.code, 'intake-workspace-binding-changed');
+    assert.deepEqual((await current.store.read())!.records, before);
+    await assert.rejects(service.check(manifest, root), {
+      code: 'intake-workspace-binding-changed',
+    });
+  });
+
   it('should return from a delayed scheduled readiness read and resume without losing or duplicating assignments', async () => {
     const intake = fixtureIntake;
     const current = await service.scope(manifest, root);

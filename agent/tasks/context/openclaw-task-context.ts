@@ -34,3 +34,5 @@ export async function selectOpenClawTaskContext(
   await new GitHubIdentityCache(store.location).hydrate(manifest.github?.notifications);
   return { selected, store, workspace };
 }
+
+export type OpenClawTaskContext = Awaited<ReturnType<typeof selectOpenClawTaskContext>>;

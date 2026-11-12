@@ -26,6 +26,19 @@ export interface OpenClawFeedbackScan {
   before: string;
   feedback: NonNullable<OpenClawDispatchRecord['feedback']>;
 }
+export function openClawFeedbackRecords(state: OpenClawDispatchState) {
+  return state.records
+    .filter(
+      (record) =>
+        !record.supersededBy &&
+        !record.retirement &&
+        !record.reset &&
+        record.sessionCreation?.verified &&
+        record.threadId,
+    )
+    .sort((a, b) => (a.feedback?.scannedTime ?? 0) - (b.feedback?.scannedTime ?? 0))
+    .slice(0, 12);
+}
 /** provider reads stay outside the journal lock; only unchanged owners accept the snapshot. */
 export async function scanOpenClawFeedback(input: {
   service: Pick<OpenClawDispatchContext, 'scope' | 'dependencies' | 'validate'>;
@@ -41,17 +54,7 @@ export async function scanOpenClawFeedback(input: {
   const { service, manifest, now } = input;
   const budget = input.budget ?? new DiscoveryBudget(20000, input.authority.signal);
   const scans: OpenClawFeedbackScan[] = [];
-  const records = input.state.records
-    .filter(
-      (record) =>
-        !record.supersededBy &&
-        !record.retirement &&
-        !record.reset &&
-        record.sessionCreation?.verified &&
-        record.threadId,
-    )
-    .sort((a, b) => (a.feedback?.scannedTime ?? 0) - (b.feedback?.scannedTime ?? 0))
-    .slice(0, 12);
+  const records = openClawFeedbackRecords(input.state);
   let connection: Awaited<ReturnType<typeof service.dependencies.connect>> | undefined;
   let provider:
     Awaited<ReturnType<NonNullable<typeof service.dependencies.feedbackConnect>>> | undefined;
