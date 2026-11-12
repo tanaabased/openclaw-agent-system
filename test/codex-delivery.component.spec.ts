@@ -666,6 +666,12 @@ describe('agent/codex-delivery', () => {
         if (argv[0] === 'branch') return branch;
         if (argv[0] === 'status') return dirty ? ' M source.ts' : '';
         if (argv[0] === 'rev-parse') return head;
+        if (argv[0] === 'for-each-ref') return '';
+        if (
+          argv[0] === 'ls-remote' &&
+          ['refs/heads/release/2.x', 'refs/heads/earlier-target'].includes(argv.at(-1)!)
+        )
+          return `${'d'.repeat(40)}\t${argv.at(-1)}`;
         if (argv[0] === 'rev-list') return '2';
         if (argv[0] === 'ls-remote') return remote ? `${remote}\trefs/heads/pirog-work\n` : '';
         if (argv.includes('push')) remote = head;

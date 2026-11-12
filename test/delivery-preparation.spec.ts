@@ -6,6 +6,7 @@ import {
   selectDeliveryDestination,
 } from '../agent/tasks/delivery/delivery-preparation.ts';
 import type { IssueDeliveryState } from '../agent/tasks/delivery/issue-delivery-state.ts';
+import { verifyDeliveryCommits } from '../agent/tasks/delivery/delivery-base.ts';
 
 function delivery(): IssueDeliveryState {
   return {
@@ -29,6 +30,55 @@ function delivery(): IssueDeliveryState {
 }
 
 describe('task delivery preparation', () => {
+  it('should preview an unfetched remote base without mutation and require commits after publication fetch', async () => {
+    const calls: string[][] = [];
+    let local = '',
+      remote = 'c'.repeat(40),
+      count = '1';
+    const git = async (argv: string[]) => {
+      calls.push(argv);
+      if (argv[0] === 'remote') return 'git@github.com:owner/repo.git';
+      if (argv[0] === 'ls-remote') return remote ? `${remote}\trefs/heads/release` : '';
+      if (argv[0] === 'for-each-ref') return local;
+      if (argv[0] === 'fetch') local = remote;
+      if (argv[0] === 'rev-list') {
+        assert.equal(local, remote);
+        assert.ok(local);
+        return count;
+      }
+      return '';
+    };
+    const preview = () =>
+      verifyDeliveryCommits(git, 'release', 'b'.repeat(40), {
+        repository: 'owner/repo',
+        operation: 'prepare',
+      });
+    await preview();
+    assert.equal(
+      calls.some(([command]) => ['fetch', 'rev-list'].includes(command!)),
+      false,
+    );
+    const publish = () =>
+      verifyDeliveryCommits(git, 'release', 'b'.repeat(40), {
+        repository: 'owner/repo',
+        operation: 'publish',
+      });
+    await publish();
+    assert.equal(local, remote);
+    count = '0';
+    await assert.rejects(publish(), /delivery-committed-work-required/);
+    await assert.rejects(preview(), /delivery-committed-work-required/);
+    remote = '';
+    await assert.rejects(preview(), /delivery-base-unavailable/);
+    await assert.rejects(
+      verifyDeliveryCommits(git, 'release', 'b'.repeat(40), {
+        repository: 'other/repo',
+        operation: 'prepare',
+      }),
+      /delivery-push-destination-mismatch/,
+    );
+  });
+
   it('should use the repository default or explicit base before publication', () => {
     assert.deepEqual(selectDeliveryDestination({ repositoryDefault: 'trunk' }), {
       base: 'trunk',

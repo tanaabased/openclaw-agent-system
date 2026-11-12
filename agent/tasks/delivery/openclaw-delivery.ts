@@ -319,8 +319,10 @@ export default async function openClawDelivery(input: {
     git,
     base,
     head,
-    action.operation === 'publish' && action.base !== undefined && retainedBase === undefined
-      ? repository
+    (action.operation === 'prepare' || action.operation === 'publish') &&
+      action.base !== undefined &&
+      retainedBase === undefined
+      ? { repository, operation: action.operation }
       : undefined,
   );
   const remotes = (await git(['remote', 'get-url', '--push', '--all', 'origin'])).split(/\r?\n/u);

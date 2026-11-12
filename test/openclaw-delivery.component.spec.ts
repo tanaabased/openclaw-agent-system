@@ -126,6 +126,12 @@ describe('agent/openclaw-delivery', () => {
             if (argv[0] === 'rev-parse')
               return argv.some((arg) => arg.startsWith('refs/agent-system/pr/')) ? remote : head;
             if (argv[0] === 'status') return dirty ? ' M file' : '';
+            if (argv[0] === 'for-each-ref') return '';
+            if (
+              argv[0] === 'ls-remote' &&
+              ['refs/heads/release/2.x', 'refs/heads/earlier-target'].includes(argv.at(-1)!)
+            )
+              return `${'d'.repeat(40)}\t${argv.at(-1)}`;
             if (argv[0] === 'rev-list') return '1';
             if (argv[0] === 'remote') return 'git@github.com:owner/repo.git';
             if (argv[0] === 'ls-remote') return remote ? `${remote}\trefs/heads/task-branch` : '';

@@ -591,7 +591,12 @@ describe('agent/implementation-entry', () => {
       assert.ok('id' in context && typeof context.id === 'string');
       const result = await call('result', { result: ready });
       assert.equal('handoff' in result && result.handoff?.next, 'delivery');
-      let remote = '',
+      let head = 'a'.repeat(40),
+        body = 'Verified change. Closes #3',
+        publishedBody = body,
+        updates = 0,
+        lostUpdate = true,
+        remote = '',
         pushes = 0,
         creates = 0,
         lostPush = true,
@@ -609,17 +614,23 @@ describe('agent/implementation-entry', () => {
           if (argv[0] === 'check-ref-format' || argv[0] === 'status') return '';
           if (argv[0] === 'rev-list') return '1';
           if (argv[0] === 'remote') return 'git@github.com:owner/repo.git';
-          if (argv[0] === 'ls-remote') return remote ? `${remote} refs/heads/task` : '';
+          if (argv[0] === 'for-each-ref') return '';
+          if (argv[0] === 'ls-remote')
+            return argv.at(-1) === 'refs/heads/release'
+              ? `${'c'.repeat(40)} refs/heads/release`
+              : remote
+                ? `${remote} refs/heads/task`
+                : '';
           if (argv[0] === 'push') {
             pushes++;
-            remote = 'a'.repeat(40);
+            remote = head;
             if (lostPush) {
               lostPush = false;
               throw new Error('lost-push-response');
             }
             return '';
           }
-          return argv.includes('--show-toplevel') ? root : 'a'.repeat(40);
+          return argv.includes('--show-toplevel') ? root : head;
         },
       });
       const store = () =>
@@ -646,6 +657,18 @@ describe('agent/implementation-entry', () => {
               throw new Error('lost-create-response');
             }
           }
+          if (publication.contentUpdate?.body && publication.contentUpdate.body !== publishedBody) {
+            await publication.beforeUpdate?.({
+              title: publication.contentUpdate.title ?? publication.title!,
+              body: publication.contentUpdate.body,
+            });
+            updates++;
+            publishedBody = publication.contentUpdate.body;
+            if (lostUpdate) {
+              lostUpdate = false;
+              throw new Error('lost-update-response');
+            }
+          }
           await publication.checkpoint?.(receipt);
           return receipt;
         },
@@ -660,7 +683,7 @@ describe('agent/implementation-entry', () => {
               deliveryOperation,
               ...(deliveryOperation === 'prepare' && base ? { base } : {}),
               title: 'Implement handler',
-              body: 'Verified change. Closes #3',
+              body,
             },
             deps,
             save,
@@ -700,6 +723,22 @@ describe('agent/implementation-entry', () => {
         await store().exclusive(async (entries) => entries[0]!.delivery?.reconciled),
         true,
       );
+      head = 'b'.repeat(40);
+      body = 'Updated verified change. Closes #3';
+      assert.equal((await perform('prepare')).status, 'prepared');
+      await assert.rejects(perform('publish'), /lost-update-response/);
+      body = 'A different update must wait';
+      await assert.rejects(perform('publish'), /delivery-content-changed/);
+      body = 'Updated verified change. Closes #3';
+      assert.equal((await perform('reconcile')).status, 'delivered');
+      assert.equal(pushes, 2);
+      assert.equal(creates, 1);
+      assert.equal(updates, 1);
+      assert.equal(publishedBody, body);
+      assert.equal(
+        await store().exclusive(async (entries) => entries[0]!.delivery?.binding.head),
+        head,
+      );
       const receiptBeforeRestriction = await store().exclusive(async (entries) =>
         structuredClone(entries[0]!.delivery),
       );
@@ -712,7 +751,7 @@ describe('agent/implementation-entry', () => {
         receiptBeforeRestriction,
       );
       await assert.rejects(publishPrepared(), /implementation-publication-not-authorized/);
-      assert.equal(pushes, 1);
+      assert.equal(pushes, 2);
       assert.equal(creates, 1);
     });
 

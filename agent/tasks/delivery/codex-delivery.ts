@@ -710,8 +710,10 @@ async function runCodexDeliveryScoped(
         (argv) => git(found.cwd, argv, signal),
         base,
         head,
-        input.action === 'publish' && input.base !== undefined && retainedBase === undefined
-          ? repository
+        (input.action === 'prepare' || input.action === 'publish') &&
+          input.base !== undefined &&
+          retainedBase === undefined
+          ? { repository, operation: input.action }
           : undefined,
       );
       if (!adoptedPullRequest && !adopted)

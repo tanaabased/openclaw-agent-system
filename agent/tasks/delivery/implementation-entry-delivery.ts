@@ -7,7 +7,11 @@ import { gitRemoteIdentity } from '../../../tools/git/worktree-remote.ts';
 import type { directImplementationRequestSchema } from '../../../tools/dispatch/implementation-schema.ts';
 import type { AssessmentEntryDependencies } from '../assessment/assessment-entry.ts';
 import { automationHash } from '../../automation-hash.ts';
-import { assertDeliveryBinding, selectDeliveryDestination } from './delivery-preparation.ts';
+import {
+  assertDeliveryBinding,
+  deliveryContentUpdate,
+  selectDeliveryDestination,
+} from './delivery-preparation.ts';
 import type { ImplementationEntry } from '../implementation/implementation-entry-state.ts';
 import publishIssueDelivery from './publish-issue-delivery.ts';
 import { replyLocator } from '../feedback/reply-target.ts';
@@ -84,8 +88,10 @@ export default async function implementationEntryDelivery(input: {
     git,
     base,
     head,
-    operation === 'publish' && action.base !== undefined && retainedBase === undefined
-      ? repository
+    (operation === 'prepare' || operation === 'publish') &&
+      action.base !== undefined &&
+      retainedBase === undefined
+      ? { repository, operation }
       : undefined,
   );
   const remotes = (await git(['remote', 'get-url', '--push', '--all', 'origin'])).split(/\r?\n/u);
@@ -113,20 +119,26 @@ export default async function implementationEntryDelivery(input: {
   if (
     deliveryHasEffects(previous) &&
     previous &&
+    (!previous.reconciled || operation === 'reconcile') &&
     (title !== previous.title || body !== previous.body || head !== previous.binding.head)
   )
     throw new Error('delivery-content-changed');
-  const delivery =
-    deliveryHasEffects(previous) && previous
-      ? previous
-      : {
-          id: automationHash({ binding, title, body }),
-          binding,
-          title,
-          body,
-          creationAttempted: false,
-          reconciled: false,
-        };
+  const delivery = {
+    ...previous,
+    id: previous?.id ?? automationHash({ binding, title, body }),
+    binding,
+    title,
+    body,
+    creationAttempted: previous?.creationAttempted ?? false,
+    reconciled: false,
+  };
+  const contentUpdate = deliveryContentUpdate(previous, delivery);
+  if (Object.keys(contentUpdate).length) {
+    delivery.contentUpdate = contentUpdate;
+    delivery.contentUpdateAttempted = previous?.contentUpdate
+      ? previous.contentUpdateAttempted
+      : false;
+  }
   if (operation === 'prepare')
     return {
       status: 'prepared',

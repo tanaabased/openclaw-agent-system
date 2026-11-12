@@ -34,16 +34,25 @@ export async function verifyDeliveryCommits(
   git: (argv: string[]) => Promise<string>,
   base: string,
   head: string,
-  fetchFrom?: string,
+  selectedBase?: { repository: string; operation: 'prepare' | 'publish' },
 ) {
   const ref = `refs/heads/${base}`;
   const tracking = `refs/remotes/origin/${base}`;
   await git(['check-ref-format', ref]);
-  if (fetchFrom) {
+  if (selectedBase) {
     const remote = (await git(['remote', 'get-url', 'origin'])).trim();
-    if (gitRemoteIdentity(remote) !== `github.com/${fetchFrom.toLowerCase()}`)
+    if (gitRemoteIdentity(remote) !== `github.com/${selectedBase.repository.toLowerCase()}`)
       throw new Error('delivery-push-destination-mismatch');
-    await git(['fetch', 'origin', `+${ref}:${tracking}`]);
+    if (selectedBase.operation === 'publish') {
+      await git(['fetch', 'origin', `+${ref}:${tracking}`]);
+    } else {
+      const remoteRef = (await git(['ls-remote', '--heads', 'origin', ref])).trim().split(/\s+/u);
+      if (remoteRef[1] !== ref || !/^[a-f0-9]{40,64}$/u.test(remoteRef[0] ?? ''))
+        throw new Error('delivery-base-unavailable');
+      const localRef = (await git(['for-each-ref', '--format=%(objectname)', tracking])).trim();
+      // preview is read-only. publication fetches and verifies the selected base before effects.
+      if (localRef !== remoteRef[0]) return;
+    }
   }
   const count = Number(await git(['rev-list', '--count', `${tracking}..${head}`]));
   if (!Number.isSafeInteger(count) || count < 1)
