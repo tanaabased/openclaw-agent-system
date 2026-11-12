@@ -27,9 +27,7 @@ import { progressionExampleScenario } from '../examples/openclaw-issue-progressi
 import { decisionRecoveryExampleScenario } from '../examples/openclaw-issue-decision-recovery/model-fixture.ts';
 import { prExampleScenario } from '../examples/openclaw-pr-journey/model-fixture.ts';
 import { prUpdateExampleScenario } from '../examples/openclaw-pr-update/model-fixture.ts';
-import { prCollaborationExampleScenario } from '../examples/openclaw-pr-collaboration/model-fixture.ts';
 import { prDiscoveryExampleScenario } from '../examples/openclaw-pr-discovery/model-fixture.ts';
-import { prReplyRecoveryExampleScenario } from '../examples/openclaw-pr-reply-recovery/model-fixture.ts';
 import { worktreeExampleScenario } from '../examples/openclaw-worktree-session/model-fixture.ts';
 import { automaticDeliveryScenario as workScenario } from '../examples/openclaw-issue-work/model-fixture.ts';
 import { automaticDeliveryScenario as customWorkScenario } from '../examples/openclaw-issue-work-custom/model-fixture.ts';
@@ -53,9 +51,7 @@ const scenarios = new Map<string, OpenClawAIMockScenario>([
   [worktreeExampleScenario.id, worktreeExampleScenario],
   [prExampleScenario.id, prExampleScenario],
   [prUpdateExampleScenario.id, prUpdateExampleScenario],
-  [prCollaborationExampleScenario.id, prCollaborationExampleScenario],
   [prDiscoveryExampleScenario.id, prDiscoveryExampleScenario],
-  [prReplyRecoveryExampleScenario.id, prReplyRecoveryExampleScenario],
   [progressionExampleScenario.id, progressionExampleScenario],
   [decisionRecoveryExampleScenario.id, decisionRecoveryExampleScenario],
   [workScenario.id, workScenario],

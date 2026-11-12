@@ -6,16 +6,18 @@ publish a reply. Verify that another scan repeats none of the completed actions.
 
 ## What Belongs Here
 
+- Preserve a real collaborator commit while pushing approved feedback to the same PR.
+
 - An initial question shown in chat and on GitHub, followed by an approved answer entering Work without rewriting the assessment or requiring another handoff.
 - Pushed changes, issue linkage, configured recipients, and one issue announcement that also answers the implementation request, without a second completion reply.
 - One uninterrupted PR feedback change preserving the assessment, owner, checkout, PR, and announcement, with exact source attribution and duplicate prevention.
 
 ## What Does Not Belong Here
 
-- Initial-turn delivery without feedback: [default Work](../openclaw-issue-work/README.md), [custom Work](../openclaw-issue-work-custom/README.md), and [Auto Work](../openclaw-issue-auto-work/README.md).
+- Initial-turn Work and Auto Work delivery: [custom delivery](../openclaw-issue-work-custom/README.md).
 - Recipient preview, dirty-checkout card readback, and operator updates: [PR operator update](../openclaw-pr-update/README.md).
-- Other feedback conditions: [PR collaborator reconciliation](../openclaw-pr-collaboration/README.md), [PR discovery recovery](../openclaw-pr-discovery/README.md), [PR reply recovery](../openclaw-pr-reply-recovery/README.md).
-- Mode transitions and implementation clarification: [progression](../openclaw-issue-progression/README.md). Inline review-thread processing and replacement-coordinator recovery remain separate acceptance work.
+- Provider deadline and interrupted reply recovery: [PR discovery](../openclaw-pr-discovery/README.md).
+- Mode transitions and implementation clarification: [progression](../openclaw-issue-auto-plan/README.md). Inline review-thread processing and replacement-coordinator recovery remain separate acceptance work.
 
 ## Notes
 
@@ -198,7 +200,7 @@ number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-announcements.json"
 jq -e --slurpfile delivery "$TMPDIR/notification-delivery.json" '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:pull-request-handoff:")))] | length == 1 and .[0].node_id == $delivery[0].announcement.receipt.nodeId and (.[0].body | contains("Ready for review."))' "$TMPDIR/notification-announcements.json"
 
-# should implement and publish one ordinary approved pr comment in the owning issue chat
+# should incorporate a collaborator commit before implementing approved pr feedback
 set -o pipefail
 feedback_diagnostics() {
   feedback_status=$?
@@ -211,6 +213,8 @@ trap feedback_diagnostics EXIT
 worktree=$(jq -er .worktree "$TMPDIR/notification-delivery.json")
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/emori"
 number=$(jq -er .delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
+branch=$(jq -er .delivery.binding.branch "$TMPDIR/notification-delivery.json")
+openclaw agent-system tool gh -- api --method PUT "repos/tanaabased/big-test-bucket/contents/collaborator-$number.txt" -f message="preserve disposable collaborator evidence" -f branch="$branch" -f content=Q29sbGFib3JhdG9yIHdvcmsuCg== > "$TMPDIR/notification-collaborator.json"
 openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/comments" -f 'body=@tanaabot add a note that feedback changes stay on the original PR, check it, and push the change.' > "$TMPDIR/notification-feedback-source.json"
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
@@ -242,6 +246,8 @@ jq -e --slurp '{
 } | to_entries | map(select(.value == false)) | if length == 0 then true else error({code:"feedback-continuity-mismatch",failed:map(.key)} | tojson) end' "$TMPDIR/notification-delivery.json" "$TMPDIR/notification-feedback.json"
 openclaw agent-system tool gh -- pr view "$number" --repo tanaabased/big-test-bucket --json headRefOid | jq -e --arg head "$(jq -er .delivery.pushedHead "$TMPDIR/notification-feedback.json")" '.headRefOid == $head'
 git -C "$worktree" show HEAD | grep -F 'Keep feedback changes on the original PR.'
+git -C "$worktree" merge-base --is-ancestor "$(jq -er .commit.sha "$TMPDIR/notification-collaborator.json")" HEAD
+git -C "$worktree" show "HEAD:collaborator-$number.txt" | grep -F 'Collaborator work.'
 openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$(jq -er .delivery.binding.branch "$TMPDIR/notification-feedback.json")" --state all --json number | jq -e --argjson pr "$number" 'length == 1 and .[0].number == $pr'
 
 # should verify the exact response and suppress another reply on a repeat scan

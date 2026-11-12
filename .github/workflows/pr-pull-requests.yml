@@ -24,9 +24,7 @@ jobs:
         example:
           - openclaw-pr-journey
           - openclaw-pr-update
-          - openclaw-pr-collaboration
           - openclaw-pr-discovery
-          - openclaw-pr-reply-recovery
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

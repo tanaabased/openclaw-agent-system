@@ -1,22 +1,21 @@
 # OpenClaw PR Discovery Recovery Example
 
 Stall PR-comment reads past the discovery deadline and verify that three checks leave
-the pending queue unchanged. Restore provider reads and implement the approved comment
-on the existing PR.
+the pending queue unchanged. Restore provider reads, push the approved change on the existing PR, then resume only its interrupted reply.
 
 ## What Belongs Here
 
 - Real deadline cancellation of the forwarding provider, retained discovery checkpoints, and no fabricated admission while reads stall.
 - Compact native inspection of the selected stalled owner without another scan or lifecycle change.
-- Removing obsolete source discovery scratch without losing the current PR checkpoint or accepted feedback.
+- Resume a saved unpublished reply in the same native owner without repeating the pushed change.
 - Processing the exact comment after recovery without duplicating earlier events, work, PRs, or replies.
 
 ## What Does Not Belong Here
 
 - Ordinary assignment, initial delivery, and uninterrupted feedback: [PR journey](../openclaw-pr-journey/README.md).
 - Recipient preview, dirty-checkout card readback, and operator updates: [PR operator update](../openclaw-pr-update/README.md).
-- Other feedback conditions: [PR collaborator reconciliation](../openclaw-pr-collaboration/README.md), [PR reply recovery](../openclaw-pr-reply-recovery/README.md).
-- Mode transitions and implementation clarification: [progression](../openclaw-issue-progression/README.md). Inline review-thread processing and replacement-coordinator recovery remain separate acceptance work.
+- Collaborator reconciliation and uninterrupted feedback: [PR journey](../openclaw-pr-journey/README.md).
+- Mode transitions and implementation clarification: [progression](../openclaw-issue-auto-plan/README.md). Inline review-thread processing and replacement-coordinator recovery remain separate acceptance work.
 
 ## Notes
 
@@ -172,33 +171,11 @@ openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bu
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-discovery/tanaabot"
 node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; const p=process.env.TMPDIR+"/pr-provider/control.json"; const control=JSON.parse(readFileSync(p,"utf8")); control.endpoint="repos/tanaabased/big-test-bucket/issues/"+process.argv[1]+"/comments"; control.paused=true; writeFileSync(p,JSON.stringify(control));' "$number"
 jq -s '[.[].records[] | {id, events:[.feedback.events[] | {id,sourceId}]}] | sort_by(.id)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-feedback-before-stall.json"
-node --input-type=module <<'NODE'
-import assert from 'node:assert/strict';
-import {readFileSync, readdirSync, writeFileSync} from 'node:fs';
-import {join} from 'node:path';
-assert.equal(process.env.GITHUB_ACTIONS, 'true');
-const directory = join(process.env.XDG_CONFIG_HOME, 'tanaab/agent-system/agent-system-dispatch-v2');
-const owner = JSON.parse(readFileSync(join(process.env.TMPDIR, 'notification-delivery.json'), 'utf8')).id;
-let seeded = 0;
-for (const file of readdirSync(directory).filter(name => /^openclaw-dispatch-.*[.]json$/.test(name))) {
-  const path = join(directory, file);
-  const state = JSON.parse(readFileSync(path, 'utf8'));
-  const record = state.records.find(record => record.id === owner);
-  if (!record) continue;
-  const feedback = record.feedback;
-  (feedback.discovery ??= {}).PR_fixture_obsolete = {since: 0, startedAt: 1, reads: {'comments:1': JSON.stringify({comments: [], truncated: false})}};
-  (feedback.discoveryStalls ??= {}).PR_fixture_obsolete = {operation: 'source-validation', attempts: 3};
-  feedback.lastSource = 'PR_fixture_obsolete';
-  writeFileSync(path, JSON.stringify(state));
-  seeded++;
-}
-assert.equal(seeded, 1);
-NODE
 for poll in 1 2 3; do
   PATH="$TMPDIR/pr-provider:$PATH" OPENCLAW_PATH_BOOTSTRAPPED=1 openclaw agent-system notifications refresh --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")" --json | jq -e '.status == "completed"'
 done
 jq -s -e 'length == 3 and all(.[]; .paused and .operation == "comments:1")' "$TMPDIR/pr-provider/reads.jsonl"
-jq -es --arg pr "$(jq -er .delivery.pullRequest.pullRequestNodeId "$TMPDIR/notification-delivery.json")" --arg source "$(jq -er .node_id "$TMPDIR/notification-feedback-source.json")" 'all(.[].records[]; .feedback.discoveryPending and .feedback.code == "feedback-discovery-no-progress" and .feedback.discoveryStalls[$pr].operation == "comments:1" and .feedback.discovery.PR_fixture_obsolete == null and .feedback.discoveryStalls.PR_fixture_obsolete == null and (.feedback.discovery[$pr].reads | length) == 0 and all(.feedback.events[]; .sourceId != $source))' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+jq -es --arg pr "$(jq -er .delivery.pullRequest.pullRequestNodeId "$TMPDIR/notification-delivery.json")" --arg source "$(jq -er .node_id "$TMPDIR/notification-feedback-source.json")" 'all(.[].records[]; .feedback.discoveryPending and .feedback.code == "feedback-discovery-no-progress" and .feedback.discoveryStalls[$pr].operation == "comments:1" and (.feedback.discovery[$pr].reads | length) == 0 and all(.feedback.events[]; .sourceId != $source))' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 jq -es --slurpfile before "$TMPDIR/notification-feedback-before-stall.json" '([.[].records[] | {id, events:[.feedback.events[] | {id,sourceId}]}] | sort_by(.id)) == $before[0]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 
 # should inspect the stalled owner through the installed native tool without another provider read
@@ -225,8 +202,21 @@ jq -es '[.[].records[] | {id,nativeInactive,blocker,feedbackCode:.feedback.code,
 feedback_run=$(jq -ers --arg source "$(jq -er .node_id "$TMPDIR/notification-feedback-source.json")" '[.[].records[].feedback.events[] | select(.sourceId == $source and .turn != null)] | if length == 1 then .[0].turn.runId else error("one feedback turn required; inspect retained dispatch feedback state") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$feedback_run" 600000
 conversation=$(jq -er .threadId "$TMPDIR/notification-delivery.json")
+jq -es '[.[].records[]] | if length == 1 then .[0] else error("one issue owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-feedback-retained.json"
+jq -e '.delivery.pushedHead == .delivery.binding.head' "$TMPDIR/notification-feedback-retained.json"
+jq -es --slurpfile saved "$TMPDIR/notification-feedback-retained.json" '[.[] | . | select(.feedback.eventId == $saved[0].feedback.events[1].id)] | if length == 1 then .[0] else error("one retained reply draft required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-retained-draft.json"
+jq -e '.attempted == null and .receipt == null and (.publicText | length > 0)' "$TMPDIR/notification-retained-draft.json"
+session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-feedback-retained.json")
+receipt=$(jq -er .id "$TMPDIR/notification-feedback-retained.json")
+draft_id=$(jq -c '{target:(.target | fromjson | .url),publicText}' "$TMPDIR/notification-retained-draft.json")
+leaf=$(openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:1}')" --json | jq -er .sessionInfo.activeLeafEntryId)
+params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg receipt "$receipt" --arg draft "$draft_id" '{sessionKey:$key,agentId:"pr-discovery-tanaabot",sessionId:$session,message:("Publish retained reply: " + $draft + "\nDo not repeat the pushed repair."),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"notification-feedback-resume"}')"
+node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; const result = await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"}); console.log(JSON.stringify(result));' "$params" | jq -e '.runId == "notification-feedback-resume"'
+feedback_run=notification-feedback-resume
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$feedback_run" 600000
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$feedback_run" '{sessionKey:$key,inputRunIds:[$run],limit:200,maxChars:100000}')" --json | jq --arg run "$feedback_run" '. + {requestedRunId:$run}' > "$TMPDIR/notification-feedback-history.json"
 jq -es '[.[].records[]] | if length == 1 then .[0] else error("one issue owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-feedback.json"
+jq -e --slurpfile before "$TMPDIR/notification-feedback-retained.json" '.feedback.events[1].turn.runId == $before[0].feedback.events[1].turn.runId and .feedback.events[1].work == null and .delivery == $before[0].delivery' "$TMPDIR/notification-feedback.json"
 jq -e --slurp '
   (.[0].feedback.events[0]) as $before |
   (.[1].feedback.events[0]) as $after |
@@ -255,7 +245,7 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-pr-discovery/tanaabot"
 number=$(jq -er .feedback.events[1].number "$TMPDIR/notification-feedback.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-feedback-replies.json"
 jq -s '[.[] | .]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-reply-drafts.json"
-node --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; const read=n=>JSON.parse(readFileSync(process.env.TMPDIR+"/notification-"+n+".json","utf8")); const record=read("feedback"); const replies=read("feedback-replies"); const history=read("feedback-history"); assert.equal(record.feedback.events.length,2); const event=record.feedback.events[1]; assert.equal(event.itemType,"pull-request"); assert.equal(JSON.parse(event.source).nodeId,read("feedback-source").node_id); assert.equal(history.requestedRunId,event.turn.runId); const draft=read("reply-drafts").find(d=>d.feedback?.eventId===event.id); assert.ok(draft); const found=replies.filter(c=>c.node_id===draft.receipt.nodeId); assert.equal(found.length,1); assert.equal(found[0].user.login,"tanaabot"); assert.ok(found[0].body.includes(draft.publicText)); const answer=history.messages.filter(m=>m.role==="assistant" && m.__openclaw?.runId===event.turn.runId && m.stopReason==="stop"); assert.equal(answer.length,1); const text=typeof answer[0].content==="string"?answer[0].content:answer[0].content.map(c=>c.text??"").join(""); assert.ok(text.includes(draft.privateText)); assert.ok(text.includes(draft.publicText)); assert.ok(text.includes("[Reply ↗]("+found[0].html_url+") from [@tanaabot](https://github.com/tanaabot)")); assert.ok(!text.includes("Reply published")); assert.equal(replies.filter(c=>c.user.login==="tanaabot").length,1);'
+node --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; const read=n=>JSON.parse(readFileSync(process.env.TMPDIR+"/notification-"+n+".json","utf8")); const record=read("feedback"); const replies=read("feedback-replies"); const history=read("feedback-history"); assert.equal(record.feedback.events.length,2); const event=record.feedback.events[1]; assert.equal(event.itemType,"pull-request"); assert.equal(JSON.parse(event.source).nodeId,read("feedback-source").node_id); assert.equal(history.requestedRunId,"notification-feedback-resume"); const draft=read("reply-drafts").find(d=>d.feedback?.eventId===event.id); assert.ok(draft); const found=replies.filter(c=>c.node_id===draft.receipt.nodeId); assert.equal(found.length,1); assert.equal(found[0].user.login,"tanaabot"); assert.ok(found[0].body.includes(draft.publicText)); const answer=history.messages.filter(m=>m.role==="assistant" && m.__openclaw?.runId===history.requestedRunId && m.stopReason==="stop"); assert.equal(answer.length,1); const text=typeof answer[0].content==="string"?answer[0].content:answer[0].content.map(c=>c.text??"").join("");  assert.ok(text.includes(draft.publicText)); assert.ok(text.includes("[Reply ↗]("+found[0].html_url+") from [@tanaabot](https://github.com/tanaabot)")); assert.ok(!text.includes("Reply published")); assert.equal(replies.filter(c=>c.user.login==="tanaabot").length,1);'
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 jq -es '[.[].records[]] | length == 1 and (.[0].feedback.events | length) == 2 and all(.[0].feedback.events[]; .turn.status == "consumed" and .phase == "delivered")' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json

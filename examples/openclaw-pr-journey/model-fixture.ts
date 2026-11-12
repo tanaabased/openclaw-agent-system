@@ -1033,4 +1033,5 @@ export function createPRExampleScenario(
 
 export const prExampleScenario = createPRExampleScenario('openclaw-pr-journey', {
   initialQuestion: true,
+  incorporateCollaborator: true,
 });

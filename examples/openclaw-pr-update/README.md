@@ -11,8 +11,8 @@ After one delivered PR, preview its reviewers and read its plan and card with a 
 ## What Does Not Belong Here
 
 - Ordinary assignment, initial delivery, and uninterrupted feedback: [PR journey](../openclaw-pr-journey/README.md).
-- Other feedback conditions: [PR collaborator reconciliation](../openclaw-pr-collaboration/README.md), [PR discovery recovery](../openclaw-pr-discovery/README.md), [PR reply recovery](../openclaw-pr-reply-recovery/README.md).
-- Mode transitions and implementation clarification: [progression](../openclaw-issue-progression/README.md). Inline review-thread processing and replacement-coordinator recovery remain separate acceptance work.
+- Collaborator reconciliation and uninterrupted feedback: [PR journey](../openclaw-pr-journey/README.md).
+- Mode transitions and implementation clarification: [progression](../openclaw-issue-auto-plan/README.md). Inline review-thread processing and replacement-coordinator recovery remain separate acceptance work.
 
 ## Notes
 

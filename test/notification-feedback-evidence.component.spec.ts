@@ -7,8 +7,6 @@ import { join } from 'node:path';
 for (const scenario of [
   'openclaw-pr-journey',
   'openclaw-pr-discovery',
-  'openclaw-pr-collaboration',
-  'openclaw-pr-reply-recovery',
 ]) {
   describe(`examples/${scenario} retained feedback evidence`, () => {
     it('should permit only verified consumption on the earlier feedback event', async () => {

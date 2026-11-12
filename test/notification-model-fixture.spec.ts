@@ -1650,15 +1650,13 @@ for (const scenario of [
         ? ([
             [true, 'openclaw-pr-journey'],
             [false, 'openclaw-pr-journey'],
-            [false, 'openclaw-pr-collaboration'],
             [false, 'openclaw-pr-discovery'],
-            [false, 'openclaw-pr-reply-recovery'],
           ] as const)
         : ([[false, undefined]] as const))
         it(`should ${initial ? 'combine initial feedback completion with the issue announcement' : 'keep feedback ' + (driver ?? scenario.id) + ' continuation and source-bound publication distinct'}`, async () => {
           const selectedScenario = driver ? resolveExampleModelScenario(driver) : scenario;
-          const collaboration = driver === 'openclaw-pr-collaboration';
-          const replyRecovery = driver === 'openclaw-pr-reply-recovery';
+          const collaboration = !initial && (driver ?? scenario.id) === 'openclaw-pr-journey';
+          const replyRecovery = !initial && driver === 'openclaw-pr-discovery';
           const runResponse = (input: ChatCompletionRequest) => response(input, selectedScenario);
           const runAction = <A extends Action['action']>(
             input: ChatCompletionRequest,
