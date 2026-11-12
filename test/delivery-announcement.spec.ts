@@ -390,6 +390,23 @@ describe('agent/delivery-announcement', () => {
       assert.match(comments[0]!.body, /agent-system-github-publication:pull-request-handoff:/);
       assert.deepEqual(delivery.announcement?.receipt, { nodeId: 'IC_1', databaseId: 1 });
     });
+  for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should link local announcement mentions without changing publication or reconciliation in ${runtime}`, async () => {
+      input.runtime = runtime;
+      await run('compose');
+      const preview = await run('candidate', { publicText: 'Thanks, @octocat.' });
+      const text = delivery.announcement!.publicText!;
+      assert.ok(text.includes('Thanks, @octocat.'));
+      assert.ok(preview.presentation!.includes('[@octocat](https://github.com/octocat)'));
+      assert.equal(posts, 0);
+      const result = await run('announce');
+      assert.equal(result.status, 'announced');
+      assert.ok(result.presentation!.includes('[@octocat](https://github.com/octocat)'));
+      assert.ok(comments[0]!.body.includes(text));
+      assert.ok(!comments[0]!.body.includes('[@octocat]'));
+      assert.equal((await run('announce')).status, 'announced');
+      assert.equal(posts, 1);
+    });
   it('should reconcile repeated delivery after restart without regenerating text or reading changed pr status', async () => {
     await candidate();
     await run('announce', {});
