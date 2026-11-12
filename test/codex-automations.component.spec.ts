@@ -54,7 +54,7 @@ import {
 import { intakeFixture } from './github-intake-fixture.ts';
 import { prepareCodexPickupEnrollment, inspectCodexIntake } from '../agent/codex-intake.ts';
 import normalizeAutomationSchedule from '../manifest/automation-schedule.ts';
-import { inspectCodexSetup, installCodexSetup } from '../agent/codex-setup.ts';
+import { inspectCodexSetup, installCodexSetup } from '../agent/lifecycle/codex-setup.ts';
 
 const capture = (name: string) =>
   readFile(resolve('fixtures', `codex-automation-${name}.approved.txt`), 'utf8');

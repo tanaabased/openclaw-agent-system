@@ -1,4 +1,4 @@
-import type { BackupConfiguration } from '../manifest/backup-schema.ts';
+import type { BackupConfiguration } from '../../manifest/backup-schema.ts';
 
 export const backupDefaultOutput = '.agent-system/backups';
 export const backupControlDirectory = '.agent-system/backup-staging';

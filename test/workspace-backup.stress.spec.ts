@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
-import WorkspaceBackupService from '../agent/backup-service.ts';
+import WorkspaceBackupService from '../agent/backup/backup-service.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 
 const executeFile = promisify(execFile);

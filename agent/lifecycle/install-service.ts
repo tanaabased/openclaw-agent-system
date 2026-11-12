@@ -1,15 +1,15 @@
-import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
+import type SessionDispatchCredential from '../../credentials/session-dispatch.ts';
 import sessionDispatchRequirements from './session-dispatch-requirements.ts';
 import collectOpEnvironmentRequirements, {
   hasOpEnvironmentRequirements,
-} from '../environment/op-requirements.ts';
-import type OpCredentialManager from '../credentials/op-manager.ts';
-import type AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';
+} from '../../environment/op-requirements.ts';
+import type OpCredentialManager from '../../credentials/op-manager.ts';
+import type AgentSystemLifecycleRegistry from '../../core/lifecycle-registry.ts';
 import type {
   AgentSystemLifecycleExecutionContext,
   AgentSystemLifecycleOutcome,
   AgentSystemLifecycleWarning,
-} from '../core/lifecycle-registry.ts';
+} from '../../core/lifecycle-registry.ts';
 import { selectedSetupPhases, type InstallSetupOptions } from './install-options.ts';
 
 export interface AgentInstallResult {

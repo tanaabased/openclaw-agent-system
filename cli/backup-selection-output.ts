@@ -1,4 +1,4 @@
-import type { BackupCoverage, BackupPlan, BackupSettings } from '../agent/backup-types.ts';
+import type { BackupCoverage, BackupPlan, BackupSettings } from '../agent/backup/backup-types.ts';
 import type { BackupCliOutput } from './backup-output.ts';
 import { createCliStyles, type CliSummaryLine, writeCliLines, writeCliSummary } from './output.ts';
 

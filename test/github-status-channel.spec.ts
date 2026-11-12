@@ -4,7 +4,7 @@ import { realpath } from 'node:fs/promises';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/channel-core';
 import { Value } from 'typebox/value';
 
-import createGitHubChannelLifecycle from '../agent/github-channel-lifecycle.ts';
+import createGitHubChannelLifecycle from '../agent/lifecycle/github-channel-lifecycle.ts';
 import createGitHubStatusChannel from '../channels/github/channel.ts';
 import { githubChannelAccounts, githubChannelId } from '../channels/github/channel-config.ts';
 import type { AgentManifest } from '../manifest/types.ts';

@@ -2,10 +2,10 @@ import { access, lstat, mkdtemp, realpath, rm, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { delimiter, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
-import { commandTerminationGraceMs } from '../api/cli-budget.ts';
-import { resolveToolExecutable } from '../api/cli-runner.ts';
-import type { AgentSetupCommand, AgentSetupShell } from '../manifest/setup-schema.ts';
-import isPathContained from '../utils/is-path-contained.ts';
+import { commandTerminationGraceMs } from '../../api/cli-budget.ts';
+import { resolveToolExecutable } from '../../api/cli-runner.ts';
+import type { AgentSetupCommand, AgentSetupShell } from '../../manifest/setup-schema.ts';
+import isPathContained from '../../utils/is-path-contained.ts';
 
 // opt-in debug release stays small and allowlisted; this does not limit process capture.
 const maximumDiagnosticBytes = 16_384;

@@ -3,7 +3,7 @@ import { mkdtemp, realpath, rm } from 'node:fs/promises';
 
 import AutomationReportStore from '../agent/automations/automation-report-store.ts';
 import executeAutomation from '../cli/automation-execute.ts';
-import type { SetupCommandResult } from '../agent/setup-runner.ts';
+import type { SetupCommandResult } from '../agent/lifecycle/setup-runner.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import type { AutomationLifecycleCommandScope } from '../agent/automations/automation-lifecycle-authority.ts';
 

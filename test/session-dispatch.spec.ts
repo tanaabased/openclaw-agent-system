@@ -7,11 +7,11 @@ import {
   GatewayClientRequestTimeoutError,
 } from '@openclaw/gateway-client';
 
-import AgentInstallService from '../agent/install-service.ts';
-import createSessionDispatchLifecycle from '../agent/session-dispatch-lifecycle.ts';
+import AgentInstallService from '../agent/lifecycle/install-service.ts';
+import createSessionDispatchLifecycle from '../agent/lifecycle/session-dispatch-lifecycle.ts';
 import sessionDispatchRequirements, {
   sessionDispatchScopes,
-} from '../agent/session-dispatch-requirements.ts';
+} from '../agent/lifecycle/session-dispatch-requirements.ts';
 import confirmSessionDispatch from '../cli/session-dispatch-consent.ts';
 import { SessionDispatchConnectionError } from '../credentials/session-dispatch-diagnostic.ts';
 import { observeReadiness } from '../credentials/session-dispatch-readiness-evidence.ts';

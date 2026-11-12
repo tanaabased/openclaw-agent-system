@@ -1,6 +1,6 @@
 import { createClackPrompter } from 'openclaw/plugin-sdk/setup-runtime';
 
-import { sessionDispatchDisclosure } from '../agent/session-dispatch-requirements.ts';
+import { sessionDispatchDisclosure } from '../agent/lifecycle/session-dispatch-requirements.ts';
 import type { SetupConsentOptions } from './setup-consent.ts';
 
 /** unattended execution is not consent; only an explicit yes accepts enrollment. */

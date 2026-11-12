@@ -57,7 +57,7 @@ import { RoutingError } from './model-routing.ts';
 
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import { createCodexSessionContext } from './codex-context.ts';
-import { CodexSetupError, inspectCodexSetup, installCodexSetup } from './codex-setup.ts';
+import { CodexSetupError, inspectCodexSetup, installCodexSetup } from './lifecycle/codex-setup.ts';
 import {
   bindCodexWorkspace,
   inspectCodexWorkspaceBinding,

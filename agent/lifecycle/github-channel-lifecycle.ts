@@ -1,17 +1,17 @@
 import { realpath } from 'node:fs/promises';
 
-import type { ToolAccessLifecycleDependencies } from '../api/access-lifecycle.ts';
+import type { ToolAccessLifecycleDependencies } from '../../api/access-lifecycle.ts';
 import {
   githubChannelAccounts,
   githubChannelId,
   ownsGitHubChannelAccount,
   wantsGitHubChannel,
-} from '../channels/github/channel-config.ts';
+} from '../../channels/github/channel-config.ts';
 import {
   AgentSystemLifecycleError,
   type AgentSystemLifecycleContribution,
   type AgentSystemLifecycleExecutionContext,
-} from '../core/lifecycle-registry.ts';
+} from '../../core/lifecycle-registry.ts';
 
 export default function createGitHubChannelLifecycle(
   dependencies: Pick<ToolAccessLifecycleDependencies, 'readConfig' | 'mutateConfigFile'>,

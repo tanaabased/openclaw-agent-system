@@ -4,7 +4,7 @@ import { stringify } from 'yaml';
 import parse, { normalizeAgentManifest } from '../manifest/parse.ts';
 import mergeManifestDocuments from '../manifest/merge-documents.ts';
 import { wantsGitHubChannel } from '../channels/github/channel-config.ts';
-import sessionDispatchRequirements from '../agent/session-dispatch-requirements.ts';
+import sessionDispatchRequirements from '../agent/lifecycle/session-dispatch-requirements.ts';
 import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import recipients from '../channels/github/pull-request-recipients.ts';
 

@@ -4,7 +4,7 @@ import GitHubAssignmentClaimClient from '../channels/github/provider/assignment-
 import { commandTerminationGraceMs } from '../api/cli-budget.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import createGitHubStatusChannel from '../channels/github/channel.ts';
-import createGitHubChannelLifecycle from '../agent/github-channel-lifecycle.ts';
+import createGitHubChannelLifecycle from '../agent/lifecycle/github-channel-lifecycle.ts';
 import notificationAutomationReadiness, {
   type NotificationScheduler,
 } from '../agent/automations/automation-readiness.ts';
@@ -49,14 +49,14 @@ import { nativeObject, requestAutomationGateway } from '../agent/automations/aut
 import { AutomationError } from '../agent/automations/automation-errors.ts';
 import BoundCommandService from '../agent/bound-command-service.ts';
 import AgentCommandAuthority from '../agent/command-authority.ts';
-import AgentDoctorService from '../agent/doctor-service.ts';
+import AgentDoctorService from '../agent/lifecycle/doctor-service.ts';
 import AgentEnvironmentService from '../environment/service.ts';
-import AgentInstallService from '../agent/install-service.ts';
+import AgentInstallService from '../agent/lifecycle/install-service.ts';
 import createSessionDispatchCredential from '../credentials/session-dispatch-runtime.ts';
 import openClawNativeMaterial from '../agent/tasks/context/openclaw-native-material.ts';
-import createSessionDispatchLifecycle from '../agent/session-dispatch-lifecycle.ts';
-import createCollaborationLifecycleContribution from '../agent/collaboration-lifecycle.ts';
-import AgentLifecycleApproval from '../agent/lifecycle-approval.ts';
+import createSessionDispatchLifecycle from '../agent/lifecycle/session-dispatch-lifecycle.ts';
+import createCollaborationLifecycleContribution from '../agent/lifecycle/collaboration-lifecycle.ts';
+import AgentLifecycleApproval from '../agent/lifecycle/lifecycle-approval.ts';
 import createInstallTool from '../tools/install/tool.ts';
 import createDoctorTool from '../tools/doctor/tool.ts';
 import createModelRoutingTool from '../tools/model-routing/tool.ts';
@@ -68,22 +68,22 @@ import registerAutomationLifecycleHooks from './automation-lifecycle-hook.ts';
 import registerAutomationReportHooks from './automation-report-hook.ts';
 import { reconcileAutomationReport } from '../agent/automations/automation-report-delivery.ts';
 import automationLifecycleCommand from '../cli/automation-lifecycle.ts';
-import SetupCommandService from '../agent/setup-command-service.ts';
-import SetupLifecycleService from '../agent/setup-lifecycle.ts';
+import SetupCommandService from '../agent/lifecycle/setup-command-service.ts';
+import SetupLifecycleService from '../agent/lifecycle/setup-lifecycle.ts';
 import createAgentLifecycleContribution from '../agent/lifecycle.ts';
 import waitForGatewayAgent from '../agent/wait-for-gateway-agent.ts';
 import createModelLifecycleContribution from '../agent/model-lifecycle.ts';
-import createCodexPluginLifecycleContribution from '../agent/codex-plugin-lifecycle.ts';
+import createCodexPluginLifecycleContribution from '../agent/lifecycle/codex-plugin-lifecycle.ts';
 import codexPluginRequirement from './codex-plugin-metadata.ts';
 import ensurePrivateStateDirectories from './ensure-private-state-directories.ts';
 import acquirePrivateStateFileLock from './private-state-file-lock.ts';
 import parseModelCatalogRows from '../agent/model-catalog.ts';
-import createMemoryLifecycleContribution from '../agent/memory-lifecycle.ts';
+import createMemoryLifecycleContribution from '../agent/lifecycle/memory-lifecycle.ts';
 import {
   createMemorySecretProviderConfiguration,
   memorySecretProviderAlias,
-} from '../agent/memory-secret-provider-configuration.ts';
-import { parseMemoryStatus } from '../agent/memory-status.ts';
+} from '../agent/lifecycle/memory-secret-provider-configuration.ts';
+import { parseMemoryStatus } from '../agent/lifecycle/memory-status.ts';
 import AgentManifestService, { type ManifestLoadTrigger } from '../manifest/service.ts';
 import AgentPathService from '../paths/service.ts';
 import CodexPathConfigService from '../paths/codex-config-service.ts';
@@ -109,7 +109,7 @@ import createToolAccessLifecycleContribution from '../api/access-lifecycle.ts';
 import createAgentToolAccessGrants from '../api/tool-access-grants.ts';
 import createToolSecurityLifecycleContribution from '../api/security-lifecycle.ts';
 import WorkspaceGitignoreService from '../paths/workspace-gitignore-service.ts';
-import WorkspaceBackupService from '../agent/backup-service.ts';
+import WorkspaceBackupService from '../agent/backup/backup-service.ts';
 import readFreshRuntimeConfig from './read-fresh-runtime-config.ts';
 import resolvePackageDirectory from './package-directory.ts';
 import registerOpCache from './register-op-cache.ts';

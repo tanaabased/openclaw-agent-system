@@ -5,7 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { memorySecretProviderAlias, memorySecretId } from '../agent/memory-configuration-plan.ts';
+import {
+  memorySecretProviderAlias,
+  memorySecretId,
+} from '../agent/lifecycle/memory-configuration-plan.ts';
 
 describe('environment/memory-secret-provider built helper', () => {
   it('should resolve only the memory binding from a valid 9.5 config in a fresh built helper process', async function () {

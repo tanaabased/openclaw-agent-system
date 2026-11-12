@@ -2,8 +2,8 @@ import type { TSchema } from 'typebox';
 
 import type AgentLifecycleApproval from './lifecycle-approval.ts';
 import type { LifecycleToolName } from './lifecycle-tool-contract.ts';
-import type { RegisteredAgentSystemTool } from '../api/types.ts';
-import AgentSystemToolError from '../api/error.ts';
+import type { RegisteredAgentSystemTool } from '../../api/types.ts';
+import AgentSystemToolError from '../../api/error.ts';
 
 /** Native lifecycle tools share approval execution, never a command or credential route. */
 export default function createLifecycleTool(

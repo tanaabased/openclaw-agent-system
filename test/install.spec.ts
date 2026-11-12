@@ -5,13 +5,13 @@ import { AutomationError } from '../agent/automations/automation-errors.ts';
 import { cliDiagnosticContext } from '../core/cli-diagnostic-context.ts';
 import ansis from 'ansis';
 
-import SetupLifecycleService from '../agent/setup-lifecycle.ts';
+import SetupLifecycleService from '../agent/lifecycle/setup-lifecycle.ts';
 import { normalizeAgentSetup } from '../manifest/setup-schema.ts';
 import installAgentSystem from '../cli/install.ts';
 import AgentInstallService, {
   AgentInstallError,
   type AgentInstallResult,
-} from '../agent/install-service.ts';
+} from '../agent/lifecycle/install-service.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import { createCliStyles, type CliStyles } from '../cli/output.ts';
 import AgentSystemLifecycleRegistry, {

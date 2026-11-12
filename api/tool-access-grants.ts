@@ -1,4 +1,4 @@
-import sessionDispatchRequirements from '../agent/session-dispatch-requirements.ts';
+import sessionDispatchRequirements from '../agent/lifecycle/session-dispatch-requirements.ts';
 import type AgentSystemToolRegistry from './registry.ts';
 import type { AgentToolAccessGrants } from './plan-access.ts';
 import type { AgentManifest } from '../manifest/types.ts';

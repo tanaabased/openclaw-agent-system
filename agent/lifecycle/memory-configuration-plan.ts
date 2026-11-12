@@ -2,8 +2,8 @@ import { isDeepStrictEqual } from 'node:util';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
-import { configuredAgentValue } from '../core/configured-agents.ts';
-import type { AgentMemoryConfiguration } from '../manifest/memory-schema.ts';
+import { configuredAgentValue } from '../../core/configured-agents.ts';
+import type { AgentMemoryConfiguration } from '../../manifest/memory-schema.ts';
 import {
   isAgentSystemMemorySecretProvider,
   memorySecretId,

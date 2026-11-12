@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { lstat, readFile, readdir } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 
-import nodeErrorCode from '../utils/node-error-code.ts';
+import nodeErrorCode from '../../utils/node-error-code.ts';
 import { BackupError, type BackupPlan, type OpenClawSnapshotManifest } from './backup-types.ts';
 
 export interface BackupSnapshotCommand {

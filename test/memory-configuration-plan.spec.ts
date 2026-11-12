@@ -5,8 +5,8 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import createMemoryConfigurationPlan, {
   memorySecretId,
   memorySecretProviderAlias,
-} from '../agent/memory-configuration-plan.ts';
-import type { MemorySecretProviderConfiguration } from '../agent/memory-secret-provider-configuration.ts';
+} from '../agent/lifecycle/memory-configuration-plan.ts';
+import type { MemorySecretProviderConfiguration } from '../agent/lifecycle/memory-secret-provider-configuration.ts';
 
 function standaloneProvider(
   packageDir = '/checkout/agent-system',

@@ -1,5 +1,5 @@
-import WorkspaceBackupService from '../agent/backup-service.ts';
-import { BackupError, type WorkspaceBackupManifest } from '../agent/backup-types.ts';
+import WorkspaceBackupService from '../agent/backup/backup-service.ts';
+import { BackupError, type WorkspaceBackupManifest } from '../agent/backup/backup-types.ts';
 import backupRestore from '../cli/backup-restore.ts';
 import { createCliStyles } from '../cli/output.ts';
 

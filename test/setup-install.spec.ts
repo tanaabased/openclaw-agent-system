@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import AgentDoctorService from '../agent/doctor-service.ts';
-import AgentInstallService from '../agent/install-service.ts';
-import SetupLifecycleService from '../agent/setup-lifecycle.ts';
+import AgentDoctorService from '../agent/lifecycle/doctor-service.ts';
+import AgentInstallService from '../agent/lifecycle/install-service.ts';
+import SetupLifecycleService from '../agent/lifecycle/setup-lifecycle.ts';
 import AgentSystemLifecycleRegistry, {
   type AgentSystemLifecycleContribution,
 } from '../core/lifecycle-registry.ts';

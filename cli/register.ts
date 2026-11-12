@@ -27,7 +27,7 @@ import backupVerify from './backup-verify.ts';
 import backupPrune from './backup-prune.ts';
 import backupCleanup from './backup-cleanup.ts';
 import backupRestore from './backup-restore.ts';
-import WorkspaceBackupService from '../agent/backup-service.ts';
+import WorkspaceBackupService from '../agent/backup/backup-service.ts';
 import registerGitHubNotificationsCli, {
   type RegisterGitHubNotificationsCliOptions,
 } from '../channels/github/cli/register.ts';
@@ -37,9 +37,9 @@ import {
   agentCommandAuthorityEnvironmentName,
   agentCommandCapabilityEnvironmentName,
 } from '../agent/command-authority.ts';
-import type AgentDoctorService from '../agent/doctor-service.ts';
+import type AgentDoctorService from '../agent/lifecycle/doctor-service.ts';
 import type AgentManifestService from '../manifest/service.ts';
-import type AgentInstallService from '../agent/install-service.ts';
+import type AgentInstallService from '../agent/lifecycle/install-service.ts';
 import { completeCliOneShot } from './one-shot.ts';
 import {
   type CliOutput,

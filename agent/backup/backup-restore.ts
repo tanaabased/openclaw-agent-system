@@ -2,8 +2,8 @@ import { constants } from 'node:fs';
 import { lstat, mkdir, mkdtemp, open, readdir, realpath, rename, rm } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 
-import isPathContained from '../utils/is-path-contained.ts';
-import nodeErrorCode from '../utils/node-error-code.ts';
+import isPathContained from '../../utils/is-path-contained.ts';
+import nodeErrorCode from '../../utils/node-error-code.ts';
 import { extractWorkspaceArchive, verifyWorkspaceArchive } from './backup-archive.ts';
 import { canonicalBackupPath } from './backup-selection.ts';
 import {

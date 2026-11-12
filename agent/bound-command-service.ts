@@ -10,7 +10,7 @@ import AgentCommandAuthority, {
 import createSetupCommandRunner, {
   SetupCommandError,
   type SetupCommandResult,
-} from './setup-runner.ts';
+} from './lifecycle/setup-runner.ts';
 import AgentSystemToolError from '../api/error.ts';
 import type AgentSystemToolRegistry from '../api/registry.ts';
 import type AgentSystemToolRuntime from '../api/runtime.ts';

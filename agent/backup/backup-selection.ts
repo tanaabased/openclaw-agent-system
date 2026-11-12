@@ -3,10 +3,10 @@ import { lstat, readdir, readlink, realpath } from 'node:fs/promises';
 import { dirname, isAbsolute, join, matchesGlob, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 
-import isPathContained from '../utils/is-path-contained.ts';
-import nodeErrorCode from '../utils/node-error-code.ts';
-import type { AgentManifest } from '../manifest/types.ts';
-import type { BackupConfiguration } from '../manifest/backup-schema.ts';
+import isPathContained from '../../utils/is-path-contained.ts';
+import nodeErrorCode from '../../utils/node-error-code.ts';
+import type { AgentManifest } from '../../manifest/types.ts';
+import type { BackupConfiguration } from '../../manifest/backup-schema.ts';
 import backupDirectoryRelevant from './backup-directory-relevant.ts';
 import backupPayloadPaths from './backup-payload-paths.ts';
 import {

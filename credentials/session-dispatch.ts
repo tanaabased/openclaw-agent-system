@@ -9,7 +9,7 @@ import {
 } from './session-dispatch-diagnostic.ts';
 import type { CredentialKey, CredentialStore } from './types.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
-import { sessionDispatchScopes } from '../agent/session-dispatch-requirements.ts';
+import { sessionDispatchScopes } from '../agent/lifecycle/session-dispatch-requirements.ts';
 
 const recordSchema = Type.Object(
   {

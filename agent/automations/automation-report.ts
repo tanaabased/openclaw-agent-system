@@ -8,7 +8,7 @@ import {
   sanitizeReportText,
   standardReportInstructions,
 } from './automation-report-presentation.ts';
-import type { SetupCommandResult } from '../setup-runner.ts';
+import type { SetupCommandResult } from '../lifecycle/setup-runner.ts';
 
 // bound chat excerpts to 16 kib per stream; full capture stays in native history.
 const excerptBytes = 16 * 1024;

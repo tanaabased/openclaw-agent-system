@@ -23,7 +23,7 @@ import {
 } from '../agent/automations/automation-projection.ts';
 import AutomationService from '../agent/automations/automation-service.ts';
 import notificationAutomationReadiness from '../agent/automations/automation-readiness.ts';
-import AgentInstallService from '../agent/install-service.ts';
+import AgentInstallService from '../agent/lifecycle/install-service.ts';
 import AgentSystemLifecycleRegistry, {
   AgentSystemLifecycleError,
 } from '../core/lifecycle-registry.ts';

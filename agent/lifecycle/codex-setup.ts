@@ -1,21 +1,21 @@
 import { delimiter } from 'node:path';
-import { codexInstanceStore } from './tasks/dispatch/codex-assignment-claims.ts';
-import instanceIdentity from './instance-identity.ts';
+import { codexInstanceStore } from '../tasks/dispatch/codex-assignment-claims.ts';
+import instanceIdentity from '../instance-identity.ts';
 
-import { inspectCodexIntake } from './codex-intake.ts';
-import { inspectCodexPickup } from './automations/codex-pickup-readiness.ts';
-import { inspectCodexAutomations } from './automations/codex-automations.ts';
-import type { CodexAutomationInputs } from './automations/codex-automation-plan.ts';
-import runCodexSetupProcess from './codex-process-runner.ts';
+import { inspectCodexIntake } from '../codex-intake.ts';
+import { inspectCodexPickup } from '../automations/codex-pickup-readiness.ts';
+import { inspectCodexAutomations } from '../automations/codex-automations.ts';
+import type { CodexAutomationInputs } from '../automations/codex-automation-plan.ts';
+import runCodexSetupProcess from '../codex-process-runner.ts';
 import {
   inspectCodexWorkspaceBinding,
   type CodexWorkspaceBindingInspection,
-} from './codex-workspace-binding.ts';
+} from '../codex-workspace-binding.ts';
 import SetupLifecycleService from './setup-lifecycle.ts';
 import createSetupCommandRunner, { type SetupProcessRunner } from './setup-runner.ts';
-import type { AgentSystemLifecycleFinding } from '../core/lifecycle-registry.ts';
-import type { AgentSetupCommand } from '../manifest/setup-schema.ts';
-import { githubNotificationRuntimeDiagnostics } from '../channels/github/notification-policy.ts';
+import type { AgentSystemLifecycleFinding } from '../../core/lifecycle-registry.ts';
+import type { AgentSetupCommand } from '../../manifest/setup-schema.ts';
+import { githubNotificationRuntimeDiagnostics } from '../../channels/github/notification-policy.ts';
 
 interface CodexSetupSnapshot {
   agentId: string;

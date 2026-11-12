@@ -1,7 +1,10 @@
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
-import type AgentLifecycleApproval from '../agent/lifecycle-approval.ts';
-import { lifecycleToolNames, type LifecycleToolName } from '../agent/lifecycle-tool-contract.ts';
+import type AgentLifecycleApproval from '../agent/lifecycle/lifecycle-approval.ts';
+import {
+  lifecycleToolNames,
+  type LifecycleToolName,
+} from '../agent/lifecycle/lifecycle-tool-contract.ts';
 
 export function registerLifecycleApprovalHook(
   api: Pick<OpenClawPluginApi, 'on'>,

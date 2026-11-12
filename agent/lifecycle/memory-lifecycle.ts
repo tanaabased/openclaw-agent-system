@@ -1,18 +1,18 @@
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
-import { configuredAgentValue } from '../core/configured-agents.ts';
+import { configuredAgentValue } from '../../core/configured-agents.ts';
 import {
   AgentSystemLifecycleError,
   type AgentSystemLifecycleContribution,
   type AgentSystemLifecycleFinding,
-} from '../core/lifecycle-registry.ts';
+} from '../../core/lifecycle-registry.ts';
 import createMemoryConfigurationPlan, {
   memorySecretProviderAlias,
   type MemoryConfigurationPlan,
   type ReadyMemoryConfigurationPlan,
 } from './memory-configuration-plan.ts';
 import { memorySecretId } from './memory-secret-provider-configuration.ts';
-import type { AgentMemoryConfiguration } from '../manifest/memory-schema.ts';
+import type { AgentMemoryConfiguration } from '../../manifest/memory-schema.ts';
 import {
   classifyMemoryEmbeddingFailure,
   memoryIndexState,

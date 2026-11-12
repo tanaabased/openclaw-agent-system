@@ -10,11 +10,11 @@ import type AgentDoctorService from './doctor-service.ts';
 import type AgentInstallService from './install-service.ts';
 import { selectedSetupPhases, type InstallSetupOptions } from './install-options.ts';
 import setupStepApplies from './setup-runtime.ts';
-import type AgentManifestService from '../manifest/service.ts';
-import type { AgentManifestLoadResult } from '../manifest/service.ts';
+import type AgentManifestService from '../../manifest/service.ts';
+import type { AgentManifestLoadResult } from '../../manifest/service.ts';
 import { lifecycleParameters, type LifecycleToolName } from './lifecycle-tool-contract.ts';
-import AgentSystemToolError from '../api/error.ts';
-import loadBoundToolManifest from '../api/manifest-binding.ts';
+import AgentSystemToolError from '../../api/error.ts';
+import loadBoundToolManifest from '../../api/manifest-binding.ts';
 
 type LoadedManifest = Extract<AgentManifestLoadResult, { status: 'loaded' }>;
 export interface ApprovalContext {

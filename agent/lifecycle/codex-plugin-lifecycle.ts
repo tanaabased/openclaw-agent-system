@@ -1,11 +1,11 @@
 import { satisfies, valid, validRange } from 'semver';
 
-import cliOutputComplete from '../api/cli-output-complete.ts';
+import cliOutputComplete from '../../api/cli-output-complete.ts';
 import {
   assertPrivateStateLocksHeld,
   privateStateLockSignal,
-} from '../core/private-state-lock-context.ts';
-import type { CodexPluginRequirement } from '../core/codex-plugin-metadata.ts';
+} from '../../core/private-state-lock-context.ts';
+import type { CodexPluginRequirement } from '../../core/codex-plugin-metadata.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import codexPluginApplies from './codex-plugin-applicability.ts';
 import {
@@ -14,7 +14,7 @@ import {
   type AgentSystemLifecycleContext,
   type AgentSystemLifecycleExecutionContext,
   type AgentSystemLifecycleFinding,
-} from '../core/lifecycle-registry.ts';
+} from '../../core/lifecycle-registry.ts';
 
 interface CommandResult {
   code: number | null;

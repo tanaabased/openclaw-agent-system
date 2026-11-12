@@ -16,7 +16,7 @@ import type { Logger } from '../core/logger.ts';
 import SecretServiceCredentialStore from './secret-service-store.ts';
 import SessionDispatchCredential from './session-dispatch.ts';
 import { classifySessionDispatchFailure } from './session-dispatch-diagnostic.ts';
-import { sessionDispatchScopes } from '../agent/session-dispatch-requirements.ts';
+import { sessionDispatchScopes } from '../agent/lifecycle/session-dispatch-requirements.ts';
 
 /** share one protected service identity across registrations and processes for this gateway. */
 export default function createSessionDispatchCredential(options: {

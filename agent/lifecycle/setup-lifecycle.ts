@@ -5,10 +5,10 @@ import {
   type AgentSystemLifecycleExecutionContext,
   type AgentSystemLifecycleFinding,
   type AgentSystemLifecycleReconcileResult,
-} from '../core/lifecycle-registry.ts';
+} from '../../core/lifecycle-registry.ts';
 import { SetupCommandError, type SetupCommandResult } from './setup-runner.ts';
 import setupStepApplies from './setup-runtime.ts';
-import type { AgentSetupCommand, AgentSetupStep } from '../manifest/setup-schema.ts';
+import type { AgentSetupCommand, AgentSetupStep } from '../../manifest/setup-schema.ts';
 
 type SetupStage = 'host' | 'agent';
 type SetupPhase = 'check' | 'apply' | 'check after apply';

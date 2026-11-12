@@ -17,7 +17,7 @@ import assignmentIntakePolicy from '../agent/automations/assignment-intake-polic
 import { codexIntakePolicy } from '../agent/automations/codex-intake-policy.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
-import AgentDoctorService from '../agent/doctor-service.ts';
+import AgentDoctorService from '../agent/lifecycle/doctor-service.ts';
 import doctorAgentSystem from '../cli/doctor.ts';
 import AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';
 import openclawIntakeJobs from '../agent/automations/openclaw-intake-policy.ts';

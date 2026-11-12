@@ -1,5 +1,5 @@
-import { automationThreadSelection } from './automations/automation-thread-selection.ts';
-import type { AgentManifest } from '../manifest/types.ts';
+import { automationThreadSelection } from '../automations/automation-thread-selection.ts';
+import type { AgentManifest } from '../../manifest/types.ts';
 
 /** one catalog owns the consumers shown in consent, lifecycle, and tool access. */
 export default function sessionDispatchRequirements(

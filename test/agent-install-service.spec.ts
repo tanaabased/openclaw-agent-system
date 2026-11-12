@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import AgentInstallService, { AgentInstallError } from '../agent/install-service.ts';
+import AgentInstallService, { AgentInstallError } from '../agent/lifecycle/install-service.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 
 const manifest: AgentManifest = {

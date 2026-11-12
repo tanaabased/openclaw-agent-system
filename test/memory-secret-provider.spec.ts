@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 
-import { memorySecretProviderAlias, memorySecretId } from '../agent/memory-configuration-plan.ts';
+import {
+  memorySecretProviderAlias,
+  memorySecretId,
+} from '../agent/lifecycle/memory-configuration-plan.ts';
 import resolveMemorySecretProviderRequest, {
   parseMemorySecretProviderRequest,
 } from '../environment/memory-secret-provider.ts';

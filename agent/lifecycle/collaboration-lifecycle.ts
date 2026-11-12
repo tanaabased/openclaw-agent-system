@@ -2,13 +2,13 @@ import { stat } from 'node:fs/promises';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
-import configuredAgentEntries from '../core/configured-agents.ts';
+import configuredAgentEntries from '../../core/configured-agents.ts';
 import {
   AgentSystemLifecycleError,
   type AgentSystemLifecycleContribution,
-} from '../core/lifecycle-registry.ts';
-import discoverManifest from '../manifest/discover.ts';
-import { loadDiscoveredManifest } from '../manifest/load.ts';
+} from '../../core/lifecycle-registry.ts';
+import discoverManifest from '../../manifest/discover.ts';
+import { loadDiscoveredManifest } from '../../manifest/load.ts';
 import planCollaboration, {
   collaborationConfiguration,
   collaborationError,

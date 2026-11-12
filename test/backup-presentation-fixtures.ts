@@ -1,9 +1,9 @@
-import WorkspaceBackupService from '../agent/backup-service.ts';
+import WorkspaceBackupService from '../agent/backup/backup-service.ts';
 import type {
   BackupCoverage,
   BackupPlan,
   CurrentWorkspaceBackupManifest,
-} from '../agent/backup-types.ts';
+} from '../agent/backup/backup-types.ts';
 import backupCreate from '../cli/backup-create.ts';
 import { createCliStyles } from '../cli/output.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';

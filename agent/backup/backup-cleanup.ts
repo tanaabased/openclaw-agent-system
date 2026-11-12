@@ -8,13 +8,13 @@ import { createGunzip } from 'node:zlib';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
+import acquirePrivateStateFileLock from '../../core/private-state-file-lock.ts';
 import {
   assertPrivateStateLocksHeld,
   withPrivateStateLock,
-} from '../core/private-state-lock-context.ts';
-import isPathContained from '../utils/is-path-contained.ts';
-import nodeErrorCode from '../utils/node-error-code.ts';
+} from '../../core/private-state-lock-context.ts';
+import isPathContained from '../../utils/is-path-contained.ts';
+import nodeErrorCode from '../../utils/node-error-code.ts';
 import {
   backupArtifactIdentity,
   type BackupAttempt,

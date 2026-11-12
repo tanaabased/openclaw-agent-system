@@ -1,4 +1,4 @@
-import { BackupError, type BackupDiagnostic } from '../agent/backup-types.ts';
+import { BackupError, type BackupDiagnostic } from '../agent/backup/backup-types.ts';
 import {
   type CliOutput,
   type CliStyles,

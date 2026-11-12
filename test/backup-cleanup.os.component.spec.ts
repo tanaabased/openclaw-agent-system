@@ -19,9 +19,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 
-import BackupAttemptWriter from '../agent/backup-attempt.ts';
-import cleanup, { BackupCleanupError, backupOwnerState } from '../agent/backup-cleanup.ts';
-import WorkspaceBackupService from '../agent/backup-service.ts';
+import BackupAttemptWriter from '../agent/backup/backup-attempt.ts';
+import cleanup, { BackupCleanupError, backupOwnerState } from '../agent/backup/backup-cleanup.ts';
+import WorkspaceBackupService from '../agent/backup/backup-service.ts';
 import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
 import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 

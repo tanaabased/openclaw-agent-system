@@ -1,8 +1,8 @@
-import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
+import type SessionDispatchCredential from '../../credentials/session-dispatch.ts';
 import type {
   AgentSystemLifecycleContribution,
   AgentSystemLifecycleExecutionContext,
-} from '../core/lifecycle-registry.ts';
+} from '../../core/lifecycle-registry.ts';
 import sessionDispatchRequirements from './session-dispatch-requirements.ts';
 
 export default function createSessionDispatchLifecycle(

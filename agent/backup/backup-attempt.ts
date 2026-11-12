@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import { lstat, open } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { assertPrivateStateLocksHeld } from '../core/private-state-lock-context.ts';
+import { assertPrivateStateLocksHeld } from '../../core/private-state-lock-context.ts';
 
 export interface BackupArtifactIdentity {
   dev: number;

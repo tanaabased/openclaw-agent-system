@@ -4,7 +4,7 @@ import { realpath } from 'node:fs/promises';
 import deliverAutomationReport from '../agent/automations/automation-report-delivery.ts';
 import { AutomationError } from '../agent/automations/automation-errors.ts';
 import type AutomationService from '../agent/automations/automation-service.ts';
-import type { SetupCommandResult } from '../agent/setup-runner.ts';
+import type { SetupCommandResult } from '../agent/lifecycle/setup-runner.ts';
 import type BoundCommandService from '../agent/bound-command-service.ts';
 import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
 import type AgentManifestService from '../manifest/service.ts';

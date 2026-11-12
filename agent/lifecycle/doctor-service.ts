@@ -1,15 +1,15 @@
-import type AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';
-import type AgentSystemToolRegistry from '../api/registry.ts';
-import type { resolveToolExecutable } from '../api/cli-runner.ts';
+import type AgentSystemLifecycleRegistry from '../../core/lifecycle-registry.ts';
+import type AgentSystemToolRegistry from '../../api/registry.ts';
+import type { resolveToolExecutable } from '../../api/cli-runner.ts';
 import {
   excludedToolExecutableDirectories,
   executableGuidance,
   unavailableToolExecutables,
-} from '../api/executable-requirements.ts';
+} from '../../api/executable-requirements.ts';
 import type {
   AgentSystemLifecycleExecutionContext,
   AgentSystemLifecycleFinding,
-} from '../core/lifecycle-registry.ts';
+} from '../../core/lifecycle-registry.ts';
 
 export type AgentDoctorFinding = AgentSystemLifecycleFinding;
 

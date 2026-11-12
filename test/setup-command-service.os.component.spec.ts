@@ -8,7 +8,7 @@ import AgentCommandAuthority from '../agent/command-authority.ts';
 import BoundCommandService from '../agent/bound-command-service.ts';
 import SetupCommandService, {
   type SetupCommandServiceDependencies,
-} from '../agent/setup-command-service.ts';
+} from '../agent/lifecycle/setup-command-service.ts';
 import AgentSystemToolRegistry from '../api/registry.ts';
 import AgentSystemToolRuntime from '../api/runtime.ts';
 import type { AgentSystemCliRunRequest } from '../api/types.ts';

@@ -1,7 +1,7 @@
 import type { AutomationLifecycleCommandScope } from '../agent/automations/automation-lifecycle-authority.ts';
 import type { AgentBoundCommand, AgentBoundCommandResult } from '../agent/command-authority.ts';
-import type AgentDoctorService from '../agent/doctor-service.ts';
-import type AgentInstallService from '../agent/install-service.ts';
+import type AgentDoctorService from '../agent/lifecycle/doctor-service.ts';
+import type AgentInstallService from '../agent/lifecycle/install-service.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import AgentSystemToolError from '../api/error.ts';
 import doctorAgentSystem from './doctor.ts';

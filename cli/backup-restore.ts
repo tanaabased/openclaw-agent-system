@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 
-import type WorkspaceBackupService from '../agent/backup-service.ts';
-import { BackupError, type WorkspaceBackupManifest } from '../agent/backup-types.ts';
+import type WorkspaceBackupService from '../agent/backup/backup-service.ts';
+import { BackupError, type WorkspaceBackupManifest } from '../agent/backup/backup-types.ts';
 import { resolveBackupCaller, type BackupCommandContext } from './backup-context.ts';
 import {
   type BackupCliOutput,

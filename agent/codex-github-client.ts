@@ -18,7 +18,7 @@ import GitHubWorkEventClient from '../channels/github/provider/work-event-client
 import readItemContext from '../channels/github/provider/read-item-context.ts';
 import { githubResponseIdentity } from '../channels/github/provider/work-event-normalization.ts';
 import runCodexSetupProcess from './codex-process-runner.ts';
-import type { SetupProcessRunner } from './setup-runner.ts';
+import type { SetupProcessRunner } from './lifecycle/setup-runner.ts';
 
 const cooldown = new GitHubRequestCooldown();
 

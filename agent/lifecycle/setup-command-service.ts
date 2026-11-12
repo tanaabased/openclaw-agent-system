@@ -2,13 +2,13 @@ import { delimiter } from 'node:path';
 
 import BoundCommandService, {
   type BoundCommandServiceDependencies,
-} from './bound-command-service.ts';
+} from '../bound-command-service.ts';
 import createSetupCommandRunner, {
   SetupCommandError,
   type SetupCommandResult,
 } from './setup-runner.ts';
-import type { AgentSetupCommand } from '../manifest/setup-schema.ts';
-import type { AgentManifest } from '../manifest/types.ts';
+import type { AgentSetupCommand } from '../../manifest/setup-schema.ts';
+import type { AgentManifest } from '../../manifest/types.ts';
 
 export type SetupCommandServiceDependencies = BoundCommandServiceDependencies;
 

@@ -4,7 +4,7 @@ import {
   classifyMemoryEmbeddingFailure,
   memoryIndexState,
   parseMemoryStatus,
-} from '../agent/memory-status.ts';
+} from '../agent/lifecycle/memory-status.ts';
 
 describe('agent/memory-status', () => {
   it('should parse one bounded agent status row', () => {

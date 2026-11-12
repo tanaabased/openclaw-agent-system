@@ -6,7 +6,6 @@ import {
   mkdir,
   mkdtemp,
   open,
-  readFile,
   readlink,
   readdir,
   realpath,
@@ -16,16 +15,17 @@ import {
 } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 
+import packageMetadata from '../../package.json' with { type: 'json' };
 import {
   withPrivateStateLock,
   assertPrivateStateLocksHeld,
   privateStateLockSignal,
-} from '../core/private-state-lock-context.ts';
-import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
-import isPathContained from '../utils/is-path-contained.ts';
-import nodeErrorCode from '../utils/node-error-code.ts';
-import type { AgentManifest } from '../manifest/types.ts';
-import type { BackupConfiguration } from '../manifest/backup-schema.ts';
+} from '../../core/private-state-lock-context.ts';
+import acquirePrivateStateFileLock from '../../core/private-state-file-lock.ts';
+import isPathContained from '../../utils/is-path-contained.ts';
+import nodeErrorCode from '../../utils/node-error-code.ts';
+import type { AgentManifest } from '../../manifest/types.ts';
+import type { BackupConfiguration } from '../../manifest/backup-schema.ts';
 import {
   captureAgentSnapshot,
   verifyAgentSnapshot,
@@ -552,11 +552,7 @@ export default class WorkspaceBackupService {
               : []),
           ],
         };
-        const agentSystemVersion = (
-          JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as {
-            version: string;
-          }
-        ).version;
+        const agentSystemVersion = packageMetadata.version;
         const manifest: WorkspaceBackupManifest = {
           format: 'agent-system-backup',
           version: 2,

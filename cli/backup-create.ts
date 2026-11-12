@@ -1,6 +1,6 @@
 import presentCliCommand from './presentation.ts';
-import type WorkspaceBackupService from '../agent/backup-service.ts';
-import { BackupError } from '../agent/backup-types.ts';
+import type WorkspaceBackupService from '../agent/backup/backup-service.ts';
+import { BackupError } from '../agent/backup/backup-types.ts';
 import type { BackupConfiguration } from '../manifest/backup-schema.ts';
 import {
   assertBackupLocationOwner,

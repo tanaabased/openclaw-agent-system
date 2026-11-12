@@ -17,8 +17,8 @@ import registerAgentSystemCli, { type RegisterAgentSystemCliOptions } from '../c
 import type { OpCacheGatewayRequest } from '../cli/credentials-cache.ts';
 import type { AgentSystemToolScope } from '../api/types.ts';
 import OpCache from '../environment/op-cache.ts';
-import WorkspaceBackupService from '../agent/backup-service.ts';
-import type { BackupPlan, WorkspaceBackupManifest } from '../agent/backup-types.ts';
+import WorkspaceBackupService from '../agent/backup/backup-service.ts';
+import type { BackupPlan, WorkspaceBackupManifest } from '../agent/backup/backup-types.ts';
 
 const validResult: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
   status: 'loaded',

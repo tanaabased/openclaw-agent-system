@@ -12,7 +12,7 @@ import { extract, pack, type Header } from 'tar-stream';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { externalBackupSchema } from '../manifest/backup-schema.ts';
+import { externalBackupSchema } from '../../manifest/backup-schema.ts';
 import { maximumBackupInventoryEntries } from './backup-payload-paths.ts';
 import { safeBackupRelativePath } from './backup-selection.ts';
 import {

@@ -1,4 +1,4 @@
-import type { AgentSetupRuntime, AgentSetupStep } from '../manifest/setup-schema.ts';
+import type { AgentSetupRuntime, AgentSetupStep } from '../../manifest/setup-schema.ts';
 
 /** Omitted runtime filters apply to every supported integration. */
 export default function setupStepApplies(

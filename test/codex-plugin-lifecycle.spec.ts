@@ -3,7 +3,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import createCodexPluginLifecycleContribution, {
   type CodexPluginLifecycleDependencies,
-} from '../agent/codex-plugin-lifecycle.ts';
+} from '../agent/lifecycle/codex-plugin-lifecycle.ts';
 import AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';
 import codexPluginRequirement from '../core/codex-plugin-metadata.ts';
 

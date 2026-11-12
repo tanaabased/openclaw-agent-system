@@ -1,5 +1,5 @@
 // eslint-disable-next-line @typescript-eslint/triple-slash-reference -- the sdk omits declarations; every consuming ts project needs this ambient module.
-/// <reference path="./native-session-policy.d.ts" />
+/// <reference path="../native-session-policy.d.ts" />
 
 import { isDeepStrictEqual } from 'node:util';
 
@@ -9,7 +9,7 @@ import {
   resolveSessionToolsVisibility,
 } from 'openclaw/plugin-sdk/session-visibility';
 
-import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
+import { AgentSystemLifecycleError } from '../../core/lifecycle-registry.ts';
 
 export type CollaborationSelection = 'auto' | 'all' | false | string[];
 export interface CollaborationState {
