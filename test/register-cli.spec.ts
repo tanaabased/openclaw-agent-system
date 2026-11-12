@@ -980,7 +980,7 @@ describe('cli/register', () => {
     assert.equal(command?.name(), 'agent-system');
     assert.deepEqual(command?.aliases(), ['as']);
     assert.deepEqual(
-      command?.commands.map((subcommand) => subcommand.name()),
+      command?.commands.map((subcommand) => subcommand.name()).toSorted(),
       [
         'backup',
         'validate',
@@ -991,13 +991,14 @@ describe('cli/register', () => {
         'tool',
         'credentials',
         'install',
-      ],
+      ].toSorted(),
     );
     assert.deepEqual(
       command?.commands
         .find((subcommand) => subcommand.name() === 'notifications')
-        ?.commands.map((subcommand) => subcommand.name()),
-      ['reset', 'refresh', 'status', 'wait'],
+        ?.commands.map((subcommand) => subcommand.name())
+        .toSorted(),
+      ['reset', 'refresh', 'status', 'wait'].toSorted(),
     );
   });
 

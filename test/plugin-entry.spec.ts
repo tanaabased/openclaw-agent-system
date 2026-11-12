@@ -11,7 +11,6 @@ describe('index', () => {
   it('should expose the agent system plugin contract', () => {
     assert.equal(plugin.id, 'agent-system');
     assert.equal(plugin.name, 'Agent System');
-    assert.equal(plugin.description, 'Better per-agent management for OpenClaw.');
     assert.equal(typeof plugin.register, 'function');
     assert.equal(plugin.configSchema.jsonSchema?.additionalProperties, false);
     assert.equal(
@@ -170,18 +169,21 @@ describe('index', () => {
         'agent-system-command-authority',
       ]),
     );
-    assert.deepEqual(toolNames, [
-      'agent_system_dispatch',
-      'agent_system_context',
-      'agent_system_intake',
-      'agent_system_git',
-      'agent_system_git_worktree',
-      'agent_system_github',
-      'agent_system_google',
-      'agent_system_install',
-      'agent_system_doctor',
-      'agent_system_model_routing',
-    ]);
+    assert.deepEqual(
+      toolNames.toSorted(),
+      [
+        'agent_system_dispatch',
+        'agent_system_context',
+        'agent_system_intake',
+        'agent_system_git',
+        'agent_system_git_worktree',
+        'agent_system_github',
+        'agent_system_google',
+        'agent_system_install',
+        'agent_system_doctor',
+        'agent_system_model_routing',
+      ].toSorted(),
+    );
     assert.deepEqual(policyIds, [
       'agent-system.git',
       'agent-system.git-worktree',

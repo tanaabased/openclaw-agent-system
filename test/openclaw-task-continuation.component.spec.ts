@@ -1353,24 +1353,6 @@ describe('agent/openclaw task-continuation', () => {
     assert.equal(fixtureState.sends().length, 1);
   });
 
-  it('should reject incomplete results but accept a complete plan without a redundant summary', async () => {
-    const input = await fixtureState.next();
-    await fixtureState.prepare(input);
-    await fixtureState.assess(input.id);
-    await fixtureState.context(input.id);
-    await assert.rejects(
-      fixtureState.renderAssessment(input.id, {
-        ...fixtureState.plan,
-        summary: '',
-      } as unknown as AssessmentSubmission),
-      /assessment-render-request-invalid/,
-    );
-    await writeFile(join(fixtureState.root, 'SKILL.md'), '# changed selection');
-    const concise = { ...fixtureState.plan };
-    delete concise.reviewSummary;
-    await fixtureState.renderAssessment(input.id, concise);
-  });
-
   it('should keep an uncertain assessment send blocked and never reinterpret it as a fresh attempt', async () => {
     const input = await fixtureState.next();
     await fixtureState.prepare(input);

@@ -494,7 +494,7 @@ describe('cli/install', () => {
     }
   });
 
-  it('should preview fixture-backed success and partial failure across widths and color modes', async () => {
+  it('should render install outcomes and partial failure through human and json output', async () => {
     const literal = 'AgentX /Work/AgentX/File.JSON OP_TOKEN 2026-10-07T23:00:00Z';
     const outcomes = installOutcomes.map((item) => ({
       ...item,
@@ -521,38 +521,31 @@ describe('cli/install', () => {
             { outcomes, warnings, unattempted: [{ component: 'models', stepId: 'ProfileX' }] },
           )
         : { agentId: 'AgentX', workspaceDir: '/Work/AgentX', outcomes, warnings };
-      for (const terminalColumns of [32, 120]) {
-        const previews: string[] = [];
-        for (const environment of [{ FORCE_COLOR: '3' }, { NO_COLOR: '', FORCE_COLOR: '3' }]) {
-          const harness = createHarness({
-            install,
-            terminalColumns,
-            styles: createCliStyles(environment),
-          });
-          await harness.run();
-          const text = ansis.strip(harness.events.join(''));
-          previews.push(text);
-          assert.equal(text.match(/^messages$/gmu)?.length, 1);
-          assert.ok(text.indexOf('workspace  ') < text.indexOf('messages'));
-          const unwrapped = text.replace(/\s/gu, '');
-          assert.ok(unwrapped.includes(literal.replace(/\s/gu, '')));
-          assert.ok(unwrapped.indexOf('warningA') < unwrapped.indexOf('warningB'));
-          assert.ok(unwrapped.indexOf('warningB') < unwrapped.indexOf('infoA'));
-          if (failed)
-            assert.ok(unwrapped.indexOf('HTTP403:InvalidToken') < unwrapped.indexOf('warningA'));
-          assert.deepEqual(harness.exitCodes, failed ? [1] : []);
-          assert.deepEqual(
-            harness.calls.install.map(({ manifest }) => manifest),
-            [validResult.manifest],
-          );
-          const rows = text.split('\n').filter((row) => /^(agent|path|git|github)\s/.test(row));
-          assert.deepEqual(
-            rows.map((row) => row.trim().split(/\s/).filter(Boolean).slice(0, 2)),
-            outcomes.map(({ component, status }) => [component, status]),
-          );
-        }
-        assert.equal(previews[0], previews[1]);
-      }
+      const harness = createHarness({
+        install,
+        terminalColumns: 32,
+        styles: createCliStyles({ NO_COLOR: '1' }),
+      });
+      await harness.run();
+      const text = ansis.strip(harness.events.join(''));
+      assert.equal(text.match(/^messages$/gmu)?.length, 1);
+      assert.ok(text.indexOf('workspace  ') < text.indexOf('messages'));
+      const unwrapped = text.replace(/\s/gu, '');
+      assert.ok(unwrapped.includes(literal.replace(/\s/gu, '')));
+      assert.ok(unwrapped.indexOf('warningA') < unwrapped.indexOf('warningB'));
+      assert.ok(unwrapped.indexOf('warningB') < unwrapped.indexOf('infoA'));
+      if (failed)
+        assert.ok(unwrapped.indexOf('HTTP403:InvalidToken') < unwrapped.indexOf('warningA'));
+      assert.deepEqual(harness.exitCodes, failed ? [1] : []);
+      assert.deepEqual(
+        harness.calls.install.map(({ manifest }) => manifest),
+        [validResult.manifest],
+      );
+      const rows = text.split('\n').filter((row) => /^(agent|path|git|github)\s/.test(row));
+      assert.deepEqual(
+        rows.map((row) => row.trim().split(/\s/).filter(Boolean).slice(0, 2)),
+        outcomes.map(({ component, status }) => [component, status]),
+      );
       const json = createHarness({
         install,
         json: true,

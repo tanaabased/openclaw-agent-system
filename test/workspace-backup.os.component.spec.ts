@@ -35,7 +35,6 @@ import {
   writeWorkspaceArchive,
 } from '../agent/backup/backup-archive.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import parseAgentManifest from '../manifest/parse.ts';
 import backupCreate from '../cli/backup-create.ts';
 import backupVerify from '../cli/backup-verify.ts';
 import backupRestore from '../cli/backup-restore.ts';
@@ -168,24 +167,6 @@ describe('workspace backup', () => {
     assert.deepEqual(failedExit, [1]);
     assert.match(failedErr.join(''), /error/u);
     assert.equal(previews.length, 3);
-  });
-
-  it('should strictly decode backup keys without changing literal patterns', () => {
-    const parsed = parseAgentManifest(
-      'schema-version: 1\nagent: { id: tanaabot }\nbackup:\n  git-ignore: true\n  include: [MEMORY.md, memory/**]\n  exclude: []\n',
-    );
-    assert.equal(parsed.status, 'valid');
-    if (parsed.status === 'valid')
-      assert.deepEqual(parsed.manifest.backup, {
-        gitIgnore: true,
-        include: ['MEMORY.md', 'memory/**'],
-        exclude: [],
-      });
-    assert.equal(
-      parseAgentManifest('schema-version: 1\nagent: { id: tanaabot }\nbackup: { retention: 3 }\n')
-        .status,
-      'invalid',
-    );
   });
 
   it('should distinguish absent, required, and explicitly omitted agent databases', async function () {

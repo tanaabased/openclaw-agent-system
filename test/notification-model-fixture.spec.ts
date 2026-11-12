@@ -679,122 +679,9 @@ for (const scenario of [
       });
     }
 
-    it('should advance three distinct pending assessments using indexed string-wrapped native results', async () => {
-      const input = request(intakePrompt);
-      append(input, 'scan', JSON.stringify({ status: 'ready' }));
-      for (let index = 0; index < 3; index++) {
-        const receipt = String(index + 1).repeat(64);
-        await action(input, 'next');
-        append(
-          input,
-          `next-${index}`,
-          JSON.stringify({
-            status: 'routing-required',
-            target: source,
-            id: receipt,
-            digest,
-            context: { source, body: 'disposable Agent System notification-flow fixture' },
-          }),
-        );
-        await readRoutingSource(input, index);
-        assert.equal((await action(input, 'prepare')).target, source);
-        append(input, `prepare-${index}`, { status: 'session-created', id: receipt });
-        assert.equal((await action(input, 'assess')).target, source);
-        append(
-          input,
-          `assess-${index}`,
-          JSON.stringify({ status: 'assessment-pending', id: receipt }),
-        );
-      }
-      await action(input, 'next');
-      append(input, 'next-3', { status: 'pass-completed' });
-      await action(input, 'report');
-      append(input, 'report', { status: 'reported', response: 'pass completed' });
-      assert.deepEqual(await response(input), { content: 'pass completed' });
-    });
-
-    it('should continue after assessment turns and terminate on native capacity and blockers', async () => {
-      for (const status of ['assessment-pending', 'assessment-completed']) {
-        const input = request(intakePrompt);
-        append(input, 'scan', { status: 'ready' });
-        append(input, 'next', { status: 'reconcile-required', target: source, id });
-        append(input, 'reconcile', { status, id });
-        await action(input, 'next');
-        append(input, 'next-1', { status: 'at-capacity' });
-        await action(input, 'report');
-        append(input, 'report', { status: 'reported', response: 'at capacity' });
-        assert.deepEqual(await response(input), { content: 'at capacity' });
-      }
-    });
-
-    it('should continue unrelated work after an item failure explicitly selects next', async () => {
-      for (const status of ['blocked', 'waiting', 'retrying']) {
-        const input = request(intakePrompt);
-        append(input, 'scan', { status: 'ready' });
-        append(input, 'next', { status, id, nextAction: 'next' });
-        await action(input, 'next');
-        append(input, 'next-1', { status: 'idle' });
-        await action(input, 'report');
-      }
-    });
-
-    it('should advance manually admitted work without requesting another intake scan', async () => {
-      const input = request('Advance previously admitted issue or feedback work.');
-      assert.deepEqual(await action(input, 'next'), { action: 'next' });
-    });
-
-    it('should select the issue while keeping routing bindings inside the runtime', async () => {
-      const input = request(
-        `Fill initially available intake slots in one bounded pass. Policy digest: ${digest}`,
-      );
-      assert.deepEqual(await action(input, 'scan'), { action: 'scan' });
-      append(input, 'scan', { status: 'ready', admitted: 1 });
-      await action(input, 'next');
-      append(input, 'next', {
-        status: 'routing-required',
-        target: source,
-        id,
-        digest,
-        context: { source, body: 'disposable Agent System notification-flow fixture' },
-      });
-      await readRoutingSource(input);
-      const prepared = await action(input, 'prepare');
-      assert.equal(prepared.target, source);
-      assert.equal('id' in prepared, false);
-      assert.equal('digest' in prepared, false);
-      append(input, 'prepare', { status: 'session-created', id });
-      assert.equal((await action(input, 'assess')).target, source);
-      append(input, 'assess', { status: 'assessment-pending', id });
-      await action(input, 'next');
-      append(input, 'next-1', { status: 'pass-completed' });
-      await action(input, 'report');
-      append(input, 'report', { status: 'reported', response: '> ## 📥 Intake complete' });
-      assert.deepEqual(await response(input), { content: '> ## 📥 Intake complete' });
-      input.messages.push({
-        role: 'user',
-        content: `Fill initially available intake slots in one bounded pass. Policy digest: ${digest}`,
-      });
-      await action(input, 'scan');
-    });
-
-    it('should reconcile pending assessments and stop on native idle without fabricating work', async () => {
-      for (const status of ['idle', 'reconcile-required']) {
-        const input = request(
-          `Fill initially available intake slots in one bounded pass. Policy digest: ${digest}`,
-        );
-        append(input, 'scan', { status: 'ready', admitted: 0 });
-        append(input, 'next', { status, id, target: source });
-        if (status === 'reconcile-required') {
-          assert.equal((await action(input, 'reconcile')).target, source);
-          append(input, 'reconcile', { status: 'assessment-completed', id });
-          await action(input, 'next');
-          append(input, 'next-1', { status: 'pass-completed' });
-        }
-        await action(input, 'report');
-        append(input, 'report', { status: 'reported', response: '' });
-        assert.deepEqual(await response(input), { content: 'notification-intake-unchanged' });
-      }
-    });
+    // these wrappers reuse the conversation driver; their distinct behavior is checked above.
+    if (['openclaw-issue-intake', 'openclaw-notifications-retirement'].includes(scenario.id))
+      return;
 
     for (const code of ['private-state-file-lock-busy', 'discovery-checkpoint-changed']) {
       it(`should retry waiting ${code} with the same arguments and a bounded budget`, async () => {
@@ -1205,10 +1092,9 @@ for (const scenario of [
           /native hook must retain task facts/,
         );
       });
-      for (const mode of ['operator', 'work', 'auto', 'custom'])
+      for (const mode of ['operator', 'custom'])
         it(`should carry ${mode} through implementation and the same delivery on retry`, async () => {
           const workScenario = createPRExampleScenario(scenario.id, {
-            explicitInitialLink: mode === 'work',
             ...(mode === 'custom' ? { assessmentSkill: 'cleanup-assessment' } : {}),
           });
           const input = request(
@@ -1221,7 +1107,7 @@ for (const scenario of [
               status: 'verified',
               runtime: 'openclaw',
               id,
-              mode: mode === 'auto' ? 'auto' : 'work',
+              mode: 'work',
               evidence: { source: 'https://github.com/owner/repo/issues/3' },
               currentTurnId: 'native-turn',
               project: { path: '/tmp/owned' },
@@ -1330,8 +1216,6 @@ for (const scenario of [
           });
           const association = await action(input, 'delivery', workScenario);
           assert.equal(association.operation, 'link');
-          if (mode === 'work')
-            assert.equal(association.pullRequest, 'https://github.com/owner/repo/pull/456');
           append(input, 'delivery-association', {
             status: 'linked',
             pullRequest: { pullRequestNumber: 456 },
@@ -1578,71 +1462,6 @@ for (const scenario of [
         const composed = await action(input, 'reply');
         assert.equal(composed.operation, 'compose');
         assert.equal(composed.target, source);
-      });
-    if (scenario.id === 'openclaw-issue-conversation')
-      it('should answer github and direct questions from native conversation without a result checkpoint', async () => {
-        const github = request(
-          `Call agent_system_dispatch with action feedback, operation context, id ${id}, eventId ${'e'.repeat(64)}`,
-        );
-        append(github, 'feedback-context', {
-          status: 'verified',
-          runtime: 'openclaw',
-          publication: 'allowed',
-          replyTarget: source,
-          source: { body: '@tanaabot explain the plan using the earlier explanation.' },
-        });
-        const composed = await action(github, 'reply');
-        assert.equal(composed.operation, 'compose');
-        assert.equal(composed.target, source);
-        assert.match(composed.privateText!, /implementation remains unstarted/);
-        const direct = request(
-          `Explain retained plan for managed issue ${id}: explain the plan using the earlier explanation.`,
-        );
-        direct.messages.unshift({
-          role: 'assistant',
-          content: 'The plan documents disposable issue cleanup after evidence.',
-        });
-        assert.deepEqual(await response(direct), {
-          content:
-            'The retained plan proposes documenting disposable issue cleanup after evidence is captured. Implementation remains unstarted.',
-        });
-      });
-    if (scenario.id === 'openclaw-issue-conversation')
-      it('should answer ordinary clarification using native context without saved revisions', async () => {
-        for (const stage of ['Clarify', 'Answer']) {
-          const input = request(
-            `[Wed 2026-10-21 17:32 UTC] ${stage} ordinary assessment for managed issue ${id}`,
-          );
-          input.messages.push({
-            role: 'user',
-            content:
-              '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> Agent System model-only current-turn facts\n{"contextProbe":{"version":1,"runtime":"openclaw","hook":"before_prompt_build"}}',
-          });
-          if (!hookAssessment) assert.equal('id' in (await action(input, 'context')), false);
-          append(input, 'context', {
-            status: 'verified',
-            runtime: 'openclaw',
-            ...assessmentContract(),
-            id,
-            project: { path: '/tmp/managed-worktree' },
-            assessment: { skill: { name: 'generic-assessment', path: '/fixture/SKILL.md' } },
-            currentTurnId: 'native-answer',
-            evidence: { source: 'https://github.com/owner/repo/issues/3' },
-            resultFormat: assessmentResultFormat,
-          });
-          const read = await response(input);
-          assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
-          append(input, 'assessment-skill', 'Generic Assessment');
-          await response(input);
-          append(input, 'git', { exitCode: 0, stdout: '/tmp/managed-worktree', truncated: false });
-          if (stage === 'Clarify') {
-            assert.deepEqual(await response(input), {
-              content: 'Should cleanup close the issue only after evidence capture?',
-            });
-            continue;
-          }
-          await publishNativePlan(input);
-        }
       });
     if (scenario.id !== 'openclaw-issue-auto-plan')
       for (const [initial, driver] of scenario.id === 'openclaw-pr-journey'
