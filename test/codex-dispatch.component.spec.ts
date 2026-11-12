@@ -3022,8 +3022,22 @@ describe('agent/codex-dispatch', () => {
             : git(cwd, argv, signal);
         const result = await next();
         assert.equal(preparations, managed ? 1 : 0);
-        assert.equal(result.status, broken && !managed ? 'waiting' : 'routing-required');
-        if (broken && !managed) assert.equal(result.code, 'dispatch-project-workspace-required');
+        assert.equal(result.status, broken && !managed ? 'retrying' : 'routing-required');
+        if (broken && !managed) {
+          assert.equal(result.code, 'dispatch-project-workspace-required');
+          const retained = ((await readDispatchState()).records as DispatchRecord[])[0]!;
+          assert.equal(retained.request, undefined);
+          assert.ok(retained.retryAfter && retained.retryAfter > now);
+          now = retained.retryAfter;
+          assert.equal((await next()).status, 'retrying');
+          assert.equal(preparations, 0);
+          deps.git = git;
+          now = ((await readDispatchState()).records as DispatchRecord[])[0]!.retryAfter!;
+          const resumed = await next();
+          assert.equal(resumed.status, 'routing-required');
+          assert.equal(resumed.id, result.id);
+          assert.equal(preparations, 0);
+        }
       });
     }
   }
