@@ -11,7 +11,8 @@ import type {
 } from './codex-dispatch-context.ts';
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
 import codexEntryContext from './codex-entry-context.ts';
-import { connectCodexGitHub, selectCodexIntake } from './codex-intake.ts';
+import { connectCodexGitHub } from './codex-github-client.ts';
+import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import issueLaunch from './issue-launch.ts';
 import { dispatchAdmission, managedIssueState } from './managed-issue.ts';
 import retainedIntakePolicy from './retained-intake-policy.ts';
@@ -24,7 +25,7 @@ export default async function codexIssueLaunch(
 ) {
   if (!Value.Check(launchRequestSchema, input)) throw new Error('launch-request-invalid');
   return codexEntryContext(pluginData, input, deps, async (context) => {
-    const current = await selectCodexIntake(pluginData, deps, { resolvePolicy: false });
+    const current = await selectCodexTaskContext(pluginData, deps, { resolvePolicy: false });
     const journal = new CodexDispatchStore(
       current.store.location.root,
       current.store.location.scope,

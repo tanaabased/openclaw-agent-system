@@ -18,7 +18,7 @@ import authorizeCodexFeedback from './codex-feedback-authority.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';
 import { applyFeedbackScans, scanCodexFeedback } from './codex-feedback-scan.ts';
 import codexHostAccess from './codex-host-access.ts';
-import { selectCodexIntake } from './codex-intake.ts';
+import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import codexReply from './codex-reply.ts';
 import codexSessionSettings from './codex-session-settings.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
@@ -74,7 +74,7 @@ async function runCodexFeedbackScoped(
     (input.material !== undefined && input.action !== 'context')
   )
     throw new Error('feedback-request-invalid');
-  const current = await selectCodexIntake(pluginData, deps);
+  const current = await selectCodexTaskContext(pluginData, deps);
   const admittedState = await current.store.read();
   const selected =
     current.policy ??
@@ -361,7 +361,7 @@ async function runCodexFeedbackScoped(
                 if (fresh.sourceThreadId !== activation!.sourceThreadId)
                   throw new Error('feedback-schedule-owner-changed');
               }
-              const live = await selectCodexIntake(pluginData, deps);
+              const live = await selectCodexTaskContext(pluginData, deps);
               await authorizeCodexFeedback({
                 conversation: true,
                 current: live,
@@ -439,7 +439,8 @@ async function runCodexFeedbackScoped(
                   repository: owner + '/' + name,
                   mode: feedbackConversationMode(
                     record,
-                    (await selectCodexIntake(pluginData, deps)).manifest.github!.notifications!,
+                    (await selectCodexTaskContext(pluginData, deps)).manifest.github!
+                      .notifications!,
                   ),
                   issueStage: retainedIssueProgression(record)?.stage ?? 'planning',
                   self: selfFeedback,

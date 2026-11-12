@@ -1,3 +1,7 @@
+import {
+  selectCodexTaskContext,
+  type CodexTaskContextDependencies,
+} from '../context/codex-task-context.ts';
 import { withDispatchTask } from '../../dispatch-task-scope.ts';
 import { deliveryBaseSchema, verifyDeliveryCommits } from './delivery-base.ts';
 import { retainedAnnouncementPublication } from './delivery-announcement-recovery.ts';
@@ -39,7 +43,6 @@ import authorizeCodexFeedback from '../../codex-feedback-authority.ts';
 import connectCodexFeedback from '../../codex-feedback-client.ts';
 import connectCodexGitHubAccount from '../../codex-github-client.ts';
 import codexHostAccess from '../../codex-host-access.ts';
-import { selectCodexIntake, type CodexIntakeDependencies } from '../../codex-intake.ts';
 import codexIssueBranch from '../../codex-issue-branch.ts';
 import codexIssueNotice from '../../codex-issue-notice.ts';
 import { connectCodexThreads, type CodexThreadRequest } from '../../codex-thread-client.ts';
@@ -99,7 +102,8 @@ const requestSchema = Type.Object(
   { additionalProperties: false },
 );
 type DeliveryRequest = Static<typeof requestSchema>;
-export interface CodexDeliveryDependencies extends Omit<CodexIntakeDependencies, 'connect'> {
+export interface CodexDeliveryDependencies extends CodexTaskContextDependencies {
+  now?: () => number;
   activation?: typeof inspectCodexDispatchActivation;
   feedbackConnect?: typeof connectCodexFeedback;
   connect?: typeof connectCodexGitHubAccount;
@@ -213,7 +217,7 @@ async function runCodexDeliveryScoped(
     throw invalidDeliveryRequest(input.action, 'codex');
   if (input.title?.includes('\0') || input.body?.includes('\0'))
     throw invalidDeliveryRequest(input.action, 'codex');
-  const current = await selectCodexIntake(pluginData, {
+  const current = await selectCodexTaskContext(pluginData, {
     codexHome: deps.codexHome,
     inspectBinding: deps.inspectBinding,
   });
@@ -570,7 +574,7 @@ async function runCodexDeliveryScoped(
       const authorizePublication = async () => {
         await deps.authorizeSchedule?.();
         if (!feedbackEvent) return;
-        const live = await selectCodexIntake(pluginData, { ...deps, connect: undefined });
+        const live = await selectCodexTaskContext(pluginData, deps);
         await authorizeCodexFeedback({
           conversation: true,
           current: live,

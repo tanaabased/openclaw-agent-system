@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { automationHash } from '../agent/automation-hash.ts';
 import type { SavedAutomation } from '../agent/codex-automation-state.ts';
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
-import { selectCodexIntake } from '../agent/codex-intake.ts';
+import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import runCodexNotificationReset from '../agent/codex-notification-reset.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
@@ -72,7 +72,7 @@ describe('agent/notification reset runtime adapters', () => {
       );
       const binding = await bindCodexWorkspace(pluginData, workspace);
       assert.equal(binding.status, 'bound', JSON.stringify(binding));
-      const current = await selectCodexIntake(pluginData, { codexHome });
+      const current = await selectCodexTaskContext(pluginData, { codexHome });
       const saved: SavedAutomation = {
         id: 'job',
         definition: {
@@ -528,7 +528,7 @@ describe('agent/notification reset runtime adapters', () => {
       JSON.stringify({ 'schema-version': 1, agent: { id: 'receiver' } }),
     );
     await bindCodexWorkspace(pluginData, workspace);
-    const current = await selectCodexIntake(pluginData, { codexHome });
+    const current = await selectCodexTaskContext(pluginData, { codexHome });
     await seed(current.store, current.workspace);
     const make = (id: string, status: 'ACTIVE' | 'PAUSED'): SavedAutomation => ({
       id,
@@ -945,7 +945,7 @@ describe('agent/notification reset runtime adapters', () => {
       JSON.stringify({ 'schema-version': 1, agent: { id: 'receiver' } }),
     );
     await bindCodexWorkspace(pluginData, workspace);
-    const current = await selectCodexIntake(pluginData, { codexHome });
+    const current = await selectCodexTaskContext(pluginData, { codexHome });
     await seed(current.store, current.workspace);
     const saved: SavedAutomation = {
       id: 'job',

@@ -3,7 +3,7 @@ import authorizeCodexFeedback from '../agent/codex-feedback-authority.ts';
 import authorizeFeedback from '../agent/feedback-source-context.ts';
 import { feedbackRevision } from '../agent/feedback-source.ts';
 import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
-import type { selectCodexIntake } from '../agent/codex-intake.ts';
+import type { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import type { ManagedIssue } from '../agent/managed-issue.ts';
 import { account, intakeFixture } from './github-intake-fixture.ts';
 
@@ -36,7 +36,7 @@ function fixture() {
   } as unknown as ManagedIssue;
   const current = {
     manifest: { github: { username: account.login, notifications: f.policy } },
-  } as Awaited<ReturnType<typeof selectCodexIntake>>;
+  } as Awaited<ReturnType<typeof selectCodexTaskContext>>;
   const record = {} as DispatchRecord;
   const provider = {
     ...f.client,

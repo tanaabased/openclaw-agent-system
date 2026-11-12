@@ -49,7 +49,7 @@ export default async function retireOpenClawTask(options: {
     await service.dependencies.credential.use(authority, (request) =>
       observeRetirementSession(request, record, manifest.agent.id, owner),
     );
-    const loaded = await service.dependencies.intake.dependencies.manifestService.loadForAgentId(
+    const loaded = await service.dependencies.taskContext.manifestService.loadForAgentId(
       manifest.agent.id,
       'service',
     );

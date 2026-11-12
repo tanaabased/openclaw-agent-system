@@ -114,3 +114,11 @@ export default async function connectCodexGitHubAccount(
   });
   return { client, account };
 }
+
+export async function connectCodexGitHub(
+  workspace: string,
+  signal: AbortSignal,
+  run?: SetupProcessRunner,
+) {
+  return (await connectCodexGitHubAccount(workspace, signal, run)).client;
+}

@@ -7,7 +7,7 @@ import type connectCodexFeedback from './codex-feedback-client.ts';
 import { discoverFeedback } from './feedback-source.ts';
 import type { CodexFeedback } from './codex-feedback-state.ts';
 import codexHostAccess from './codex-host-access.ts';
-import type { selectCodexIntake } from './codex-intake.ts';
+import type { CodexTaskSelection } from './tasks/context/codex-task-context.ts';
 import DiscoveryBudget, { DiscoveryPaused } from './discovery-budget.ts';
 import feedbackDiscoveryOwner from './feedback-discovery-owner.ts';
 import feedbackOwnPublications from './feedback-own-publications.ts';
@@ -23,7 +23,7 @@ export interface FeedbackScan {
 /** provider discovery runs without the journal lock; changed owners discard stale snapshots. */
 export async function scanCodexFeedback(input: {
   state: DispatchState;
-  current: Awaited<ReturnType<typeof selectCodexIntake>>;
+  current: CodexTaskSelection;
   provider: Awaited<ReturnType<typeof connectCodexFeedback>>;
   occurrence: string;
   now: number;

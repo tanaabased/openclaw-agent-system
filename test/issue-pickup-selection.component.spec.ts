@@ -18,9 +18,9 @@ import {
   prepareCodexPickupEnrollment,
   runCodexIntake,
   runCodexIssuePickup,
-  selectCodexIntake,
   type CodexIntakeDependencies,
 } from '../agent/codex-intake.ts';
+import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import openClawCapacity from '../agent/openclaw-capacity.ts';
 import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
@@ -164,7 +164,7 @@ describe('issue pickup selection through native journals', () => {
         },
       };
       await runCodexIntake(data, true, deps);
-      const selected = await selectCodexIntake(data, deps);
+      const selected = await selectCodexTaskContext(data, deps);
       scope = selected.store.location.scope;
       journal = new CodexDispatchStore(data, scope);
       const enrollment = await prepareCodexPickupEnrollment(data, deps);

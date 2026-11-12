@@ -100,11 +100,10 @@ export async function scanOpenClawFeedback(input: {
             input.sourceThreadId
           )
             throw new Error('feedback-schedule-owner-changed');
-          const fresh =
-            await service.dependencies.intake.dependencies.manifestService.loadForAgentId(
-              manifest.agent.id,
-              'service',
-            );
+          const fresh = await service.dependencies.taskContext.manifestService.loadForAgentId(
+            manifest.agent.id,
+            'service',
+          );
           if (
             fresh.status !== 'loaded' ||
             fresh.manifest.agent.id !== manifest.agent.id ||
@@ -165,7 +164,7 @@ export async function scanOpenClawFeedback(input: {
                       runtime: 'openclaw',
                       agentId: manifest.agent.id,
                       workspace: input.workspace,
-                      namespace: service.dependencies.intake.dependencies.namespace,
+                      namespace: service.dependencies.taskContext.namespace,
                       session: record.threadId!,
                       incarnation: record.sessionCreation!.sessionId!,
                     },

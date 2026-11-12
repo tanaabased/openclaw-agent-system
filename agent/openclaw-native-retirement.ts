@@ -1,7 +1,8 @@
+import { selectOpenClawTaskContext } from './tasks/context/openclaw-task-context.ts';
 import { automationHash } from './automation-hash.ts';
 import nativeRetirement from './native-retirement.ts';
 import assertNotificationResetRetirement from './notification-reset-retirement.ts';
-import type { OpenClawDispatchDependencies } from './openclaw-dispatch-context.ts';
+import type { OpenClawTaskDependencies } from './openclaw-dispatch-context.ts';
 import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
 import { operatorInputEvent } from './openclaw-session-input.ts';
 import { sessionObject, type DispatchCaller } from './openclaw-session-create.ts';
@@ -10,7 +11,7 @@ import type { AgentManifest } from '../manifest/types.ts';
 
 /** unmanaged cleanup uses native session custody, never issue admission or git preservation. */
 export default async function retireOpenClawNative(input: {
-  dependencies: OpenClawDispatchDependencies;
+  dependencies: OpenClawTaskDependencies;
   manifest: AgentManifest;
   workspace: string;
   caller: DispatchCaller;
@@ -25,7 +26,9 @@ export default async function retireOpenClawNative(input: {
   if (!input.native.startsWith(`agent:${manifest.agent.id}:`))
     throw new Error('native-retirement-agent-mismatch');
   await authority.assertCurrent?.();
-  const selected = await deps.intake.select(manifest, input.workspace, { resolvePolicy: false });
+  const selected = await selectOpenClawTaskContext(deps.taskContext, manifest, input.workspace, {
+    resolvePolicy: false,
+  });
   const journal = new OpenClawDispatchStore(deps.root, selected.store.location.scope);
   return deps.credential.use(authority, async (request) => {
     const nativeInput = () =>
@@ -44,7 +47,7 @@ export default async function retireOpenClawNative(input: {
         runtime: 'openclaw',
         agentId: manifest.agent.id,
         workspace: selected.workspace,
-        namespace: deps.intake.dependencies.namespace,
+        namespace: deps.taskContext.namespace,
         session: caller.sessionKey,
         incarnation: caller.sessionId,
       },
@@ -63,7 +66,7 @@ export default async function retireOpenClawNative(input: {
           selected.store.location.scope,
           input.native,
         );
-        const fresh = await deps.intake.dependencies.manifestService.loadForAgentId(
+        const fresh = await deps.taskContext.manifestService.loadForAgentId(
           manifest.agent.id,
           'service',
         );

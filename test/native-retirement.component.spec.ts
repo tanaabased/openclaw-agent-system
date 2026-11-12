@@ -6,7 +6,7 @@ import { Value } from 'typebox/value';
 
 import { runCodexDispatch, type CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
-import { selectCodexIntake } from '../agent/codex-intake.ts';
+import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import nativeRetirement, { type NativeRetirementTarget } from '../agent/native-retirement.ts';
 import NotificationResetStore from '../agent/notification-reset-state.ts';
@@ -271,6 +271,7 @@ describe('agent/native retirement runtime entries', () => {
     const service = new OpenClawDispatch({
       root: join(root, 'dispatch'),
       intake,
+      taskContext: intake.dependencies,
       config: () => ({}),
       connect: unsupported,
       coordinator: unsupported,
@@ -425,7 +426,7 @@ describe('agent/native retirement runtime entries', () => {
     };
     const run = async (input: unknown) =>
       (await runCodexDispatch(pluginData, 'retire', input, deps)) as Record<string, unknown>;
-    const resetScope = await selectCodexIntake(pluginData, deps, { resolvePolicy: false });
+    const resetScope = await selectCodexTaskContext(pluginData, deps, { resolvePolicy: false });
     const reset = await pendingReset(
       pluginData,
       resetScope.store.location.scope,
@@ -455,7 +456,7 @@ describe('agent/native retirement runtime entries', () => {
         ['thread/read', 'thread/turns/list', 'thread/items/list'].includes(method),
       ),
     );
-    const current = await selectCodexIntake(pluginData, deps, { resolvePolicy: false });
+    const current = await selectCodexTaskContext(pluginData, deps, { resolvePolicy: false });
     assert.equal(await current.store.read(), undefined);
     const journal = new CodexDispatchStore(
       current.store.location.root,

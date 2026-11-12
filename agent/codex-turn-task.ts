@@ -9,7 +9,7 @@ import codexContinuationNative from './codex-continuation-native.ts';
 import { codexDispatchNative, type DispatchNativeThread } from './codex-dispatch-native.ts';
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';
-import { selectCodexIntake } from './codex-intake.ts';
+import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
 import { feedbackConversationMode } from './feedback-conversation-mode.ts';
 import { feedbackInputContext } from './feedback-input.ts';
@@ -144,7 +144,7 @@ export function readCodexTaskOwner(pluginData: string, turn: Turn) {
   return withDispatchTask('codex', turn.threadId, () => readScopedTaskOwner(pluginData, turn));
 }
 async function readScopedTaskOwner(pluginData: string, turn: Turn) {
-  const current = await selectCodexIntake(
+  const current = await selectCodexTaskContext(
     pluginData,
     {},
     { resolvePolicy: false, inspectionOnly: true },

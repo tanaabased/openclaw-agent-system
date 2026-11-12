@@ -1,3 +1,7 @@
+import {
+  selectOpenClawTaskContext,
+  type OpenClawTaskContextDependencies,
+} from './tasks/context/openclaw-task-context.ts';
 import { omit } from 'lodash-es';
 import { realpath } from 'node:fs/promises';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
@@ -19,10 +23,7 @@ import issuePickup, { pickupAuthority, type PickupInput } from './issue-pickup.t
 import openClawCapacity, { openClawItemOccupied } from './openclaw-capacity.ts';
 import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
 
-import IntakeRecordStore, {
-  IntakeError,
-  intakeLocation,
-} from '../channels/github/intake/record-store.ts';
+import { IntakeError } from '../channels/github/intake/record-store.ts';
 import scanAssignments from '../channels/github/intake/scan-assignments.ts';
 import {
   githubNotificationRuntimeBlocker,
@@ -32,17 +33,12 @@ import type { GitHubNotificationIntakeClient } from '../channels/github/provider
 import type { GitHubNotificationItemSelector } from '../channels/github/provider/work-item.ts';
 import { cliDiagnosticContext } from '../core/cli-diagnostic-context.ts';
 import type { AgentSystemLifecycleContribution } from '../core/lifecycle-registry.ts';
-import type AgentManifestService from '../manifest/service.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
 
-export interface OpenClawIntakeDependencies {
+export interface OpenClawIntakeDependencies extends OpenClawTaskContextDependencies {
   issuePickup?: IssuePickupAuthority;
   pickupStore?: IssuePickupEnrollmentStore;
-  root: string;
-  resetRoot?: string;
-  namespace: string;
-  manifestService: Pick<AgentManifestService, 'loadForAgentId'>;
   connect(
     input: { manifest: AgentManifest; workspaceDir: string },
     signal: AbortSignal,
@@ -61,26 +57,8 @@ export interface OpenClawIntakeDependencies {
 /** Workflow admission only. No sessions, assessment results, V1 files or publication. */
 export default class OpenClawIntake {
   constructor(readonly dependencies: OpenClawIntakeDependencies) {}
-  async select(
-    manifest: AgentManifest,
-    workspaceDir: string,
-    options: { resolvePolicy?: boolean } = {},
-  ) {
-    const workspace = await realpath(workspaceDir);
-    const selected =
-      options.resolvePolicy === false ? undefined : assignmentIntakePolicy(manifest, 'openclaw');
-    const store = new IntakeRecordStore(
-      intakeLocation({
-        runtime: 'openclaw',
-        root: this.dependencies.root,
-        namespace: this.dependencies.namespace,
-        workspaceDir: workspace,
-        agentId: manifest.agent.id,
-        resetRoot: this.dependencies.resetRoot,
-      }),
-    );
-    await new GitHubIdentityCache(store.location).hydrate(manifest.github?.notifications);
-    return { selected, store, workspace };
+  select(manifest: AgentManifest, workspaceDir: string, options: { resolvePolicy?: boolean } = {}) {
+    return selectOpenClawTaskContext(this.dependencies, manifest, workspaceDir, options);
   }
   async readiness(
     manifest: AgentManifest,

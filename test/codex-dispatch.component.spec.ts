@@ -42,7 +42,8 @@ import type { DispatchNativeThread } from '../agent/codex-dispatch-native.ts';
 import CodexDispatchStore, { type DispatchRecord } from '../agent/codex-dispatch-state.ts';
 import { runCodexDispatch, type CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
 import runCodexFeedback from '../agent/codex-feedback.ts';
-import { runCodexIntake, selectCodexIntake } from '../agent/codex-intake.ts';
+import { runCodexIntake } from '../agent/codex-intake.ts';
+import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import { githubNotificationMarkdownCode } from '../channels/github/presentation/card.ts';
 
@@ -95,7 +96,7 @@ describe('agent/codex-dispatch', () => {
       unknown
     >;
   const readDispatchState = async (): Promise<Record<string, unknown>> => {
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     return new CodexDispatchStore(current.store.location.root, current.store.location.scope).read();
   };
   const renderAssessment = async (result: unknown, overrides: CodexDispatchDependencies = {}) =>
@@ -445,7 +446,7 @@ describe('agent/codex-dispatch', () => {
       target: { environment: { startingState: { branchName: string } } };
     };
     assert.equal(creation.target.environment.startingState.branchName, commit);
-    const selected = await selectCodexIntake(pluginData, deps);
+    const selected = await selectCodexTaskContext(pluginData, deps);
     const records = (await new CodexDispatchStore(pluginData, selected.store.location.scope).read())
       .records;
     assert.equal(records.length, 2);
@@ -483,7 +484,7 @@ describe('agent/codex-dispatch', () => {
     await request('context', { id: prepared.id }, { threadId: native!.id });
     await renderAssessment(result, { threadId: native!.id });
     const observed = selectedPullRequest();
-    const selected = await selectCodexIntake(pluginData, deps);
+    const selected = await selectCodexTaskContext(pluginData, deps);
     const store = new CodexDispatchStore(pluginData, selected.store.location.scope);
     const input = { id: prepared.id, pullRequest: 'https://github.com/owner/repo/pull/7' };
     await assert.rejects(
@@ -573,7 +574,7 @@ describe('agent/codex-dispatch', () => {
 
   it('should inspect a selected saved owner without scanning or modifying state', async () => {
     const prepared = await prepare();
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     const store = new CodexDispatchStore(pluginData, current.store.location.scope);
     const before = await store.read();
     deps.connect = async () => {
@@ -607,7 +608,7 @@ describe('agent/codex-dispatch', () => {
       });
       let selected = await next();
       if (waiting) {
-        const current = await selectCodexIntake(pluginData, deps);
+        const current = await selectCodexTaskContext(pluginData, deps);
         const store = new CodexDispatchStore(pluginData, current.store.location.scope);
         await store.exclusive(async (state, save) => {
           state.records[0]!.blocker = 'dispatch-routing-unresolved';
@@ -1229,7 +1230,7 @@ describe('agent/codex-dispatch', () => {
 
   it('should leave a claim owned by openclaw without preparing any codex repository or chat', async () => {
     const { store, client, comments } = await claiming();
-    const selected = await selectCodexIntake(pluginData, deps);
+    const selected = await selectCodexTaskContext(pluginData, deps);
     const intake = (await selected.store.read())!.records[0]!;
     const other = new OpenClawAssignmentClaims(
       new AssignmentClaimStore(join(root, 'openclaw-instance')),
@@ -1303,7 +1304,7 @@ describe('agent/codex-dispatch', () => {
     const prepared = await prepare();
     created();
     await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     native!.status = 'notLoaded';
     native!.turnStatus = 'interrupted';
@@ -1329,7 +1330,7 @@ describe('agent/codex-dispatch', () => {
     });
     const failure = await next();
     assert.equal(failure.code, 'dispatch-host-unavailable');
-    const selected = await selectCodexIntake(pluginData, deps);
+    const selected = await selectCodexTaskContext(pluginData, deps);
     const store = new CodexDispatchStore(
       selected.store.location.root,
       selected.store.location.scope,
@@ -1438,7 +1439,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(missing.status, 'idle');
     native!.turnId = 'authorized-follow-up';
     native!.followUpUserTurn = true;
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     const branchStore = new CodexDispatchStore(
       current.store.location.root,
       current.store.location.scope,
@@ -1521,7 +1522,7 @@ describe('agent/codex-dispatch', () => {
   });
 
   it('should require a new terminal dispatch check after each scan occurrence', async () => {
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     await current.store.exclusive(async (state, save) => {
       state!.records = [];
       await save(state!);
@@ -1646,7 +1647,7 @@ describe('agent/codex-dispatch', () => {
     created();
     await request('reconcile', { id: prepared.id, receipt: { threadId: 'issue-thread' } });
     await next();
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     await next();
     const first = await report();
@@ -1675,7 +1676,7 @@ describe('agent/codex-dispatch', () => {
     native!.followUpUserTurn = true;
     native!.turnId = 'authorized-follow-up';
     const preview = await request('handoff', { id: prepared.id }, child);
-    const selected = await selectCodexIntake(pluginData, deps);
+    const selected = await selectCodexTaskContext(pluginData, deps);
     const store = new CodexDispatchStore(
       selected.store.location.root,
       selected.store.location.scope,
@@ -2023,7 +2024,7 @@ describe('agent/codex-dispatch', () => {
     const prepared = await prepare();
     created();
     await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     const journal = new CodexDispatchStore(
       current.store.location.root,
       current.store.location.scope,
@@ -2087,7 +2088,7 @@ describe('agent/codex-dispatch', () => {
       fixture.item.state = 'closed';
       now += 60_000;
       await next();
-      const selected = await selectCodexIntake(pluginData, deps);
+      const selected = await selectCodexTaskContext(pluginData, deps);
       const journal = new CodexDispatchStore(
         selected.store.location.root,
         selected.store.location.scope,
@@ -2122,7 +2123,7 @@ describe('agent/codex-dispatch', () => {
     native!.status = 'idle';
     native!.turnEnded = true;
     fixture.item.state = 'closed';
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     const journal = new CodexDispatchStore(
       current.store.location.root,
       current.store.location.scope,
@@ -2161,7 +2162,7 @@ describe('agent/codex-dispatch', () => {
     fixture.item.state = 'closed';
     now += 60_000;
     await next();
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     const journal = new CodexDispatchStore(
       current.store.location.root,
       current.store.location.scope,
@@ -2320,7 +2321,7 @@ describe('agent/codex-dispatch', () => {
       threadId: 'operator',
       activation: async () => ({ sourceThreadId: 'intake-thread' }),
     };
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     await store.exclusive(async (state, save) => {
       state.records.push({
@@ -2461,7 +2462,7 @@ describe('agent/codex-dispatch', () => {
   });
 
   async function addPendingSecondIssue() {
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     const admission = structuredClone((await current.store.read())!.records[0]!);
     admission.issue = { ...admission.issue, number: 4, nodeId: 'I_second', databaseId: 21 };
     admission.id = automationHash([
@@ -2696,7 +2697,7 @@ describe('agent/codex-dispatch', () => {
 
   it('should not guess missing native anchors for a routing attempt', async () => {
     const first = await next();
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     await store.exclusive(async (state, save) => {
       delete state.records[0]!.preparationObservation;
@@ -2770,7 +2771,7 @@ describe('agent/codex-dispatch', () => {
 
   it('should allow verified operator recovery from an unrelated managed task chat', async () => {
     const first = await prepare();
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     await store.exclusive(async (state, save) => {
       state.records.push({
@@ -2807,7 +2808,7 @@ describe('agent/codex-dispatch', () => {
 
   it('should recover an explicitly approved denied request after reassignment without retaining its waiting continuation', async () => {
     const first = await prepare();
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     await store.exclusive(async (state, save) => {
       const record = state.records[0]!;
@@ -2939,7 +2940,7 @@ describe('agent/codex-dispatch', () => {
 
   it('should recover a retained inventory error with valid input and preserve its identity', async () => {
     const selected = await next();
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     await store.exclusive(async (state, save) => {
       const record = state.records[0]!;
@@ -3297,7 +3298,7 @@ describe('agent/codex-dispatch', () => {
 
   it('should preserve native denials during automatic creation recovery', async () => {
     const prepared = await prepare();
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     await store.exclusive(async (state, save) => {
       state.records[0]!.denial = {
@@ -3377,7 +3378,7 @@ describe('agent/codex-dispatch', () => {
       prepared = await prepare();
       assert.equal(prepared.status, 'prepared');
     }
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     assert.equal((await store.read()).records[0]!.creationRecovery?.attempts, 9);
   });
@@ -3538,7 +3539,7 @@ describe('agent/codex-dispatch', () => {
         now += 60_000;
         await next();
       }
-      const current = await selectCodexIntake(pluginData, deps);
+      const current = await selectCodexTaskContext(pluginData, deps);
       const store = new CodexDispatchStore(
         current.store.location.root,
         current.store.location.scope,
@@ -3606,7 +3607,7 @@ describe('agent/codex-dispatch', () => {
     removeFixtureAssignment(fixture);
     now += 60_000;
     await next();
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     const pending = (await store.read()).records[0]!;
     assert.equal(pending.retirement?.reason, 'assignment-removed');
@@ -3684,7 +3685,7 @@ describe('agent/codex-dispatch', () => {
     native!.effort = 'low';
     const blocked = await request('reconcile', { id: prepared.id });
     assert.equal(blocked.code, 'dispatch-native-model-diverged');
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     assert.equal((await store.read()).records[0]!.effective, undefined);
     native!.effort = 'high';
@@ -3717,7 +3718,7 @@ describe('agent/codex-dispatch', () => {
     created();
     await request('reconcile', { id: prepared.id, receipt: { threadId: 'issue-thread' } });
     await next();
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
@@ -3873,7 +3874,7 @@ describe('agent/codex-dispatch', () => {
 
   it('should defer pre-transaction continuation contention without consuming work or action counters', async () => {
     const work = await workIssue();
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     const before = await store.read();
     const lock = properLockfile.lock;
@@ -3960,7 +3961,7 @@ describe('agent/codex-dispatch', () => {
     const rejected = outcomes.filter((r) => r.status === 'rejected');
     assert.equal(rejected.length, 1);
     assert.match(String(rejected[0]!.reason), /private-state-snapshot-conflict/);
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     assert.equal((await store.read()).continuationRun?.actions, 1);
   });
@@ -3981,7 +3982,7 @@ describe('agent/codex-dispatch', () => {
     const pending = work.run('next');
     await entered.promise;
     try {
-      const current = await selectCodexIntake(pluginData, deps);
+      const current = await selectCodexTaskContext(pluginData, deps);
       const other = new CodexDispatchStore(
         current.store.location.root,
         current.store.location.scope,
@@ -4003,7 +4004,7 @@ describe('agent/codex-dispatch', () => {
       created();
       const child = { threadId: native!.id };
       await request('context', { id: prepared.id }, child);
-      const current = await selectCodexIntake(pluginData, deps);
+      const current = await selectCodexTaskContext(pluginData, deps);
       const store = new CodexDispatchStore(
         current.store.location.root,
         current.store.location.scope,
@@ -4183,7 +4184,7 @@ describe('agent/codex-dispatch', () => {
       now: () => now,
       connect: async () => fixture.client,
     });
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     // retain the admission mode as historical evidence; live policy governs progression.
     await current.store.exclusive(async (state, save) => {
       for (const record of state!.records) record.evidence.mode = mode;
@@ -4259,7 +4260,7 @@ describe('agent/codex-dispatch', () => {
       questions: ['Which approach?'],
     };
     const work = await workIssue(question, 'Follow the answer.', 'company:implement', 'plan');
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     assert.equal((await work.run('next')).status, 'reconciled');
     const source = {
@@ -4331,7 +4332,7 @@ describe('agent/codex-dispatch', () => {
   });
 
   async function workStore() {
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     return new CodexDispatchStore(current.store.location.root, current.store.location.scope);
   }
 
@@ -4836,7 +4837,7 @@ describe('agent/codex-dispatch', () => {
   for (const scope of ['local', 'pull-request'] as const)
     it(`should route ${scope} input to its issue instead of a historical feedback owner`, async () => {
       await workIssue();
-      const current = await selectCodexIntake(pluginData, deps);
+      const current = await selectCodexTaskContext(pluginData, deps);
       const store = new CodexDispatchStore(
         current.store.location.root,
         current.store.location.scope,
@@ -4967,7 +4968,7 @@ describe('agent/codex-dispatch', () => {
           'observation-required',
         );
         assert.equal((await work.run('next')).status, 'reconciled');
-        const current = await selectCodexIntake(pluginData, deps);
+        const current = await selectCodexTaskContext(pluginData, deps);
         const state = await new CodexDispatchStore(
           current.store.location.root,
           current.store.location.scope,
@@ -5022,7 +5023,7 @@ describe('agent/codex-dispatch', () => {
         'implementation' in verified && verified.implementation?.skill.name,
         'company:implement',
       );
-      const current = await selectCodexIntake(pluginData, deps);
+      const current = await selectCodexTaskContext(pluginData, deps);
       const store = new CodexDispatchStore(
         current.store.location.root,
         current.store.location.scope,
@@ -5071,7 +5072,7 @@ describe('agent/codex-dispatch', () => {
       const prepared = await prepare();
       created();
       await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
-      const current = await selectCodexIntake(pluginData, deps);
+      const current = await selectCodexTaskContext(pluginData, deps);
       const store = new CodexDispatchStore(
         current.store.location.root,
         current.store.location.scope,
@@ -5219,7 +5220,7 @@ describe('agent/codex-dispatch', () => {
   it('should reuse live managed ownership for status updates without restarting assessment or implementation', async () => {
     await writeFile(join(root, 'SKILL.md'), '# status composer');
     await workIssue(result, 'Follow the plan.', 'company:implement', 'plan');
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     const before = await store.read();
     const provider = {
@@ -5321,7 +5322,7 @@ describe('agent/codex-dispatch', () => {
 
   it('should include a github plan revision in direct planning context without entering work', async () => {
     const work = await workIssue(result, 'Follow the plan.', 'company:implement', 'plan');
-    const current = await selectCodexIntake(pluginData, deps);
+    const current = await selectCodexTaskContext(pluginData, deps);
     const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     await store.exclusive(async (state, save) => {
       state.records[0]!.feedback = {
@@ -5355,7 +5356,7 @@ describe('agent/codex-dispatch', () => {
       work.receive();
       const before = await work.run('context', {}, true);
       assert.ok('issueStage' in before);
-      const current = await selectCodexIntake(pluginData, deps);
+      const current = await selectCodexTaskContext(pluginData, deps);
       const store = new CodexDispatchStore(
         current.store.location.root,
         current.store.location.scope,
@@ -5459,7 +5460,7 @@ describe('agent/codex-dispatch', () => {
       assert.equal(context.status, 'verified', JSON.stringify(context));
       assert.ok('publicationAuthorized' in context);
       assert.equal(context.publicationAuthorized, false);
-      const current = await selectCodexIntake(pluginData, deps);
+      const current = await selectCodexTaskContext(pluginData, deps);
       const record = (
         await new CodexDispatchStore(
           current.store.location.root,
@@ -5529,7 +5530,7 @@ describe('agent/codex-dispatch', () => {
   for (const kind of ['issue', 'pull-request'] as const)
     it(`should launch unassigned manual ${kind} work through existing native owners`, async () => {
       if (kind === 'pull-request') fixturePullRequest(fixture);
-      const selected = await selectCodexIntake(pluginData, deps);
+      const selected = await selectCodexTaskContext(pluginData, deps);
       await rm(selected.store.location.path);
       await writeFile(
         join(workspace, 'agent.yaml'),

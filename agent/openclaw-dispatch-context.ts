@@ -1,3 +1,7 @@
+import {
+  selectOpenClawTaskContext,
+  type OpenClawTaskContextDependencies,
+} from './tasks/context/openclaw-task-context.ts';
 import { withDispatchTask } from './dispatch-task-scope.ts';
 import { realpath } from 'node:fs/promises';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
@@ -71,12 +75,12 @@ import openclawTurnContext from './openclaw-turn-context.ts';
 import retainedIntakePolicy from './retained-intake-policy.ts';
 import taskTurnContext from './task-turn-context.ts';
 import WorkflowRequestError from './workflow-request-error.ts';
-export interface OpenClawDispatchDependencies {
+export interface OpenClawTaskDependencies {
   root: string;
   claimStore?: AssignmentClaimStore;
   claims?: OpenClawAssignmentClaims;
   config(): OpenClawConfig;
-  intake: OpenClawIntake;
+  taskContext: OpenClawTaskContextDependencies;
   connect(
     input: {
       manifest: AgentManifest;
@@ -126,6 +130,9 @@ export interface OpenClawDispatchDependencies {
     connection?: GitHubNotificationIntakeClient & GitHubNotificationItemContextClient;
   }): Promise<OpenClawDeliveryConnection>;
 }
+export interface OpenClawDispatchDependencies extends OpenClawTaskDependencies {
+  intake: Pick<OpenClawIntake, 'run' | 'inspect' | 'readiness'>;
+}
 export function openClawDispatchFailureCode(error: unknown): string {
   if (error instanceof ContextMaterialError) return error.code;
   if (error instanceof AssessmentValidationError || error instanceof WorkflowRequestError)
@@ -160,7 +167,11 @@ export function openClawDispatchFailureCode(error: unknown): string {
 export default class OpenClawDispatchContext {
   constructor(readonly dependencies: OpenClawDispatchDependencies) {}
   async scope(manifest: AgentManifest, workspace: string) {
-    const current = await this.dependencies.intake.select(manifest, workspace);
+    const current = await selectOpenClawTaskContext(
+      this.dependencies.taskContext,
+      manifest,
+      workspace,
+    );
     await assertNotificationManagement(this.dependencies.root, current.store.location.scope);
     const journal = new OpenClawDispatchStore(this.dependencies.root, current.store.location.scope);
     const admitted = managedIssueState(await current.store.read(), (await journal.read()).records);
@@ -183,7 +194,7 @@ export default class OpenClawDispatchContext {
     feedback: boolean | 'native' = false,
   ) {
     const current = await this.scope(manifest, workspace);
-    const fresh = await this.dependencies.intake.dependencies.manifestService.loadForAgentId(
+    const fresh = await this.dependencies.taskContext.manifestService.loadForAgentId(
       manifest.agent.id,
       'service',
     );
@@ -365,9 +376,14 @@ export default class OpenClawDispatchContext {
     binding: Parameters<typeof openclawTurnContext>[1],
     authority: DispatchAuthority = {},
   ) {
-    const current = await this.dependencies.intake.select(manifest, workspace, {
-      resolvePolicy: false,
-    });
+    const current = await selectOpenClawTaskContext(
+      this.dependencies.taskContext,
+      manifest,
+      workspace,
+      {
+        resolvePolicy: false,
+      },
+    );
     const journal = new OpenClawDispatchStore(this.dependencies.root, current.store.location.scope);
     const records = (await journal.read()).records.filter(
       (entry) => entry.threadId === binding.sessionKey,
@@ -466,7 +482,11 @@ export default class OpenClawDispatchContext {
     };
   }
   async reportScope(manifest: AgentManifest, workspace: string) {
-    const current = await this.dependencies.intake.select(manifest, workspace);
+    const current = await selectOpenClawTaskContext(
+      this.dependencies.taskContext,
+      manifest,
+      workspace,
+    );
     const journal = new OpenClawDispatchStore(this.dependencies.root, current.store.location.scope);
     const state = managedIssueState(await current.store.read(), (await journal.read()).records);
     if (!state) throw new Error('dispatch-intake-record-missing');

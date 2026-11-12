@@ -33,7 +33,7 @@ import { failDispatch, notice } from './codex-dispatch-reporting.ts';
 import prepareDispatchRepository from './codex-dispatch-repository.ts';
 import { type DispatchRecord } from './codex-dispatch-state.ts';
 import connectCodexGitHubAccount from './codex-github-client.ts';
-import { selectCodexIntake } from './codex-intake.ts';
+import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import codexIssueBranch from './codex-issue-branch.ts';
 import codexSessionSettings from './codex-session-settings.ts';
 import dispatchContext from './dispatch-context.ts';
@@ -799,7 +799,7 @@ export async function prepareDispatch(
       'codex',
     );
     if (!('candidate' in decision)) throw new Error(decision.code);
-    const live = await selectCodexIntake(pluginData, deps);
+    const live = await selectCodexTaskContext(pluginData, deps);
     const held = liveWorkflowPolicy(live.manifest, 'codex', intake);
     if (held) throw new WorkflowPolicyHeld(held);
     current.manifest = live.manifest;

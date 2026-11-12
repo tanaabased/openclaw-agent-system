@@ -4,7 +4,7 @@ import type { CodexWorkContext } from './codex-continuation-context.ts';
 import { revalidateDispatchAssignment } from './codex-dispatch-context.ts';
 import { verifyDispatchWorktree } from './codex-dispatch-project.ts';
 import type { DispatchRecord, DispatchState } from './codex-dispatch-state.ts';
-import { selectCodexIntake } from './codex-intake.ts';
+import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import codexSessionSettings from './codex-session-settings.ts';
 import codexWorkContext from './codex-work-context.ts';
 import renderCodexWorkResult from './codex-work-result.ts';
@@ -94,7 +94,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     const enteringImplementation = !retainedIssueProgression(record);
     const authorizeLive = async () => {
       await context.feedbackInput?.authorize();
-      const live = await selectCodexIntake(pluginData, deps);
+      const live = await selectCodexTaskContext(pluginData, deps);
       const held = liveWorkflowPolicy(
         live.manifest,
         'codex',

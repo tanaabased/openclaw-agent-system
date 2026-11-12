@@ -2,7 +2,7 @@ import { nativeIssueContext } from './native-issue-context.ts';
 import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
 
 import { realpath } from 'node:fs/promises';
-import connectCodexGitHubAccount from './codex-github-client.ts';
+import connectCodexGitHubAccount, { connectCodexGitHub } from './codex-github-client.ts';
 import type { ImplementationResult } from './implementation-result.ts';
 import managedImplementationRoute from './managed-implementation-route.ts';
 
@@ -14,7 +14,7 @@ import { withNative } from './codex-dispatch-context.ts';
 import { dispatchGit } from './codex-dispatch-project.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
 import type { CodexFeedbackDependencies } from './codex-feedback.ts';
-import { connectCodexGitHub, selectCodexIntake } from './codex-intake.ts';
+import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
 
 /** standalone native account and portable binding; no OpenClaw environment or assignment. */
@@ -35,7 +35,7 @@ export default async function codexEntryContext<T>(
     input.action === 'assessment' &&
     'operation' in input &&
     input.operation === 'context';
-  const current = await selectCodexIntake(pluginData, deps, { resolvePolicy: false });
+  const current = await selectCodexTaskContext(pluginData, deps, { resolvePolicy: false });
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
   if (!caller) throw new Error('assessment-native-caller-required');
   const connection = await (deps.replyConnection ?? connectCodexThreads)(
@@ -114,7 +114,7 @@ export default async function codexEntryContext<T>(
     }
     const turn = readOnlyNative ? undefined : await codexDirectInput(connection.request, caller);
     const assertCurrent = async () => {
-      const fresh = await selectCodexIntake(pluginData, deps, { resolvePolicy: false });
+      const fresh = await selectCodexTaskContext(pluginData, deps, { resolvePolicy: false });
       if (
         fresh.store.location.scope !== current.store.location.scope ||
         fresh.agentId !== current.agentId ||

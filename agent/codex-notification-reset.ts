@@ -10,11 +10,9 @@ import {
   replaceCodexNotificationCoordinator,
 } from './codex-automations.ts';
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
-import {
-  connectCodexGitHub,
-  selectCodexIntake,
-  type CodexIntakeDependencies,
-} from './codex-intake.ts';
+import { type CodexIntakeDependencies } from './codex-intake.ts';
+import { connectCodexGitHub } from './codex-github-client.ts';
+import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import notificationResetBaseline from './notification-reset-baseline.ts';
 import observeResetThread from './codex-reset-observation.ts';
 import codexRetirementNative from './codex-retirement-native.ts';
@@ -79,7 +77,7 @@ export default async function runCodexNotificationReset(
     throw new Error('notification-reset-options-invalid');
   if (!input.all && !input.agent?.length)
     throw new Error('notification-reset-explicit-bound-agent-required');
-  const current = await selectCodexIntake(pluginData, deps, { inspectionOnly: true });
+  const current = await selectCodexTaskContext(pluginData, deps, { inspectionOnly: true });
   if (!input.all && (input.agent?.length !== 1 || input.agent[0] !== current.agentId))
     throw new Error('notification-reset-explicit-bound-agent-required');
   const journal = new CodexDispatchStore(pluginData, current.store.location.scope);

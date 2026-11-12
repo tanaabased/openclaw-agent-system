@@ -1,3 +1,4 @@
+import { selectOpenClawTaskContext } from './tasks/context/openclaw-task-context.ts';
 import { withDispatchTask } from './dispatch-task-scope.ts';
 import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { isDeepStrictEqual } from 'node:util';
@@ -312,9 +313,14 @@ export default class OpenClawDispatch {
       authority,
     );
     if (response && typeof response === 'object' && 'id' in response) {
-      const current = await this.dependencies.intake.select(manifest, workspace, {
-        resolvePolicy: false,
-      });
+      const current = await selectOpenClawTaskContext(
+        this.dependencies.taskContext,
+        manifest,
+        workspace,
+        {
+          resolvePolicy: false,
+        },
+      );
       const journal = new OpenClawDispatchStore(
         this.dependencies.root,
         current.store.location.scope,
@@ -423,9 +429,14 @@ export default class OpenClawDispatch {
     const admitted = await openClawEntryContext(
       { manifest, workspace, caller, action, operator, authority, dependencies: this.dependencies },
       async (context) => {
-        const selected = await this.dependencies.intake.select(manifest, workspace, {
-          resolvePolicy: false,
-        });
+        const selected = await selectOpenClawTaskContext(
+          this.dependencies.taskContext,
+          manifest,
+          workspace,
+          {
+            resolvePolicy: false,
+          },
+        );
         const journal = new OpenClawDispatchStore(
           this.dependencies.root,
           selected.store.location.scope,
@@ -563,9 +574,14 @@ export default class OpenClawDispatch {
     }
     if (input.action === 'assessment' && input.operation === 'render') {
       if (caller.sessionKey) {
-        const current = await this.dependencies.intake.select(manifest, workspace, {
-          resolvePolicy: false,
-        });
+        const current = await selectOpenClawTaskContext(
+          this.dependencies.taskContext,
+          manifest,
+          workspace,
+          {
+            resolvePolicy: false,
+          },
+        );
         const journal = new OpenClawDispatchStore(
           this.dependencies.root,
           current.store.location.scope,
@@ -648,7 +664,11 @@ export default class OpenClawDispatch {
           throw error;
         });
     if (input.action === 'delivery' && input.operation === 'present') {
-      const selected = await this.dependencies.intake.select(manifest, workspace);
+      const selected = await selectOpenClawTaskContext(
+        this.dependencies.taskContext,
+        manifest,
+        workspace,
+      );
       const admitted = (await this.context.scope(manifest, workspace)).admitted;
       if (!admitted) throw new Error('dispatch-intake-record-missing');
       const journal = new OpenClawDispatchStore(

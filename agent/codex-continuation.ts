@@ -22,7 +22,7 @@ import runCodexDelivery from './tasks/delivery/codex-delivery.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
 import { dispatchGit } from './codex-dispatch-project.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
-import { selectCodexIntake } from './codex-intake.ts';
+import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import codexLiveTurn from './codex-live-turn.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
 import advanceCodexWork, { prepareCodexWork } from './codex-work.ts';
@@ -51,7 +51,7 @@ async function runCodexContinuationScoped(
     (input.material !== undefined && input.action !== 'context')
   )
     throw new Error('continuation-request-invalid');
-  const current = await selectCodexIntake(pluginData, deps);
+  const current = await selectCodexTaskContext(pluginData, deps);
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
   const retryDenied = input.action === 'retry-denied';
   const retry = input.action === 'retry' || retryDenied;
@@ -165,7 +165,7 @@ async function runCodexContinuationScoped(
           const authorize = async () =>
             authorizeCodexFeedback({
               conversation: true,
-              current: await selectCodexIntake(pluginData, deps),
+              current: await selectCodexTaskContext(pluginData, deps),
               record: source.record,
               event: source.event,
               intake: admitted,
@@ -248,7 +248,7 @@ async function runCodexContinuationScoped(
         threadId: caller,
         schedule,
         authorizeSchedule: async () => {
-          const live = await selectCodexIntake(pluginData, deps);
+          const live = await selectCodexTaskContext(pluginData, deps);
           const record = (await store.read()).records.find((entry) => entry.id === input.id);
           const admitted =
             record && dispatchAdmission(record, (await live.store.read())?.records ?? []);

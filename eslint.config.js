@@ -109,6 +109,33 @@ export default defineConfig([
     },
   },
   {
+    files: [
+      'agent/tasks/context/*.ts',
+      'agent/tasks/delivery/codex-delivery.ts',
+      'agent/codex-dispatch-context.ts',
+      'agent/codex-feedback*.ts',
+      'agent/codex-entry-context.ts',
+      'agent/codex-reply.ts',
+      'agent/openclaw-entry-context.ts',
+      'agent/openclaw-reply.ts',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: restrictedBuiltinImports,
+          patterns: [
+            {
+              group: ['**/codex-intake.ts', '**/openclaw-intake.ts'],
+              message:
+                'Task selection and task operations must not depend on assignment scan services.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['test/**/*.{js,mjs,cjs,ts,tsx}', '**/*.{spec,test}.{js,mjs,cjs,ts,tsx}'],
     languageOptions: {
       globals: globals.mocha,

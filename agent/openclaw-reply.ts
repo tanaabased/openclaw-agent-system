@@ -1,3 +1,4 @@
+import { selectOpenClawTaskContext } from './tasks/context/openclaw-task-context.ts';
 import { realpath } from 'node:fs/promises';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -6,7 +7,7 @@ import assignmentIntakePolicy from './assignment-intake-policy.ts';
 import { inspectIssueIdentity } from './dispatch-assignment.ts';
 import feedbackReply from './feedback-reply.ts';
 import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
-import type { OpenClawDispatchDependencies } from './openclaw-dispatch-context.ts';
+import type { OpenClawTaskDependencies } from './openclaw-dispatch-context.ts';
 import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
 import openClawFeedbackInput from './openclaw-feedback-input.ts';
 import { authorizeFeedback } from './openclaw-feedback.ts';
@@ -27,18 +28,20 @@ export default async function openClawReply(input: {
   action: unknown;
   operator: boolean;
   authority: DispatchAuthority;
-  dependencies: OpenClawDispatchDependencies;
+  dependencies: OpenClawTaskDependencies;
 }) {
   const { manifest, caller, dependencies: deps, authority } = input;
   const action = parseReplyRequest(input.action);
   await authority.assertCurrent?.();
-  const current = await deps.intake.select(manifest, input.workspace, { resolvePolicy: false });
+  const current = await selectOpenClawTaskContext(deps.taskContext, manifest, input.workspace, {
+    resolvePolicy: false,
+  });
   const journal = new OpenClawDispatchStore(deps.root, current.store.location.scope);
   const binding = {
     runtime: 'openclaw' as const,
     agentId: manifest.agent.id,
     workspace: current.workspace,
-    namespace: deps.intake.dependencies.namespace,
+    namespace: deps.taskContext.namespace,
     session: caller.sessionKey,
     incarnation: caller.sessionId,
   };
@@ -141,7 +144,7 @@ export default async function openClawReply(input: {
       authority.signal ?? AbortSignal.timeout(60000),
     );
     const readManifest = async () => {
-      const fresh = await deps.intake.dependencies.manifestService.loadForAgentId(
+      const fresh = await deps.taskContext.manifestService.loadForAgentId(
         manifest.agent.id,
         'service',
       );

@@ -7,7 +7,8 @@ import { codexNativeHandoff } from './codex-dispatch-handoff.ts';
 import { verifyDispatchWorktree } from './codex-dispatch-project.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';
-import { connectCodexGitHub, selectCodexIntake } from './codex-intake.ts';
+import { connectCodexGitHub } from './codex-github-client.ts';
+import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import codexRetirementCleanup, {
   type RetirementArchiveRequest,
 } from './codex-retirement-cleanup.ts';
@@ -33,7 +34,7 @@ export default async function reconcileCodexLifecycle(
     caller: string;
   },
 ) {
-  const current = await selectCodexIntake(pluginData, deps);
+  const current = await selectCodexTaskContext(pluginData, deps);
   const readConfiguration = deps.readCleanupConfiguration ?? cleanupConfiguration;
   const configuration = await readConfiguration();
   const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
@@ -139,7 +140,7 @@ export default async function reconcileCodexLifecycle(
         fresh: async () => {
           if (manual && (await native.operatorInput(caller)).turnId !== occurrence.id)
             throw new Error('dispatch-native-caller-changed');
-          const selected = await selectCodexIntake(pluginData, deps);
+          const selected = await selectCodexTaskContext(pluginData, deps);
           const live = retainedIntakePolicy(selected.manifest, admitted, 'codex');
           current.policy!.policy = live.policy;
           current.policy!.policy.issueAssignment!.allowed =

@@ -9,7 +9,7 @@ import authorizeCodexFeedback from './codex-feedback-authority.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';
 import codexFeedbackInput from './codex-feedback-input.ts';
 import type { CodexFeedbackDependencies } from './codex-feedback.ts';
-import { selectCodexIntake } from './codex-intake.ts';
+import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
 import feedbackReply from './feedback-reply.ts';
 import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
@@ -33,7 +33,7 @@ async function codexReplyScoped(
   deps: CodexFeedbackDependencies,
 ) {
   const input = parseReplyRequest(request);
-  const current = await selectCodexIntake(pluginData, deps, { resolvePolicy: false });
+  const current = await selectCodexTaskContext(pluginData, deps, { resolvePolicy: false });
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
   if (!caller) throw new Error('reply-native-caller-required');
   const connection = await (deps.replyConnection ?? connectCodexThreads)(
@@ -182,7 +182,7 @@ async function codexReplyScoped(
       ? await deps.replyProvider(current.workspace, AbortSignal.timeout(60000))
       : await connect();
     const readManifest = async () => {
-      const fresh = await selectCodexIntake(pluginData, deps, { resolvePolicy: false });
+      const fresh = await selectCodexTaskContext(pluginData, deps, { resolvePolicy: false });
       if (fresh.store.location.scope !== current.store.location.scope)
         throw new Error('reply-workspace-binding-changed');
       return fresh.manifest;
@@ -200,7 +200,7 @@ async function codexReplyScoped(
         );
         const retained = record?.feedback?.events.find((entry) => entry.id === source.eventId);
         const event = source;
-        const fresh = await selectCodexIntake(pluginData, deps);
+        const fresh = await selectCodexTaskContext(pluginData, deps);
         const admitted =
           record && dispatchAdmission(record, (await fresh.store.read())?.records ?? []);
         if (

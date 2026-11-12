@@ -18,7 +18,8 @@ import { attemptedAnnouncement } from './delivery-announcement-fixture.ts';
 import { automationHash } from '../agent/automation-hash.ts';
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import runCodexFeedback, { type CodexFeedbackDependencies } from '../agent/codex-feedback.ts';
-import { runCodexIntake, selectCodexIntake } from '../agent/codex-intake.ts';
+import { runCodexIntake } from '../agent/codex-intake.ts';
+import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import { account, baseline, intakeFixture } from './github-intake-fixture.ts';
 import {
@@ -98,7 +99,7 @@ describe('agent/codex-feedback', () => {
       assertActive: async () => {},
       connect: async () => fixture.client,
     });
-    const current = await selectCodexIntake(pluginData, { codexHome });
+    const current = await selectCodexTaskContext(pluginData, { codexHome });
     const admitted = (await current.store.read())!.records[0]!;
     store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     await store.exclusive(async (state, save) => {
@@ -407,7 +408,7 @@ describe('agent/codex-feedback', () => {
         PR_other: { since: baseline, startedAt: baseline + 1, reads: {} },
       };
       const before = structuredClone(owner.feedback!);
-      const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+      const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
       const provider = await deps.feedbackConnect!(current.workspace, new AbortController().signal);
       provider.comments.reviews = {
         listReviews: async () => ({ values: [], nextPage: 1 }),
@@ -478,7 +479,7 @@ describe('agent/codex-feedback', () => {
   for (const association of ['relinked', 'unlinked'] as const) {
     it(`should discard ${association} pr scratch durably without querying the old source`, async () => {
       await prepare();
-      const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+      const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
       await store.exclusive(async (state, save) => {
         const owner = state.records[0]!;
         owner.pullRequestLink =
@@ -549,7 +550,7 @@ describe('agent/codex-feedback', () => {
       id: 'e'.repeat(64),
       sourceThreadId: 'changed-owner',
     });
-    const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+    const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
     const visits: string[] = [];
     const scans = await scanCodexFeedback({
       state,
@@ -584,7 +585,7 @@ describe('agent/codex-feedback', () => {
       await save();
     });
     occurrence++;
-    const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+    const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
     const scans = await scanCodexFeedback({
       state: await store.read(),
       current,
@@ -622,7 +623,7 @@ describe('agent/codex-feedback', () => {
       const first = state.records[0]!;
       const peer = { ...structuredClone(first), id: 'e'.repeat(64) };
       state.records.push(peer);
-      const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+      const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
       const provider = await deps.feedbackConnect!(current.workspace, new AbortController().signal);
       const raw = {
         nodeId: 'IC_human',
@@ -1607,7 +1608,7 @@ describe('agent/codex-feedback', () => {
   it('should retain admitted feedback when discovery configuration is removed', async () => {
     await prepare();
     const manifestPath = join(root, 'workspace', 'agent.yaml');
-    const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+    const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
     await writeFile(
       manifestPath,
       JSON.stringify({

@@ -579,25 +579,27 @@ describe('agent/native-assessment-entry', () => {
       },
     };
     const calls: string[] = [];
+    const intake = new OpenClawIntake({
+      root: join(root, 'intake'),
+      namespace: root,
+      connect: async () => provider,
+      manifestService: {
+        loadForAgentId: async () => ({
+          status: 'loaded' as const,
+          manifest,
+          scope: { agentId: 'receiver', workspaceDir: workspace },
+          path: join(workspace, 'agent.yaml'),
+          digest: 'manifest',
+          diagnostics: [],
+          validationChecks: [],
+        }),
+      },
+    });
     const service = new OpenClawDispatch({
       root: join(root, 'dispatch'),
       config: () => ({}),
-      intake: new OpenClawIntake({
-        root: join(root, 'intake'),
-        namespace: root,
-        connect: async () => provider,
-        manifestService: {
-          loadForAgentId: async () => ({
-            status: 'loaded' as const,
-            manifest,
-            scope: { agentId: 'receiver', workspaceDir: workspace },
-            path: join(workspace, 'agent.yaml'),
-            digest: 'manifest',
-            diagnostics: [],
-            validationChecks: [],
-          }),
-        },
-      }),
+      intake,
+      taskContext: intake.dependencies,
       connect: async () => provider,
       assessmentGit: ({ cwd, argv }) => git(cwd, argv),
       feedbackConnect: async () => provider as never,

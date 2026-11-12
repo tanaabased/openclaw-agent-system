@@ -1,7 +1,7 @@
 import type { CodexDispatchDependencies } from './codex-dispatch-context.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
-import { selectCodexIntake } from './codex-intake.ts';
+import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import reconcileRetirementEffects from './reconcile-retirement-effects.ts';
 import IssueDeliveryProvider from '../channels/github/publication/issue-delivery.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
@@ -13,7 +13,7 @@ export default async function reconcileCodexRetirementEffects(
   deps: CodexDispatchDependencies,
   operator = false,
 ) {
-  const current = await selectCodexIntake(pluginData, deps);
+  const current = await selectCodexTaskContext(pluginData, deps);
   const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
   if (!(await store.read()).retirementEffects?.length) return;
   if (operator) {

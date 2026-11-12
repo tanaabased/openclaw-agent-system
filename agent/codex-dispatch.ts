@@ -35,7 +35,8 @@ import runCodexFeedback from './codex-feedback.ts';
 import codexImplementationEntry from './codex-implementation-entry.ts';
 import acceptCodexIntakeOccurrence from './codex-intake-occurrence.ts';
 import { codexIntakePolicy } from './codex-intake-policy.ts';
-import { connectCodexGitHub, selectCodexIntake } from './codex-intake.ts';
+import { connectCodexGitHub } from './codex-github-client.ts';
+import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import codexIssueLaunch from './codex-issue-launch.ts';
 import retireCodexNative from './codex-native-retirement.ts';
 import reconcileCodexRetirementEffects from './codex-retirement-effects.ts';
@@ -162,7 +163,7 @@ async function runCodexDispatchScoped(
   ) {
     const binding = await (deps.inspectBinding ?? inspectCodexWorkspaceBinding)(pluginData);
     if (binding.status !== 'unbound' || ('id' in input && input.id)) {
-      const current = await selectCodexIntake(
+      const current = await selectCodexTaskContext(
         pluginData,
         { ...deps, inspectBinding: async () => binding },
         { resolvePolicy: false, inspectionOnly: true },
@@ -253,7 +254,7 @@ async function executeCodexDispatch(
   deps: CodexDispatchDependencies,
 ) {
   validateDispatchRequest(action, input);
-  const current = await selectCodexIntake(pluginData, deps);
+  const current = await selectCodexTaskContext(pluginData, deps);
   const retainedAdmission = await current.store.read();
   if (retainedAdmission?.records.length)
     current.policy ??= retainedIntakePolicy(current.manifest, retainedAdmission, 'codex');
@@ -373,7 +374,7 @@ async function executeCodexDispatch(
         await save();
       }
       const fresh = async () => {
-        const selected = await selectCodexIntake(pluginData, deps);
+        const selected = await selectCodexTaskContext(pluginData, deps);
         const allowed = manualOwner
           ? { sourceThreadId: manualOwner.sourceThreadId }
           : await (deps.activation ?? inspectCodexDispatchActivation)(
@@ -473,7 +474,7 @@ async function executeCodexDispatch(
             await fresh();
             if (
               action === 'retry-denied' &&
-              (await selectCodexIntake(pluginData, deps)).digest !== current.digest
+              (await selectCodexTaskContext(pluginData, deps)).digest !== current.digest
             )
               throw new Error('dispatch-recovery-stale');
           },

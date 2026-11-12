@@ -9,7 +9,7 @@ import replyOwnPublications from '../agent/reply-own-publications.ts';
 import assessmentSkillSource from '../agent/assessment-skill-source.ts';
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import runCodexFeedback from '../agent/codex-feedback.ts';
-import { selectCodexIntake } from '../agent/codex-intake.ts';
+import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import { issueKey } from '../agent/dispatch-pending.ts';
 import feedbackReply, { type FeedbackReplyDependencies } from '../agent/feedback-reply.ts';
@@ -1782,7 +1782,7 @@ describe('agent/feedback-reply', () => {
     assert.equal(writes, 2);
     assert.equal(postedNumber, 4);
     assert.ok(posted?.body.includes(':status-update:'));
-    const selected = await selectCodexIntake(pluginData, nativeDeps, { resolvePolicy: false });
+    const selected = await selectCodexTaskContext(pluginData, nativeDeps, { resolvePolicy: false });
     await independentAdapterComments(
       direct,
       new CodexDispatchStore(pluginData, selected.store.location.scope),
@@ -1812,6 +1812,7 @@ describe('agent/feedback-reply', () => {
       root: deps.root,
       config: () => ({}),
       intake,
+      taskContext: intake.dependencies,
       connect: async () => provider,
       worktrees: {
         prepareGitHub: async () => {

@@ -267,8 +267,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   const pickupStore = new IssuePickupEnrollmentStore(
     join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-instance'),
   );
-  const intakeV2: OpenClawIntake = new OpenClawIntake({
-    pickupStore,
+  const taskContext = {
     root: join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-intake-v2'),
     resetRoot: join(
       privateStateRoot ?? api.runtime.state.resolveStateDir(),
@@ -276,6 +275,10 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ),
     namespace: api.runtime.state.resolveStateDir(),
     manifestService: lifecycleManifestService,
+  };
+  const intakeV2: OpenClawIntake = new OpenClawIntake({
+    ...taskContext,
+    pickupStore,
     // tool registrations need not share the service-start closure; use enrolled read authority.
     readiness: (manifest, workspace, automationId, expectedNativeId, signal) =>
       sessionDispatch.use({ signal: signal ?? AbortSignal.timeout(25000) }, (request) =>
@@ -370,6 +373,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     config: readRuntimeConfig,
     root: join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-dispatch-v2'),
     intake: intakeV2,
+    taskContext,
     credential: sessionDispatch,
     automations: automationService,
     manifestService: lifecycleManifestService,

@@ -1,3 +1,4 @@
+import { selectOpenClawTaskContext } from './tasks/context/openclaw-task-context.ts';
 import { nativeIssueContext } from './native-issue-context.ts';
 import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
 
@@ -9,7 +10,7 @@ import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import type { AssessmentEntryDependencies } from './assessment-entry.ts';
 import assessmentOwner from './assessment-owner.ts';
-import type { OpenClawDispatchDependencies } from './openclaw-dispatch-context.ts';
+import type { OpenClawTaskDependencies } from './openclaw-dispatch-context.ts';
 import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
 import { describeIssueSession, type DispatchCaller } from './openclaw-session-create.ts';
 import { nativeInputEvent, operatorInputEvent } from './openclaw-session-input.ts';
@@ -24,7 +25,7 @@ export default async function openClawEntryContext<T>(
     action: unknown;
     operator: boolean;
     authority: DispatchAuthority;
-    dependencies: OpenClawDispatchDependencies;
+    dependencies: OpenClawTaskDependencies;
   },
   collect: (deps: AssessmentEntryDependencies) => Promise<T>,
   routeManaged?: (
@@ -46,7 +47,9 @@ export default async function openClawEntryContext<T>(
     input.action.action === 'implementation';
   const { manifest, caller, authority, dependencies: deps } = input;
   await authority.assertCurrent?.();
-  const current = await deps.intake.select(manifest, input.workspace, { resolvePolicy: false });
+  const current = await selectOpenClawTaskContext(deps.taskContext, manifest, input.workspace, {
+    resolvePolicy: false,
+  });
   const journal = new OpenClawDispatchStore(deps.root, current.store.location.scope);
   return deps.credential.use(authority, async (request) => {
     const managed: AssessmentEntryDependencies['managed'] = async (target) => {
@@ -133,7 +136,7 @@ export default async function openClawEntryContext<T>(
     const turn = readOnlyNative ? undefined : await nativeInput();
     const assertCurrent = async () => {
       await authority.assertCurrent?.();
-      const fresh = await deps.intake.dependencies.manifestService.loadForAgentId(
+      const fresh = await deps.taskContext.manifestService.loadForAgentId(
         manifest.agent.id,
         'service',
       );
@@ -155,7 +158,7 @@ export default async function openClawEntryContext<T>(
         runtime: 'openclaw',
         agentId: manifest.agent.id,
         workspace: current.workspace,
-        namespace: deps.intake.dependencies.namespace,
+        namespace: deps.taskContext.namespace,
         session: caller.sessionKey,
         incarnation: caller.sessionId,
       },

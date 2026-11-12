@@ -8,14 +8,14 @@ import type {
   GitHubNotificationIntakeClient,
   GitHubNotificationCommentClient,
 } from '../channels/github/provider/work-event-types.ts';
-import type { selectCodexIntake } from './codex-intake.ts';
+import type { CodexTaskSelection } from './tasks/context/codex-task-context.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
 import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 
 /** verify the exact admitted source before work and every dependent provider write. */
 export default async function authorizeCodexFeedback(input: {
   conversation?: boolean;
-  current: Awaited<ReturnType<typeof selectCodexIntake>>;
+  current: CodexTaskSelection;
   record: DispatchRecord;
   event: Pick<FeedbackSourceEvent, 'number' | 'nodeId' | 'itemType' | 'source' | 'revision'>;
   intake: IntakeRecord;

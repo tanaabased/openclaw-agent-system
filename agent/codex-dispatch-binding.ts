@@ -1,7 +1,7 @@
 import nativeFeedbackPublication from './native-feedback-publication.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
-import { selectCodexIntake } from './codex-intake.ts';
+import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
 import { managedIssueState } from './managed-issue.ts';
 import {
@@ -34,7 +34,7 @@ export default async function codexDispatchBinding(
     throw new Error('dispatch-model-request-invalid');
   if (input.action === 'retire' && input.native)
     return { action: 'retire', native: input.native, apply: !input.preview };
-  const current = await selectCodexIntake(
+  const current = await selectCodexTaskContext(
     pluginData,
     {},
     { resolvePolicy: false, inspectionOnly: true },
@@ -85,7 +85,7 @@ export default async function codexDispatchBinding(
 
 export async function codexDispatchResponse<T>(pluginData: string, value: T): Promise<T> {
   if (!value || typeof value !== 'object' || !('id' in value)) return value;
-  const current = await selectCodexIntake(
+  const current = await selectCodexTaskContext(
     pluginData,
     {},
     { resolvePolicy: false, inspectionOnly: true },
@@ -103,7 +103,7 @@ export async function codexFeedbackReconciliation(
   assertNativeContextInput(input);
   if (Object.keys(input).some((key) => !['action', 'source'].includes(key)))
     throw new Error('feedback-request-invalid');
-  const current = await selectCodexIntake(
+  const current = await selectCodexTaskContext(
     pluginData,
     {},
     { resolvePolicy: false, inspectionOnly: true },
@@ -126,7 +126,7 @@ export async function codexFeedbackPublication(
   input: Record<string, unknown>,
   threadId: string,
 ) {
-  const current = await selectCodexIntake(
+  const current = await selectCodexTaskContext(
     pluginData,
     {},
     { resolvePolicy: false, inspectionOnly: true },

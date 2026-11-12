@@ -3,7 +3,7 @@ import { automationHash } from './automation-hash.ts';
 import codexDirectInput from './codex-direct-input.ts';
 import type { CodexDispatchDependencies } from './codex-dispatch-context.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
-import { selectCodexIntake } from './codex-intake.ts';
+import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import nativeRetirement from './native-retirement.ts';
 import assertNotificationResetRetirement from './notification-reset-retirement.ts';
 import codexRetirementNative from './codex-retirement-native.ts';
@@ -15,7 +15,7 @@ export default async function retireCodexNative(
   input: { native: string; digest?: string; apply?: boolean },
   deps: CodexDispatchDependencies,
 ) {
-  const current = await selectCodexIntake(pluginData, deps, {
+  const current = await selectCodexTaskContext(pluginData, deps, {
     resolvePolicy: false,
     inspectionOnly: true,
   });
@@ -52,7 +52,7 @@ export default async function retireCodexNative(
         'Archive this exact unmanaged native Codex chat through codex_app.set_thread_archived. Normal native effects may archive descendants and reclaim its checkout/local branch; local-only work may be lost. No issue, assignment or remote branch is changed. If the desktop archive tool is unavailable, report native-retirement-capability-unavailable; do not substitute filesystem removal or a different archive owner. Existing explicit cleanup intent authorizes apply without another conversational confirmation.',
       assertCurrent: async () => {
         await deps.assertActive?.();
-        const fresh = await selectCodexIntake(pluginData, deps, {
+        const fresh = await selectCodexTaskContext(pluginData, deps, {
           resolvePolicy: false,
           inspectionOnly: true,
         });

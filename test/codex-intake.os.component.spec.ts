@@ -21,12 +21,9 @@ import {
   codexIntakePolicy,
   intakeAutomationId,
 } from '../agent/codex-intake-policy.ts';
-import {
-  connectCodexGitHub,
-  inspectCodexIntake,
-  runCodexIntake,
-  selectCodexIntake,
-} from '../agent/codex-intake.ts';
+import { inspectCodexIntake, runCodexIntake } from '../agent/codex-intake.ts';
+import { connectCodexGitHub } from '../agent/codex-github-client.ts';
+import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import checkCodexActivationIsolation from './codex-activation-fixture.ts';
@@ -80,7 +77,7 @@ describe('agent/codex-intake', () => {
       connect: async () => provider.client,
     };
     await runCodexIntake(pluginData, true, deps);
-    const { store } = await selectCodexIntake(pluginData, deps);
+    const { store } = await selectCodexTaskContext(pluginData, deps);
     const journal = new CodexDispatchStore(store.location.root, store.location.scope);
     const contents = JSON.stringify({
       version: 4,
@@ -151,7 +148,7 @@ describe('agent/codex-intake', () => {
     now += 60000;
     const included = await runCodexIntake(pluginData, false, deps);
     assert.equal('admitted' in included && included.admitted, 1);
-    const { store } = await selectCodexIntake(pluginData, deps);
+    const { store } = await selectCodexTaskContext(pluginData, deps);
     const before = (await store.read())!;
     await configure([]);
     now += 60000;
@@ -185,7 +182,7 @@ describe('agent/codex-intake', () => {
     provider.events.push(...intakeFixture().events);
     now += 120000;
     assert.equal((await runCodexIntake(pluginData, false, deps)).status, 'ready');
-    const { store } = await selectCodexIntake(pluginData, deps);
+    const { store } = await selectCodexTaskContext(pluginData, deps);
     assert.equal((await store.read())!.records.length, 1);
   });
   it('should refresh changed intake policy without resetting the assignment baseline', async () => {
@@ -201,7 +198,7 @@ describe('agent/codex-intake', () => {
       },
     };
     await runCodexIntake(pluginData, true, deps);
-    const selected = await selectCodexIntake(pluginData, deps);
+    const selected = await selectCodexTaskContext(pluginData, deps);
     const original = 'previous-policy';
     await selected.store.exclusive(async (state, save) => {
       state!.policyDigest = original;
@@ -224,7 +221,7 @@ describe('agent/codex-intake', () => {
       connect: async () => client,
     };
     await runCodexIntake(pluginData, true, deps);
-    const { store } = await selectCodexIntake(pluginData, deps);
+    const { store } = await selectCodexTaskContext(pluginData, deps);
     await store.exclusive(async (state, save) => {
       state!.blocker = {
         code: 'intake-provider-unavailable',
@@ -277,7 +274,7 @@ describe('agent/codex-intake', () => {
       connect: async () => client,
     };
     await runCodexIntake(pluginData, true, deps);
-    const { store } = await selectCodexIntake(pluginData, deps);
+    const { store } = await selectCodexTaskContext(pluginData, deps);
     const before = (await store.read())!;
     await writeFile(
       join(workspace, 'agent.yaml'),
@@ -382,7 +379,7 @@ describe('agent/codex-intake', () => {
     const fixture = intakeFixture();
     const deps = { codexHome, now: () => baseline, connect: async () => fixture.client };
     await runCodexIntake(pluginData, true, deps);
-    const { store } = await selectCodexIntake(pluginData, deps);
+    const { store } = await selectCodexTaskContext(pluginData, deps);
     const before = await store.read();
     for (const code of ['EPERM', 'EACCES']) {
       const denial = Object.assign(new Error('denied'), { code });
@@ -547,7 +544,7 @@ describe('agent/codex-intake', () => {
         () => inspectCodexDispatchActivation(pluginData, deps, false, false, 'intake'),
         plan,
       );
-      const selected = await selectCodexIntake(pluginData, deps);
+      const selected = await selectCodexTaskContext(pluginData, deps);
       const before = await selected.store.read();
       const file = (await readdir(pluginData)).find(
         (name) => name.startsWith('codex-automations-') && name.endsWith('.json'),

@@ -29,12 +29,8 @@ import { IntakeError } from '../channels/github/intake/record-store.ts';
 import { runCodexDispatch } from './codex-dispatch.ts';
 import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
 import codexHostAccess from './codex-host-access.ts';
-import {
-  inspectCodexIntake,
-  runCodexIntake,
-  runCodexIssuePickup,
-  selectCodexIntake,
-} from './codex-intake.ts';
+import { inspectCodexIntake, runCodexIntake, runCodexIssuePickup } from './codex-intake.ts';
+import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
 import workflowNoticeInstructions from './workflow-notice-instructions.ts';
 
@@ -316,7 +312,11 @@ async function readWorkflowCommand(route: string, args: string[]) {
     route === 'dispatch' &&
     ['next', 'launch', 'retire'].includes(String(result.request.action))
   ) {
-    await selectCodexIntake(result.pluginData, {}, { resolvePolicy: false, inspectionOnly: true });
+    await selectCodexTaskContext(
+      result.pluginData,
+      {},
+      { resolvePolicy: false, inspectionOnly: true },
+    );
     const inventory = await codexNativeInventory();
     if (result.request.action === 'next')
       result.request = {

@@ -1,7 +1,14 @@
+import type {
+  CodexTaskContextDependencies,
+  CodexTaskSelection,
+} from './tasks/context/codex-task-context.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type AssignmentClaimStore from './assignment-claim-store.ts';
 import type { CleanupConfiguration } from './cleanup-configuration.ts';
-import type connectCodexGitHubAccount from './codex-github-client.ts';
+import {
+  connectCodexGitHub,
+  type default as connectCodexGitHubAccount,
+} from './codex-github-client.ts';
 import {
   managedTargetUrl,
   type ManagedIssue as IntakeRecord,
@@ -20,11 +27,6 @@ import type prepareDispatchRepository from './codex-dispatch-repository.ts';
 import type { DispatchRecord, DispatchState } from './codex-dispatch-state.ts';
 import type connectCodexFeedback from './codex-feedback-client.ts';
 import codexHostAccess from './codex-host-access.ts';
-import {
-  connectCodexGitHub,
-  type CodexIntakeDependencies,
-  type selectCodexIntake,
-} from './codex-intake.ts';
 
 import type codexRetirementNative from './codex-retirement-native.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
@@ -32,9 +34,11 @@ import { inspectAdmittedIssue, inspectContinuedIssue } from './dispatch-assignme
 import workflowFailure from './workflow-failure.ts';
 
 type Client = GitHubNotificationIntakeClient & GitHubNotificationItemContextClient;
-export type CodexDispatchSelection = Awaited<ReturnType<typeof selectCodexIntake>>;
+export type CodexDispatchSelection = CodexTaskSelection;
 export type CodexDispatchNative = ReturnType<typeof codexDispatchNative>;
-export interface CodexDispatchDependencies extends Omit<CodexIntakeDependencies, 'connect'> {
+export interface CodexDispatchDependencies extends CodexTaskContextDependencies {
+  now?: () => number;
+  assertActive?: () => Promise<void>;
   readCleanupConfiguration?: () => Promise<CleanupConfiguration>;
   claimStore?: AssignmentClaimStore;
   claims?: Pick<CodexAssignmentClaims, 'select' | 'accept'> &

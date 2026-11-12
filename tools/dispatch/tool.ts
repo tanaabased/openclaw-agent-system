@@ -67,6 +67,7 @@ export default function createDispatchTool(input: {
   claimStore?: OpenClawDispatchDependencies['claimStore'];
   claims?: OpenClawDispatchDependencies['claims'];
   intake: OpenClawIntake;
+  taskContext: OpenClawDispatchDependencies['taskContext'];
   connect: OpenClawDispatchDependencies['connect'];
   automations: AutomationService;
   manifestService: Pick<AgentManifestService, 'loadForAgentId'>;
@@ -93,6 +94,7 @@ export default function createDispatchTool(input: {
     config: input.config,
     credential: input.credential,
     intake: input.intake,
+    taskContext: input.taskContext,
     worktrees: input.worktrees,
     connect: input.connect,
     delivery: input.delivery,

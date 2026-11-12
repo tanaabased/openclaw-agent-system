@@ -75,7 +75,7 @@ export default async function reconcileOpenClawLifecycle(input: {
   const fresh = async () => {
     authority.signal?.throwIfAborted();
     await authority.assertCurrent?.();
-    const loaded = await service.dependencies.intake.dependencies.manifestService.loadForAgentId(
+    const loaded = await service.dependencies.taskContext.manifestService.loadForAgentId(
       manifest.agent.id,
       'service',
     );
@@ -149,7 +149,7 @@ export default async function reconcileOpenClawLifecycle(input: {
               runtime: 'openclaw',
               agentId: manifest.agent.id,
               workspace,
-              namespace: service.dependencies.intake.dependencies.namespace,
+              namespace: service.dependencies.taskContext.namespace,
               session: record.threadId,
               incarnation: record.sessionCreation.sessionId,
             },
@@ -196,7 +196,7 @@ export default async function reconcileOpenClawLifecycle(input: {
                 runtime: 'openclaw',
                 agentId: manifest.agent.id,
                 workspace,
-                namespace: service.dependencies.intake.dependencies.namespace,
+                namespace: service.dependencies.taskContext.namespace,
                 session: record.threadId!,
                 incarnation: record.sessionCreation!.sessionId!,
               },

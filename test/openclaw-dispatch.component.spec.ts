@@ -72,6 +72,7 @@ import {
 } from './github-review-fixtures.ts';
 
 describe('agent/openclaw issue dispatch', () => {
+  let fixtureIntake: OpenClawIntake;
   let root: string;
   let fixture: ReturnType<typeof intakeFixture>;
   let manifest: AgentManifest;
@@ -156,13 +157,13 @@ describe('agent/openclaw issue dispatch', () => {
       },
     };
     let now = baseline;
-    const intake = new OpenClawIntake({
+    const intake = (fixtureIntake = new OpenClawIntake({
       root: join(root, 'intake'),
       namespace: root,
       manifestService,
       now: () => now,
       connect: async () => fixture.client,
-    });
+    }));
     await intake.run(manifest, root, 'activate');
     now += 120000;
     await intake.run(
@@ -226,6 +227,7 @@ describe('agent/openclaw issue dispatch', () => {
       root: join(root, 'dispatch'),
       config: () => config,
       intake,
+      taskContext: intake.dependencies,
       now: () => now,
       coordinator: async () => coordinator.sessionKey,
       connect: async () => ({
@@ -573,7 +575,7 @@ describe('agent/openclaw issue dispatch', () => {
   it('should commit unrelated progress while native readiness is delayed', async () => {
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
-    const intake = service.dependencies.intake;
+    const intake = fixtureIntake;
     const readiness = intake.readiness.bind(intake);
     intake.readiness = async (...args) => {
       entered.resolve();
@@ -633,7 +635,7 @@ describe('agent/openclaw issue dispatch', () => {
   for (const pause of ['native', 'manifest'] as const)
     it(`should finish an accepted run through ${pause} pause and gate the next occurrence`, async () => {
       const routed = await next();
-      const intake = service.dependencies.intake;
+      const intake = fixtureIntake;
       const readiness = intake.readiness.bind(intake);
       if (pause === 'manifest') manifest.github!.notifications!.issueAssignment!.paused = true;
       intake.readiness = async () => 'intake-automation-paused';
@@ -1886,7 +1888,7 @@ describe('agent/openclaw issue dispatch', () => {
   }
 
   it('should report scheduler drift and its recovery without creating issue sessions', async () => {
-    const intake = service.dependencies.intake;
+    const intake = fixtureIntake;
     const readiness = intake.readiness.bind(intake);
     intake.readiness = async () => 'intake-automation-update-required';
     const warning = await service.run(manifest, root, coordinator, { action: 'report' });
@@ -1910,7 +1912,7 @@ describe('agent/openclaw issue dispatch', () => {
     const routed = await next();
     removeFixtureAssignment(fixture);
     await prepare(routed);
-    const intake = service.dependencies.intake;
+    const intake = fixtureIntake;
     const run = intake.run;
     let scans = 0;
     intake.run = async (...args) => {
@@ -2438,7 +2440,7 @@ describe('agent/openclaw issue dispatch', () => {
         truncated: false,
       }),
     });
-    const intake = service.dependencies.intake;
+    const intake = fixtureIntake;
     intake.dependencies.now = () => baseline;
     await intake.run(manifest, root, 'activate');
     intake.dependencies.now = () => baseline + 120000;
@@ -4667,7 +4669,7 @@ describe('agent/openclaw issue dispatch', () => {
         dependencies: service.dependencies,
       },
       async (entry) => {
-        const manifests = service.dependencies.intake.dependencies.manifestService;
+        const manifests = service.dependencies.taskContext.manifestService;
         const load = manifests.loadForAgentId.bind(manifests);
         manifests.loadForAgentId = async (...args) => {
           const result = await load(...args);
@@ -5110,7 +5112,7 @@ describe('agent/openclaw issue dispatch', () => {
           entries: { 'agent-system': { config: { cleanup: { graceMinutes: 17 } } } },
         };
       if (change === 'stale-readback') {
-        const manifests = service.dependencies.intake.dependencies.manifestService;
+        const manifests = service.dependencies.taskContext.manifestService;
         const load = manifests.loadForAgentId.bind(manifests);
         const fresh = structuredClone(manifest);
         fresh.models!.medium!.effort = 'medium';
@@ -7512,7 +7514,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.deepEqual(missing.records, []);
   });
   it('should return from a delayed scheduled readiness read and resume without losing or duplicating assignments', async () => {
-    const intake = service.dependencies.intake;
+    const intake = fixtureIntake;
     const current = await service.scope(manifest, root);
     const before = await current.store.read();
     const waiting = Promise.withResolvers<void>();
@@ -8150,7 +8152,7 @@ describe('agent/openclaw issue dispatch', () => {
     });
     const now = service.dependencies.now!() + 2000;
     service.dependencies.now = () => now;
-    const intake = service.dependencies.intake;
+    const intake = fixtureIntake;
     const selector = { repository: 'owner/repo', itemType: 'issue' as const, number: 3 };
     const observation = await intake.run(
       manifest,
@@ -8183,7 +8185,7 @@ describe('agent/openclaw issue dispatch', () => {
       'idle',
     );
     assert.equal((await record()).feedback!.events.length, 0);
-    const intake = service.dependencies.intake;
+    const intake = fixtureIntake;
     const observation = await intake.run(
       manifest,
       root,
@@ -8432,7 +8434,7 @@ describe('agent/openclaw issue dispatch', () => {
         manifest.github!.notifications!.maxConcurrentItems = limit;
         await service.dependencies.intake.run(manifest, root, 'activate');
         await feedbackOwner();
-        const { store } = await service.dependencies.intake.select(manifest, root);
+        const { store } = await fixtureIntake.select(manifest, root);
         const createdAt = olderAssignment ? '2026-10-07T10:01:30Z' : '2026-10-07T10:04:00Z';
         const other = { ...fixture.item, nodeId: 'I_other', databaseId: 21, number: 4 };
         const assignment = { ...fixture.events[0]!, nodeId: 'E_other', databaseId: 31, createdAt };
@@ -8775,7 +8777,7 @@ describe('agent/openclaw issue dispatch', () => {
       throw new Error('manual work must not depend on assignment history');
     };
     manifest.models = { default: manifest.models!.default };
-    const selected = await service.dependencies.intake.select(manifest, root);
+    const selected = await fixtureIntake.select(manifest, root);
     await rm(selected.store.location.path);
     delete manifest.github!.notifications;
     multiple = true;
@@ -8858,7 +8860,7 @@ describe('agent/openclaw issue dispatch', () => {
       fixture.client.listAssignmentEvents = async () => {
         throw new Error('manual work must not depend on assignment history');
       };
-      const selected = await service.dependencies.intake.select(manifest, root);
+      const selected = await fixtureIntake.select(manifest, root);
       await rm(selected.store.location.path);
       delete manifest.github!.notifications;
       multiple = true;
@@ -9027,7 +9029,7 @@ describe('agent/openclaw issue dispatch', () => {
           };
         fixture.item.assignees = [];
         manifest.models = { default: manifest.models!.default };
-        const selected = await service.dependencies.intake.select(manifest, root);
+        const selected = await fixtureIntake.select(manifest, root);
         await rm(selected.store.location.path);
         delete manifest.github!.notifications;
         multiple = true;
