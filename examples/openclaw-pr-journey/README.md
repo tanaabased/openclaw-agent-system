@@ -8,6 +8,7 @@ publish a reply. Verify that another scan repeats none of the completed actions.
 
 - An initial question shown in chat and on GitHub, followed by an approved answer entering Work without rewriting the assessment or requiring another handoff.
 - Pushed changes, issue linkage, configured recipients, and one issue announcement that also answers the implementation request, without a second completion reply.
+- Intake notices acknowledging verified feedback delivery once, with counts and a link to the owning issue chat.
 - One uninterrupted PR feedback change preserving the assessment, owner, checkout, PR, and announcement, with exact source attribution and duplicate prevention.
 
 ## What Does Not Belong Here
@@ -225,7 +226,7 @@ jq -es '[.[].records[]] | if length == 1 then .[0] else error("one issue owner r
 jq -e --slurp '
   (.[0].feedback.events[0]) as $before |
   (.[1].feedback.events[0]) as $after |
-  if $after == ($before + {phase:"delivered",turn:($before.turn + {status:"consumed",consumedByEventId:$after.turn.consumedByEventId})})
+  if ($after | del(.intakeReportedAt)) == (($before | del(.intakeReportedAt)) + {phase:"delivered",turn:($before.turn + {status:"consumed",consumedByEventId:$after.turn.consumedByEventId})})
     and $after.turn.consumedByEventId != null
     and ($before.turn.consumedByEventId == null or $before.turn.consumedByEventId == $after.turn.consumedByEventId)
     and $after.turn.failed != true and $after.turn.cancelled != true
@@ -255,6 +256,16 @@ run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" 
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 jq -es '[.[].records[]] | length == 1 and (.[0].feedback.events | length) == 2 and all(.[0].feedback.events[]; .turn.status == "consumed" and .phase == "delivered")' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile before "$TMPDIR/notification-feedback-replies.json" '[.[] | select(.user.login == "tanaabot") | .node_id] == [$before[0][] | select(.user.login == "tanaabot") | .node_id]'
+
+# should acknowledge verified feedback in intake without repeating it on a quiet scan
+cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
+conversation=$(jq -er .sourceThreadId "$TMPDIR/notification-feedback.json")
+openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200,maxChars:100000}')" --json > "$TMPDIR/notification-intake-history.json"
+node --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; const record=JSON.parse(readFileSync(process.env.TMPDIR+"/notification-feedback.json","utf8")); const history=JSON.parse(readFileSync(process.env.TMPDIR+"/notification-intake-history.json","utf8")); const text=history.messages.filter(m=>m.role==="assistant" && m.stopReason==="stop").map(m=>typeof m.content==="string"?m.content:m.content.map(c=>c.text??"").join("")); const notices=text.flatMap(t=>t.split("\n").filter(l=>l.includes("Feedback delivered to chat:") && l.includes("/chat?session="+encodeURIComponent(record.threadId)))); assert.equal(notices.reduce((sum,l)=>sum+Number(/· ([0-9]+) items?/.exec(l)?.[1]),0),2);'
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
+jq -es 'all(.[]; (.intakeReport.response | contains("Feedback delivered to chat:")) | not)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+
 ```
 
 ## Cleanup

@@ -67,8 +67,10 @@ baseline excludes existing assignments; assign new work after verifying the firs
 | OpenClaw | `github-issue-assignment`, visible through [automations list](../../CLI.md#openclaw-agent-system-automations-list) | `ISSUE ASSIGNMENTS` in **AGENT SYSTEM**    |
 | Codex    | **📥 ISSUE ASSIGNMENTS** in native automations                                                                     | `ISSUE ASSIGNMENTS` under **AGENT SYSTEM** |
 
-The intake chat reports started issues, pending assignments, capacity, and obstacles.
-Follow its issue links for plans, questions, implementation, and PR delivery.
+The intake chat reports started issues, newly verified feedback deliveries, pending
+assignments, capacity, and obstacles. Delivery notices include a count and link to
+the issue chat; later checks do not repeat them. Follow those links for plans,
+questions, implementation, and PR delivery.
 
 For OpenClaw, request a run and inspect its status:
 

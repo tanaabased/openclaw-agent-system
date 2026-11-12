@@ -358,6 +358,12 @@ export default class OpenClawDispatchCoordinator {
       for (const record of state.records)
         if (report.started.includes(record.id))
           record.intakeReportedAt = (this.context.dependencies.now ?? Date.now)();
+      for (const record of state.records)
+        for (const event of record.feedback?.events ?? [])
+          if (
+            report.delivered.some((entry) => entry.id === record.id && entry.eventId === event.id)
+          )
+            event.intakeReportedAt = (this.context.dependencies.now ?? Date.now)();
       authority.signal?.throwIfAborted();
       await authority.assertCurrent?.();
       await save();

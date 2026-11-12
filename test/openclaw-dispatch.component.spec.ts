@@ -8288,6 +8288,57 @@ describe('agent/openclaw issue dispatch', () => {
     );
   });
 
+  it('should never report a refused native feedback send as delivered', async () => {
+    await feedbackOwner();
+    await acknowledgeReport();
+    onSend = () => {
+      throw new GatewayClientRequestError({ code: 'FORBIDDEN', message: 'native send refused' });
+    };
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const event = (await record()).feedback!.events[0]!;
+    assert.notEqual(event.phase, 'delivered');
+    const report = await service.run(
+      manifest,
+      root,
+      { ...coordinator, runId: 'denied-feedback-report' },
+      { action: 'report' },
+    );
+    assert.ok('response' in report);
+    assert.doesNotMatch(report.response, /Feedback delivered to chat/);
+    assert.equal((await record()).feedback!.events[0]!.intakeReportedAt, undefined);
+  });
+  it('should report a verified feedback delivery once across report retries and service restart', async () => {
+    await feedbackOwner();
+    await acknowledgeReport();
+    consumeSend = true;
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const delivered = (await record()).feedback!.events[0]!;
+    assert.equal(delivered.phase, 'delivered');
+    assert.equal(delivered.intakeReportedAt, undefined);
+    const before = sends().length;
+    const caller = { ...coordinator, runId: 'delivery-report' };
+    const first = await service.run(manifest, root, caller, { action: 'report' });
+    assert.ok('response' in first);
+    assert.match(
+      first.response,
+      /Feedback delivered to chat:.*owner\/repo#3.*chat\?session=.*1 item/,
+    );
+    assert.ok((await record()).feedback!.events[0]!.intakeReportedAt !== undefined);
+    const retry = await service.run(manifest, root, caller, { action: 'report' });
+    assert.ok('response' in retry);
+    assert.equal(retry.response, first.response);
+    service = new OpenClawDispatch(service.dependencies);
+    const repeated = await service.run(
+      manifest,
+      root,
+      { ...caller, runId: 'quiet-report' },
+      { action: 'report' },
+    );
+    assert.ok('response' in repeated);
+    assert.equal(repeated.response, '');
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal(sends().length, before);
+  });
   it('should stop reconciling consumed feedback while native conversation remains active', async () => {
     await feedbackOwner();
     consumeSend = true;
@@ -8394,6 +8445,15 @@ describe('agent/openclaw issue dispatch', () => {
     const before = sends().length;
     await service.run(manifest, root, coordinator, { action: 'next' });
     assert.equal((await record()).feedback!.events[0]!.turn?.status, 'attempted');
+    const report = await service.run(
+      manifest,
+      root,
+      { ...coordinator, runId: 'uncertain-report' },
+      { action: 'report' },
+    );
+    assert.ok('response' in report);
+    assert.doesNotMatch(report.response, /Feedback delivered to chat/);
+    assert.equal((await record()).feedback!.events[0]!.intakeReportedAt, undefined);
     loseSend = false;
     service = new OpenClawDispatch(service.dependencies);
     await service.run(manifest, root, coordinator, { action: 'next' });
