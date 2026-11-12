@@ -6,19 +6,19 @@ import {
 } from '../channels/github/presentation/card.ts';
 import intakeAutomationNotice from '../channels/github/presentation/intake-automation-notice.ts';
 import providerErrorMessage from '../utils/provider-error-message.ts';
-import { awaitingReassignment } from './assignment-retirement.ts';
+import { awaitingReassignment } from './tasks/retirement/assignment-retirement.ts';
 import { automationHash } from './automation-hash.ts';
 import codexCapacity from './codex-capacity.ts';
 import { denialRecovery } from './codex-dispatch-denial.ts';
 import type { DispatchState } from './codex-dispatch-state.ts';
-import codexFeedbackProblem from './codex-feedback-problem.ts';
+import codexFeedbackProblem from './tasks/feedback/codex-feedback-problem.ts';
 import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
 import discoveryNotice from './discovery-notice.ts';
 import pendingDispatchAssignments from './dispatch-pending.ts';
 import { dispatchStorageNotice } from './dispatch-storage.ts';
 import { dispatchAdmission, type ManagedIssueState as IntakeState } from './managed-issue.ts';
-import retirementNotice from './retirement-notice.ts';
+import retirementNotice from './tasks/retirement/retirement-notice.ts';
 import workflowStatus from './workflow-status.ts';
 /** summarize intake facts only; assessment results never become intake announcements. */
 export default function prepareDispatchReport(input: {

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { codexDispatchNative } from '../agent/codex-dispatch-native.ts';
 import codexEntryContext from '../agent/codex-entry-context.ts';
 import { issueKey } from '../agent/dispatch-pending.ts';
-import { discoverFeedback } from '../agent/feedback-source.ts';
+import { discoverFeedback } from '../agent/tasks/feedback/feedback-source.ts';
 import manualPullRequest from '../agent/manual-pull-request.ts';
 import { notificationAuthorityDigest } from '../agent/notification-authority.ts';
 import {

@@ -4,8 +4,8 @@ import { assessmentPresentationRequest } from './tasks/assessment/assessment-ren
 import { assessmentResultFormat } from './tasks/assessment/assessment-result.ts';
 import type { CodexAssessmentSkill } from './tasks/assessment/codex-assessment-skill.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
-import type { feedbackInputContext } from './feedback-input.ts';
-import selectFeedbackStage from './feedback-stage.ts';
+import type { feedbackInputContext } from './tasks/feedback/feedback-input.ts';
+import selectFeedbackStage from './tasks/feedback/feedback-stage.ts';
 import guidanceReference from './guidance-reference.ts';
 import { retainedIssueProgression } from './issue-progression.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';

@@ -1,6 +1,6 @@
 import assessmentEntry from './assessment-entry.ts';
 import codexEntryContext from '../../codex-entry-context.ts';
-import type { CodexFeedbackDependencies } from '../../codex-feedback.ts';
+import type { CodexFeedbackDependencies } from '../feedback/codex-feedback.ts';
 
 export default function codexAssessmentEntry(
   pluginData: string,

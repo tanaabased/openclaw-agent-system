@@ -1,4 +1,4 @@
-import nativeFeedbackPublication from './native-feedback-publication.ts';
+import nativeFeedbackPublication from './tasks/feedback/native-feedback-publication.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
 import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
@@ -13,7 +13,7 @@ import { assertNativeContextInput } from './native-context-request.ts';
 import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 import { Value } from 'typebox/value';
 import nativeOperatorSelection from './native-operator-selection.ts';
-import nativeFeedbackReconciliation from './native-feedback-reconciliation.ts';
+import nativeFeedbackReconciliation from './tasks/feedback/native-feedback-reconciliation.ts';
 import { codexRecoveryModelSchema } from '../tools/dispatch/recovery-schema.ts';
 
 /** Read existing custody; the dispatch owner still verifies activation and the live occurrence. */

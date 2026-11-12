@@ -1,4 +1,4 @@
-import redactFeedback from '../agent/feedback-redaction.ts';
+import redactFeedback from '../agent/tasks/feedback/feedback-redaction.ts';
 import assert from 'node:assert/strict';
 
 import {

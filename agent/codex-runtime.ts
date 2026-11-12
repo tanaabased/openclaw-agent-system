@@ -7,7 +7,7 @@ import runCodexContinuation from './tasks/implementation/codex-continuation.ts';
 import runCodexDelivery, { CodexDeliveryFailure } from './tasks/delivery/codex-delivery.ts';
 import { codexDispatchResponse } from './codex-dispatch-binding.ts';
 import { codexWorkObservationHandoff } from './codex-dispatch-handoff.ts';
-import runCodexFeedback from './codex-feedback.ts';
+import runCodexFeedback from './tasks/feedback/codex-feedback.ts';
 import codexNativeInventory, { assertNoNativeInventory } from './codex-native-inventory.ts';
 import codexNativeMaterial, { codexNativeRuntimeResult } from './codex-native-material.ts';
 import assertCodexNodeVersion, { CodexNodeVersionError } from './codex-node-version.ts';

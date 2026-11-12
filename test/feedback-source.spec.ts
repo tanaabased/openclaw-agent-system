@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict';
 import { Value } from 'typebox/value';
-import { codexFeedbackSchema, type CodexFeedback } from '../agent/codex-feedback-state.ts';
+import {
+  codexFeedbackSchema,
+  type CodexFeedback,
+} from '../agent/tasks/feedback/codex-feedback-state.ts';
 import DiscoveryBudget, { DiscoveryPaused } from '../agent/discovery-budget.ts';
 import {
   admitFeedback,
   discoverFeedback,
   observeFeedbackPolicy,
-} from '../agent/feedback-source.ts';
-import { openclawFeedbackSchema } from '../agent/openclaw-feedback-state.ts';
+} from '../agent/tasks/feedback/feedback-source.ts';
+import { openclawFeedbackSchema } from '../agent/tasks/feedback/openclaw-feedback-state.ts';
 
 import { account, intakeFixture } from './github-intake-fixture.ts';
 import {

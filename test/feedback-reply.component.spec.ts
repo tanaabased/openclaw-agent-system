@@ -2,23 +2,25 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { feedbackRevision } from '../agent/feedback-source.ts';
+import { feedbackRevision } from '../agent/tasks/feedback/feedback-source.ts';
 import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
-import replyOwnPublications from '../agent/reply-own-publications.ts';
+import replyOwnPublications from '../agent/tasks/feedback/reply-own-publications.ts';
 
 import assessmentSkillSource from '../agent/tasks/assessment/assessment-skill-source.ts';
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
-import runCodexFeedback from '../agent/codex-feedback.ts';
+import runCodexFeedback from '../agent/tasks/feedback/codex-feedback.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import { issueKey } from '../agent/dispatch-pending.ts';
-import feedbackReply, { type FeedbackReplyDependencies } from '../agent/feedback-reply.ts';
+import feedbackReply, {
+  type FeedbackReplyDependencies,
+} from '../agent/tasks/feedback/feedback-reply.ts';
 import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
 import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
-import type { OpenClawFeedbackProvider } from '../agent/openclaw-feedback.ts';
+import type { OpenClawFeedbackProvider } from '../agent/tasks/feedback/openclaw-feedback.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
-import replyOwner, { type ReplyOwner } from '../agent/reply-owner.ts';
-import ReplyStore from '../agent/reply-store.ts';
+import replyOwner, { type ReplyOwner } from '../agent/tasks/feedback/reply-owner.ts';
+import ReplyStore from '../agent/tasks/feedback/reply-store.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { account, intakeFixture } from './github-intake-fixture.ts';
 import {

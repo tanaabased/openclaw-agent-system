@@ -19,7 +19,7 @@ import {
 import openClawConditionCheck from '../agent/openclaw-condition-check.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import { nativeTurnFor } from '../agent/openclaw-native-turns.ts';
-import { feedbackTarget } from '../agent/reply-target.ts';
+import { feedbackTarget } from '../agent/tasks/feedback/reply-target.ts';
 import workflowStatus from '../agent/workflow-status.ts';
 import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
 import announcementFixture, { attemptedAnnouncement } from './delivery-announcement-fixture.ts';
@@ -52,7 +52,7 @@ import OpenClawAssignmentClaims from '../agent/openclaw-assignment-claims.ts';
 import openClawCapacity from '../agent/openclaw-capacity.ts';
 import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
 import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
-import { scanOpenClawFeedback } from '../agent/openclaw-feedback-scan.ts';
+import { scanOpenClawFeedback } from '../agent/tasks/feedback/openclaw-feedback-scan.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import type { DispatchCaller } from '../agent/openclaw-session-create.ts';
 import AgentSystemToolError from '../api/error.ts';

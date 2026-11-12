@@ -26,7 +26,7 @@ import {
   repositoryPreparationFailure,
   scheduleDispatchRetry,
 } from './dispatch-retry.ts';
-import feedbackContextMaterial from './feedback-context-material.ts';
+import feedbackContextMaterial from './tasks/feedback/feedback-context-material.ts';
 import implementationMaterial, {
   type ImplementationMaterialRead,
 } from './tasks/implementation/implementation-material.ts';
@@ -47,8 +47,8 @@ import {
   nativeDispatchResponse,
   nativeDispatchSelection,
 } from './native-dispatch-selection.ts';
-import nativeFeedbackReconciliation from './native-feedback-reconciliation.ts';
-import nativeFeedbackSource from './native-feedback-source.ts';
+import nativeFeedbackReconciliation from './tasks/feedback/native-feedback-reconciliation.ts';
+import nativeFeedbackSource from './tasks/feedback/native-feedback-source.ts';
 import { nativeMaterialResponse } from './native-material.ts';
 import nativeOperatorSelection from './native-operator-selection.ts';
 import openClawAssessmentEntry from './tasks/assessment/openclaw-assessment-entry.ts';
@@ -63,21 +63,24 @@ import OpenClawDispatchContext, {
 import OpenClawDispatchCoordinator from './openclaw-dispatch-coordinator.ts';
 import OpenClawDispatchIssue from './openclaw-dispatch-issue.ts';
 import recoverOpenClawTask from './openclaw-dispatch-recovery.ts';
-import retireOpenClawTask from './openclaw-dispatch-retirement.ts';
+import retireOpenClawTask from './tasks/retirement/openclaw-dispatch-retirement.ts';
 import OpenClawDispatchStore, {
   preserveOpenClawProgress,
   type OpenClawDispatchRecord,
 } from './openclaw-dispatch-state.ts';
 import openClawEntryContext from './openclaw-entry-context.ts';
-import { resolveOpenClawTurnFeedback } from './openclaw-feedback-input.ts';
-import { applyOpenClawFeedbackScans, scanOpenClawFeedback } from './openclaw-feedback-scan.ts';
+import { resolveOpenClawTurnFeedback } from './tasks/feedback/openclaw-feedback-input.ts';
+import {
+  applyOpenClawFeedbackScans,
+  scanOpenClawFeedback,
+} from './tasks/feedback/openclaw-feedback-scan.ts';
 import openClawImplementationEntry from './tasks/implementation/openclaw-implementation-entry.ts';
 import { sameIntakeRun } from './openclaw-intake-pass.ts';
 import openClawNativeMaterial from './openclaw-native-material.ts';
-import retireOpenClawNative from './openclaw-native-retirement.ts';
+import retireOpenClawNative from './tasks/retirement/openclaw-native-retirement.ts';
 import { nativeTurnFor } from './openclaw-native-turns.ts';
-import openClawReply from './openclaw-reply.ts';
-import reconcileOpenClawRetirementEffects from './openclaw-retirement-effects.ts';
+import openClawReply from './tasks/feedback/openclaw-reply.ts';
+import reconcileOpenClawRetirementEffects from './tasks/retirement/openclaw-retirement-effects.ts';
 import {
   describeIssueSession,
   IssueSessionMismatchError,

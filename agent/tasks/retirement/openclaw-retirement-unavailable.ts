@@ -1,0 +1,54 @@
+import type { DispatchRequest } from '../../../credentials/session-dispatch.ts';
+import type { OpenClawDispatchRecord } from '../../openclaw-dispatch-state.ts';
+import retirementSessionIdentity from './openclaw-retirement-identity.ts';
+
+/** an unavailable session is an inference, never proof of deletion or native idleness. */
+export default async function observeUnavailableRetirementSession(input: {
+  record: OpenClawDispatchRecord;
+  agentId: string;
+  owner: string;
+  code: string;
+  request: DispatchRequest;
+}) {
+  const { record, agentId, owner, request } = input;
+  const intent = retirementSessionIdentity(record);
+  if (
+    ![
+      'retirement-session-identity-unresolved',
+      'dispatch-session-response-invalid-sessions-describe-session-null',
+      'session-dispatch-describe-forbidden',
+    ].includes(input.code) ||
+    !intent ||
+    !record.worktree ||
+    intent.cwd !== record.worktree
+  )
+    return undefined;
+  const key = intent.key;
+  if (
+    key === owner ||
+    key === record.sourceThreadId ||
+    (record.threadId && key !== record.threadId) ||
+    intent.agentId !== agentId
+  )
+    return undefined;
+  if (!key) return 'identity-unresolved' as const;
+  const description = await request('sessions.describe', { key }).then(
+    (value) => ({ value, denied: false as const }),
+    (error: unknown) => {
+      if (error instanceof Error && error.message === 'session-dispatch-describe-forbidden')
+        return { denied: true as const };
+      throw error;
+    },
+  );
+  if (description.denied) return 'access-denied' as const;
+  const result = description.value;
+  if (
+    !result ||
+    typeof result !== 'object' ||
+    Array.isArray(result) ||
+    !('session' in result) ||
+    result.session !== null
+  )
+    return undefined;
+  return 'not-found' as const;
+}

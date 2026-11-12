@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import authorizeCodexFeedback from '../agent/codex-feedback-authority.ts';
-import authorizeFeedback from '../agent/feedback-source-context.ts';
-import { feedbackRevision } from '../agent/feedback-source.ts';
+import authorizeCodexFeedback from '../agent/tasks/feedback/codex-feedback-authority.ts';
+import authorizeFeedback from '../agent/tasks/feedback/feedback-source-context.ts';
+import { feedbackRevision } from '../agent/tasks/feedback/feedback-source.ts';
 import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
 import type { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import type { ManagedIssue } from '../agent/managed-issue.ts';

@@ -8,7 +8,7 @@ import {
   type GitHubCanonicalWorkItem,
   type GitHubIdentity,
 } from '../channels/github/provider/work-item.ts';
-import type { AssignmentObservation } from './assignment-retirement.ts';
+import type { AssignmentObservation } from './tasks/retirement/assignment-retirement.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 
 /** missing membership is not authority to cancel already admitted work. */

@@ -13,7 +13,7 @@ import codexDirectInput from './codex-direct-input.ts';
 import { withNative } from './codex-dispatch-context.ts';
 import { dispatchGit } from './codex-dispatch-project.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
-import type { CodexFeedbackDependencies } from './codex-feedback.ts';
+import type { CodexFeedbackDependencies } from './tasks/feedback/codex-feedback.ts';
 import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
 

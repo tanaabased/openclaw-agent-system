@@ -2,20 +2,20 @@ import assert from 'node:assert/strict';
 import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Value } from 'typebox/value';
-import feedbackPresentation from '../agent/feedback-presentation.ts';
-import { discoverFeedback, feedbackRevision } from '../agent/feedback-source.ts';
+import feedbackPresentation from '../agent/tasks/feedback/feedback-presentation.ts';
+import { discoverFeedback, feedbackRevision } from '../agent/tasks/feedback/feedback-source.ts';
 import openClawCapacity from '../agent/openclaw-capacity.ts';
 import { type OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
-import openClawFeedbackInput from '../agent/openclaw-feedback-input.ts';
+import openClawFeedbackInput from '../agent/tasks/feedback/openclaw-feedback-input.ts';
 import {
   openclawFeedbackSchema,
   type OpenClawFeedbackEvent,
-} from '../agent/openclaw-feedback-state.ts';
+} from '../agent/tasks/feedback/openclaw-feedback-state.ts';
 import openClawFeedback, {
   advanceFeedbackTurn,
   type OpenClawFeedbackAction,
   type OpenClawFeedbackProvider,
-} from '../agent/openclaw-feedback.ts';
+} from '../agent/tasks/feedback/openclaw-feedback.ts';
 import { verifyOpenClawWork } from '../agent/tasks/implementation/openclaw-work.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';

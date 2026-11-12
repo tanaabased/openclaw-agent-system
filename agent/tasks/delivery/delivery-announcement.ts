@@ -1,7 +1,7 @@
 import { cardCopyInstructions } from '../../../channels/github/presentation/card.ts';
-import replyMaterial from '../../reply-material.ts';
+import replyMaterial from '../feedback/reply-material.ts';
 import type { ImplementationMaterialRead } from '../implementation/implementation-material.ts';
-import taskUpdateInstructions from '../../task-update-instructions.ts';
+import taskUpdateInstructions from '../feedback/task-update-instructions.ts';
 import isFilesystemAccessError from '../../../utils/is-filesystem-access-error.ts';
 
 import { automationHash } from '../../automation-hash.ts';
@@ -20,7 +20,7 @@ import GitHubIssueCommentClient from '../../../channels/github/provider/issue-co
 import GitHubWorkEventApiClient, {
   GitHubWorkEventClientError,
 } from '../../../channels/github/provider/work-event-api-client.ts';
-import redactFeedback from '../../feedback-redaction.ts';
+import redactFeedback from '../feedback/feedback-redaction.ts';
 import type { GitHubNotificationCommentPublicationInput } from '../../../channels/github/publication/comment-publisher.ts';
 import { githubNotificationPublicationText } from '../../../channels/github/publication/publication-contract.ts';
 import IssueDeliveryProvider, {
@@ -29,7 +29,7 @@ import IssueDeliveryProvider, {
 import type { GitHubNotificationPublicationClient } from '../../../channels/github/provider/work-event-client.ts';
 import { githubCommentCard } from '../../../channels/github/presentation/comment.ts';
 import publicResponsePresentation from '../../../channels/github/presentation/public-response.ts';
-import taskUpdate from '../../task-update.ts';
+import taskUpdate from '../feedback/task-update.ts';
 
 type CommentClient = Pick<
   GitHubNotificationPublicationClient,

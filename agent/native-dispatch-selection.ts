@@ -1,10 +1,10 @@
 import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { automationHash } from './automation-hash.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
-import type { FeedbackSourceEvent } from './feedback-state.ts';
+import type { FeedbackSourceEvent } from './tasks/feedback/feedback-state.ts';
 import { dispatchAdmission, managedTargetUrl, type ManagedIssue } from './managed-issue.ts';
 import { assertNativeContextInput } from './native-context-request.ts';
-import { feedbackTarget } from './reply-target.ts';
+import { feedbackTarget } from './tasks/feedback/reply-target.ts';
 import { routingInstructionsDigest } from './routing-instructions.ts';
 export function isNativeDispatchSelection(action: unknown) {
   return ['prepare', 'reconcile', 'start', 'assess'].includes(String(action));

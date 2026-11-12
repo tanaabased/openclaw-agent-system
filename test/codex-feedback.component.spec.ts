@@ -7,7 +7,7 @@ import { runInNewContext } from 'node:vm';
 import { parseCleanupConfiguration } from '../agent/cleanup-configuration.ts';
 import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
 import { runCodexDispatch, type CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
-import { scanCodexFeedback } from '../agent/codex-feedback-scan.ts';
+import { scanCodexFeedback } from '../agent/tasks/feedback/codex-feedback-scan.ts';
 import discoveryCheckpoint from '../agent/discovery-checkpoint.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import commentProviderFixture from './github-comment-provider-fixture.ts';
@@ -17,7 +17,9 @@ import { attemptedAnnouncement } from './delivery-announcement-fixture.ts';
 
 import { automationHash } from '../agent/automation-hash.ts';
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
-import runCodexFeedback, { type CodexFeedbackDependencies } from '../agent/codex-feedback.ts';
+import runCodexFeedback, {
+  type CodexFeedbackDependencies,
+} from '../agent/tasks/feedback/codex-feedback.ts';
 import { runCodexIntake } from '../agent/codex-intake.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';

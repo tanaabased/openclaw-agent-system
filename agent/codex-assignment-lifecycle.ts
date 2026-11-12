@@ -1,4 +1,4 @@
-import reactivateAssignmentFeedback from './assignment-feedback-reactivation.ts';
+import reactivateAssignmentFeedback from './tasks/feedback/assignment-feedback-reactivation.ts';
 import cleanupConfiguration from './cleanup-configuration.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import type { CodexDispatchDependencies } from './codex-dispatch-context.ts';
@@ -6,23 +6,23 @@ import { codexDispatchNative } from './codex-dispatch-native.ts';
 import { codexNativeHandoff } from './codex-dispatch-handoff.ts';
 import { verifyDispatchWorktree } from './codex-dispatch-project.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
-import connectCodexFeedback from './codex-feedback-client.ts';
+import connectCodexFeedback from './tasks/feedback/codex-feedback-client.ts';
 import { connectCodexGitHub } from './codex-github-client.ts';
 import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import codexRetirementCleanup, {
   type RetirementArchiveRequest,
-} from './codex-retirement-cleanup.ts';
-import codexRetirementNative from './codex-retirement-native.ts';
+} from './tasks/retirement/codex-retirement-cleanup.ts';
+import codexRetirementNative from './tasks/retirement/codex-retirement-native.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
 import DiscoveryBudget from './discovery-budget.ts';
 import { dispatchAdmission, managedIssueState } from './managed-issue.ts';
-import pendingRetirement from './pending-retirement.ts';
+import pendingRetirement from './tasks/retirement/pending-retirement.ts';
 import reconcileAssignmentLifecycle from './reconcile-assignment-lifecycle.ts';
-import replyOwnPublications from './reply-own-publications.ts';
+import replyOwnPublications from './tasks/feedback/reply-own-publications.ts';
 import retainedIntakePolicy from './retained-intake-policy.ts';
-import retirementConsumption from './retirement-consumption.ts';
-import retirementEffects from './retirement-effects.ts';
-import retirementLocalData from './retirement-local-data.ts';
+import retirementConsumption from './tasks/retirement/retirement-consumption.ts';
+import retirementEffects from './tasks/retirement/retirement-effects.ts';
+import retirementLocalData from './tasks/retirement/retirement-local-data.ts';
 import taskPullRequest from './tasks/delivery/task-pull-request.ts';
 /** lifecycle reconciliation belongs to the existing native intake occurrence, before feedback selection. */
 export default async function reconcileCodexLifecycle(

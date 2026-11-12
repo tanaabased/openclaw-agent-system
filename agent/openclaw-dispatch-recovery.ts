@@ -7,7 +7,7 @@ import type OpenClawDispatchContext from './openclaw-dispatch-context.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import openClawEntryContext from './openclaw-entry-context.ts';
 import openClawNativeTurns from './openclaw-native-turns.ts';
-import { observeRetiringSession } from './openclaw-retirement-observation.ts';
+import { observeRetiringSession } from './tasks/retirement/openclaw-retirement-observation.ts';
 import type { DispatchCaller } from './openclaw-session-create.ts';
 
 /** native input and session observation adapt the shared recovery, never create a second lifecycle. */

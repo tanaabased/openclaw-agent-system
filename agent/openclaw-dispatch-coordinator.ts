@@ -18,7 +18,7 @@ import pendingAssignments, { issueKey } from './dispatch-pending.ts';
 import { dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
 import { dispatchStoragePressure } from './dispatch-storage.ts';
 import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
-import { observeFeedbackPolicy } from './feedback-source.ts';
+import { observeFeedbackPolicy } from './tasks/feedback/feedback-source.ts';
 import intakePassStarted from './intake-pass-started.ts';
 import issuePickupCapacity from './issue-pickup-capacity.ts';
 import liveWorkflowPolicy from './live-workflow-policy.ts';
@@ -40,7 +40,10 @@ import {
 } from './openclaw-dispatch-context.ts';
 import type OpenClawDispatchIssue from './openclaw-dispatch-issue.ts';
 import { type OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
-import { applyOpenClawFeedbackScans, scanOpenClawFeedback } from './openclaw-feedback-scan.ts';
+import {
+  applyOpenClawFeedbackScans,
+  scanOpenClawFeedback,
+} from './tasks/feedback/openclaw-feedback-scan.ts';
 import { sameIntakeRun } from './openclaw-intake-pass.ts';
 import openclawIntakeReport, { type IntakeObservation } from './openclaw-intake-report.ts';
 import openClawNativeTurns, { nativeTurnFor } from './openclaw-native-turns.ts';

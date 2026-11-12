@@ -1,6 +1,6 @@
 import publicResponseState, {
   type PublicResponseState,
-} from '../../../agent/public-response-state.ts';
+} from '../../../agent/tasks/feedback/public-response-state.ts';
 import { githubNotificationMarkdownCode, githubNotificationQuote } from './card.ts';
 
 /** successful publication uses the existing linked attribution, not another success card. */

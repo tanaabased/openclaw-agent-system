@@ -17,7 +17,7 @@ import automationThreadGateway from './automation-thread-gateway.ts';
 import observeResetUnresolved from './openclaw-reset-unresolved.ts';
 import { listNativeAutomations, nativeObject } from './automation-gateway.ts';
 import { openclawIntakeAutomationId } from './openclaw-intake-policy.ts';
-import observeRetirementSession from './openclaw-retirement-observation.ts';
+import observeRetirementSession from './tasks/retirement/openclaw-retirement-observation.ts';
 import OpenClawDispatchStore, { type OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import NotificationResetStore, {
   type NotificationResetRecord,

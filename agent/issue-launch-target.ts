@@ -1,4 +1,4 @@
-import { replyLocator } from './reply-target.ts';
+import { replyLocator } from './tasks/feedback/reply-target.ts';
 
 /** canonicalize explicit references; callers supply only independently verified repository context. */
 export default function issueLaunchTarget(target: string, repository?: string) {

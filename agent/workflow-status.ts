@@ -1,5 +1,5 @@
 import dispatchCreationStatus from './dispatch-creation-status.ts';
-import { awaitingReassignment } from './assignment-retirement.ts';
+import { awaitingReassignment } from './tasks/retirement/assignment-retirement.ts';
 export interface IssueWorkflowState {
   request?: unknown;
   effective?: unknown;

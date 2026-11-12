@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 
-import publicResponseState from '../agent/public-response-state.ts';
-import publicResponse, { type PublicResponseReceipt } from '../agent/public-response.ts';
+import publicResponseState from '../agent/tasks/feedback/public-response-state.ts';
+import publicResponse, {
+  type PublicResponseReceipt,
+} from '../agent/tasks/feedback/public-response.ts';
 import publicResponsePresentation from '../channels/github/presentation/public-response.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 

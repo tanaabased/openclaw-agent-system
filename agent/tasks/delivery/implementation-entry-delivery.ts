@@ -10,7 +10,7 @@ import { automationHash } from '../../automation-hash.ts';
 import { assertDeliveryBinding, selectDeliveryDestination } from './delivery-preparation.ts';
 import type { ImplementationEntry } from '../implementation/implementation-entry-state.ts';
 import publishIssueDelivery from './publish-issue-delivery.ts';
-import { replyLocator } from '../../reply-target.ts';
+import { replyLocator } from '../feedback/reply-target.ts';
 
 /** reuse the publication owner and receipts without synthesizing an intake assignment. */
 export default async function implementationEntryDelivery(input: {

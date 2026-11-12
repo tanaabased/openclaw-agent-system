@@ -2,7 +2,7 @@ import { realpath } from 'node:fs/promises';
 
 import { parseDirectImplementationRequest } from '../../../tools/dispatch/implementation-schema.ts';
 import type { AssessmentEntryDependencies } from '../assessment/assessment-entry.ts';
-import { replyLocator } from '../../reply-target.ts';
+import { replyLocator } from '../feedback/reply-target.ts';
 
 /** native adapters verify custody; matching work keeps its owner, scope and original receipts. */
 export default async function managedImplementationRoute<T>(input: {

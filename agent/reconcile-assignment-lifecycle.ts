@@ -4,7 +4,7 @@ import type assignmentIntakePolicy from './assignment-intake-policy.ts';
 import assignmentRetirement, {
   awaitingReassignment,
   type Retirement,
-} from './assignment-retirement.ts';
+} from './tasks/retirement/assignment-retirement.ts';
 import {
   cleanupConfigurationDiagnostic,
   type CleanupConfiguration,

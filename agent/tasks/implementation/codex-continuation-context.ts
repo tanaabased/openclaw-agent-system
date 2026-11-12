@@ -1,6 +1,6 @@
-import type connectCodexFeedback from '../../codex-feedback-client.ts';
+import type connectCodexFeedback from '../feedback/codex-feedback-client.ts';
 import { implementationDecisionSchema } from '../../issue-progression.ts';
-import type { FeedbackEvent } from '../../codex-feedback-state.ts';
+import type { FeedbackEvent } from '../feedback/codex-feedback-state.ts';
 import { implementationMaterialSchema } from '../../../tools/dispatch/implementation-material-schema.ts';
 import type { ManagedIssueState } from '../../managed-issue.ts';
 import { type Static, Type } from 'typebox';

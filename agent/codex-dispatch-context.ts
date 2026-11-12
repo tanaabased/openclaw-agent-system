@@ -25,10 +25,10 @@ import { codexDispatchNative } from './codex-dispatch-native.ts';
 import { type DispatchGit } from './codex-dispatch-project.ts';
 import type prepareDispatchRepository from './codex-dispatch-repository.ts';
 import type { DispatchRecord, DispatchState } from './codex-dispatch-state.ts';
-import type connectCodexFeedback from './codex-feedback-client.ts';
+import type connectCodexFeedback from './tasks/feedback/codex-feedback-client.ts';
 import codexHostAccess from './codex-host-access.ts';
 
-import type codexRetirementNative from './codex-retirement-native.ts';
+import type codexRetirementNative from './tasks/retirement/codex-retirement-native.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
 import { inspectAdmittedIssue, inspectContinuedIssue } from './dispatch-assignment.ts';
 import workflowFailure from './workflow-failure.ts';

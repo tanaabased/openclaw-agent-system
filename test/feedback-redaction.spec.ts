@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import redact from '../agent/feedback-redaction.ts';
+import redact from '../agent/tasks/feedback/feedback-redaction.ts';
 
 describe('agent/feedback-redaction', () => {
   it('should allow harmless file references without weakening credential checks', () => {

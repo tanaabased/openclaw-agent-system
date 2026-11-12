@@ -39,8 +39,8 @@ import {
   type DispatchGit,
 } from '../../codex-dispatch-project.ts';
 import CodexDispatchStore from '../../codex-dispatch-state.ts';
-import authorizeCodexFeedback from '../../codex-feedback-authority.ts';
-import connectCodexFeedback from '../../codex-feedback-client.ts';
+import authorizeCodexFeedback from '../feedback/codex-feedback-authority.ts';
+import connectCodexFeedback from '../feedback/codex-feedback-client.ts';
 import connectCodexGitHubAccount from '../../codex-github-client.ts';
 import codexHostAccess from '../../codex-host-access.ts';
 import codexIssueBranch from '../../codex-issue-branch.ts';
@@ -56,7 +56,7 @@ import {
   selectDeliveryDestination,
   deliveryContentUpdate,
 } from './delivery-preparation.ts';
-import selectFeedbackStage from '../../feedback-stage.ts';
+import selectFeedbackStage from '../feedback/feedback-stage.ts';
 import bindIssuePullRequest from './issue-pr-binding.ts';
 import issueProgression from '../../issue-progression.ts';
 import issueWorkflowMode from '../../issue-workflow-mode.ts';

@@ -5,9 +5,9 @@ import {
 import { retainedIssueProgression } from './issue-progression.ts';
 import nativeTaskInstructions from './native-task-instructions.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
-import { selectedOpenClawFeedback } from './openclaw-feedback-input.ts';
+import { selectedOpenClawFeedback } from './tasks/feedback/openclaw-feedback-input.ts';
 import { nativeTurnFor } from './openclaw-native-turns.ts';
-import { feedbackTarget } from './reply-target.ts';
+import { feedbackTarget } from './tasks/feedback/reply-target.ts';
 import taskPullRequest from './tasks/delivery/task-pull-request.ts';
 import type taskTurnContext from './task-turn-context.ts';
 /** native session/incarnation/run identities select retained facts; explicit tools verify authority. */

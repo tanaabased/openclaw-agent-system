@@ -2,7 +2,7 @@ import dispatchCreationStatus from './dispatch-creation-status.ts';
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
 import IssueDeliveryProvider from '../channels/github/publication/issue-delivery.ts';
-import assignmentRetirement from './assignment-retirement.ts';
+import assignmentRetirement from './tasks/retirement/assignment-retirement.ts';
 import { automationHash } from './automation-hash.ts';
 import { type CleanupConfiguration } from './cleanup-configuration.ts';
 import type { codexDispatchNative } from './codex-dispatch-native.ts';

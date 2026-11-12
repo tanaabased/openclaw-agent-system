@@ -16,8 +16,8 @@ import type { DispatchGit } from '../../codex-dispatch-project.ts';
 import { type DirectEntryBinding } from '../../direct-entry-store.ts';
 import type { nativeIssueContext } from '../../native-issue-context.ts';
 import type { OpenClawDeliveryConnection } from '../delivery/openclaw-delivery.ts';
-import type { OpenClawFeedbackProvider } from '../../openclaw-feedback.ts';
-import { replyLocator } from '../../reply-target.ts';
+import type { OpenClawFeedbackProvider } from '../feedback/openclaw-feedback.ts';
+import { replyLocator } from '../feedback/reply-target.ts';
 import { selectWorkflowStage } from '../../workflow-stage.ts';
 
 export interface AssessmentEntryDependencies {

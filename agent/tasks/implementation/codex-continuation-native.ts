@@ -5,7 +5,7 @@ import dispatchHistory, {
   dispatchHistoryPages,
   dispatchTurn,
 } from '../../codex-dispatch-history.ts';
-import type { FeedbackEvent } from '../../codex-feedback-state.ts';
+import type { FeedbackEvent } from '../feedback/codex-feedback-state.ts';
 import type { CodexThreadRequest } from '../../codex-thread-client.ts';
 import codexTurnApprovalDenied from '../../codex-turn-approval.ts';
 

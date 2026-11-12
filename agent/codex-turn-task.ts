@@ -8,12 +8,12 @@ import {
 import codexContinuationNative from './tasks/implementation/codex-continuation-native.ts';
 import { codexDispatchNative, type DispatchNativeThread } from './codex-dispatch-native.ts';
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
-import connectCodexFeedback from './codex-feedback-client.ts';
+import connectCodexFeedback from './tasks/feedback/codex-feedback-client.ts';
 import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
-import { feedbackConversationMode } from './feedback-conversation-mode.ts';
-import { feedbackInputContext } from './feedback-input.ts';
-import authorizeFeedback from './feedback-source-context.ts';
+import { feedbackConversationMode } from './tasks/feedback/feedback-conversation-mode.ts';
+import { feedbackInputContext } from './tasks/feedback/feedback-input.ts';
+import authorizeFeedback from './tasks/feedback/feedback-source-context.ts';
 import { retainedIssueProgression } from './issue-progression.ts';
 import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
 import taskPullRequest from './tasks/delivery/task-pull-request.ts';

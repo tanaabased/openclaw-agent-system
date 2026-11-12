@@ -8,7 +8,9 @@ import { runCodexDispatch, type CodexDispatchDependencies } from '../agent/codex
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
-import nativeRetirement, { type NativeRetirementTarget } from '../agent/native-retirement.ts';
+import nativeRetirement, {
+  type NativeRetirementTarget,
+} from '../agent/tasks/retirement/native-retirement.ts';
 import NotificationResetStore from '../agent/notification-reset-state.ts';
 import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
 import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';

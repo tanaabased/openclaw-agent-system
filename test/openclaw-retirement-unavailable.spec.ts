@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
-import observeUnavailable from '../agent/openclaw-retirement-unavailable.ts';
+import observeUnavailable from '../agent/tasks/retirement/openclaw-retirement-unavailable.ts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 
 function fixture() {

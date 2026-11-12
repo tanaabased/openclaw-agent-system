@@ -1,9 +1,9 @@
 import { automationHash } from './automation-hash.ts';
 import type { AdoptedPullRequest } from './tasks/delivery/delivery-state.ts';
-import type { FeedbackEvent } from './codex-feedback-state.ts';
+import type { FeedbackEvent } from './tasks/feedback/codex-feedback-state.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { ManagedIssue } from './managed-issue.ts';
-import type { OpenClawFeedbackEvent } from './openclaw-feedback-state.ts';
+import type { OpenClawFeedbackEvent } from './tasks/feedback/openclaw-feedback-state.ts';
 import taskRecoveryCaller from './task-recovery-caller.ts';
 /** Replacement must preserve input and uncertain effects, not old reporting checkpoints. */
 export function pendingRecoveryFeedback(event: FeedbackEvent | OpenClawFeedbackEvent) {

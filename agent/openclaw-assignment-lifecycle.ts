@@ -1,24 +1,24 @@
 import { lstat } from 'node:fs/promises';
 import type { DispatchAuthority, DispatchRequest } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import reactivateAssignmentFeedback from './assignment-feedback-reactivation.ts';
+import reactivateAssignmentFeedback from './tasks/feedback/assignment-feedback-reactivation.ts';
 import { listNativeAutomations } from './automation-gateway.ts';
 import { openClawCleanupConfiguration } from './cleanup-configuration.ts';
 import DiscoveryBudget from './discovery-budget.ts';
 import { managedPullRequest } from './managed-issue.ts';
 import type OpenClawDispatchContext from './openclaw-dispatch-context.ts';
 import type { OpenClawDispatchRecord, OpenClawDispatchState } from './openclaw-dispatch-state.ts';
-import reconcileOpenClawRetirementEffects from './openclaw-retirement-effects.ts';
+import reconcileOpenClawRetirementEffects from './tasks/retirement/openclaw-retirement-effects.ts';
 import observeRetirementSession, {
   observeRetiringResource,
   retirementObject,
-} from './openclaw-retirement-observation.ts';
-import pendingRetirement from './pending-retirement.ts';
+} from './tasks/retirement/openclaw-retirement-observation.ts';
+import pendingRetirement from './tasks/retirement/pending-retirement.ts';
 import reconcileAssignmentLifecycle from './reconcile-assignment-lifecycle.ts';
-import replyOwnPublications from './reply-own-publications.ts';
-import retirementConsumption from './retirement-consumption.ts';
-import retirementEffects from './retirement-effects.ts';
-import retirementLocalData from './retirement-local-data.ts';
+import replyOwnPublications from './tasks/feedback/reply-own-publications.ts';
+import retirementConsumption from './tasks/retirement/retirement-consumption.ts';
+import retirementEffects from './tasks/retirement/retirement-effects.ts';
+import retirementLocalData from './tasks/retirement/retirement-local-data.ts';
 import taskPullRequest from './tasks/delivery/task-pull-request.ts';
 import workflowFailure from './workflow-failure.ts';
 export default async function reconcileOpenClawLifecycle(input: {

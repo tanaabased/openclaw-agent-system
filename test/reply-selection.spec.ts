@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import selectReplyDraft from '../agent/reply-selection.ts';
-import type { ReplyDraft } from '../agent/reply-store.ts';
+import selectReplyDraft from '../agent/tasks/feedback/reply-selection.ts';
+import type { ReplyDraft } from '../agent/tasks/feedback/reply-store.ts';
 import workflowFailure from '../agent/workflow-failure.ts';
 
 describe('agent/reply-selection', () => {

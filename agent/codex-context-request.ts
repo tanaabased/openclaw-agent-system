@@ -4,7 +4,7 @@ import codexDispatchBinding, {
   codexFeedbackPublication,
 } from './codex-dispatch-binding.ts';
 import { isNativeDispatchSelection } from './native-dispatch-selection.ts';
-import nativeFeedbackSource from './native-feedback-source.ts';
+import nativeFeedbackSource from './tasks/feedback/native-feedback-source.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
 import type { ManagedIssue } from './managed-issue.ts';
 import {

@@ -20,7 +20,7 @@ import AssessmentValidationError from './assessment-validation.ts';
 import { dispatchAssessmentContext } from '../../dispatch-presentation.ts';
 import type { SharedDispatchRecord } from '../../dispatch-state.ts';
 import { dispatchAdmission, managedTargetUrl, type ManagedIssue } from '../../managed-issue.ts';
-import { replyLocator } from '../../reply-target.ts';
+import { replyLocator } from '../feedback/reply-target.ts';
 
 const renderRequestSchema = Type.Object(
   {

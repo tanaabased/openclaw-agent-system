@@ -15,14 +15,14 @@ import { connectCodexGitHub } from './codex-github-client.ts';
 import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import notificationResetBaseline from './notification-reset-baseline.ts';
 import observeResetThread from './codex-reset-observation.ts';
-import codexRetirementNative from './codex-retirement-native.ts';
+import codexRetirementNative from './tasks/retirement/codex-retirement-native.ts';
 import CodexSidebarJournal, { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
 import {
   codexThreadAdapter,
   CodexThreadRpcError,
   connectCodexThreads,
 } from './codex-thread-client.ts';
-import waitForCodexWorktreeRemoval from './codex-worktree-removal.ts';
+import waitForCodexWorktreeRemoval from './tasks/retirement/codex-worktree-removal.ts';
 import {
   agentCommandAuthorityEnvironmentName,
   agentCommandCapabilityEnvironmentName,

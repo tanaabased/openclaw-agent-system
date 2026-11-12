@@ -1,5 +1,5 @@
 import { assessmentFallbackInstructions } from './tasks/assessment/assessment-instructions.ts';
-import taskUpdateInstructions from './task-update-instructions.ts';
+import taskUpdateInstructions from './tasks/feedback/task-update-instructions.ts';
 import workflowNoticeInstructions from './workflow-notice-instructions.ts';
 
 export const taskScopeInstructions =

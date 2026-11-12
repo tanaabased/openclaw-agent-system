@@ -3,7 +3,7 @@ import { Value } from 'typebox/value';
 import { stringify } from 'yaml';
 
 import { inspectAdmittedIssue } from '../agent/dispatch-assignment.ts';
-import { feedbackConversationMode } from '../agent/feedback-conversation-mode.ts';
+import { feedbackConversationMode } from '../agent/tasks/feedback/feedback-conversation-mode.ts';
 import authorizeProjectAssignment, { projectWorkSchema } from '../agent/issue-pickup-authority.ts';
 import issuePickupScope from '../agent/issue-pickup-scope.ts';
 import issueProgression from '../agent/issue-progression.ts';

@@ -20,7 +20,10 @@ import storedDataSchema from '../core/stored-data-schema.ts';
 import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 import { providerDiagnosticSchema } from '../utils/provider-diagnostic.ts';
 import { assessmentSelectionSchema } from './tasks/assessment/assessment-selection.ts';
-import { assignmentObservationSchema, retirementSchema } from './assignment-retirement.ts';
+import {
+  assignmentObservationSchema,
+  retirementSchema,
+} from './tasks/retirement/assignment-retirement.ts';
 import {
   adoptedPullRequestSchema,
   deliveryPullRequestSchema,
@@ -43,8 +46,11 @@ import { validNativeDispatchRecord } from './native-dispatch-record.ts';
 import { assertNotificationManagement } from './notification-reset-state.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import { openclawIntakePassSchema, sameIntakeRun } from './openclaw-intake-pass.ts';
-import { validPendingRetirement } from './pending-retirement.ts';
-import { retirementEffectSchema, type RetirementEffect } from './retirement-effects.ts';
+import { validPendingRetirement } from './tasks/retirement/pending-retirement.ts';
+import {
+  retirementEffectSchema,
+  type RetirementEffect,
+} from './tasks/retirement/retirement-effects.ts';
 import { routingInstructionsSchema } from './routing-instructions.ts';
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });

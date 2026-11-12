@@ -18,7 +18,7 @@ import { implementationEntriesSchema } from './implementation-entry-state.ts';
 import implementationHandoff from './implementation-handoff.ts';
 import { implementationPresentation } from './implementation-result.ts';
 import issueProgression from '../../issue-progression.ts';
-import { replyLocator } from '../../reply-target.ts';
+import { replyLocator } from '../feedback/reply-target.ts';
 import { selectWorkflowStage } from '../../workflow-stage.ts';
 
 /** collect only missing inputs; managed execution and the selected skill retain their owners. */

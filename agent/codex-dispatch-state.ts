@@ -1,7 +1,7 @@
 import { Type, type Static } from 'typebox';
 import { codexWorkStateSchema } from './tasks/implementation/codex-work-state.ts';
 
-import { codexFeedbackSchema } from './codex-feedback-state.ts';
+import { codexFeedbackSchema } from './tasks/feedback/codex-feedback-state.ts';
 import DispatchStore, {
   dispatchRecordProperties,
   type DispatchState as SharedDispatchState,

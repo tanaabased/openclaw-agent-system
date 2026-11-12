@@ -1,5 +1,5 @@
 import debugCard from '../channels/github/presentation/debug.ts';
-import retirementNotice from './retirement-notice.ts';
+import retirementNotice from './tasks/retirement/retirement-notice.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import intakeAutomationNotice from '../channels/github/presentation/intake-automation-notice.ts';
 import {

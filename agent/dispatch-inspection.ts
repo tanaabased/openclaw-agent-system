@@ -1,7 +1,7 @@
 import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { Type, type Static } from 'typebox';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
-import type { FeedbackSourceState } from './feedback-state.ts';
+import type { FeedbackSourceState } from './tasks/feedback/feedback-state.ts';
 import issueLaunchTarget from './issue-launch-target.ts';
 import { dispatchAdmission, managedPullRequest, type ManagedIssue } from './managed-issue.ts';
 import taskPullRequest from './tasks/delivery/task-pull-request.ts';

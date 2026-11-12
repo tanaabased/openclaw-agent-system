@@ -4,7 +4,7 @@ import { stateSnapshotConflictCode } from '../core/merge-state-snapshot.ts';
 import { nativeTurnSchema } from './openclaw-native-turns.ts';
 
 import DispatchStore, { dispatchRecordProperties, type DispatchState } from './dispatch-state.ts';
-import { openclawFeedbackSchema } from './openclaw-feedback-state.ts';
+import { openclawFeedbackSchema } from './tasks/feedback/openclaw-feedback-state.ts';
 import { type OpenClawTurn } from './openclaw-turn-state.ts';
 import { openclawWorkStateSchema } from './tasks/implementation/openclaw-work-state.ts';
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { codexReplyInput } from '../agent/codex-reply.ts';
+import { codexReplyInput } from '../agent/tasks/feedback/codex-reply.ts';
 import type { CodexThreadRequest } from '../agent/codex-thread-client.ts';
 
 describe('agent/codex-reply input', () => {

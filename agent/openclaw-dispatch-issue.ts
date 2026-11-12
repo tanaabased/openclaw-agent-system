@@ -1,5 +1,5 @@
 import { issuePullRequestRecipients } from '../channels/github/pull-request-recipients.ts';
-import feedbackPresentation from './feedback-presentation.ts';
+import feedbackPresentation from './tasks/feedback/feedback-presentation.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import {
   dispatchAdmission,
@@ -10,7 +10,7 @@ import {
 import {
   resolveOpenClawTurnFeedback,
   selectedOpenClawFeedback,
-} from './openclaw-feedback-input.ts';
+} from './tasks/feedback/openclaw-feedback-input.ts';
 import { nativeTurnFor } from './openclaw-native-turns.ts';
 import { nativeInputEvent, operatorInputEvent } from './openclaw-session-input.ts';
 import taskPullRequest, { isCurrentTaskPullRequest } from './tasks/delivery/task-pull-request.ts';
@@ -30,7 +30,7 @@ import {
   dispatchRetryDue,
   scheduleDispatchRetry,
 } from './dispatch-retry.ts';
-import selectFeedbackStage from './feedback-stage.ts';
+import selectFeedbackStage from './tasks/feedback/feedback-stage.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import {
   issueAssessmentAction,
@@ -47,13 +47,13 @@ import {
 } from './openclaw-dispatch-context.ts';
 
 import { type OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
-import { openClawFeedbackEnabled } from './openclaw-feedback-scan.ts';
-import type { OpenClawFeedbackEvent } from './openclaw-feedback-state.ts';
+import { openClawFeedbackEnabled } from './tasks/feedback/openclaw-feedback-scan.ts';
+import type { OpenClawFeedbackEvent } from './tasks/feedback/openclaw-feedback-state.ts';
 import openClawFeedback, {
   advanceFeedbackTurn,
   authorizeFeedback,
   type OpenClawFeedbackAction,
-} from './openclaw-feedback.ts';
+} from './tasks/feedback/openclaw-feedback.ts';
 import { describeIssueSession, type DispatchCaller } from './openclaw-session-create.ts';
 import openClawSkill from './openclaw-skill.ts';
 import openClawWorkAction, { verifyOpenClawWork } from './tasks/implementation/openclaw-work.ts';

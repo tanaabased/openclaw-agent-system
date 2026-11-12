@@ -1,4 +1,4 @@
-import selectFeedbackStage from '../agent/feedback-stage.ts';
+import selectFeedbackStage from '../agent/tasks/feedback/feedback-stage.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 import assert from 'node:assert/strict';
 

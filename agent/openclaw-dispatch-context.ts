@@ -35,16 +35,16 @@ import type TrustedGitWorktreeService from '../tools/git/trusted-worktree-servic
 import GitWorktreeConflict from '../tools/git/worktree-conflict.ts';
 import AssessmentValidationError from './tasks/assessment/assessment-validation.ts';
 import type AssignmentClaimStore from './assignment-claim-store.ts';
-import { inspectFeedbackAssignment } from './assignment-feedback-reactivation.ts';
+import { inspectFeedbackAssignment } from './tasks/feedback/assignment-feedback-reactivation.ts';
 import { automationHash } from './automation-hash.ts';
 import {
   inspectAdmittedIssue,
   inspectContinuedIssue,
   inspectIssueIdentity,
 } from './dispatch-assignment.ts';
-import { feedbackConversationMode } from './feedback-conversation-mode.ts';
-import { feedbackInputContext } from './feedback-input.ts';
-import authorizeFeedback from './feedback-source-context.ts';
+import { feedbackConversationMode } from './tasks/feedback/feedback-conversation-mode.ts';
+import { feedbackInputContext } from './tasks/feedback/feedback-input.ts';
+import authorizeFeedback from './tasks/feedback/feedback-source-context.ts';
 import { ContextMaterialError } from './tasks/implementation/implementation-material.ts';
 import { retainedIssueProgression } from './issue-progression.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
@@ -64,8 +64,8 @@ import OpenClawDispatchStore, {
 import {
   resolveOpenClawTurnFeedback,
   selectedOpenClawFeedback,
-} from './openclaw-feedback-input.ts';
-import { type OpenClawFeedbackProvider } from './openclaw-feedback.ts';
+} from './tasks/feedback/openclaw-feedback-input.ts';
+import { type OpenClawFeedbackProvider } from './tasks/feedback/openclaw-feedback.ts';
 import { type IntakeObservation } from './openclaw-intake-report.ts';
 import type OpenClawIntake from './openclaw-intake.ts';
 import { nativeTurnFor } from './openclaw-native-turns.ts';

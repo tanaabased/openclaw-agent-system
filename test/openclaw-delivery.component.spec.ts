@@ -3,15 +3,18 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { recoverRetainedAnnouncement } from '../agent/tasks/delivery/delivery-announcement.ts';
-import { feedbackRevision } from '../agent/feedback-source.ts';
+import { feedbackRevision } from '../agent/tasks/feedback/feedback-source.ts';
 import manualPullRequest from '../agent/manual-pull-request.ts';
 import { openClawWorkSlot } from '../agent/tasks/implementation/openclaw-continuation.ts';
-import { authorizeFeedback, type OpenClawFeedbackProvider } from '../agent/openclaw-feedback.ts';
+import {
+  authorizeFeedback,
+  type OpenClawFeedbackProvider,
+} from '../agent/tasks/feedback/openclaw-feedback.ts';
 import { account, fixturePullRequest, intakeFixture } from './github-intake-fixture.ts';
 
 import announcementFixture from './delivery-announcement-fixture.ts';
 
-import selectFeedbackStage from '../agent/feedback-stage.ts';
+import selectFeedbackStage from '../agent/tasks/feedback/feedback-stage.ts';
 import openClawSkill from '../agent/openclaw-skill.ts';
 
 import openClawDelivery from '../agent/tasks/delivery/openclaw-delivery.ts';
