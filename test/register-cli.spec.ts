@@ -3,7 +3,7 @@ import { Readable } from 'node:stream';
 
 import { Command } from 'commander';
 
-import { createAutomationGateway } from '../agent/automation-gateway.ts';
+import { createAutomationGateway } from '../agent/automations/automation-gateway.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import type { AgentEnvironmentLoadResult } from '../environment/service.ts';

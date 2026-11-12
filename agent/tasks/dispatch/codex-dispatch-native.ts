@@ -8,7 +8,7 @@ import intakeDenial from '../../codex-intake-denial.ts';
 import creationHistory from './codex-dispatch-creation-history.ts';
 import unsubmittedCreation from './codex-dispatch-unsubmitted.ts';
 
-import { nativeObject } from '../../automation-gateway.ts';
+import { nativeObject } from '../../automations/automation-gateway.ts';
 import { automationHash } from '../../automation-hash.ts';
 import codexAssessmentSkill from '../assessment/codex-assessment-skill.ts';
 import { CodexThreadRpcError, type CodexThreadRequest } from '../../codex-thread-client.ts';

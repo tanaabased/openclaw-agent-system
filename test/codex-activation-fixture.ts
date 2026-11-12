@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { parse, stringify } from 'smol-toml';
 
-import { readCodexAutomations } from '../agent/codex-automation-state.ts';
+import { readCodexAutomations } from '../agent/automations/codex-automation-state.ts';
 
 /** exercise both activation consumers against the same isolated saved-definition failures. */
 export default async function checkCodexActivationIsolation(

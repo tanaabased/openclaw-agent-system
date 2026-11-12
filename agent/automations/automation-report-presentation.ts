@@ -1,6 +1,6 @@
 import { stripVTControlCharacters } from 'node:util';
 
-import redactFeedback from './tasks/feedback/feedback-redaction.ts';
+import redactFeedback from '../tasks/feedback/feedback-redaction.ts';
 import type { StructuredReportCard } from './automation-report-schema.ts';
 
 export function sanitizeReportText(text: string): string {

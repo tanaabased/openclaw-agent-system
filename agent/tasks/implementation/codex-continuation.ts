@@ -11,7 +11,7 @@ import { dispatchAdmission, managedIssueState } from '../managed-issue.ts';
 import taskRecoveryCaller from '../dispatch/task-recovery-caller.ts';
 import workflowFailure from '../workflow-failure.ts';
 
-import { inspectCodexDispatchActivation } from '../../codex-automations.ts';
+import { inspectCodexDispatchActivation } from '../../automations/codex-automations.ts';
 import {
   requestSchema,
   type CodexContinuationDependencies,

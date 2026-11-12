@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 
-import AutomationReportStore from '../agent/automation-report-store.ts';
+import AutomationReportStore from '../agent/automations/automation-report-store.ts';
 import executeAutomation from '../cli/automation-execute.ts';
 import type { SetupCommandResult } from '../agent/setup-runner.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
-import type { AutomationLifecycleCommandScope } from '../agent/automation-lifecycle-authority.ts';
+import type { AutomationLifecycleCommandScope } from '../agent/automations/automation-lifecycle-authority.ts';
 
 describe('cli/automation-execute', () => {
   async function execute(

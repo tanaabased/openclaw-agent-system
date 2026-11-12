@@ -4,7 +4,7 @@ import type AutomationService from './automation-service.ts';
 import { listNativeAutomations, type AutomationGateway } from './automation-gateway.ts';
 import { effectiveAutomation, nativeAutomationHash } from './automation-projection.ts';
 import openclawIntakeJobs, { openclawIntakeAutomationId } from './openclaw-intake-policy.ts';
-import type { AgentManifest } from '../manifest/types.ts';
+import type { AgentManifest } from '../../manifest/types.ts';
 
 export type NotificationScheduler = Pick<
   NonNullable<ReturnType<NonNullable<OpenClawPluginServiceContext['getCron']>>>,

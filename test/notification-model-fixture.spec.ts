@@ -9,7 +9,7 @@ import {
   nativeMaterialResponse,
 } from '../agent/tasks/context/native-material.ts';
 import nativeTaskInstructions from '../agent/tasks/context/native-task-instructions.ts';
-import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
+import openclawIntakeJobs from '../agent/automations/openclaw-intake-policy.ts';
 import waitForAssessmentRelease from '../examples/openclaw-issue-intake/assessment-barrier.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 

@@ -9,7 +9,7 @@ import { matchFixture, type ChatCompletionRequest, type ContentPart } from '@cop
 import automationReport, {
   automationReportCardValid,
   prepareAutomationReport,
-} from '../agent/automation-report.ts';
+} from '../agent/automations/automation-report.ts';
 import registerAgentSystemHooks from '../core/register-hooks.ts';
 import { credentialExampleChecks } from '../examples/openclaw-credentials/model-fixture.ts';
 import {

@@ -3,7 +3,7 @@ import { realpath } from 'node:fs/promises';
 import type { DispatchAuthority } from '../../../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../../../manifest/types.ts';
 import { parseReplyRequest } from '../../../tools/dispatch/reply-schema.ts';
-import assignmentIntakePolicy from '../../assignment-intake-policy.ts';
+import assignmentIntakePolicy from '../../automations/assignment-intake-policy.ts';
 import { inspectIssueIdentity } from '../dispatch/dispatch-assignment.ts';
 import feedbackReply from './feedback-reply.ts';
 import { dispatchAdmission, managedTargetUrl } from '../managed-issue.ts';

@@ -1,4 +1,4 @@
-import type { AutomationSchedule } from '../manifest/automation-schedule.ts';
+import type { AutomationSchedule } from '../../manifest/automation-schedule.ts';
 
 /** Filter a generated cron superset before OpenClaw starts its model payload. */
 export default function scheduleCondition(

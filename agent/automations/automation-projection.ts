@@ -1,12 +1,12 @@
 import scheduleCondition from './automation-schedule-condition.ts';
 import { automationReportTimeoutMs } from './automation-report-delivery.ts';
-import { commandTerminationGraceMs } from '../api/cli-budget.ts';
+import { commandTerminationGraceMs } from '../../api/cli-budget.ts';
 import type { AutomationThreadModelObservation } from './automation-threads.ts';
 import { AutomationError, type NativeAutomation } from './automation-gateway.ts';
 import { automationHash, type AutomationRecord } from './automation-store.ts';
-import automationContent from '../manifest/automation-content.ts';
-import { explicitModelEfforts } from '../manifest/models-schema.ts';
-import type { ResolvedAutomation } from '../manifest/automation-schema.ts';
+import automationContent from '../../manifest/automation-content.ts';
+import { explicitModelEfforts } from '../../manifest/models-schema.ts';
+import type { ResolvedAutomation } from '../../manifest/automation-schema.ts';
 
 export interface AutomationProjectionContext {
   agentId: string;

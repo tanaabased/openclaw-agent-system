@@ -8,7 +8,7 @@ import automationRun from './automation-run.ts';
 import automationRuns from './automation-runs.ts';
 import automationSync from './automation-sync.ts';
 import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
-import type AutomationService from '../agent/automation-service.ts';
+import type AutomationService from '../agent/automations/automation-service.ts';
 import type BoundCommandService from '../agent/bound-command-service.ts';
 
 import envAgentSystem from './env.ts';

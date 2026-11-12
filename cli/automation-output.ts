@@ -1,7 +1,7 @@
 import automationPresentation from './automation-presentation.ts';
 import presentCliCommand from './presentation.ts';
-import type AutomationService from '../agent/automation-service.ts';
-import { AutomationError } from '../agent/automation-gateway.ts';
+import type AutomationService from '../agent/automations/automation-service.ts';
+import { AutomationError } from '../agent/automations/automation-gateway.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import automationFailureNotice from './automation-diagnostic.ts';
 import loadCommandManifest from './load-command-manifest.ts';

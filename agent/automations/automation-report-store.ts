@@ -3,10 +3,10 @@ import { join } from 'node:path';
 
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
-import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
-import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
-import PrivateStateFile from '../core/private-state-file.ts';
-import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
+import ensurePrivateStateDirectories from '../../core/ensure-private-state-directories.ts';
+import acquirePrivateStateFileLock from '../../core/private-state-file-lock.ts';
+import PrivateStateFile from '../../core/private-state-file.ts';
+import { withPrivateStateLock } from '../../core/private-state-lock-context.ts';
 
 export const reportLifetimeMs = 30 * 24 * 60 * 60 * 1000;
 

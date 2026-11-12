@@ -1,7 +1,7 @@
-import { notificationAuthority } from './notification-authority.ts';
-import { automationHash } from './automation-hash.ts';
-import { IntakeError } from '../channels/github/intake/record-store.ts';
-import type { AgentManifest } from '../manifest/types.ts';
+import { notificationAuthority } from '../notification-authority.ts';
+import { automationHash } from '../automation-hash.ts';
+import { IntakeError } from '../../channels/github/intake/record-store.ts';
+import type { AgentManifest } from '../../manifest/types.ts';
 
 /** Workflow admission policy is shared; neither runtime may select the V1 monitor state. */
 export default function assignmentIntakePolicy(

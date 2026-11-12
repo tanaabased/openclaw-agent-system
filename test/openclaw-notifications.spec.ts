@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import { createCliStyles } from '../cli/output.ts';
 
-import assignmentIntakePolicy from '../agent/assignment-intake-policy.ts';
+import assignmentIntakePolicy from '../agent/automations/assignment-intake-policy.ts';
 import { issueKey } from '../agent/tasks/dispatch/dispatch-pending.ts';
 import type { OpenClawDispatchRecord } from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import OpenClawNotifications from '../agent/openclaw-notifications.ts';

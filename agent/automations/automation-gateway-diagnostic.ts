@@ -1,8 +1,8 @@
-import providerErrorMessage from '../utils/provider-error-message.ts';
+import providerErrorMessage from '../../utils/provider-error-message.ts';
 import gatewayErrorDiagnostic, {
   retainGatewayErrorDiagnostic,
   type GatewayErrorDiagnostic,
-} from '../utils/gateway-error-diagnostic.ts';
+} from '../../utils/gateway-error-diagnostic.ts';
 import type { AutomationGateway } from './automation-gateway.ts';
 
 export interface AutomationGatewayDiagnostic extends GatewayErrorDiagnostic {

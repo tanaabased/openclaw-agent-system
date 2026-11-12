@@ -1,7 +1,7 @@
 import { lstat, realpath } from 'node:fs/promises';
 
-import { nativeObject } from '../../automation-gateway.ts';
-import { readCodexAutomations } from '../../codex-automation-state.ts';
+import { nativeObject } from '../../automations/automation-gateway.ts';
+import { readCodexAutomations } from '../../automations/codex-automation-state.ts';
 import {
   dispatchGit,
   verifyDispatchWorktree,

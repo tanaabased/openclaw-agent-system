@@ -1,7 +1,7 @@
 import { formatErrorMessage } from 'openclaw/plugin-sdk/error-runtime';
 
-import { AutomationError } from '../agent/automation-gateway.ts';
-import { retainAutomationGatewayDiagnostic } from '../agent/automation-gateway-diagnostic.ts';
+import { AutomationError } from '../agent/automations/automation-gateway.ts';
+import { retainAutomationGatewayDiagnostic } from '../agent/automations/automation-gateway-diagnostic.ts';
 import { retainSessionDispatchDiagnostic } from '../credentials/session-dispatch-diagnostic.ts';
 
 import { manifestNotices, lifecycleWarningNotice } from './diagnostic-notices.ts';

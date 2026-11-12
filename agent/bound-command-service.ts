@@ -16,7 +16,7 @@ import type AgentSystemToolRegistry from '../api/registry.ts';
 import type AgentSystemToolRuntime from '../api/runtime.ts';
 import type { AgentSetupCommand } from '../manifest/setup-schema.ts';
 import type AgentManifestService from '../manifest/service.ts';
-import type { AutomationLifecycleCommandScope } from './automation-lifecycle-authority.ts';
+import type { AutomationLifecycleCommandScope } from './automations/automation-lifecycle-authority.ts';
 
 export interface BoundCommandServiceDependencies {
   authorityRoot?: string;

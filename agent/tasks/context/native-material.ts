@@ -1,6 +1,6 @@
 import { Value } from 'typebox/value';
 import { automationHash } from '../../automation-hash.ts';
-import { nativeObject } from '../../automation-gateway.ts';
+import { nativeObject } from '../../automations/automation-gateway.ts';
 import { modelMaterialSchema } from '../../../tools/dispatch/implementation-material-schema.ts';
 
 export function materialScope(route: string, input: Record<string, unknown>) {

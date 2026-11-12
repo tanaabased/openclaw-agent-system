@@ -16,7 +16,7 @@ import {
   issuePickupAutomationId,
   issuePickupConfigurationCode,
   issuePickupErrorCode,
-} from './issue-pickup-jobs.ts';
+} from './automations/issue-pickup-jobs.ts';
 import reconcileIssuePickup from './issue-pickup-reconcile.ts';
 import issuePickupReport from './issue-pickup-report.ts';
 import issuePickup, { pickupAuthority, type PickupInput } from './issue-pickup.ts';
@@ -34,7 +34,7 @@ import type { GitHubNotificationItemSelector } from '../channels/github/provider
 import { cliDiagnosticContext } from '../core/cli-diagnostic-context.ts';
 import type { AgentSystemLifecycleContribution } from '../core/lifecycle-registry.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import assignmentIntakePolicy from './assignment-intake-policy.ts';
+import assignmentIntakePolicy from './automations/assignment-intake-policy.ts';
 
 export interface OpenClawIntakeDependencies extends OpenClawTaskContextDependencies {
   issuePickup?: IssuePickupAuthority;

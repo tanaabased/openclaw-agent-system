@@ -48,11 +48,11 @@ import {
   type AgentSystemLifecycleFinding,
   type AgentSystemLifecycleOutcome,
   type AgentSystemLifecycleReconcileResult,
-} from '../core/lifecycle-registry.ts';
-import type AgentManifestService from '../manifest/service.ts';
-import type { AgentManifest } from '../manifest/types.ts';
-import type { DispatchRequest } from '../credentials/session-dispatch.ts';
-import { assertPrivateStateLocksHeld } from '../core/private-state-lock-context.ts';
+} from '../../core/lifecycle-registry.ts';
+import type AgentManifestService from '../../manifest/service.ts';
+import type { AgentManifest } from '../../manifest/types.ts';
+import type { DispatchRequest } from '../../credentials/session-dispatch.ts';
+import { assertPrivateStateLocksHeld } from '../../core/private-state-lock-context.ts';
 
 export interface AutomationServiceDependencies {
   pickup?: {

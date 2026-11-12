@@ -1,4 +1,4 @@
-import type { AutomationLifecycleCommandScope } from '../agent/automation-lifecycle-authority.ts';
+import type { AutomationLifecycleCommandScope } from '../agent/automations/automation-lifecycle-authority.ts';
 import type { AgentBoundCommand, AgentBoundCommandResult } from '../agent/command-authority.ts';
 import type AgentDoctorService from '../agent/doctor-service.ts';
 import type AgentInstallService from '../agent/install-service.ts';

@@ -9,8 +9,8 @@ import {
 } from './automation-gateway.ts';
 import { effectiveAutomation, nativeAutomationHash } from './automation-projection.ts';
 import openclawIntakeJobs from './openclaw-intake-policy.ts';
-import type { AgentManifest } from '../manifest/types.ts';
-import type { AgentManifestLoadResult } from '../manifest/service.ts';
+import type { AgentManifest } from '../../manifest/types.ts';
+import type { AgentManifestLoadResult } from '../../manifest/service.ts';
 
 export interface AutomationLifecycleCommandScope {
   loaded: Extract<AgentManifestLoadResult, { status: 'loaded' }>;

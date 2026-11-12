@@ -1,14 +1,17 @@
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { defaultManagedGroup } from '../utils/managed-group-name.ts';
-import { nativeObject } from './automation-gateway.ts';
+import { nativeObject } from './automations/automation-gateway.ts';
 import { automationHash } from './automation-hash.ts';
-import { readCodexAutomations, type SavedAutomation } from './codex-automation-state.ts';
+import {
+  readCodexAutomations,
+  type SavedAutomation,
+} from './automations/codex-automation-state.ts';
 import {
   codexNotificationResetAutomation,
   codexNotificationResetPickupAutomation,
   replaceCodexNotificationCoordinator,
-} from './codex-automations.ts';
+} from './automations/codex-automations.ts';
 import CodexDispatchStore, { type DispatchRecord } from './tasks/dispatch/codex-dispatch-state.ts';
 import { type CodexIntakeDependencies } from './codex-intake.ts';
 import { connectCodexGitHub } from './codex-github-client.ts';
@@ -27,7 +30,7 @@ import {
   agentCommandAuthorityEnvironmentName,
   agentCommandCapabilityEnvironmentName,
 } from './command-authority.ts';
-import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
+import { issuePickupAutomationId } from './automations/issue-pickup-jobs.ts';
 import { dispatchAdmission, managedIssueState } from './tasks/managed-issue.ts';
 import { notificationResetResources, type ResetInventory } from './notification-reset-inventory.ts';
 import notificationResetPickup from './notification-reset-pickup.ts';

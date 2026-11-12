@@ -1,5 +1,5 @@
-import { AutomationError } from '../agent/automation-gateway.ts';
-import automationGatewayDiagnostic from '../agent/automation-gateway-diagnostic.ts';
+import { AutomationError } from '../agent/automations/automation-gateway.ts';
+import automationGatewayDiagnostic from '../agent/automations/automation-gateway-diagnostic.ts';
 import automationSync from '../cli/automation-sync.ts';
 import { createCliStyles } from '../cli/output.ts';
 import {

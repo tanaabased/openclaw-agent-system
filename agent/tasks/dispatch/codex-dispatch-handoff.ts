@@ -1,4 +1,4 @@
-import { nativeObject } from '../../automation-gateway.ts';
+import { nativeObject } from '../../automations/automation-gateway.ts';
 
 interface CodexRuntimeIdentity {
   entrypoint: string;

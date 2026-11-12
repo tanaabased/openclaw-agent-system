@@ -7,7 +7,7 @@ import {
   automationThreadSelection,
   type AutomationThreadModelObservation,
 } from './automation-threads.ts';
-import { automationHash } from './automation-hash.ts';
+import { automationHash } from '../automation-hash.ts';
 import codexAutomationSchedule from './codex-automation-schedule.ts';
 import {
   CodexAutomationError,
@@ -16,8 +16,8 @@ import {
   type NativeAutomation,
   type SavedAutomation,
 } from './codex-automation-state.ts';
-import automationContent from '../manifest/automation-content.ts';
-import type { ResolvedAutomation } from '../manifest/automation-schema.ts';
+import automationContent from '../../manifest/automation-content.ts';
+import type { ResolvedAutomation } from '../../manifest/automation-schema.ts';
 
 const text = Type.String({ minLength: 1 });
 export const automationRecordSchema = Type.Object(

@@ -13,7 +13,7 @@ import {
 } from '../channels/github/notification-policy.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import abortableDelay from '../utils/abortable-delay.ts';
-import { type default as assignmentIntakePolicy } from './assignment-intake-policy.ts';
+import { type default as assignmentIntakePolicy } from './automations/assignment-intake-policy.ts';
 import pendingDispatchAssignments, { issueKey } from './tasks/dispatch/dispatch-pending.ts';
 import { dispatchStorageNotice } from './tasks/dispatch/dispatch-storage.ts';
 import type { IssuePickupState } from './issue-pickup-state.ts';

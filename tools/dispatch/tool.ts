@@ -10,15 +10,17 @@ import workflowFailure, { workflowFailureScope } from '../../agent/tasks/workflo
 import workflowNoticeInstructions from '../../agent/tasks/workflow-notice-instructions.ts';
 import WorkflowRequestError from '../../agent/tasks/workflow-request-error.ts';
 
-import type AutomationService from '../../agent/automation-service.ts';
-import AutomationThreads, { automationThreadSelection } from '../../agent/automation-threads.ts';
+import type AutomationService from '../../agent/automations/automation-service.ts';
+import AutomationThreads, {
+  automationThreadSelection,
+} from '../../agent/automations/automation-threads.ts';
 import OpenClawDispatch, {
   openClawDispatchFailureCode,
   type OpenClawDispatchDependencies,
 } from '../../agent/tasks/dispatch/openclaw-dispatch.ts';
 import openclawIntakeJobs, {
   openclawIntakeAutomationId,
-} from '../../agent/openclaw-intake-policy.ts';
+} from '../../agent/automations/openclaw-intake-policy.ts';
 import type OpenClawIntake from '../../agent/openclaw-intake.ts';
 import type { DispatchCaller } from '../../agent/openclaw-session-create.ts';
 import AgentSystemToolError from '../../api/error.ts';

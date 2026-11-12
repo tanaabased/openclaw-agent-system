@@ -31,7 +31,7 @@ import {
 } from './session-dispatch.ts';
 import { sessionDispatchScopes } from '../agent/session-dispatch-requirements.ts';
 import { openclawSessionCreateTimeoutMs } from '../agent/openclaw-session-timeout.ts';
-import automationGatewayDiagnostic from '../agent/automation-gateway-diagnostic.ts';
+import automationGatewayDiagnostic from '../agent/automations/automation-gateway-diagnostic.ts';
 
 interface SessionDispatchClientDependencies {
   createClient(

@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 
 import parse from '../manifest/parse.ts';
 import { pickupDeclaration } from './issue-pickup-fixture.ts';
-import automationModels from '../agent/automation-models.ts';
-import { codexIntakeJobs } from '../agent/codex-intake-policy.ts';
-import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
+import automationModels from '../agent/automations/automation-models.ts';
+import { codexIntakeJobs } from '../agent/automations/codex-intake-policy.ts';
+import openclawIntakeJobs from '../agent/automations/openclaw-intake-policy.ts';
 import automationContent from '../manifest/automation-content.ts';
 import normalizeAutomations, { type ResolvedAutomation } from '../manifest/automation-schema.ts';
 import type { AgentManifest } from '../manifest/types.ts';

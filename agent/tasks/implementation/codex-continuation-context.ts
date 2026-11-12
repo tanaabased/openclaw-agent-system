@@ -5,7 +5,7 @@ import { implementationMaterialSchema } from '../../../tools/dispatch/implementa
 import type { ManagedIssueState } from '../managed-issue.ts';
 import { type Static, Type } from 'typebox';
 
-import type { inspectCodexDispatchActivation } from '../../codex-automations.ts';
+import type { inspectCodexDispatchActivation } from '../../automations/codex-automations.ts';
 import type codexContinuationNative from './codex-continuation-native.ts';
 import type codexLiveTurn from '../../codex-live-turn.ts';
 import {

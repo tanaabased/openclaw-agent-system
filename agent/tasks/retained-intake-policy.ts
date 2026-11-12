@@ -1,4 +1,4 @@
-import assignmentIntakePolicy from '../assignment-intake-policy.ts';
+import assignmentIntakePolicy from '../automations/assignment-intake-policy.ts';
 import type { ManagedIssueState as IntakeState } from './managed-issue.ts';
 import type { AgentManifest } from '../../manifest/types.ts';
 

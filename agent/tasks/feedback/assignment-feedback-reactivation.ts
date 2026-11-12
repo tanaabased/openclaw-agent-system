@@ -4,7 +4,7 @@ import type DiscoveryBudget from '../../discovery-budget.ts';
 import { workflowFeedbackAccepting } from '../../../channels/github/feedback-policy.ts';
 import type { GitHubNotificationPublicationClient } from '../../../channels/github/provider/work-event-client.ts';
 import type { DeliveryAnnouncementState } from '../delivery/delivery-announcement-state.ts';
-import type assignmentIntakePolicy from '../../assignment-intake-policy.ts';
+import type assignmentIntakePolicy from '../../automations/assignment-intake-policy.ts';
 import { inspectActiveIssue, inspectContinuedIssue } from '../dispatch/dispatch-assignment.ts';
 import repositoryScope from '../../../channels/github/repository-scope.ts';
 import type { SharedDispatchRecord } from '../dispatch/dispatch-state.ts';

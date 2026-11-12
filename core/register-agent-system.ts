@@ -7,10 +7,10 @@ import createGitHubStatusChannel from '../channels/github/channel.ts';
 import createGitHubChannelLifecycle from '../agent/github-channel-lifecycle.ts';
 import notificationAutomationReadiness, {
   type NotificationScheduler,
-} from '../agent/automation-readiness.ts';
+} from '../agent/automations/automation-readiness.ts';
 import OpenClawNotifications from '../agent/openclaw-notifications.ts';
 import OpenClawNotificationReset from '../agent/openclaw-notification-reset.ts';
-import { openclawIntakeAutomationId } from '../agent/openclaw-intake-policy.ts';
+import { openclawIntakeAutomationId } from '../agent/automations/openclaw-intake-policy.ts';
 import { readFile, realpath } from 'node:fs/promises';
 
 import OpenClawIntake from '../agent/openclaw-intake.ts';
@@ -18,7 +18,7 @@ import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-sta
 import createIntakeTool from '../tools/intake/tool.ts';
 import IssuePickupEnrollmentStore from '../agent/issue-pickup-enrollment.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import { issuePickupAutomationId } from '../agent/issue-pickup-jobs.ts';
+import { issuePickupAutomationId } from '../agent/automations/issue-pickup-jobs.ts';
 import createDispatchTool from '../tools/dispatch/tool.ts';
 import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
 import instanceIdentity from '../agent/instance-identity.ts';
@@ -42,14 +42,14 @@ import createGitCapability from '../tools/git/capability.ts';
 import createGitHubCapability from '../tools/github/capability.ts';
 import resolveCodexCommandAgentId from '../agent/resolve-codex-command-id.ts';
 import registerAgentCommandSecurity from '../agent/command-security.ts';
-import AutomationService from '../agent/automation-service.ts';
-import automationGatewayDiagnostic from '../agent/automation-gateway-diagnostic.ts';
+import AutomationService from '../agent/automations/automation-service.ts';
+import automationGatewayDiagnostic from '../agent/automations/automation-gateway-diagnostic.ts';
 import gatewayErrorDiagnostic from '../utils/gateway-error-diagnostic.ts';
 import {
   AutomationError,
   nativeObject,
   requestAutomationGateway,
-} from '../agent/automation-gateway.ts';
+} from '../agent/automations/automation-gateway.ts';
 import BoundCommandService from '../agent/bound-command-service.ts';
 import AgentCommandAuthority from '../agent/command-authority.ts';
 import AgentDoctorService from '../agent/doctor-service.ts';
@@ -66,10 +66,10 @@ import createModelRoutingTool from '../tools/model-routing/tool.ts';
 import { registerLifecycleApprovalHook } from './lifecycle-approval-hook.ts';
 import AutomationLifecycleAuthority, {
   verifyAutomationLifecycleRun,
-} from '../agent/automation-lifecycle-authority.ts';
+} from '../agent/automations/automation-lifecycle-authority.ts';
 import registerAutomationLifecycleHooks from './automation-lifecycle-hook.ts';
 import registerAutomationReportHooks from './automation-report-hook.ts';
-import { reconcileAutomationReport } from '../agent/automation-report-delivery.ts';
+import { reconcileAutomationReport } from '../agent/automations/automation-report-delivery.ts';
 import automationLifecycleCommand from '../cli/automation-lifecycle.ts';
 import SetupCommandService from '../agent/setup-command-service.ts';
 import SetupLifecycleService from '../agent/setup-lifecycle.ts';

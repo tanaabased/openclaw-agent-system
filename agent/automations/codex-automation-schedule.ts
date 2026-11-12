@@ -1,5 +1,5 @@
 import { CodexAutomationError } from './codex-automation-state.ts';
-import type { AutomationSchedule } from '../manifest/automation-schedule.ts';
+import type { AutomationSchedule } from '../../manifest/automation-schedule.ts';
 
 /** map shared schedules to native recurrences; codex owns clock and dst behavior. */
 export default function codexAutomationSchedule(

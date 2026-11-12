@@ -1,11 +1,11 @@
 import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
-import issuePickupJobs from '../agent/issue-pickup-jobs.ts';
+import issuePickupJobs from '../agent/automations/issue-pickup-jobs.ts';
 import IssuePickupEnrollmentStore from '../agent/issue-pickup-enrollment.ts';
 import selectionFixture from './issue-pickup-selection-fixture.ts';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 
-import { prepareAutomationReport } from '../agent/automation-report.ts';
+import { prepareAutomationReport } from '../agent/automations/automation-report.ts';
 import { mkdtemp, realpath, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -14,15 +14,15 @@ import {
   createAutomationGateway,
   type AutomationGateway,
   type NativeAutomation,
-} from '../agent/automation-gateway.ts';
-import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
+} from '../agent/automations/automation-gateway.ts';
+import openclawIntakeJobs from '../agent/automations/openclaw-intake-policy.ts';
 import {
   automationPatch,
   nativeAutomationHash,
   effectiveAutomation,
-} from '../agent/automation-projection.ts';
-import AutomationService from '../agent/automation-service.ts';
-import notificationAutomationReadiness from '../agent/automation-readiness.ts';
+} from '../agent/automations/automation-projection.ts';
+import AutomationService from '../agent/automations/automation-service.ts';
+import notificationAutomationReadiness from '../agent/automations/automation-readiness.ts';
 import AgentInstallService from '../agent/install-service.ts';
 import AgentSystemLifecycleRegistry, {
   AgentSystemLifecycleError,

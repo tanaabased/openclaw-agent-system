@@ -1,7 +1,7 @@
 import automationModels from './automation-models.ts';
-import type { ResolvedAutomation } from '../manifest/automation-schema.ts';
-import type { AgentManifest } from '../manifest/types.ts';
-import { issuePickupConfigurationCode } from '../channels/github/issue-pickup-schema.ts';
+import type { ResolvedAutomation } from '../../manifest/automation-schema.ts';
+import type { AgentManifest } from '../../manifest/types.ts';
+import { issuePickupConfigurationCode } from '../../channels/github/issue-pickup-schema.ts';
 export { issuePickupConfigurationCode };
 
 export const issuePickupAutomationId = 'github-issue-pickup';

@@ -7,7 +7,7 @@ import IntakeRecordStore, {
   intakeLocation,
 } from '../../../channels/github/intake/record-store.ts';
 import { inspectCodexWorkspaceBinding } from '../../codex-workspace-binding.ts';
-import assignmentIntakePolicy from '../../assignment-intake-policy.ts';
+import assignmentIntakePolicy from '../../automations/assignment-intake-policy.ts';
 import { assertNotificationManagement } from '../../notification-reset-state.ts';
 
 export interface CodexTaskContextDependencies {

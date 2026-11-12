@@ -2,13 +2,13 @@ import { withDispatchTask } from './dispatch-task-scope.ts';
 import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { parseDirectImplementationRequest } from '../../../tools/dispatch/implementation-schema.ts';
 import renderNativeAssessment, { renderBoundAssessment } from '../assessment/assessment-render.ts';
-import { nativeObject } from '../../automation-gateway.ts';
+import { nativeObject } from '../../automations/automation-gateway.ts';
 import { automationHash } from '../../automation-hash.ts';
 import cleanupConfiguration from '../../cleanup-configuration.ts';
 import codexAssessmentEntry from '../assessment/codex-assessment-entry.ts';
 import { codexInstanceStore } from './codex-assignment-claims.ts';
 import reconcileCodexLifecycle from './codex-assignment-lifecycle.ts';
-import { inspectCodexDispatchActivation } from '../../codex-automations.ts';
+import { inspectCodexDispatchActivation } from '../../automations/codex-automations.ts';
 import runCodexContinuation from '../implementation/codex-continuation.ts';
 import runCodexDelivery from '../delivery/codex-delivery.ts';
 import {
@@ -34,7 +34,7 @@ import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.
 import runCodexFeedback from '../feedback/codex-feedback.ts';
 import codexImplementationEntry from '../implementation/codex-implementation-entry.ts';
 import acceptCodexIntakeOccurrence from '../../codex-intake-occurrence.ts';
-import { codexIntakePolicy } from '../../codex-intake-policy.ts';
+import { codexIntakePolicy } from '../../automations/codex-intake-policy.ts';
 import { connectCodexGitHub } from '../../codex-github-client.ts';
 import { selectCodexTaskContext } from '../context/codex-task-context.ts';
 import codexIssueLaunch from './codex-issue-launch.ts';

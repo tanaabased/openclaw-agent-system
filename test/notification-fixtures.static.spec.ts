@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
+import openclawIntakeJobs from '../agent/automations/openclaw-intake-policy.ts';
 import repositoryScope from '../channels/github/repository-scope.ts';
 import parseAgentManifest from '../manifest/parse.ts';
 

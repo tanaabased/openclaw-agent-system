@@ -2,7 +2,7 @@ import { lstat } from 'node:fs/promises';
 import type { DispatchAuthority, DispatchRequest } from '../../../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../../../manifest/types.ts';
 import reactivateAssignmentFeedback from '../feedback/assignment-feedback-reactivation.ts';
-import { listNativeAutomations } from '../../automation-gateway.ts';
+import { listNativeAutomations } from '../../automations/automation-gateway.ts';
 import { openClawCleanupConfiguration } from '../../cleanup-configuration.ts';
 import DiscoveryBudget from '../../discovery-budget.ts';
 import { managedPullRequest } from '../managed-issue.ts';

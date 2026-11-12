@@ -5,9 +5,9 @@ import automationReport, {
   automationReportInstructionsFor,
   prepareAutomationReport,
   type AutomationReportInput,
-} from '../agent/automation-report.ts';
-import classifyAutomationReport from '../agent/automation-report-schema.ts';
-import { renderStructuredReport } from '../agent/automation-report-presentation.ts';
+} from '../agent/automations/automation-report.ts';
+import classifyAutomationReport from '../agent/automations/automation-report-schema.ts';
+import { renderStructuredReport } from '../agent/automations/automation-report-presentation.ts';
 
 const input: AutomationReportInput = {
   id: 'backup',

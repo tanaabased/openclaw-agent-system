@@ -4,9 +4,9 @@ import {
   automationReportCardValid,
   automationReportInstructionsFor,
   default as automationReport,
-} from '../agent/automation-report.ts';
-import type AutomationReportStore from '../agent/automation-report-store.ts';
-import type { AutomationReportRecord } from '../agent/automation-report-store.ts';
+} from '../agent/automations/automation-report.ts';
+import type AutomationReportStore from '../agent/automations/automation-report-store.ts';
+import type { AutomationReportRecord } from '../agent/automations/automation-report-store.ts';
 
 /** only retained native run identities select a formatter turn; prompt prose never does. */
 export default function registerAutomationReportHooks(

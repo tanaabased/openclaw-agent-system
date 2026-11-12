@@ -1,11 +1,11 @@
 import automationModels from './automation-models.ts';
 import issuePickupJobs, { issuePickupAutomationId } from './issue-pickup-jobs.ts';
-import { issueChatTitleGuidance } from './tasks/dispatch/issue-chat-title.ts';
-import { taskUpdateConsent } from './tasks/feedback/task-update-instructions.ts';
+import { issueChatTitleGuidance } from '../tasks/dispatch/issue-chat-title.ts';
+import { taskUpdateConsent } from '../tasks/feedback/task-update-instructions.ts';
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
-import { IntakeError } from '../channels/github/intake/record-store.ts';
-import type { ResolvedAutomation } from '../manifest/automation-schema.ts';
-import type { AgentManifest } from '../manifest/types.ts';
+import { IntakeError } from '../../channels/github/intake/record-store.ts';
+import type { ResolvedAutomation } from '../../manifest/automation-schema.ts';
+import type { AgentManifest } from '../../manifest/types.ts';
 
 export const openclawIntakeAutomationId = 'github-issue-assignment';
 

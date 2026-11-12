@@ -14,7 +14,7 @@ import {
   issuePickupAutomationId,
   issuePickupConfigurationCode,
   issuePickupErrorCode,
-} from './issue-pickup-jobs.ts';
+} from './automations/issue-pickup-jobs.ts';
 import issuePickup, { pickupAuthority, type PickupInput } from './issue-pickup.ts';
 import type { IssuePickupClient } from '../channels/github/provider/issue-pickup-client.ts';
 import { assertDispatchStorage } from './tasks/dispatch/dispatch-storage.ts';
@@ -34,11 +34,11 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import codexIssueNotice from './codex-issue-notice.ts';
-import { CodexAutomationError } from './codex-automation-state.ts';
+import { CodexAutomationError } from './automations/codex-automation-state.ts';
 import {
   inspectCodexDispatchActivation,
   inspectCodexPickupActivation,
-} from './codex-automations.ts';
+} from './automations/codex-automations.ts';
 import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
 import IntakeRecordStore, {
   IntakeError,

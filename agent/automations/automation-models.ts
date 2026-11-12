@@ -6,13 +6,13 @@ import {
   projectRoutingProfile,
   selectRoutingOverrides,
   validateRoutingProfiles,
-} from './model-routing.ts';
-import type { AutomationRuntime, ResolvedAutomation } from '../manifest/automation-schema.ts';
+} from '../model-routing.ts';
+import type { AutomationRuntime, ResolvedAutomation } from '../../manifest/automation-schema.ts';
 import {
   explicitModelEfforts,
   modelReferenceSchema,
   type AgentModelsConfiguration,
-} from '../manifest/models-schema.ts';
+} from '../../manifest/models-schema.ts';
 
 /** resolve once before planning or mutation; native adapters validate actual model availability. */
 export default function automationModels(

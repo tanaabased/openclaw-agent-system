@@ -1,6 +1,6 @@
 import type { GitHubNotificationIntakeClient } from '../../../channels/github/provider/work-event-types.ts';
 import { githubIdentityMatches } from '../../../channels/github/provider/work-item.ts';
-import type assignmentIntakePolicy from '../../assignment-intake-policy.ts';
+import type assignmentIntakePolicy from '../../automations/assignment-intake-policy.ts';
 import assignmentRetirement, {
   awaitingReassignment,
   type Retirement,

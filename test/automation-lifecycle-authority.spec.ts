@@ -4,14 +4,14 @@ import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import AutomationLifecycleAuthority, {
   verifyAutomationLifecycleRun,
   type AutomationLifecycleRun,
-} from '../agent/automation-lifecycle-authority.ts';
+} from '../agent/automations/automation-lifecycle-authority.ts';
 import {
   effectiveAutomation,
   nativeAutomationHash,
   projectAutomation,
-} from '../agent/automation-projection.ts';
-import type { NotificationScheduler } from '../agent/automation-readiness.ts';
-import AutomationStore, { type AutomationRecord } from '../agent/automation-store.ts';
+} from '../agent/automations/automation-projection.ts';
+import type { NotificationScheduler } from '../agent/automations/automation-readiness.ts';
+import AutomationStore, { type AutomationRecord } from '../agent/automations/automation-store.ts';
 import registerAutomationLifecycleHooks from '../core/automation-lifecycle-hook.ts';
 import normalizeAutomations, { type ResolvedAutomation } from '../manifest/automation-schema.ts';
 import type { AgentManifest } from '../manifest/types.ts';

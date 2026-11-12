@@ -1,4 +1,4 @@
-import { AutomationError } from '../agent/automation-gateway.ts';
+import { AutomationError } from '../agent/automations/automation-gateway.ts';
 import { lifecycleTableLines } from '../core/lifecycle-presentation.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import automationFailureNotice from './automation-diagnostic.ts';

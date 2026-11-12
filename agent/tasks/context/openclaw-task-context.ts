@@ -3,7 +3,7 @@ import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
 import IntakeRecordStore, { intakeLocation } from '../../../channels/github/intake/record-store.ts';
 import type AgentManifestService from '../../../manifest/service.ts';
 import type { AgentManifest } from '../../../manifest/types.ts';
-import assignmentIntakePolicy from '../../assignment-intake-policy.ts';
+import assignmentIntakePolicy from '../../automations/assignment-intake-policy.ts';
 
 export interface OpenClawTaskContextDependencies {
   root: string;

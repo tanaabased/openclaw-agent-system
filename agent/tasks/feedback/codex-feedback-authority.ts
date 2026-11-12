@@ -1,4 +1,4 @@
-import assignmentIntakePolicy from '../../assignment-intake-policy.ts';
+import assignmentIntakePolicy from '../../automations/assignment-intake-policy.ts';
 import { inspectFeedbackAssignment } from './assignment-feedback-reactivation.ts';
 import { inspectIssueIdentity } from '../dispatch/dispatch-assignment.ts';
 import authorizeFeedback from './feedback-source-context.ts';

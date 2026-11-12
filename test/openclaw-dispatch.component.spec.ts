@@ -20,7 +20,7 @@ import {
   taskScopeInstructions,
 } from '../agent/tasks/context/native-task-instructions.ts';
 import openClawConditionCheck from '../agent/openclaw-condition-check.ts';
-import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
+import openclawIntakeJobs from '../agent/automations/openclaw-intake-policy.ts';
 import { nativeTurnFor } from '../agent/openclaw-native-turns.ts';
 import { feedbackTarget } from '../agent/tasks/feedback/reply-target.ts';
 import workflowStatus from '../agent/tasks/workflow-status.ts';

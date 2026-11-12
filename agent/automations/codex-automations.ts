@@ -1,27 +1,27 @@
 import { mkdir, readdir, realpath, rmdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { workflowFeedbackAvailable } from '../channels/github/feedback-policy.ts';
-import { codexInstanceStore } from './tasks/dispatch/codex-assignment-claims.ts';
+import { workflowFeedbackAvailable } from '../../channels/github/feedback-policy.ts';
+import { codexInstanceStore } from '../tasks/dispatch/codex-assignment-claims.ts';
 import codexAutomationSchedule from './codex-automation-schedule.ts';
-import IssuePickupEnrollmentStore from './issue-pickup-enrollment.ts';
+import IssuePickupEnrollmentStore from '../issue-pickup-enrollment.ts';
 import {
   issuePickupAutomationId,
   issuePickupConfigurationCode,
   issuePickupErrorCode,
 } from './issue-pickup-jobs.ts';
-import { notificationAuthorityDigest } from './notification-authority.ts';
+import { notificationAuthorityDigest } from '../notification-authority.ts';
 
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { IntakeError } from '../channels/github/intake/record-store.ts';
-import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
-import PrivateStateFile from '../core/private-state-file.ts';
-import type { ResolvedAutomation } from '../manifest/automation-schema.ts';
-import type { AgentManifest } from '../manifest/types.ts';
+import { IntakeError } from '../../channels/github/intake/record-store.ts';
+import ensurePrivateStateDirectories from '../../core/ensure-private-state-directories.ts';
+import PrivateStateFile from '../../core/private-state-file.ts';
+import type { ResolvedAutomation } from '../../manifest/automation-schema.ts';
+import type { AgentManifest } from '../../manifest/types.ts';
 import { AutomationError } from './automation-gateway.ts';
-import { automationHash } from './automation-hash.ts';
+import { automationHash } from '../automation-hash.ts';
 import AutomationThreads, {
   AutomationThreadSettingsError,
   AutomationThreadSettingsHandoff,
@@ -54,11 +54,11 @@ import {
   prepareCodexPickupEnrollment,
   runCodexIntake,
   type CodexIntakeDependencies,
-} from './codex-intake.ts';
-import CodexSidebarJournal, { type SidebarEffect } from './codex-sidebar-journal.ts';
-import { sidebarSections } from './codex-sidebar-placement.ts';
-import { codexThreadAdapter, connectCodexThreads } from './codex-thread-client.ts';
-import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
+} from '../codex-intake.ts';
+import CodexSidebarJournal, { type SidebarEffect } from '../codex-sidebar-journal.ts';
+import { sidebarSections } from '../codex-sidebar-placement.ts';
+import { codexThreadAdapter, connectCodexThreads } from '../codex-thread-client.ts';
+import { inspectCodexWorkspaceBinding } from '../codex-workspace-binding.ts';
 
 class SidebarPending extends AutomationError {
   constructor(readonly effect: Exclude<SidebarEffect, { status: 'done' }>) {

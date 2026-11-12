@@ -1,6 +1,6 @@
 import reactivateAssignmentFeedback from '../feedback/assignment-feedback-reactivation.ts';
 import cleanupConfiguration from '../../cleanup-configuration.ts';
-import { inspectCodexDispatchActivation } from '../../codex-automations.ts';
+import { inspectCodexDispatchActivation } from '../../automations/codex-automations.ts';
 import type { CodexDispatchDependencies } from './codex-dispatch-context.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
 import { codexNativeHandoff } from './codex-dispatch-handoff.ts';

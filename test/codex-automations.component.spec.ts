@@ -19,8 +19,11 @@ import { join, resolve } from 'node:path';
 import { parse, stringify } from 'smol-toml';
 
 import { automationHash } from '../agent/automation-hash.ts';
-import { AutomationError } from '../agent/automation-gateway.ts';
-import type { AutomationThread, AutomationThreadAdapter } from '../agent/automation-threads.ts';
+import { AutomationError } from '../agent/automations/automation-gateway.ts';
+import type {
+  AutomationThread,
+  AutomationThreadAdapter,
+} from '../agent/automations/automation-threads.ts';
 import {
   inspectCodexPickupActivation,
   acknowledgeCodexAutomation,
@@ -35,15 +38,15 @@ import {
   reconcileCodexAutomationRetirements,
   syncCodexAutomationThreads,
   type CodexAutomationDependencies,
-} from '../agent/codex-automations.ts';
-import codexAutomationSchedule from '../agent/codex-automation-schedule.ts';
+} from '../agent/automations/codex-automations.ts';
+import codexAutomationSchedule from '../agent/automations/codex-automation-schedule.ts';
 import {
   parseSavedAutomation,
   parseAutomationReceipt,
   readCodexAutomations,
   type NativeAutomation,
   type SavedAutomation,
-} from '../agent/codex-automation-state.ts';
+} from '../agent/automations/codex-automation-state.ts';
 import {
   bindCodexWorkspace,
   inspectCodexWorkspaceBinding,

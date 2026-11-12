@@ -23,7 +23,7 @@ import codexTurnContext, { codexCurrentTurnContext } from './tasks/context/codex
 import contextMaterialTransport from './tasks/context/context-material-transport.ts';
 import { operateInstanceIdentity } from './instance-identity.ts';
 import IssuePickupFailure from './issue-pickup-failure.ts';
-import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
+import { issuePickupAutomationId } from './automations/issue-pickup-jobs.ts';
 import {
   assertModelWorkflowInput,
   nativeContextResponse,
@@ -41,7 +41,7 @@ import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
 import workflowNoticeInstructions from './tasks/workflow-notice-instructions.ts';
 
-import { CodexAutomationError } from './codex-automation-state.ts';
+import { CodexAutomationError } from './automations/codex-automation-state.ts';
 import {
   acknowledgeCodexAutomation,
   cancelCodexAutomation,
@@ -51,7 +51,7 @@ import {
   prepareCodexAutomation,
   reconcileCodexAutomationRetirements,
   syncCodexAutomationThreads,
-} from './codex-automations.ts';
+} from './automations/codex-automations.ts';
 import codexModelRouting from './codex-model-routing.ts';
 import { RoutingError } from './model-routing.ts';
 

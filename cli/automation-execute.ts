@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
 
-import deliverAutomationReport from '../agent/automation-report-delivery.ts';
-import { AutomationError } from '../agent/automation-gateway.ts';
-import type AutomationService from '../agent/automation-service.ts';
+import deliverAutomationReport from '../agent/automations/automation-report-delivery.ts';
+import { AutomationError } from '../agent/automations/automation-gateway.ts';
+import type AutomationService from '../agent/automations/automation-service.ts';
 import type { SetupCommandResult } from '../agent/setup-runner.ts';
 import type BoundCommandService from '../agent/bound-command-service.ts';
 import type SessionDispatchCredential from '../credentials/session-dispatch.ts';

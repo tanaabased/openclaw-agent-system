@@ -7,7 +7,7 @@ import {
   isGatewayTransportError,
 } from 'openclaw/plugin-sdk/gateway-runtime';
 
-import gatewayUnavailable from './automation-gateway-unavailable.ts';
+import gatewayUnavailable from './automations/automation-gateway-unavailable.ts';
 import gatewayAgentReapply from './gateway-agent-reapply.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import type { Logger } from '../core/logger.ts';

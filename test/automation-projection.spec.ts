@@ -1,5 +1,5 @@
 import pickupTiming from '../channels/github/issue-pickup-timing.ts';
-import codexSchedule from '../agent/codex-automation-schedule.ts';
+import codexSchedule from '../agent/automations/codex-automation-schedule.ts';
 import assert from 'node:assert/strict';
 
 import {
@@ -8,8 +8,8 @@ import {
   nativeAutomationHash,
   projectAutomation,
   type AutomationProjectionContext,
-} from '../agent/automation-projection.ts';
-import type { NativeAutomation } from '../agent/automation-gateway.ts';
+} from '../agent/automations/automation-projection.ts';
+import type { NativeAutomation } from '../agent/automations/automation-gateway.ts';
 import normalizeAutomations, { type ResolvedAutomation } from '../manifest/automation-schema.ts';
 import normalizeSchedule from '../manifest/automation-schedule.ts';
 

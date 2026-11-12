@@ -3,14 +3,14 @@ import { join } from 'node:path';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
-import { automationHash } from './automation-hash.ts';
+import { withPrivateStateLock } from '../../core/private-state-lock-context.ts';
+import { automationHash } from '../automation-hash.ts';
 import { AutomationError } from './automation-gateway.ts';
-import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
-import PrivateStateFile from '../core/private-state-file.ts';
-import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
+import ensurePrivateStateDirectories from '../../core/ensure-private-state-directories.ts';
+import PrivateStateFile from '../../core/private-state-file.ts';
+import acquirePrivateStateFileLock from '../../core/private-state-file-lock.ts';
 
-export { automationHash } from './automation-hash.ts';
+export { automationHash } from '../automation-hash.ts';
 
 const hashSchema = Type.String({ pattern: '^[a-f0-9]{64}$' });
 const recordSchema = Type.Object(

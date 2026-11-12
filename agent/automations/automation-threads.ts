@@ -6,13 +6,13 @@ import { Value } from 'typebox/value';
 
 import { AutomationError } from './automation-gateway.ts';
 import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
-import { automationHash } from './automation-hash.ts';
-import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
-import PrivateStateFile from '../core/private-state-file.ts';
-import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
-import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
-import type { AutomationRuntime, ResolvedAutomation } from '../manifest/automation-schema.ts';
-import managedGroupName, { defaultManagedGroup } from '../utils/managed-group-name.ts';
+import { automationHash } from '../automation-hash.ts';
+import ensurePrivateStateDirectories from '../../core/ensure-private-state-directories.ts';
+import PrivateStateFile from '../../core/private-state-file.ts';
+import acquirePrivateStateFileLock from '../../core/private-state-file-lock.ts';
+import { withPrivateStateLock } from '../../core/private-state-lock-context.ts';
+import type { AutomationRuntime, ResolvedAutomation } from '../../manifest/automation-schema.ts';
+import managedGroupName, { defaultManagedGroup } from '../../utils/managed-group-name.ts';
 
 const settingsSchema = Type.Object(
   {

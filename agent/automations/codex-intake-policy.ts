@@ -1,13 +1,13 @@
 import automationModels from './automation-models.ts';
 import issuePickupJobs, { issuePickupAutomationId } from './issue-pickup-jobs.ts';
-import { issueChatTitleGuidance } from './tasks/dispatch/issue-chat-title.ts';
-import { taskUpdateConsent } from './tasks/feedback/task-update-instructions.ts';
+import { issueChatTitleGuidance } from '../tasks/dispatch/issue-chat-title.ts';
+import { taskUpdateConsent } from '../tasks/feedback/task-update-instructions.ts';
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
-import codexDispatchHandoff from './tasks/dispatch/codex-dispatch-handoff.ts';
-import { codexQuietHeartbeatInstructions } from './codex-heartbeat.ts';
-import type { ResolvedAutomation } from '../manifest/automation-schema.ts';
-import type { AgentManifest } from '../manifest/types.ts';
-import { IntakeError } from '../channels/github/intake/record-store.ts';
+import codexDispatchHandoff from '../tasks/dispatch/codex-dispatch-handoff.ts';
+import { codexQuietHeartbeatInstructions } from '../codex-heartbeat.ts';
+import type { ResolvedAutomation } from '../../manifest/automation-schema.ts';
+import type { AgentManifest } from '../../manifest/types.ts';
+import { IntakeError } from '../../channels/github/intake/record-store.ts';
 
 export const intakeAutomationId = 'github-issue-assignment';
 

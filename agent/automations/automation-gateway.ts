@@ -3,9 +3,9 @@ import type { callGatewayFromCli } from 'openclaw/plugin-sdk/gateway-runtime';
 import {
   assertPrivateStateLocksHeld,
   privateStateLockSignal,
-} from '../core/private-state-lock-context.ts';
+} from '../../core/private-state-lock-context.ts';
 import type { AutomationGatewayDiagnostic } from './automation-gateway-diagnostic.ts';
-import { openclawSessionCreateTimeoutMs } from './openclaw-session-timeout.ts';
+import { openclawSessionCreateTimeoutMs } from '../openclaw-session-timeout.ts';
 
 export type AutomationGateway = (
   method:

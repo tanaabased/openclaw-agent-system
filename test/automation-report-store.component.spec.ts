@@ -4,12 +4,12 @@ import { mkdtemp, rm } from 'node:fs/promises';
 
 import deliverAutomationReport, {
   reconcileAutomationReport,
-} from '../agent/automation-report-delivery.ts';
+} from '../agent/automations/automation-report-delivery.ts';
 import AutomationReportStore, {
   reportLifetimeMs,
   type AutomationReportRecord,
-} from '../agent/automation-report-store.ts';
-import { prepareAutomationReport } from '../agent/automation-report.ts';
+} from '../agent/automations/automation-report-store.ts';
+import { prepareAutomationReport } from '../agent/automations/automation-report.ts';
 
 describe('agent/automation-report-store', () => {
   let root: string;

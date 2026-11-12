@@ -1,5 +1,5 @@
 import { realpath } from 'node:fs/promises';
-import { nativeObject } from '../../automation-gateway.ts';
+import { nativeObject } from '../../automations/automation-gateway.ts';
 import { dispatchHistoryPages, nativeHistoryPages } from '../dispatch/codex-dispatch-history.ts';
 import literalArguments from '../../literal-command-arguments.ts';
 import { assertModelMaterial, bindNativeMaterial } from './native-material.ts';

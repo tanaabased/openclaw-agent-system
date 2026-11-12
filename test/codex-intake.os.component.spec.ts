@@ -5,22 +5,24 @@ import { join, resolve } from 'node:path';
 
 import { parse, stringify } from 'smol-toml';
 
-import planCodexAutomations, { codexAutomationMarker } from '../agent/codex-automation-plan.ts';
-import codexAutomationSchedule from '../agent/codex-automation-schedule.ts';
-import type { NativeAutomation } from '../agent/codex-automation-state.ts';
+import planCodexAutomations, {
+  codexAutomationMarker,
+} from '../agent/automations/codex-automation-plan.ts';
+import codexAutomationSchedule from '../agent/automations/codex-automation-schedule.ts';
+import type { NativeAutomation } from '../agent/automations/codex-automation-state.ts';
 import {
   acknowledgeCodexAutomation,
   inspectCodexAutomations,
   inspectCodexDispatchActivation,
   prepareCodexAutomation,
   syncCodexAutomationThreads,
-} from '../agent/codex-automations.ts';
+} from '../agent/automations/codex-automations.ts';
 import { codexQuietHeartbeatInstructions } from '../agent/codex-heartbeat.ts';
 import {
   codexIntakeJobs,
   codexIntakePolicy,
   intakeAutomationId,
-} from '../agent/codex-intake-policy.ts';
+} from '../agent/automations/codex-intake-policy.ts';
 import { inspectCodexIntake, runCodexIntake } from '../agent/codex-intake.ts';
 import { connectCodexGitHub } from '../agent/codex-github-client.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
