@@ -351,7 +351,6 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
   const agentKey = isRecord(value) && Object.hasOwn(value, 'setup-agent') ? 'setup-agent' : 'setup';
   const github = isRecord(value) && isRecord(value.github) ? value.github : undefined;
   const legacyPickup = github !== undefined && Object.hasOwn(github, 'project-pickup');
-  const pickupConflict = legacyPickup && Object.hasOwn(github, 'issue-pickup');
   const declarations = (['setup-host', agentKey] as const).flatMap((key) => {
     if (!isRecord(value) || !Object.hasOwn(value, key)) return [];
     const declaration = value[key];
@@ -397,18 +396,35 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
           isRecord(value) ? value.models : undefined,
         )
       : []),
-    ...(pickupConflict
+    ...(legacyPickup
       ? [
           {
-            code: 'github-issue-pickup-alias-conflict',
-            fieldPath: '/github/issue-pickup',
+            code: 'github-project-pickup-removed',
+            fieldPath: '/github/project-pickup',
             message:
-              'Declare only github.issue-pickup; remove its project-pickup alias instead of defining both.',
+              'github.project-pickup is no longer supported. Use github.issue-pickup with the same settings, including projects.',
             severity: 'error' as const,
           },
         ]
       : []),
-    ...(['issue-assignment', 'issue-pickup', 'project-pickup'] as const).flatMap((workflow) => {
+    ...(Array.isArray(github?.routing)
+      ? github.routing.flatMap((route: unknown, index: number): ManifestDiagnostic[] =>
+          isRecord(route) &&
+          Array.isArray(route.workflows) &&
+          route.workflows.includes('project-pickup')
+            ? [
+                {
+                  code: 'github-routing-project-pickup-removed',
+                  fieldPath: `/github/routing/${index}/workflows`,
+                  message:
+                    'Routing workflow project-pickup is no longer supported. Use issue-pickup with the same targets and rule order.',
+                  severity: 'error',
+                },
+              ]
+            : [],
+        )
+      : []),
+    ...(['issue-assignment', 'issue-pickup'] as const).flatMap((workflow) => {
       const github = isRecord(value) && isRecord(value.github) ? value.github : undefined;
       const settings = github && isRecord(github[workflow]) ? github[workflow] : undefined;
       return automationModelProfileDiagnostics(
@@ -498,34 +514,6 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
       : {}),
     diagnostics: [
       ...notificationDiagnostics,
-      ...(legacyPickup
-        ? [
-            {
-              code: 'github-issue-pickup-alias-deprecated',
-              fieldPath: '/github/project-pickup',
-              message:
-                'github.project-pickup is deprecated; use github.issue-pickup with the same settings.',
-              severity: 'warning' as const,
-            },
-          ]
-        : []),
-      ...(Array.isArray(github?.routing) &&
-      github.routing.some(
-        (route: unknown) =>
-          isRecord(route) &&
-          Array.isArray(route.workflows) &&
-          route.workflows.includes('project-pickup'),
-      )
-        ? [
-            {
-              code: 'github-routing-issue-pickup-alias-deprecated',
-              fieldPath: '/github/routing',
-              message:
-                'Routing workflow project-pickup is deprecated; use issue-pickup with the same targets and rule order.',
-              severity: 'warning' as const,
-            },
-          ]
-        : []),
       ...(isRecord(value) && Object.hasOwn(value, 'setup')
         ? [
             {

@@ -32,7 +32,7 @@ describe('issue pickup conversation selection', () => {
               runtimes: [runtime],
               routing: ['owner/*'],
               'issue-assignment': { allowed: [{ login: 'operator', 'node-id': 'U_operator' }] },
-              [runtime === 'codex' ? 'project-pickup' : 'issue-pickup']: {
+              'issue-pickup': {
                 ...pickupDeclaration,
 
                 thread,
