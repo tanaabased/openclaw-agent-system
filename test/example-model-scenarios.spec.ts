@@ -11,6 +11,7 @@ import automationReport, {
   prepareAutomationReport,
 } from '../agent/automations/automation-report.ts';
 import registerAgentSystemHooks from '../core/register-hooks.ts';
+import { hookDiagnostic } from '../examples/openclaw-automation-command-chat/codex-hook-trace.mjs';
 import { credentialExampleChecks } from '../examples/openclaw-credentials/model-fixture.ts';
 import {
   githubExampleEmoriCallId,
@@ -192,6 +193,58 @@ describe('scripts/example-model-scenarios', () => {
       ])
         assert.equal(matchFixture([...scenario.fixtures], input(changed)), null);
     }
+  });
+
+  it('should diagnose native hook setup and failure without exposing protocol content', () => {
+    assert.deepEqual(
+      hookDiagnostic({
+        method: 'thread/start',
+        params: {
+          config: {
+            'features.hooks': true,
+            'hooks.Stop': [{ hooks: [{ command: 'private callback command' }] }],
+            'hooks.state': {
+              '/<session-flags>/config.toml:stop:0:0': {
+                enabled: true,
+                trusted_hash: 'private hash',
+              },
+            },
+          },
+          developerInstructions: 'private prompt',
+        },
+      }),
+      {
+        method: 'thread/start',
+        hooksEnabled: true,
+        stopHandlers: 1,
+        stopTrustEntries: [{ enabled: true, trusted: true }],
+      },
+    );
+    assert.deepEqual(
+      hookDiagnostic({
+        method: 'hook/completed',
+        params: {
+          run: {
+            eventName: 'stop',
+            status: 'failed',
+            durationMs: 10000,
+            entries: [{ text: 'private callback timed out with secret token' }],
+          },
+        },
+      }),
+      {
+        method: 'hook/completed',
+        stop: true,
+        status: 'failed',
+        durationMs: 10000,
+        entryCount: 1,
+        signals: ['timed out'],
+      },
+    );
+    assert.equal(
+      hookDiagnostic({ method: 'turn/start', params: { input: 'private prompt' } }),
+      undefined,
+    );
   });
 
   it('should report recovery output without copying appended native context', async () => {
