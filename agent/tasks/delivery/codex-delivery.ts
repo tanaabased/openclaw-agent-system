@@ -1,10 +1,5 @@
 import { withDispatchTask } from '../../dispatch-task-scope.ts';
-import {
-  deliveryBaseSchema,
-  deliveryHasEffects,
-  selectDeliveryBase,
-  verifyDeliveryCommits,
-} from './delivery-base.ts';
+import { deliveryBaseSchema, verifyDeliveryCommits } from './delivery-base.ts';
 import { retainedAnnouncementPublication } from './delivery-announcement-recovery.ts';
 import { realpath } from 'node:fs/promises';
 import { Type, type Static } from 'typebox';
@@ -53,7 +48,11 @@ import deliveryAnnouncement, {
   announcementPresentation,
   deliveryCompletionInstructions,
 } from './delivery-announcement.ts';
-import deliveryBindingChange from './delivery-binding-change.ts';
+import {
+  assertDeliveryBinding,
+  selectDeliveryDestination,
+  deliveryContentUpdate,
+} from './delivery-preparation.ts';
 import selectFeedbackStage from '../../feedback-stage.ts';
 import bindIssuePullRequest from './issue-pr-binding.ts';
 import issueProgression from '../../issue-progression.ts';
@@ -676,11 +675,12 @@ async function runCodexDeliveryScoped(
         };
       }
       const adopted = previous?.adopted ?? record.adoptedPullRequest;
-      const retainedBase =
-        adoptedPullRequest?.baseRef ??
-        adopted?.base ??
-        (deliveryHasEffects(previous) ? previous?.binding.base : undefined);
-      const base = selectDeliveryBase(input.base, checked.repo.defaultBranch, retainedBase);
+      const { base, retainedBase } = selectDeliveryDestination({
+        requestedBase: input.base,
+        repositoryDefault: checked.repo.defaultBranch,
+        selectedBase: adoptedPullRequest?.baseRef ?? adopted?.base,
+        previous,
+      });
       await verifyDispatchWorktree(record.project, found.cwd, repository, git, 'handoff');
       const checkedOutBranch = (await git(found.cwd, ['branch', '--show-current'], signal)).trim();
       let branch = checkedOutBranch;
@@ -750,17 +750,7 @@ async function runCodexDeliveryScoped(
         !(input.body ?? previous?.body)?.trim()
       )
         throw new Error('delivery-body-required');
-      const bindingChange =
-        previous &&
-        deliveryBindingChange(previous.binding, binding, [
-          'repositoryId',
-          'issueId',
-          'threadId',
-          'worktree',
-          ...(deliveryHasEffects(previous) ? (['branch', 'base'] as const) : []),
-          'authorId',
-        ]);
-      if (bindingChange) throw new Error(bindingChange);
+      assertDeliveryBinding(previous, binding);
       const existingContent =
         adoptedPullRequest &&
         ((input.title ?? previous?.title) === undefined ||
@@ -811,15 +801,7 @@ async function runCodexDeliveryScoped(
         (delivery.title !== previous.title || delivery.body !== previous.body)
       )
         throw new Error('delivery-content-changed');
-      const contentUpdate = {
-        ...previous?.contentUpdate,
-        ...(previous?.pullRequest && delivery.title !== previous.title
-          ? { title: delivery.title }
-          : {}),
-        ...(previous?.pullRequest && delivery.body !== previous.body
-          ? { body: delivery.body }
-          : {}),
-      };
+      const contentUpdate = deliveryContentUpdate(previous, delivery);
       if (Object.keys(contentUpdate).length) {
         delivery.contentUpdate = contentUpdate;
         delivery.contentUpdateAttempted = previous?.contentUpdate

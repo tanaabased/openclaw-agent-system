@@ -1,4 +1,4 @@
-import { deliveryHasEffects, selectDeliveryBase, verifyDeliveryCommits } from './delivery-base.ts';
+import { deliveryHasEffects, verifyDeliveryCommits } from './delivery-base.ts';
 import { realpath } from 'node:fs/promises';
 import type { Static } from 'typebox';
 
@@ -7,7 +7,7 @@ import { gitRemoteIdentity } from '../../../tools/git/worktree-remote.ts';
 import type { directImplementationRequestSchema } from '../../../tools/dispatch/implementation-schema.ts';
 import type { AssessmentEntryDependencies } from '../../assessment-entry.ts';
 import { automationHash } from '../../automation-hash.ts';
-import deliveryBindingChange from './delivery-binding-change.ts';
+import { assertDeliveryBinding, selectDeliveryDestination } from './delivery-preparation.ts';
 import type { ImplementationEntry } from '../../implementation-entry-state.ts';
 import publishIssueDelivery from './publish-issue-delivery.ts';
 import { replyLocator } from '../../reply-target.ts';
@@ -64,8 +64,11 @@ export default async function implementationEntryDelivery(input: {
   if ((await realpath(await git(['rev-parse', '--show-toplevel']))) !== entry.checkout.path)
     throw new Error('delivery-worktree-diverged');
   const previous = entry.delivery;
-  const retainedBase = deliveryHasEffects(previous) ? previous?.binding.base : undefined;
-  const base = selectDeliveryBase(action.base, repo.defaultBranch, retainedBase);
+  const { base, retainedBase } = selectDeliveryDestination({
+    requestedBase: action.base,
+    repositoryDefault: repo.defaultBranch,
+    previous,
+  });
   const branch = await git(['branch', '--show-current']);
   if (!branch || branch === base || branch === repo.defaultBranch)
     throw new Error('delivery-branch-required');
@@ -102,18 +105,7 @@ export default async function implementationEntryDelivery(input: {
     head,
     authorId: connection.account.identity.nodeId,
   };
-  const changed =
-    previous &&
-    deliveryBindingChange(previous.binding, binding, [
-      'repositoryId',
-      'issueId',
-      'sessionId',
-      'threadId',
-      'worktree',
-      ...(deliveryHasEffects(previous) ? (['branch', 'base'] as const) : []),
-      'authorId',
-    ]);
-  if (changed) throw new Error(changed);
+  assertDeliveryBinding(previous, binding);
   const title = action.title ?? previous?.title,
     body = action.body ?? previous?.body;
   if (!title?.trim() || !body?.trim() || title.includes('\0') || body.includes('\0'))

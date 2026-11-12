@@ -1,4 +1,4 @@
-import { deliveryHasEffects, selectDeliveryBase, verifyDeliveryCommits } from './delivery-base.ts';
+import { verifyDeliveryCommits } from './delivery-base.ts';
 import { retainedAnnouncementPublication } from './delivery-announcement-recovery.ts';
 import codexIssueNotice from '../../codex-issue-notice.ts';
 import invalidDeliveryRequest from '../../../tools/dispatch/delivery-request-error.ts';
@@ -12,7 +12,11 @@ import bindIssuePullRequest from './issue-pr-binding.ts';
 import { adoptedIssueDelivery } from './delivery-state.ts';
 import { retainedIssueProgression } from '../../issue-progression.ts';
 import workflowStatus from '../../workflow-status.ts';
-import deliveryBindingChange from './delivery-binding-change.ts';
+import {
+  assertDeliveryBinding,
+  selectDeliveryDestination,
+  deliveryContentUpdate,
+} from './delivery-preparation.ts';
 import publishIssueDelivery from './publish-issue-delivery.ts';
 import deliveryAnnouncement, {
   announcementPrecedesDelivery,
@@ -280,11 +284,12 @@ export default async function openClawDelivery(input: {
   }
   const previous = record.delivery;
   const adopted = previous?.adopted;
-  const retainedBase =
-    adoptedPullRequest?.baseRef ??
-    adopted?.base ??
-    (deliveryHasEffects(previous) ? previous?.binding.base : undefined);
-  const base = selectDeliveryBase(action.base, input.base, retainedBase);
+  const { base, retainedBase } = selectDeliveryDestination({
+    requestedBase: action.base,
+    repositoryDefault: input.base,
+    selectedBase: adoptedPullRequest?.baseRef ?? adopted?.base,
+    previous,
+  });
   let branch = await git(['branch', '--show-current']);
   if (previous?.localBranch && branch !== previous.localBranch)
     throw new Error('delivery-branch-diverged');
@@ -340,19 +345,7 @@ export default async function openClawDelivery(input: {
     head,
     authorId: adopted?.authorId ?? connection.account.identity.nodeId,
   };
-  // the commit belongs to this attempt; the issue, session and branch own the delivery.
-  const bindingChange =
-    previous &&
-    deliveryBindingChange(previous.binding, binding, [
-      'repositoryId',
-      'issueId',
-      'sessionId',
-      'threadId',
-      'worktree',
-      ...(deliveryHasEffects(previous) ? (['branch', 'base'] as const) : []),
-      'authorId',
-    ]);
-  if (bindingChange) throw new Error(bindingChange);
+  assertDeliveryBinding(previous, binding);
   const existingContent =
     adoptedPullRequest &&
     ((action.title ?? previous?.title) === undefined ||
@@ -395,11 +388,7 @@ export default async function openClawDelivery(input: {
     creationAttempted: false,
     reconciled: false,
   };
-  const contentUpdate = {
-    ...previous?.contentUpdate,
-    ...(previous?.pullRequest && title !== previous.title ? { title } : {}),
-    ...(previous?.pullRequest && body !== previous.body ? { body } : {}),
-  };
+  const contentUpdate = deliveryContentUpdate(previous, { title, body });
   if (
     adopted &&
     head === adopted.head &&

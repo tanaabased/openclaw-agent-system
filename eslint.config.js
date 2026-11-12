@@ -88,7 +88,7 @@ export default defineConfig([
   {
     files: [
       'agent/tasks/delivery/delivery-base.ts',
-      'agent/tasks/delivery/delivery-binding-change.ts',
+      'agent/tasks/delivery/delivery-preparation.ts',
       'agent/tasks/delivery/delivery-state.ts',
       'agent/tasks/delivery/issue-delivery-state.ts',
       'agent/tasks/delivery/publish-issue-delivery.ts',
