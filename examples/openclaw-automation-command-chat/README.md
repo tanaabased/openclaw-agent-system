@@ -43,8 +43,8 @@ openclaw-aimock prepare --scenario openclaw-automation-command-chat
 openclaw config set models.mode merge
 openclaw config set memory.search.enabled false --strict-json
 openclaw config set plugins.entries.codex.config.codexDynamicToolsLoading direct
-openclaw config set plugins.entries.codex.config.appServer.command "$(command -v node)"
-openclaw config set plugins.entries.codex.config.appServer.args "$(jq -nc --arg trace "$GITHUB_WORKSPACE/examples/openclaw-automation-command-chat/codex-hook-trace.mjs" '[$trace,"-c","openai_base_url=\"http://127.0.0.1:4010/v1\"","app-server","--listen","stdio://"]')" --strict-json
+openclaw config set plugins.entries.codex.config.appServer.command "$GITHUB_WORKSPACE/examples/openclaw-automation-command-chat/codex-hook-trace.mjs"
+openclaw config set plugins.entries.codex.config.appServer.args '["-c","openai_base_url=\"http://127.0.0.1:4010/v1\"","app-server","--listen","stdio://"]' --strict-json
 openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true --strict-json
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 for runtime in openclaw codex; do
