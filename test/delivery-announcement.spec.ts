@@ -397,6 +397,7 @@ describe('agent/delivery-announcement', () => {
       const preview = await run('candidate', { publicText: 'Thanks, @octocat.' });
       const text = delivery.announcement!.publicText!;
       assert.ok(text.includes('Thanks, @octocat.'));
+      assert.ok('presentation' in preview);
       assert.ok(preview.presentation!.includes('[@octocat](https://github.com/octocat)'));
       assert.equal(posts, 0);
       const result = await run('announce');
