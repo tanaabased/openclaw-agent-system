@@ -965,6 +965,44 @@ for (const scenario of [
         });
     }
     if (scenario.id === 'openclaw-pr-journey') {
+      it('should continue a launched pr through managed work without replacing its metadata', async () => {
+        const input = request(
+          `Operator request for managed issue ${id}: Implement the cleanup note and update this existing PR. Preserve its title, body, base and draft state.`,
+        );
+        supplyFacts(input, { stage: 'assessment', receipt: id });
+        const launch = resolveExampleModelScenario('openclaw-issue-launch');
+        assert.deepEqual(await action(input, 'implementation-context', launch), {
+          action: 'implementation-context',
+        });
+        append(input, 'work-context', {
+          status: 'verified',
+          runtime: 'openclaw',
+          publicationAuthorized: true,
+          project: { path: '/tmp/owned' },
+          instructions: nativeTaskInstructions('openclaw'),
+          implementation: { defaultSkill: true, skill: { path: '/fixture/SKILL.md' } },
+        });
+        append(input, 'implementation-skill', 'Use the supplied implementation context.');
+        for (const stage of ['apply', 'check', 'add', 'commit'])
+          append(input, stage, { exitCode: 0, truncated: false });
+        assert.deepEqual(await action(input, 'delivery', launch), {
+          action: 'delivery',
+          operation: 'prepare',
+        });
+        append(input, 'delivery-prepare', { status: 'prepared' });
+        assert.deepEqual(await action(input, 'delivery', launch), {
+          action: 'delivery',
+          operation: 'publish',
+        });
+        append(input, 'delivery-publish', { status: 'published' });
+        assert.deepEqual(await action(input, 'delivery', launch), {
+          action: 'delivery',
+          operation: 'present',
+        });
+        append(input, 'delivery-present', { status: 'presented', presentation: 'Existing PR' });
+        assert.deepEqual(await response(input, launch), { content: 'Existing PR' });
+      });
+
       it('should answer a post-delivery question through the native retained context without tools', async () => {
         const input = request(
           `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`,
@@ -1074,12 +1112,12 @@ for (const scenario of [
         });
       });
 
-      it('should stop when native authority rejects direct implementation context', async () => {
+      it('should stop when native authority rejects managed implementation context', async () => {
         const input = request(
           `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`,
         );
         supplyFacts(input, { stage: 'assessment', receipt: id });
-        assert.equal((await action(input, 'implementation')).operation, 'context');
+        await action(input, 'implementation-context');
         append(input, 'work-context', { status: 'blocked', code: 'dispatch-operator-required' });
         assert.equal(matchFixture([...scenario.fixtures], input), null);
       });

@@ -455,7 +455,7 @@ describe('scripts/aimock-tool-search', () => {
       project: { path: '/tmp/owned' },
       implementation: { defaultSkill: true, skill: { path: '/fixture/SKILL.md' } },
     };
-    const contextRequest = { action: 'implementation', operation: 'context' };
+    const contextRequest = { action: 'implementation-context' };
     const receipts: unknown[] = [];
     const materialResponse = (value: unknown, args: Record<string, unknown>) => {
       const projected = {

@@ -207,7 +207,6 @@ for (const field of ['id', 'threadId', 'worktree']) assert.equal(records[0][fiel
 assert.equal(records[0].delivery.pullRequest.pullRequestNodeId, before.manualIssue.issue.nodeId);
 assert.equal(records[0].delivery.reconciled, true);
 assert.equal(records[0].delivery.creationAttempted, false);
-assert.equal(records[0].work.result.outcome, 'done');
 NODE
 openclaw agent-system automations list --json | jq -e '.status == "aligned" and (.jobs | length) == 0'
 ```

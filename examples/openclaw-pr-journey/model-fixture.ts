@@ -729,24 +729,26 @@ function respond(
     const retry = prompt.includes(
       'Show the plan from this conversation and existing PR card again.',
     );
+    const preserveMetadata = prompt.includes('Preserve its title, body, base and draft state.');
     const title = update
       ? 'Document disposable notification fixture cleanup and verification'
       : 'Document disposable notification fixture cleanup';
     const body = update
       ? 'Document closing disposable test issues and verifying the retained delivery after follow-up commits.'
       : 'Document closing disposable test issues after their evidence is captured.';
+    const publicationContent = preserveMetadata ? {} : { title, body };
     let published = result('delivery-publish');
     if (!retry) {
       const nativeWork = update;
       const context = nativeWork ? currentFacts(messages) : result('work-context');
       if (!context)
         return dispatch('work-context', {
+          action: 'implementation-context',
           ...(automaticId
             ? {
-                action: 'implementation-context',
                 decision: { mode: 'work', reasons: ['The current cleanup scope is clear.'] },
               }
-            : { action: 'implementation', operation: 'context' }),
+            : {}),
         });
       const path = nativeWork ? context.worktree : context.project?.path;
       if (!path) return;
@@ -824,16 +826,14 @@ function respond(
         return dispatch('delivery-prepare', {
           action: 'delivery',
           operation: 'prepare',
-          title,
-          body,
+          ...publicationContent,
         });
       if (prepared.status !== 'prepared') return;
       if (!published)
         return dispatch('delivery-publish', {
           action: 'delivery',
           operation: 'publish',
-          title,
-          body,
+          ...publicationContent,
         });
       for (let index = 0; index < 3 && isPendingDelivery(published); index++) {
         const receipt = published.pullRequest as Record<string, unknown> | undefined;
@@ -848,8 +848,7 @@ function respond(
           return dispatch(prepareStage, {
             action: 'delivery',
             operation: 'prepare',
-            title,
-            body,
+            ...publicationContent,
           });
         if (retained.status !== 'prepared') return;
         const publishStage = `delivery-link-publish-${index}`;
@@ -858,8 +857,7 @@ function respond(
           return dispatch(publishStage, {
             action: 'delivery',
             operation: 'publish',
-            title,
-            body,
+            ...publicationContent,
           });
         published = reconciled;
       }
@@ -867,7 +865,7 @@ function respond(
         throw new Error(`notification-delivery-reconciliation-exhausted: ${published.code}`);
       if (published.status !== 'published') return deliveryObstacle(published);
     }
-    if (!retry && !update) {
+    if (!retry && !update && !preserveMetadata) {
       if (options.explicitInitialLink) assert.equal(typeof published?.url, 'string');
       const linked = result('delivery-association');
       if (!linked)
@@ -910,7 +908,7 @@ function respond(
             'Publication retained. Presentation intentionally deferred for recovery coverage.',
         };
     }
-    if (!retry) {
+    if (!retry && !preserveMetadata) {
       const repeated = result('delivery-repeat');
       if (!repeated)
         return dispatch('delivery-repeat', {
@@ -929,7 +927,9 @@ function respond(
     return {
       content: [
         presented.presentation,
-        !retry && !update ? result('delivery-announce')?.presentation : undefined,
+        !retry && !update && !preserveMetadata
+          ? result('delivery-announce')?.presentation
+          : undefined,
       ]
         .filter(Boolean)
         .join('\n\n'),
