@@ -1,13 +1,13 @@
-import { managedPullRequest, type ManagedIssue as IntakeRecord } from '../../managed-issue.ts';
+import { managedPullRequest, type ManagedIssue as IntakeRecord } from '../managed-issue.ts';
 import feedbackOwnPublications from './feedback-own-publications.ts';
 import type DiscoveryBudget from '../../discovery-budget.ts';
 import { workflowFeedbackAccepting } from '../../../channels/github/feedback-policy.ts';
 import type { GitHubNotificationPublicationClient } from '../../../channels/github/provider/work-event-client.ts';
 import type { DeliveryAnnouncementState } from '../delivery/delivery-announcement-state.ts';
 import type assignmentIntakePolicy from '../../assignment-intake-policy.ts';
-import { inspectActiveIssue, inspectContinuedIssue } from '../../dispatch-assignment.ts';
+import { inspectActiveIssue, inspectContinuedIssue } from '../dispatch/dispatch-assignment.ts';
 import repositoryScope from '../../../channels/github/repository-scope.ts';
-import type { SharedDispatchRecord } from '../../dispatch-state.ts';
+import type { SharedDispatchRecord } from '../dispatch/dispatch-state.ts';
 import { admitFeedback, discoverFeedback, observeFeedbackPolicy } from './feedback-source.ts';
 import type { FeedbackSourceState } from './feedback-state.ts';
 

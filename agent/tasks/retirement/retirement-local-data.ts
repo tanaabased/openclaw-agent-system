@@ -1,6 +1,6 @@
-import { DirectEntryStore } from '../../direct-entry-store.ts';
+import { DirectEntryStore } from '../direct-entry-store.ts';
 import { implementationEntriesSchema } from '../implementation/implementation-entry-state.ts';
-import type { ManagedIssue } from '../../managed-issue.ts';
+import type { ManagedIssue } from '../managed-issue.ts';
 import ReplyStore, { type ReplyBinding } from '../feedback/reply-store.ts';
 import {
   retirementDeliveryEffects,

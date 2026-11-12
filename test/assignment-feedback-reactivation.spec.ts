@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import reactivate, {
   revalidateFeedbackAssignment,
 } from '../agent/tasks/feedback/assignment-feedback-reactivation.ts';
-import { inspectActiveIssue } from '../agent/dispatch-assignment.ts';
-import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
+import { inspectActiveIssue } from '../agent/tasks/dispatch/dispatch-assignment.ts';
+import type { SharedDispatchRecord } from '../agent/tasks/dispatch/dispatch-state.ts';
 import type { FeedbackSourceState } from '../agent/tasks/feedback/feedback-state.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import { account, baseline, intakeFixture } from './github-intake-fixture.ts';

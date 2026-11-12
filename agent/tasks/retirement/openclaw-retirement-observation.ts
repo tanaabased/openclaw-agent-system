@@ -1,8 +1,8 @@
 import type { DispatchRequest } from '../../../credentials/session-dispatch.ts';
-import type { OpenClawDispatchRecord } from '../../openclaw-dispatch-state.ts';
+import type { OpenClawDispatchRecord } from '../dispatch/openclaw-dispatch-state.ts';
 import retirementSessionIdentity from './openclaw-retirement-identity.ts';
 import observeUnavailableRetirementSession from './openclaw-retirement-unavailable.ts';
-import workflowFailure from '../../workflow-failure.ts';
+import workflowFailure from '../workflow-failure.ts';
 
 export function retirementObject(value: unknown, field: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {

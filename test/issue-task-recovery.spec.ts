@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import type { FeedbackEvent } from '../agent/tasks/feedback/codex-feedback-state.ts';
 import type { OpenClawFeedbackEvent } from '../agent/tasks/feedback/openclaw-feedback-state.ts';
-import { pendingRecoveryFeedback } from '../agent/issue-task-recovery.ts';
+import { pendingRecoveryFeedback } from '../agent/tasks/dispatch/issue-task-recovery.ts';
 
 describe('task replacement feedback protection', () => {
   const stale: FeedbackEvent = {

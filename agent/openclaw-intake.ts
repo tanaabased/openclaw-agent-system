@@ -6,9 +6,9 @@ import { omit } from 'lodash-es';
 import { realpath } from 'node:fs/promises';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type { IssuePickupClient } from '../channels/github/provider/issue-pickup-client.ts';
-import AssignmentClaimStore from './assignment-claim-store.ts';
+import AssignmentClaimStore from './tasks/dispatch/assignment-claim-store.ts';
 import DiscoveryBudget from './discovery-budget.ts';
-import { assertDispatchStorage } from './dispatch-storage.ts';
+import { assertDispatchStorage } from './tasks/dispatch/dispatch-storage.ts';
 import type { IssuePickupAuthority } from './issue-pickup-authority.ts';
 import type IssuePickupEnrollmentStore from './issue-pickup-enrollment.ts';
 import IssuePickupFailure from './issue-pickup-failure.ts';
@@ -20,8 +20,8 @@ import {
 import reconcileIssuePickup from './issue-pickup-reconcile.ts';
 import issuePickupReport from './issue-pickup-report.ts';
 import issuePickup, { pickupAuthority, type PickupInput } from './issue-pickup.ts';
-import openClawCapacity, { openClawItemOccupied } from './openclaw-capacity.ts';
-import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
+import openClawCapacity, { openClawItemOccupied } from './tasks/dispatch/openclaw-capacity.ts';
+import OpenClawDispatchStore from './tasks/dispatch/openclaw-dispatch-state.ts';
 
 import { IntakeError } from '../channels/github/intake/record-store.ts';
 import scanAssignments from '../channels/github/intake/scan-assignments.ts';

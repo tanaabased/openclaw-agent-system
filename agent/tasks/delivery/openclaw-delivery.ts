@@ -7,11 +7,11 @@ import {
   managedPullRequest,
   managedTargetUrl,
   type ManagedIssue as IntakeRecord,
-} from '../../managed-issue.ts';
+} from '../managed-issue.ts';
 import bindIssuePullRequest from './issue-pr-binding.ts';
 import { adoptedIssueDelivery } from './delivery-state.ts';
-import { retainedIssueProgression } from '../../issue-progression.ts';
-import workflowStatus from '../../workflow-status.ts';
+import { retainedIssueProgression } from '../issue-progression.ts';
+import workflowStatus from '../workflow-status.ts';
 import {
   assertDeliveryBinding,
   selectDeliveryDestination,
@@ -29,7 +29,7 @@ import GitHubWorkEventApiClient from '../../../channels/github/provider/work-eve
 import { realpath } from 'node:fs/promises';
 
 import { automationHash } from '../../automation-hash.ts';
-import type { OpenClawDispatchRecord } from '../../openclaw-dispatch-state.ts';
+import type { OpenClawDispatchRecord } from '../dispatch/openclaw-dispatch-state.ts';
 import type { OpenClawWorkAction } from '../implementation/openclaw-work.ts';
 
 import IssueDeliveryProvider, {

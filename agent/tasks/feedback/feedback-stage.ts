@@ -1,5 +1,5 @@
 import type { AssessmentSelection } from '../assessment/assessment-selection.ts';
-import { selectWorkflowStage } from '../../workflow-stage.ts';
+import { selectWorkflowStage } from '../workflow-stage.ts';
 import type { CodexAssessmentSkill } from '../assessment/codex-assessment-skill.ts';
 import type { GitHubNotificationPolicy } from '../../../channels/github/workflow-policy.ts';
 

@@ -7,14 +7,17 @@ import {
 import intakeAutomationNotice from '../channels/github/presentation/intake-automation-notice.ts';
 import { awaitingReassignment } from './tasks/retirement/assignment-retirement.ts';
 import { automationHash } from './automation-hash.ts';
-import pendingAssignments from './dispatch-pending.ts';
-import { dispatchStorageNotice } from './dispatch-storage.ts';
-import dispatchCapacity from './openclaw-capacity.ts';
-import type { OpenClawDispatchRecord, OpenClawDispatchState } from './openclaw-dispatch-state.ts';
+import pendingAssignments from './tasks/dispatch/dispatch-pending.ts';
+import { dispatchStorageNotice } from './tasks/dispatch/dispatch-storage.ts';
+import dispatchCapacity from './tasks/dispatch/openclaw-capacity.ts';
+import type {
+  OpenClawDispatchRecord,
+  OpenClawDispatchState,
+} from './tasks/dispatch/openclaw-dispatch-state.ts';
 import retirementNotice from './tasks/retirement/retirement-notice.ts';
 import taskPullRequest from './tasks/delivery/task-pull-request.ts';
-import workflowRecovery from './workflow-recovery.ts';
-import workflowStatus from './workflow-status.ts';
+import workflowRecovery from './tasks/workflow-recovery.ts';
+import workflowStatus from './tasks/workflow-status.ts';
 export interface IntakeObservation {
   status: 'ready' | 'blocked';
   changed: boolean;

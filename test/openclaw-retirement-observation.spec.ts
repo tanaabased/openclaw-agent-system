@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
+import type { OpenClawDispatchRecord } from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import observeRetirementSession, {
   observeRetiringSession,
 } from '../agent/tasks/retirement/openclaw-retirement-observation.ts';

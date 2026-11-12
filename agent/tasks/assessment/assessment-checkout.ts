@@ -1,6 +1,6 @@
 import { realpath } from 'node:fs/promises';
 
-import { githubOrigin, type DispatchGit } from '../../codex-dispatch-project.ts';
+import { githubOrigin, type DispatchGit } from '../dispatch/codex-dispatch-project.ts';
 
 /** inspect an existing checkout only; setup and fetch belong to the full workflow. */
 export default async function assessmentCheckout(

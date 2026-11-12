@@ -1,4 +1,4 @@
-import type { DispatchRecord } from '../../codex-dispatch-state.ts';
+import type { DispatchRecord } from '../dispatch/codex-dispatch-state.ts';
 
 /** normal historical closure is quiet only when no execution or publication remains uncertain. */
 export default function codexFeedbackProblem(record: DispatchRecord) {

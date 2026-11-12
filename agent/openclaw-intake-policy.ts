@@ -1,6 +1,6 @@
 import automationModels from './automation-models.ts';
 import issuePickupJobs, { issuePickupAutomationId } from './issue-pickup-jobs.ts';
-import { issueChatTitleGuidance } from './issue-chat-title.ts';
+import { issueChatTitleGuidance } from './tasks/dispatch/issue-chat-title.ts';
 import { taskUpdateConsent } from './tasks/feedback/task-update-instructions.ts';
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
 import { IntakeError } from '../channels/github/intake/record-store.ts';

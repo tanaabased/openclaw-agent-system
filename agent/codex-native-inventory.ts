@@ -1,5 +1,5 @@
 import { nativeObject } from './automation-gateway.ts';
-import { nativeHistoryPages } from './codex-dispatch-history.ts';
+import { nativeHistoryPages } from './tasks/dispatch/codex-dispatch-history.ts';
 import { connectCodexCaller, type CodexThreadRequest } from './codex-thread-client.ts';
 
 function resultObject(result: unknown) {

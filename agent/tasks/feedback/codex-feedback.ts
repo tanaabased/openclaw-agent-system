@@ -1,4 +1,4 @@
-import { withDispatchTask } from '../../dispatch-task-scope.ts';
+import { withDispatchTask } from '../dispatch/dispatch-task-scope.ts';
 import { resolve } from 'node:path';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
@@ -8,11 +8,11 @@ import { implementationMaterialSchema } from '../../../tools/dispatch/implementa
 import { automationHash } from '../../automation-hash.ts';
 import { inspectCodexDispatchActivation } from '../../codex-automations.ts';
 import codexContinuationNative from '../implementation/codex-continuation-native.ts';
-import type { CodexDispatchDependencies } from '../../codex-dispatch-context.ts';
-import { codexDispatchNative } from '../../codex-dispatch-native.ts';
-import unsubmittedNativeRequest from '../../codex-dispatch-unsubmitted.ts';
-import { codexNativeHandoff } from '../../codex-dispatch-handoff.ts';
-import CodexDispatchStore, { type DispatchRecord } from '../../codex-dispatch-state.ts';
+import type { CodexDispatchDependencies } from '../dispatch/codex-dispatch-context.ts';
+import { codexDispatchNative } from '../dispatch/codex-dispatch-native.ts';
+import unsubmittedNativeRequest from '../dispatch/codex-dispatch-unsubmitted.ts';
+import { codexNativeHandoff } from '../dispatch/codex-dispatch-handoff.ts';
+import CodexDispatchStore, { type DispatchRecord } from '../dispatch/codex-dispatch-state.ts';
 import type { FeedbackEvent } from './codex-feedback-state.ts';
 import authorizeCodexFeedback from './codex-feedback-authority.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';
@@ -28,20 +28,20 @@ import {
   dispatchFailurePhase,
   dispatchRetryDue,
   scheduleDispatchRetry,
-} from '../../dispatch-retry.ts';
+} from '../dispatch/dispatch-retry.ts';
 import feedbackContextMaterial from './feedback-context-material.ts';
 import { feedbackConversationMode } from './feedback-conversation-mode.ts';
 import { feedbackInputContext } from './feedback-input.ts';
 import feedbackPresentation from './feedback-presentation.ts';
 import { observeFeedbackPolicy } from './feedback-source.ts';
-import { retainedIssueProgression } from '../../issue-progression.ts';
-import { WorkflowPolicyHeld } from '../../live-workflow-policy.ts';
-import { dispatchAdmission } from '../../managed-issue.ts';
+import { retainedIssueProgression } from '../issue-progression.ts';
+import { WorkflowPolicyHeld } from '../live-workflow-policy.ts';
+import { dispatchAdmission } from '../managed-issue.ts';
 import type { OpenClawFeedbackProvider } from './openclaw-feedback.ts';
-import retainedIntakePolicy from '../../retained-intake-policy.ts';
-import deliverTaskInput, { type TaskInputReceipt } from '../../task-input-delivery.ts';
-import workflowFailure from '../../workflow-failure.ts';
-import { requireWorkflowSchedule } from '../../workflow-schedule.ts';
+import retainedIntakePolicy from '../retained-intake-policy.ts';
+import deliverTaskInput, { type TaskInputReceipt } from '../context/task-input-delivery.ts';
+import workflowFailure from '../workflow-failure.ts';
+import { requireWorkflowSchedule } from '../workflow-schedule.ts';
 const requestSchema = Type.Object(
   {
     action: Type.Union([Type.Literal('next'), Type.Literal('context'), Type.Literal('reconcile')]),

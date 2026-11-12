@@ -12,11 +12,11 @@ import feedbackSources from './feedback-sources.ts';
 import {
   type default as OpenClawDispatchContext,
   openClawDispatchFailureCode,
-} from '../../openclaw-dispatch-context.ts';
+} from '../dispatch/openclaw-dispatch-context.ts';
 import type {
   OpenClawDispatchRecord,
   OpenClawDispatchState,
-} from '../../openclaw-dispatch-state.ts';
+} from '../dispatch/openclaw-dispatch-state.ts';
 import replyOwnPublications from './reply-own-publications.ts';
 export function openClawFeedbackEnabled(manifest: AgentManifest) {
   return workflowFeedbackAvailable(manifest.github?.notifications, 'issue-assignment');

@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { type ChatCompletionRequest, type FixtureResponse } from '@copilotkit/aimock';
 
 import { pickupResponse } from '../examples/openclaw-project-picker/model-fixture.ts';
-import taskTurnContext from '../agent/task-turn-context.ts';
-import openclawTurnContext from '../agent/openclaw-turn-context.ts';
-import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
+import taskTurnContext from '../agent/tasks/context/task-turn-context.ts';
+import openclawTurnContext from '../agent/tasks/context/openclaw-turn-context.ts';
+import type { OpenClawDispatchRecord } from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 
 function request(prompt: string, results: Array<[string, unknown]> = []): ChatCompletionRequest {
   return {

@@ -1,16 +1,16 @@
 import assignmentIntakePolicy from '../../assignment-intake-policy.ts';
 import { inspectFeedbackAssignment } from './assignment-feedback-reactivation.ts';
-import { inspectIssueIdentity } from '../../dispatch-assignment.ts';
+import { inspectIssueIdentity } from '../dispatch/dispatch-assignment.ts';
 import authorizeFeedback from './feedback-source-context.ts';
-import { WorkflowPolicyHeld } from '../../live-workflow-policy.ts';
-import type { DispatchRecord } from '../../codex-dispatch-state.ts';
+import { WorkflowPolicyHeld } from '../live-workflow-policy.ts';
+import type { DispatchRecord } from '../dispatch/codex-dispatch-state.ts';
 import type {
   GitHubNotificationIntakeClient,
   GitHubNotificationCommentClient,
 } from '../../../channels/github/provider/work-event-types.ts';
 import type { CodexTaskSelection } from '../context/codex-task-context.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
-import type { ManagedIssue as IntakeRecord } from '../../managed-issue.ts';
+import type { ManagedIssue as IntakeRecord } from '../managed-issue.ts';
 
 /** verify the exact admitted source before work and every dependent provider write. */
 export default async function authorizeCodexFeedback(input: {

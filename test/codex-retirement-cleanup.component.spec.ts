@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import cleanup from '../agent/tasks/retirement/codex-retirement-cleanup.ts';
 import nativeRetirement from '../agent/tasks/retirement/codex-retirement-native.ts';
-import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
+import type { DispatchRecord } from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 
 describe('codex retirement cleanup', () => {
   let root: string;

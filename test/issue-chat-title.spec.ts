@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import issueChatTitle from '../agent/issue-chat-title.ts';
+import issueChatTitle from '../agent/tasks/dispatch/issue-chat-title.ts';
 
 const format = (title: string) => issueChatTitle(title, 149, 'tanaabased/emori');
 

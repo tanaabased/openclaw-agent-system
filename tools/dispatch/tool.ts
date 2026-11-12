@@ -1,21 +1,21 @@
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import { Value } from 'typebox/value';
 import codexIssueNotice from '../../agent/codex-issue-notice.ts';
-import contextMaterialTransport from '../../agent/context-material-transport.ts';
-import { dispatchFailurePhase } from '../../agent/dispatch-retry.ts';
-import nativeTaskInstructions from '../../agent/native-task-instructions.ts';
+import contextMaterialTransport from '../../agent/tasks/context/context-material-transport.ts';
+import { dispatchFailurePhase } from '../../agent/tasks/dispatch/dispatch-retry.ts';
+import nativeTaskInstructions from '../../agent/tasks/context/native-task-instructions.ts';
 import openClawConditionCheck from '../../agent/openclaw-condition-check.ts';
 import { readOpenClawTurnInput } from '../../agent/openclaw-turn-binding.ts';
-import workflowFailure, { workflowFailureScope } from '../../agent/workflow-failure.ts';
-import workflowNoticeInstructions from '../../agent/workflow-notice-instructions.ts';
-import WorkflowRequestError from '../../agent/workflow-request-error.ts';
+import workflowFailure, { workflowFailureScope } from '../../agent/tasks/workflow-failure.ts';
+import workflowNoticeInstructions from '../../agent/tasks/workflow-notice-instructions.ts';
+import WorkflowRequestError from '../../agent/tasks/workflow-request-error.ts';
 
 import type AutomationService from '../../agent/automation-service.ts';
 import AutomationThreads, { automationThreadSelection } from '../../agent/automation-threads.ts';
 import OpenClawDispatch, {
   openClawDispatchFailureCode,
   type OpenClawDispatchDependencies,
-} from '../../agent/openclaw-dispatch.ts';
+} from '../../agent/tasks/dispatch/openclaw-dispatch.ts';
 import openclawIntakeJobs, {
   openclawIntakeAutomationId,
 } from '../../agent/openclaw-intake-policy.ts';

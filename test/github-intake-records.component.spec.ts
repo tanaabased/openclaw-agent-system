@@ -13,9 +13,9 @@ import IntakeRecordStore, {
   type IntakeObservation,
 } from '../channels/github/intake/record-store.ts';
 import scanAssignments from '../channels/github/intake/scan-assignments.ts';
-import { inspectAdmittedIssue } from '../agent/dispatch-assignment.ts';
+import { inspectAdmittedIssue } from '../agent/tasks/dispatch/dispatch-assignment.ts';
 import { automationHash } from '../agent/automation-hash.ts';
-import pendingDispatchAssignments from '../agent/dispatch-pending.ts';
+import pendingDispatchAssignments from '../agent/tasks/dispatch/dispatch-pending.ts';
 import { baseline, intakeFixture } from './github-intake-fixture.ts';
 
 describe('channels/github/intake/records', () => {

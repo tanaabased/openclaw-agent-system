@@ -1,9 +1,9 @@
 import type { CodexWorkContext } from './codex-continuation-context.ts';
-import type { DispatchRecord } from '../../codex-dispatch-state.ts';
+import type { DispatchRecord } from '../dispatch/codex-dispatch-state.ts';
 import codexWorkState from './codex-work-state.ts';
 import implementationHandoff from './implementation-handoff.ts';
 import { implementationPresentation } from './implementation-result.ts';
-import nativeClarification from '../../native-clarification.ts';
+import nativeClarification from '../context/native-clarification.ts';
 
 /** Format current implementation output without persisting conversation state. */
 export default function renderCodexWorkResult(

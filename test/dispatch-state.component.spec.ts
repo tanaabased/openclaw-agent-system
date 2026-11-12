@@ -1,17 +1,17 @@
-import codexCapacity from '../agent/codex-capacity.ts';
-import openClawCapacity from '../agent/openclaw-capacity.ts';
-import { issueKey } from '../agent/dispatch-pending.ts';
-import { withDispatchTask } from '../agent/dispatch-task-scope.ts';
+import codexCapacity from '../agent/tasks/dispatch/codex-capacity.ts';
+import openClawCapacity from '../agent/tasks/dispatch/openclaw-capacity.ts';
+import { issueKey } from '../agent/tasks/dispatch/dispatch-pending.ts';
+import { withDispatchTask } from '../agent/tasks/dispatch/dispatch-task-scope.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import codexCommit from '../agent/codex-commit.ts';
 
-import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
+import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import OpenClawDispatchStore, {
   type OpenClawDispatchRecord,
-} from '../agent/openclaw-dispatch-state.ts';
+} from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 
 function pending(id = 'a'.repeat(64)) {
   return {

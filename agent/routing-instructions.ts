@@ -1,6 +1,6 @@
 import { Type, type Static } from 'typebox';
 
-import guidanceReference from './guidance-reference.ts';
+import guidanceReference from './tasks/context/guidance-reference.ts';
 import assessmentGuidance from './tasks/assessment/assessment-guidance.ts';
 import { assessmentSelectionSchema } from './tasks/assessment/assessment-selection.ts';
 import { automationHash } from './automation-hash.ts';

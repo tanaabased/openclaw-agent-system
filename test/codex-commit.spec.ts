@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 
 import codexCommit from '../agent/codex-commit.ts';
-import type { DispatchRecord, DispatchState } from '../agent/codex-dispatch-state.ts';
+import type {
+  DispatchRecord,
+  DispatchState,
+} from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import mergeStateSnapshot from '../core/merge-state-snapshot.ts';
 
 function record(id: string): DispatchRecord {

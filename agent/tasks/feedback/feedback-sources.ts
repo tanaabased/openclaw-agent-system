@@ -1,5 +1,5 @@
 import taskPullRequest from '../delivery/task-pull-request.ts';
-import { managedPullRequest, type ManagedIssue } from '../../managed-issue.ts';
+import { managedPullRequest, type ManagedIssue } from '../managed-issue.ts';
 import type { FeedbackSourceState } from './feedback-state.ts';
 
 /** discovery scratch belongs only to the owner's currently selected sources. */

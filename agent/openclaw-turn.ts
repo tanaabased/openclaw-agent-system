@@ -1,5 +1,5 @@
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
-import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import type { OpenClawDispatchRecord } from './tasks/dispatch/openclaw-dispatch-state.ts';
 import {
   completeOpenClawMessage,
   openClawHistoryPages,

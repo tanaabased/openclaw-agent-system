@@ -1,30 +1,35 @@
-import { selectWorkflowStage } from '../agent/workflow-stage.ts';
+import { selectWorkflowStage } from '../agent/tasks/workflow-stage.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
-import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
-import type { ClaimClient } from '../agent/assignment-claim.ts';
+import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
+import type { ClaimClient } from '../agent/tasks/dispatch/assignment-claim.ts';
 import { automationHash } from '../agent/automation-hash.ts';
 import cleanupConfiguration from '../agent/cleanup-configuration.ts';
-import CodexAssignmentClaims, { codexInstanceStore } from '../agent/codex-assignment-claims.ts';
-import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
-import { codexItemOccupied } from '../agent/codex-capacity.ts';
+import CodexAssignmentClaims, {
+  codexInstanceStore,
+} from '../agent/tasks/dispatch/codex-assignment-claims.ts';
+import reconcileCodexLifecycle from '../agent/tasks/dispatch/codex-assignment-lifecycle.ts';
+import { codexItemOccupied } from '../agent/tasks/dispatch/codex-capacity.ts';
 import codexContinuationNative from '../agent/tasks/implementation/codex-continuation-native.ts';
 import runCodexContinuation, {
   type CodexContinuationDependencies,
 } from '../agent/tasks/implementation/codex-continuation.ts';
 import codexDirectInput from '../agent/codex-direct-input.ts';
-import { codexWorkObservationHandoff } from '../agent/codex-dispatch-handoff.ts';
+import { codexWorkObservationHandoff } from '../agent/tasks/dispatch/codex-dispatch-handoff.ts';
 import connectCodexGitHubAccount from '../agent/codex-github-client.ts';
 import codexImplementationEntry from '../agent/tasks/implementation/codex-implementation-entry.ts';
 import codexLiveTurn from '../agent/codex-live-turn.ts';
 import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
 import { feedbackRevision } from '../agent/tasks/feedback/feedback-source.ts';
-import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
-import OpenClawAssignmentClaims from '../agent/openclaw-assignment-claims.ts';
-import workflowStatus from '../agent/workflow-status.ts';
+import {
+  bindNativeMaterial,
+  nativeMaterialResponse,
+} from '../agent/tasks/context/native-material.ts';
+import OpenClawAssignmentClaims from '../agent/tasks/dispatch/openclaw-assignment-claims.ts';
+import workflowStatus from '../agent/tasks/workflow-status.ts';
 import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import {
@@ -38,9 +43,14 @@ import hydrateImplementation from './implementation-material-fixture.ts';
 import properLockfile from 'proper-lockfile';
 
 import runCodexDelivery from '../agent/tasks/delivery/codex-delivery.ts';
-import type { DispatchNativeThread } from '../agent/codex-dispatch-native.ts';
-import CodexDispatchStore, { type DispatchRecord } from '../agent/codex-dispatch-state.ts';
-import { runCodexDispatch, type CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
+import type { DispatchNativeThread } from '../agent/tasks/dispatch/codex-dispatch-native.ts';
+import CodexDispatchStore, {
+  type DispatchRecord,
+} from '../agent/tasks/dispatch/codex-dispatch-state.ts';
+import {
+  runCodexDispatch,
+  type CodexDispatchDependencies,
+} from '../agent/tasks/dispatch/codex-dispatch.ts';
 import runCodexFeedback from '../agent/tasks/feedback/codex-feedback.ts';
 import { runCodexIntake } from '../agent/codex-intake.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';

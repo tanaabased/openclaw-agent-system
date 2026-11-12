@@ -1,8 +1,8 @@
 import isFilesystemAccessError from '../../../utils/is-filesystem-access-error.ts';
 import { retainAnnouncementFailure } from './delivery-announcement-recovery.ts';
 import { recoverRetainedAnnouncement } from './delivery-announcement.ts';
-import type OpenClawDispatchContext from '../../openclaw-dispatch-context.ts';
-import type { OpenClawDispatchRecord } from '../../openclaw-dispatch-state.ts';
+import type OpenClawDispatchContext from '../dispatch/openclaw-dispatch-context.ts';
+import type { OpenClawDispatchRecord } from '../dispatch/openclaw-dispatch-state.ts';
 import type { DispatchAuthority } from '../../../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../../../manifest/types.ts';
 import type { DispatchCaller } from '../../openclaw-session-create.ts';

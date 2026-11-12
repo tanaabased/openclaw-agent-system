@@ -5,8 +5,8 @@ import {
   dispatchRetryDue,
   repositoryPreparationFailure,
   scheduleDispatchRetry,
-} from '../agent/dispatch-retry.ts';
-import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
+} from '../agent/tasks/dispatch/dispatch-retry.ts';
+import type { SharedDispatchRecord } from '../agent/tasks/dispatch/dispatch-state.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 
 describe('agent/dispatch-retry', () => {

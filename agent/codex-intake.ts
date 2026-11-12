@@ -1,14 +1,14 @@
-import { withDispatchTask } from './dispatch-task-scope.ts';
+import { withDispatchTask } from './tasks/dispatch/dispatch-task-scope.ts';
 import IssuePickupFailure from './issue-pickup-failure.ts';
 import { omit } from 'lodash-es';
 import reconcileIssuePickup from './issue-pickup-reconcile.ts';
-import workflowFailure from './workflow-failure.ts';
+import workflowFailure from './tasks/workflow-failure.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import type { AgentSystemLifecycleFinding } from '../core/lifecycle-registry.ts';
 import issuePickupReport from './issue-pickup-report.ts';
 import { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
-import codexCapacity, { codexItemOccupied } from './codex-capacity.ts';
-import { codexInstanceStore } from './codex-assignment-claims.ts';
+import codexCapacity, { codexItemOccupied } from './tasks/dispatch/codex-capacity.ts';
+import { codexInstanceStore } from './tasks/dispatch/codex-assignment-claims.ts';
 import IssuePickupEnrollmentStore from './issue-pickup-enrollment.ts';
 import {
   issuePickupAutomationId,
@@ -17,7 +17,7 @@ import {
 } from './issue-pickup-jobs.ts';
 import issuePickup, { pickupAuthority, type PickupInput } from './issue-pickup.ts';
 import type { IssuePickupClient } from '../channels/github/provider/issue-pickup-client.ts';
-import { assertDispatchStorage } from './dispatch-storage.ts';
+import { assertDispatchStorage } from './tasks/dispatch/dispatch-storage.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type { IssuePickupAuthority } from './issue-pickup-authority.ts';
 import { connectCodexGitHub } from './codex-github-client.ts';
@@ -26,8 +26,8 @@ import {
   type CodexTaskContextDependencies,
 } from './tasks/context/codex-task-context.ts';
 import acceptCodexIntakeOccurrence from './codex-intake-occurrence.ts';
-import CodexDispatchStore from './codex-dispatch-state.ts';
-import { codexDispatchNative } from './codex-dispatch-native.ts';
+import CodexDispatchStore from './tasks/dispatch/codex-dispatch-state.ts';
+import { codexDispatchNative } from './tasks/dispatch/codex-dispatch-native.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
 import { readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';

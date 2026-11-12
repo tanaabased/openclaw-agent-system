@@ -4,7 +4,7 @@ import codexDelegatedInput from '../../codex-delegated-input.ts';
 import dispatchHistory, {
   dispatchHistoryPages,
   dispatchTurn,
-} from '../../codex-dispatch-history.ts';
+} from '../dispatch/codex-dispatch-history.ts';
 import type { FeedbackEvent } from '../feedback/codex-feedback-state.ts';
 import type { CodexThreadRequest } from '../../codex-thread-client.ts';
 import codexTurnApprovalDenied from '../../codex-turn-approval.ts';

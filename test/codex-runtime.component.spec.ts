@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
 
-import codexDispatchHandoff from '../agent/codex-dispatch-handoff.ts';
+import codexDispatchHandoff from '../agent/tasks/dispatch/codex-dispatch-handoff.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 
 describe('agent/codex-runtime', () => {

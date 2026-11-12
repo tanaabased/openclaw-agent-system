@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
-import prepareDispatchReport from '../agent/codex-dispatch-report.ts';
-import type { DispatchRecord, DispatchState } from '../agent/codex-dispatch-state.ts';
-import { issueKey } from '../agent/dispatch-pending.ts';
+import prepareDispatchReport from '../agent/tasks/dispatch/codex-dispatch-report.ts';
+import type {
+  DispatchRecord,
+  DispatchState,
+} from '../agent/tasks/dispatch/codex-dispatch-state.ts';
+import { issueKey } from '../agent/tasks/dispatch/dispatch-pending.ts';
 import type { IntakeRecord, IntakeState } from '../channels/github/intake/record-store.ts';
 
 const state: DispatchState = {

@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 
-import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
+import type { DispatchRecord } from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import codexWorkContext from '../agent/tasks/implementation/codex-work-context.ts';
 import {
   implementationReviewInstructions,
   taskScopeInstructions,
-} from '../agent/native-task-instructions.ts';
+} from '../agent/tasks/context/native-task-instructions.ts';
 
 // Only the model-facing projection is under test; checkout and provider boundaries are injected.
 describe('agent/codex-work-context', () => {

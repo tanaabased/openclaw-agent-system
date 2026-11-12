@@ -9,8 +9,8 @@ import {
 } from '../../../channels/github/provider/review-feedback.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
 import { admitFeedback, feedbackRevision } from './feedback-source.ts';
-import { WorkflowPolicyHeld } from '../../live-workflow-policy.ts';
-import type { ManagedIssue as IntakeRecord } from '../../managed-issue.ts';
+import { WorkflowPolicyHeld } from '../live-workflow-policy.ts';
+import type { ManagedIssue as IntakeRecord } from '../managed-issue.ts';
 
 /** source authority is rechecked before context and every publication effect. */
 export default async function authorizeFeedback(input: {

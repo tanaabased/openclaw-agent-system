@@ -1,6 +1,6 @@
 import { nativeObject } from '../../automation-gateway.ts';
 import codexTurnApprovalDenied from '../../codex-turn-approval.ts';
-import creationHistory from '../../codex-dispatch-creation-history.ts';
+import creationHistory from '../dispatch/codex-dispatch-creation-history.ts';
 import type { CodexThreadRequest } from '../../codex-thread-client.ts';
 
 function helperParent(thread: Record<string, unknown>): string | undefined {

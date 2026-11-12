@@ -1,11 +1,11 @@
 import { Type, type Static } from 'typebox';
 import type { IssueDeliveryInput } from '../../../channels/github/publication/issue-delivery.ts';
 import { automationHash } from '../../automation-hash.ts';
-import type { DispatchRecord } from '../../codex-dispatch-state.ts';
+import type { DispatchRecord } from '../dispatch/codex-dispatch-state.ts';
 import { announcementPublication } from '../delivery/delivery-announcement.ts';
-import type { SharedDispatchRecord } from '../../dispatch-state.ts';
-import { managedPullRequest, type ManagedIssue } from '../../managed-issue.ts';
-import type { OpenClawDispatchRecord } from '../../openclaw-dispatch-state.ts';
+import type { SharedDispatchRecord } from '../dispatch/dispatch-state.ts';
+import { managedPullRequest, type ManagedIssue } from '../managed-issue.ts';
+import type { OpenClawDispatchRecord } from '../dispatch/openclaw-dispatch-state.ts';
 import type { ReplyDraft } from '../feedback/reply-store.ts';
 import type { ReplyTarget } from '../feedback/reply-target.ts';
 

@@ -1,7 +1,7 @@
 import { automationHash } from '../../automation-hash.ts';
 import type { AdoptedPullRequest } from './delivery-state.ts';
 import IssueDeliveryProvider from '../../../channels/github/publication/issue-delivery.ts';
-import type { ManagedIssue } from '../../managed-issue.ts';
+import type { ManagedIssue } from '../managed-issue.ts';
 import type { ConnectedGitHubAccountClient } from '../../../core/github-account-client.ts';
 
 export default async function verifyIssuePullRequest(

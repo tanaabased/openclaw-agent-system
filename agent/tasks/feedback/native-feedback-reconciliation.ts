@@ -1,5 +1,5 @@
-import { dispatchAdmission, type ManagedIssue } from '../../managed-issue.ts';
-import type { SharedDispatchRecord } from '../../dispatch-state.ts';
+import { dispatchAdmission, type ManagedIssue } from '../managed-issue.ts';
+import type { SharedDispatchRecord } from '../dispatch/dispatch-state.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
 import { feedbackTarget, replyLocator } from './reply-target.ts';
 

@@ -1,8 +1,8 @@
 import { Type } from 'typebox';
 
 import { automationHash } from '../../automation-hash.ts';
-import { DirectEntryStore, type DirectEntryBinding } from '../../direct-entry-store.ts';
-import workflowFailure from '../../workflow-failure.ts';
+import { DirectEntryStore, type DirectEntryBinding } from '../direct-entry-store.ts';
+import workflowFailure from '../workflow-failure.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const entriesSchema = Type.Array(

@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { normalizeAgentSetup } from '../manifest/setup-schema.ts';
 
 import { agentCommandSecurityGuidance } from '../agent/command-security.ts';
-import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
-import openclawTurnContext from '../agent/openclaw-turn-context.ts';
+import type { OpenClawDispatchRecord } from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
+import openclawTurnContext from '../agent/tasks/context/openclaw-turn-context.ts';
 import registerAgentSystemHooks from '../core/register-hooks.ts';
 
 describe('core/register-hooks', () => {

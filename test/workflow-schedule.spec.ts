@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {
   requireWorkflowSchedule,
   type WorkflowScheduleAuthority,
-} from '../agent/workflow-schedule.ts';
+} from '../agent/tasks/workflow-schedule.ts';
 describe('agent/workflow-schedule', () => {
   it('should reject assessment-only or stale schedule authority for implementation and publication', () => {
     const current = {

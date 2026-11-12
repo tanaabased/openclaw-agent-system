@@ -7,7 +7,7 @@ import implementationMaterial, {
   type ImplementationMaterialRead,
   implementationContextBudget,
 } from '../agent/tasks/implementation/implementation-material.ts';
-import workflowFailure from '../agent/workflow-failure.ts';
+import workflowFailure from '../agent/tasks/workflow-failure.ts';
 import hydrateImplementation from './implementation-material-fixture.ts';
 
 const original = () => {

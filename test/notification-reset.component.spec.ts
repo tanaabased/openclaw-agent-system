@@ -13,7 +13,7 @@ import resetNotifications, {
 import NotificationResetStore, {
   assertNotificationManagement,
 } from '../agent/notification-reset-state.ts';
-import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
+import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import waitForCodexWorktreeRemoval from '../agent/tasks/retirement/codex-worktree-removal.ts';
 import IntakeRecordStore from '../channels/github/intake/record-store.ts';
 

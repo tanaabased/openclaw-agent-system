@@ -1,5 +1,5 @@
 import type { AgentSystemLifecycleContribution } from '../core/lifecycle-registry.ts';
-import type AssignmentClaimStore from './assignment-claim-store.ts';
+import type AssignmentClaimStore from './tasks/dispatch/assignment-claim-store.ts';
 
 export default function instanceIdentity(
   store: AssignmentClaimStore,

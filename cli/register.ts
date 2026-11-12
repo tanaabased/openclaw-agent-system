@@ -15,7 +15,7 @@ import envAgentSystem from './env.ts';
 import credentialsCache, { type OpCacheGatewayRequest } from './credentials-cache.ts';
 import doctorAgentSystem from './doctor.ts';
 import instanceCommand from './instance.ts';
-import type AssignmentClaimStore from '../agent/assignment-claim-store.ts';
+import type AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
 import runAgentSystemTool from './tool.ts';
 import setCredentialsAgentSystem from './credentials-set.ts';
 import unsetCredentialsAgentSystem from './credentials-unset.ts';

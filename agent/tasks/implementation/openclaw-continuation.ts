@@ -1,11 +1,11 @@
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { DispatchRequest } from '../../../credentials/session-dispatch.ts';
-import type { OpenClawDispatchRecord } from '../../openclaw-dispatch-state.ts';
+import type { OpenClawDispatchRecord } from '../dispatch/openclaw-dispatch-state.ts';
 import openClawNativeTurns from '../../openclaw-native-turns.ts';
 import { describeIssueSession } from '../../openclaw-session-create.ts';
 import type { OpenClawTurn } from '../../openclaw-turn-state.ts';
 import { reconcileOpenClawTurn } from '../../openclaw-turn.ts';
-import workflowFailure from '../../workflow-failure.ts';
+import workflowFailure from '../workflow-failure.ts';
 
 /** Only an existing native request can need reconciliation; idle is never new work. */
 export function openClawWorkSlot(record: OpenClawDispatchRecord) {

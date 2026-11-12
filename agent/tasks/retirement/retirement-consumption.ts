@@ -1,5 +1,5 @@
 import { automationHash } from '../../automation-hash.ts';
-import type { ManagedIssue } from '../../managed-issue.ts';
+import type { ManagedIssue } from '../managed-issue.ts';
 import type IntakeStore from '../../../channels/github/intake/record-store.ts';
 
 /** consumed assignment identity outlives local task data; manual unassigned work needs none. */

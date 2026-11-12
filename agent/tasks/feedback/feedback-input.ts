@@ -1,6 +1,6 @@
 import { feedbackResponseInstructions } from './feedback-presentation.ts';
 import taskUpdateInstructions from './task-update-instructions.ts';
-import nativeTaskInstructions from '../../native-task-instructions.ts';
+import nativeTaskInstructions from '../context/native-task-instructions.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
 import type { GitHubCanonicalFeedback } from '../../../channels/github/provider/review-feedback.ts';
 import { feedbackTarget } from './reply-target.ts';

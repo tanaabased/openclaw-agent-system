@@ -1,4 +1,4 @@
-import { withDispatchTask } from '../../dispatch-task-scope.ts';
+import { withDispatchTask } from '../dispatch/dispatch-task-scope.ts';
 import { Value } from 'typebox/value';
 import recoverCodexAnnouncement from '../delivery/codex-announcement-recovery.ts';
 import codexCommit from '../../codex-commit.ts';
@@ -7,9 +7,9 @@ import connectCodexFeedback from '../feedback/codex-feedback-client.ts';
 import codexFeedbackInput from '../feedback/codex-feedback-input.ts';
 import codexWorkState from './codex-work-state.ts';
 import implementationMaterial from './implementation-material.ts';
-import { dispatchAdmission, managedIssueState } from '../../managed-issue.ts';
-import taskRecoveryCaller from '../../task-recovery-caller.ts';
-import workflowFailure from '../../workflow-failure.ts';
+import { dispatchAdmission, managedIssueState } from '../managed-issue.ts';
+import taskRecoveryCaller from '../dispatch/task-recovery-caller.ts';
+import workflowFailure from '../workflow-failure.ts';
 
 import { inspectCodexDispatchActivation } from '../../codex-automations.ts';
 import {
@@ -19,16 +19,16 @@ import {
 } from './codex-continuation-context.ts';
 import codexContinuationNative from './codex-continuation-native.ts';
 import runCodexDelivery from '../delivery/codex-delivery.ts';
-import { codexDispatchNative } from '../../codex-dispatch-native.ts';
-import { dispatchGit } from '../../codex-dispatch-project.ts';
-import CodexDispatchStore from '../../codex-dispatch-state.ts';
+import { codexDispatchNative } from '../dispatch/codex-dispatch-native.ts';
+import { dispatchGit } from '../dispatch/codex-dispatch-project.ts';
+import CodexDispatchStore from '../dispatch/codex-dispatch-state.ts';
 import { selectCodexTaskContext } from '../context/codex-task-context.ts';
 import codexLiveTurn from '../../codex-live-turn.ts';
 import { connectCodexThreads } from '../../codex-thread-client.ts';
 import advanceCodexWork, { prepareCodexWork } from './codex-work.ts';
-import { retainedIssueProgression } from '../../issue-progression.ts';
-import liveWorkflowPolicy, { WorkflowPolicyHeld } from '../../live-workflow-policy.ts';
-import { requireWorkflowSchedule } from '../../workflow-schedule.ts';
+import { retainedIssueProgression } from '../issue-progression.ts';
+import liveWorkflowPolicy, { WorkflowPolicyHeld } from '../live-workflow-policy.ts';
+import { requireWorkflowSchedule } from '../workflow-schedule.ts';
 
 export type { CodexContinuationDependencies } from './codex-continuation-context.ts';
 /** work mode is standing authority; these checks never ask for another stage approval. */

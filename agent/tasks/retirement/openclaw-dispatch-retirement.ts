@@ -3,9 +3,9 @@ import type { AgentManifest } from '../../../manifest/types.ts';
 import assignmentRetirement from './assignment-retirement.ts';
 import { automationHash } from '../../automation-hash.ts';
 import { openClawCleanupConfiguration } from '../../cleanup-configuration.ts';
-import { dispatchAdmission, managedTargetUrl } from '../../managed-issue.ts';
-import reconcileOpenClawLifecycle from '../../openclaw-assignment-lifecycle.ts';
-import type OpenClawDispatchContext from '../../openclaw-dispatch-context.ts';
+import { dispatchAdmission, managedTargetUrl } from '../managed-issue.ts';
+import reconcileOpenClawLifecycle from '../dispatch/openclaw-assignment-lifecycle.ts';
+import type OpenClawDispatchContext from '../dispatch/openclaw-dispatch-context.ts';
 import observeRetirementSession from './openclaw-retirement-observation.ts';
 import type { DispatchCaller } from '../../openclaw-session-create.ts';
 /** an operator entry records intent, then enters the same resource lifecycle as intake. */

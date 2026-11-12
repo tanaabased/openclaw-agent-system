@@ -1,4 +1,4 @@
-import type { ClaimClient, ClaimSource } from '../../../agent/assignment-claim.ts';
+import type { ClaimClient, ClaimSource } from '../../../agent/tasks/dispatch/assignment-claim.ts';
 import type { GitHubAssignmentEvent } from './work-item.ts';
 import type { GitHubCanonicalIssueComment } from './comment-admission.ts';
 import GitHubIssueCommentClient from './issue-comment-client.ts';

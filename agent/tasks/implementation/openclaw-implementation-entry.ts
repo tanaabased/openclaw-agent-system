@@ -1,6 +1,6 @@
 import { parseDirectImplementationRequest } from '../../../tools/dispatch/implementation-schema.ts';
 import implementationEntry from './implementation-entry.ts';
-import openClawEntryContext from '../../openclaw-entry-context.ts';
+import openClawEntryContext from '../context/openclaw-entry-context.ts';
 
 export default function openClawImplementationEntry(
   input: Parameters<typeof openClawEntryContext>[0],

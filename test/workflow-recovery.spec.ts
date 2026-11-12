@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import workflowRecovery from '../agent/workflow-recovery.ts';
+import workflowRecovery from '../agent/tasks/workflow-recovery.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import { intakeRemediation } from '../channels/github/intake/record-store.ts';
 

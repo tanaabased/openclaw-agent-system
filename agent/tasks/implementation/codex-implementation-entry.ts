@@ -1,5 +1,5 @@
 import { parseDirectImplementationRequest } from '../../../tools/dispatch/implementation-schema.ts';
-import codexEntryContext from '../../codex-entry-context.ts';
+import codexEntryContext from '../context/codex-entry-context.ts';
 import type { CodexFeedbackDependencies } from '../feedback/codex-feedback.ts';
 import implementationEntry from './implementation-entry.ts';
 

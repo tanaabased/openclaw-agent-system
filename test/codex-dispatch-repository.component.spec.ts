@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
-import workflowFailure from '../agent/workflow-failure.ts';
+import workflowFailure from '../agent/tasks/workflow-failure.ts';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import prepareDispatchRepository, {
   type DispatchRepositoryPreparation,
-} from '../agent/codex-dispatch-repository.ts';
+} from '../agent/tasks/dispatch/codex-dispatch-repository.ts';
 import { repositoryFixture } from './git-repository-fixture.ts';
 
 const source = 'https://github.com/owner/repo.git';

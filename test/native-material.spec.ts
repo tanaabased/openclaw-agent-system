@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict';
 import { Value } from 'typebox/value';
-import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
-import { codexMaterialReceipts, codexRuntimeReceipts } from '../agent/codex-native-material.ts';
+import {
+  bindNativeMaterial,
+  nativeMaterialResponse,
+} from '../agent/tasks/context/native-material.ts';
+import {
+  codexMaterialReceipts,
+  codexRuntimeReceipts,
+} from '../agent/tasks/context/codex-native-material.ts';
 import openClawNativeMaterial, {
   openClawMaterialReceipts,
-} from '../agent/openclaw-native-material.ts';
+} from '../agent/tasks/context/openclaw-native-material.ts';
 import implementationMaterial, {
   type ImplementationMaterialRead,
 } from '../agent/tasks/implementation/implementation-material.ts';

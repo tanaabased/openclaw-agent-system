@@ -1,6 +1,6 @@
-import type { ManagedIssueState as IntakeState } from './managed-issue.ts';
-import type { DispatchRecord } from './codex-dispatch-state.ts';
-import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import type { ManagedIssueState as IntakeState } from './tasks/managed-issue.ts';
+import type { DispatchRecord } from './tasks/dispatch/codex-dispatch-state.ts';
+import type { OpenClawDispatchRecord } from './tasks/dispatch/openclaw-dispatch-state.ts';
 import type { NotificationResetResource } from './notification-reset-state.ts';
 
 export type ResetDispatchRecord = DispatchRecord | OpenClawDispatchRecord;

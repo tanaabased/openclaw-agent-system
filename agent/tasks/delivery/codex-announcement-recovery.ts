@@ -4,10 +4,10 @@ import {
   retainAnnouncementFailure,
 } from './delivery-announcement-recovery.ts';
 import { recoverRetainedAnnouncement } from './delivery-announcement.ts';
-import { dispatchAdmission } from '../../managed-issue.ts';
-import { inspectIssueIdentity } from '../../dispatch-assignment.ts';
+import { dispatchAdmission } from '../managed-issue.ts';
+import { inspectIssueIdentity } from '../dispatch/dispatch-assignment.ts';
 import connectCodexGitHubAccount from '../../codex-github-client.ts';
-import type { DispatchRecord } from '../../codex-dispatch-state.ts';
+import type { DispatchRecord } from '../dispatch/codex-dispatch-state.ts';
 import type { CodexWorkContext } from '../implementation/codex-continuation-context.ts';
 
 /** Recover one uncertain announcement without entering implementation or sending a model turn. */

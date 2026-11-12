@@ -1,4 +1,4 @@
-import recoverAssignmentClaim from '../agent/assignment-claim-recovery.ts';
+import recoverAssignmentClaim from '../agent/tasks/dispatch/assignment-claim-recovery.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -11,8 +11,8 @@ import {
   claimAssignment,
   type ClaimClient,
   type ClaimSource,
-} from '../agent/assignment-claim.ts';
-import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
+} from '../agent/tasks/dispatch/assignment-claim.ts';
+import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
 import { claimBody, parseAssignmentClaim } from '../channels/github/provider/assignment-claim.ts';
 import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
 

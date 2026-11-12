@@ -1,7 +1,7 @@
 import { selectOpenClawTaskContext } from '../context/openclaw-task-context.ts';
 import type { AgentManifest } from '../../../manifest/types.ts';
-import type { OpenClawTaskDependencies } from '../../openclaw-dispatch-context.ts';
-import OpenClawDispatchStore from '../../openclaw-dispatch-state.ts';
+import type { OpenClawTaskDependencies } from '../dispatch/openclaw-dispatch-context.ts';
+import OpenClawDispatchStore from '../dispatch/openclaw-dispatch-state.ts';
 import reconcileRetirementEffects from './reconcile-retirement-effects.ts';
 
 /** recovery remains available to explicit invocations even without an intake schedule or task. */

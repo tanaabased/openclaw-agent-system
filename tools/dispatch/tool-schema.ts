@@ -1,12 +1,12 @@
 import { deliveryBaseSchema } from '../../agent/tasks/delivery/delivery-base.ts';
 import { Type, type Static, type TProperties } from 'typebox';
 import { Value } from 'typebox/value';
-import { dispatchInspectionProperties } from '../../agent/dispatch-inspection.ts';
+import { dispatchInspectionProperties } from '../../agent/tasks/dispatch/dispatch-inspection.ts';
 import { implementationResultSchema } from '../../agent/tasks/implementation/implementation-result.ts';
-import { issueChatTitleGuidance } from '../../agent/issue-chat-title.ts';
-import { implementationDecisionSchema } from '../../agent/issue-progression.ts';
+import { issueChatTitleGuidance } from '../../agent/tasks/dispatch/issue-chat-title.ts';
+import { implementationDecisionSchema } from '../../agent/tasks/issue-progression.ts';
 import { assessmentSchema } from '../../agent/model-routing.ts';
-import WorkflowRequestError from '../../agent/workflow-request-error.ts';
+import WorkflowRequestError from '../../agent/tasks/workflow-request-error.ts';
 import discriminatedSchema from '../../utils/discriminated-schema.ts';
 import { directAssessmentRequestSchema } from './assessment-schema.ts';
 import invalidDeliveryRequest from './delivery-request-error.ts';

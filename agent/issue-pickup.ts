@@ -13,10 +13,10 @@ import type { GitHubNotificationPolicy } from '../channels/github/workflow-polic
 import { implementationMaterialSchema } from '../tools/dispatch/implementation-material-schema.ts';
 import type { ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import assessmentGuidance from './tasks/assessment/assessment-guidance.ts';
-import { claimRouteEligibility, type ClaimStore } from './assignment-claim.ts';
+import { claimRouteEligibility, type ClaimStore } from './tasks/dispatch/assignment-claim.ts';
 import { automationHash } from './automation-hash.ts';
 import DiscoveryBudget, { DiscoveryPaused } from './discovery-budget.ts';
-import guidanceReference from './guidance-reference.ts';
+import guidanceReference from './tasks/context/guidance-reference.ts';
 import implementationMaterial, {
   type ImplementationMaterialRead,
 } from './tasks/implementation/implementation-material.ts';

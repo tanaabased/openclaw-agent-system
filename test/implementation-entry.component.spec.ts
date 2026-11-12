@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { nativeIssueContext } from '../agent/native-issue-context.ts';
+import { nativeIssueContext } from '../agent/tasks/context/native-issue-context.ts';
 import hydrateImplementation from './implementation-material-fixture.ts';
 
 import assessmentEntry, {
@@ -11,14 +11,14 @@ import assessmentEntry, {
 import renderNativeAssessment from '../agent/tasks/assessment/assessment-render.ts';
 import assessmentSkillSource from '../agent/tasks/assessment/assessment-skill-source.ts';
 import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
-import { DirectEntryStore } from '../agent/direct-entry-store.ts';
+import { DirectEntryStore } from '../agent/tasks/direct-entry-store.ts';
 import implementationEntryDelivery from '../agent/tasks/delivery/implementation-entry-delivery.ts';
 import { implementationEntriesSchema } from '../agent/tasks/implementation/implementation-entry-state.ts';
 import implementationEntry from '../agent/tasks/implementation/implementation-entry.ts';
 import {
   implementationReviewInstructions,
   taskScopeInstructions,
-} from '../agent/native-task-instructions.ts';
+} from '../agent/tasks/context/native-task-instructions.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
@@ -840,7 +840,8 @@ describe('agent/native-implementation-entry', () => {
   });
   it('should require a verified openclaw operator and retain explicit local scope under work defaults', async () => {
     const { default: OpenClawIntake } = await import('../agent/openclaw-intake.ts');
-    const { default: OpenClawDispatch } = await import('../agent/openclaw-dispatch.ts');
+    const { default: OpenClawDispatch } =
+      await import('../agent/tasks/dispatch/openclaw-dispatch.ts');
     const fixture = intakeFixture();
     const provider = {
       ...fixture.client,

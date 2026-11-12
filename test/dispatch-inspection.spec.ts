@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 
-import dispatchInspection, { dispatchInspectionSummary } from '../agent/dispatch-inspection.ts';
-import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
-import type { ManagedIssue } from '../agent/managed-issue.ts';
+import dispatchInspection, {
+  dispatchInspectionSummary,
+} from '../agent/tasks/dispatch/dispatch-inspection.ts';
+import type { SharedDispatchRecord } from '../agent/tasks/dispatch/dispatch-state.ts';
+import type { ManagedIssue } from '../agent/tasks/managed-issue.ts';
 import { baseline, intakeFixture } from './github-intake-fixture.ts';
 
 describe('agent/dispatch-inspection', () => {

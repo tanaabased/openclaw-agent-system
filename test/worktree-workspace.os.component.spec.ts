@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import isManagedWorktreeWorkspace from '../tools/git/worktree-workspace.ts';
 import loadBoundToolManifest from '../api/manifest-binding.ts';
-import worktreeGuidance from '../agent/worktree-guidance.ts';
+import worktreeGuidance from '../agent/tasks/context/worktree-guidance.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 
 describe('managed worktree workspace binding', () => {

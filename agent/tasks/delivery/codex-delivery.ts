@@ -2,7 +2,7 @@ import {
   selectCodexTaskContext,
   type CodexTaskContextDependencies,
 } from '../context/codex-task-context.ts';
-import { withDispatchTask } from '../../dispatch-task-scope.ts';
+import { withDispatchTask } from '../dispatch/dispatch-task-scope.ts';
 import { deliveryBaseSchema, verifyDeliveryCommits } from './delivery-base.ts';
 import { retainedAnnouncementPublication } from './delivery-announcement-recovery.ts';
 import { realpath } from 'node:fs/promises';
@@ -30,20 +30,20 @@ import { automationHash } from '../../automation-hash.ts';
 import { inspectCodexDispatchActivation } from '../../codex-automations.ts';
 import codexCommit from '../../codex-commit.ts';
 import { adoptedCodexDelivery, type IssueDeliveryState } from './issue-delivery-state.ts';
-import { revalidateDispatchAssignment } from '../../codex-dispatch-context.ts';
-import dispatchHistory from '../../codex-dispatch-history.ts';
-import { codexDispatchNative } from '../../codex-dispatch-native.ts';
+import { revalidateDispatchAssignment } from '../dispatch/codex-dispatch-context.ts';
+import dispatchHistory from '../dispatch/codex-dispatch-history.ts';
+import { codexDispatchNative } from '../dispatch/codex-dispatch-native.ts';
 import {
   dispatchGit,
   verifyDispatchWorktree,
   type DispatchGit,
-} from '../../codex-dispatch-project.ts';
-import CodexDispatchStore from '../../codex-dispatch-state.ts';
+} from '../dispatch/codex-dispatch-project.ts';
+import CodexDispatchStore from '../dispatch/codex-dispatch-state.ts';
 import authorizeCodexFeedback from '../feedback/codex-feedback-authority.ts';
 import connectCodexFeedback from '../feedback/codex-feedback-client.ts';
 import connectCodexGitHubAccount from '../../codex-github-client.ts';
 import codexHostAccess from '../../codex-host-access.ts';
-import codexIssueBranch from '../../codex-issue-branch.ts';
+import codexIssueBranch from '../dispatch/codex-issue-branch.ts';
 import codexIssueNotice from '../../codex-issue-notice.ts';
 import { connectCodexThreads, type CodexThreadRequest } from '../../codex-thread-client.ts';
 import deliveryAnnouncement, {
@@ -58,21 +58,18 @@ import {
 } from './delivery-preparation.ts';
 import selectFeedbackStage from '../feedback/feedback-stage.ts';
 import bindIssuePullRequest from './issue-pr-binding.ts';
-import issueProgression from '../../issue-progression.ts';
-import issueWorkflowMode from '../../issue-workflow-mode.ts';
-import { WorkflowPolicyHeld } from '../../live-workflow-policy.ts';
-import { dispatchAdmission, managedPullRequest, managedTargetUrl } from '../../managed-issue.ts';
+import issueProgression from '../issue-progression.ts';
+import issueWorkflowMode from '../issue-workflow-mode.ts';
+import { WorkflowPolicyHeld } from '../live-workflow-policy.ts';
+import { dispatchAdmission, managedPullRequest, managedTargetUrl } from '../managed-issue.ts';
 import publishIssueDelivery from './publish-issue-delivery.ts';
 import taskPullRequest, {
   isCurrentTaskPullRequest,
   setTaskPullRequestLink,
 } from './task-pull-request.ts';
-import workflowFailure from '../../workflow-failure.ts';
-import {
-  requireWorkflowSchedule,
-  type WorkflowScheduleAuthority,
-} from '../../workflow-schedule.ts';
-import workflowStatus from '../../workflow-status.ts';
+import workflowFailure from '../workflow-failure.ts';
+import { requireWorkflowSchedule, type WorkflowScheduleAuthority } from '../workflow-schedule.ts';
+import workflowStatus from '../workflow-status.ts';
 const requestSchema = Type.Object(
   {
     action: Type.Union(

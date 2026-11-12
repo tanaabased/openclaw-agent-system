@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
+import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 
 describe('agent/codex-dispatch-state', () => {
   let root: string;

@@ -9,7 +9,7 @@ import {
   codexNotificationResetPickupAutomation,
   replaceCodexNotificationCoordinator,
 } from './codex-automations.ts';
-import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
+import CodexDispatchStore, { type DispatchRecord } from './tasks/dispatch/codex-dispatch-state.ts';
 import { type CodexIntakeDependencies } from './codex-intake.ts';
 import { connectCodexGitHub } from './codex-github-client.ts';
 import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
@@ -28,7 +28,7 @@ import {
   agentCommandCapabilityEnvironmentName,
 } from './command-authority.ts';
 import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
-import { dispatchAdmission, managedIssueState } from './managed-issue.ts';
+import { dispatchAdmission, managedIssueState } from './tasks/managed-issue.ts';
 import { notificationResetResources, type ResetInventory } from './notification-reset-inventory.ts';
 import notificationResetPickup from './notification-reset-pickup.ts';
 import NotificationResetStore, {

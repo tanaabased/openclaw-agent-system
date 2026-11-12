@@ -1,5 +1,5 @@
 import { Type, type Static } from 'typebox';
-import { dispatchRetryProperties } from '../../dispatch-retry.ts';
+import { dispatchRetryProperties } from '../dispatch/dispatch-retry.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });

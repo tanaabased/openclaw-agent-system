@@ -4,17 +4,20 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import prepareDispatchReport from '../agent/codex-dispatch-report.ts';
+import prepareDispatchReport from '../agent/tasks/dispatch/codex-dispatch-report.ts';
 import CodexDispatchStore, {
   type DispatchRecord,
   type DispatchState,
-} from '../agent/codex-dispatch-state.ts';
-import type DispatchStore from '../agent/dispatch-state.ts';
-import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
-import { dispatchStorageBytes, dispatchStorageNotice } from '../agent/dispatch-storage.ts';
+} from '../agent/tasks/dispatch/codex-dispatch-state.ts';
+import type DispatchStore from '../agent/tasks/dispatch/dispatch-state.ts';
+import type { SharedDispatchRecord } from '../agent/tasks/dispatch/dispatch-state.ts';
+import {
+  dispatchStorageBytes,
+  dispatchStorageNotice,
+} from '../agent/tasks/dispatch/dispatch-storage.ts';
 import OpenClawDispatchStore, {
   type OpenClawDispatchState,
-} from '../agent/openclaw-dispatch-state.ts';
+} from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import openclawIntakeReport from '../agent/openclaw-intake-report.ts';
 
 // Opt-in synthetic journal measurement. Never reads or changes installed runtime state.

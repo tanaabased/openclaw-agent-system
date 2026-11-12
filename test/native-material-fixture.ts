@@ -1,5 +1,8 @@
-import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
-import contextMaterialTransport from '../agent/context-material-transport.ts';
+import {
+  bindNativeMaterial,
+  nativeMaterialResponse,
+} from '../agent/tasks/context/native-material.ts';
+import contextMaterialTransport from '../agent/tasks/context/context-material-transport.ts';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';

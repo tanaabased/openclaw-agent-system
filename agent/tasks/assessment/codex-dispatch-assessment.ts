@@ -6,7 +6,7 @@ import { automationHash } from '../../automation-hash.ts';
 import codexAssessmentInstructions, {
   autoAssessmentInstructions,
 } from './codex-assessment-instructions.ts';
-import { observeCodexActivity } from '../../codex-capacity-reconcile.ts';
+import { observeCodexActivity } from '../dispatch/codex-capacity-reconcile.ts';
 import {
   repository,
   withNative,
@@ -14,25 +14,25 @@ import {
   type CodexDispatchNative,
   type CodexDispatchTransaction,
   type CodexDispatchSelection as Selection,
-} from '../../codex-dispatch-context.ts';
-import { verifyDispatchWorktree } from '../../codex-dispatch-project.ts';
-import { notice } from '../../codex-dispatch-reporting.ts';
+} from '../dispatch/codex-dispatch-context.ts';
+import { verifyDispatchWorktree } from '../dispatch/codex-dispatch-project.ts';
+import { notice } from '../dispatch/codex-dispatch-reporting.ts';
 import {
   type default as CodexDispatchStore,
   type DispatchRecord,
-} from '../../codex-dispatch-state.ts';
-import codexIssueBranch from '../../codex-issue-branch.ts';
+} from '../dispatch/codex-dispatch-state.ts';
+import codexIssueBranch from '../dispatch/codex-issue-branch.ts';
 import type { ImplementationMaterialRead } from '../implementation/implementation-material.ts';
-import issueProgression from '../../issue-progression.ts';
-import issueWorkflowMode from '../../issue-workflow-mode.ts';
-import { WorkflowPolicyHeld } from '../../live-workflow-policy.ts';
+import issueProgression from '../issue-progression.ts';
+import issueWorkflowMode from '../issue-workflow-mode.ts';
+import { WorkflowPolicyHeld } from '../live-workflow-policy.ts';
 import {
   dispatchAdmission,
   managedTargetUrl,
   type ManagedIssue as IntakeRecord,
-} from '../../managed-issue.ts';
-import workflowRecovery from '../../workflow-recovery.ts';
-import { selectWorkflowStage } from '../../workflow-stage.ts';
+} from '../managed-issue.ts';
+import workflowRecovery from '../workflow-recovery.ts';
+import { selectWorkflowStage } from '../workflow-stage.ts';
 export async function handoffDispatch(
   input: Record<string, unknown>,
   current: Selection,

@@ -3,9 +3,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { assignmentClaimRoute } from '../agent/assignment-claim-source.ts';
-import CodexAssignmentClaims from '../agent/codex-assignment-claims.ts';
-import OpenClawAssignmentClaims from '../agent/openclaw-assignment-claims.ts';
+import { assignmentClaimRoute } from '../agent/tasks/dispatch/assignment-claim-source.ts';
+import CodexAssignmentClaims from '../agent/tasks/dispatch/codex-assignment-claims.ts';
+import OpenClawAssignmentClaims from '../agent/tasks/dispatch/openclaw-assignment-claims.ts';
 import { pickupAuthority } from '../agent/issue-pickup.ts';
 import { pickupIssueKey } from '../agent/issue-pickup-capacity.ts';
 import IntakeRecordStore, {

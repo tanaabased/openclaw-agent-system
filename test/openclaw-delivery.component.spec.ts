@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { recoverRetainedAnnouncement } from '../agent/tasks/delivery/delivery-announcement.ts';
 import { feedbackRevision } from '../agent/tasks/feedback/feedback-source.ts';
-import manualPullRequest from '../agent/manual-pull-request.ts';
+import manualPullRequest from '../agent/tasks/dispatch/manual-pull-request.ts';
 import { openClawWorkSlot } from '../agent/tasks/implementation/openclaw-continuation.ts';
 import {
   authorizeFeedback,
@@ -18,7 +18,7 @@ import selectFeedbackStage from '../agent/tasks/feedback/feedback-stage.ts';
 import openClawSkill from '../agent/openclaw-skill.ts';
 
 import openClawDelivery from '../agent/tasks/delivery/openclaw-delivery.ts';
-import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
+import type { OpenClawDispatchRecord } from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 
 const response = (value: unknown) => ({

@@ -1,5 +1,5 @@
 import { delimiter } from 'node:path';
-import { codexInstanceStore } from './codex-assignment-claims.ts';
+import { codexInstanceStore } from './tasks/dispatch/codex-assignment-claims.ts';
 import instanceIdentity from './instance-identity.ts';
 
 import { inspectCodexIntake, inspectCodexPickup } from './codex-intake.ts';

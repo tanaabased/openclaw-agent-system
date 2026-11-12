@@ -2,7 +2,7 @@ import { mkdir, readdir, realpath, rmdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { workflowFeedbackAvailable } from '../channels/github/feedback-policy.ts';
-import { codexInstanceStore } from './codex-assignment-claims.ts';
+import { codexInstanceStore } from './tasks/dispatch/codex-assignment-claims.ts';
 import codexAutomationSchedule from './codex-automation-schedule.ts';
 import IssuePickupEnrollmentStore from './issue-pickup-enrollment.ts';
 import {

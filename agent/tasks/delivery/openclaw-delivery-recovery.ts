@@ -2,7 +2,7 @@ import type { ProviderDiagnostic } from '../../../utils/provider-diagnostic.ts';
 import { deliveryHasEffects } from './delivery-base.ts';
 import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
 import type { IssueDeliveryState } from './issue-delivery-state.ts';
-import workflowRecovery from '../../workflow-recovery.ts';
+import workflowRecovery from '../workflow-recovery.ts';
 
 /** recovery follows the failed operation and retained effects, never an optional preview. */
 export default function openClawDeliveryRecovery(input: {

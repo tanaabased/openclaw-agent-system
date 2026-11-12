@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import type { AssessmentEntryDependencies } from '../agent/tasks/assessment/assessment-entry.ts';
-import { codexItemOccupied } from '../agent/codex-capacity.ts';
-import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
-import { nativeIssueContext } from '../agent/native-issue-context.ts';
+import { codexItemOccupied } from '../agent/tasks/dispatch/codex-capacity.ts';
+import type { DispatchRecord } from '../agent/tasks/dispatch/codex-dispatch-state.ts';
+import { nativeIssueContext } from '../agent/tasks/context/native-issue-context.ts';
 import managedImplementationRoute from '../agent/tasks/implementation/managed-implementation-route.ts';
-import { openClawItemOccupied } from '../agent/openclaw-capacity.ts';
-import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
+import { openClawItemOccupied } from '../agent/tasks/dispatch/openclaw-capacity.ts';
+import type { OpenClawDispatchRecord } from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 
 describe('agent/native-issue-context', () => {
   it('should release historical execution reservations while retaining current native activity', () => {

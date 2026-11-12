@@ -1,21 +1,21 @@
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { GitHubNotificationPolicy } from '../../../channels/github/workflow-policy.ts';
-import issueWorkflowMode from '../../issue-workflow-mode.ts';
+import issueWorkflowMode from '../issue-workflow-mode.ts';
 import {
   managedPullRequest,
   managedTargetUrl,
   type ManagedIssue as IntakeRecord,
-} from '../../managed-issue.ts';
+} from '../managed-issue.ts';
 
 import assignmentCard from '../../../channels/github/presentation/assignment-card.ts';
 import { nativeAssessmentInstructions } from './assessment-instructions.ts';
 import { assessmentPresentationRequest } from './assessment-render.ts';
 import { assessmentResultContextSchema } from './assessment-result.ts';
-import type { OpenClawDispatchRecord } from '../../openclaw-dispatch-state.ts';
+import type { OpenClawDispatchRecord } from '../dispatch/openclaw-dispatch-state.ts';
 import { describeIssueSession, type DispatchCaller } from '../../openclaw-session-create.ts';
 import { nativeInputEvent } from '../../openclaw-session-input.ts';
 import openClawSkill from '../../openclaw-skill.ts';
-import { selectWorkflowStage } from '../../workflow-stage.ts';
+import { selectWorkflowStage } from '../workflow-stage.ts';
 
 import type { DispatchRequest } from '../../../credentials/session-dispatch.ts';
 import type { AssessmentConfiguration } from '../../../manifest/assessment-schema.ts';

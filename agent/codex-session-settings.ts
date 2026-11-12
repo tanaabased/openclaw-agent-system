@@ -1,4 +1,4 @@
-import type { DispatchRecord } from './codex-dispatch-state.ts';
+import type { DispatchRecord } from './tasks/dispatch/codex-dispatch-state.ts';
 import sessionSettings, { type SessionSettings } from './session-settings.ts';
 
 /** codex may omit settings readback; absence is not proof of the requested configuration. */

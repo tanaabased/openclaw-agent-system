@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import selectReplyDraft from '../agent/tasks/feedback/reply-selection.ts';
 import type { ReplyDraft } from '../agent/tasks/feedback/reply-store.ts';
-import workflowFailure from '../agent/workflow-failure.ts';
+import workflowFailure from '../agent/tasks/workflow-failure.ts';
 
 describe('agent/reply-selection', () => {
   it('should preserve a safe diagnostic when concurrent drafts require an authored choice', () => {

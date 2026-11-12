@@ -3,20 +3,23 @@ import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { feedbackRevision } from '../agent/tasks/feedback/feedback-source.ts';
-import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
+import {
+  bindNativeMaterial,
+  nativeMaterialResponse,
+} from '../agent/tasks/context/native-material.ts';
 import replyOwnPublications from '../agent/tasks/feedback/reply-own-publications.ts';
 
 import assessmentSkillSource from '../agent/tasks/assessment/assessment-skill-source.ts';
-import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
+import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import runCodexFeedback from '../agent/tasks/feedback/codex-feedback.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
-import { issueKey } from '../agent/dispatch-pending.ts';
+import { issueKey } from '../agent/tasks/dispatch/dispatch-pending.ts';
 import feedbackReply, {
   type FeedbackReplyDependencies,
 } from '../agent/tasks/feedback/feedback-reply.ts';
-import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
-import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
+import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
+import OpenClawDispatch from '../agent/tasks/dispatch/openclaw-dispatch.ts';
 import type { OpenClawFeedbackProvider } from '../agent/tasks/feedback/openclaw-feedback.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import replyOwner, { type ReplyOwner } from '../agent/tasks/feedback/reply-owner.ts';

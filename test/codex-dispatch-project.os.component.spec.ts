@@ -9,10 +9,10 @@ import {
   resolveDispatchProject,
   verifyDispatchWorktree,
   type DispatchGit,
-} from '../agent/codex-dispatch-project.ts';
+} from '../agent/tasks/dispatch/codex-dispatch-project.ts';
 import codexHostAccess from '../agent/codex-host-access.ts';
-import { dispatchRetryDue, scheduleDispatchRetry } from '../agent/dispatch-retry.ts';
-import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
+import { dispatchRetryDue, scheduleDispatchRetry } from '../agent/tasks/dispatch/dispatch-retry.ts';
+import type { SharedDispatchRecord } from '../agent/tasks/dispatch/dispatch-state.ts';
 
 describe('agent/codex-dispatch-project', () => {
   let root: string, source: string, other: string, commonDir: string;

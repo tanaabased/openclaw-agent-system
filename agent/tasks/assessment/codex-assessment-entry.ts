@@ -1,5 +1,5 @@
 import assessmentEntry from './assessment-entry.ts';
-import codexEntryContext from '../../codex-entry-context.ts';
+import codexEntryContext from '../context/codex-entry-context.ts';
 import type { CodexFeedbackDependencies } from '../feedback/codex-feedback.ts';
 
 export default function codexAssessmentEntry(

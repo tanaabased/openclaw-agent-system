@@ -15,8 +15,8 @@ import {
   type AssessmentSubmission,
 } from '../agent/tasks/assessment/assessment-result.ts';
 import assessmentSkillSource from '../agent/tasks/assessment/assessment-skill-source.ts';
-import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
-import { nativeIssueContext } from '../agent/native-issue-context.ts';
+import type { SharedDispatchRecord } from '../agent/tasks/dispatch/dispatch-state.ts';
+import { nativeIssueContext } from '../agent/tasks/context/native-issue-context.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
@@ -473,7 +473,7 @@ describe('agent/native-assessment-entry', () => {
     const { bindCodexWorkspace } = await import('../agent/codex-workspace-binding.ts');
     const { default: codexAssessmentEntry } =
       await import('../agent/tasks/assessment/codex-assessment-entry.ts');
-    const { runCodexDispatch } = await import('../agent/codex-dispatch.ts');
+    const { runCodexDispatch } = await import('../agent/tasks/dispatch/codex-dispatch.ts');
     const home = join(root, 'codex'),
       data = join(root, 'plugin');
     await mkdir(home);
@@ -561,7 +561,8 @@ describe('agent/native-assessment-entry', () => {
   });
   it('should require a verified openclaw operator and remain assessment-only under work defaults', async () => {
     const { default: OpenClawIntake } = await import('../agent/openclaw-intake.ts');
-    const { default: OpenClawDispatch } = await import('../agent/openclaw-dispatch.ts');
+    const { default: OpenClawDispatch } =
+      await import('../agent/tasks/dispatch/openclaw-dispatch.ts');
     const fixture = intakeFixture();
     const provider = {
       ...fixture.client,

@@ -2,7 +2,7 @@ import selectFeedbackStage from '../agent/tasks/feedback/feedback-stage.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 import assert from 'node:assert/strict';
 
-import { selectWorkflowStage } from '../agent/workflow-stage.ts';
+import { selectWorkflowStage } from '../agent/tasks/workflow-stage.ts';
 
 describe('agent/workflow-stage', () => {
   const skill = {

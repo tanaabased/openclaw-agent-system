@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { codexDispatchNative } from '../agent/codex-dispatch-native.ts';
-import codexEntryContext from '../agent/codex-entry-context.ts';
-import { issueKey } from '../agent/dispatch-pending.ts';
+import { codexDispatchNative } from '../agent/tasks/dispatch/codex-dispatch-native.ts';
+import codexEntryContext from '../agent/tasks/context/codex-entry-context.ts';
+import { issueKey } from '../agent/tasks/dispatch/dispatch-pending.ts';
 import { discoverFeedback } from '../agent/tasks/feedback/feedback-source.ts';
-import manualPullRequest from '../agent/manual-pull-request.ts';
+import manualPullRequest from '../agent/tasks/dispatch/manual-pull-request.ts';
 import { notificationAuthorityDigest } from '../agent/notification-authority.ts';
 import {
   account,
@@ -24,7 +24,7 @@ import runCodexDelivery, {
   CodexDeliveryFailure,
   type CodexDeliveryDependencies,
 } from '../agent/tasks/delivery/codex-delivery.ts';
-import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
+import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import { runCodexIntake } from '../agent/codex-intake.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';

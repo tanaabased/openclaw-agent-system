@@ -1,5 +1,5 @@
 import { automationHash } from './automation-hash.ts';
-import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import type { OpenClawDispatchRecord } from './tasks/dispatch/openclaw-dispatch-state.ts';
 import type { OpenClawIntakePass } from './openclaw-intake-pass.ts';
 
 /** consumed allowance survives removal of the original native request or feedback body. */

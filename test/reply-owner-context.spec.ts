@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import type { DeliveryAnnouncementState } from '../agent/tasks/delivery/delivery-announcement-state.ts';
-import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
+import type { SharedDispatchRecord } from '../agent/tasks/dispatch/dispatch-state.ts';
 import replyOwnerContext from '../agent/tasks/feedback/reply-owner-context.ts';
 import replyOwner from '../agent/tasks/feedback/reply-owner.ts';
 import type { ReplyTarget } from '../agent/tasks/feedback/reply-target.ts';

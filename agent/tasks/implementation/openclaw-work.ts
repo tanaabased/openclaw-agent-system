@@ -2,18 +2,18 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { Static } from 'typebox';
 import implementationContext from './implementation-context.ts';
 import implementationHandoff from './implementation-handoff.ts';
-import nativeClarification from '../../native-clarification.ts';
-import nativeTaskInstructions from '../../native-task-instructions.ts';
+import nativeClarification from '../context/native-clarification.ts';
+import nativeTaskInstructions from '../context/native-task-instructions.ts';
 import openClawNativeTurns from '../../openclaw-native-turns.ts';
-import workflowRecovery from '../../workflow-recovery.ts';
+import workflowRecovery from '../workflow-recovery.ts';
 
 import type { DispatchRequest } from '../../../credentials/session-dispatch.ts';
 import type { dispatchParameters } from '../../../tools/dispatch/tool-schema.ts';
 import { automationHash } from '../../automation-hash.ts';
 import { implementationPresentation } from './implementation-result.ts';
-import issueProgression, { type IssueProgression } from '../../issue-progression.ts';
-import { WorkflowPolicyHeld } from '../../live-workflow-policy.ts';
-import type { OpenClawDispatchRecord } from '../../openclaw-dispatch-state.ts';
+import issueProgression, { type IssueProgression } from '../issue-progression.ts';
+import { WorkflowPolicyHeld } from '../live-workflow-policy.ts';
+import type { OpenClawDispatchRecord } from '../dispatch/openclaw-dispatch-state.ts';
 import { describeIssueSession, type DispatchCaller } from '../../openclaw-session-create.ts';
 import { nativeInputEvent, operatorInputEvent } from '../../openclaw-session-input.ts';
 

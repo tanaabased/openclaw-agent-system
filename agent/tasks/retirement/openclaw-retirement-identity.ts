@@ -1,4 +1,4 @@
-import type { OpenClawDispatchRecord } from '../../openclaw-dispatch-state.ts';
+import type { OpenClawDispatchRecord } from '../dispatch/openclaw-dispatch-state.ts';
 
 /** compact cleanup receipts identify a native resource without restoring an execution request. */
 export default function retirementSessionIdentity(record: OpenClawDispatchRecord) {

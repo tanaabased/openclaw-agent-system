@@ -1,14 +1,14 @@
 import codexWorkState from './codex-work-state.ts';
-import nativeTaskInstructions from '../../native-task-instructions.ts';
+import nativeTaskInstructions from '../context/native-task-instructions.ts';
 import implementationContext from './implementation-context.ts';
 import assessmentReviewContext from '../assessment/assessment-review-context.ts';
-import codexIssueBranch from '../../codex-issue-branch.ts';
+import codexIssueBranch from '../dispatch/codex-issue-branch.ts';
 import type { AssessmentSelection } from '../assessment/assessment-selection.ts';
 import type { CodexWorkContext } from './codex-continuation-context.ts';
-import type { revalidateDispatchAssignment } from '../../codex-dispatch-context.ts';
-import type { DispatchRecord } from '../../codex-dispatch-state.ts';
-import type { ManagedIssue } from '../../managed-issue.ts';
-import workflowRecovery from '../../workflow-recovery.ts';
+import type { revalidateDispatchAssignment } from '../dispatch/codex-dispatch-context.ts';
+import type { DispatchRecord } from '../dispatch/codex-dispatch-state.ts';
+import type { ManagedIssue } from '../managed-issue.ts';
+import workflowRecovery from '../workflow-recovery.ts';
 
 /** Prepare the issue branch and skill context under the verified native task binding. */
 export default async function codexWorkContext(

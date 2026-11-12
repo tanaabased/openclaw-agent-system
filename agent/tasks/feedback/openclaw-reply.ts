@@ -4,11 +4,11 @@ import type { DispatchAuthority } from '../../../credentials/session-dispatch.ts
 import type { AgentManifest } from '../../../manifest/types.ts';
 import { parseReplyRequest } from '../../../tools/dispatch/reply-schema.ts';
 import assignmentIntakePolicy from '../../assignment-intake-policy.ts';
-import { inspectIssueIdentity } from '../../dispatch-assignment.ts';
+import { inspectIssueIdentity } from '../dispatch/dispatch-assignment.ts';
 import feedbackReply from './feedback-reply.ts';
-import { dispatchAdmission, managedTargetUrl } from '../../managed-issue.ts';
-import type { OpenClawTaskDependencies } from '../../openclaw-dispatch-context.ts';
-import OpenClawDispatchStore from '../../openclaw-dispatch-state.ts';
+import { dispatchAdmission, managedTargetUrl } from '../managed-issue.ts';
+import type { OpenClawTaskDependencies } from '../dispatch/openclaw-dispatch-context.ts';
+import OpenClawDispatchStore from '../dispatch/openclaw-dispatch-state.ts';
 import openClawFeedbackInput from './openclaw-feedback-input.ts';
 import { authorizeFeedback } from './openclaw-feedback.ts';
 import openClawNativeTurns from '../../openclaw-native-turns.ts';

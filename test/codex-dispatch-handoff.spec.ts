@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { runInNewContext } from 'node:vm';
 
-import codexDispatchHandoff, { codexNativeHandoff } from '../agent/codex-dispatch-handoff.ts';
+import codexDispatchHandoff, {
+  codexNativeHandoff,
+} from '../agent/tasks/dispatch/codex-dispatch-handoff.ts';
 
 const runtime = {
   nodeExecutable: '/node',

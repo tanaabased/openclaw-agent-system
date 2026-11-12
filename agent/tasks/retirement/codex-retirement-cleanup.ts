@@ -6,9 +6,9 @@ import {
   dispatchGit,
   verifyDispatchWorktree,
   type DispatchGit,
-} from '../../codex-dispatch-project.ts';
-import type { RetirementCleanupResult } from '../../reconcile-assignment-lifecycle.ts';
-import type { DispatchRecord } from '../../codex-dispatch-state.ts';
+} from '../dispatch/codex-dispatch-project.ts';
+import type { RetirementCleanupResult } from '../dispatch/reconcile-assignment-lifecycle.ts';
+import type { DispatchRecord } from '../dispatch/codex-dispatch-state.ts';
 import type codexRetirementNative from './codex-retirement-native.ts';
 
 export type RetirementArchiveRequest = { threadId: string; archived: true; hostId: 'local' };

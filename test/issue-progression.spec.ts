@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import issueProgression, { retainedIssueProgression } from '../agent/issue-progression.ts';
+import issueProgression, { retainedIssueProgression } from '../agent/tasks/issue-progression.ts';
 
 const planning = {};
 

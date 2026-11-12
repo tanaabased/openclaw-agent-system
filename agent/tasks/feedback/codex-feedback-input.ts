@@ -1,5 +1,5 @@
 import type codexContinuationNative from '../implementation/codex-continuation-native.ts';
-import type { DispatchRecord } from '../../codex-dispatch-state.ts';
+import type { DispatchRecord } from '../dispatch/codex-dispatch-state.ts';
 
 /** Reuse the exact native-send receipt; delegated feedback is never an operator input. */
 export default async function codexFeedbackInput(

@@ -1,5 +1,5 @@
 import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
-import openClawEntryContext from '../agent/openclaw-entry-context.ts';
+import openClawEntryContext from '../agent/tasks/context/openclaw-entry-context.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -10,17 +10,20 @@ import {
   retainedAnnouncementPublication,
 } from '../agent/tasks/delivery/delivery-announcement-recovery.ts';
 import { implementationContextBudget } from '../agent/tasks/implementation/implementation-material.ts';
-import { pendingRecoveryFeedback } from '../agent/issue-task-recovery.ts';
-import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
+import { pendingRecoveryFeedback } from '../agent/tasks/dispatch/issue-task-recovery.ts';
+import {
+  bindNativeMaterial,
+  nativeMaterialResponse,
+} from '../agent/tasks/context/native-material.ts';
 import {
   implementationReviewInstructions,
   taskScopeInstructions,
-} from '../agent/native-task-instructions.ts';
+} from '../agent/tasks/context/native-task-instructions.ts';
 import openClawConditionCheck from '../agent/openclaw-condition-check.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import { nativeTurnFor } from '../agent/openclaw-native-turns.ts';
 import { feedbackTarget } from '../agent/tasks/feedback/reply-target.ts';
-import workflowStatus from '../agent/workflow-status.ts';
+import workflowStatus from '../agent/tasks/workflow-status.ts';
 import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
 import announcementFixture, { attemptedAnnouncement } from './delivery-announcement-fixture.ts';
 import {
@@ -43,15 +46,15 @@ import {
   type AssessmentSubmission,
 } from '../agent/tasks/assessment/assessment-result.ts';
 import type { AssessmentSelection } from '../agent/tasks/assessment/assessment-selection.ts';
-import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
-import type { ClaimClient } from '../agent/assignment-claim.ts';
+import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
+import type { ClaimClient } from '../agent/tasks/dispatch/assignment-claim.ts';
 import DiscoveryBudget, { DiscoveryPaused } from '../agent/discovery-budget.ts';
 import discoveryCheckpoint from '../agent/discovery-checkpoint.ts';
-import { issueKey } from '../agent/dispatch-pending.ts';
-import OpenClawAssignmentClaims from '../agent/openclaw-assignment-claims.ts';
-import openClawCapacity from '../agent/openclaw-capacity.ts';
-import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
-import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
+import { issueKey } from '../agent/tasks/dispatch/dispatch-pending.ts';
+import OpenClawAssignmentClaims from '../agent/tasks/dispatch/openclaw-assignment-claims.ts';
+import openClawCapacity from '../agent/tasks/dispatch/openclaw-capacity.ts';
+import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
+import OpenClawDispatch from '../agent/tasks/dispatch/openclaw-dispatch.ts';
 import { scanOpenClawFeedback } from '../agent/tasks/feedback/openclaw-feedback-scan.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import type { DispatchCaller } from '../agent/openclaw-session-create.ts';

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import type { OpenClawDispatchState } from '../agent/openclaw-dispatch-state.ts';
+import type { OpenClawDispatchState } from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import openclawIntakeReport from '../agent/openclaw-intake-report.ts';
 
 function state(): OpenClawDispatchState {

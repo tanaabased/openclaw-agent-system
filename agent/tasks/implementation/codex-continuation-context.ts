@@ -1,8 +1,8 @@
 import type connectCodexFeedback from '../feedback/codex-feedback-client.ts';
-import { implementationDecisionSchema } from '../../issue-progression.ts';
+import { implementationDecisionSchema } from '../issue-progression.ts';
 import type { FeedbackEvent } from '../feedback/codex-feedback-state.ts';
 import { implementationMaterialSchema } from '../../../tools/dispatch/implementation-material-schema.ts';
-import type { ManagedIssueState } from '../../managed-issue.ts';
+import type { ManagedIssueState } from '../managed-issue.ts';
 import { type Static, Type } from 'typebox';
 
 import type { inspectCodexDispatchActivation } from '../../codex-automations.ts';
@@ -16,11 +16,11 @@ import {
 import {
   type CodexDispatchSelection,
   type CodexDispatchDependencies,
-} from '../../codex-dispatch-context.ts';
+} from '../dispatch/codex-dispatch-context.ts';
 
-import type { codexDispatchNative } from '../../codex-dispatch-native.ts';
-import type { dispatchGit } from '../../codex-dispatch-project.ts';
-import type { DispatchRecord } from '../../codex-dispatch-state.ts';
+import type { codexDispatchNative } from '../dispatch/codex-dispatch-native.ts';
+import type { dispatchGit } from '../dispatch/codex-dispatch-project.ts';
+import type { DispatchRecord } from '../dispatch/codex-dispatch-state.ts';
 import { implementationResultSchema } from './implementation-result.ts';
 
 export const requestSchema = Type.Object(

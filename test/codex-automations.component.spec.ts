@@ -1,4 +1,4 @@
-import { codexInstanceStore } from '../agent/codex-assignment-claims.ts';
+import { codexInstanceStore } from '../agent/tasks/dispatch/codex-assignment-claims.ts';
 import IssuePickupEnrollmentStore from '../agent/issue-pickup-enrollment.ts';
 import selectionFixture from './issue-pickup-selection-fixture.ts';
 import checkCodexActivationIsolation from './codex-activation-fixture.ts';

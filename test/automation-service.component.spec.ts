@@ -1,4 +1,4 @@
-import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
+import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
 import issuePickupJobs from '../agent/issue-pickup-jobs.ts';
 import IssuePickupEnrollmentStore from '../agent/issue-pickup-enrollment.ts';
 import selectionFixture from './issue-pickup-selection-fixture.ts';

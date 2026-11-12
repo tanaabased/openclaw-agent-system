@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import advanceOpenClawWork, {
   openClawWorkSlot,
 } from '../agent/tasks/implementation/openclaw-continuation.ts';
-import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
+import type { OpenClawDispatchRecord } from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 
 function delivered() {
   return {

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { Value } from 'typebox/value';
-import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
-import type { ManagedIssue } from '../agent/managed-issue.ts';
-import nativeOperatorSelection from '../agent/native-operator-selection.ts';
+import type { SharedDispatchRecord } from '../agent/tasks/dispatch/dispatch-state.ts';
+import type { ManagedIssue } from '../agent/tasks/managed-issue.ts';
+import nativeOperatorSelection from '../agent/tasks/native-operator-selection.ts';
 import { codexRecoveryModelSchema } from '../tools/dispatch/recovery-schema.ts';
 import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 

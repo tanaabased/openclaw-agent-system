@@ -1,5 +1,5 @@
 import type { IntakeRecord } from '../../../channels/github/intake/record-store.ts';
-import type { SharedDispatchRecord } from '../../dispatch-state.ts';
+import type { SharedDispatchRecord } from '../dispatch/dispatch-state.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
 import type { ReplyOwner } from './reply-owner.ts';
 /** project common reply obligations; native adapters supply only custody and lifecycle evidence. */

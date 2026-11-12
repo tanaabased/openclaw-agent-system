@@ -1,4 +1,4 @@
-import type AssignmentClaimStore from '../agent/assignment-claim-store.ts';
+import type AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
 import { operateInstanceIdentity } from '../agent/instance-identity.ts';
 import presentCliCommand from './presentation.ts';
 import {

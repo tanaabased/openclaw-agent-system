@@ -1,25 +1,25 @@
 import { realpath } from 'node:fs/promises';
 import implementationMaterial from './implementation-material.ts';
-import nativeClarification from '../../native-clarification.ts';
-import nativeTaskContext from '../../native-task-context.ts';
+import nativeClarification from '../context/native-clarification.ts';
+import nativeTaskContext from '../context/native-task-context.ts';
 import {
   implementationReviewInstructions,
   taskScopeInstructions,
-} from '../../native-task-instructions.ts';
+} from '../context/native-task-instructions.ts';
 
 import { parseDirectImplementationRequest } from '../../../tools/dispatch/implementation-schema.ts';
 import assessmentCheckout from '../assessment/assessment-checkout.ts';
 import type { AssessmentEntryDependencies } from '../assessment/assessment-entry.ts';
 import { automationHash } from '../../automation-hash.ts';
-import { DirectEntryStore } from '../../direct-entry-store.ts';
+import { DirectEntryStore } from '../direct-entry-store.ts';
 import implementationContext from './implementation-context.ts';
 import implementationEntryDelivery from '../delivery/implementation-entry-delivery.ts';
 import { implementationEntriesSchema } from './implementation-entry-state.ts';
 import implementationHandoff from './implementation-handoff.ts';
 import { implementationPresentation } from './implementation-result.ts';
-import issueProgression from '../../issue-progression.ts';
+import issueProgression from '../issue-progression.ts';
 import { replyLocator } from '../feedback/reply-target.ts';
-import { selectWorkflowStage } from '../../workflow-stage.ts';
+import { selectWorkflowStage } from '../workflow-stage.ts';
 
 /** collect only missing inputs; managed execution and the selected skill retain their owners. */
 export default async function implementationEntry(

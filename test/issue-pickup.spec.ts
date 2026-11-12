@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import { Value } from 'typebox/value';
 import { stringify } from 'yaml';
 
-import { inspectAdmittedIssue } from '../agent/dispatch-assignment.ts';
+import { inspectAdmittedIssue } from '../agent/tasks/dispatch/dispatch-assignment.ts';
 import { feedbackConversationMode } from '../agent/tasks/feedback/feedback-conversation-mode.ts';
 import authorizeProjectAssignment, { projectWorkSchema } from '../agent/issue-pickup-authority.ts';
 import issuePickupScope from '../agent/issue-pickup-scope.ts';
-import issueProgression from '../agent/issue-progression.ts';
-import issueWorkflowMode from '../agent/issue-workflow-mode.ts';
-import liveWorkflowPolicy from '../agent/live-workflow-policy.ts';
+import issueProgression from '../agent/tasks/issue-progression.ts';
+import issueWorkflowMode from '../agent/tasks/issue-workflow-mode.ts';
+import liveWorkflowPolicy from '../agent/tasks/live-workflow-policy.ts';
 import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import { githubNotificationRuntimeDiagnostics } from '../channels/github/notification-policy.ts';

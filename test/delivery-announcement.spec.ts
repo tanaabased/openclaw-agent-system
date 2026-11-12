@@ -19,7 +19,7 @@ import {
   type AnnouncementDelivery,
 } from '../agent/tasks/delivery/delivery-announcement-recovery.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
-import { WorkflowPolicyHeld } from '../agent/live-workflow-policy.ts';
+import { WorkflowPolicyHeld } from '../agent/tasks/live-workflow-policy.ts';
 
 describe('agent/delivery-announcement', () => {
   let input: Parameters<typeof deliveryAnnouncement>[0];

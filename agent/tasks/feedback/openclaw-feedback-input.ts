@@ -1,6 +1,6 @@
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { DispatchRequest } from '../../../credentials/session-dispatch.ts';
-import type { OpenClawDispatchRecord } from '../../openclaw-dispatch-state.ts';
+import type { OpenClawDispatchRecord } from '../dispatch/openclaw-dispatch-state.ts';
 import { completeOpenClawMessage, openClawHistoryPages } from '../../openclaw-history.ts';
 import {
   describeIssueSession,

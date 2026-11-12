@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { Value } from 'typebox/value';
 import feedbackPresentation from '../agent/tasks/feedback/feedback-presentation.ts';
 import { discoverFeedback, feedbackRevision } from '../agent/tasks/feedback/feedback-source.ts';
-import openClawCapacity from '../agent/openclaw-capacity.ts';
-import { type OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
+import openClawCapacity from '../agent/tasks/dispatch/openclaw-capacity.ts';
+import { type OpenClawDispatchRecord } from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import openClawFeedbackInput from '../agent/tasks/feedback/openclaw-feedback-input.ts';
 import {
   openclawFeedbackSchema,

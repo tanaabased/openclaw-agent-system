@@ -2,7 +2,7 @@ import { Value } from 'typebox/value';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
 import { IntakeError } from '../../channels/github/intake/record-store.ts';
-import contextMaterialTransport from '../../agent/context-material-transport.ts';
+import contextMaterialTransport from '../../agent/tasks/context/context-material-transport.ts';
 import IssuePickupFailure from '../../agent/issue-pickup-failure.ts';
 import { AutomationError } from '../../agent/automation-gateway.ts';
 
@@ -13,7 +13,7 @@ import loadBoundToolManifest from '../../api/manifest-binding.ts';
 import type { RegisteredAgentSystemTool } from '../../api/types.ts';
 import type AgentManifestService from '../../manifest/service.ts';
 import { intakeParameters } from './tool-schema.ts';
-import { nativeMaterialResponse } from '../../agent/native-material.ts';
+import { nativeMaterialResponse } from '../../agent/tasks/context/native-material.ts';
 import type { ImplementationMaterialRead } from '../../agent/tasks/implementation/implementation-material.ts';
 
 /** No caller-selected identity or credential route; scan admission belongs to V2 policy. */

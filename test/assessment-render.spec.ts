@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
+import type { SharedDispatchRecord } from '../agent/tasks/dispatch/dispatch-state.ts';
 
 import renderNativeAssessment, {
   assessmentPresentationRequest,
@@ -11,14 +11,14 @@ import renderNativeAssessment, {
 import type { AssessmentSubmission } from '../agent/tasks/assessment/assessment-result.ts';
 import assessmentReviewContext from '../agent/tasks/assessment/assessment-review-context.ts';
 import AssessmentValidationError from '../agent/tasks/assessment/assessment-validation.ts';
-import { runCodexDispatch } from '../agent/codex-dispatch.ts';
+import { runCodexDispatch } from '../agent/tasks/dispatch/codex-dispatch.ts';
 import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
 import implementationMaterial, {
   implementationContextBudget,
   implementationMaterialSize,
   type ImplementationMaterialRead,
 } from '../agent/tasks/implementation/implementation-material.ts';
-import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
+import OpenClawDispatch from '../agent/tasks/dispatch/openclaw-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import hydrateImplementation from './implementation-material-fixture.ts';
 

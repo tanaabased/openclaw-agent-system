@@ -4,16 +4,19 @@ import { join } from 'node:path';
 
 import { Value } from 'typebox/value';
 
-import { runCodexDispatch, type CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
-import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
+import {
+  runCodexDispatch,
+  type CodexDispatchDependencies,
+} from '../agent/tasks/dispatch/codex-dispatch.ts';
+import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import nativeRetirement, {
   type NativeRetirementTarget,
 } from '../agent/tasks/retirement/native-retirement.ts';
 import NotificationResetStore from '../agent/notification-reset-state.ts';
-import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
-import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
+import OpenClawDispatch from '../agent/tasks/dispatch/openclaw-dispatch.ts';
+import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';

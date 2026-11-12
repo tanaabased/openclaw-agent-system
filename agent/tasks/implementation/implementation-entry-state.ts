@@ -1,7 +1,7 @@
 import { Type, type Static } from 'typebox';
 
 import { assessmentSelectionSchema } from '../assessment/assessment-selection.ts';
-import { issueProgressionSchema } from '../../issue-progression.ts';
+import { issueProgressionSchema } from '../issue-progression.ts';
 import { issueDeliveryStateSchema } from '../delivery/issue-delivery-state.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });

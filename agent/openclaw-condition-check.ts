@@ -1,5 +1,5 @@
 import DiscoveryBudget, { DiscoveryPaused } from './discovery-budget.ts';
-import workflowFailure from './workflow-failure.ts';
+import workflowFailure from './tasks/workflow-failure.ts';
 
 /** reserve ten seconds of the host's thirty-second gate for preparation and final commits. */
 export default async function openClawConditionCheck<T>(

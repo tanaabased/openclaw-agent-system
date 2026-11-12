@@ -1,8 +1,8 @@
 import { nativeObject } from '../../automation-gateway.ts';
 import { automationHash } from '../../automation-hash.ts';
 import codexDirectInput from '../../codex-direct-input.ts';
-import type { CodexDispatchDependencies } from '../../codex-dispatch-context.ts';
-import CodexDispatchStore from '../../codex-dispatch-state.ts';
+import type { CodexDispatchDependencies } from '../dispatch/codex-dispatch-context.ts';
+import CodexDispatchStore from '../dispatch/codex-dispatch-state.ts';
 import { selectCodexTaskContext } from '../context/codex-task-context.ts';
 import nativeRetirement from './native-retirement.ts';
 import assertNotificationResetRetirement from '../../notification-reset-retirement.ts';

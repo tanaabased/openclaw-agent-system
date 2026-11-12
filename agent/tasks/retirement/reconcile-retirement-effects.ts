@@ -6,7 +6,7 @@ import GitHubNotificationCommentPublisher, {
   type GitHubNotificationCommentPublicationInput,
 } from '../../../channels/github/publication/comment-publisher.ts';
 import redactFeedback from '../feedback/feedback-redaction.ts';
-import workflowFailure from '../../workflow-failure.ts';
+import workflowFailure from '../workflow-failure.ts';
 
 /** recovery has no write route: absent or changed evidence retains only the original receipt. */
 export default async function reconcileRetirementEffects(input: {

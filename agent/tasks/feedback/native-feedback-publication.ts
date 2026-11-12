@@ -1,7 +1,7 @@
-import type { SharedDispatchRecord } from '../../dispatch-state.ts';
+import type { SharedDispatchRecord } from '../dispatch/dispatch-state.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
-import { dispatchAdmission, type ManagedIssue } from '../../managed-issue.ts';
-import { assertNativeContextInput } from '../../native-context-request.ts';
+import { dispatchAdmission, type ManagedIssue } from '../managed-issue.ts';
+import { assertNativeContextInput } from '../context/native-context-request.ts';
 import { feedbackTarget, replyLocator } from './reply-target.ts';
 /** Explicit operator recovery selects an exact source and retained text, never a latest draft. */
 export default function nativeFeedbackPublication(

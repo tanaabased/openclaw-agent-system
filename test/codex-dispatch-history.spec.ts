@@ -3,7 +3,7 @@ import { mock } from 'node:test';
 import dispatchHistory, {
   dispatchHistoryPages,
   dispatchTurn,
-} from '../agent/codex-dispatch-history.ts';
+} from '../agent/tasks/dispatch/codex-dispatch-history.ts';
 
 describe('agent/codex-dispatch-history', () => {
   it('should read only the relevant send interval while retaining later turns', async () => {

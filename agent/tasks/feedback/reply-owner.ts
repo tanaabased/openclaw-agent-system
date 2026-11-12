@@ -1,5 +1,5 @@
 import type { FeedbackSourceEvent } from './feedback-state.ts';
-import managedOwner from '../../managed-owner.ts';
+import managedOwner from '../managed-owner.ts';
 import type { ReplyTarget } from './reply-target.ts';
 export interface ReplyOwner {
   id: string;

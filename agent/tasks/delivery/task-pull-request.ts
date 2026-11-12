@@ -1,5 +1,5 @@
-import type { SharedDispatchRecord } from '../../dispatch-state.ts';
-import type { ManagedIssue } from '../../managed-issue.ts';
+import type { SharedDispatchRecord } from '../dispatch/dispatch-state.ts';
+import type { ManagedIssue } from '../managed-issue.ts';
 import type { GitHubNotificationIntakeClient } from '../../../channels/github/provider/work-event-types.ts';
 import { replyLocator } from '../feedback/reply-target.ts';
 

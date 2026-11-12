@@ -1,6 +1,6 @@
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
-import nativeTaskContext from '../../native-task-context.ts';
+import nativeTaskContext from '../context/native-task-context.ts';
 
 import type { AssessmentConfiguration } from '../../../manifest/assessment-schema.ts';
 import type { AgentManifest } from '../../../manifest/types.ts';
@@ -12,13 +12,13 @@ import { assessmentPresentationRequest } from './assessment-render.ts';
 import { assessmentResultContextSchema } from './assessment-result.ts';
 import type { AssessmentSelection } from './assessment-selection.ts';
 import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
-import type { DispatchGit } from '../../codex-dispatch-project.ts';
-import { type DirectEntryBinding } from '../../direct-entry-store.ts';
-import type { nativeIssueContext } from '../../native-issue-context.ts';
+import type { DispatchGit } from '../dispatch/codex-dispatch-project.ts';
+import { type DirectEntryBinding } from '../direct-entry-store.ts';
+import type { nativeIssueContext } from '../context/native-issue-context.ts';
 import type { OpenClawDeliveryConnection } from '../delivery/openclaw-delivery.ts';
 import type { OpenClawFeedbackProvider } from '../feedback/openclaw-feedback.ts';
 import { replyLocator } from '../feedback/reply-target.ts';
-import { selectWorkflowStage } from '../../workflow-stage.ts';
+import { selectWorkflowStage } from '../workflow-stage.ts';
 
 export interface AssessmentEntryDependencies {
   root: string;

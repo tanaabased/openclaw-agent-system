@@ -4,8 +4,11 @@ import { join } from 'node:path';
 import implementationMaterial, {
   type ImplementationMaterialRead,
 } from '../agent/tasks/implementation/implementation-material.ts';
-import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
-import nativeTaskInstructions from '../agent/native-task-instructions.ts';
+import {
+  bindNativeMaterial,
+  nativeMaterialResponse,
+} from '../agent/tasks/context/native-material.ts';
+import nativeTaskInstructions from '../agent/tasks/context/native-task-instructions.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import waitForAssessmentRelease from '../examples/openclaw-issue-intake/assessment-barrier.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
@@ -19,8 +22,8 @@ import {
   assessmentResultContextSchema,
   assessmentResultFormat,
 } from '../agent/tasks/assessment/assessment-result.ts';
-import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
-import openclawTurnContext from '../agent/openclaw-turn-context.ts';
+import type { OpenClawDispatchRecord } from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
+import openclawTurnContext from '../agent/tasks/context/openclaw-turn-context.ts';
 import {
   createIntakeExampleScenario,
   intakeExampleScenario,

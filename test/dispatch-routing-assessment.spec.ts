@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import dispatchRoutingAssessment from '../agent/dispatch-routing-assessment.ts';
+import dispatchRoutingAssessment from '../agent/tasks/dispatch/dispatch-routing-assessment.ts';
 
 const assessment = {
   complexity: 'high',

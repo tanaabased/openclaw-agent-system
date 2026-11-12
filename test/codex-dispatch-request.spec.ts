@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import validateDispatchRequest from '../agent/codex-dispatch-request.ts';
+import validateDispatchRequest from '../agent/tasks/dispatch/codex-dispatch-request.ts';
 import { Value } from 'typebox/value';
 import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import { launchRequestSchema } from '../tools/dispatch/launch-schema.ts';

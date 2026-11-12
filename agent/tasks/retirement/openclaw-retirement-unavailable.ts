@@ -1,5 +1,5 @@
 import type { DispatchRequest } from '../../../credentials/session-dispatch.ts';
-import type { OpenClawDispatchRecord } from '../../openclaw-dispatch-state.ts';
+import type { OpenClawDispatchRecord } from '../dispatch/openclaw-dispatch-state.ts';
 import retirementSessionIdentity from './openclaw-retirement-identity.ts';
 
 /** an unavailable session is an inference, never proof of deletion or native idleness. */

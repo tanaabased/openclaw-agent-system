@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
+import type { DispatchRecord } from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import codexFeedbackInput from '../agent/tasks/feedback/codex-feedback-input.ts';
 
 function fixture() {

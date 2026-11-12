@@ -1,7 +1,7 @@
 import { assessmentFallbackInstructions } from './assessment-instructions.ts';
 import { assessmentPresentationRequest } from './assessment-render.ts';
 import { assessmentResultContextSchema } from './assessment-result.ts';
-import type { SharedDispatchRecord } from '../../dispatch-state.ts';
+import type { SharedDispatchRecord } from '../dispatch/dispatch-state.ts';
 
 /** carry display inputs through native resumption without storing or requiring a review receipt. */
 export default function assessmentReviewContext(

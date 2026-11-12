@@ -1,8 +1,11 @@
 import implementationMaterial, {
   type ImplementationMaterialRead,
 } from '../agent/tasks/implementation/implementation-material.ts';
-import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
-import nativeTaskInstructions from '../agent/native-task-instructions.ts';
+import {
+  bindNativeMaterial,
+  nativeMaterialResponse,
+} from '../agent/tasks/context/native-material.ts';
+import nativeTaskInstructions from '../agent/tasks/context/native-task-instructions.ts';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import AssignmentClaimStore from './assignment-claim-store.ts';
+import AssignmentClaimStore from './tasks/dispatch/assignment-claim-store.ts';
 import { issuePickupEnrollmentSchema, issuePickupPolicyDigest } from './issue-pickup-authority.ts';
 import issuePickupScope from './issue-pickup-scope.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';

@@ -17,9 +17,9 @@ import { directAssessmentRequestSchema } from '../../../tools/dispatch/assessmen
 import assessmentOwner from './assessment-owner.ts';
 import { parseAssessmentSubmission } from './assessment-result.ts';
 import AssessmentValidationError from './assessment-validation.ts';
-import { dispatchAssessmentContext } from '../../dispatch-presentation.ts';
-import type { SharedDispatchRecord } from '../../dispatch-state.ts';
-import { dispatchAdmission, managedTargetUrl, type ManagedIssue } from '../../managed-issue.ts';
+import { dispatchAssessmentContext } from '../dispatch/dispatch-presentation.ts';
+import type { SharedDispatchRecord } from '../dispatch/dispatch-state.ts';
+import { dispatchAdmission, managedTargetUrl, type ManagedIssue } from '../managed-issue.ts';
 import { replyLocator } from '../feedback/reply-target.ts';
 
 const renderRequestSchema = Type.Object(

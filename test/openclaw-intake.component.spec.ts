@@ -16,7 +16,7 @@ import notificationWait from '../channels/github/cli/wait.ts';
 import assignmentIntakePolicy from '../agent/assignment-intake-policy.ts';
 import { codexIntakePolicy } from '../agent/codex-intake-policy.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
-import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
+import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import AgentDoctorService from '../agent/doctor-service.ts';
 import doctorAgentSystem from '../cli/doctor.ts';
 import AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';

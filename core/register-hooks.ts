@@ -5,7 +5,7 @@ import type { AgentManifest } from '../manifest/types.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import { agentCommandSecurityGuidance } from '../agent/command-security.ts';
 import type AgentSystemToolRegistry from '../api/registry.ts';
-import worktreeGuidance from '../agent/worktree-guidance.ts';
+import worktreeGuidance from '../agent/tasks/context/worktree-guidance.ts';
 
 type HookApi = Pick<OpenClawPluginApi, 'on'> & {
   logger?: Pick<OpenClawPluginApi['logger'], 'info' | 'warn'>;

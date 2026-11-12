@@ -25,7 +25,7 @@ import { inspectCodexIntake, runCodexIntake } from '../agent/codex-intake.ts';
 import { connectCodexGitHub } from '../agent/codex-github-client.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
-import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
+import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import checkCodexActivationIsolation from './codex-activation-fixture.ts';
 import { baseline, intakeFixture } from './github-intake-fixture.ts';
 

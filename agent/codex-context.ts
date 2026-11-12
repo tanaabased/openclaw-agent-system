@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import resolveGitProtocol from '../tools/git/protocol.ts';
-import nativeTaskInstructions from './native-task-instructions.ts';
+import nativeTaskInstructions from './tasks/context/native-task-instructions.ts';
 import taskUpdateInstructions from './tasks/feedback/task-update-instructions.ts';
 
 import type { AgentModelsConfiguration } from '../manifest/models-schema.ts';

@@ -1,7 +1,7 @@
 import { automationHash } from '../../automation-hash.ts';
-import type { SharedDispatchRecord } from '../../dispatch-state.ts';
-import { dispatchAdmission, type ManagedIssue as IntakeRecord } from '../../managed-issue.ts';
-import managedOwner from '../../managed-owner.ts';
+import type { SharedDispatchRecord } from '../dispatch/dispatch-state.ts';
+import { dispatchAdmission, type ManagedIssue as IntakeRecord } from '../managed-issue.ts';
+import managedOwner from '../managed-owner.ts';
 /** missing, reset, or other-session ownership is never absence of managed work. */
 export default function assessmentOwner<R extends SharedDispatchRecord>(
   records: R[],

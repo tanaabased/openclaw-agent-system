@@ -1,4 +1,4 @@
-import type { SharedDispatchRecord } from '../../dispatch-state.ts';
+import type { SharedDispatchRecord } from '../dispatch/dispatch-state.ts';
 
 // Original creation evidence is required by the native custody readers until resources are gone.
 const keys = new Set([

@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 
 import assessmentMaterial from '../agent/tasks/assessment/assessment-material.ts';
-import taskTurnContext from '../agent/task-turn-context.ts';
-import openclawTurnContext from '../agent/openclaw-turn-context.ts';
-import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
+import taskTurnContext from '../agent/tasks/context/task-turn-context.ts';
+import openclawTurnContext from '../agent/tasks/context/openclaw-turn-context.ts';
+import type { OpenClawDispatchRecord } from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import {
   implementationMaterialSize,
   type ImplementationMaterialRead,

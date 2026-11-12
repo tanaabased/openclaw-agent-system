@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { AssessmentSelection } from '../assessment/assessment-selection.ts';
-import guidanceReference from '../../guidance-reference.ts';
-import { nativeMaterialResponse } from '../../native-material.ts';
+import guidanceReference from '../context/guidance-reference.ts';
+import { nativeMaterialResponse } from '../context/native-material.ts';
 
 import type { Static } from 'typebox';
 

@@ -1,11 +1,11 @@
-import type { CodexDispatchDependencies } from '../../codex-dispatch-context.ts';
+import type { CodexDispatchDependencies } from '../dispatch/codex-dispatch-context.ts';
 import connectCodexFeedback from '../feedback/codex-feedback-client.ts';
-import CodexDispatchStore from '../../codex-dispatch-state.ts';
+import CodexDispatchStore from '../dispatch/codex-dispatch-state.ts';
 import { selectCodexTaskContext } from '../context/codex-task-context.ts';
 import reconcileRetirementEffects from './reconcile-retirement-effects.ts';
 import IssueDeliveryProvider from '../../../channels/github/publication/issue-delivery.ts';
 import { connectCodexThreads } from '../../codex-thread-client.ts';
-import { codexDispatchNative } from '../../codex-dispatch-native.ts';
+import { codexDispatchNative } from '../dispatch/codex-dispatch-native.ts';
 
 /** an explicit invocation or the existing intake owner can observe residual effects without a task. */
 export default async function reconcileCodexRetirementEffects(

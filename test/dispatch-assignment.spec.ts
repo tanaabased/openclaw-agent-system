@@ -3,7 +3,7 @@ import {
   inspectActiveIssue,
   inspectAdmittedIssue,
   inspectContinuedIssue,
-} from '../agent/dispatch-assignment.ts';
+} from '../agent/tasks/dispatch/dispatch-assignment.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import { intakeFixture, removeFixtureAssignment } from './github-intake-fixture.ts';
 

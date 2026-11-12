@@ -1,8 +1,8 @@
 import { isDeepStrictEqual } from 'node:util';
 
 import { stateSnapshotConflictCode } from '../core/merge-state-snapshot.ts';
-import codexCapacity, { codexItemOccupied } from './codex-capacity.ts';
-import type { DispatchState } from './codex-dispatch-state.ts';
+import codexCapacity, { codexItemOccupied } from './tasks/dispatch/codex-capacity.ts';
+import type { DispatchState } from './tasks/dispatch/codex-dispatch-state.ts';
 
 /** reject competing effect/authority changes, checking capacity and branch ownership at commit. */
 export default function codexCommit(

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import contextMaterialTransport from '../agent/context-material-transport.ts';
+import contextMaterialTransport from '../agent/tasks/context/context-material-transport.ts';
 import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
 import implementationMaterial, {
   type ImplementationMaterialRead,

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import type { CodexWorkContext } from '../agent/tasks/implementation/codex-continuation-context.ts';
-import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
+import type { DispatchRecord } from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import advance from '../agent/tasks/implementation/codex-work-turn.ts';
 
 function fixture() {

@@ -14,8 +14,8 @@ import {
   type AnnouncementDelivery,
   type AnnouncementRecovery,
 } from './delivery-announcement-recovery.ts';
-import type { ManagedIssue } from '../../managed-issue.ts';
-import { WorkflowPolicyHeld } from '../../live-workflow-policy.ts';
+import type { ManagedIssue } from '../managed-issue.ts';
+import { WorkflowPolicyHeld } from '../live-workflow-policy.ts';
 import GitHubIssueCommentClient from '../../../channels/github/provider/issue-comment-client.ts';
 import GitHubWorkEventApiClient, {
   GitHubWorkEventClientError,

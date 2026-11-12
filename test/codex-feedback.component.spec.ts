@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
-import { pendingRecoveryFeedback } from '../agent/issue-task-recovery.ts';
+import { pendingRecoveryFeedback } from '../agent/tasks/dispatch/issue-task-recovery.ts';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { parseCleanupConfiguration } from '../agent/cleanup-configuration.ts';
-import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
-import { runCodexDispatch, type CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
+import reconcileCodexLifecycle from '../agent/tasks/dispatch/codex-assignment-lifecycle.ts';
+import {
+  runCodexDispatch,
+  type CodexDispatchDependencies,
+} from '../agent/tasks/dispatch/codex-dispatch.ts';
 import { scanCodexFeedback } from '../agent/tasks/feedback/codex-feedback-scan.ts';
 import discoveryCheckpoint from '../agent/discovery-checkpoint.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
@@ -16,7 +19,7 @@ import hydrateImplementation, { type Field } from './implementation-material-fix
 import { attemptedAnnouncement } from './delivery-announcement-fixture.ts';
 
 import { automationHash } from '../agent/automation-hash.ts';
-import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
+import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import runCodexFeedback, {
   type CodexFeedbackDependencies,
 } from '../agent/tasks/feedback/codex-feedback.ts';

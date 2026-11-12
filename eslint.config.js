@@ -112,11 +112,11 @@ export default defineConfig([
     files: [
       'agent/tasks/context/*.ts',
       'agent/tasks/delivery/codex-delivery.ts',
-      'agent/codex-dispatch-context.ts',
+      'agent/tasks/dispatch/codex-dispatch-context.ts',
       'agent/tasks/feedback/codex-feedback*.ts',
-      'agent/codex-entry-context.ts',
+      'agent/tasks/context/codex-entry-context.ts',
       'agent/tasks/feedback/codex-reply.ts',
-      'agent/openclaw-entry-context.ts',
+      'agent/tasks/context/openclaw-entry-context.ts',
       'agent/tasks/feedback/openclaw-reply.ts',
     ],
     rules: {

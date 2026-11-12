@@ -1,8 +1,11 @@
 import { PrivateStateFileLockBusyError } from '../core/private-state-file-lock.ts';
 import assert from 'node:assert/strict';
-import workflowFailure, { workflowFailureScope } from '../agent/workflow-failure.ts';
+import workflowFailure, { workflowFailureScope } from '../agent/tasks/workflow-failure.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
-import { scheduleDispatchRetry, dispatchFailurePhase } from '../agent/dispatch-retry.ts';
+import {
+  scheduleDispatchRetry,
+  dispatchFailurePhase,
+} from '../agent/tasks/dispatch/dispatch-retry.ts';
 
 describe('agent/workflow-failure', () => {
   it('should retain bounded conflict categories through wrapped publication failures', () => {
