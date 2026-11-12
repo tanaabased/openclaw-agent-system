@@ -190,6 +190,88 @@ describe('channels/github/publication/publication-contract', () => {
     );
   });
 
+  it('should preserve exact case-insensitive recipient mentions in ordinary prose', () => {
+    for (const text of [
+      '@emoriwan full validation passed.',
+      'Checked, @emoriwan.',
+      'Thanks (@EMORIWAN)!',
+      '**@Emoriwan**, checked.',
+      '👋 @emoriwan: checked.\r\n\r\nNo rewrite.',
+      '@emoriwan, intentional repetition: @emoriwan.',
+      '> @other quoted reply\n\nChecked, @emoriwan.',
+      '```text\n@other\n```\n\nChecked, @emoriwan.',
+      '<!-- 👋 @emoriwan -->\n\nChecked, @emoriwan.',
+      '\\@other is escaped; @emoriwan is not.',
+      '\\\\@emoriwan checked.',
+    ]) {
+      assert.equal(githubNotificationAttributedReplyText(text, 'emoriwan', redactFeedback), text);
+    }
+  });
+
+  it('should add fallback attribution for misleading non-prose and non-recipient mentions', () => {
+    for (const text of [
+      'Checked the flow.',
+      'Ask @other.',
+      'Ask @emoriwan-other.',
+      'Ask @emoriwan2.',
+      'Ask @emoriwan_other.',
+      'Ask @emoriwané.',
+      'See @emoriwan/team.',
+      'See /@emoriwan.',
+      '\\@emoriwan is escaped.',
+      '`@emoriwan` is an example.',
+      '``literal `@emoriwan` code``',
+      '```text\n@emoriwan\n```',
+      '~~~text\n@emoriwan\n~~~',
+      'Example:\n\n    @emoriwan indented code',
+      '    @emoriwan indented code',
+      '> @emoriwan quoted reply',
+      '> Quoted reply\n@emoriwan is a lazy continuation.',
+      '- > @emoriwan nested quote',
+      '<blockquote>@emoriwan quoted reply</blockquote>',
+      '<code>@emoriwan</code> is an example.',
+      '<!-- @emoriwan generated marker -->',
+      'Email user+tag@emoriwan.example.',
+      'Email "user"@emoriwan.example.',
+      'See https://example.com/@emoriwan.',
+      'See www.example.com/@emoriwan.',
+      'See [profile](/@emoriwan).',
+      'See [profile](https://example.com/@emoriwan).',
+      'See [profile](\n  /@emoriwan\n).',
+      'See [profile][user].\n\n[user]: /@emoriwan',
+      'See <https://example.com/@emoriwan>.',
+      'See <a href="/@emoriwan">profile</a>.',
+      'Literal &#64;emoriwan is not a mention.',
+    ]) {
+      assert.equal(
+        githubNotificationAttributedReplyText(text, 'emoriwan', redactFeedback),
+        `@emoriwan\n\n${text}`,
+        text,
+      );
+    }
+  });
+
+  it('should require an ordinary-prose mention after placeholder substitution', () => {
+    for (const text of [
+      '`Example {{commenter}} here` is code.',
+      '> {{commenter}} quoted reply',
+      '<!-- {{commenter}} generated marker -->',
+    ]) {
+      assert.equal(
+        githubNotificationAttributedReplyText(text, 'emoriwan', redactFeedback),
+        `@emoriwan\n\n${text.replace('{{commenter}}', '@emoriwan')}`,
+      );
+    }
+    assert.equal(
+      githubNotificationAttributedReplyText(
+        '@EMORIWAN, {{commenter}} is intentional.',
+        'emoriwan',
+        redactFeedback,
+      ),
+      '@EMORIWAN, @emoriwan is intentional.',
+    );
+  });
+
   it('should enforce the shared reply length boundary', () => {
     const maximum = Array.from({ length: maximumGitHubNotificationReplyLength }, (_, index) =>
       index % 2 === 0 ? 'a' : ' ',

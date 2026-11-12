@@ -453,12 +453,13 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (openClawAIMockToolResultText(messages, prefix + 'feedback-skill') === undefined)
       return call('feedback-skill', 'read', { path: skill.path });
     const candidate = result('feedback-candidate');
+    const source = context.source as { author?: { login?: string } };
+    assert.ok(source.author?.login);
     if (!candidate)
       return dispatch('feedback-candidate', {
         ...reply,
         operation: 'candidate',
-        publicText:
-          'The plan is to document closing disposable test issues after capturing their evidence. Implementation has not started.',
+        publicText: `@${source.author.login}, the plan is to document closing disposable test issues after capturing their evidence. Implementation has not started.`,
       });
     if (candidate.status !== 'candidate-recorded') return;
     const published = result('feedback-publish');

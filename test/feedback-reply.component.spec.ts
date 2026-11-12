@@ -1209,6 +1209,26 @@ describe('agent/feedback-reply', () => {
     await call('reconcile', { ...reply });
     assert.equal(writes, 1);
   });
+  for (const runtime of ['codex', 'openclaw'] as const) {
+    for (const [text, expected] of [
+      ['Checked, @AUTHOR.', 'Checked, @AUTHOR.'],
+      ['Checked the flow.', '@author\n\nChecked the flow.'],
+    ]) {
+      it(`should attribute ${JSON.stringify(text).toLowerCase()} without rewriting prose in ${runtime}`, async () => {
+        deps.binding.runtime = runtime;
+        const composed = await call('compose', {
+          target: `${url}#issuecomment-42`,
+          privateText: 'Supplied answer.',
+        });
+        await call('candidate', { ...selection(composed), publicText: text });
+        assert.equal((await call('publish', selection(composed))).status, 'published');
+        assert.ok(posted!.body.startsWith(`${expected}\n\n<!-- agent-system-github-publication:`));
+        assert.equal((await call('reconcile', selection(composed))).status, 'published');
+        assert.equal(writes, 1);
+      });
+    }
+  }
+
   it('should retain real comment attribution and reject binding overrides and substituted destinations', async () => {
     const composed = await call('compose', {
       target: `${url}#issuecomment-42`,

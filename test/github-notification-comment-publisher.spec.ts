@@ -119,7 +119,7 @@ describe('channels/github/publication/comment-publisher', () => {
     assert.equal(created, false);
   });
 
-  it('should prefix the verified commenter when the model omits the token', async () => {
+  it('should add attribution only when the reply lacks a prose mention of the verified commenter', async () => {
     let publishedBody = '';
     const publisher = new GitHubNotificationCommentPublisher({
       redactText: redactSensitiveText,
@@ -137,9 +137,15 @@ describe('channels/github/publication/comment-publisher', () => {
       exclusive: async (_key, run) => run(),
     });
 
-    await publisher.publish({ ...input(), text: 'I checked the current behavior.' });
-
-    assert.match(publishedBody, /^@pirog\n\nI checked the current behavior\./u);
+    for (const [text, expected] of [
+      ['I checked the current behavior.', '@pirog\n\nI checked the current behavior.'],
+      ['@pirog full validation passed.', '@pirog full validation passed.'],
+      ['Checked, @PIROG.', 'Checked, @PIROG.'],
+      ['`@pirog` is code.', '@pirog\n\n`@pirog` is code.'],
+    ] as const) {
+      await publisher.publish({ ...input(), text });
+      assert.ok(publishedBody.startsWith(`${expected}\n\n<!-- agent-system-github-publication:`));
+    }
   });
 
   it('should reject revoked authority before credentials are connected', async () => {
