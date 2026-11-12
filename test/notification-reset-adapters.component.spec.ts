@@ -7,7 +7,7 @@ import type { SavedAutomation } from '../agent/automations/codex-automation-stat
 import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import runCodexNotificationReset from '../agent/codex-notification-reset.ts';
-import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
+import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
 import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import OpenClawNotificationReset from '../agent/openclaw-notification-reset.ts';
 import IntakeRecordStore from '../channels/github/intake/record-store.ts';

@@ -1,6 +1,6 @@
 import { Type, type Static } from 'typebox';
 
-import { assessmentSchema, selectedProfileSchema } from '../../agent/model-routing.ts';
+import { assessmentSchema, selectedProfileSchema } from '../../agent/models/model-routing.ts';
 
 export const modelRoutingTextContextSchema = Type.String({ minLength: 1, maxLength: 18000 });
 export const modelRoutingContextSchema = Type.Union([

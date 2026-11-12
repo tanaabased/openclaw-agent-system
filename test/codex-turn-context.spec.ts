@@ -7,7 +7,7 @@ import type { AgentManifest } from '../manifest/types.ts';
 import codexTurnContext, {
   codexCurrentTurnContext,
 } from '../agent/tasks/context/codex-turn-context.ts';
-import type { CodexWorkspaceBindingInspection } from '../agent/codex-workspace-binding.ts';
+import type { CodexWorkspaceBindingInspection } from '../agent/identity/codex-workspace-binding.ts';
 
 const bound = {
   status: 'bound',

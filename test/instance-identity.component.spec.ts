@@ -6,9 +6,9 @@ import ansis from 'ansis';
 import stringWidth from 'fast-string-width';
 
 import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
-import instanceIdentity, { operateInstanceIdentity } from '../agent/instance-identity.ts';
+import instanceIdentity, { operateInstanceIdentity } from '../agent/identity/instance-identity.ts';
 import { inspectCodexSetup, installCodexSetup } from '../agent/lifecycle/codex-setup.ts';
-import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
+import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
 import { codexInstanceStore } from '../agent/tasks/dispatch/codex-assignment-claims.ts';
 import AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';
 import instanceCommand from '../cli/instance.ts';

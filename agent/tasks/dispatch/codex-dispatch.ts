@@ -41,7 +41,7 @@ import codexIssueLaunch from './codex-issue-launch.ts';
 import retireCodexNative from '../retirement/codex-native-retirement.ts';
 import reconcileCodexRetirementEffects from '../retirement/codex-retirement-effects.ts';
 import { selectCodexTaskOwner } from '../context/codex-turn-task.ts';
-import { inspectCodexWorkspaceBinding } from '../../codex-workspace-binding.ts';
+import { inspectCodexWorkspaceBinding } from '../../identity/codex-workspace-binding.ts';
 import dispatchInspection, { dispatchInspectionSummary } from './dispatch-inspection.ts';
 import { issueKey } from './dispatch-pending.ts';
 import liveWorkflowPolicy from '../live-workflow-policy.ts';

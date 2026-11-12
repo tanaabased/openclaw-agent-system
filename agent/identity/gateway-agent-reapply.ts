@@ -1,6 +1,6 @@
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
-import configuredAgentEntries from '../core/configured-agents.ts';
+import configuredAgentEntries from '../../core/configured-agents.ts';
 
 /** Reapply only a verified saved revision containing the missing registration. */
 export default function gatewayAgentReapply(agentId: string, value: unknown) {

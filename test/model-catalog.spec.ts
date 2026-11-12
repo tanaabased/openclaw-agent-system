@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import parseModelCatalogRows from '../agent/model-catalog.ts';
+import parseModelCatalogRows from '../agent/models/model-catalog.ts';
 
 describe('agent/model-catalog', () => {
   it('should accept omitted missing flags without losing availability evidence', () => {

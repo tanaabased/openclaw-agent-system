@@ -10,7 +10,7 @@ import {
 } from '../agent/tasks/dispatch/codex-dispatch.ts';
 import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
-import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
+import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
 import nativeRetirement, {
   type NativeRetirementTarget,
 } from '../agent/tasks/retirement/native-retirement.ts';

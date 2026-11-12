@@ -25,7 +25,7 @@ import runCodexFeedback, {
 } from '../agent/tasks/feedback/codex-feedback.ts';
 import { runCodexIntake } from '../agent/codex-intake.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
-import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
+import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
 import { account, baseline, intakeFixture } from './github-intake-fixture.ts';
 import {
   reviewClientFixture,

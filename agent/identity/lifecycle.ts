@@ -1,21 +1,21 @@
-import type { ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
+import type { ProviderDiagnostic } from '../../utils/provider-diagnostic.ts';
 import { listAgentIds } from 'openclaw/plugin-sdk/agent-scope-runtime';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
-import configuredAgentEntries from '../core/configured-agents.ts';
-import type { Logger } from '../core/logger.ts';
+import configuredAgentEntries from '../../core/configured-agents.ts';
+import type { Logger } from '../../core/logger.ts';
 import planAgentInstall, {
   type AgentInstallAction,
   type CurrentAgentInstallState,
   type DesiredAgentInstallState,
 } from './plan-install.ts';
-import resolveManifestValue from '../manifest/resolve-value.ts';
-import type AgentEnvironmentService from '../environment/service.ts';
+import resolveManifestValue from '../../manifest/resolve-value.ts';
+import type AgentEnvironmentService from '../../environment/service.ts';
 import {
   AgentSystemLifecycleError,
   type AgentSystemLifecycleContribution,
   type AgentSystemLifecycleContext,
-} from '../core/lifecycle-registry.ts';
+} from '../../core/lifecycle-registry.ts';
 
 export interface AgentLifecycleCommandResult {
   code: number;

@@ -4,7 +4,7 @@ import type {
   Complexity,
   RoutingField,
 } from '../../../channels/github/provider/routing-metadata.ts';
-import { assessmentSchema } from '../../model-routing.ts';
+import { assessmentSchema } from '../../models/model-routing.ts';
 
 export default function dispatchRoutingAssessment(
   assessment: unknown,

@@ -13,7 +13,7 @@ import assessmentSkillSource from '../agent/tasks/assessment/assessment-skill-so
 import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import runCodexFeedback from '../agent/tasks/feedback/codex-feedback.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
-import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
+import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
 import { issueKey } from '../agent/tasks/dispatch/dispatch-pending.ts';
 import feedbackReply, {
   type FeedbackReplyDependencies,

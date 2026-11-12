@@ -470,7 +470,7 @@ describe('agent/native-assessment-entry', () => {
           ? workspace
           : 'a'.repeat(40);
   it('should assess in an ordinary codex chat without activation, native creation or managed tools', async () => {
-    const { bindCodexWorkspace } = await import('../agent/codex-workspace-binding.ts');
+    const { bindCodexWorkspace } = await import('../agent/identity/codex-workspace-binding.ts');
     const { default: codexAssessmentEntry } =
       await import('../agent/tasks/assessment/codex-assessment-entry.ts');
     const { runCodexDispatch } = await import('../agent/tasks/dispatch/codex-dispatch.ts');

@@ -6,7 +6,7 @@ import {
   projectRoutingProfile,
   selectRoutingOverrides,
   validateRoutingProfiles,
-} from '../model-routing.ts';
+} from '../models/model-routing.ts';
 import type { AutomationRuntime, ResolvedAutomation } from '../../manifest/automation-schema.ts';
 import {
   explicitModelEfforts,

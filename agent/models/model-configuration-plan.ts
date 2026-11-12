@@ -1,8 +1,8 @@
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
-import { configuredAgentValue } from '../core/configured-agents.ts';
-import type { AgentModelProfile, AgentModelsConfiguration } from '../manifest/models-schema.ts';
-import type { AgentManifest } from '../manifest/types.ts';
+import { configuredAgentValue } from '../../core/configured-agents.ts';
+import type { AgentModelProfile, AgentModelsConfiguration } from '../../manifest/models-schema.ts';
+import type { AgentManifest } from '../../manifest/types.ts';
 
 interface ModelRef {
   model: string;

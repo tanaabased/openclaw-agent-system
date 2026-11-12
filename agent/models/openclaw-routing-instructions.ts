@@ -1,6 +1,6 @@
-import type OpenClawDispatchContext from './tasks/dispatch/openclaw-dispatch-context.ts';
-import type { OpenClawDispatchTransaction } from './tasks/dispatch/openclaw-dispatch-context.ts';
-import openClawSkill from './openclaw-skill.ts';
+import type OpenClawDispatchContext from '../tasks/dispatch/openclaw-dispatch-context.ts';
+import type { OpenClawDispatchTransaction } from '../tasks/dispatch/openclaw-dispatch-context.ts';
+import openClawSkill from '../openclaw-skill.ts';
 import routingInstructions from './routing-instructions.ts';
 
 export default function openClawRoutingInstructions(

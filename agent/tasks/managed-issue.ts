@@ -1,5 +1,5 @@
 import { manualPullRequestSchema } from './dispatch/manual-pull-request.ts';
-import { selectedProfileSchema } from '../model-routing.ts';
+import { selectedProfileSchema } from '../models/model-routing.ts';
 import { Type, type Static } from 'typebox';
 
 import {

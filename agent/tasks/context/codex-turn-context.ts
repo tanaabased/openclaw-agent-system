@@ -5,7 +5,7 @@ import codexRuntimeInstructions from '../../codex-runtime-instructions.ts';
 import {
   inspectCodexWorkspaceBinding,
   type CodexWorkspaceBindingInspection,
-} from '../../codex-workspace-binding.ts';
+} from '../../identity/codex-workspace-binding.ts';
 
 const taskInstructions =
   codexRuntimeInstructions +

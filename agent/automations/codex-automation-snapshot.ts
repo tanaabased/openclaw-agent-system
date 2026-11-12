@@ -21,7 +21,7 @@ import { automationRecordSchema, codexAutomationMarker } from './codex-automatio
 import { nativeAutomationSchema, type readCodexAutomations } from './codex-automation-state.ts';
 import { codexIntakeJobs, intakeAutomationId } from './codex-intake-policy.ts';
 import type { CodexIntakeDependencies } from '../codex-intake.ts';
-import { inspectCodexWorkspaceBinding } from '../codex-workspace-binding.ts';
+import { inspectCodexWorkspaceBinding } from '../identity/codex-workspace-binding.ts';
 
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
 const actionSchema = Type.Object(

@@ -1,5 +1,5 @@
 import type AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
-import { operateInstanceIdentity } from '../agent/instance-identity.ts';
+import { operateInstanceIdentity } from '../agent/identity/instance-identity.ts';
 import presentCliCommand from './presentation.ts';
 import {
   type CliOutput,

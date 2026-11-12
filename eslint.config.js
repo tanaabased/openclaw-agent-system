@@ -136,6 +136,30 @@ export default defineConfig([
     },
   },
   {
+    files: [
+      'agent/models/model-routing.ts',
+      'agent/models/model-configuration-plan.ts',
+      'agent/models/model-catalog.ts',
+      'agent/identity/plan-install.ts',
+      'agent/lifecycle/setup-runtime.ts',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: restrictedBuiltinImports,
+          patterns: [
+            {
+              group: ['**/codex-*', '**/openclaw-*', '**/tasks/**'],
+              message:
+                'Lifecycle and model decisions must not depend on native adapters or task orchestration.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['test/**/*.{js,mjs,cjs,ts,tsx}', '**/*.{spec,test}.{js,mjs,cjs,ts,tsx}'],
     languageOptions: {
       globals: globals.mocha,

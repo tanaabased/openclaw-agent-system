@@ -1,6 +1,6 @@
 import { delimiter } from 'node:path';
 import { codexInstanceStore } from '../tasks/dispatch/codex-assignment-claims.ts';
-import instanceIdentity from '../instance-identity.ts';
+import instanceIdentity from '../identity/instance-identity.ts';
 
 import { inspectCodexIntake } from '../codex-intake.ts';
 import { inspectCodexPickup } from '../automations/codex-pickup-readiness.ts';
@@ -10,7 +10,7 @@ import runCodexSetupProcess from '../codex-process-runner.ts';
 import {
   inspectCodexWorkspaceBinding,
   type CodexWorkspaceBindingInspection,
-} from '../codex-workspace-binding.ts';
+} from '../identity/codex-workspace-binding.ts';
 import SetupLifecycleService from './setup-lifecycle.ts';
 import createSetupCommandRunner, { type SetupProcessRunner } from './setup-runner.ts';
 import type { AgentSystemLifecycleFinding } from '../../core/lifecycle-registry.ts';

@@ -753,7 +753,7 @@ describe('agent/native-implementation-entry', () => {
           ? workspace
           : 'a'.repeat(40);
   it('should implement in an ordinary codex chat without activation, native creation or managed tools', async () => {
-    const { bindCodexWorkspace } = await import('../agent/codex-workspace-binding.ts');
+    const { bindCodexWorkspace } = await import('../agent/identity/codex-workspace-binding.ts');
     const { default: codexImplementationEntry } =
       await import('../agent/tasks/implementation/codex-implementation-entry.ts');
     const home = join(root, 'codex'),

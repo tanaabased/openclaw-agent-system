@@ -5,7 +5,7 @@ import { revalidateDispatchAssignment } from '../dispatch/codex-dispatch-context
 import { verifyDispatchWorktree } from '../dispatch/codex-dispatch-project.ts';
 import type { DispatchRecord, DispatchState } from '../dispatch/codex-dispatch-state.ts';
 import { selectCodexTaskContext } from '../context/codex-task-context.ts';
-import codexSessionSettings from '../../codex-session-settings.ts';
+import codexSessionSettings from '../../models/codex-session-settings.ts';
 import codexWorkContext from './codex-work-context.ts';
 import renderCodexWorkResult from './codex-work-result.ts';
 import codexWorkState from './codex-work-state.ts';

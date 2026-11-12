@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
 
 import codexDispatchHandoff from '../agent/tasks/dispatch/codex-dispatch-handoff.ts';
-import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
+import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
 
 describe('agent/codex-runtime', () => {
   it('rejects copied native inventories and effect receipts before reading state or performing effects', () => {

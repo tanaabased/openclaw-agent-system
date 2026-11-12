@@ -20,7 +20,7 @@ import { applyFeedbackScans, scanCodexFeedback } from './codex-feedback-scan.ts'
 import codexHostAccess from '../../codex-host-access.ts';
 import { selectCodexTaskContext } from '../context/codex-task-context.ts';
 import codexReply from './codex-reply.ts';
-import codexSessionSettings from '../../codex-session-settings.ts';
+import codexSessionSettings from '../../models/codex-session-settings.ts';
 import { connectCodexThreads } from '../../codex-thread-client.ts';
 import DiscoveryBudget from '../../discovery-budget.ts';
 import discoveryCheckpoint from '../../discovery-checkpoint.ts';

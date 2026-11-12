@@ -2,7 +2,11 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import { configuredAgentValue } from '../../core/configured-agents.ts';
 import type { AgentManifest } from '../../manifest/types.ts';
-import { configuredRuntime, parseModelRef, sameRuntime } from '../model-configuration-plan.ts';
+import {
+  configuredRuntime,
+  parseModelRef,
+  sameRuntime,
+} from '../models/model-configuration-plan.ts';
 
 function selectedModels(
   model: string | { primary?: string; fallbacks?: string[] } | undefined,

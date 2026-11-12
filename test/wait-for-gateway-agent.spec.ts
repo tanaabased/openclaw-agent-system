@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import waitForGatewayAgent from '../agent/wait-for-gateway-agent.ts';
+import waitForGatewayAgent from '../agent/identity/wait-for-gateway-agent.ts';
 
 const snapshot = {
   valid: true,

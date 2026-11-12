@@ -1,5 +1,5 @@
 import type { SharedDispatchRecord } from './dispatch-state.ts';
-import type { RoutingDecision } from '../../model-routing.ts';
+import type { RoutingDecision } from '../../models/model-routing.ts';
 
 import type { WorkflowInstructionsPresentation } from '../../../channels/github/presentation/workflow-instructions.ts';
 

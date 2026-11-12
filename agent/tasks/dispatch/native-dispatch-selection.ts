@@ -5,7 +5,7 @@ import type { FeedbackSourceEvent } from '../feedback/feedback-state.ts';
 import { dispatchAdmission, managedTargetUrl, type ManagedIssue } from '../managed-issue.ts';
 import { assertNativeContextInput } from '../context/native-context-request.ts';
 import { feedbackTarget } from '../feedback/reply-target.ts';
-import { routingInstructionsDigest } from '../../routing-instructions.ts';
+import { routingInstructionsDigest } from '../../models/routing-instructions.ts';
 export function isNativeDispatchSelection(action: unknown) {
   return ['prepare', 'reconcile', 'start', 'assess'].includes(String(action));
 }

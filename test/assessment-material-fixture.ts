@@ -1,6 +1,6 @@
 import { assessmentPresentationRequest } from '../agent/tasks/assessment/assessment-render.ts';
 import dispatchContext from '../agent/tasks/dispatch/dispatch-context.ts';
-import resolveModelRoutingRequest from '../agent/model-routing-request.ts';
+import resolveModelRoutingRequest from '../agent/models/model-routing-request.ts';
 import {
   nativeRoutingMetadata,
   routingMetadata,

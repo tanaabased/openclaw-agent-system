@@ -37,7 +37,7 @@ import {
   inspectCodexDispatchActivation,
   inspectCodexPickupActivation,
 } from './automations/codex-automation-activation.ts';
-import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
+import { inspectCodexWorkspaceBinding } from './identity/codex-workspace-binding.ts';
 import IntakeRecordStore, {
   IntakeError,
   intakeLocation,

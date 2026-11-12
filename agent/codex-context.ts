@@ -11,8 +11,8 @@ import codexRuntimeInstructions from './codex-runtime-instructions.ts';
 import {
   inspectCodexWorkspaceBinding,
   type CodexWorkspaceBindingInspection,
-} from './codex-workspace-binding.ts';
-import { projectRoutingProfile } from './model-routing.ts';
+} from './identity/codex-workspace-binding.ts';
+import { projectRoutingProfile } from './models/model-routing.ts';
 
 export const codexContextVersion = 1;
 export const codexRuntimeRelativePath = 'dist/codex/codex-runtime.js';

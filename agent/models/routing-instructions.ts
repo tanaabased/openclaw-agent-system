@@ -1,15 +1,15 @@
 import { Type, type Static } from 'typebox';
 
-import guidanceReference from './tasks/context/guidance-reference.ts';
-import assessmentGuidance from './tasks/assessment/assessment-guidance.ts';
-import { assessmentSelectionSchema } from './tasks/assessment/assessment-selection.ts';
-import { automationHash } from './automation-hash.ts';
-import type { CodexAssessmentSkill } from './tasks/assessment/codex-assessment-skill.ts';
+import guidanceReference from '../tasks/context/guidance-reference.ts';
+import assessmentGuidance from '../tasks/assessment/assessment-guidance.ts';
+import { assessmentSelectionSchema } from '../tasks/assessment/assessment-selection.ts';
+import { automationHash } from '../automation-hash.ts';
+import type { CodexAssessmentSkill } from '../tasks/assessment/codex-assessment-skill.ts';
 import { RoutingError } from './model-routing.ts';
 import {
   normalizeAssessmentSkillId,
   type AssessmentConfiguration,
-} from '../manifest/assessment-schema.ts';
+} from '../../manifest/assessment-schema.ts';
 
 export const defaultRoutingSkill = 'agent-system:agent-system-model-routing';
 export const routingInstructionsSchema = Type.Object(

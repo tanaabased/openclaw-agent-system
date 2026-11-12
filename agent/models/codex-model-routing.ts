@@ -1,9 +1,9 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import codexAssessmentSkill from './tasks/assessment/codex-assessment-skill.ts';
-import { connectCodexThreads } from './codex-thread-client.ts';
-import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
+import codexAssessmentSkill from '../tasks/assessment/codex-assessment-skill.ts';
+import { connectCodexThreads } from '../codex-thread-client.ts';
+import { inspectCodexWorkspaceBinding } from '../identity/codex-workspace-binding.ts';
 import { RoutingError } from './model-routing.ts';
 import { routingInstructionsReference } from './routing-instructions.ts';
 import initialModelRouting from './initial-model-routing.ts';

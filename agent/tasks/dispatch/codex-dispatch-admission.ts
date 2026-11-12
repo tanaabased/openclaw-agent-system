@@ -35,7 +35,7 @@ import { type DispatchRecord } from './codex-dispatch-state.ts';
 import connectCodexGitHubAccount from '../../codex-github-client.ts';
 import { selectCodexTaskContext } from '../context/codex-task-context.ts';
 import codexIssueBranch from './codex-issue-branch.ts';
-import codexSessionSettings from '../../codex-session-settings.ts';
+import codexSessionSettings from '../../models/codex-session-settings.ts';
 import dispatchContext from './dispatch-context.ts';
 import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
 import { dispatchRecheckable, repositoryPreparationFailure } from './dispatch-retry.ts';
@@ -51,14 +51,14 @@ import {
   managedPullRequest,
   type ManagedIssue as IntakeRecord,
 } from '../managed-issue.ts';
-import resolveModelRoutingRequest from '../../model-routing-request.ts';
-import { assessmentSchema } from '../../model-routing.ts';
+import resolveModelRoutingRequest from '../../models/model-routing-request.ts';
+import { assessmentSchema } from '../../models/model-routing.ts';
 import routingInstructions, {
   assertRoutingInstructions,
   routingInstructionsDigest,
   routingInstructionsGuidance,
   routingInstructionsReference,
-} from '../../routing-instructions.ts';
+} from '../../models/routing-instructions.ts';
 import workflowFailure from '../workflow-failure.ts';
 import deliverTaskInput from '../context/task-input-delivery.ts';
 import { codexNativeHandoff } from './codex-dispatch-handoff.ts';

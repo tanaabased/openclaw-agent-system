@@ -3,8 +3,8 @@ import {
   type AssessmentResult,
 } from '../../../agent/tasks/assessment/assessment-result.ts';
 import redactFeedback from '../../../agent/tasks/feedback/feedback-redaction.ts';
-import type { RoutingDecision } from '../../../agent/model-routing.ts';
-import type { RoutingInstructions } from '../../../agent/routing-instructions.ts';
+import type { RoutingDecision } from '../../../agent/models/model-routing.ts';
+import type { RoutingInstructions } from '../../../agent/models/routing-instructions.ts';
 import githubNotificationCard, {
   githubNotificationMarkdownCode,
   githubNotificationMarkdownText,

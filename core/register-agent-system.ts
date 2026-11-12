@@ -21,7 +21,7 @@ import type { AgentManifest } from '../manifest/types.ts';
 import { issuePickupAutomationId } from '../agent/automations/issue-pickup-jobs.ts';
 import createDispatchTool from '../tools/dispatch/tool.ts';
 import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
-import instanceIdentity from '../agent/instance-identity.ts';
+import instanceIdentity from '../agent/identity/instance-identity.ts';
 import executeOpenClawDeliveryGit from './openclaw-delivery-git.ts';
 import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
 import IssueDeliveryProvider from '../channels/github/publication/issue-delivery.ts';
@@ -40,7 +40,7 @@ import { withPrivateStateLock } from './private-state-lock-context.ts';
 import createGoogleCapability from '../tools/google/capability.ts';
 import createGitCapability from '../tools/git/capability.ts';
 import createGitHubCapability from '../tools/github/capability.ts';
-import resolveCodexCommandAgentId from '../agent/resolve-codex-command-id.ts';
+import resolveCodexCommandAgentId from '../agent/identity/resolve-codex-command-id.ts';
 import registerAgentCommandSecurity from '../agent/command-security.ts';
 import AutomationService from '../agent/automations/automation-service.ts';
 import automationGatewayDiagnostic from '../agent/automations/automation-gateway-diagnostic.ts';
@@ -70,14 +70,14 @@ import { reconcileAutomationReport } from '../agent/automations/automation-repor
 import automationLifecycleCommand from '../cli/automation-lifecycle.ts';
 import SetupCommandService from '../agent/lifecycle/setup-command-service.ts';
 import SetupLifecycleService from '../agent/lifecycle/setup-lifecycle.ts';
-import createAgentLifecycleContribution from '../agent/lifecycle.ts';
-import waitForGatewayAgent from '../agent/wait-for-gateway-agent.ts';
-import createModelLifecycleContribution from '../agent/model-lifecycle.ts';
+import createAgentLifecycleContribution from '../agent/identity/lifecycle.ts';
+import waitForGatewayAgent from '../agent/identity/wait-for-gateway-agent.ts';
+import createModelLifecycleContribution from '../agent/models/model-lifecycle.ts';
 import createCodexPluginLifecycleContribution from '../agent/lifecycle/codex-plugin-lifecycle.ts';
 import codexPluginRequirement from './codex-plugin-metadata.ts';
 import ensurePrivateStateDirectories from './ensure-private-state-directories.ts';
 import acquirePrivateStateFileLock from './private-state-file-lock.ts';
-import parseModelCatalogRows from '../agent/model-catalog.ts';
+import parseModelCatalogRows from '../agent/models/model-catalog.ts';
 import createMemoryLifecycleContribution from '../agent/lifecycle/memory-lifecycle.ts';
 import {
   createMemorySecretProviderConfiguration,

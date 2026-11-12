@@ -1,6 +1,6 @@
 import { Value } from 'typebox/value';
 import launchPending from './launch-pending.ts';
-import { routingInstructionsDigest } from '../../routing-instructions.ts';
+import { routingInstructionsDigest } from '../../models/routing-instructions.ts';
 
 import { launchRequestSchema } from '../../../tools/dispatch/launch-schema.ts';
 import { automationHash } from '../../automation-hash.ts';

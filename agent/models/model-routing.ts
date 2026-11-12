@@ -5,7 +5,7 @@ import {
   explicitModelEfforts,
   externalAgentModelsSchema,
   type AgentModelsConfiguration,
-} from '../manifest/models-schema.ts';
+} from '../../manifest/models-schema.ts';
 
 export const profileSchema = externalAgentModelsSchema.properties.default;
 export const selectedProfileSchema = Type.Object(

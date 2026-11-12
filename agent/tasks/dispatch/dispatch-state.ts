@@ -45,7 +45,7 @@ import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import { openclawIntakePassSchema, sameIntakeRun } from '../../openclaw-intake-pass.ts';
 import { validPendingRetirement } from '../retirement/pending-retirement.ts';
 import { retirementEffectSchema, type RetirementEffect } from '../retirement/retirement-effects.ts';
-import { routingInstructionsSchema } from '../../routing-instructions.ts';
+import { routingInstructionsSchema } from '../../models/routing-instructions.ts';
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
 export const dispatchRecordProperties = {

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 
 import { runCodexIntake, type CodexIntakeDependencies } from '../agent/codex-intake.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
-import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
+import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
 import issueWorkflowMode from '../agent/tasks/issue-workflow-mode.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import {

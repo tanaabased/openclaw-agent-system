@@ -4,7 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { codexQuietHeartbeatInstructions } from '../agent/codex-heartbeat.ts';
-import { bindCodexWorkspace, unbindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
+import {
+  bindCodexWorkspace,
+  unbindCodexWorkspace,
+} from '../agent/identity/codex-workspace-binding.ts';
 import {
   createCodexSessionContext,
   projectCodexManifest,

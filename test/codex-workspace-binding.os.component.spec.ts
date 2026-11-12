@@ -9,7 +9,7 @@ import {
   inspectCodexWorkspaceBinding,
   previewCodexWorkspace,
   unbindCodexWorkspace,
-} from '../agent/codex-workspace-binding.ts';
+} from '../agent/identity/codex-workspace-binding.ts';
 
 const temporaryRoots: string[] = [];
 

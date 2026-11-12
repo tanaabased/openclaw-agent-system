@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import loadBoundToolManifest from '../api/manifest-binding.ts';
-import { previewCodexWorkspace } from '../agent/codex-workspace-binding.ts';
+import { previewCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
 import { projectCodexManifest } from '../agent/codex-context.ts';
 import discoverManifest, { maximumManifestBytes } from '../manifest/discover.ts';
 import { loadDiscoveredManifest } from '../manifest/load.ts';

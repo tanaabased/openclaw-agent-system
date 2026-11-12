@@ -4,7 +4,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import createConfigurationPlan, {
   type ModelConfigurationDependencies,
-} from '../agent/model-configuration-plan.ts';
+} from '../agent/models/model-configuration-plan.ts';
 
 const dependencies: ModelConfigurationDependencies = {
   resolveCliBackendDispatchEligibility: () => ({ provider: 'codex' }),

@@ -6,12 +6,12 @@ import {
   resolveModelRouting,
   RoutingError,
 } from './model-routing.ts';
-import type { AgentModelsConfiguration } from '../manifest/models-schema.ts';
+import type { AgentModelsConfiguration } from '../../manifest/models-schema.ts';
 import {
   modelRoutingContextSchema,
   modelRoutingRequestSchema,
   modelRoutingTextContextSchema,
-} from '../tools/model-routing/tool-schema.ts';
+} from '../../tools/model-routing/tool-schema.ts';
 
 /** runtime bindings supply the profiles; task context can never choose a workspace. */
 export default function resolveModelRoutingRequest(

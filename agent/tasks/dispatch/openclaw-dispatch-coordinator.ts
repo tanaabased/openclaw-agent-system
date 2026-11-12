@@ -27,8 +27,8 @@ import {
   managedTargetUrl,
   type ManagedIssue as IntakeRecord,
 } from '../managed-issue.ts';
-import resolveModelRoutingRequest from '../../model-routing-request.ts';
-import { assessmentSchema } from '../../model-routing.ts';
+import resolveModelRoutingRequest from '../../models/model-routing-request.ts';
+import { assessmentSchema } from '../../models/model-routing.ts';
 import recoverOpenClawAnnouncement from '../delivery/openclaw-announcement-recovery.ts';
 import reconcileOpenClawLifecycle from './openclaw-assignment-lifecycle.ts';
 import dispatchCapacity from './openclaw-capacity.ts';
@@ -49,14 +49,14 @@ import {
 import { sameIntakeRun } from '../../openclaw-intake-pass.ts';
 import openclawIntakeReport, { type IntakeObservation } from '../../openclaw-intake-report.ts';
 import openClawNativeTurns, { nativeTurnFor } from '../../openclaw-native-turns.ts';
-import openClawRoutingInstructions from '../../openclaw-routing-instructions.ts';
+import openClawRoutingInstructions from '../../models/openclaw-routing-instructions.ts';
 import observeIssueActivity from '../../openclaw-session-activity.ts';
 import { verifyEmptyIssueSession, type DispatchCaller } from '../../openclaw-session-create.ts';
 import {
   routingInstructionsDigest,
   routingInstructionsGuidance,
   routingInstructionsReference,
-} from '../../routing-instructions.ts';
+} from '../../models/routing-instructions.ts';
 import taskPullRequest from '../delivery/task-pull-request.ts';
 import workflowFailure from '../workflow-failure.ts';
 import workflowRecovery from '../workflow-recovery.ts';

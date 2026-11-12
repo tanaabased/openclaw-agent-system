@@ -5,7 +5,7 @@ import { dispatchInspectionProperties } from '../../agent/tasks/dispatch/dispatc
 import { implementationResultSchema } from '../../agent/tasks/implementation/implementation-result.ts';
 import { issueChatTitleGuidance } from '../../agent/tasks/dispatch/issue-chat-title.ts';
 import { implementationDecisionSchema } from '../../agent/tasks/issue-progression.ts';
-import { assessmentSchema } from '../../agent/model-routing.ts';
+import { assessmentSchema } from '../../agent/models/model-routing.ts';
 import WorkflowRequestError from '../../agent/tasks/workflow-request-error.ts';
 import discriminatedSchema from '../../utils/discriminated-schema.ts';
 import { directAssessmentRequestSchema } from './assessment-schema.ts';

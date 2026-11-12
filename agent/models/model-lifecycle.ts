@@ -1,11 +1,11 @@
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
-import { configuredAgentValue } from '../core/configured-agents.ts';
+import { configuredAgentValue } from '../../core/configured-agents.ts';
 import {
   AgentSystemLifecycleError,
   type AgentSystemLifecycleContribution,
   type AgentSystemLifecycleFinding,
-} from '../core/lifecycle-registry.ts';
+} from '../../core/lifecycle-registry.ts';
 import createConfigurationPlan, {
   modelKey,
   parseModelRef,

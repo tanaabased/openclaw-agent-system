@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import sessionSettings from '../agent/session-settings.ts';
+import sessionSettings from '../agent/models/session-settings.ts';
 
 describe('agent/session-settings', () => {
   const requested = { model: 'original', effort: 'high' };

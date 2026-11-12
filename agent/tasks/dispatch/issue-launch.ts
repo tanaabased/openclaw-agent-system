@@ -20,7 +20,7 @@ import { issueKey } from './dispatch-pending.ts';
 import type DispatchStore from './dispatch-state.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import { assertDispatchStorage } from './dispatch-storage.ts';
-import initialModelRouting from '../../initial-model-routing.ts';
+import initialModelRouting from '../../models/initial-model-routing.ts';
 import { issueChatTitleGuidance } from './issue-chat-title.ts';
 import issueLaunchTarget from './issue-launch-target.ts';
 import launchAssignment from './launch-assignment.ts';
@@ -31,7 +31,7 @@ import manualPullRequest from './manual-pull-request.ts';
 import {
   routingInstructionsDigest,
   routingInstructionsReference,
-} from '../../routing-instructions.ts';
+} from '../../models/routing-instructions.ts';
 type ExistingDelivery = {
   pullRequest?: GitHubNotificationIssueDeliveryReceipt;
 };

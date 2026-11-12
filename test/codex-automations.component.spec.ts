@@ -50,7 +50,7 @@ import {
 import {
   bindCodexWorkspace,
   inspectCodexWorkspaceBinding,
-} from '../agent/codex-workspace-binding.ts';
+} from '../agent/identity/codex-workspace-binding.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 import { prepareCodexPickupEnrollment, inspectCodexIntake } from '../agent/codex-intake.ts';
 import normalizeAutomationSchedule from '../manifest/automation-schedule.ts';

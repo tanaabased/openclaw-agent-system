@@ -4,7 +4,7 @@ import { implementationMaterialSchema } from '../../../tools/dispatch/implementa
 import { nativeRetirementProperties } from '../../../tools/dispatch/retirement-schema.ts';
 import { dispatchInspectionProperties } from './dispatch-inspection.ts';
 import { issueChatTitleGuidance } from './issue-chat-title.ts';
-import { assessmentSchema } from '../../model-routing.ts';
+import { assessmentSchema } from '../../models/model-routing.ts';
 
 const id = Type.String({ pattern: '^[a-f0-9]{64}$' });
 const digest = Type.Optional(Type.String());

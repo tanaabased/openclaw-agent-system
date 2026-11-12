@@ -6,16 +6,16 @@ import issueChatTitle from './issue-chat-title.ts';
 import verifyIssuePullRequest from '../delivery/issue-pr-selection.ts';
 import { dispatchAdmission, managedPullRequest } from '../managed-issue.ts';
 import { nativeTurnFor } from '../../openclaw-native-turns.ts';
-import openClawRoutingInstructions from '../../openclaw-routing-instructions.ts';
+import openClawRoutingInstructions from '../../models/openclaw-routing-instructions.ts';
 import {
   assertRoutingInstructions,
   routingInstructionsDigest,
-} from '../../routing-instructions.ts';
+} from '../../models/routing-instructions.ts';
 
 import type { dispatchParameters } from '../../../tools/dispatch/tool-schema.ts';
 import { automationHash } from '../../automation-hash.ts';
 import dispatchRoutingAssessment from './dispatch-routing-assessment.ts';
-import resolveModelRoutingRequest from '../../model-routing-request.ts';
+import resolveModelRoutingRequest from '../../models/model-routing-request.ts';
 import dispatchCapacity from './openclaw-capacity.ts';
 import {
   type default as OpenClawDispatchContext,

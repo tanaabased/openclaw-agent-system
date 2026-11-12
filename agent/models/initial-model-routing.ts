@@ -1,5 +1,5 @@
-import type { AgentModelsConfiguration } from '../manifest/models-schema.ts';
-import type { CodexAssessmentSkill } from './tasks/assessment/codex-assessment-skill.ts';
+import type { AgentModelsConfiguration } from '../../manifest/models-schema.ts';
+import type { CodexAssessmentSkill } from '../tasks/assessment/codex-assessment-skill.ts';
 import resolveModelRoutingRequest from './model-routing-request.ts';
 import routingInstructions, {
   routingInstructionsDigest,

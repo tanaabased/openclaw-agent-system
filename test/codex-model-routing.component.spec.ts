@@ -3,8 +3,8 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import codexModelRouting from '../agent/codex-model-routing.ts';
-import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
+import codexModelRouting from '../agent/models/codex-model-routing.ts';
+import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
 
 const roots: string[] = [];
 afterEach(async () => {

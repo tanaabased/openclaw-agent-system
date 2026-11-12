@@ -21,7 +21,7 @@ import codexRuntimeRequest from './codex-runtime-request.ts';
 import { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
 import codexTurnContext, { codexCurrentTurnContext } from './tasks/context/codex-turn-context.ts';
 import contextMaterialTransport from './tasks/context/context-material-transport.ts';
-import { operateInstanceIdentity } from './instance-identity.ts';
+import { operateInstanceIdentity } from './identity/instance-identity.ts';
 import IssuePickupFailure from './issue-pickup-failure.ts';
 import { issuePickupAutomationId } from './automations/issue-pickup-jobs.ts';
 import {
@@ -52,8 +52,8 @@ import {
   reconcileCodexAutomationRetirements,
   syncCodexAutomationThreads,
 } from './automations/codex-automations.ts';
-import codexModelRouting from './codex-model-routing.ts';
-import { RoutingError } from './model-routing.ts';
+import codexModelRouting from './models/codex-model-routing.ts';
+import { RoutingError } from './models/model-routing.ts';
 
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import { createCodexSessionContext } from './codex-context.ts';
@@ -64,7 +64,7 @@ import {
   previewCodexWorkspace,
   unbindCodexWorkspace,
   type CodexWorkspacePreview,
-} from './codex-workspace-binding.ts';
+} from './identity/codex-workspace-binding.ts';
 
 interface SessionStartInput {
   hook_event_name?: unknown;

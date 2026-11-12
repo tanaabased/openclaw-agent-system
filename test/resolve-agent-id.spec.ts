@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import resolveAgentId from '../agent/resolve-id.ts';
+import resolveAgentId from '../agent/identity/resolve-id.ts';
 
 describe('agent/resolve-id', () => {
   it('should prefer the host-supplied agent id', () => {

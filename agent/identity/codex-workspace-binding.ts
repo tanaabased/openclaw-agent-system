@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, normalize, resolve } from 'node:path';
 
-import discoverManifest from '../manifest/discover.ts';
-import { loadDiscoveredManifest, type AgentManifestLoadResult } from '../manifest/load.ts';
+import discoverManifest from '../../manifest/discover.ts';
+import { loadDiscoveredManifest, type AgentManifestLoadResult } from '../../manifest/load.ts';
 
 export const codexWorkspaceBindingFileName = 'workspace-binding.json';
 const maximumBindingBytes = 16 * 1024;

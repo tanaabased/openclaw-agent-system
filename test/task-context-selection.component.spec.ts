@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import { selectOpenClawTaskContext } from '../agent/tasks/context/openclaw-task-context.ts';
-import type { CodexWorkspaceBindingInspection } from '../agent/codex-workspace-binding.ts';
+import type { CodexWorkspaceBindingInspection } from '../agent/identity/codex-workspace-binding.ts';
 import NotificationResetStore from '../agent/notification-reset-state.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type { AgentManifest } from '../manifest/types.ts';

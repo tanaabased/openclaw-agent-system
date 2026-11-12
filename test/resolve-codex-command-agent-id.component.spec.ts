@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import resolveCodexCommandAgentId from '../agent/resolve-codex-command-id.ts';
+import resolveCodexCommandAgentId from '../agent/identity/resolve-codex-command-id.ts';
 
 describe('agent/resolve-codex-command-id', () => {
   let root: string;
