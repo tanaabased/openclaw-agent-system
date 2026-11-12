@@ -1208,6 +1208,35 @@ describe('agent/feedback-reply', () => {
     await call('reconcile', { ...reply });
     assert.equal(writes, 1);
   });
+  for (const runtime of ['codex', 'openclaw'] as const) {
+    for (const [text, expected] of [
+      ['@author full validation passed.', '@author full validation passed.'],
+      ['Checked, @AUTHOR.', 'Checked, @AUTHOR.'],
+      ['Thanks, {{commenter}}.', 'Thanks, @author.'],
+      ['Checked the flow.', '@author\n\nChecked the flow.'],
+      ['Ask @author-other.', '@author\n\nAsk @author-other.'],
+      ['`@author` is code.', '@author\n\n`@author` is code.'],
+      ['    @author indented code', '@author\n\n    @author indented code'],
+      ['> @author quoted reply', '@author\n\n> @author quoted reply'],
+      ['> Quote\n@author continues it.', '@author\n\n> Quote\n@author continues it.'],
+      ['\\@author is escaped.', '@author\n\n\\@author is escaped.'],
+      ['See [profile](/@author).', '@author\n\nSee [profile](/@author).'],
+    ]) {
+      it(`should attribute ${JSON.stringify(text).toLowerCase()} without rewriting prose in ${runtime}`, async () => {
+        deps.binding.runtime = runtime;
+        const composed = await call('compose', {
+          target: `${url}#issuecomment-42`,
+          privateText: 'Supplied answer.',
+        });
+        await call('candidate', { ...selection(composed), publicText: text });
+        assert.equal((await call('publish', selection(composed))).status, 'published');
+        assert.ok(posted!.body.startsWith(`${expected}\n\n<!-- agent-system-github-publication:`));
+        assert.equal((await call('reconcile', selection(composed))).status, 'published');
+        assert.equal(writes, 1);
+      });
+    }
+  }
+
   it('should retain real comment attribution and reject binding overrides and substituted destinations', async () => {
     const composed = await call('compose', {
       target: `${url}#issuecomment-42`,

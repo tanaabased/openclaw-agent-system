@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
 
+import { githubCommentProseMentions } from '../comment-mentions.ts';
 import { githubNotificationConversationId } from './conversation-identity.ts';
 import { maximumGitHubNotificationReplyLength } from './limits.ts';
 
@@ -56,7 +57,10 @@ function safeText(
   publicationIntent: GitHubNotificationPublicationIntent,
   redact: (text: string) => string,
 ): string {
-  const text = value.trim();
+  const text =
+    publicationIntent === 'github-reply'
+      ? value.trimEnd().replace(/^(?:[\t ]*\r?\n)+/u, '')
+      : value.trim();
   const maximumLength =
     publicationIntent === 'initial-acknowledgment'
       ? maximumAcknowledgmentLength
@@ -101,7 +105,7 @@ function safeText(
   return text;
 }
 
-/** Substitute only one provider-verified commenter into a safe reply candidate. */
+/** attribute a safe reply only when ordinary prose does not already mention its verified recipient. */
 export function githubNotificationAttributedReplyText(
   value: string,
   commenterLogin: string,
@@ -114,9 +118,10 @@ export function githubNotificationAttributedReplyText(
   ) {
     throw new Error('GitHub notification commenter logins are invalid.');
   }
-  return text.includes(githubNotificationCommenterToken)
-    ? text.replace(githubNotificationCommenterToken, `@${commenterLogin}`)
-    : `@${commenterLogin}\n\n${text}`;
+  const attributed = text.replace(githubNotificationCommenterToken, `@${commenterLogin}`);
+  return githubCommentProseMentions(attributed, commenterLogin).length > 0
+    ? attributed
+    : `@${commenterLogin}\n\n${attributed}`;
 }
 
 /** Accept one bounded final agent reply for an explicit GitHub publication intent. */

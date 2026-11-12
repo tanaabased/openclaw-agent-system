@@ -1665,7 +1665,7 @@ for (const scenario of [
             runtime: 'openclaw',
             publication: 'allowed',
             replyTarget: source,
-            source: { body: '@tanaabot explain the plan.' },
+            source: { author: { login: 'emoriwan' }, body: '@tanaabot explain the plan.' },
           });
           if (scenario.id === 'openclaw-pr-journey') {
             append(input, 'feedback-context', {

@@ -105,8 +105,10 @@ describe('channels/github/provider/comment-admission', () => {
 
   it('should retain exact source ranges for each admitted prose mention', () => {
     const body = [
+      '<!-- 👋 @tanaabot -->',
       '👋 @Tanaabot could you compare this with `@tanaabot`?',
       '> @tanaabot quoted reply',
+      '',
       'Then let @TANAABOT know.',
     ].join('\n');
     const result = admitGitHubComment({
@@ -185,6 +187,21 @@ describe('channels/github/provider/comment-admission', () => {
           configuration,
         }).code,
         'comment-mention-quote-only',
+      );
+    }
+  });
+
+  it('should reject escaped, email and reference-destination occurrences without granting feedback authority', () => {
+    for (const body of [
+      '\\@tanaabot is escaped.',
+      'Email user+tag@tanaabot.example.',
+      'See [the profile][user].\n\n[user]: /@tanaabot',
+      '> Quoted reply\n@tanaabot is a lazy continuation.',
+    ]) {
+      assert.equal(
+        admitGitHubComment({ account: notificationAccount, comment: comment(body), configuration })
+          .disposition,
+        'rejected',
       );
     }
   });
