@@ -1,3 +1,4 @@
+import type { FeedbackProvider } from '../agent/tasks/feedback/feedback-provider.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -14,7 +15,6 @@ import {
 import openClawFeedback, {
   advanceFeedbackTurn,
   type OpenClawFeedbackAction,
-  type OpenClawFeedbackProvider,
 } from '../agent/tasks/feedback/openclaw-feedback.ts';
 import { verifyOpenClawWork } from '../agent/tasks/implementation/openclaw-work.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
@@ -25,7 +25,7 @@ import { reviewCommentFixture } from './github-review-fixtures.ts';
 const actor = { login: 'operator', nodeId: 'U_operator', type: 'User' };
 describe('agent/openclaw-feedback', () => {
   let root: string, record: OpenClawDispatchRecord, event: OpenClawFeedbackEvent;
-  let source: GitHubCanonicalIssueComment, provider: OpenClawFeedbackProvider;
+  let source: GitHubCanonicalIssueComment, provider: FeedbackProvider;
   let input: Omit<Parameters<typeof openClawFeedback>[0], 'action'> & {
     sourcePresentation?: string;
   };

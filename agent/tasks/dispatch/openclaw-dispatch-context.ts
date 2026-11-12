@@ -66,7 +66,7 @@ import {
   resolveOpenClawTurnFeedback,
   selectedOpenClawFeedback,
 } from '../feedback/openclaw-feedback-input.ts';
-import { type OpenClawFeedbackProvider } from '../feedback/openclaw-feedback.ts';
+import { type FeedbackProvider } from '../feedback/feedback-provider.ts';
 import { type IntakeObservation } from '../../openclaw-intake-report.ts';
 import type OpenClawIntake from '../../openclaw-intake.ts';
 import { nativeTurnFor } from '../../openclaw-native-turns.ts';
@@ -113,7 +113,7 @@ export interface OpenClawTaskDependencies {
     },
     signal: AbortSignal,
     connection?: GitHubNotificationIntakeClient & GitHubNotificationItemContextClient,
-  ): Promise<OpenClawFeedbackProvider>;
+  ): Promise<FeedbackProvider>;
   retirementDelivery?(
     input: {
       manifest: AgentManifest;

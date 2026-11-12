@@ -1,3 +1,4 @@
+import type { FeedbackProvider } from '../agent/tasks/feedback/feedback-provider.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -6,10 +7,7 @@ import { recoverRetainedAnnouncement } from '../agent/tasks/delivery/delivery-an
 import { feedbackRevision } from '../agent/tasks/feedback/feedback-source.ts';
 import manualPullRequest from '../agent/tasks/dispatch/manual-pull-request.ts';
 import { openClawWorkSlot } from '../agent/tasks/implementation/openclaw-continuation.ts';
-import {
-  authorizeFeedback,
-  type OpenClawFeedbackProvider,
-} from '../agent/tasks/feedback/openclaw-feedback.ts';
+import { authorizeFeedback } from '../agent/tasks/feedback/openclaw-feedback.ts';
 import { account, fixturePullRequest, intakeFixture } from './github-intake-fixture.ts';
 
 import announcementFixture from './delivery-announcement-fixture.ts';
@@ -453,7 +451,7 @@ describe('agent/openclaw-delivery', () => {
       source: JSON.stringify(source),
       revision: feedbackRevision(source),
     };
-    const provider: OpenClawFeedbackProvider = {
+    const provider: FeedbackProvider = {
       ...fixture.client,
       getItem: async () => item,
       getItemContext: async () => ({

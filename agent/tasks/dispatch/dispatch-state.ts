@@ -39,7 +39,6 @@ import resetIssuePickup from '../../issue-pickup-reset.ts';
 import { issuePickupStateSchema } from '../../issue-pickup-state.ts';
 import { implementationDecisionSchema, issueProgressionSchema } from '../issue-progression.ts';
 import { operatorIssueSchema } from '../managed-issue.ts';
-import { validNativeDispatchRecord } from './native-dispatch-record.ts';
 import { assertNotificationManagement } from '../../notification-reset-state.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import { openclawIntakePassSchema, sameIntakeRun } from '../../openclaw-intake-pass.ts';
@@ -324,7 +323,6 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
         (!r.cleanupPending &&
           ((r.request && (!r.context || !r.routing)) ||
             (r.handoff && (!r.request || !r.threadId || !r.worktree)))) ||
-        (!r.cleanupPending && !validNativeDispatchRecord(r, this.contract.runtime)) ||
         (r.reset && !r.threadId) ||
         (r.cleanupPending ? !validPendingRetirement(r) : !this.contract.validRecord(r))
       )

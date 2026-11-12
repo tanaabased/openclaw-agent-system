@@ -1,5 +1,5 @@
 import type { RetirementEffect } from './retirement-effects.ts';
-import type { OpenClawFeedbackProvider } from '../feedback/openclaw-feedback.ts';
+import type { FeedbackProvider } from '../feedback/feedback-provider.ts';
 import type IssueDeliveryProvider from '../../../channels/github/publication/issue-delivery.ts';
 import type { IssueDeliveryInput } from '../../../channels/github/publication/issue-delivery.ts';
 import GitHubNotificationCommentPublisher, {
@@ -12,7 +12,7 @@ import workflowFailure from '../workflow-failure.ts';
 export default async function reconcileRetirementEffects(input: {
   effects: RetirementEffect[];
   comments(): Promise<
-    Pick<OpenClawFeedbackProvider, 'identity' | 'getRepository' | 'findOwnIssueComment' | 'replies'>
+    Pick<FeedbackProvider, 'identity' | 'getRepository' | 'findOwnIssueComment' | 'replies'>
   >;
   delivery(): Promise<Pick<IssueDeliveryProvider, 'client' | 'retirementOutcome'>>;
   save(): Promise<void>;

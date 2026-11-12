@@ -1,5 +1,5 @@
 import { feedbackRevision } from './feedback-source.ts';
-import type { OpenClawFeedbackProvider } from './openclaw-feedback.ts';
+import type { FeedbackProvider } from './feedback-provider.ts';
 import {
   isReviewFeedback,
   reviewFeedback,
@@ -49,7 +49,7 @@ export function replyLocator(value: string) {
 }
 
 /** fixed provider readers verify the selected item and retain the original inline thread. */
-export default async function readReplyTarget(provider: OpenClawFeedbackProvider, url: string) {
+export default async function readReplyTarget(provider: FeedbackProvider, url: string) {
   const locator = replyLocator(url);
   const { owner, name, number } = locator;
   const repository = await provider.getRepository(owner, name);
@@ -119,10 +119,7 @@ export default async function readReplyTarget(provider: OpenClawFeedbackProvider
 export type ReplyTarget = Awaited<ReturnType<typeof readReplyTarget>>;
 
 /** Reconciliation reads the destination identity, not a possibly deleted source comment. */
-export async function verifyReplyDestination(
-  provider: OpenClawFeedbackProvider,
-  target: ReplyTarget,
-) {
+export async function verifyReplyDestination(provider: FeedbackProvider, target: ReplyTarget) {
   const current = await readReplyTarget(provider, target.url.split('#')[0]!);
   if (current.repositoryNodeId !== target.repositoryNodeId || current.nodeId !== target.nodeId)
     throw new Error('reply-target-diverged');

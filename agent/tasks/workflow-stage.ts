@@ -8,7 +8,7 @@ import {
 } from '../../manifest/assessment-schema.ts';
 import assessmentGuidance from './assessment/assessment-guidance.ts';
 import type { assessmentSelectionSchema } from './assessment/assessment-selection.ts';
-import type { CodexAssessmentSkill } from './assessment/codex-assessment-skill.ts';
+import type { AssessmentSkill } from './assessment/assessment-skill-source.ts';
 
 export type WorkflowStage = 'assessment' | 'implementation' | 'review' | 'feedback';
 export interface WorkflowSelection {
@@ -22,7 +22,7 @@ export async function selectWorkflowStage(input: {
   configuration?: AssessmentConfiguration;
   workspace: string;
   observedAt: number;
-  resolveSkill: (id: string) => Promise<CodexAssessmentSkill>;
+  resolveSkill: (id: string) => Promise<AssessmentSkill>;
 }): Promise<WorkflowSelection> {
   const requestedSkill =
     input.configuration?.skill ??

@@ -11,12 +11,12 @@ import assessmentMaterial from './assessment-material.ts';
 import { assessmentPresentationRequest } from './assessment-render.ts';
 import { assessmentResultContextSchema } from './assessment-result.ts';
 import type { AssessmentSelection } from './assessment-selection.ts';
-import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
+import type { AssessmentSkill } from './assessment-skill-source.ts';
 import type { DispatchGit } from '../dispatch/codex-dispatch-project.ts';
 import { type DirectEntryBinding } from '../direct-entry-store.ts';
 import type { nativeIssueContext } from '../context/native-issue-context.ts';
 import type { OpenClawDeliveryConnection } from '../delivery/openclaw-delivery.ts';
-import type { OpenClawFeedbackProvider } from '../feedback/openclaw-feedback.ts';
+import type { FeedbackProvider } from '../feedback/feedback-provider.ts';
 import { replyLocator } from '../feedback/reply-target.ts';
 import { selectWorkflowStage } from '../workflow-stage.ts';
 
@@ -33,9 +33,9 @@ export interface AssessmentEntryDependencies {
   now: number;
   git: DispatchGit;
   connectProvider(): Promise<
-    Pick<OpenClawFeedbackProvider, 'getRepository' | 'getItem' | 'getItemContext'>
+    Pick<FeedbackProvider, 'getRepository' | 'getItem' | 'getItemContext'>
   >;
-  resolveSkill(id: string): Promise<CodexAssessmentSkill>;
+  resolveSkill(id: string): Promise<AssessmentSkill>;
   assertCurrent(): Promise<void>;
   managed(target: { repository: string; number: number }): Promise<
     | {

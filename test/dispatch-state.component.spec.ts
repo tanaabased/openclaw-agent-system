@@ -75,6 +75,87 @@ describe('agent/shared dispatch state', () => {
     assert.equal((await new OpenClawDispatchStore(root, 'c'.repeat(64)).read()).records.length, 0);
   });
 
+  it('should retain valid native turn receipts across restart', async () => {
+    const store = new OpenClawDispatchStore(root, scope);
+    const turns: NonNullable<OpenClawDispatchRecord['nativeTurns']> = [
+      { role: 'assessment', turn: { runId: 'attempted', status: 'attempted', message: 'plan' } },
+      { role: 'assessment', turn: { runId: 'accepted', status: 'accepted', message: 'plan' } },
+      {
+        role: 'assessment',
+        turn: {
+          runId: 'consumed',
+          status: 'consumed',
+          message: 'plan',
+          consumedByEventId: 'input',
+        },
+      },
+      {
+        role: 'assessment',
+        turn: {
+          runId: 'completed',
+          status: 'completed',
+          consumedByEventId: 'input',
+          replyEventId: 'reply',
+          executionModel: 'provider/model',
+        },
+      },
+      {
+        role: 'assessment',
+        turn: { runId: 'failed', status: 'completed', consumedByEventId: 'input', failed: true },
+      },
+    ];
+    await store.exclusive(async (state, save) => {
+      state.records.push({ ...pending(), nativeTurns: turns });
+      await save();
+    });
+    assert.deepEqual(
+      (await new OpenClawDispatchStore(root, scope).read()).records[0]!.nativeTurns,
+      turns,
+    );
+  });
+
+  it('should reject inconsistent native turn receipts without replacing committed evidence', async () => {
+    const store = new OpenClawDispatchStore(root, scope);
+    await store.exclusive(async (state, save) => {
+      state.records.push(pending());
+      await save();
+    });
+    const before = await readFile(store.path, 'utf8');
+    const accepted = { runId: 'run', status: 'accepted' as const, message: 'plan' };
+    const completed = {
+      runId: 'run',
+      status: 'completed' as const,
+      consumedByEventId: 'input',
+      replyEventId: 'reply',
+    };
+    const invalid: NonNullable<OpenClawDispatchRecord['nativeTurns']>[] = [
+      [
+        { role: 'assessment', turn: accepted },
+        { role: 'assessment', turn: accepted },
+      ],
+      [{ role: 'feedback', turn: accepted }],
+      [{ role: 'assessment', turn: { ...accepted, message: undefined } }],
+      [{ role: 'assessment', turn: { ...accepted, consumedByEventId: 'input' } }],
+      [{ role: 'assessment', turn: { ...accepted, status: 'consumed' } }],
+      [{ role: 'assessment', turn: { ...accepted, replyEventId: 'reply' } }],
+      [{ role: 'assessment', turn: { ...accepted, executionModel: 'provider/model' } }],
+      [{ role: 'assessment', turn: { ...accepted, failed: true } }],
+      [{ role: 'assessment', turn: { ...completed, message: 'plan' } }],
+      [{ role: 'assessment', turn: { ...completed, consumedByEventId: undefined } }],
+      [{ role: 'assessment', turn: { ...completed, replyEventId: undefined } }],
+    ];
+    for (const nativeTurns of invalid) {
+      await assert.rejects(
+        store.exclusive(async (state, save) => {
+          state.records[0]!.nativeTurns = nativeTurns;
+          await save();
+        }),
+        /dispatch-state-invalid/,
+      );
+      assert.equal(await readFile(store.path, 'utf8'), before);
+    }
+  });
+
   it('should preserve native-run bounds across restart and reject malformed passes', async () => {
     const store = new OpenClawDispatchStore(root, scope);
     const pass = {

@@ -20,7 +20,7 @@ import feedbackReply, {
 } from '../agent/tasks/feedback/feedback-reply.ts';
 import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import OpenClawDispatch from '../agent/tasks/dispatch/openclaw-dispatch.ts';
-import type { OpenClawFeedbackProvider } from '../agent/tasks/feedback/openclaw-feedback.ts';
+import type { FeedbackProvider } from '../agent/tasks/feedback/feedback-provider.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import replyOwner, { type ReplyOwner } from '../agent/tasks/feedback/reply-owner.ts';
 import ReplyStore from '../agent/tasks/feedback/reply-store.ts';
@@ -36,7 +36,7 @@ import hydrateImplementation from './implementation-material-fixture.ts';
 import nativeMaterialFixture from './native-material-fixture.ts';
 const url = 'https://github.com/owner/repo/issues/3';
 describe('agent/feedback-reply', () => {
-  let root: string, deps: FeedbackReplyDependencies, provider: OpenClawFeedbackProvider;
+  let root: string, deps: FeedbackReplyDependencies, provider: FeedbackProvider;
   let selections: number, writes: number, lost: boolean, hidden: boolean;
   let postedNumber: number | undefined;
   let posted: { nodeId: string; databaseId: number; body: string } | undefined;

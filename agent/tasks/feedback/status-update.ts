@@ -1,11 +1,11 @@
 import { automationHash } from '../../automation-hash.ts';
-import type { OpenClawFeedbackProvider } from './openclaw-feedback.ts';
+import type { FeedbackProvider } from './feedback-provider.ts';
 import type { ReplyTarget } from './reply-target.ts';
 import type { StatusUpdate } from '../../../tools/dispatch/reply-schema.ts';
 
 /** bounded provider observations stay separate from the model's materiality judgment. */
 export default async function statusUpdateContext(
-  provider: OpenClawFeedbackProvider,
+  provider: FeedbackProvider,
   target: ReplyTarget,
   retainedPullRequest?: number,
 ) {

@@ -1,7 +1,6 @@
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import { type Static } from 'typebox';
-import type GitHubReviewReplyClient from '../../../channels/github/provider/review-reply-client.ts';
-import type { GitHubNotificationProviderClient } from '../../../channels/github/provider/work-event-types.ts';
+import type { FeedbackProvider } from './feedback-provider.ts';
 import type { GitHubCanonicalWorkItem } from '../../../channels/github/provider/work-item.ts';
 import type { GitHubNotificationPolicy } from '../../../channels/github/workflow-policy.ts';
 import type { DispatchRequest } from '../../../credentials/session-dispatch.ts';
@@ -20,9 +19,6 @@ import observeIssueActivity from '../../openclaw-session-activity.ts';
 import type { DispatchCaller } from '../../openclaw-session-create.ts';
 export { default as authorizeFeedback } from './feedback-source-context.ts';
 
-export type OpenClawFeedbackProvider = GitHubNotificationProviderClient & {
-  replies: Pick<GitHubReviewReplyClient, 'find' | 'create'>;
-};
 export type OpenClawFeedbackAction = Extract<
   Static<typeof dispatchParameters>,
   { action: 'feedback' }
@@ -101,7 +97,7 @@ export default async function openClawFeedback(input: {
   caller: DispatchCaller;
   request: DispatchRequest;
   config: OpenClawConfig;
-  provider: OpenClawFeedbackProvider;
+  provider: FeedbackProvider;
   policy: GitHubNotificationPolicy;
   intake: IntakeRecord;
   assertCurrent(): Promise<void>;

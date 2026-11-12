@@ -3,28 +3,21 @@ import { basename, isAbsolute } from 'node:path';
 import { nativeObject } from '../../automations/automation-gateway.ts';
 import type { CodexThreadRequest } from '../../codex-thread-client.ts';
 import { normalizeAssessmentSkillId } from '../../../manifest/assessment-schema.ts';
-import assessmentSkillSource from './assessment-skill-source.ts';
-
-export interface CodexAssessmentSkill {
-  name: string;
-  path: string;
-  scope: string;
-  digest: string;
-}
+import assessmentSkillSource, { type AssessmentSkill } from './assessment-skill-source.ts';
 
 /** resolve one active host-discovered local skill, never a manifest-supplied path. */
 export default async function codexAssessmentSkill(
   request: CodexThreadRequest,
   cwd: string,
   id: string,
-): Promise<CodexAssessmentSkill> {
+): Promise<AssessmentSkill> {
   return codexSkillResolver(request, cwd)(id);
 }
 
 /** keep discovery local to one context request; selected files are still read independently. */
 export function codexSkillResolver(request: CodexThreadRequest, cwd: string) {
   let catalog: ReturnType<typeof readCatalog> | undefined;
-  return async (id: string): Promise<CodexAssessmentSkill> => {
+  return async (id: string): Promise<AssessmentSkill> => {
     const selected = normalizeAssessmentSkillId(id);
     const skills = await (catalog ??= readCatalog(request, cwd).catch((error) => {
       catalog = undefined;

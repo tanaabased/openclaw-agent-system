@@ -3,12 +3,18 @@ import { constants } from 'node:fs';
 import { open, realpath } from 'node:fs/promises';
 
 import isFilesystemAccessError from '../../../utils/is-filesystem-access-error.ts';
-import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
+
+export interface AssessmentSkill {
+  name: string;
+  path: string;
+  scope: string;
+  digest: string;
+}
 
 /** Bounded source read shared by runtime-owned skill discovery adapters. */
 export default async function assessmentSkillSource(
-  skill: Omit<CodexAssessmentSkill, 'digest'>,
-): Promise<CodexAssessmentSkill> {
+  skill: Omit<AssessmentSkill, 'digest'>,
+): Promise<AssessmentSkill> {
   let path: string;
   let bytes: Buffer;
   try {

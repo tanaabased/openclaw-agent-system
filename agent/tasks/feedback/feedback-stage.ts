@@ -1,6 +1,6 @@
 import type { AssessmentSelection } from '../assessment/assessment-selection.ts';
 import { selectWorkflowStage } from '../workflow-stage.ts';
-import type { CodexAssessmentSkill } from '../assessment/codex-assessment-skill.ts';
+import type { AssessmentSkill } from '../assessment/assessment-skill-source.ts';
 import type { GitHubNotificationPolicy } from '../../../channels/github/workflow-policy.ts';
 
 /** the conversation owner selects composition independently of feedback admission. */
@@ -10,7 +10,7 @@ export default function selectFeedbackStage(input: {
   workspace: string;
   observedAt: number;
   retained?: AssessmentSelection;
-  resolveSkill: (id: string) => Promise<CodexAssessmentSkill>;
+  resolveSkill: (id: string) => Promise<AssessmentSkill>;
 }) {
   const feedback =
     input.workflow === 'issue-assignment'

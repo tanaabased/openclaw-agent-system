@@ -13,7 +13,7 @@ import { selectCodexTaskContext } from '../context/codex-task-context.ts';
 import { connectCodexThreads } from '../../codex-thread-client.ts';
 import feedbackReply from './feedback-reply.ts';
 import { dispatchAdmission, managedTargetUrl } from '../managed-issue.ts';
-import type { OpenClawFeedbackProvider } from './openclaw-feedback.ts';
+import type { FeedbackProvider } from './feedback-provider.ts';
 import replyOwnerContext from './reply-owner-context.ts';
 import replyOwner from './reply-owner.ts';
 import selectReplyDraft from './reply-selection.ts';
@@ -146,7 +146,7 @@ async function codexReplyScoped(
         return { inputId: match.attempt.id, message: match.event.source };
       });
     const turn = await nativeInput();
-    const connect = async (): Promise<OpenClawFeedbackProvider> => {
+    const connect = async (): Promise<FeedbackProvider> => {
       const providerConnection = await (deps.feedbackConnect ?? connectCodexFeedback)(
         current.workspace,
         AbortSignal.timeout(60000),

@@ -2,7 +2,7 @@ import type { AgentManifest } from '../../../manifest/types.ts';
 import { nativeAssessmentInstructions } from '../assessment/assessment-instructions.ts';
 import { assessmentPresentationRequest } from '../assessment/assessment-render.ts';
 import { assessmentResultFormat } from '../assessment/assessment-result.ts';
-import type { CodexAssessmentSkill } from '../assessment/codex-assessment-skill.ts';
+import type { AssessmentSkill } from '../assessment/assessment-skill-source.ts';
 import type { SharedDispatchRecord } from '../dispatch/dispatch-state.ts';
 import type { feedbackInputContext } from '../feedback/feedback-input.ts';
 import selectFeedbackStage from '../feedback/feedback-stage.ts';
@@ -19,7 +19,7 @@ export default async function taskTurnContext(input: {
   target: string;
   record: SharedDispatchRecord;
   stage: string;
-  resolveSkill(id: string): Promise<CodexAssessmentSkill>;
+  resolveSkill(id: string): Promise<AssessmentSkill>;
   feedback?: ReturnType<typeof feedbackInputContext>;
   feedbackLimitation?: {
     code: string;

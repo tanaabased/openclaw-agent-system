@@ -1,5 +1,5 @@
 import type { AgentModelsConfiguration } from '../../manifest/models-schema.ts';
-import type { CodexAssessmentSkill } from '../tasks/assessment/codex-assessment-skill.ts';
+import type { AssessmentSkill } from '../tasks/assessment/assessment-skill-source.ts';
 import resolveModelRoutingRequest from './model-routing-request.ts';
 import routingInstructions, {
   routingInstructionsDigest,
@@ -14,7 +14,7 @@ export default async function initialModelRouting(input: {
   runtime: 'codex' | 'openclaw';
   workspace: string;
   observedAt?: number;
-  resolveSkill?: (id: string) => Promise<CodexAssessmentSkill>;
+  resolveSkill?: (id: string) => Promise<AssessmentSkill>;
 }) {
   const output = resolveModelRoutingRequest(
     input.models,

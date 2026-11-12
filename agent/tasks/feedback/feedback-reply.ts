@@ -3,13 +3,13 @@ import { cardCopyInstructions } from '../../../channels/github/presentation/card
 
 import assessmentGuidance from '../assessment/assessment-guidance.ts';
 import { automationHash } from '../../automation-hash.ts';
-import type { CodexAssessmentSkill } from '../assessment/codex-assessment-skill.ts';
+import type { AssessmentSkill } from '../assessment/assessment-skill-source.ts';
 import feedbackComposition from './feedback-composition.ts';
 import { feedbackResponseInstructions } from './feedback-presentation.ts';
 import replyMaterial from './reply-material.ts';
 import redactFeedback from './feedback-redaction.ts';
 import selectFeedbackStage from './feedback-stage.ts';
-import type { OpenClawFeedbackProvider } from './openclaw-feedback.ts';
+import type { FeedbackProvider } from './feedback-provider.ts';
 import taskUpdate from './task-update.ts';
 import type replyOwner from './reply-owner.ts';
 import ReplyStore, { type ReplyBinding, type ReplyDraft } from './reply-store.ts';
@@ -52,8 +52,8 @@ export interface FeedbackReplyDependencies {
   manifest: AgentManifest;
   now: number;
   readManifest?(): Promise<AgentManifest>;
-  provider: OpenClawFeedbackProvider;
-  resolveSkill(id: string): Promise<CodexAssessmentSkill>;
+  provider: FeedbackProvider;
+  resolveSkill(id: string): Promise<AssessmentSkill>;
   assertCurrent(): Promise<void>;
   managed(
     target: ReplyTarget,

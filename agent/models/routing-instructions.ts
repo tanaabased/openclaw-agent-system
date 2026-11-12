@@ -4,7 +4,7 @@ import guidanceReference from '../tasks/context/guidance-reference.ts';
 import assessmentGuidance from '../tasks/assessment/assessment-guidance.ts';
 import { assessmentSelectionSchema } from '../tasks/assessment/assessment-selection.ts';
 import { automationHash } from '../automation-hash.ts';
-import type { CodexAssessmentSkill } from '../tasks/assessment/codex-assessment-skill.ts';
+import type { AssessmentSkill } from '../tasks/assessment/assessment-skill-source.ts';
 import { RoutingError } from './model-routing.ts';
 import {
   normalizeAssessmentSkillId,
@@ -26,7 +26,7 @@ export default async function routingInstructions(input: {
   configuration?: AssessmentConfiguration;
   workspace: string;
   observedAt: number;
-  resolveSkill?: (id: string) => Promise<CodexAssessmentSkill>;
+  resolveSkill?: (id: string) => Promise<AssessmentSkill>;
 }): Promise<RoutingInstructions> {
   const requestedSkill = normalizeAssessmentSkillId(
     input.configuration?.skill ?? defaultRoutingSkill,

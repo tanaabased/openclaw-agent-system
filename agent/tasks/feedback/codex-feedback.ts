@@ -37,7 +37,7 @@ import { observeFeedbackPolicy } from './feedback-source.ts';
 import { retainedIssueProgression } from '../issue-progression.ts';
 import { WorkflowPolicyHeld } from '../live-workflow-policy.ts';
 import { dispatchAdmission } from '../managed-issue.ts';
-import type { OpenClawFeedbackProvider } from './openclaw-feedback.ts';
+import type { FeedbackProvider } from './feedback-provider.ts';
 import retainedIntakePolicy from '../retained-intake-policy.ts';
 import deliverTaskInput, { type TaskInputReceipt } from '../context/task-input-delivery.ts';
 import workflowFailure from '../workflow-failure.ts';
@@ -53,7 +53,7 @@ const requestSchema = Type.Object(
 );
 export interface CodexFeedbackDependencies extends CodexDispatchDependencies {
   replyConnection?: typeof connectCodexThreads;
-  replyProvider?: (workspace: string, signal: AbortSignal) => Promise<OpenClawFeedbackProvider>;
+  replyProvider?: (workspace: string, signal: AbortSignal) => Promise<FeedbackProvider>;
   feedbackConnect?: typeof connectCodexFeedback;
   continuationNative?: ReturnType<typeof codexContinuationNative>;
   nativeRequest?: Parameters<typeof unsubmittedNativeRequest>[0];
