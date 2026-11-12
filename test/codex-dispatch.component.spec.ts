@@ -419,6 +419,7 @@ describe('agent/codex-dispatch', () => {
       join(workspace, 'agent.yaml'),
       JSON.stringify({
         ...manifest,
+        debug: true,
         github: { ...manifest.github, routing: [], 'max-concurrent-items': 1 },
       }),
     );
@@ -467,6 +468,17 @@ describe('agent/codex-dispatch', () => {
       const recovered = await request('launch', { operation: 'reconcile', target });
       assert.equal(recovered.destination, parallel.id);
     }
+    const shown = await renderAssessment(result, {
+      threadId: parallel.id,
+      connect: async () => {
+        assert.fail('adopted base needs no optional lookup');
+      },
+    });
+    assert.match(
+      String(shown.presentation),
+      new RegExp(`${commit} \\(origin/collaborator-work\\)`),
+    );
+    assert.match(String(shown.presentation), /PR base.*`release`/);
     const intake = await request('next', { projects }, { threadId: 'intake-thread' });
     assert.ok(!['prepared', 'routing-required'].includes(String(intake.status)));
     assert.equal(
@@ -1867,6 +1879,33 @@ describe('agent/codex-dispatch', () => {
       assert.equal(records[0]!.threadId, 'issue-thread');
       assert.equal('result' in records[0]!, false);
     });
+
+  it('should show the original checkout and effective base through the codex assessment adapter', async () => {
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify({ ...manifest, debug: true }));
+    await prepare();
+    created();
+    fixture.repository.defaultBranch = 'release';
+    const child = { threadId: 'issue-thread' };
+    const known = await renderAssessment(result, child);
+    assert.match(String(known.presentation), new RegExp(`${commit} \\(origin/main\\)`));
+    assert.match(String(known.presentation), /PR base.*`release`/);
+    const failed = await renderAssessment(result, {
+      ...child,
+      connect: async () => {
+        throw Error('optional metadata unavailable');
+      },
+    });
+    assert.match(String(failed.presentation), new RegExp(commit));
+    assert.match(String(failed.presentation), /PR base.*`unknown`/);
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify({ ...manifest, debug: false }));
+    const hidden = await renderAssessment(result, {
+      ...child,
+      connect: async () => {
+        assert.fail('debug off must not connect');
+      },
+    });
+    assert.doesNotMatch(String(hidden.presentation), /Checkout starting point|PR base/);
+  });
 
   it('should use live assessment guidance without expanding authority', async () => {
     await writeFile(join(workspace, 'guidance.md'), 'Prefer small fixes.');

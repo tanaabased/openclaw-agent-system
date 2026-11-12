@@ -2061,6 +2061,52 @@ describe('agent/openclaw issue dispatch', () => {
       /target-unavailable/,
     );
   });
+  it('should show independent checkout and base facts through the openclaw assessment adapter', async () => {
+    manifest.debug = true;
+    const input = await next();
+    await prepare(input);
+    fixture.repository.defaultBranch = 'release';
+    const knownBase = await renderAssessment(input.id);
+    assert.ok('presentation' in knownBase);
+    assert.match(String(knownBase.presentation), /Checkout starting point.*unknown/);
+    assert.match(String(knownBase.presentation), /PR base.*`release`/);
+    const connect = service.dependencies.connect;
+    service.dependencies.connect = async () => {
+      throw Error('optional metadata unavailable');
+    };
+    const failed = await renderAssessment(input.id);
+    assert.ok('presentation' in failed);
+    assert.match(String(failed.presentation), /PR base.*`unknown`/);
+    const { journal } = await service.scope(manifest, root);
+    await journal.transaction(async (state, save) => {
+      state.records[0]!.adoptedPullRequest = {
+        pullRequestNodeId: 'PR_selected',
+        pullRequestNumber: 7,
+        head: 'a'.repeat(40),
+        branch: 'feature/selected',
+        base: 'stable',
+        authorId: 'U_collaborator',
+        title: 'Selected work',
+        body: '',
+      };
+      await save();
+    });
+    const before = await record();
+    const known = await renderAssessment(input.id);
+    assert.ok('presentation' in known);
+    assert.match(
+      String(known.presentation),
+      new RegExp(`${'a'.repeat(40)} \\(feature/selected\\)`),
+    );
+    assert.match(String(known.presentation), /PR base.*`stable`/);
+    assert.deepEqual(await record(), before);
+    manifest.debug = false;
+    const hidden = await renderAssessment(input.id);
+    assert.ok('presentation' in hidden);
+    assert.doesNotMatch(String(hidden.presentation), /Checkout starting point|PR base/);
+    service.dependencies.connect = connect;
+  });
+
   it('should snapshot custom routing and keep prepared settings after guidance edits', async () => {
     manifest.debug = true;
     manifest.models!.routing = { skill: 'custom-routing', guidance: { file: 'routing.md' } };
