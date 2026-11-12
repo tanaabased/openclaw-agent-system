@@ -1,3 +1,5 @@
+import { buildControlUiSessionPath } from 'openclaw/plugin-sdk/session-discussion';
+
 import { intakeRemediation, type IntakeState } from '../channels/github/intake/record-store.ts';
 import {
   githubNotificationQuote,
@@ -162,16 +164,22 @@ export default function openclawIntakeReport(input: {
       ? `${item.repository.owner.login}/${item.repository.name}#${item.issue.number}`
       : 'Issue';
   };
-  for (const record of started)
-    lines.push(
-      `- **Issue:** [${text(label(record))}](/chat?session=${encodeURIComponent(record.threadId!)})`,
-    );
+  const chatLink = (record: OpenClawDispatchRecord) => {
+    const title = text(label(record));
+    const path = buildControlUiSessionPath({
+      namespace: 'chat',
+      sessionKey: record.threadId!,
+      exactKey: true,
+    });
+    return path ? `[${title}](${path})` : title;
+  };
+  for (const record of started) lines.push(`- **Issue:** ${chatLink(record)}`);
   if (started.length) lines.push('');
   for (const record of active) {
     const count = delivered.filter((entry) => entry.record === record).length;
     if (count)
       lines.push(
-        `- **Feedback delivered to chat:** [${text(label(record))}](/chat?session=${encodeURIComponent(record.threadId!)}) · ${count} item${count === 1 ? '' : 's'}`,
+        `- **Feedback delivered to chat:** ${chatLink(record)} · ${count} item${count === 1 ? '' : 's'}`,
       );
   }
   if (delivered.length) lines.push('');

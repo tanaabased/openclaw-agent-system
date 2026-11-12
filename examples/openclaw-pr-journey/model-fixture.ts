@@ -639,13 +639,16 @@ function respond(
     if (published.status !== 'published' || typeof published.presentation !== 'string') return;
     return { content: published.presentation };
   }
+  const explicitOperatorId = /Operator request for managed issue ([a-f0-9]{64}):/u.exec(
+    prompt,
+  )?.[1];
   const id =
     (currentFacts(messages, false).stage === 'assessment'
       ? currentFacts(messages, false).receipt
       : undefined) ??
     /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
   let automaticId: string | undefined;
-  if (id) {
+  if (id && !explicitOperatorId) {
     const context = currentFacts(messages);
     assert.equal(
       context.status,
@@ -690,8 +693,7 @@ function respond(
       return published;
     automaticId = id;
   }
-  const operatorId =
-    automaticId ?? /Operator request for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1];
+  const operatorId = automaticId ?? explicitOperatorId;
   if (operatorId) {
     const selectedPr =
       /Bind existing PR (https:\/\/github\.com\/[^\s]+\/pull\/[1-9][0-9]*)\./u.exec(prompt)?.[1];

@@ -1078,6 +1078,8 @@ for (const scenario of [
         const input = request(
           `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`,
         );
+        supplyFacts(input, { stage: 'assessment', receipt: id });
+        assert.equal((await action(input, 'implementation')).operation, 'context');
         append(input, 'work-context', { status: 'blocked', code: 'dispatch-operator-required' });
         assert.equal(matchFixture([...scenario.fixtures], input), null);
       });

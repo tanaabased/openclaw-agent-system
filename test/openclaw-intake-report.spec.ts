@@ -17,7 +17,7 @@ describe('agent/openclaw-intake-report', () => {
     const records = ['one', 'two'].map((id, index) => ({
       id,
       intakeId: id,
-      threadId: `chat-${id}`,
+      threadId: `agent:fixture:dashboard:chat-${id}`,
       sessionCreation: { verified: true },
       intakeReportedAt: 1,
       feedback: {
@@ -51,11 +51,11 @@ describe('agent/openclaw-intake-report', () => {
     assert.match(first.response, /3 feedback items delivered/);
     assert.match(
       first.response,
-      /Feedback delivered to chat:\*\* \[owner\/repo#3\]\(\/chat\?session=chat-one\) · 2 items/,
+      /Feedback delivered to chat:\*\* \[owner\/repo#3\]\(\/chat\/fixture\/dashboard\/chat-one\) · 2 items/,
     );
     assert.match(
       first.response,
-      /Feedback delivered to chat:\*\* \[owner\/repo#4\]\(\/chat\?session=chat-two\) · 1 item/,
+      /Feedback delivered to chat:\*\* \[owner\/repo#4\]\(\/chat\/fixture\/dashboard\/chat-two\) · 1 item/,
     );
     assert.deepEqual(records, before);
     for (const record of records)
@@ -300,7 +300,7 @@ describe('agent/openclaw-intake-report', () => {
       observation: { status: 'blocked', code: 'intake-search-incomplete', changed: true },
     });
     assert.equal(report.started.length, 1);
-    assert.match(report.response, /chat\?session=agent%3Areceiver%3Aissue%3A1/);
+    assert.ok(report.response.includes('/chat/receiver/issue/1'));
     assert.match(report.response, /1\/2 occupied · 1 available/);
     assert.match(report.response, /pending assignments are unknown/);
     assert.doesNotMatch(report.response, /HIDDEN-PROVIDER-PAYLOAD|Queued feedback|plan-ready/);

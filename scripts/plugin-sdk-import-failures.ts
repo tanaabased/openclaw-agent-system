@@ -24,6 +24,7 @@ const supportedPluginSdkSubpaths = new Set([
   'runtime',
   'runtime-config-snapshot',
   'secret-ref-runtime',
+  'session-discussion',
   'session-store-runtime',
   'session-visibility',
   'setup-runtime',

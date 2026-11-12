@@ -1710,7 +1710,7 @@ describe('agent/openclaw task-feedback', () => {
     assert.ok('response' in first);
     assert.match(
       first.response,
-      /Feedback delivered to chat:.*owner\/repo#3.*chat\?session=.*1 item/,
+      /Feedback delivered to chat:.*owner\/repo#3.*\/chat\/receiver\/dashboard\/agent-system-issue-[a-f0-9]{64}.*1 item/,
     );
     assert.ok((await fixtureState.record()).feedback!.events[0]!.intakeReportedAt !== undefined);
     const retry = await fixtureState.service.run(fixtureState.manifest, fixtureState.root, caller, {
