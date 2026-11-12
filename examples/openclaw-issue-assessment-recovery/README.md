@@ -14,9 +14,9 @@ public summary from its independent draft while keeping the same chat and checko
 
 ## What Does Not Belong Here
 
-- Author-policy changes: [feedback policy](../openclaw-issue-feedback-policy/README.md). Assignment removal and reactivation: [assignment policy](../openclaw-issue-assignment-policy/README.md) and [reactivation](../openclaw-issue-reactivation/README.md).
-- Retirement and reset: [retirement](../openclaw-notifications-retirement/README.md) and [reset](../openclaw-notifications-reset/README.md).
-- Ordinary planning and PR delivery: [issue planning](../openclaw-issue-journey/README.md) and [PR delivery](../openclaw-pr-journey/README.md).
+- Author-policy changes: [feedback policy](../openclaw-issue-assignment-policy/README.md). Assignment removal and reactivation: [assignment policy](../openclaw-issue-assignment-policy/README.md) and [reactivation](../openclaw-issue-assignment-policy/README.md).
+- Retirement and reset: [retirement](../openclaw-notifications-retirement/README.md) and [reset](../openclaw-notifications-retirement/README.md).
+- Ordinary planning and PR delivery: [issue planning](../openclaw-issue-conversation/README.md) and [PR delivery](../openclaw-pr-journey/README.md).
 
 ## Notes
 

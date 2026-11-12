@@ -28,11 +28,12 @@ import {
   createIntakeExampleScenario,
   intakeExampleScenario,
 } from '../examples/openclaw-issue-intake/model-fixture.ts';
-import { issueExampleScenario } from '../examples/openclaw-issue-journey/model-fixture.ts';
+import { issueExampleScenario } from '../examples/openclaw-issue-conversation/issue-model.ts';
 import {
   progressionExampleScenario,
+  createProgressionScenario,
   retainedPlan,
-} from '../examples/openclaw-issue-progression/model-fixture.ts';
+} from '../examples/openclaw-issue-auto-plan/progression-model.ts';
 import { retirementExampleScenario } from '../examples/openclaw-notifications-retirement/model-fixture.ts';
 import { prDiscoveryExampleScenario } from '../examples/openclaw-pr-discovery/model-fixture.ts';
 import {
@@ -108,9 +109,7 @@ for (const scenario of [
   const digest = 'd'.repeat(64);
 
   const source = 'https://github.com/tanaabased/big-test-bucket/issues/123';
-  const hookAssessment = ['openclaw-pr-journey', 'openclaw-issue-progression'].includes(
-    scenario.id,
-  );
+  const hookAssessment = ['openclaw-pr-journey', 'openclaw-issue-auto-plan'].includes(scenario.id);
 
   function supplyFacts(input: ChatCompletionRequest, values: Record<string, unknown>) {
     const marker = 'Agent System model-only current-turn facts (keep private):\n';
@@ -210,7 +209,7 @@ for (const scenario of [
   }
 
   if (
-    ['openclaw-issue-journey', 'openclaw-pr-journey', 'openclaw-issue-progression'].includes(
+    ['openclaw-issue-conversation', 'openclaw-pr-journey', 'openclaw-issue-auto-plan'].includes(
       scenario.id,
     )
   ) {
@@ -540,7 +539,7 @@ for (const scenario of [
         });
       });
 
-    if (scenario.id === 'openclaw-issue-journey')
+    if (scenario.id === 'openclaw-issue-conversation')
       it('should correct one rejected direct assessment shape without repeating investigation or changing source', async () => {
         const input = request(`Direct issue assessment target: ${source} checkout: /tmp/owned`);
         assert.equal((await action(input, 'assessment')).operation, 'context');
@@ -893,7 +892,7 @@ for (const scenario of [
       else assert.equal(matchFixture([...scenario.fixtures], missing), null);
     });
 
-    if (!['openclaw-pr-journey', 'openclaw-issue-progression'].includes(scenario.id))
+    if (!['openclaw-pr-journey', 'openclaw-issue-auto-plan'].includes(scenario.id))
       it('should consume fresh later evidence after recovery', async () => {
         const later = request('Initial assessment.');
         append(later, 'assessment-source', {
@@ -941,12 +940,12 @@ for (const scenario of [
             id,
             project: { path: '/fixture' },
             assessment:
-              scenario.id === 'openclaw-issue-journey'
+              scenario.id === 'openclaw-issue-conversation'
                 ? { skill: { name: 'generic-assessment', path: '/fixture/SKILL.md' } }
                 : {},
             resultFormat: assessmentResultFormat,
           });
-          if (scenario.id === 'openclaw-issue-journey') {
+          if (scenario.id === 'openclaw-issue-conversation') {
             const read = await response(input);
             assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
             append(input, 'assessment-skill', 'Generic Assessment');
@@ -979,16 +978,16 @@ for (const scenario of [
         evidence: { source: 'https://github.com/owner/repo/issues/3' },
         project: { path: '/tmp/managed-worktree' },
         assessment: {
-          defaultSkill: scenario.id !== 'openclaw-issue-journey',
+          defaultSkill: scenario.id !== 'openclaw-issue-conversation',
           skill:
-            scenario.id === 'openclaw-issue-journey'
+            scenario.id === 'openclaw-issue-conversation'
               ? { name: 'generic-assessment', path: '/fixture/SKILL.md' }
               : { path: '/fixture/SKILL.md' },
         },
         resultFormat: assessmentResultFormat,
       };
       append(input, 'context', context);
-      if (scenario.id === 'openclaw-issue-journey') {
+      if (scenario.id === 'openclaw-issue-conversation') {
         const read = await response(input);
         assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
         assert.deepEqual(JSON.parse(read.toolCalls![0]!.arguments), { path: '/fixture/SKILL.md' });
@@ -1059,7 +1058,7 @@ for (const scenario of [
       append(invalid, 'git', { exitCode: 0, stdout: '/tmp/other', truncated: false });
       assert.equal(matchFixture([...scenario.fixtures], invalid), null);
     });
-    if (scenario.id === 'openclaw-issue-progression') {
+    if (scenario.id === 'openclaw-issue-auto-plan') {
       it('should ask an auto clarification in native chat without recording another assessment', async () => {
         const selected = resolveExampleModelScenario('openclaw-issue-auto-plan');
         const input = request(
@@ -1078,7 +1077,7 @@ for (const scenario of [
       for (const interrupted of [false, true])
         it(`should select auto work in native context with interruption ${interrupted}`, async () => {
           const selected = interrupted
-            ? resolveExampleModelScenario('openclaw-issue-decision-recovery')
+            ? createProgressionScenario('interrupted-fixture', true)
             : scenario;
           const input = request(
             `Consider current plan for managed issue ${id}: decide whether to implement.`,
@@ -1470,7 +1469,7 @@ for (const scenario of [
         );
       });
     }
-    if (scenario.id === 'openclaw-issue-journey')
+    if (scenario.id === 'openclaw-issue-conversation')
       it('should drive typed status composition once and keep no-op independent of composer and publication', async () => {
         const input = request(
           `Operator status update target: ${source}\nDecision: use shared replies.`,
@@ -1522,7 +1521,7 @@ for (const scenario of [
         });
         assert.deepEqual(await response(current), { content: 'Already current.' });
       });
-    if (scenario.id === 'openclaw-issue-journey')
+    if (scenario.id === 'openclaw-issue-conversation')
       it('should select queued feedback by its received source before composing a source-bound reply', async () => {
         const input = request(`> Explain the plan. [Comment](${source}#issuecomment-42)`);
         const privateContext = openclawTurnContext(
@@ -1580,7 +1579,7 @@ for (const scenario of [
         assert.equal(composed.operation, 'compose');
         assert.equal(composed.target, source);
       });
-    if (scenario.id === 'openclaw-issue-journey')
+    if (scenario.id === 'openclaw-issue-conversation')
       it('should answer github and direct questions from native conversation without a result checkpoint', async () => {
         const github = request(
           `Call agent_system_dispatch with action feedback, operation context, id ${id}, eventId ${'e'.repeat(64)}`,
@@ -1608,7 +1607,7 @@ for (const scenario of [
             'The retained plan proposes documenting disposable issue cleanup after evidence is captured. Implementation remains unstarted.',
         });
       });
-    if (scenario.id === 'openclaw-issue-journey')
+    if (scenario.id === 'openclaw-issue-conversation')
       it('should answer ordinary clarification using native context without saved revisions', async () => {
         for (const stage of ['Clarify', 'Answer']) {
           const input = request(
@@ -1645,11 +1644,12 @@ for (const scenario of [
           await publishNativePlan(input);
         }
       });
-    if (scenario.id !== 'openclaw-issue-progression')
+    if (scenario.id !== 'openclaw-issue-auto-plan')
       for (const [initial, driver] of scenario.id === 'openclaw-pr-journey'
         ? ([
             [true, 'openclaw-pr-journey'],
             [false, 'openclaw-pr-journey'],
+
             [false, 'openclaw-pr-discovery'],
           ] as const)
         : ([[false, undefined]] as const))

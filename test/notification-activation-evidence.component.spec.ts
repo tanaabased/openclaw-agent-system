@@ -33,16 +33,13 @@ jq() { cat; }
 `;
 
 for (const scenario of [
-  'openclaw-issue-journey',
   'openclaw-issue-conversation',
   'openclaw-pr-journey',
   'openclaw-pr-update',
   'openclaw-pr-discovery',
   'openclaw-issue-intake',
   'openclaw-issue-assessment-recovery',
-  'openclaw-issue-feedback-policy',
   'openclaw-issue-assignment-policy',
-  'openclaw-issue-reactivation',
   'openclaw-notifications-retirement',
   'openclaw-notifications-reset',
 ]) {

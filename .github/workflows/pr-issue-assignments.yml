@@ -24,16 +24,9 @@ jobs:
         example:
           - openclaw-issue-intake
           - openclaw-issue-assessment-recovery
-          - openclaw-issue-feedback-policy
           - openclaw-issue-assignment-policy
-          - openclaw-issue-reactivation
-          - openclaw-issue-journey
           - openclaw-issue-conversation
-          - openclaw-issue-progression
-          - openclaw-issue-decision-recovery
-          - openclaw-issue-work
           - openclaw-issue-work-custom
-          - openclaw-issue-auto-work
           - openclaw-issue-auto-plan
     steps:
       - name: Checkout code

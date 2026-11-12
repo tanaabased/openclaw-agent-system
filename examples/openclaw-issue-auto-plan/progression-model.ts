@@ -436,4 +436,4 @@ export function createProgressionScenario(
   };
 }
 
-export const progressionExampleScenario = createProgressionScenario('openclaw-issue-progression');
+export const progressionExampleScenario = createProgressionScenario('openclaw-issue-auto-plan');

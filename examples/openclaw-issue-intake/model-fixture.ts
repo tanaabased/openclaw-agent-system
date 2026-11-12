@@ -1,4 +1,4 @@
-import { currentTurn, issueExampleScenario } from '../openclaw-issue-journey/model-fixture.ts';
+import { currentTurn, issueExampleScenario } from '../openclaw-issue-conversation/issue-model.ts';
 import { currentFacts } from '../openclaw-pr-journey/model-fixture.ts';
 import waitForAssessmentRelease from './assessment-barrier.ts';
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
