@@ -1,6 +1,6 @@
 import { readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 import { codexInstanceStore } from '../tasks/dispatch/codex-assignment-claims.ts';
@@ -69,6 +69,16 @@ export const ledgerSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+// discover ownership before validating payloads that another installation alone consumes.
+const ownershipSchema = Type.Object(
+  {
+    version: ledgerSchema.properties.version,
+    scope: hash,
+    binding: ledgerSchema.properties.binding,
+  },
+  { additionalProperties: true },
+);
+
 export type Ledger = Static<typeof ledgerSchema>;
 export interface CodexAutomationDependencies {
   codexHome?: string;
@@ -114,7 +124,7 @@ export async function readCodexAutomationSnapshot(
     });
     const value: unknown = JSON.parse((await stored.read()) ?? 'null');
     if (
-      !Value.Check(ledgerSchema, value) ||
+      !Value.Check(ownershipSchema, value) ||
       name !== `codex-automations-${value.scope}.json` ||
       (value.binding &&
         value.scope !==
@@ -125,6 +135,22 @@ export async function readCodexAutomationSnapshot(
             agentId: value.binding.agentId,
           }))
     )
+      throw new CodexAutomationError('automation-ownership-invalid');
+    if (
+      value.binding &&
+      isAbsolute(value.binding.codexHome) &&
+      value.binding.codexHome !== codexHome
+    ) {
+      const ownerHome = await realpath(value.binding.codexHome).catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === 'ENOENT') return resolve(value.binding!.codexHome);
+          throw error;
+        },
+      );
+      // aliases of this home are not evidence of unrelated ownership.
+      if (ownerHome !== codexHome) continue;
+    }
+    if (!Value.Check(ledgerSchema, value))
       throw new CodexAutomationError('automation-ownership-invalid');
     if (
       value.binding?.codexHome === codexHome &&

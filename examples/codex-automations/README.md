@@ -6,7 +6,7 @@ those same conversations.
 
 ## What Belongs Here
 
-- Digest-bound plans for native automation actions without private scheduler-file writes.
+- Digest-bound plans for native automation actions without private scheduler-file writes, including isolation from another installation’s damaged ownership payload.
 - Packaged removal and verified-deletion retirement, with explicit saved-state fixtures rather than desktop scheduler execution.
 - Real app-server conversation creation, selected model/permission readback, and attributed setup history without model generation.
 - Fresh-process resumption and shared profile changes preserving conversation identity, permissions, and durable model/effort settings.
@@ -53,6 +53,7 @@ plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 workspace=$(cd "$GITHUB_WORKSPACE/examples/codex-automations/automation" && pwd -P)
 node "$runtime" binding bind --plugin-data "$root/automation-data" --workspace "$workspace" --confirm
+node "$GITHUB_WORKSPACE/examples/codex-automations/unrelated-ledger-fixture.mjs" "$root/automation-data" "$workspace" "$root/other-codex-home"
 jq -n --arg workspace "$workspace" '{projects:{schemaVersion:2,projects:[{projectId:"fixture-project",projectKind:"local",hostId:"local",path:$workspace}]}}' > "$root/automation-input.json"
 node "$runtime" automations plan --plugin-data "$root/automation-data" < "$root/automation-input.json" \
   | tee "$root/automation-plan.json" \

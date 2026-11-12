@@ -281,6 +281,25 @@ describe('agent/codex-automations', () => {
     const bytes = await readFile(path, 'utf8');
     return { path, bytes, ledger: JSON.parse(bytes) };
   }
+  async function unrelatedDamagedLedger() {
+    const binding = { workspace, codexHome: join(root, 'other-codex'), agentId: 'fixture' };
+    const scope = automationHash({
+      runtime: 'codex',
+      profile: binding.codexHome,
+      workspaceDir: workspace,
+      agentId: binding.agentId,
+    });
+    const path = join(pluginData, `codex-automations-${scope}.json`);
+    const contents = JSON.stringify({
+      version: 1,
+      scope,
+      binding,
+      records: 'damaged',
+      pending: { broken: true },
+    });
+    await writeFile(path, contents, { mode: 0o600 });
+    return { path, contents };
+  }
   async function manifest(declaration = job()) {
     await writeFile(
       join(workspace, 'agent.yaml'),
@@ -352,6 +371,70 @@ describe('agent/codex-automations', () => {
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+
+  it('should isolate damaged payloads belonging to another codex installation', async () => {
+    const expected = await inspect();
+    const { path, contents } = await unrelatedDamagedLedger();
+    assert.deepEqual(await inspect(), expected);
+    assert.equal(await readFile(path, 'utf8'), contents);
+  });
+
+  it('should reject damaged current, retained and ambiguous automation ownership', async () => {
+    for (const binding of [
+      { workspace, codexHome, agentId: 'fixture' },
+      { workspace: join(root, 'prior-workspace'), codexHome, agentId: 'prior-agent' },
+      undefined,
+    ]) {
+      const scope = binding
+        ? automationHash({
+            runtime: 'codex',
+            profile: binding.codexHome,
+            workspaceDir: binding.workspace,
+            agentId: binding.agentId,
+          })
+        : 'a'.repeat(64);
+      const path = join(pluginData, `codex-automations-${scope}.json`);
+      await writeFile(path, JSON.stringify({ version: 1, scope, binding, records: 'damaged' }), {
+        mode: 0o600,
+      });
+      await assert.rejects(inspect(), rejectsCode('automation-ownership-invalid'));
+      await rm(path);
+    }
+    const alias = join(root, 'home-alias');
+    await symlink(codexHome, alias);
+    const binding = { workspace, codexHome: alias, agentId: 'fixture' };
+    const scope = automationHash({
+      runtime: 'codex',
+      profile: alias,
+      workspaceDir: workspace,
+      agentId: binding.agentId,
+    });
+    const path = join(pluginData, `codex-automations-${scope}.json`);
+    await writeFile(path, JSON.stringify({ version: 1, scope, binding, records: 'damaged' }), {
+      mode: 0o600,
+    });
+    await assert.rejects(inspect(), rejectsCode('automation-ownership-invalid'));
+  });
+
+  it('should reject unrelated ledgers with unverified ownership envelopes', async () => {
+    const binding = { workspace, codexHome: join(root, 'other-codex'), agentId: 'fixture' };
+    const scope = automationHash({
+      runtime: 'codex',
+      profile: binding.codexHome,
+      workspaceDir: workspace,
+      agentId: binding.agentId,
+    });
+    const path = join(pluginData, `codex-automations-${scope}.json`);
+    for (const damaged of [
+      { version: 999, scope, binding, records: [] },
+      { version: 1, scope: 'a'.repeat(64), binding, records: [] },
+      { version: 1, scope, binding: { ...binding, agentId: 'wrong-agent' }, records: [] },
+      { version: 1, scope, binding: { codexHome: binding.codexHome }, records: [] },
+    ]) {
+      await writeFile(path, JSON.stringify(damaged), { mode: 0o600 });
+      await assert.rejects(inspect(), rejectsCode('automation-ownership-invalid'));
+    }
   });
 
   it('should reconcile only the selected automation while leaving earlier changes pending', async () => {
@@ -735,6 +818,7 @@ describe('agent/codex-automations', () => {
     });
     assert.equal(inspection.status, 'aligned');
     assert.equal(bindingReads, 1);
+    await unrelatedDamagedLedger();
     const active = await inspectCodexPickupActivation(pluginData, dependencies);
     assert.equal(active.nativeId, first.nativeId);
     await checkCodexActivationIsolation(
