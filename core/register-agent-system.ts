@@ -607,7 +607,32 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         if (result.code !== 0) {
           throw new Error(result.stderr.trim() || `OpenClaw models list exited ${result.code}.`);
         }
-        return parseModelCatalogRows(result.stdout);
+        const rows = parseModelCatalogRows(result.stdout);
+        if (!rows.some(({ available }) => available === false)) return rows;
+        // the CLI omits route-specific absence reasons; retain warnings if native evidence is unavailable.
+        try {
+          const catalog = await requestAutomationGateway('models.list', {
+            agentId,
+            view: 'configured',
+            preparedOnly: true,
+            includeDefaultModels: false,
+          });
+          if (!Array.isArray(catalog.models)) return rows;
+          return rows.map((row) => {
+            const matches = (catalog.models as unknown[]).filter(
+              (model: unknown) =>
+                nativeObject(model) && `${model.provider}/${model.id}` === row.key,
+            );
+            const model = matches.length === 1 ? matches[0] : undefined;
+            return nativeObject(model) &&
+              model.available === false &&
+              model.unavailableReason === 'missing-auth'
+              ? { ...row, unavailableReason: 'missing-auth' }
+              : row;
+          });
+        } catch {
+          return rows;
+        }
       },
       mutateConfigFile(params) {
         return api.runtime.config.mutateConfigFile(params);

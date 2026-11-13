@@ -48,25 +48,31 @@ function jobLine(job: AutomationJob): CliLifecycleLine {
     .find(Boolean);
   const label = attention
     ? attention.status
-    : !job.applicable
-      ? 'inapplicable'
-      : !job.declared || job.removed
-        ? 'retained'
-        : !job.enabled
-          ? 'disabled'
-          : job.findings.some(({ code }) => code === 'automation-completed')
-            ? 'completed'
-            : job.findings.some(({ status }) => status === 'healthy')
-              ? 'aligned'
-              : 'unavailable';
+    : job.findings.some(({ status }) => status === 'skipped')
+      ? 'skipped'
+      : !job.applicable
+        ? 'inapplicable'
+        : !job.declared || job.removed
+          ? 'retained'
+          : !job.enabled
+            ? 'disabled'
+            : job.findings.some(({ code }) => code === 'automation-completed')
+              ? 'completed'
+              : job.findings.some(({ status }) => status === 'healthy')
+                ? 'aligned'
+                : 'unavailable';
   const missing = job.findings.some(({ code }) =>
     ['automation-missing', 'automation-recovery-required'].includes(code),
   );
   const native =
     job.nativeEnabled === null
-      ? missing
-        ? 'missing'
-        : 'unavailable'
+      ? job.findings.some(
+          ({ status, code }) => status === 'skipped' && code === 'automation-model-auth-missing',
+        )
+        ? 'not-installed'
+        : missing
+          ? 'missing'
+          : 'unavailable'
       : job.nativeEnabled
         ? 'enabled'
         : 'disabled';

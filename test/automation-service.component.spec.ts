@@ -43,6 +43,7 @@ describe('agent/automation-service', () => {
   let manifest: AgentManifest;
   let service: AutomationService;
   let native: NativeAutomation[];
+  let modelRows: Record<string, unknown>[];
   let calls: { method: string; params: Record<string, unknown> }[];
   let now: number;
   let revision: number;
@@ -58,6 +59,7 @@ describe('agent/automation-service', () => {
       automations: jobs([{ id: 'check', schedule: 'in 1 hour', run: ['gh', 'api', 'user'] }]),
     };
     native = [];
+    modelRows = [];
     calls = [];
     now = 1_900_000_000_000;
     revision = 0;
@@ -72,6 +74,7 @@ describe('agent/automation-service', () => {
         (fail === 'second-add' && method === 'cron.add' && native.length === 1)
       )
         throw new Error('secret provider text must not escape');
+      if (method === 'models.list') return { models: modelRows };
       if (method === 'sessions.resolve') return { ok: false };
       if (method === 'cron.status') return { enabled: true, jobs: native.length };
       if (method === 'cron.list') return { jobs: structuredClone(native), hasMore: false };
@@ -176,6 +179,86 @@ describe('agent/automation-service', () => {
       },
     });
   });
+  it('should skip a paused unauthenticated prompt without creating its conversation or ownership receipt', async () => {
+    manifest.automations = jobs([
+      {
+        id: 'paused',
+        enabled: false,
+        schedule: 'every 5 minutes',
+        prompt: 'inspect',
+        model: 'openai/test',
+        thread: { name: 'PAUSED' },
+      },
+    ]);
+    modelRows = [
+      { provider: 'openai', id: 'test', available: false, unavailableReason: 'missing-auth' },
+    ];
+    const result = await service.reconcile(manifest, root);
+    assert.deepEqual(
+      result.outcomes.map(({ status }) => status),
+      ['skipped'],
+    );
+    assert.equal(native.length, 0);
+    assert.equal(
+      calls.some(({ method }) =>
+        ['sessions.create', 'sessions.patch', 'cron.add'].includes(method),
+      ),
+      false,
+    );
+    const { store } = await service.scope(manifest, root);
+    assert.deepEqual((await store.read()).records, []);
+    assert.ok((await service.inspect(manifest, root)).some(({ status }) => status === 'skipped'));
+  });
+
+  it('should skip only new unauthenticated prompts and install them after authentication is configured', async () => {
+    manifest.automations = jobs([
+      { id: 'check', schedule: 'in 1 hour', run: ['echo', 'ok'] },
+      { id: 'prompt', schedule: 'in 1 hour', prompt: 'inspect', model: 'openai/test' },
+    ]);
+    modelRows = [
+      { provider: 'openai', id: 'test', available: false, unavailableReason: 'missing-auth' },
+    ];
+    const first = await service.reconcile(manifest, root);
+    assert.ok(
+      first.outcomes.some(({ stepId, status }) => stepId === 'prompt' && status === 'skipped'),
+    );
+    assert.equal(first.warnings?.length ?? 0, 0);
+    assert.equal(native.length, 1);
+    assert.equal(native[0]!.payload.kind, 'command');
+    const { store } = await service.scope(manifest, root);
+    assert.equal(
+      (await store.read()).records.some(({ id }) => id === 'prompt'),
+      false,
+    );
+    assert.ok(
+      (await service.inspect(manifest, root)).some(
+        ({ stepId, status }) => stepId === 'prompt' && status === 'skipped',
+      ),
+    );
+    modelRows[0] = { ...modelRows[0], available: true, unavailableReason: undefined };
+    await service.reconcile(manifest, root);
+    assert.equal(native.length, 2);
+    const ids = native.map(({ id }) => id);
+    await service.reconcile(manifest, root);
+    assert.deepEqual(
+      native.map(({ id }) => id),
+      ids,
+    );
+    modelRows[0] = { ...modelRows[0], available: false, unavailableReason: 'missing-auth' };
+    assert.ok(
+      (await service.inspect(manifest, root)).some(
+        ({ stepId, status }) => stepId === 'prompt' && status === 'blocked',
+      ),
+    );
+    await assert.rejects(service.reconcile(manifest, root), {
+      code: 'automation-model-auth-missing',
+    });
+    assert.deepEqual(
+      native.map(({ id }) => id),
+      ids,
+    );
+  });
+
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
   });

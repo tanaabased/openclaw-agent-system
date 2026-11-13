@@ -61,6 +61,7 @@ export function retainAutomationGatewayDiagnostic(value: unknown): GatewayErrorD
     'method' in input
       ? ((
           [
+            'models.list',
             'sessions.resolve',
             'sessions.list',
             'sessions.create',

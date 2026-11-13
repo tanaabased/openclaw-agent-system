@@ -9,6 +9,7 @@ import { openclawSessionCreateTimeoutMs } from '../openclaw-session-timeout.ts';
 
 export type AutomationGateway = (
   method:
+    | 'models.list'
     | 'sessions.resolve'
     | 'sessions.list'
     | 'sessions.create'

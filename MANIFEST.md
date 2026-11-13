@@ -357,6 +357,13 @@ discovery without changing jobs; explicit sync and incompatible RPCs still fail.
 Run scheduler synchronization from the operator CLI. Install and Doctor in an agent
 chat report when this step is needed; they do not acquire operator permissions.
 
+When OpenClaw reports missing authentication for a new prompt automation's selected
+model, Install skips that automation without creating its scheduled job. Doctor reports
+`skipped`, not a warning. Configure authentication for that model and rerun Install to
+create the job. This applies whether the declaration is enabled or paused. Existing
+jobs are preserved; missing authentication for an installed job remains a failure.
+Unknown availability, rejected credentials, and cooldowns are not treated as missing setup.
+
 Command jobs run without a model. Before starting, Agent System verifies the workspace,
 job ownership, enabled state, and that the saved job matches its declaration. It then
 grants temporary authority for that run. Plain `git` and `gh` use the agent's managed
@@ -738,7 +745,8 @@ agent's effective `modelPolicy.allow`, which may come from the agent entry or
 
 `doctor` checks configuration, selection policy, model presence, and effort
 support without authentication or inference. OpenClaw owns runtime health.
-Explicit unavailability produces a warning; unknown availability is not failure.
+Confirmed missing authentication is reported as `skipped`. Other explicit unavailability
+produces a warning; unknown availability is not failure.
 Inspection errors remain distinct from known unsupported models or efforts.
 
 Complete work tiers enable [GitHub issue model routing](./tools/model-routing/README.md)

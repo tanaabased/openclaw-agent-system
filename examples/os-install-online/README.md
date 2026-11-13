@@ -8,7 +8,7 @@ first attempt's evidence before testing repeat installation.
 
 - Cold first-online enrollment and automation reconciliation without a preparatory offline Install.
 - First-attempt output, exit status, redacted Gateway evidence, and the packed Agent System source revision before any repeat.
-- Successful repeat retaining the same native jobs and dispatch credential.
+- Successful repeat retaining the command job and dispatch credential without creating the skipped prompt job.
 
 ## What Does Not Belong Here
 
@@ -18,8 +18,8 @@ first attempt's evidence before testing repeat installation.
 ## Notes
 
 - This needs a separate fresh runner because dispatch identity is Gateway-wide; successful online enrollment would invalidate the missing-credential and offline-first conditions in the recovery example. The existing OS matrix gains one scenario on each OS, not another runtime or model matrix.
-- Reuse the enrollment example's synthetic GitHub provider. Enrollment and native storage remain real; neither hosted credentials nor a model turn is needed. Both jobs stay disabled.
-- The agent declares a Codex model without configuring a provider account. Cold Install must register its automation chats without selecting that unavailable model. Model execution belongs to the automation scenarios.
+- Reuse the enrollment example's synthetic GitHub provider. Enrollment and native storage remain real; neither hosted credentials nor a model turn is needed. The command job stays disabled; the prompt job is skipped until model authentication is configured.
+- The agent declares a Codex model without configuring a provider account. Cold Install must skip the unauthenticated prompt job while installing the command job. Model execution belongs to the automation scenarios.
 - Setup, first Install, and dependent convergence checks share one fail-fast block. A missing prerequisite or failed first Install ends that journey; no shell retry can turn it green or create misleading downstream failures.
 - Session creation uses the shared 120-second budget, subject to earlier cancellation or enclosing deadlines; unrelated requests retain their native timeout. Controlled-time source tests prove the budget, while this scenario proves installed behavior. First-attempt failures remain fatal.
 - Enrollment allows up to 90 seconds for startup or plugin reload, within a 135-second connection deadline including authentication. Terminal reload failure and cancellation stop earlier. Session-creation failures report the automation ID and a safe native reason category; `unclassified` means the native rejection is not yet recognized, not that a timeout occurred.
@@ -53,17 +53,17 @@ if test "$first_status" -ne 0; then cat "$TMPDIR/online-first.gateway.log"; exit
 jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .code == "intake-activated") and all(.warnings[]; .code != "automation-sync-deferred")' "$TMPDIR/online-first.json"
 before_status=0
 openclaw agent-system automations list --json >"$TMPDIR/online-jobs-before.json" || before_status=$?
-if test "$before_status" -ne 1 || ! jq -e '.status == "attention" and ([.findings[] | select(.status != "healthy" and .status != "skipped") | {stepId, status, code}] == [{stepId: "scheduler", status: "blocked", code: "automation-scheduler-disabled"}]) and ([.jobs[].id] | sort) == ["cold-install-command", "github-issue-assignment"] and all(.jobs[]; .nativeEnabled == false)' "$TMPDIR/online-jobs-before.json"; then
+if test "$before_status" -ne 1 || ! jq -e '.status == "attention" and ([.findings[] | select(.status != "healthy" and .status != "skipped") | {stepId, status, code}] == [{stepId: "scheduler", status: "blocked", code: "automation-scheduler-disabled"}]) and ([.jobs[].id] | sort) == ["cold-install-command", "github-issue-assignment"] and any(.jobs[]; .id == "cold-install-command" and .nativeEnabled == false and .nativeId != null) and any(.jobs[]; .id == "github-issue-assignment" and .nativeId == null and any(.findings[]; .status == "skipped" and .code == "automation-model-auth-missing"))' "$TMPDIR/online-jobs-before.json"; then
   printf 'automation list before repeat install exited %s\n' "$before_status" >&2
   jq '{status, jobs: [.jobs[] | {id, nativeEnabled}], findings: [.findings[] | {stepId, status, code}]}' "$TMPDIR/online-jobs-before.json" >&2
   exit 1
 fi
 openclaw agent-system install --non-interactive --json >"$TMPDIR/online-repeat.json" 2>"$TMPDIR/online-repeat.stderr"
 cat "$TMPDIR/online-repeat.json" "$TMPDIR/online-repeat.stderr"
-jq -e 'any(.outcomes[]; .code == "session-dispatch-unchanged") and all(.outcomes[]; .component != "automations" or .status == "unchanged")' "$TMPDIR/online-repeat.json"
+jq -e 'any(.outcomes[]; .code == "session-dispatch-unchanged") and all(.outcomes[]; .component != "automations" or .status == "unchanged" or (.status == "skipped" and .code == "automation-model-auth-missing"))' "$TMPDIR/online-repeat.json"
 after_status=0
 openclaw agent-system automations list --json >"$TMPDIR/online-jobs-after.json" || after_status=$?
-if test "$after_status" -ne 1 || ! jq -e '.status == "attention" and ([.findings[] | select(.status != "healthy" and .status != "skipped") | {stepId, status, code}] == [{stepId: "scheduler", status: "blocked", code: "automation-scheduler-disabled"}]) and ([.jobs[].id] | sort) == ["cold-install-command", "github-issue-assignment"] and all(.jobs[]; .nativeEnabled == false)' "$TMPDIR/online-jobs-after.json"; then
+if test "$after_status" -ne 1 || ! jq -e '.status == "attention" and ([.findings[] | select(.status != "healthy" and .status != "skipped") | {stepId, status, code}] == [{stepId: "scheduler", status: "blocked", code: "automation-scheduler-disabled"}]) and ([.jobs[].id] | sort) == ["cold-install-command", "github-issue-assignment"] and any(.jobs[]; .id == "cold-install-command" and .nativeEnabled == false and .nativeId != null) and any(.jobs[]; .id == "github-issue-assignment" and .nativeId == null and any(.findings[]; .status == "skipped" and .code == "automation-model-auth-missing"))' "$TMPDIR/online-jobs-after.json"; then
   printf 'automation list after repeat install exited %s\n' "$after_status" >&2
   jq '{status, jobs: [.jobs[] | {id, nativeEnabled}], findings: [.findings[] | {stepId, status, code}]}' "$TMPDIR/online-jobs-after.json" >&2
   exit 1

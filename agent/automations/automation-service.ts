@@ -1,6 +1,7 @@
 import { realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import automationModelAuth, { automationAuthSkipped } from './automation-model-auth.ts';
 import AutomationReportStore, { type AutomationReportRecord } from './automation-report-store.ts';
 
 import {
@@ -521,13 +522,36 @@ export default class AutomationService {
         return { ...item, automationName: automationReportName(name, id) };
       });
     const findings: AgentSystemLifecycleFinding[] = [];
+    const missingAuth = await automationModelAuth(
+      this.dependencies.request,
+      context.agentId,
+      declarations,
+    );
+    const incompleteThreads = (await this.threads(context, store).read()).records.filter(
+      (record) => record.phase !== 'ready' || record.settingsUpdate,
+    );
+    const skipped = new Set(
+      declarations
+        .filter(
+          (job) =>
+            missingAuth.has(job.id) &&
+            !incompleteThreads.some(
+              ({ key }) => key === automationThreadSelection(job, 'openclaw')?.key,
+            ) &&
+            !ledger.records.some(({ id }) => id === job.id) &&
+            !observed.some((native) => native.declarationKey === store.marker(job.id)),
+        )
+        .map(({ id }) => id),
+    );
     const status = await this.dependencies.request('cron.status', {});
     if (status.enabled === false)
       findings.push(finding('scheduler', 'blocked', 'automation-scheduler-disabled'));
     else if (status.enabled !== true)
       findings.push(finding('scheduler', 'blocked', 'automation-scheduler-status-unavailable'));
     try {
-      context.threads = await this.threads(context, store).resolve(declarations);
+      context.threads = await this.threads(context, store).resolve(
+        declarations.filter(({ id }) => !skipped.has(id)),
+      );
     } catch (error) {
       return namedFindings([
         ...findings,
@@ -547,6 +571,10 @@ export default class AutomationService {
       ]);
     }
     for (const job of declarations) {
+      if (skipped.has(job.id)) {
+        findings.push(automationAuthSkipped(job.id));
+        continue;
+      }
       try {
         effectiveAutomation(job, context);
         const record = ledger.records.find(({ id }) => id === job.id);
@@ -572,6 +600,10 @@ export default class AutomationService {
         }
         if (native.state.autoDisabled) {
           findings.push(finding(job.id, 'blocked', 'automation-native-safety-disabled'));
+          continue;
+        }
+        if (missingAuth.has(job.id)) {
+          findings.push(finding(job.id, 'blocked', 'automation-model-auth-missing'));
           continue;
         }
         const desired = projectAutomation(job, record, context, native);
@@ -816,7 +848,26 @@ export default class AutomationService {
             throw new AutomationError('automation-manifest-changed');
         };
         await assertCurrent();
-        context.threads = await this.threads(context, store).resolve(declarations, true);
+        const missingAuth = await automationModelAuth(request, context.agentId, declarations);
+        const incompleteThreads = (await this.threads(context, store).read()).records.filter(
+          (record) => record.phase !== 'ready' || record.settingsUpdate,
+        );
+        const skipped = new Set(
+          declarations
+            .filter(
+              (job) =>
+                missingAuth.has(job.id) &&
+                !ledger.records.some(({ id }) => id === job.id) &&
+                !incompleteThreads.some(
+                  ({ key }) => key === automationThreadSelection(job, 'openclaw')?.key,
+                ),
+            )
+            .map(({ id }) => id),
+        );
+        context.threads = await this.threads(context, store).resolve(
+          declarations.filter(({ id }) => !skipped.has(id)),
+          true,
+        );
         await assertCurrent();
         // absence is re-observed at the retirement boundary, never inferred from not-found.
         for (const record of ledger.records.filter(
@@ -844,6 +895,11 @@ export default class AutomationService {
           });
         }
         for (const job of declarations) {
+          if (skipped.has(job.id)) {
+            outcomes.push(automationAuthSkipped(job.id));
+            continue;
+          }
+          if (missingAuth.has(job.id)) throw new AutomationError('automation-model-auth-missing');
           const pickup =
             job.id === issuePickupAutomationId && job.enabled
               ? await this.dependencies.pickup?.prepare(manifest, context.workspaceDir)
