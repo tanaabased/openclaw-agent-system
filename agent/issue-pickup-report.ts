@@ -87,6 +87,17 @@ export default function issuePickupReport(input: {
           .join(' · '),
       })),
       ...allowances.flatMap((entry) => {
+        const types = entry.filters?.types;
+        return types?.length
+          ? [
+              {
+                label: 'Issue type filters',
+                value: `${text(entry.repository)} · match any: ${types.map(code).join(', ')}`,
+              },
+            ]
+          : [];
+      }),
+      ...allowances.flatMap((entry) => {
         const filters = entry.filters;
         if (!filters?.labels?.length) return [];
         const { required, excluded } = issuePickupLabelPatterns(filters);
@@ -108,12 +119,12 @@ export default function issuePickupReport(input: {
       }),
       ...(outcome.status === 'empty' &&
       summary?.eligible === 0 &&
-      allowances.some((entry) => entry.filters?.labels?.length)
+      allowances.some((entry) => entry.filters?.labels?.length || entry.filters?.types?.length)
         ? [
             {
               label: 'Filters',
               value:
-                'No eligible issues matched within the configured scope. Review the label criteria for a later scan; the search was not widened. Unreadable issues or scopes remain reported separately.',
+                'No eligible issues matched within the configured scope. Review the filter criteria for a later scan; the search was not widened. Unreadable issues or scopes remain reported separately.',
             },
           ]
         : []),

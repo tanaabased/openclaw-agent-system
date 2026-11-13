@@ -31,7 +31,7 @@ import issuePickupCapacity, {
   type PickupManagedRecord,
 } from './issue-pickup-capacity.ts';
 import discardSelection from './issue-pickup-discard-selection.ts';
-import issuePickupLabels from './issue-pickup-labels.ts';
+import issuePickupFilters from './issue-pickup-filters.ts';
 import issuePickupScope, {
   pickupCandidateScope,
   type PickupCandidateScope,
@@ -459,7 +459,7 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
       (project) => project.repository.toLowerCase() === `${owner.login}/${name}`.toLowerCase(),
     )?.filters;
     const observation =
-      readContent || filters?.labels?.length
+      readContent || filters?.labels?.length || filters?.types?.length
         ? await client.projectCandidate(owner.login, name, number)
         : undefined;
     const item = observation ? observation.item : await client.getItem(owner.login, name, number);
@@ -482,7 +482,7 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
       return;
     const evidence = observation?.candidate;
     if (evidence && evidence.nodeId !== nodeId) return;
-    if (evidence && !issuePickupLabels(evidence.labels, filters)) return;
+    if (evidence && !issuePickupFilters(evidence, filters)) return;
     return { item, evidence, pickupScope: pickupCandidateScope(scope, item)! };
   };
   try {
@@ -685,7 +685,10 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
               }
             } catch (error) {
               const invalid =
-                error instanceof Error && error.message === 'issue-pickup-candidate-invalid';
+                error instanceof Error &&
+                ['issue-pickup-candidate-invalid', 'issue-pickup-type-unavailable'].includes(
+                  error.message,
+                );
               if (!itemReadFailure(error) && !invalid) throw error;
               recordReadFailure(error);
               operation.deferred ??= [];

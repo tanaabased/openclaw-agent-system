@@ -53,6 +53,22 @@ function observation(candidate: Record<string, unknown>) {
 }
 
 describe('github issue pickup provider', () => {
+  it('should preserve native type names, confirmed absence and unavailable evidence separately', async () => {
+    const f = fixture();
+    const candidate = { nodeId: 'I_one', number: 1, title: 'ready', labels: [] };
+    for (const metadata of [{ issueType: { name: 'Customer Request' } }, { issueType: null }, {}]) {
+      f.reply.value = observation({ ...candidate, ...metadata });
+      assert.deepEqual((await f.client.projectCandidate('owner', 'repo', 1)).candidate, {
+        ...candidate,
+        ...metadata,
+      });
+    }
+    for (const issueType of ['Bug', {}, { name: null }, { name: '' }, { name: 42 }]) {
+      f.reply.value = observation({ ...candidate, issueType });
+      await assert.rejects(f.client.projectCandidate('owner', 'repo', 1), /candidate-invalid/);
+    }
+  });
+
   it('should keep complete descriptions and reject malformed provider data', async () => {
     const f = fixture();
     const candidate = {

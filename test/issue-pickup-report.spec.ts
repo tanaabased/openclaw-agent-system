@@ -7,6 +7,21 @@ import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 const allowances = [{ repository: 'owner/repo', milestone: 10, used: 0, limit: 1 }];
 
 describe('agent/issue-pickup-report', () => {
+  it('should explain type-only empty scans and distinguish missing provider evidence', () => {
+    const result = report({
+      outcome: {
+        status: 'empty',
+        allowances: [{ ...allowances[0]!, filters: { types: ['Bug', 'Customer Request'] } }],
+        summary: { eligible: 0, shortlist: [], skipped: 0, remaining: 0 },
+      },
+    });
+    assert.match(result.response, /Issue type filters.*Bug.*Customer Request/);
+    assert.match(result.response, /No eligible issues matched/);
+    const failed = report({ outcome: { status: 'failed', code: 'issue-pickup-type-unavailable' } });
+    assert.match(failed.response, /issue-pickup-type-unavailable/);
+    assert.doesNotMatch(failed.response, /No eligible issues matched/);
+  });
+
   it('should explain contradictory and no-match criteria without hiding unreadable issues', () => {
     for (const [required, excluded, contradictory] of [
       ['bug', 'BUG', true],

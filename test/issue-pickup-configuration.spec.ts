@@ -89,6 +89,23 @@ describe('issue pickup configuration', () => {
       );
       assert.equal(job.overrides[runtime]?.effort, 'medium');
     });
+
+    it(`should preserve native type filters through ${runtime} configuration`, () => {
+      const source = document('issue-pickup', 'issue-pickup', runtime);
+      const filters = { types: ['Bug', 'Customer Request'], labels: ['ready*', '!blocked'] };
+      source.github['issue-pickup'] = { projects: [{ repository: 'owner/repo', filters }] };
+      const parsed = load(source);
+      assert.deepEqual(
+        parsed.manifest.github!.notifications!.issuePickup!.projects[0]!.filters,
+        filters,
+      );
+      for (const types of ['', 'Bug', [42], [' '], ['']]) {
+        source.github['issue-pickup'] = {
+          projects: [{ repository: 'owner/repo', filters: { types } }],
+        };
+        assert.equal(parse(JSON.stringify(source)).status, 'invalid');
+      }
+    });
   }
 
   for (const both of [false, true]) {

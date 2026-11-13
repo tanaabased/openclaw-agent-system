@@ -184,6 +184,7 @@ Pickup uses the existing GitHub access and approved assignment and feedback auth
 | `thread`                        | no       | Persistent coordination chat: a name string or `{name, id}`, using the existing [automation thread convention](../../MANIFEST.md#automations). Defaults to `ISSUE PICKUP`. Run Install to reconcile a changed choice; missing conversations use the native automation recovery flow.                                                 |
 | `projects`                      | yes      | One or more distinct entries with `repository: owner/name`, optional `milestone: {number: 10, policy: only}`, and optional `limit`. `number` accepts a positive integer or a nonempty list of distinct positive integers. `policy` defaults to `only`; `prefer` enables fallback. `limit` is a positive integer and defaults to `1`. |
 | `projects[].filters.labels`     | no       | Case-insensitive label patterns, such as `["bug*", "!blocked", "!needs-*"]`. Every positive pattern must match a label; any matching `!` exclusion wins. `*` matches zero or more characters; other metacharacters are literal. Negative-only lists allow other issues; omitted or empty means no label restriction.                 |
+| `projects[].filters.types`      | no       | List of native GitHub issue-type names, such as `["Bug", "Customer Request"]`. Any listed name matches case-insensitively, including organization-defined types. Omitted or empty means no type restriction. Type and label filters must both match; labels never imply a native type.                                               |
 | `projects[].selection.guidance` | no       | Inline text or `{file: relative/path.md}`, using the same guidance rules. Applies only to that repository, after built-in and global selection guidance; cannot widen eligibility or limits.                                                                                                                                         |
 
 Omit `milestone` to consider all otherwise eligible issues in that repository, including
@@ -220,8 +221,10 @@ coordinator, not the models that assess or implement individual issues. Existing
 Label filters apply in both runtimes, within the configured repository and milestone,
 alongside open/unassigned eligibility. Names are compared case-insensitively; label
 values are not otherwise rewritten. The model still chooses whether matching work
-is worth taking. Before assignment, pickup reads the selected issue's current labels
-again; unrelated title, body or label changes do not invalidate a still-matching issue.
+is worth taking. Type filters use native GitHub metadata: an issue with no native type
+cannot match an explicit type filter, and unavailable type evidence remains a read error.
+Before assignment, pickup reads the selected issue's current labels and type again;
+unrelated title, body or label changes do not invalidate a still-matching issue.
 This read and assignment are not atomic against later GitHub edits.
 
 An unmatched required pattern leaves no matches; an unmatched excluded pattern excludes
@@ -229,7 +232,7 @@ nothing. Contradictory criteria or no eligible matches are explained in the scan
 card without widening the search. GitHub read errors remain separate. Edit criteria
 for a later scan; filters do not cancel accepted work or repeat uncertain assignments.
 
-Repository, milestone, limit, label filters, guidance and route changes apply on the next run
+Repository, milestone, limit, filters, guidance and route changes apply on the next run
 without Install. Edits preserve assignments already counted in the window and
 the receipts for accepted assignments. Run Install after changing timing, chat or model settings.
 Replace the former `schedule` and `window-minutes` fields with `start`, `window` and `scans`.
