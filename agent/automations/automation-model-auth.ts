@@ -2,15 +2,17 @@ import { AutomationError } from './automation-errors.ts';
 import { nativeObject, type AutomationGateway } from './automation-gateway.ts';
 import type { ResolvedAutomation } from '../../manifest/automation-schema.ts';
 
-/** use native route-aware evidence; unknown availability is never credential absence. */
+export type ModelUnavailableReason = 'missing-auth' | 'auth-failed' | 'cooldown' | 'unavailable';
+
+/** Only a definitive native model result permits a skip; failed reads are not model facts. */
 export default async function automationModelAuth(
   request: AutomationGateway,
   agentId: string,
   jobs: readonly ResolvedAutomation[],
   mode: 'inspect' | 'reconcile' = 'inspect',
-): Promise<Set<string>> {
+): Promise<Map<string, ModelUnavailableReason>> {
   const prompts = jobs.filter((job) => job.payload.kind === 'prompt');
-  if (!prompts.length) return new Set();
+  if (!prompts.length) return new Map();
   const params = {
     agentId,
     view: 'all',
@@ -45,22 +47,36 @@ export default async function automationModelAuth(
     })
   )
     rows = await readRows(true);
-  return new Set(
-    prompts
-      .filter((job) => {
-        const row = selected(job);
-        return row?.available === false && row.unavailableReason === 'missing-auth';
-      })
-      .map(({ id }) => id),
-  );
+  const unavailable = new Map<string, ModelUnavailableReason>();
+  for (const job of prompts) {
+    const row = selected(job);
+    if (row?.available !== false) continue;
+    const reason = row.unavailableReason;
+    unavailable.set(
+      job.id,
+      reason === 'missing-auth' || reason === 'auth-failed' || reason === 'cooldown'
+        ? reason
+        : 'unavailable',
+    );
+  }
+  return unavailable;
 }
 
-export function automationAuthSkipped(id: string) {
+export function automationModelUnavailableCode(reason: ModelUnavailableReason) {
+  return reason === 'missing-auth'
+    ? 'automation-model-auth-missing'
+    : 'automation-model-unavailable';
+}
+
+export function automationModelSkipped(id: string, reason: ModelUnavailableReason) {
   return {
     component: 'automations',
     stepId: id,
     status: 'skipped' as const,
-    code: 'automation-model-auth-missing',
-    message: `Automation ${id} was not installed because its model authentication is not configured. Configure authentication, then rerun Install.`,
+    code: automationModelUnavailableCode(reason),
+    message:
+      reason === 'missing-auth'
+        ? `Automation ${id} was not installed because its model authentication is not configured. Configure authentication, then rerun Install.`
+        : `Automation ${id} was not installed because OpenClaw reports its model unavailable (${reason}). Resolve model availability, then rerun Install.`,
   };
 }

@@ -216,6 +216,41 @@ describe('agent/automation-service', () => {
     assert.ok((await service.inspect(manifest, root)).some(({ status }) => status === 'skipped'));
   });
 
+  for (const reason of ['auth-failed', 'cooldown', undefined])
+    it(`should skip a new unavailable prompt with reason ${reason} without claiming missing auth or changing existing jobs`, async () => {
+      manifest.automations = jobs([
+        { id: 'check', schedule: 'in 1 hour', run: ['echo', 'ok'] },
+        { id: 'prompt', schedule: 'in 1 hour', prompt: 'inspect', model: 'openai/test' },
+      ]);
+      modelRows = [{ provider: 'openai', id: 'test', available: false, unavailableReason: reason }];
+      const result = await service.reconcile(manifest, root);
+      const skipped = result.outcomes.find(({ stepId }) => stepId === 'prompt');
+      assert.equal(skipped?.status, 'skipped');
+      assert.equal(skipped?.code, 'automation-model-unavailable');
+      assert.doesNotMatch(skipped!.message, /authentication is not configured/);
+      assert.equal(native.length, 1);
+      assert.equal(native[0]!.payload.kind, 'command');
+      assert.equal(
+        calls.some(({ method }) => method.startsWith('sessions.')),
+        false,
+      );
+      modelRows[0]!.available = true;
+      await service.reconcile(manifest, root);
+      assert.equal(native.length, 2);
+      const before = structuredClone(native);
+      modelRows[0]!.available = false;
+      await assert.rejects(service.reconcile(manifest, root), {
+        code: 'automation-model-unavailable',
+      });
+      assert.deepEqual(native, before);
+      assert.ok(
+        (await service.inspect(manifest, root)).some(
+          ({ stepId, status, code }) =>
+            stepId === 'prompt' && status === 'blocked' && code === 'automation-model-unavailable',
+        ),
+      );
+    });
+
   it('should skip only new unauthenticated prompts and install them after authentication is configured', async () => {
     manifest.automations = jobs([
       { id: 'check', schedule: 'in 1 hour', run: ['echo', 'ok'] },

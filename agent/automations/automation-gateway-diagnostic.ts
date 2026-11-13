@@ -1,4 +1,5 @@
 import providerErrorMessage from '../../utils/provider-error-message.ts';
+import { isGatewayClientRequestError } from 'openclaw/plugin-sdk/gateway-runtime';
 import gatewayErrorDiagnostic, {
   retainGatewayErrorDiagnostic,
   type GatewayErrorDiagnostic,
@@ -8,6 +9,8 @@ import type { AutomationGateway } from './automation-gateway.ts';
 export interface AutomationGatewayDiagnostic extends GatewayErrorDiagnostic {
   method: Parameters<AutomationGateway>[0];
   automationId?: string;
+  retryable?: boolean;
+  retryAfterMs?: number;
   nativeRejection?: { message?: string; detailCode?: string };
   reason?:
     | 'agent-unknown'
@@ -53,6 +56,8 @@ const settingsReasons = [
 export function retainAutomationGatewayDiagnostic(value: unknown): GatewayErrorDiagnostic & {
   method: AutomationGatewayDiagnostic['method'] | null;
   automationId?: string;
+  retryable?: boolean;
+  retryAfterMs?: number;
   reason?: AutomationGatewayDiagnostic['reason'];
   nativeRejection?: AutomationGatewayDiagnostic['nativeRejection'];
 } {
@@ -106,6 +111,19 @@ export function retainAutomationGatewayDiagnostic(value: unknown): GatewayErrorD
     ...diagnostic,
     ...(reason ? { reason } : catalogLoading ? { reason: 'model-catalog-loading' as const } : {}),
     ...(automationId ? { automationId } : {}),
+    ...(diagnostic.gatewayCode === 'UNAVAILABLE' &&
+    'retryable' in input &&
+    typeof input.retryable === 'boolean'
+      ? {
+          retryable: input.retryable,
+          ...('retryAfterMs' in input &&
+          typeof input.retryAfterMs === 'number' &&
+          Number.isSafeInteger(input.retryAfterMs) &&
+          input.retryAfterMs >= 0
+            ? { retryAfterMs: input.retryAfterMs }
+            : {}),
+        }
+      : {}),
     ...(diagnostic.category === 'rejected' && 'nativeRejection' in input
       ? { nativeRejection: rejectionEvidence(input.nativeRejection) }
       : {}),
@@ -138,6 +156,10 @@ export default function automationGatewayDiagnostic(
   evidence?: { secrets: readonly string[] },
 ): AutomationGatewayDiagnostic {
   const diagnostic: AutomationGatewayDiagnostic = { method, ...gatewayErrorDiagnostic(error) };
+  if (diagnostic.gatewayCode === 'UNAVAILABLE' && isGatewayClientRequestError(error)) {
+    diagnostic.retryable = error.retryable;
+    if (error.retryAfterMs !== undefined) diagnostic.retryAfterMs = error.retryAfterMs;
+  }
   // classify only known native rejections; never retain identifiers or raw prose.
   if (
     ['sessions.resolve', 'sessions.create', 'sessions.patch'].includes(method) &&
@@ -213,7 +235,7 @@ export default function automationGatewayDiagnostic(
   // Opt-in disposable CI evidence excludes arbitrary details and request payloads.
   if (
     evidence &&
-    (method === 'sessions.create' || method === 'cron.add') &&
+    ['models.list', 'sessions.resolve', 'sessions.create', 'cron.add'].includes(method) &&
     diagnostic.category === 'rejected' &&
     error instanceof Error
   ) {

@@ -1,4 +1,5 @@
 import { AutomationError } from './automation-errors.ts';
+import { setTimeout } from 'node:timers/promises';
 import type { callGatewayFromCli } from 'openclaw/plugin-sdk/gateway-runtime';
 
 import {
@@ -121,7 +122,11 @@ export function isOperatorAutomationGateway(request: AutomationGateway): boolean
 }
 
 /** operator transport; only the admitted cli composition supplies this dependency. */
-export function createAutomationGateway(call: AutomationGatewayCaller): AutomationGateway {
+export function createAutomationGateway(
+  call: AutomationGatewayCaller,
+  sleep: (ms: number, signal?: AbortSignal) => Promise<unknown> = (ms, signal) =>
+    setTimeout(ms, undefined, { signal }),
+): AutomationGateway {
   const request: AutomationGateway = async (method, params) => {
     assertPrivateStateLocksHeld();
     const readOnly = ![
@@ -132,11 +137,11 @@ export function createAutomationGateway(call: AutomationGatewayCaller): Automati
       'sessions.patch',
     ].includes(method);
     const signal = method === 'sessions.create' ? privateStateLockSignal() : undefined;
-    const invoke = () =>
+    const invoke = (requestParams = params) =>
       call(
         method,
         method === 'sessions.create' ? { timeout: String(openclawSessionCreateTimeoutMs) } : {},
-        params,
+        requestParams,
         {
           progress: false,
           ...(signal ? { signal } : {}),
@@ -155,12 +160,26 @@ export function createAutomationGateway(call: AutomationGatewayCaller): Automati
       try {
         return await invoke();
       } catch (error) {
+        const { ErrorCodes, isGatewayClientRequestError } =
+          await import('openclaw/plugin-sdk/gateway-runtime');
         const { default: automationGatewayUnavailable } =
           await import('./automation-gateway-unavailable.ts');
-        // Cold installation may overlap the Gateway's plugin/config reload. Reconnect
-        // once for a read that never reached it; never replay a mutation or a denial.
-        if (!readOnly || !automationGatewayUnavailable(error)) throw error;
+        // Native catalog publication can supersede a read during reload/acquisition.
+        // Follow its explicit retry hint once; never replay scheduler/session writes.
+        const retryable =
+          isGatewayClientRequestError(error) &&
+          error.gatewayCode === ErrorCodes.UNAVAILABLE &&
+          error.retryable === true;
+        if (!readOnly || (!retryable && !automationGatewayUnavailable(error))) throw error;
+        if (retryable) await sleep(error.retryAfterMs ?? 0, privateStateLockSignal());
         assertPrivateStateLocksHeld();
+        if (retryable && method === 'models.list' && params.refresh === true) {
+          // Acquisition may have published before the response was invalidated. Read
+          // the current evidence rather than initiating another catalog replacement.
+          const readParams = { ...params };
+          delete readParams.refresh;
+          return await invoke({ ...readParams, preparedOnly: true });
+        }
         return await invoke();
       }
     } catch (error) {

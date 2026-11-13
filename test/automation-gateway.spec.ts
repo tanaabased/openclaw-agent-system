@@ -25,6 +25,115 @@ const job = (id: string) => ({
   state: {},
 });
 describe('agent/automation-gateway', () => {
+  it('should honor a native retry hint once and re-read after superseded catalog acquisition', async () => {
+    const calls: { method: string; params: unknown }[] = [];
+    const waits: number[] = [];
+    const request = createAutomationGateway(
+      async (method, _options, params) => {
+        calls.push({ method, params });
+        if (calls.length === 1)
+          throw Object.assign(new Error('publication superseded'), {
+            name: 'GatewayClientRequestError',
+            gatewayCode: 'UNAVAILABLE',
+            retryable: true,
+            retryAfterMs: 25,
+          });
+        return { models: [{ available: false, unavailableReason: 'missing-auth' }] };
+      },
+      async (ms) => {
+        waits.push(ms);
+      },
+    );
+    const result = await request('models.list', { agentId: 'a', view: 'all', refresh: true });
+    assert.equal((result.models as { available: boolean }[])[0]!.available, false);
+    assert.deepEqual(waits, [25]);
+    assert.deepEqual(calls, [
+      { method: 'models.list', params: { agentId: 'a', view: 'all', refresh: true } },
+      { method: 'models.list', params: { agentId: 'a', view: 'all', preparedOnly: true } },
+    ]);
+  });
+
+  it('should keep retry exhaustion fatal and retain native retry hints without error text', async () => {
+    let calls = 0;
+    const request = createAutomationGateway(
+      async () => {
+        calls++;
+        throw Object.assign(new Error('private provider detail'), {
+          name: 'GatewayClientRequestError',
+          gatewayCode: 'UNAVAILABLE',
+          retryable: true,
+          retryAfterMs: 0,
+        });
+      },
+      async () => {},
+    );
+    await assert.rejects(request('sessions.resolve', { key: 'owned' }), (error: unknown) => {
+      assert.ok(error instanceof AutomationError);
+      assert.equal(error.diagnostic?.retryable, true);
+      assert.equal(error.diagnostic?.retryAfterMs, 0);
+      assert.doesNotMatch(JSON.stringify(error.diagnostic), /private provider detail/);
+      return true;
+    });
+    assert.equal(calls, 2);
+  });
+
+  it('should not replay writes or read refusals without an explicit transient hint', async () => {
+    for (const method of [
+      'cron.add',
+      'cron.update',
+      'cron.run',
+      'sessions.create',
+      'sessions.patch',
+      'sessions.resolve',
+      'models.list',
+    ] as const) {
+      let calls = 0;
+      const read = method === 'sessions.resolve' || method === 'models.list';
+      const request = createAutomationGateway(
+        async () => {
+          calls++;
+          throw Object.assign(
+            new Error('Plugin codex was reloaded or disabled; use its current tools.'),
+            {
+              name: 'GatewayClientRequestError',
+              gatewayCode: 'UNAVAILABLE',
+              retryable: !read,
+            },
+          );
+        },
+        async () => assert.fail('must not wait'),
+      );
+      await assert.rejects(request(method, {}), { code: 'automation-gateway-rejected' });
+      assert.equal(calls, 1);
+    }
+  });
+
+  it('should stop a hinted retry when the owning lease is cancelled', async () => {
+    const controller = new AbortController();
+    let calls = 0;
+    const request = createAutomationGateway(
+      async () => {
+        calls++;
+        throw Object.assign(new Error('publication superseded'), {
+          name: 'GatewayClientRequestError',
+          gatewayCode: 'UNAVAILABLE',
+          retryable: true,
+        });
+      },
+      async (_ms, signal) => {
+        assert.equal(signal, controller.signal);
+        controller.abort(new Error('cancelled'));
+        signal!.throwIfAborted();
+      },
+    );
+    await assert.rejects(
+      withPrivateStateLock({ signal: controller.signal, assertHeld() {} }, () =>
+        request('models.list', {}),
+      ),
+    );
+    assert.equal(calls, 1);
+  });
+
   it('should enable rejection capture only in explicitly debugged ci without retrying the mutation', async () => {
     const previous = {
       CI: process.env.CI,

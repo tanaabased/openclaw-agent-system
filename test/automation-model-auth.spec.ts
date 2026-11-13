@@ -5,7 +5,7 @@ import automationModelAuth from '../agent/automations/automation-model-auth.ts';
 import normalizeAutomations, { type ResolvedAutomation } from '../manifest/automation-schema.ts';
 
 describe('agent/automation-model-auth', () => {
-  it('should acquire unknown evidence only during reconciliation and preserve unresolved or non-auth failures', async () => {
+  it('should acquire unknown evidence only during reconciliation and skip only definitive unavailable results', async () => {
     const normalized = normalizeAutomations([
       { id: 'prompt', schedule: 'every 5 minutes', prompt: 'inspect' },
     ]);
@@ -35,10 +35,8 @@ describe('agent/automation-model-auth', () => {
             mode,
           );
           assert.deepEqual(
-            [...result],
-            mode === 'reconcile' && availability === false && reason === 'missing-auth'
-              ? ['prompt']
-              : [],
+            [...result.keys()],
+            mode === 'reconcile' && availability === false ? ['prompt'] : [],
           );
           assert.equal(reads.length, mode === 'inspect' ? 1 : 2);
           if (mode === 'reconcile')
@@ -64,7 +62,7 @@ describe('agent/automation-model-auth', () => {
       /catalog acquisition failed/,
     );
   });
-  it('should require explicit native missing-auth evidence for the selected model', async () => {
+  it('should preserve missing-auth separately from other definitive model unavailability', async () => {
     const normalized = normalizeAutomations([
       { id: 'prompt', schedule: 'every 5 minutes', prompt: 'inspect', model: 'openai/selected' },
       { id: 'command', schedule: 'every 5 minutes', run: ['echo', 'ok'] },
@@ -97,7 +95,8 @@ describe('agent/automation-model-auth', () => {
         jobs,
         'reconcile',
       );
-      assert.deepEqual([...result], reason === 'missing-auth' ? ['prompt'] : []);
+      assert.deepEqual([...result.keys()], ['prompt']);
+      assert.equal(result.get('prompt'), reason ?? 'unavailable');
     }
     assert.deepEqual([...(await automationModelAuth(async () => ({ models: [] }), 'a', jobs))], []);
     await assert.rejects(
