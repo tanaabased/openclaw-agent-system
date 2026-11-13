@@ -651,16 +651,21 @@ An operator who can rewrite `openclaw.json` can copy the reference. For linked
 checkouts, follow the [source-install rebuild and restart steps](./DEVELOPMENT.md#install-from-source)
 after changing the provider form or binding.
 
-Doctor preserves the memory database and checks readiness by provider:
+Doctor preserves the memory database and reports index readiness separately from
+embedding availability:
 
 - `none`: keyword index.
-- `local`: local provider availability.
-- `openai`: the configured credential and one bounded embedding probe; an unrelated fallback credential cannot establish readiness.
+- `local`: index readiness and a bounded embedding probe, which can initialize
+  the configured local model.
+- `openai`: index readiness, the configured credential, and a bounded embedding
+  probe; an unrelated fallback credential cannot establish readiness.
 
 Authentication, permission, billing/quota, and transport failures omit upstream
 error bodies. Index identity and synchronization drift are separate findings.
 
-Use OpenClaw's explicit memory commands when you intend to mutate the index:
+The memory CLI commands below require offline ownership; stop the Gateway through
+its service owner before running them. Doctor uses online status APIs when the
+Gateway owns the stores. Rebuild only when you intend to mutate the index:
 
 ```sh
 # inspect the bound agent without rebuilding its index.

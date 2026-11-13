@@ -1,7 +1,14 @@
 import { nativeObject } from '../../utils/native-object.ts';
 import { parseMemoryStatus, type MemoryStatus } from './memory-status.ts';
 
-type MemoryStatusDependencies = {
+export type MemoryIndexStatus = MemoryStatus['status'] & { health?: 'ready' | 'degraded' };
+export type MemoryEmbeddingStatus = {
+  provider: string;
+  fallback?: MemoryStatus['status']['fallback'];
+  probe?: MemoryStatus['embeddingProbe'];
+};
+
+export type MemoryStatusDependencies = {
   readCli(): Promise<{ code: number | null; stdout: string; stderr: string }>;
   request(
     method: 'memory.status' | 'doctor.memory.status',
@@ -9,36 +16,30 @@ type MemoryStatusDependencies = {
   ): Promise<Record<string, unknown>>;
 };
 
-export default async function inspectMemoryStatus(
+async function readOfflineStatus(
   agentId: string,
-  deep: boolean,
   dependencies: MemoryStatusDependencies,
-): Promise<MemoryStatus> {
+): Promise<MemoryStatus | undefined> {
   const result = await dependencies.readCli();
-  // only the explicit offline-owner refusal selects online diagnostics; other failures stay failures.
+  // only the explicit offline-owner refusal selects online diagnostics.
   if (
-    !result.stderr.includes('Cannot admit memory.cli for memory stores') ||
-    !result.stderr.includes('This operation requires exclusive offline state ownership.')
-  ) {
-    try {
-      return parseMemoryStatus(result.stdout, agentId);
-    } catch {
-      throw new Error(result.stderr.trim() || `OpenClaw memory status exited ${result.code}.`);
-    }
+    result.stderr.includes('Cannot admit memory.cli for memory stores') &&
+    result.stderr.includes('This operation requires exclusive offline state ownership.')
+  )
+    return undefined;
+  try {
+    return parseMemoryStatus(result.stdout, agentId);
+  } catch {
+    throw new Error('OpenClaw returned no agent-scoped memory status evidence.');
   }
+}
 
-  const probe = deep
-    ? await dependencies.request('doctor.memory.status', { agentId, probe: true })
-    : undefined;
-  if (
-    probe &&
-    (probe.agentId !== agentId ||
-      !nativeObject(probe.embedding) ||
-      typeof probe.embedding.ok !== 'boolean')
-  ) {
-    throw new Error('OpenClaw returned invalid agent-scoped embedding evidence.');
-  }
-  // read index evidence after the probe, which may initialize the embedding provider.
+export default async function inspectMemoryIndex(
+  agentId: string,
+  dependencies: MemoryStatusDependencies,
+): Promise<MemoryIndexStatus> {
+  const offline = await readOfflineStatus(agentId, dependencies);
+  if (offline) return offline.status;
   const health = await dependencies.request('memory.status', { agentId });
   const details = nativeObject(health.details) ? health.details.legacy : undefined;
   if (
@@ -46,19 +47,41 @@ export default async function inspectMemoryStatus(
     health.version !== 2 ||
     health.providerId !== 'memory-core' ||
     !nativeObject(details) ||
-    (probe?.provider !== undefined && probe.provider !== details.provider)
-  ) {
-    throw new Error('OpenClaw returned no matching built-in memory readiness evidence.');
-  }
-  const status = parseMemoryStatus(
+    !['ready', 'degraded'].includes(String(health.status))
+  )
+    throw new Error('OpenClaw returned no matching built-in memory index evidence.');
+  const parsed = parseMemoryStatus(JSON.stringify([{ agentId, status: details }]), agentId);
+  return { ...parsed.status, health: health.status as 'ready' | 'degraded' };
+}
+
+export async function inspectMemoryEmbedding(
+  agentId: string,
+  dependencies: MemoryStatusDependencies,
+): Promise<MemoryEmbeddingStatus> {
+  const offline = await readOfflineStatus(agentId, dependencies);
+  if (offline)
+    return {
+      provider: offline.status.provider,
+      probe: offline.embeddingProbe,
+      ...(offline.status.fallback ? { fallback: offline.status.fallback } : {}),
+    };
+  const result = await dependencies.request('doctor.memory.status', { agentId, probe: true });
+  if (
+    result.agentId !== agentId ||
+    !nativeObject(result.embedding) ||
+    typeof result.embedding.ok !== 'boolean' ||
+    (result.embedding.ok && typeof result.provider !== 'string')
+  )
+    throw new Error('OpenClaw returned invalid agent-scoped embedding evidence.');
+  const parsed = parseMemoryStatus(
     JSON.stringify([
-      { agentId, status: details, ...(probe ? { embeddingProbe: probe.embedding } : {}) },
+      {
+        agentId,
+        status: { provider: result.provider ?? 'unavailable' },
+        embeddingProbe: result.embedding,
+      },
     ]),
     agentId,
   );
-  // an aggregate warning must not disappear merely because its detailed fields are incomplete.
-  if (health.status !== 'ready') {
-    throw new Error('OpenClaw memory health is unavailable.');
-  }
-  return status;
+  return { provider: parsed.status.provider, probe: parsed.embeddingProbe };
 }

@@ -84,7 +84,10 @@ import {
   createMemorySecretProviderConfiguration,
   memorySecretProviderAlias,
 } from '../agent/lifecycle/memory-secret-provider-configuration.ts';
-import inspectMemoryStatus from '../agent/lifecycle/inspect-memory-status.ts';
+import inspectMemoryIndex, {
+  inspectMemoryEmbedding,
+  type MemoryStatusDependencies,
+} from '../agent/lifecycle/inspect-memory-status.ts';
 import AgentManifestService, { type ManifestLoadTrigger } from '../manifest/service.ts';
 import AgentPathService from '../paths/service.ts';
 import CodexPathConfigService from '../paths/codex-config-service.ts';
@@ -135,6 +138,34 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   const readRuntimeConfig = () => api.runtime.config.current() as OpenClawConfig;
   const cliEntry = process.argv[1] ? resolve(process.argv[1]) : undefined;
   const openClawCommand = cliEntry ? [process.execPath, cliEntry] : ['openclaw'];
+  const memoryStatusDependencies = (
+    agentId: string,
+    workspaceDir: string,
+    deep: boolean,
+  ): MemoryStatusDependencies => ({
+    readCli: () =>
+      runPluginCommandWithTimeout({
+        argv: [
+          ...openClawCommand,
+          'memory',
+          'status',
+          '--agent',
+          agentId,
+          ...(deep ? ['--deep'] : []),
+          '--json',
+        ],
+        cwd: workspaceDir,
+        timeoutMs: deep ? 120_000 : 30_000,
+      }),
+    async request(method, params) {
+      const { callGatewayFromCli } = await import('openclaw/plugin-sdk/gateway-runtime');
+      return callGatewayFromCli(method, { timeout: String(deep ? 120_000 : 30_000) }, params, {
+        progress: false,
+        scopes: ['operator.read'],
+        sharedStateMode: 'read-only',
+      });
+    },
+  });
   const toolLauncherDirectory = process.env.AGENT_SYSTEM_TOOL_LAUNCHER_DIR?.trim();
   const excludedToolExecutableDirectories = [
     join(packageDir, 'bin'),
@@ -668,36 +699,14 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       },
     }),
     createMemoryLifecycleContribution({
-      async inspectMemoryStatus({ agentId, deep, workspaceDir }) {
-        return inspectMemoryStatus(agentId, deep, {
-          readCli: () =>
-            runPluginCommandWithTimeout({
-              argv: [
-                ...openClawCommand,
-                'memory',
-                'status',
-                '--agent',
-                agentId,
-                ...(deep ? ['--deep'] : []),
-                '--json',
-              ],
-              cwd: workspaceDir,
-              timeoutMs: deep ? 120_000 : 30_000,
-            }),
-          async request(method, params) {
-            const { callGatewayFromCli } = await import('openclaw/plugin-sdk/gateway-runtime');
-            return callGatewayFromCli(
-              method,
-              { timeout: String(deep ? 120_000 : 30_000) },
-              params,
-              {
-                progress: false,
-                scopes: ['operator.read'],
-                sharedStateMode: 'read-only',
-              },
-            );
-          },
-        });
+      inspectMemoryIndex({ agentId, workspaceDir }) {
+        return inspectMemoryIndex(agentId, memoryStatusDependencies(agentId, workspaceDir, false));
+      },
+      inspectMemoryEmbedding({ agentId, workspaceDir }) {
+        return inspectMemoryEmbedding(
+          agentId,
+          memoryStatusDependencies(agentId, workspaceDir, true),
+        );
       },
       async inspectBinding({ agentId, binding }) {
         const service = environmentServiceRef.current;

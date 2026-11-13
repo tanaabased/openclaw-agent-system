@@ -6,6 +6,7 @@ export interface MemoryStatus {
   };
   status: {
     chunks?: number;
+    dirty?: boolean;
     custom?: Record<string, unknown>;
     fallback?: { from?: string };
     files?: number;
@@ -76,6 +77,7 @@ function parseStatus(value: unknown): MemoryStatus['status'] {
       : undefined;
   return {
     provider: value.provider,
+    ...(optionalBoolean(value.dirty) === undefined ? {} : { dirty: optionalBoolean(value.dirty) }),
     ...(optionalCount(value.files) === undefined ? {} : { files: optionalCount(value.files) }),
     ...(optionalCount(value.chunks) === undefined ? {} : { chunks: optionalCount(value.chunks) }),
     ...(typeof value.requestedProvider === 'string'

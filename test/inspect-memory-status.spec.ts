@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 
-import inspectMemoryStatus from '../agent/lifecycle/inspect-memory-status.ts';
+import inspectMemoryIndex, {
+  inspectMemoryEmbedding,
+  type MemoryStatusDependencies,
+} from '../agent/lifecycle/inspect-memory-status.ts';
 
 const agentId = 'test-agent';
 const refusal = {
@@ -12,39 +15,41 @@ const refusal = {
 const detail = {
   provider: 'openai',
   requestedProvider: 'openai',
+  dirty: false,
   fts: { enabled: true, available: true },
-  vector: {
-    enabled: true,
-    storeAvailable: true,
-    semanticAvailable: true,
-    index: { state: 'complete' },
-  },
+  vector: { enabled: true, index: { state: 'complete' } },
+  custom: { providerState: { mode: 'pending' }, indexIdentity: { status: 'valid' } },
 };
 const health = {
   version: 2,
   agentId,
   providerId: 'memory-core',
-  status: 'ready',
+  status: 'degraded',
   details: { legacy: detail },
 };
-const probe = { agentId, provider: 'openai', embedding: { ok: true } };
+const probe = { agentId, provider: 'openai', embedding: { checked: true, ok: true } };
+const unavailable = async () => assert.fail('unexpected transport');
+
+function online(request: MemoryStatusDependencies['request']): MemoryStatusDependencies {
+  return { readCli: async () => refusal, request };
+}
 
 describe('agent/lifecycle/inspect-memory-status', () => {
-  it('should retain offline inspection without gateway access', async () => {
-    const result = await inspectMemoryStatus(agentId, false, {
+  it('should retain offline index evidence without gateway access', async () => {
+    const result = await inspectMemoryIndex(agentId, {
       readCli: async () => ({
         code: 0,
         stderr: '',
         stdout: JSON.stringify([{ agentId, status: detail }]),
       }),
-      request: async () => assert.fail('offline inspection must not access the gateway'),
+      request: unavailable,
     });
-    assert.equal(result.status.provider, 'openai');
-    assert.equal(result.status.fts?.available, true);
+    assert.equal(result.dirty, false);
+    assert.equal(result.vector?.index?.state, 'complete');
   });
 
-  it('should retain structured offline failure evidence despite a nonzero exit', async () => {
-    const result = await inspectMemoryStatus(agentId, true, {
+  it('should retain an offline failed embedding probe despite a nonzero exit', async () => {
+    const result = await inspectMemoryEmbedding(agentId, {
       readCli: async () => ({
         code: 1,
         stderr: '',
@@ -52,107 +57,107 @@ describe('agent/lifecycle/inspect-memory-status', () => {
           { agentId, status: detail, embeddingProbe: { ok: false, error: '401' } },
         ]),
       }),
-      request: async () => assert.fail('offline evidence must not be replaced'),
+      request: unavailable,
     });
-    assert.equal(result.embeddingProbe?.ok, false);
+    assert.equal(result.probe?.ok, false);
+    assert.equal(result.probe?.error, '401');
   });
 
-  it('should combine an agent-scoped live probe with subsequent detailed index evidence', async () => {
-    let probed = false;
-    const result = await inspectMemoryStatus(agentId, true, {
-      readCli: async () => refusal,
-      request: async (method, params) => {
-        assert.equal(params.agentId, agentId);
-        if (method === 'doctor.memory.status') {
-          assert.equal(params.probe, true);
-          probed = true;
-          return probe;
-        }
-        assert.equal(probed, true);
-        return health;
-      },
-    });
-    assert.equal(result.embeddingProbe?.ok, true);
-    assert.deepEqual(result.status.vector, detail.vector);
-    assert.deepEqual(result.status.fts, detail.fts);
-  });
-
-  it('should not initialize an embedding provider for shallow inspection', async () => {
-    const result = await inspectMemoryStatus(agentId, false, {
-      readCli: async () => refusal,
-      request: async (method) => {
+  it('should inspect index health without requiring or performing an embedding probe', async () => {
+    const result = await inspectMemoryIndex(
+      agentId,
+      online(async (method, params) => {
         assert.equal(method, 'memory.status');
+        assert.deepEqual(params, { agentId });
         return health;
-      },
-    });
-    assert.equal(result.embeddingProbe, undefined);
+      }),
+    );
+    assert.equal(result.health, 'degraded');
+    assert.deepEqual(result.vector, detail.vector);
+    assert.deepEqual(result.custom, detail.custom);
   });
 
-  it('should preserve a failed embedding probe rather than promoting index health', async () => {
-    const result = await inspectMemoryStatus(agentId, true, {
-      readCli: async () => refusal,
-      request: async (method) =>
-        method === 'memory.status'
-          ? health
-          : {
-              ...probe,
-              embedding: { ok: false, checked: true, error: '401 authentication failed' },
-            },
-    });
-    assert.equal(result.embeddingProbe?.ok, false);
-    assert.match(result.embeddingProbe?.error ?? '', /401/u);
+  it('should probe embeddings without requiring or reading index health', async () => {
+    const result = await inspectMemoryEmbedding(
+      agentId,
+      online(async (method, params) => {
+        assert.equal(method, 'doctor.memory.status');
+        assert.deepEqual(params, { agentId, probe: true });
+        return probe;
+      }),
+    );
+    assert.deepEqual(result, { provider: 'openai', probe: probe.embedding });
+  });
+
+  it('should preserve provider failure without requiring provider activation', async () => {
+    const result = await inspectMemoryEmbedding(
+      agentId,
+      online(async () => ({
+        agentId,
+        embedding: { checked: true, ok: false, error: '401 authentication failed' },
+      })),
+    );
+    assert.equal(result.probe?.ok, false);
+    assert.match(result.probe?.error ?? '', /401/u);
   });
 
   it('should reject unrelated cli errors without trying a different authority path', async () => {
-    for (const stderr of [
-      'permission denied',
-      'invalid config',
-      'exclusive offline state ownership',
-    ]) {
-      await assert.rejects(
-        inspectMemoryStatus(agentId, true, {
-          readCli: async () => ({ ...refusal, stderr }),
-          request: async () => assert.fail('unexpected fallback'),
-        }),
-      );
+    for (const inspect of [inspectMemoryIndex, inspectMemoryEmbedding]) {
+      for (const stderr of [
+        'permission denied',
+        'invalid config',
+        'exclusive offline state ownership',
+      ]) {
+        await assert.rejects(
+          inspect(agentId, { readCli: async () => ({ ...refusal, stderr }), request: unavailable }),
+        );
+      }
     }
   });
 
-  it('should reject cross-agent, mismatched, incomplete and degraded online evidence', async () => {
+  it('should reject cross-agent, wrong-provider and malformed index envelopes', async () => {
     for (const bad of [
       { ...health, agentId: 'other' },
+      { ...health, version: 1 },
       { ...health, providerId: 'other' },
       { ...health, details: {} },
-      { ...health, status: 'degraded' },
-      { ...health, details: { legacy: { ...detail, provider: 'none' } } },
-    ]) {
+      { ...health, status: 'unavailable' },
+    ])
       await assert.rejects(
-        inspectMemoryStatus(agentId, true, {
-          readCli: async () => refusal,
-          request: async (method) => (method === 'memory.status' ? bad : probe),
-        }),
+        inspectMemoryIndex(
+          agentId,
+          online(async () => bad),
+        ),
       );
-    }
-    for (const bad of [{ ...probe, agentId: 'other' }, { agentId }, { agentId, embedding: {} }]) {
-      await assert.rejects(
-        inspectMemoryStatus(agentId, true, {
-          readCli: async () => refusal,
-          request: async (method) => (method === 'memory.status' ? health : bad),
-        }),
-      );
-    }
   });
 
-  it('should propagate gateway authorization and transport failures', async () => {
+  it('should reject cross-agent or malformed embedding evidence', async () => {
+    for (const bad of [
+      { ...probe, agentId: 'other' },
+      { agentId },
+      { agentId, embedding: {} },
+      { agentId, embedding: { ok: true } },
+    ])
+      await assert.rejects(
+        inspectMemoryEmbedding(
+          agentId,
+          online(async () => bad),
+        ),
+      );
+  });
+
+  it('should propagate transport and authorization failures for each check', async () => {
     const error = new Error('gateway denied');
-    await assert.rejects(
-      inspectMemoryStatus(agentId, true, {
-        readCli: async () => refusal,
-        request: async () => {
-          throw error;
-        },
-      }),
-      (actual) => actual === error,
-    );
+    for (const inspect of [inspectMemoryIndex, inspectMemoryEmbedding]) {
+      await assert.rejects(
+        inspect(
+          agentId,
+          online(async () => {
+            throw error;
+          }),
+        ),
+        (actual) => actual === error,
+      );
+    }
   });
 });
