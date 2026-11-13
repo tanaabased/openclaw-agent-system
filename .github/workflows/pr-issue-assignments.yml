@@ -16,20 +16,19 @@ env:
 
 jobs:
   examples:
-    # #631: paused until its migration slice; remove before final validation.
-    if: false
     name: ${{ matrix.example }} (ubuntu-24.04)
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         example:
-          - openclaw-issue-intake
-          - openclaw-issue-assessment-recovery
-          - openclaw-issue-assignment-policy
+          # #631: verify conversation continuity before expanding the remaining issue journeys.
+          # - openclaw-issue-intake
+          # - openclaw-issue-assessment-recovery
+          # - openclaw-issue-assignment-policy
           - openclaw-issue-conversation
-          - openclaw-issue-work-custom
-          - openclaw-issue-auto-plan
+          # - openclaw-issue-work-custom
+          # - openclaw-issue-auto-plan
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

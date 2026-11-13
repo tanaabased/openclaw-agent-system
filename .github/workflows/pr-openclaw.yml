@@ -22,14 +22,14 @@ jobs:
       fail-fast: false
       matrix:
         example:
-          # #631: restore remaining scenarios after the memory/Doctor slice.
-          # - openclaw-agent
+          # #631: expand through agent execution and assessment; restore remaining scenarios incrementally.
+          - openclaw-agent
           # - openclaw-native-retirement
           # - openclaw-workspace
           - openclaw-doctor
           # - openclaw-tool-access
           # - openclaw-github
-          # - openclaw-issue-assessment
+          - openclaw-issue-assessment
           # - openclaw-issue-launch
           # - openclaw-github-reply
           # - openclaw-google
@@ -43,7 +43,7 @@ jobs:
           # - openclaw-backup
           # - openclaw-backup-cleanup
           # - openclaw-credentials
-          # - openclaw-runtimes
+          - openclaw-runtimes
           # - openclaw-lifecycle-approvals
     steps:
       - name: Checkout code
