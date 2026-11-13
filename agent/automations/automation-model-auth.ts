@@ -1,9 +1,11 @@
+import automationCompatibilityDiagnostic from './automation-compatibility-diagnostic.ts';
 import { AutomationError } from './automation-errors.ts';
 import { nativeObject } from '../../utils/native-object.ts';
 import { type AutomationGateway } from './automation-gateway.ts';
 import type { ResolvedAutomation } from '../../manifest/automation-schema.ts';
 
-export type ModelUnavailableReason = 'missing-auth' | 'auth-failed' | 'cooldown' | 'unavailable';
+export type ModelUnavailableReason =
+  'missing-auth' | 'auth-failed' | 'cooldown' | 'unavailable' | 'unresolved';
 
 /** Failed reads are errors; unresolved catalog readiness is not proof of missing auth. */
 export default async function automationModelAuth(
@@ -50,6 +52,25 @@ export default async function automationModelAuth(
   const unavailable = new Map<string, ModelUnavailableReason>();
   for (const job of prompts) {
     const row = selected(job);
+    automationCompatibilityDiagnostic('automation-model-evidence', {
+      mode,
+      automationId: job.id,
+      model: job.overrides.openclaw?.model ?? 'default',
+      selected: Boolean(row),
+      availability:
+        row?.available === true
+          ? 'available'
+          : row?.available === false
+            ? 'unavailable'
+            : 'unknown',
+      reason: ['missing-auth', 'auth-failed', 'cooldown'].includes(String(row?.unavailableReason))
+        ? row!.unavailableReason
+        : 'unspecified',
+    });
+    if (row && typeof row.available !== 'boolean' && mode === 'inspect') {
+      unavailable.set(job.id, 'unresolved');
+      continue;
+    }
     if (row?.available !== false) continue;
     const reason = row.unavailableReason;
     unavailable.set(
@@ -63,6 +84,7 @@ export default async function automationModelAuth(
 }
 
 export function automationModelUnavailableCode(reason: ModelUnavailableReason) {
+  if (reason === 'unresolved') return 'automation-model-readiness-unresolved';
   return reason === 'missing-auth'
     ? 'automation-model-auth-missing'
     : 'automation-model-unavailable';
@@ -75,8 +97,10 @@ export function automationModelSkipped(id: string, reason: ModelUnavailableReaso
     status: 'skipped' as const,
     code: automationModelUnavailableCode(reason),
     message:
-      reason === 'missing-auth'
-        ? `Automation ${id} was not installed because its model authentication is not configured. Configure authentication, then rerun Install.`
-        : `Automation ${id} was not installed because OpenClaw reports its model unavailable (${reason}). Resolve model availability, then rerun Install.`,
+      reason === 'unresolved'
+        ? `Automation ${id} is not installed and its model availability is unresolved. Run Install to check scheduled authentication; inspection did not attempt enrollment.`
+        : reason === 'missing-auth'
+          ? `Automation ${id} was not installed because its model authentication is not configured. Configure authentication, then rerun Install.`
+          : `Automation ${id} was not installed because OpenClaw reports its model unavailable (${reason}). Resolve model availability, then rerun Install.`,
   };
 }

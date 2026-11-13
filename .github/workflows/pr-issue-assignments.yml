@@ -22,13 +22,12 @@ jobs:
       fail-fast: false
       matrix:
         example:
-          # #631: verify conversation continuity, intake, recovery and assignment policy.
           - openclaw-issue-intake
           - openclaw-issue-assessment-recovery
           - openclaw-issue-assignment-policy
           - openclaw-issue-conversation
-          # - openclaw-issue-work-custom
-          # - openclaw-issue-auto-plan
+          - openclaw-issue-work-custom
+          - openclaw-issue-auto-plan
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

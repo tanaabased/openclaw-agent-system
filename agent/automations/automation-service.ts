@@ -1,6 +1,7 @@
 import { realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import automationCompatibilityDiagnostic from './automation-compatibility-diagnostic.ts';
 import automationModelAuth, {
   automationModelSkipped,
   automationModelUnavailableCode,
@@ -605,7 +606,7 @@ export default class AutomationService {
           findings.push(finding(job.id, 'blocked', 'automation-native-safety-disabled'));
           continue;
         }
-        if (unavailableModels.has(job.id)) {
+        if (unavailableModels.has(job.id) && unavailableModels.get(job.id) !== 'unresolved') {
           findings.push(
             finding(
               job.id,
@@ -997,6 +998,10 @@ export default class AutomationService {
                 // pending scheduler receipt. Preserve any created conversation.
                 ledger.records = ledger.records.filter((entry) => entry !== record);
                 await store.write(ledger);
+                automationCompatibilityDiagnostic('automation-scheduled-auth', {
+                  source: 'cron.add',
+                  reason: 'missing-auth',
+                });
                 outcomes.push(automationModelSkipped(job.id, 'missing-auth'));
                 continue;
               }

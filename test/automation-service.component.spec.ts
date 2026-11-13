@@ -776,9 +776,25 @@ describe('agent/automation-service', () => {
         (await store.read()).records.some(({ id }) => id === 'prompt'),
         false,
       );
+      if (available === undefined) {
+        const findings = await service.inspect(manifest, root);
+        assert.ok(
+          findings.some(
+            (item) =>
+              item.stepId === 'prompt' &&
+              item.status === 'skipped' &&
+              item.code === 'automation-model-readiness-unresolved',
+          ),
+        );
+      }
       fail = undefined;
       await service.reconcile(manifest, root);
       await service.reconcile(manifest, root);
+      assert.ok(
+        (await service.inspect(manifest, root)).some(
+          (item) => item.stepId === 'prompt' && item.status === 'healthy',
+        ),
+      );
       assert.equal(native.length, 2);
       // A previously owned job is not a new optional enrollment. Its recovery
       // evidence must survive instead of treating it as an optional install.

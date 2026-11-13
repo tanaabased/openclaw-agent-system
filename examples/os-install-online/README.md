@@ -26,6 +26,7 @@ first attempt's evidence before testing repeat installation.
 - Session creation uses the shared 120-second budget, subject to earlier cancellation or enclosing deadlines; unrelated requests retain their native timeout. Controlled-time source tests prove the budget, while this scenario proves installed behavior. First-attempt failures remain fatal.
 - Enrollment allows up to 90 seconds for startup or plugin reload, within a 135-second connection deadline including authentication. Terminal reload failure and cancellation stop earlier. Session-creation failures report the automation ID and a safe native reason category; `unclassified` means the native rejection is not yet recognized, not that a timeout occurred.
 - In CI, the first Install enables bounded, redacted native rejection evidence with `OPENCLAW_DEBUG=1`; it retains no request payload or arbitrary error details.
+- Passive inspection reports an uninstalled prompt job with unknown catalog availability as skipped with `automation-model-readiness-unresolved`, not missing-job drift or proof of missing authentication. Install still requires authoritative evidence for its own outcome. CI records bounded model-decision and session-recovery evidence in the native log; any failed assertion prints redacted Gateway evidence.
 - Evidence is saved beneath `TMPDIR` before a repeat can change state. A Gateway log observation alone does not establish the failure's cause.
 
 ## Setup
@@ -42,9 +43,22 @@ chmod +x "$GITHUB_WORKSPACE/examples/os-dispatch-enrollment/provider/gh"
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service
 export OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$GITHUB_WORKSPACE/examples/os-dispatch-enrollment/provider:$PATH"
 openclaw config set cron.enabled false --strict-json
+openclaw config set logging.file "$TMPDIR/online-native.log"
 openclaw-gateway start
+online_evidence() {
+  online_status=$?
+  trap - EXIT
+  if test "$online_status" -ne 0; then
+    tail -n 300 "$gateway_log" | node "$gateway_redactor" || true
+  fi
+  if test -f "$TMPDIR/online-native.log"; then
+    grep -F 'agent-system/automation-compatibility' "$TMPDIR/online-native.log" | tail -n 100 | node "$gateway_redactor" || true
+  fi
+  exit "$online_status"
+}
 gateway_log=$(openclaw-gateway log-path)
 gateway_redactor="$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
+trap online_evidence EXIT
 cd "$GITHUB_WORKSPACE/examples/os-install-online"
 first_status=0
 date -u +%Y-%m-%dT%H:%M:%SZ >"$TMPDIR/online-first.started"
@@ -54,23 +68,22 @@ printf '%s\n' "$first_status" >"$TMPDIR/online-first.exit"
 cat "$TMPDIR/online-first.json" "$TMPDIR/online-first.stderr"
 if ! tail -n 300 "$gateway_log" | node "$gateway_redactor" >"$TMPDIR/online-first.gateway.log"; then printf '%s\n' 'gateway evidence unavailable' >"$TMPDIR/online-first.gateway.log"; fi
 if test "$first_status" -ne 0; then
-  cat "$TMPDIR/online-first.gateway.log"
   exit "$first_status"
 fi
 jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .code == "intake-activated") and any(.outcomes[]; .component == "automations" and .stepId == "github-issue-assignment" and .status == "skipped" and (.code == "automation-model-auth-missing" or .code == "automation-model-unavailable")) and all(.warnings[]; .code != "automation-sync-deferred")' "$TMPDIR/online-first.json"
 before_status=0
-openclaw agent-system automations list --json >"$TMPDIR/online-jobs-before.json" || before_status=$?
-if test "$before_status" -ne 1 || ! jq -e '.status == "attention" and ([.findings[] | select(.status != "healthy" and .status != "skipped") | {stepId, status, code}] == [{stepId: "scheduler", status: "blocked", code: "automation-scheduler-disabled"}]) and ([.jobs[].id] | sort) == ["cold-install-command", "github-issue-assignment"] and any(.jobs[]; .id == "cold-install-command" and .nativeEnabled == false and .nativeId != null) and any(.jobs[]; .id == "github-issue-assignment" and .nativeId == null and any(.findings[]; .status == "skipped" and (.code == "automation-model-auth-missing" or .code == "automation-model-unavailable")))' "$TMPDIR/online-jobs-before.json"; then
+OPENCLAW_DEBUG=1 openclaw agent-system automations list --json >"$TMPDIR/online-jobs-before.json" || before_status=$?
+if test "$before_status" -ne 1 || ! jq -e '.status == "attention" and ([.findings[] | select(.status != "healthy" and .status != "skipped") | {stepId, status, code}] == [{stepId: "scheduler", status: "blocked", code: "automation-scheduler-disabled"}]) and ([.jobs[].id] | sort) == ["cold-install-command", "github-issue-assignment"] and any(.jobs[]; .id == "cold-install-command" and .nativeEnabled == false and .nativeId != null) and any(.jobs[]; .id == "github-issue-assignment" and .nativeId == null and any(.findings[]; .status == "skipped" and (.code == "automation-model-auth-missing" or .code == "automation-model-unavailable" or .code == "automation-model-readiness-unresolved")))' "$TMPDIR/online-jobs-before.json"; then
   printf 'automation list before repeat install exited %s\n' "$before_status" >&2
   jq '{status, jobs: [.jobs[] | {id, nativeEnabled}], findings: [.findings[] | {stepId, status, code}]}' "$TMPDIR/online-jobs-before.json" >&2
   exit 1
 fi
-openclaw agent-system install --non-interactive --json >"$TMPDIR/online-repeat.json" 2>"$TMPDIR/online-repeat.stderr"
+OPENCLAW_DEBUG=1 openclaw agent-system install --non-interactive --json >"$TMPDIR/online-repeat.json" 2>"$TMPDIR/online-repeat.stderr"
 cat "$TMPDIR/online-repeat.json" "$TMPDIR/online-repeat.stderr"
 jq -e 'any(.outcomes[]; .code == "session-dispatch-unchanged") and all(.outcomes[]; .component != "automations" or .status == "unchanged" or (.status == "skipped" and (.code == "automation-model-auth-missing" or .code == "automation-model-unavailable")))' "$TMPDIR/online-repeat.json"
 after_status=0
-openclaw agent-system automations list --json >"$TMPDIR/online-jobs-after.json" || after_status=$?
-if test "$after_status" -ne 1 || ! jq -e '.status == "attention" and ([.findings[] | select(.status != "healthy" and .status != "skipped") | {stepId, status, code}] == [{stepId: "scheduler", status: "blocked", code: "automation-scheduler-disabled"}]) and ([.jobs[].id] | sort) == ["cold-install-command", "github-issue-assignment"] and any(.jobs[]; .id == "cold-install-command" and .nativeEnabled == false and .nativeId != null) and any(.jobs[]; .id == "github-issue-assignment" and .nativeId == null and any(.findings[]; .status == "skipped" and (.code == "automation-model-auth-missing" or .code == "automation-model-unavailable")))' "$TMPDIR/online-jobs-after.json"; then
+OPENCLAW_DEBUG=1 openclaw agent-system automations list --json >"$TMPDIR/online-jobs-after.json" || after_status=$?
+if test "$after_status" -ne 1 || ! jq -e '.status == "attention" and ([.findings[] | select(.status != "healthy" and .status != "skipped") | {stepId, status, code}] == [{stepId: "scheduler", status: "blocked", code: "automation-scheduler-disabled"}]) and ([.jobs[].id] | sort) == ["cold-install-command", "github-issue-assignment"] and any(.jobs[]; .id == "cold-install-command" and .nativeEnabled == false and .nativeId != null) and any(.jobs[]; .id == "github-issue-assignment" and .nativeId == null and any(.findings[]; .status == "skipped" and (.code == "automation-model-auth-missing" or .code == "automation-model-unavailable" or .code == "automation-model-readiness-unresolved")))' "$TMPDIR/online-jobs-after.json"; then
   printf 'automation list after repeat install exited %s\n' "$after_status" >&2
   jq '{status, jobs: [.jobs[] | {id, nativeEnabled}], findings: [.findings[] | {stepId, status, code}]}' "$TMPDIR/online-jobs-after.json" >&2
   exit 1

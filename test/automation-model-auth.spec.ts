@@ -36,7 +36,7 @@ describe('agent/automation-model-auth', () => {
           );
           assert.deepEqual(
             [...result.keys()],
-            mode === 'reconcile' && availability === false ? ['prompt'] : [],
+            mode === 'inspect' || availability === false ? ['prompt'] : [],
           );
           assert.equal(reads.length, mode === 'inspect' ? 1 : 2);
           if (mode === 'reconcile')
