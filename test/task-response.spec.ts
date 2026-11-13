@@ -248,6 +248,23 @@ describe('task response assembly', () => {
     assert.ok(text.includes('Available finding'));
     assert.match(text, /blocks were unavailable/);
   });
+  it('should preserve readable cards with their sections when a sibling is malformed despite a duplicate fallback', () => {
+    const blocks = taskResponseOutput({
+      responseBlocks: [
+        { section: 'debug', markdown: 'Last diagnostic' },
+        null,
+        { section: 'assessment', markdown: 'Independent finding' },
+        { section: 'delivery-reply', markdown: published },
+      ],
+      presentation: 'Duplicate fallback must not replace readable cards',
+    });
+    const text = composeResponseBlocks(blocks);
+    assert.ok(text.startsWith('Independent finding'));
+    assert.ok(text.includes(published));
+    assert.ok(text.endsWith('Last diagnostic'));
+    assert.ok(!text.includes('Duplicate fallback'));
+    assert.match(text, /blocks were unavailable/);
+  });
   it('should preserve a separate operational notice alongside an existing presentation', () => {
     const blocks = taskResponseOutput({
       presentation: 'PR retained',
@@ -256,12 +273,12 @@ describe('task response assembly', () => {
     });
     assert.equal(composeResponseBlocks(blocks), 'PR retained\n\nPush uncertain');
   });
-  it('should keep oversized markdown intact in composition and return an explicit native fallback rather than trim', async () => {
+  it('should keep oversized markdown intact without a cross-runtime cutoff', async () => {
     const markdown = 'complete finding '.repeat(2000) + 'LAST FINDING';
     assert.equal(composeResponseBlocks([{ markdown }]), markdown);
     const result = await taskResponse('openclaw', [{ markdown }], async function* () {});
-    assert.equal(result.status, 'presentation-unavailable');
-    assert.match(result.instructions, /keep all prose and exact public replies/);
+    assert.equal(result.status, 'response-composed');
+    assert.equal(result.presentation, markdown);
   });
   it('should accept empty and prose-only requests but reject native bindings and source overrides', () => {
     assert.ok(Value.Check(dispatchModelParameters, { action: 'response' }));

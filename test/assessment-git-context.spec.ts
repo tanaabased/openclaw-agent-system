@@ -1,3 +1,4 @@
+import composeResponseBlocks from '../channels/github/presentation/response-blocks.ts';
 import assert from 'node:assert/strict';
 
 import {
@@ -105,7 +106,10 @@ describe('agent/assessment-git-context', () => {
       const before = structuredClone(record);
       const show = async (repositoryDefault?: () => Promise<string>) =>
         String(
-          (await renderBoundAssessment(request, { ...context, repositoryDefault })).presentation,
+          composeResponseBlocks(
+            (await renderBoundAssessment(request, { ...context, repositoryDefault }))
+              .responseBlocks,
+          ),
         );
       const known = await show(async () => 'release');
       assert.match(known, new RegExp(`${commit} \\(origin/feature/example\\)`));
@@ -128,7 +132,10 @@ describe('agent/assessment-git-context', () => {
           assert.fail('debug off must not read diagnostics');
         },
       });
-      assert.doesNotMatch(hidden.presentation, /Checkout starting point|PR base|Debug/);
+      assert.doesNotMatch(
+        composeResponseBlocks(hidden.responseBlocks),
+        /Checkout starting point|PR base|Debug/,
+      );
       record.project = before.project;
       assert.deepEqual(record, before);
     });

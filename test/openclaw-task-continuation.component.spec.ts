@@ -1,3 +1,5 @@
+import composeResponseBlocks from '../channels/github/presentation/response-blocks.ts';
+import { taskResponseOutput } from '../agent/tasks/response/task-response.ts';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -123,16 +125,19 @@ describe('agent/openclaw task-continuation', () => {
     await fixtureState.prepare(input);
     fixtureState.fixture.repository.defaultBranch = 'release';
     const knownBase = await fixtureState.renderAssessment(input.id);
-    assert.ok('presentation' in knownBase);
-    assert.match(String(knownBase.presentation), /Checkout starting point.*unknown/);
-    assert.match(String(knownBase.presentation), /PR base.*`release`/);
+    assert.ok('responseBlocks' in knownBase);
+    assert.match(
+      composeResponseBlocks(taskResponseOutput(knownBase)),
+      /Checkout starting point.*unknown/,
+    );
+    assert.match(composeResponseBlocks(taskResponseOutput(knownBase)), /PR base.*`release`/);
     const connect = fixtureState.service.dependencies.connect;
     fixtureState.service.dependencies.connect = async () => {
       throw Error('optional metadata unavailable');
     };
     const failed = await fixtureState.renderAssessment(input.id);
-    assert.ok('presentation' in failed);
-    assert.match(String(failed.presentation), /PR base.*`unknown`/);
+    assert.ok('responseBlocks' in failed);
+    assert.match(composeResponseBlocks(taskResponseOutput(failed)), /PR base.*`unknown`/);
     const { journal } = await fixtureState.service.scope(fixtureState.manifest, fixtureState.root);
     await journal.transaction(async (state, save) => {
       state.records[0]!.adoptedPullRequest = {
@@ -149,17 +154,20 @@ describe('agent/openclaw task-continuation', () => {
     });
     const before = await fixtureState.record();
     const known = await fixtureState.renderAssessment(input.id);
-    assert.ok('presentation' in known);
+    assert.ok('responseBlocks' in known);
     assert.match(
-      String(known.presentation),
+      composeResponseBlocks(taskResponseOutput(known)),
       new RegExp(`${'a'.repeat(40)} \\(feature/selected\\)`),
     );
-    assert.match(String(known.presentation), /PR base.*`stable`/);
+    assert.match(composeResponseBlocks(taskResponseOutput(known)), /PR base.*`stable`/);
     assert.deepEqual(await fixtureState.record(), before);
     fixtureState.manifest.debug = false;
     const hidden = await fixtureState.renderAssessment(input.id);
-    assert.ok('presentation' in hidden);
-    assert.doesNotMatch(String(hidden.presentation), /Checkout starting point|PR base/);
+    assert.ok('responseBlocks' in hidden);
+    assert.doesNotMatch(
+      composeResponseBlocks(taskResponseOutput(hidden)),
+      /Checkout starting point|PR base/,
+    );
     fixtureState.service.dependencies.connect = connect;
   });
 
@@ -436,7 +444,8 @@ describe('agent/openclaw task-continuation', () => {
       };
       const result = await fixtureState.renderAssessment(input.id, assessment);
       assert.ok(
-        'presentation' in result && result.presentation?.includes(assessment.reviewSummary!),
+        'responseBlocks' in result &&
+          composeResponseBlocks(taskResponseOutput(result)).includes(assessment.reviewSummary!),
       );
       fixtureState.inputReceipts = [];
       const who = fixtureState.assessor(input.id);
@@ -875,7 +884,8 @@ describe('agent/openclaw task-continuation', () => {
       assert.equal((await fixtureState.record()).context, snapshot);
       const recorded = await fixtureState.renderAssessment(input.id);
       assert.ok(
-        'presentation' in recorded && !recorded.presentation?.includes('FRESH-PRIVATE-FACT'),
+        'responseBlocks' in recorded &&
+          !composeResponseBlocks(taskResponseOutput(recorded)).includes('FRESH-PRIVATE-FACT'),
       );
     });
   }
@@ -1019,8 +1029,8 @@ describe('agent/openclaw task-continuation', () => {
       },
     );
     assert.equal(rendered.status, 'formatted');
-    assert.ok('presentation' in rendered);
-    assert.match(String(rendered.presentation), /Model routing/);
+    assert.ok('responseBlocks' in rendered);
+    assert.match(composeResponseBlocks(taskResponseOutput(rendered)), /Model routing/);
     let renderDiscoveryCalls = 0;
     const withoutDiscovery = await new OpenClawDispatch({
       ...fixtureState.service.dependencies,
@@ -1035,8 +1045,8 @@ describe('agent/openclaw task-continuation', () => {
       ...verified.presentationRequest,
       result: { ...fixtureState.plan, reviewSummary: fixtureState.plan.summary },
     });
-    assert.ok('presentation' in withoutDiscovery);
-    assert.equal(withoutDiscovery.presentation, rendered.presentation);
+    assert.ok('responseBlocks' in withoutDiscovery);
+    assert.deepEqual(withoutDiscovery.responseBlocks, rendered.responseBlocks);
     assert.equal(renderDiscoveryCalls, 0);
     const omittedId = {
       ...verified.presentationRequest,
@@ -1049,8 +1059,8 @@ describe('agent/openclaw task-continuation', () => {
       fixtureState.assessor(input.id),
       omittedId,
     );
-    assert.ok('presentation' in inferred);
-    assert.equal(inferred.presentation, rendered.presentation);
+    assert.ok('responseBlocks' in inferred);
+    assert.deepEqual(inferred.responseBlocks, rendered.responseBlocks);
     await assert.rejects(
       fixtureState.service.runModel(
         fixtureState.manifest,

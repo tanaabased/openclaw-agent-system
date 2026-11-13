@@ -1,3 +1,4 @@
+import composeResponseBlocks from '../../channels/github/presentation/response-blocks.ts';
 import assessmentSource from '../../scripts/aimock-assessment-source.ts';
 import assert from 'node:assert/strict';
 
@@ -204,9 +205,10 @@ export function nativePlanResponse(
     });
   assert.equal(rendered.status, 'formatted');
   assert.equal(rendered.retained, false);
-  assert.ok(typeof rendered.presentation === 'string');
+  assert.ok(Array.isArray(rendered.responseBlocks));
+  const presentation = composeResponseBlocks(rendered.responseBlocks);
   for (const card of (context.presentationRequest as { cards?: string[] })?.cards ?? [])
-    assert.ok(rendered.presentation.includes(card));
+    assert.ok(presentation.includes(card));
   const observed = result('native-plan-context');
   if (!observed)
     return {
@@ -216,7 +218,7 @@ export function nativePlanResponse(
         purpose: 'status-update',
         target,
       }),
-      content: String(rendered.presentation),
+      content: presentation,
     };
   assert.equal(observed.status, 'status-update-context');
   const composed = result('native-plan-compose');
@@ -245,7 +247,7 @@ export function nativePlanResponse(
       publicText: publicText(composed, plan),
     });
   assert.equal(candidate.publication, 'workflow-authorized');
-  if (leavePending) return { content: String(rendered.presentation) };
+  if (leavePending) return { content: presentation };
   const published = result('native-plan-publish');
   if (!published)
     return dispatch('native-plan-publish', {

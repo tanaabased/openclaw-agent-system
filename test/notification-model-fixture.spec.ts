@@ -1,3 +1,4 @@
+import composeResponseBlocks from '../channels/github/presentation/response-blocks.ts';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
@@ -399,7 +400,7 @@ for (const scenario of [
     append(input, 'native-plan-render', formatted);
     const privatePlan = await response(input, selectedScenario);
     assert.ok('content' in privatePlan);
-    assert.equal(privatePlan.content, formatted.presentation);
+    assert.equal(privatePlan.content, composeResponseBlocks(formatted.responseBlocks));
     assert.match(String(privatePlan.content), /disposable (?:test )?issues/i);
     const observed = await action(input, 'reply', selectedScenario);
     assert.equal(observed.operation, 'context');
@@ -551,7 +552,7 @@ for (const scenario of [
         append(input, 'direct-assessment-result', {
           status: 'formatted',
           retained: false,
-          presentation: 'Formatted complete assessment.',
+          responseBlocks: [{ section: 'assessment', markdown: 'Formatted complete assessment.' }],
         });
         assert.deepEqual(await response(input), { content: 'Formatted complete assessment.' });
       });
