@@ -61,6 +61,7 @@ export default async function openClawReply(input: {
           sessionKey: caller.sessionKey,
           sessionId: caller.sessionId,
           runId: caller.runId,
+          inputId: caller.inputId,
           retained: [record?.assessmentCaller, record?.work?.caller],
         });
       let native: Awaited<ReturnType<typeof readNativeInput>> | undefined;
@@ -134,6 +135,7 @@ export default async function openClawReply(input: {
         sessionKey: caller.sessionKey,
         sessionId: caller.sessionId,
         runId: caller.runId,
+        inputId: caller.inputId,
         retained: [],
       });
     };

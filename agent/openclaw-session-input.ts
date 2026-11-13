@@ -9,6 +9,7 @@ export async function nativeInputEvent(input: {
   sessionKey: string;
   sessionId: string;
   runId: string;
+  inputId?: string;
   retained: Array<{ runId: string; inputEventId: string } | undefined>;
 }) {
   const { request, sessionKey, sessionId, runId } = input;
@@ -17,15 +18,53 @@ export async function nativeInputEvent(input: {
       input.requireOwner ? 'dispatch-operator-input-unverified' : 'dispatch-input-unverified',
     );
   };
+  const boundHistory = input.inputId
+    ? sessionObject(
+        await request('chat.history', {
+          sessionKey,
+          sessionId,
+          messageId: input.inputId,
+          limit: 1,
+        }),
+      )
+    : undefined;
+  if (
+    boundHistory &&
+    (boundHistory.sessionId !== sessionId || !Array.isArray(boundHistory.messages))
+  )
+    fail();
+  const boundEntries = (boundHistory?.messages as unknown[] | undefined)
+    ?.map(sessionObject)
+    .filter((entry) => {
+      const meta = sessionObject(entry.__openclaw);
+      return (
+        meta.id === input.inputId || (meta.idempotencyKey ?? entry.idempotencyKey) === input.inputId
+      );
+    });
+  if (boundEntries && boundEntries.length !== 1) fail();
+  const boundEntry = boundEntries?.[0];
+  const boundKey =
+    boundEntry &&
+    (sessionObject(boundEntry.__openclaw).idempotencyKey ?? boundEntry.idempotencyKey);
+  if (
+    boundEntry &&
+    (typeof boundKey !== 'string' || !boundKey.endsWith(':user') || boundKey.length <= 5)
+  )
+    fail();
+  const inputRunId = typeof boundKey === 'string' ? boundKey.slice(0, -5) : runId;
+  const boundEventId =
+    boundEntry &&
+    issueInputEventId(await completeOpenClawMessage(request, input, boundEntry), inputRunId, runId);
+  if (boundEntry && !boundEventId) fail();
   const history = sessionObject(
     await request('chat.history', {
       sessionKey,
-      inputRunIds: [runId],
+      inputRunIds: [inputRunId],
     }),
   );
   if (history.sessionId !== sessionId || !Array.isArray(history.messages)) fail();
   const receipts = Array.isArray(history.inputReceipts)
-    ? history.inputReceipts.map(sessionObject).filter((entry) => entry.runId === runId)
+    ? history.inputReceipts.map(sessionObject).filter((entry) => entry.runId === inputRunId)
     : [];
   if (receipts.length > 1) fail();
   const receipt = receipts[0];
@@ -37,11 +76,12 @@ export async function nativeInputEvent(input: {
       !receipt.consumedByEventId)
   )
     fail();
-  const anchors = input.retained
-    .filter((entry) => entry?.runId === runId)
-    .map((entry) => entry!.inputEventId);
+  const anchors = boundEventId
+    ? [boundEventId]
+    : input.retained.filter((entry) => entry?.runId === runId).map((entry) => entry!.inputEventId);
   if (receipt) anchors.push(receipt.consumedByEventId as string);
   for await (const messages of openClawHistoryPages(request, input, { first: history })) {
+    if (boundEventId) break;
     const candidates = messages.filter((entry) => {
       const meta = sessionObject(entry.__openclaw);
       return (
@@ -68,20 +108,23 @@ export async function nativeInputEvent(input: {
   if (!anchors.length || anchors.some((id) => !id || id !== anchors[0])) fail();
   const inputEventId = anchors[0]!;
   // anchor to the session incarnation, never a similarly named replacement session.
-  const exact = sessionObject(
-    await request('chat.history', {
-      sessionKey,
-      sessionId,
-      messageId: inputEventId,
-      limit: 1,
-    }),
-  );
+  const exact =
+    boundHistory ??
+    sessionObject(
+      await request('chat.history', {
+        sessionKey,
+        sessionId,
+        messageId: inputEventId,
+        limit: 1,
+      }),
+    );
   if (exact.sessionId !== sessionId || !Array.isArray(exact.messages)) fail();
   const matches = (exact.messages as unknown[]).map(sessionObject).filter((entry) => {
     const meta = sessionObject(entry.__openclaw);
     return (
       meta.id === inputEventId ||
-      (entry.role === 'user' &&
+      (!boundEventId &&
+        entry.role === 'user' &&
         (meta.runId === runId ||
           meta.idempotencyKey === `${runId}:user` ||
           entry.idempotencyKey === `${runId}:user`))
@@ -90,7 +133,7 @@ export async function nativeInputEvent(input: {
   if (matches.length !== 1) fail();
   const entry = await completeOpenClawMessage(request, input, matches[0]!);
   if (
-    issueInputEventId(entry, runId) !== inputEventId ||
+    issueInputEventId(entry, inputRunId, runId) !== inputEventId ||
     (input.requireOwner && sessionObject(entry.__openclaw).senderIsOwner === false)
   )
     fail();

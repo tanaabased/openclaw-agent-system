@@ -425,6 +425,7 @@ export default class OpenClawDispatchIssue {
                           sessionKey: caller.sessionKey,
                           sessionId: caller.sessionId,
                           runId: caller.runId,
+                          inputId: caller.inputId,
                           retained: [],
                         }),
                   message: undefined,

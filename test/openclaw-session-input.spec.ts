@@ -57,6 +57,8 @@ describe('agent/openclaw-session-input', () => {
   const consumed = { runId: turn.runId, state: 'consumed', consumedByEventId: 'input-event' };
   function verify(
     options: {
+      runId?: string;
+      inputId?: string;
       recent?: unknown[];
       exact?: unknown[];
       receipts?: unknown[];
@@ -69,12 +71,13 @@ describe('agent/openclaw-session-input', () => {
       senderIsOwner: options.senderIsOwner ?? true,
       sessionKey: 'issue-chat',
       sessionId: 'original-session',
-      runId: turn.runId,
+      runId: options.runId ?? turn.runId,
+      inputId: options.inputId,
       retained: options.retained ?? [],
       request: async (method, params) => {
         assert.equal(method, 'chat.history');
         if (params.messageId) {
-          assert.equal(params.messageId, 'input-event');
+          assert.equal(params.messageId, options.inputId ?? 'input-event');
           assert.equal(params.sessionId, 'original-session');
           return {
             sessionId: options.sessionId ?? 'original-session',
@@ -114,6 +117,41 @@ describe('agent/openclaw-session-input', () => {
       await verify(),
     );
   });
+  it('should verify the exact native input independently of execution identity and queued neighbors', async () => {
+    const exact = {
+      ...owner,
+      __openclaw: { ...owner.__openclaw, runId: 'resumed-execution' },
+    };
+    const options = {
+      inputId: 'input-event',
+      runId: 'resumed-execution',
+      recent: [owner, { ...exact, __openclaw: { ...exact.__openclaw, id: 'queued-input' } }],
+      exact: [exact],
+      retained: [{ runId: 'resumed-execution', inputEventId: 'previous-input' }],
+    };
+    assert.deepEqual(await verify(options), {
+      runId: 'resumed-execution',
+      inputEventId: 'input-event',
+      message: turn.message,
+    });
+    assert.deepEqual(
+      await verify({ ...options, inputId: 'owned-run:user' }),
+      await verify(options),
+    );
+    for (const change of [
+      { receipts: [{ ...consumed, cancelled: true }] },
+      { receipts: [{ ...consumed, state: 'pending' }] },
+      { receipts: [{ ...consumed, consumedByEventId: 'queued-input' }] },
+      { exact: [owner] },
+      { exact: [] },
+      { exact: [exact, exact] },
+      { sessionId: 'replacement-session' },
+      { exact: [{ ...exact, __openclaw: { ...exact.__openclaw, senderIsOwner: false } }] },
+      { exact: [{ ...exact, idempotencyKey: 'other:user' }] },
+    ])
+      await assert.rejects(verify({ ...options, ...change }), /dispatch-operator-input-unverified/);
+  });
+
   it('should use trusted owner authority when native history omits owner metadata', async () => {
     const native = { ...owner, __openclaw: { ...entry.__openclaw, runId: turn.runId } };
     assert.deepEqual(await verify({ recent: [native], exact: [native] }), {
