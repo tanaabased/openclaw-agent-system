@@ -52,8 +52,8 @@ github:
     selection:
       guidance: Select the issue describing a bounded cleanup clarification before the larger redesign.
     projects:
-      - repository: tanaabased/big-test-bucket
+      - repository: tanaabased/*
         selection:
           guidance: prefer fixture cleanup questions within this repository
         milestone:
-          number: [__MILESTONE_NUMBER__]
+          ids: [big-test-bucket#__MILESTONE_NUMBER__]

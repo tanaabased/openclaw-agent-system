@@ -21,12 +21,17 @@ function fixture() {
         calls.push({ argv, stdin });
         const page = reply.pages.shift();
         if (page) Object.assign(reply, page);
+        // gh prints scalar string projections without JSON quotes.
+        const value =
+          argv[argv.indexOf('--jq') + 1] === '.type'
+            ? (reply.value as { type: string }).type
+            : reply.value;
         return {
           exitCode: reply.status >= 400 ? 1 : 0,
           timedOut: false,
           truncated: false,
           stderr: '',
-          stdout: `HTTP/2 ${reply.status} Response\netag: "pickup"\n${reply.next ? 'link: <https://api.github.com/next>; rel="next"\n' : ''}\n${JSON.stringify(reply.value)}`,
+          stdout: `HTTP/2 ${reply.status} Response\netag: "pickup"\n${reply.next ? 'link: <https://api.github.com/next>; rel="next"\n' : ''}\n${typeof value === 'string' ? value : JSON.stringify(value)}`,
         };
       },
     },
@@ -53,6 +58,94 @@ function observation(candidate: Record<string, unknown>) {
 }
 
 describe('github issue pickup provider', () => {
+  it('should discover eligible organization repositories through paginated authenticated reads', async () => {
+    const f = fixture();
+    const repo = {
+      owner: 'owner',
+      name: 'ready',
+      archived: false,
+      disabled: false,
+      hasIssues: true,
+    };
+    f.reply.pages = [
+      { value: { type: 'Organization' }, next: false },
+      {
+        value: [
+          repo,
+          { ...repo, name: 'archive', archived: true },
+          { ...repo, name: 'disabled', disabled: true },
+          { ...repo, name: 'no-issues', hasIssues: false },
+          { ...repo, owner: 'elsewhere' },
+        ],
+        next: true,
+      },
+    ];
+    assert.deepEqual(await f.client.discoverPickupRepositories('owner', 2), {
+      repositories: ['owner/ready'],
+      nextPage: 3,
+    });
+    assert.ok(f.calls[1]!.argv.includes('/orgs/owner/repos'));
+    assert.ok(f.calls[1]!.argv.includes('page=2'));
+    f.reply.pages = [
+      { value: { type: 'Organization' }, next: false },
+      { value: [{}], next: false },
+    ];
+    await assert.rejects(f.client.discoverPickupRepositories('owner', 3), /repositories-invalid/);
+  });
+
+  it('should include private owned repositories for the authenticated user and public repositories for other users', async () => {
+    for (const [owner, endpoint] of [
+      ['receiver', '/user/repos'],
+      ['other', '/users/other/repos'],
+    ]) {
+      const f = fixture();
+      f.reply.pages = [
+        { value: { type: 'User' }, next: false },
+        {
+          value: [{ owner, name: 'repo', archived: false, disabled: false, hasIssues: true }],
+          next: false,
+        },
+      ];
+      assert.deepEqual(await f.client.discoverPickupRepositories(owner!, 1), {
+        repositories: [`${owner}/repo`],
+      });
+      assert.ok(f.calls[1]!.argv.includes(endpoint!));
+    }
+  });
+
+  it('should include and paginate private collaborator repositories within another user namespace', async () => {
+    const f = fixture();
+    const repo = {
+      owner: 'other',
+      name: 'public',
+      archived: false,
+      disabled: false,
+      hasIssues: true,
+    };
+    f.reply.pages = [
+      { value: { type: 'User' }, next: false },
+      { value: [repo], next: false },
+      {
+        value: [
+          { ...repo, name: 'private' },
+          { ...repo, owner: 'unrelated' },
+        ],
+        next: true,
+      },
+    ];
+    assert.deepEqual(await f.client.discoverPickupRepositories('other', 1), {
+      repositories: ['other/public', 'other/private'],
+      nextPage: 2,
+    });
+    assert.ok(f.calls[2]!.argv.includes('/user/repos'));
+    assert.ok(f.calls[2]!.argv.includes('affiliation=collaborator'));
+    assert.ok(f.calls[2]!.argv.includes('visibility=private'));
+    assert.equal(
+      f.calls[2]!.argv.some((part) => part.startsWith('type=')),
+      false,
+    );
+  });
+
   it('should preserve native type names, confirmed absence and unavailable evidence separately', async () => {
     const f = fixture();
     const candidate = { nodeId: 'I_one', number: 1, title: 'ready', labels: [] };

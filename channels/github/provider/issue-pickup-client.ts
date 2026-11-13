@@ -50,6 +50,10 @@ export interface ProjectCandidateObservation {
 }
 const discoveryCandidateSchema = Type.Pick(projectCandidateSchema, ['nodeId', 'number']);
 export interface IssuePickupClient extends GitHubNotificationIntakeClient {
+  discoverPickupRepositories?(
+    owner: string,
+    page: number,
+  ): Promise<{ repositories: string[]; nextPage?: number }>;
   discoverProject(
     owner: string,
     name: string,
@@ -72,6 +76,106 @@ const projection =
 /** fixed provider operations; selection and mutation recovery belong to the runtime journal. */
 export default class GitHubIssuePickupClient {
   constructor(private readonly api: GitHubWorkEventApiClient) {}
+
+  async discoverPickupRepositories(owner: string, page: number) {
+    if (
+      !/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u.test(owner) ||
+      !Number.isSafeInteger(page) ||
+      page < 1
+    )
+      throw new Error('issue-pickup-page-invalid');
+    const account = await this.api.request(
+      [`/users/${owner}`, '--jq', '{type}'],
+      'pickup namespace',
+    );
+    const namespaceType = githubResponseRecord(account.value, 'pickup namespace').type;
+    if (namespaceType !== 'User' && namespaceType !== 'Organization')
+      throw new Error('issue-pickup-namespace-invalid');
+    const self =
+      namespaceType === 'User' && owner.toLowerCase() === this.api.identity.login.toLowerCase();
+    const result = await this.api.request(
+      [
+        '--method',
+        'GET',
+        namespaceType === 'Organization'
+          ? `/orgs/${owner}/repos`
+          : self
+            ? '/user/repos'
+            : `/users/${owner}/repos`,
+        '-f',
+        `type=${self ? 'owner' : 'all'}`,
+        '-f',
+        'sort=full_name',
+        '-f',
+        'direction=asc',
+        '-F',
+        'per_page=100',
+        '-F',
+        `page=${page}`,
+        '--jq',
+        '[.[] | {owner:.owner.login,name,archived,disabled,hasIssues:.has_issues}]',
+      ],
+      'pickup repositories',
+    );
+    // another user's public listing omits private repositories shared with this account.
+    const shared =
+      namespaceType === 'User' && !self
+        ? await this.api.request(
+            [
+              '--method',
+              'GET',
+              '/user/repos',
+              '-f',
+              'affiliation=collaborator',
+              '-f',
+              'visibility=private',
+              '-f',
+              'sort=full_name',
+              '-f',
+              'direction=asc',
+              '-F',
+              'per_page=100',
+              '-F',
+              `page=${page}`,
+              '--jq',
+              '[.[] | {owner:.owner.login,name,archived,disabled,hasIssues:.has_issues}]',
+            ],
+            'shared pickup repositories',
+          )
+        : undefined;
+    const schema = Type.Array(
+      Type.Object(
+        {
+          owner: Type.String(),
+          name: Type.String(),
+          archived: Type.Boolean(),
+          disabled: Type.Boolean(),
+          hasIssues: Type.Boolean(),
+        },
+        { additionalProperties: false },
+      ),
+      { maxItems: 100 },
+    );
+    if (!Value.Check(schema, result.value)) throw new Error('issue-pickup-repositories-invalid');
+    const sharedRepositories = shared?.value ?? [];
+    if (!Value.Check(schema, sharedRepositories))
+      throw new Error('issue-pickup-repositories-invalid');
+    const repositories = [...result.value, ...sharedRepositories];
+    return {
+      repositories: repositories
+        .filter(
+          (repo) =>
+            repo.owner.toLowerCase() === owner.toLowerCase() &&
+            !repo.archived &&
+            !repo.disabled &&
+            repo.hasIssues &&
+            /^[A-Za-z0-9_.-]+$/u.test(repo.name),
+        )
+        .map((repo) => `${repo.owner}/${repo.name}`)
+        .filter((repository, index, all) => all.indexOf(repository) === index),
+      ...(result.hasNextPage || shared?.hasNextPage ? { nextPage: page + 1 } : {}),
+    };
+  }
 
   async discoverProject(owner: string, name: string, milestone: number | undefined, page: number) {
     if (

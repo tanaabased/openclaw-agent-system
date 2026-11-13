@@ -16,6 +16,7 @@ const chargeSchema = Type.Object(
     ...assignmentFields,
     repository: text,
     repositoryNodeId: text,
+    selection: Type.Optional(text),
     runId: text,
     reconciled: Type.Optional(
       Type.Object({ runId: text, at: time }, { additionalProperties: false }),
@@ -29,6 +30,7 @@ export const pickupOperationSchema = Type.Object(
     runId: text,
     enrollment: Type.Optional(issuePickupEnrollmentSchema),
     repository: text,
+    selection: Type.Optional(text),
     window: issuePickupReceiptSchema.properties.window,
     phase: Type.Union([
       Type.Literal('discovering'),
@@ -43,6 +45,9 @@ export const pickupOperationSchema = Type.Object(
         {
           digest: text,
           projectIndex: time,
+          repositories: Type.Optional(Type.Array(text)),
+          namespaceIndex: Type.Optional(time),
+          namespacePage: Type.Optional(Type.Integer({ minimum: 1 })),
           skipped: Type.Optional(Type.Record(text, text)),
           diagnostics: Type.Optional(Type.Record(text, providerDiagnosticSchema)),
           readFailures: Type.Optional(Type.Record(text, Type.Boolean())),
@@ -55,6 +60,7 @@ export const pickupOperationSchema = Type.Object(
         {
           ...pickupCandidateSchema.properties,
           repository: Type.Optional(text),
+          selectionScope: Type.Optional(text),
           repositoryNodeId: Type.Optional(text),
           milestoneNodeId: Type.Optional(text),
           pickupScope: Type.Optional(

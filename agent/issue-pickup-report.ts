@@ -70,8 +70,14 @@ export default function issuePickupReport(input: {
       ...allowances.map((entry) => ({
         label: 'Window allowance',
         value: [
-          `[${text(entry.repository)}](https://github.com/${entry.repository}${typeof entry.milestone === 'number' ? `/milestone/${entry.milestone}` : '/issues'})`,
+          `[${text(entry.repository)}](https://github.com/${entry.repository.endsWith('/*') ? entry.repository.slice(0, -2) : entry.repository + (typeof entry.milestone === 'number' ? `/milestone/${entry.milestone}` : '/issues')})`,
           Array.isArray(entry.milestone) ? `milestones ${entry.milestone.join(', ')}` : '',
+          typeof entry.milestone === 'string' ? `milestone ${text(entry.milestone)}` : '',
+          entry.scope === 'repo'
+            ? 'per repository'
+            : entry.selection?.endsWith('/*')
+              ? `selection ${text(entry.selection)} total`
+              : '',
           entry.used === undefined
             ? `limit ${entry.limit}`
             : `${entry.used} of ${entry.limit} assigned`,
@@ -166,7 +172,12 @@ export default function issuePickupReport(input: {
               value:
                 pickupScope === 'preferred'
                   ? 'Preferred milestone'
-                  : 'Fallback within the selected repository',
+                  : allowances.some(
+                        (entry) =>
+                          entry.repository === repository && entry.selection?.endsWith('/*'),
+                      )
+                    ? 'Fallback within the selected scope'
+                    : 'Fallback within the selected repository',
             },
           ]
         : []),

@@ -68,6 +68,11 @@ export default function selectionFixture(runtime: 'codex' | 'openclaw' = 'codex'
   const effects = { writes: 0, saves: 0 };
   const client: IssuePickupClient = {
     ...f.client,
+    discoverPickupRepositories: async (owner) => ({
+      repositories: [...repositories.values()]
+        .filter(({ repository }) => repository.owner.login.toLowerCase() === owner.toLowerCase())
+        .map(({ repository }) => `${repository.owner.login}/${repository.name}`),
+    }),
     getRepository: async (_owner, name) => repositories.get(name)!.repository,
     getMilestone: async (_owner, name) => repositories.get(name)!.milestone,
     getItem: async (_owner, name, number) =>
