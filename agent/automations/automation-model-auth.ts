@@ -1,16 +1,9 @@
-import { setTimeout } from 'node:timers/promises';
-import {
-  assertPrivateStateLocksHeld,
-  privateStateLockSignal,
-} from '../../core/private-state-lock-context.ts';
-
 import { AutomationError } from './automation-errors.ts';
 import { nativeObject } from '../../utils/native-object.ts';
 import { type AutomationGateway } from './automation-gateway.ts';
 import type { ResolvedAutomation } from '../../manifest/automation-schema.ts';
 
-export type ModelUnavailableReason =
-  'missing-auth' | 'auth-failed' | 'cooldown' | 'unavailable' | 'readiness-unresolved';
+export type ModelUnavailableReason = 'missing-auth' | 'auth-failed' | 'cooldown' | 'unavailable';
 
 /** Failed reads are errors; unresolved catalog readiness is not proof of missing auth. */
 export default async function automationModelAuth(
@@ -18,8 +11,6 @@ export default async function automationModelAuth(
   agentId: string,
   jobs: readonly ResolvedAutomation[],
   mode: 'inspect' | 'reconcile' = 'inspect',
-  sleep: (ms: number, signal?: AbortSignal) => Promise<unknown> = (ms, signal) =>
-    setTimeout(ms, undefined, { signal }),
 ): Promise<Map<string, ModelUnavailableReason>> {
   const prompts = jobs.filter((job) => job.payload.kind === 'prompt');
   if (!prompts.length) return new Map();
@@ -54,27 +45,11 @@ export default async function automationModelAuth(
       const row = selected(job);
       return row && typeof row.available !== 'boolean';
     });
-  if (mode === 'reconcile' && unresolved()) {
-    // Bound discovery to four refreshes and 4.25 seconds of backoff. Each RPC
-    // retains its native timeout; never retry a rejected read or scheduler write.
-    for (const delay of [0, 250, 1_000, 3_000]) {
-      assertPrivateStateLocksHeld();
-      const signal = privateStateLockSignal();
-      signal?.throwIfAborted();
-      if (delay) await sleep(delay, signal);
-      assertPrivateStateLocksHeld();
-      signal?.throwIfAborted();
-      rows = await readRows(true);
-      if (!unresolved()) break;
-    }
-  }
+  if (mode === 'reconcile' && unresolved()) rows = await readRows(true);
+  // Remaining unknown evidence is left to cron's authoritative scheduled-auth check.
   const unavailable = new Map<string, ModelUnavailableReason>();
   for (const job of prompts) {
     const row = selected(job);
-    if (row && typeof row.available !== 'boolean' && mode === 'reconcile') {
-      unavailable.set(job.id, 'readiness-unresolved');
-      continue;
-    }
     if (row?.available !== false) continue;
     const reason = row.unavailableReason;
     unavailable.set(
@@ -88,11 +63,9 @@ export default async function automationModelAuth(
 }
 
 export function automationModelUnavailableCode(reason: ModelUnavailableReason) {
-  return reason === 'readiness-unresolved'
-    ? 'automation-model-readiness-unresolved'
-    : reason === 'missing-auth'
-      ? 'automation-model-auth-missing'
-      : 'automation-model-unavailable';
+  return reason === 'missing-auth'
+    ? 'automation-model-auth-missing'
+    : 'automation-model-unavailable';
 }
 
 export function automationModelSkipped(id: string, reason: ModelUnavailableReason) {
@@ -102,10 +75,8 @@ export function automationModelSkipped(id: string, reason: ModelUnavailableReaso
     status: 'skipped' as const,
     code: automationModelUnavailableCode(reason),
     message:
-      reason === 'readiness-unresolved'
-        ? `Automation ${id} was deferred because model readiness remains unresolved. Rerun Install after OpenClaw model readiness is established.`
-        : reason === 'missing-auth'
-          ? `Automation ${id} was not installed because its model authentication is not configured. Configure authentication, then rerun Install.`
-          : `Automation ${id} was not installed because OpenClaw reports its model unavailable (${reason}). Resolve model availability, then rerun Install.`,
+      reason === 'missing-auth'
+        ? `Automation ${id} was not installed because its model authentication is not configured. Configure authentication, then rerun Install.`
+        : `Automation ${id} was not installed because OpenClaw reports its model unavailable (${reason}). Resolve model availability, then rerun Install.`,
   };
 }

@@ -5,7 +5,7 @@ import automationModelAuth from '../agent/automations/automation-model-auth.ts';
 import normalizeAutomations, { type ResolvedAutomation } from '../manifest/automation-schema.ts';
 
 describe('agent/automation-model-auth', () => {
-  it('should acquire unknown evidence only during reconciliation and defer unresolved readiness without calling it missing auth', async () => {
+  it('should acquire unknown evidence only during reconciliation and leave unresolved readiness to the scheduler', async () => {
     const normalized = normalizeAutomations([
       { id: 'prompt', schedule: 'every 5 minutes', prompt: 'inspect' },
     ]);
@@ -33,15 +33,12 @@ describe('agent/automation-model-auth', () => {
             'a',
             jobs,
             mode,
-            async () => {},
           );
           assert.deepEqual(
             [...result.keys()],
-            mode === 'reconcile' && availability !== true ? ['prompt'] : [],
+            mode === 'reconcile' && availability === false ? ['prompt'] : [],
           );
-          assert.equal(reads.length, mode === 'inspect' ? 1 : availability === undefined ? 5 : 2);
-          if (mode === 'reconcile' && availability === undefined)
-            assert.equal(result.get('prompt'), 'readiness-unresolved');
+          assert.equal(reads.length, mode === 'inspect' ? 1 : 2);
           if (mode === 'reconcile')
             assert.deepEqual(reads[1], {
               agentId: 'a',
@@ -65,41 +62,6 @@ describe('agent/automation-model-auth', () => {
       /catalog acquisition failed/,
     );
   });
-  it('should wait for a definitive late result and stop immediately when it arrives', async () => {
-    const normalized = normalizeAutomations([
-      { id: 'prompt', schedule: 'every 5 minutes', prompt: 'inspect' },
-    ]);
-    if (normalized.status !== 'valid') throw new Error('invalid fixture');
-    for (const available of [true, false]) {
-      let reads = 0;
-      const delays: number[] = [];
-      const result = await automationModelAuth(
-        async () => {
-          reads++;
-          return {
-            models: [
-              {
-                provider: 'openai',
-                id: 'selected',
-                tags: ['default'],
-                ...(reads >= 4 ? { available, unavailableReason: 'missing-auth' } : {}),
-              },
-            ],
-          };
-        },
-        'a',
-        normalized.automations as ResolvedAutomation[],
-        'reconcile',
-        async (delay) => {
-          delays.push(delay);
-        },
-      );
-      assert.equal(reads, 4);
-      assert.deepEqual(delays, [250, 1000]);
-      assert.deepEqual([...result], available ? [] : [['prompt', 'missing-auth']]);
-    }
-  });
-
   it('should preserve missing-auth separately from other definitive model unavailability', async () => {
     const normalized = normalizeAutomations([
       { id: 'prompt', schedule: 'every 5 minutes', prompt: 'inspect', model: 'openai/selected' },

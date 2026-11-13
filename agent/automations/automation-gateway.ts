@@ -2,7 +2,6 @@ import { nativeObject } from '../../utils/native-object.ts';
 import { AutomationError } from './automation-errors.ts';
 import { setTimeout } from 'node:timers/promises';
 import type { callGatewayFromCli } from 'openclaw/plugin-sdk/gateway-runtime';
-import retrySessionResolution, { staleSessionInstanceMessage } from './automation-session-retry.ts';
 
 import {
   assertPrivateStateLocksHeld,
@@ -125,7 +124,6 @@ export function createAutomationGateway(
   sleep: (ms: number, signal?: AbortSignal) => Promise<unknown> = (ms, signal) =>
     setTimeout(ms, undefined, { signal }),
   waitForReady?: () => Promise<void>,
-  now: () => number = () => performance.now(),
 ): AutomationGateway {
   const request: AutomationGateway = async (method, params) => {
     assertPrivateStateLocksHeld();
@@ -173,18 +171,6 @@ export function createAutomationGateway(
           await import('openclaw/plugin-sdk/gateway-runtime');
         const { default: automationGatewayUnavailable } =
           await import('./automation-gateway-unavailable.ts');
-        if (
-          method === 'sessions.resolve' &&
-          isGatewayClientRequestError(error) &&
-          error.gatewayCode === ErrorCodes.UNAVAILABLE &&
-          staleSessionInstanceMessage(error.message)
-        ) {
-          return await retrySessionResolution(
-            error,
-            (timeoutMs, signal) => invoke(params, timeoutMs, signal),
-            { sleep, now, signal: privateStateLockSignal() },
-          );
-        }
         // Native catalog publication can supersede a read during reload/acquisition.
         // Follow its explicit retry hint once; never replay scheduler/session writes.
         const retryable =

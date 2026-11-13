@@ -37,89 +37,9 @@ describe('agent/automation-gateway', () => {
       },
     );
 
-  it('should recover only the same stale session read with capped backoff and no reload', async () => {
-    let elapsed = 0;
-    const delays: number[] = [];
-    const params = { key: 'owned-session' };
-    const request = createAutomationGateway(
-      async (method, options, input, extra) => {
-        assert.equal(method, 'sessions.resolve');
-        assert.equal(input, params);
-        assert.equal(extra?.sharedStateMode, 'read-only');
-        if (elapsed) assert.equal(Number(options.timeout), 60_000 - elapsed);
-        if (elapsed < 20_000) throw staleInstance();
-        return { key: 'owned-session' };
-      },
-      async (ms) => {
-        delays.push(ms);
-        elapsed += ms;
-      },
-      undefined,
-      () => elapsed,
-    );
-    assert.deepEqual(await request('sessions.resolve', params), params);
-    assert.deepEqual(delays.slice(0, 5), [250, 500, 1_000, 2_000, 4_000]);
-    assert.ok(delays.every((delay) => delay <= 5_000));
-  });
-
-  it('should exhaust one elapsed recovery budget including rpc time and keep the stale error fatal', async () => {
-    let elapsed = 0;
-    let calls = 0;
-    const request = createAutomationGateway(
-      async (_method, options) => {
-        calls++;
-        if (calls > 1) {
-          assert.ok(Number(options.timeout) <= 60_000 - elapsed);
-          elapsed += Math.min(7_000, Number(options.timeout));
-        }
-        throw staleInstance();
-      },
-      async (ms) => {
-        elapsed += ms;
-      },
-      undefined,
-      () => elapsed,
-    );
-    await assert.rejects(request('sessions.resolve', {}), { code: 'automation-gateway-rejected' });
-    assert.equal(elapsed, 60_000);
-    assert.ok(calls < 12);
-  });
-
-  it('should stop stale-session recovery on cancellation or a different native rejection', async () => {
-    for (const cancel of [true, false]) {
-      let elapsed = 0;
-      let calls = 0;
-      const controller = new AbortController();
-      const request = createAutomationGateway(
-        async (_method, _options, _params, extra) => {
-          calls++;
-          if (calls === 1) throw staleInstance();
-          assert.equal(extra?.signal, controller.signal);
-          throw Object.assign(new Error('forbidden'), {
-            name: 'GatewayClientRequestError',
-            gatewayCode: 'FORBIDDEN',
-          });
-        },
-        async (ms, signal) => {
-          elapsed += ms;
-          if (cancel) controller.abort(new Error('cancelled'));
-          signal?.throwIfAborted();
-        },
-        undefined,
-        () => elapsed,
-      );
-      await assert.rejects(
-        withPrivateStateLock({ signal: controller.signal, assertHeld() {} }, () =>
-          request('sessions.resolve', {}),
-        ),
-      );
-      assert.equal(calls, cancel ? 1 : 2);
-      assert.equal(elapsed, 250);
-    }
-  });
-
-  it('should never apply stale-session recovery to writes or model reads', async () => {
+  it('should not retry stale-instance rejections without a native retry hint', async () => {
     for (const method of [
+      'sessions.resolve',
       'sessions.create',
       'sessions.patch',
       'cron.add',
