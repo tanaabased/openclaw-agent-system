@@ -222,7 +222,10 @@ export default function automationGatewayDiagnostic(
         : undefined;
     diagnostic.nativeRejection = rejectionEvidence(
       {
-        message: error.message,
+        message:
+          method === 'cron.add'
+            ? error.message.replace(/^invalid cron\.add params: /, 'invalid cron.add: ')
+            : error.message,
         detailCode: details && 'code' in details ? details.code : undefined,
       },
       evidence.secrets,

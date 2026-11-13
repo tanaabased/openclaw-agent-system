@@ -21,6 +21,7 @@ describe('agent/automation-gateway-diagnostic', () => {
       },
     );
     for (const method of ['sessions.create', 'cron.add'] as const) {
+      error.message = `${method === 'cron.add' ? 'invalid cron.add params: ' : ''}Native snapshot rejected; opaque-secret token=hidden payload={private input}`;
       assert.equal(automationGatewayDiagnostic(method, error).nativeRejection, undefined);
       const diagnostic = automationGatewayDiagnostic(method, error, {
         secrets: ['opaque-secret'],
