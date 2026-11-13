@@ -1,7 +1,7 @@
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { defaultManagedGroup } from '../utils/managed-group-name.ts';
-import { nativeObject } from './automations/automation-gateway.ts';
+import { nativeObject } from '../utils/native-object.ts';
 import { automationHash } from './automation-hash.ts';
 import {
   readCodexAutomations,

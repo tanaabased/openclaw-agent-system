@@ -8,7 +8,7 @@ import { withDispatchTask } from './dispatch-task-scope.ts';
 import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { parseDirectImplementationRequest } from '../../../tools/dispatch/implementation-schema.ts';
 import renderNativeAssessment, { renderBoundAssessment } from '../assessment/assessment-render.ts';
-import { nativeObject } from '../../automations/automation-gateway.ts';
+import { nativeObject } from '../../../utils/native-object.ts';
 import { automationHash } from '../../automation-hash.ts';
 import cleanupConfiguration from '../../cleanup-configuration.ts';
 import codexAssessmentEntry from '../assessment/codex-assessment-entry.ts';

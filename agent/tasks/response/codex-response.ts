@@ -1,5 +1,5 @@
 import type { CodexThreadRequest } from '../../codex-thread-client.ts';
-import { nativeObject } from '../../automations/automation-gateway.ts';
+import { nativeObject } from '../../../utils/native-object.ts';
 import { codexRuntimeReceipt } from '../context/codex-native-material.ts';
 import { nativeHistoryPages } from '../dispatch/codex-dispatch-history.ts';
 import { taskResponse } from './task-response.ts';

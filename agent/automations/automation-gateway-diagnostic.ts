@@ -25,6 +25,7 @@ export interface AutomationGatewayDiagnostic extends GatewayErrorDiagnostic {
     | 'runtime-restricted'
     | 'session-key-reserved'
     | 'workspace-invalid'
+    | 'model-auth-missing'
     | 'model-catalog-loading'
     | 'unclassified'
     | 'effort-invalid'
@@ -90,7 +91,9 @@ export function retainAutomationGatewayDiagnostic(value: unknown): GatewayErrorD
           ? resolverReasons
           : method === 'sessions.create' || method === 'sessions.patch'
             ? settingsReasons
-            : []
+            : method === 'cron.add'
+              ? (['model-auth-missing'] as const)
+              : []
         ).find((reason) => reason === input.reason)
       : undefined;
   const catalogLoading =
@@ -160,6 +163,17 @@ export default function automationGatewayDiagnostic(
     diagnostic.retryable = error.retryable;
     if (error.retryAfterMs !== undefined) diagnostic.retryAfterMs = error.retryAfterMs;
   }
+  // cron rejects this before creating a job; INVALID_REQUEST alone is not enough.
+  if (
+    method === 'cron.add' &&
+    diagnostic.category === 'rejected' &&
+    diagnostic.gatewayCode === 'INVALID_REQUEST' &&
+    error instanceof Error &&
+    /^invalid cron\.add params: No route-compatible authentication source is configured for [a-zA-Z0-9][a-zA-Z0-9._-]*\.$/.test(
+      error.message,
+    )
+  )
+    diagnostic.reason = 'model-auth-missing';
   // classify only known native rejections; never retain identifiers or raw prose.
   if (
     ['sessions.resolve', 'sessions.create', 'sessions.patch'].includes(method) &&

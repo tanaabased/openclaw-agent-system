@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import cliOutputComplete from '../../../api/cli-output-complete.ts';
 import gitCommandTimeout from '../../../tools/git/command-timeout.ts';
 import { commandTerminationGraceMs } from '../../../api/cli-budget.ts';
-import { nativeObject } from '../../automations/automation-gateway.ts';
+import { nativeObject } from '../../../utils/native-object.ts';
 import type { DispatchProject } from './codex-dispatch-state.ts';
 import runCodexSetupProcess from '../../codex-process-runner.ts';
 import {

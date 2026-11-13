@@ -27,6 +27,20 @@ const results = await Promise.all([
     target: 'node',
     format: 'esm',
     packages: 'bundle',
+    plugins: [
+      {
+        name: 'standalone-codex-no-host-runtime',
+        setup(build) {
+          build.onResolve({ filter: /^openclaw(?:\/|$)/ }, (args) => {
+            // The existing cleanup reader uses only this portable path resolver.
+            if (args.path === 'openclaw/plugin-sdk/state-paths') return;
+            throw new Error(
+              `Standalone Codex must not import the OpenClaw host: ${args.path} from ${args.importer}`,
+            );
+          });
+        },
+      },
+    ],
     sourcemap: 'external',
     minify: false,
     naming: '[name].js',

@@ -76,6 +76,21 @@ describe('agent/automation-service', () => {
         (fail === 'second-add' && method === 'cron.add' && native.length === 1)
       )
         throw new Error('secret provider text must not escape');
+      if (
+        fail === 'missing-model-auth' &&
+        method === 'cron.add' &&
+        (params.payload as { kind?: string })?.kind === 'agentTurn'
+      )
+        throw Object.assign(
+          new Error(
+            'invalid cron.add params: No route-compatible authentication source is configured for anthropic.',
+          ),
+          {
+            name: 'GatewayClientRequestError',
+            gatewayCode: 'INVALID_REQUEST',
+            retryable: false,
+          },
+        );
       if (method === 'models.list') {
         if (params.refresh === true) preparedModelRows = undefined;
         return { models: preparedModelRows ?? modelRows };
@@ -734,6 +749,48 @@ describe('agent/automation-service', () => {
     });
     assert.equal(requests, 0);
     assert.equal(native.length, 0);
+  });
+
+  it('should skip a new prompt on definitive cron auth rejection and retry enrollment after auth is configured', async () => {
+    manifest.automations = jobs([
+      { id: 'prompt', schedule: 'in 1 hour', prompt: 'inspect', model: 'anthropic/test' },
+      { id: 'command', schedule: 'in 1 hour', run: ['echo', 'ok'] },
+    ]);
+    // The catalog reports usable; cron's scheduled-auth check is authoritative.
+    modelRows = [{ provider: 'anthropic', id: 'test', available: true }];
+    fail = 'missing-model-auth';
+    const first = await service.reconcile(manifest, root);
+    assert.ok(
+      first.outcomes.some(
+        (item) =>
+          item.stepId === 'prompt' &&
+          item.status === 'skipped' &&
+          item.code === 'automation-model-auth-missing',
+      ),
+    );
+    assert.equal(native.length, 1);
+    assert.equal(native[0]!.payload.kind, 'command');
+    const { store } = await service.scope(manifest, root);
+    assert.equal(
+      (await store.read()).records.some(({ id }) => id === 'prompt'),
+      false,
+    );
+    fail = undefined;
+    await service.reconcile(manifest, root);
+    await service.reconcile(manifest, root);
+    assert.equal(native.length, 2);
+    // A previously owned job is not a new optional enrollment. Its recovery
+    // evidence must survive instead of treating it as an optional install.
+    const retained = (await store.read()).records.find(({ id }) => id === 'prompt');
+    native = native.filter((job) => job.payload.kind === 'command');
+    fail = 'missing-model-auth';
+    await assert.rejects(service.reconcile(manifest, root), {
+      code: 'automation-native-job-missing',
+    });
+    assert.deepEqual(
+      (await store.read()).records.find(({ id }) => id === 'prompt'),
+      retained,
+    );
   });
 
   it('should keep gateway auth rejection and unknown failures fatal during install', async () => {

@@ -1,3 +1,4 @@
+import { nativeObject } from '../../utils/native-object.ts';
 import { AutomationError } from './automation-errors.ts';
 import { setTimeout } from 'node:timers/promises';
 import type { callGatewayFromCli } from 'openclaw/plugin-sdk/gateway-runtime';
@@ -25,10 +26,6 @@ export type AutomationGateway = (
     | 'cron.runs',
   params: Record<string, unknown>,
 ) => Promise<Record<string, unknown>>;
-
-export function nativeObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 
 /** admission is not execution completion; retain only bounded non-secret result fields. */
 export function nativeAutomationRun(value: unknown) {

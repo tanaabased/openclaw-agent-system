@@ -1,4 +1,4 @@
-import { nativeObject } from './automations/automation-gateway.ts';
+import { nativeObject } from '../utils/native-object.ts';
 import { dispatchHistoryPages } from './tasks/dispatch/codex-dispatch-history.ts';
 import type { CodexThreadRequest } from './codex-thread-client.ts';
 import codexTurnApprovalDenied from './codex-turn-approval.ts';

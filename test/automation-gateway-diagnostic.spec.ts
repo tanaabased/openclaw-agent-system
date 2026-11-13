@@ -6,6 +6,36 @@ import automationGatewayDiagnostic, {
 import { AutomationError } from '../agent/automations/automation-errors.ts';
 
 describe('agent/automation-gateway-diagnostic', () => {
+  it('should classify only confirmed pre-create missing auth for any provider without retaining its name', () => {
+    for (const provider of ['openai', 'anthropic', 'google', 'local-provider']) {
+      const error = Object.assign(
+        new Error(
+          `invalid cron.add params: No route-compatible authentication source is configured for ${provider}.`,
+        ),
+        {
+          name: 'GatewayClientRequestError',
+          gatewayCode: 'INVALID_REQUEST',
+          retryable: false,
+        },
+      );
+      assert.equal(automationGatewayDiagnostic('cron.add', error).reason, 'model-auth-missing');
+      assert.equal(automationGatewayDiagnostic('cron.update', error).reason, undefined);
+      error.gatewayCode = 'FORBIDDEN';
+      assert.equal(automationGatewayDiagnostic('cron.add', error).reason, undefined);
+    }
+    for (const message of [
+      'invalid cron.add params: invalid schedule',
+      'No route-compatible authentication source is configured for openai.',
+      'invalid cron.add params: No route-compatible authentication source is configured for openai. extra',
+    ]) {
+      const error = Object.assign(new Error(message), {
+        name: 'GatewayClientRequestError',
+        gatewayCode: 'INVALID_REQUEST',
+        retryable: false,
+      });
+      assert.equal(automationGatewayDiagnostic('cron.add', error).reason, undefined);
+    }
+  });
   it('should retain bounded opt-in rejection evidence without credentials payloads or arbitrary details', () => {
     const error = Object.assign(
       new Error('Native snapshot rejected; opaque-secret token=hidden payload={private input}'),

@@ -1,4 +1,4 @@
-import { nativeObject } from '../../automations/automation-gateway.ts';
+import { nativeObject } from '../../../utils/native-object.ts';
 import type { CodexThreadRequest } from '../../codex-thread-client.ts';
 
 /** native requests own deadlines and cancellation; page counts do not establish completeness. */

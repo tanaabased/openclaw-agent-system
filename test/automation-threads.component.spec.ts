@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 
-import { nativeObject } from '../agent/automations/automation-gateway.ts';
+import { nativeObject } from '../utils/native-object.ts';
 import { AutomationError } from '../agent/automations/automation-errors.ts';
 import AutomationThreads, {
   AutomationThreadSettingsError,

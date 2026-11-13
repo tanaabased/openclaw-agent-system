@@ -15,13 +15,13 @@ import openclawIntakeJobs from './openclaw-intake-policy.ts';
 import automationReportName from './automation-report-name.ts';
 import { issuePickupAutomationId, issuePickupErrorCode } from './issue-pickup-jobs.ts';
 
+import { nativeObject } from '../../utils/native-object.ts';
 import {
   isOperatorAutomationGateway,
   listNativeAutomations,
   nativeAutomation,
   nativeAutomationHistory,
   nativeAutomationRun,
-  nativeObject,
   type AutomationHistoryOptions,
   type AutomationGateway,
   type NativeAutomation,
@@ -925,6 +925,7 @@ export default class AutomationService {
             throw new AutomationError('issue-pickup-activation-required');
           const effective = effectiveAutomation(job, context);
           let record = ledger.records.find(({ id }) => id === job.id);
+          const newRecord = !record;
           if (!record) {
             record = {
               id: job.id,
@@ -979,7 +980,28 @@ export default class AutomationService {
             const disabled = { ...desired, enabled: false };
             record.pending = { kind: 'create', nativeHash: nativeAutomationHash(disabled) };
             await store.write(ledger);
-            const result = await request('cron.add', disabled);
+            let result: Record<string, unknown>;
+            try {
+              result = await request('cron.add', disabled);
+            } catch (error) {
+              if (
+                newRecord &&
+                job.payload.kind === 'prompt' &&
+                error instanceof AutomationError &&
+                error.diagnostic?.method === 'cron.add' &&
+                error.diagnostic.category === 'rejected' &&
+                error.diagnostic.gatewayCode === 'INVALID_REQUEST' &&
+                error.diagnostic.reason === 'model-auth-missing'
+              ) {
+                // Only this confirmed pre-create rejection can discard our new
+                // pending scheduler receipt. Preserve any created conversation.
+                ledger.records = ledger.records.filter((entry) => entry !== record);
+                await store.write(ledger);
+                outcomes.push(automationModelSkipped(job.id, 'missing-auth'));
+                continue;
+              }
+              throw error;
+            }
             const added = nativeAutomation(result.job ?? result);
             const readback = nativeAutomation(await request('cron.get', { id: added.id }));
             created = true;

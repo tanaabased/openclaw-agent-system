@@ -5,7 +5,8 @@ import {
 } from '../../core/private-state-lock-context.ts';
 
 import { AutomationError } from './automation-errors.ts';
-import { nativeObject, type AutomationGateway } from './automation-gateway.ts';
+import { nativeObject } from '../../utils/native-object.ts';
+import { type AutomationGateway } from './automation-gateway.ts';
 import type { ResolvedAutomation } from '../../manifest/automation-schema.ts';
 
 export type ModelUnavailableReason =

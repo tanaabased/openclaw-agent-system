@@ -8,7 +8,7 @@ import automationReport, {
 import type AutomationReportStore from './automation-report-store.ts';
 import type { AutomationReportRecord } from './automation-report-store.ts';
 import automationThreadGateway from './automation-thread-gateway.ts';
-import { nativeObject } from './automation-gateway.ts';
+import { nativeObject } from '../../utils/native-object.ts';
 import { AutomationError } from './automation-errors.ts';
 import openClawTurnReply from '../openclaw-turn-evidence.ts';
 import gatewayErrorDiagnostic from '../../utils/gateway-error-diagnostic.ts';
@@ -16,7 +16,7 @@ import type SessionDispatchCredential from '../../credentials/session-dispatch.t
 import type { DispatchRequest } from '../../credentials/session-dispatch.ts';
 
 // bound one observation pass, not the model's execution lifetime.
-export const automationReportTimeoutMs = 30_000;
+import { automationReportTimeoutMs } from './automation-report-timeout.ts';
 
 export interface AutomationReportTarget {
   sessionKey: string;
