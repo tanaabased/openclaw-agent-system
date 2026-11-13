@@ -1,6 +1,7 @@
 const actions: Record<string, readonly string[]> = {
   dispatch: [
     'launch',
+    'response',
     'assessment',
     'implementation',
     'inspect',

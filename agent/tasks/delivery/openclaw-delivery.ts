@@ -1,3 +1,4 @@
+import { responseBlocks } from '../../../channels/github/presentation/response-blocks.ts';
 import { verifyDeliveryCommits } from './delivery-base.ts';
 import { retainedAnnouncementPublication } from './delivery-announcement-recovery.ts';
 import codexIssueNotice from '../../codex-issue-notice.ts';
@@ -550,23 +551,26 @@ export function presentOpenClawDelivery(
   const notice = incomplete
     ? codexIssueNotice({ event: 'failure', changed: true, code: 'delivery-publication-incomplete' })
     : undefined;
-  const presentation =
-    githubNotificationPullRequestOpenedCard({
-      issueNumber: managedPullRequest(intake) ? undefined : intake.issue.number,
-      updated: updatedSinceAnnouncement,
-      pullRequestNumber: receipt.pullRequestNumber,
-      repositoryOwner: intake.repository.owner.login,
-      repositoryName: intake.repository.name,
-      commentFlow: feedbackEnabled ? 'openclaw' : 'unavailable',
-    }) +
-    '\n\n' +
-    announcementPresentation(
-      record.announcement,
-      managedTargetUrl(intake),
-      undefined,
-      record.announcementRecovery,
-    ) +
-    (notice ? '\n\n' + notice.message : '');
+  const card = githubNotificationPullRequestOpenedCard({
+    issueNumber: managedPullRequest(intake) ? undefined : intake.issue.number,
+    updated: updatedSinceAnnouncement,
+    pullRequestNumber: receipt.pullRequestNumber,
+    repositoryOwner: intake.repository.owner.login,
+    repositoryName: intake.repository.name,
+    commentFlow: feedbackEnabled ? 'openclaw' : 'unavailable',
+  });
+  const announcement = announcementPresentation(
+    record.announcement,
+    managedTargetUrl(intake),
+    undefined,
+    record.announcementRecovery,
+  );
+  const blocks = [
+    ...responseBlocks('delivery', card, `pr:${url}`),
+    ...responseBlocks('delivery-reply', announcement, `announcement:${managedTargetUrl(intake)}`),
+    ...responseBlocks('delivery', notice?.message ?? '', `pr-notice:${url}`),
+  ];
+  const presentation = [card, announcement, notice?.message].filter(Boolean).join('\n\n');
   return {
     status: incomplete ? 'publication-incomplete' : 'presented',
     retained: true,
@@ -574,6 +578,7 @@ export function presentOpenClawDelivery(
     id: record.id,
     url,
     presentation,
+    responseBlocks: blocks,
     instructions:
       'Reproduce the complete quoted PR card in this issue chat. Card generation does not establish visible delivery. Never recreate the PR for a presentation failure.',
   };

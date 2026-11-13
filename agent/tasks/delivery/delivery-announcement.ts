@@ -1,3 +1,5 @@
+import { responseInstructions } from '../response/task-response.ts';
+import { responseBlocks } from '../../../channels/github/presentation/response-blocks.ts';
 import { cardCopyInstructions } from '../../../channels/github/presentation/card.ts';
 import replyMaterial from '../feedback/reply-material.ts';
 import type { ImplementationMaterialRead } from '../implementation/implementation-material.ts';
@@ -193,7 +195,12 @@ function completeAnnouncement(state: DeliveryAnnouncementState, issueUrl: string
           publication: { url: `${issueUrl}#issuecomment-${state.receipt!.databaseId}` },
         })
       : '';
-  return { status: 'announced' as const, receipt: state.receipt!, presentation };
+  return {
+    status: 'announced' as const,
+    receipt: state.receipt!,
+    presentation,
+    responseBlocks: responseBlocks('delivery-reply', presentation, `announcement:${issueUrl}`),
+  };
 }
 
 /** scheduled recovery checks retained intent without a composer, publication, or synthetic native turn. */
@@ -321,6 +328,8 @@ export function deliveryCompletionInstructions(
         ? 'Native PR attachment is confirmed. '
         : 'Call native attach_artifact for this pull_request URL, then list_artifacts and delivery reconcile. ';
   return (
+    responseInstructions +
+    ' ' +
     cardCopyInstructions +
     ' ' +
     (updated
@@ -483,27 +492,30 @@ export default async function deliveryAnnouncement(input: {
     }
     const prepared = announcementPublication(state, item);
     const previewDigest = automationHash({ ...current, publicText: state.publicText });
-    if (input.operation === 'candidate')
+    if (input.operation === 'candidate') {
+      const presentation = githubCommentCard({
+        body: state.publicText!,
+        author: input.authorLogin
+          ? {
+              label: input.authorLogin,
+              url: `https://github.com/${encodeURIComponent(input.authorLogin)}`,
+            }
+          : undefined,
+        label: 'PR announcement',
+        connector: 'by',
+        publication: { draft: true },
+      });
       return {
         status: 'announcement-prepared',
         digest: previewDigest,
         destination: issueUrl,
         publicText: state.publicText,
-        presentation: githubCommentCard({
-          body: state.publicText!,
-          author: input.authorLogin
-            ? {
-                label: input.authorLogin,
-                url: `https://github.com/${encodeURIComponent(input.authorLogin)}`,
-              }
-            : undefined,
-          label: 'PR announcement',
-          connector: 'by',
-          publication: { draft: true },
-        }),
+        presentation,
+        responseBlocks: responseBlocks('delivery-reply', presentation, `announcement:${issueUrl}`),
         instruction:
           'Publish this exact announcement using delivery announce through native approval. Existing managed-delivery authority covers only this issue/PR announcement; stop on denial. Afterwards present the full private PR card and announcement outcome.',
       };
+    }
     const result = await taskUpdate({
       request: { operation: 'publish', digest: previewDigest, expectedDigest: previewDigest },
       draft: state,
@@ -580,15 +592,17 @@ export default async function deliveryAnnouncement(input: {
       prerequisite ? 'prerequisite' : 'response',
     );
     await input.save();
+    const presentation = announcementPresentation(
+      state,
+      issueUrl,
+      input.authorLogin ?? state?.authorLogin,
+      delivery.announcementRecovery,
+    );
     return {
       status: 'announcement-blocked',
       code,
-      presentation: announcementPresentation(
-        state,
-        issueUrl,
-        input.authorLogin ?? state?.authorLogin,
-        delivery.announcementRecovery,
-      ),
+      presentation,
+      responseBlocks: responseBlocks('delivery-reply', presentation, `announcement:${issueUrl}`),
       instruction:
         'The delivered PR and any draft are retained. Present its full private card and this announcement obstacle, then stop announcement retries in this turn. Automatic recovery uses the retained retry eligibility and bounded budget; held or exhausted recovery needs explicit same-chat continuation after correction. Stop on denial or lost authority. Reconcile an uncertain write without reposting; never recreate the PR.',
     };
