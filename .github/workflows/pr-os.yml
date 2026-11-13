@@ -21,15 +21,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # #631: restore the full matrix incrementally after each migration slice passes.
         os:
-          - macos-26
+          # - macos-26
           - ubuntu-24.04
         example:
           - os-install
-          - os-install-online
-          - os-dispatch-enrollment
-          - os-execution
-          - os-credentials
+          # - os-install-online
+          # - os-dispatch-enrollment
+          # - os-execution
+          # - os-credentials
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

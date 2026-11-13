@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import validateClawHubReport from '../scripts/clawhub-validation.ts';
 
 describe('scripts/clawhub-validation', () => {
-  const target = { path: '/sdk/openclaw', version: '2026.10.9' };
+  const target = { path: '/sdk/openclaw', version: '2026.11.3' };
   function warning(api: string, record: string, path: string) {
     return {
       code: 'sdk-deprecated-api',
@@ -34,13 +34,11 @@ describe('scripts/clawhub-validation', () => {
     validateClawHubReport(report(), target);
   });
 
-  it('should accept only the owned 10.9 config and final session exceptions with their bundles', () => {
+  it('should accept only the owned 11.3 config and final session exceptions with their bundles', () => {
     validateClawHubReport(
       report([
         config(),
-        config('environment/memory-secret-provider-entry.ts'),
         config('dist/index.js'),
-        config('dist/memory-secret-provider-entry.js'),
         session(),
         session('core/register-agent-system.ts'),
         session('dist/index.js'),
@@ -53,6 +51,8 @@ describe('scripts/clawhub-validation', () => {
     for (const issue of [
       warning('different.api', 'runtime-config-sync-load', 'core/read-fresh-runtime-config.ts'),
       config('environment/unrelated.ts'),
+      config('environment/memory-secret-provider-entry.ts'),
+      config('dist/memory-secret-provider-entry.js'),
       session('core/unrelated.ts'),
       { ...config(), compatRecord: 'different-record' },
       { ...config(), code: 'some-other-warning' },
@@ -88,7 +88,7 @@ describe('scripts/clawhub-validation', () => {
       assert.throws(() => validateClawHubReport(value, target), /clawhub-/);
   });
 
-  it('should not carry 10.9 exceptions into a different sdk target', () => {
+  it('should not carry 11.3 exceptions into a different sdk target', () => {
     const value = report([config()]);
     value.targetOpenClaw.version = '2027.1.1';
     assert.throws(

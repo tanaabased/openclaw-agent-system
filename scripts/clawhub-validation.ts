@@ -25,7 +25,8 @@ const reportSchema = Type.Object({
   ),
 });
 
-// 10.9 has no equivalent public cold config reader; its final session guard is synchronous.
+// 11.3 retains these synchronous contracts: async config reads reuse pinned snapshots,
+// and final session guards must run without an intervening await.
 // keep exceptions api- and owner-specific, including only their emitted bundle entries.
 const exceptions = [
   {
@@ -37,8 +38,8 @@ const exceptions = [
   {
     api: 'openclaw/plugin-sdk/runtime-config-snapshot.getRuntimeConfig',
     record: 'runtime-config-sync-load',
-    sources: ['core/read-fresh-runtime-config.ts', 'environment/memory-secret-provider-entry.ts'],
-    bundles: ['dist/index.js', 'dist/memory-secret-provider-entry.js'],
+    sources: ['core/read-fresh-runtime-config.ts'],
+    bundles: ['dist/index.js'],
   },
 ];
 
@@ -60,7 +61,7 @@ export default function validateClawHubReport(
   assert.equal(report.issues.length, report.summary.warningCount, 'clawhub-findings-mismatch');
   for (const issue of report.issues) {
     const exception =
-      target.version === '2026.10.9' &&
+      target.version === '2026.11.3' &&
       exceptions.find(
         (entry) => entry.api === issue.deprecatedApi && entry.record === issue.compatRecord,
       );

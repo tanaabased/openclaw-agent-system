@@ -1,5 +1,8 @@
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
-import { getRuntimeConfig } from 'openclaw/plugin-sdk/runtime-config-snapshot';
+import {
+  captureRuntimeConfigAsyncReader,
+  readRuntimeConfig,
+} from 'openclaw/plugin-sdk/runtime-config-snapshot';
 
 import { configuredAgentValue } from '../core/configured-agents.ts';
 import createCredentialStores from '../credentials/registry.ts';
@@ -27,8 +30,7 @@ async function readInput(): Promise<string> {
 
 const quietLogger = { debug() {}, error() {}, info() {}, warn() {} };
 const manifestService = new AgentManifestService({
-  // 10.9 snapshots cannot cold-load config in this fresh helper process.
-  getConfig: () => getRuntimeConfig({ pin: false }),
+  getConfig: readRuntimeConfig,
   logger: quietLogger,
   parseSessionAgentId: () => undefined,
   resolveAgentWorkspaceDir(config, agentId) {
@@ -60,6 +62,7 @@ const environmentService = new AgentEnvironmentService({
 
 try {
   const request = parseMemorySecretProviderRequest(await readInput());
+  await captureRuntimeConfigAsyncReader()();
   const result = await resolveMemorySecretProviderRequest(request, {
     async resolveBinding(agentId, binding) {
       const loaded = await environmentService.loadForAgentId(agentId, 'service');
