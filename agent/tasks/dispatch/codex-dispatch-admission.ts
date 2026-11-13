@@ -853,6 +853,9 @@ export async function prepareDispatch(
       request: record.request,
       nativeHandoff: codexNativeHandoff('create_thread', request),
       instruction:
+        (intake.assignment
+          ? `The runtime has revalidated GitHub assignment ${intake.assignment.nodeId} from ${intake.assignment.createdAt} and prepared a new native creation attempt for it. This attempt has no prior creation request to repeat. An archived chat for an earlier assignment does not prohibit this prepared launch; fresh assignments after completed retirement are supported. Native approval review still applies. `
+          : '') +
         'Execute nativeHandoff exactly once in a separate functions.exec call. It contains the complete native create_thread request; do not reconstruct it or call prepare again to retrieve it. Then reconcile the original attempt using the receipt returned by that call. If execution was omitted, failed, or its outcome is unknown, reconcile without a receipt; never execute an old handoff again.',
       ...creationRecovery(record, 'create'),
     };
