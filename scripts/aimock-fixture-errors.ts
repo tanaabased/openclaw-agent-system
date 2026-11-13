@@ -1,8 +1,14 @@
 import { getTextContent, type ChatCompletionRequest, type Fixture } from '@copilotkit/aimock';
 
+import { providerDiagnostic, type ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
+
 import type { OpenClawAIMockScenario } from './aimock-scenario.ts';
 
-function resultDiagnostic(content: string): { status?: string; code?: string } {
+function resultDiagnostic(content: string): {
+  status?: string;
+  code?: string;
+  providerDiagnostic?: ProviderDiagnostic;
+} {
   try {
     let value = JSON.parse(content);
     // Tool Search wraps the same plugin result delivered by a direct call.
@@ -17,7 +23,20 @@ function resultDiagnostic(content: string): { status?: string; code?: string } {
       typeof value?.code === 'string' && /^[a-z]+(?:-[a-z]+)+$/u.test(value.code)
         ? value.code
         : undefined;
-    return { ...(status ? { status } : {}), ...(code ? { code } : {}) };
+    return {
+      ...(status ? { status } : {}),
+      ...(code ? { code } : {}),
+      ...(value?.providerDiagnostic?.provider === 'github'
+        ? {
+            providerDiagnostic: providerDiagnostic(
+              'github',
+              value.providerDiagnostic.operation,
+              value.providerDiagnostic.classification,
+              value.providerDiagnostic,
+            ),
+          }
+        : {}),
+    };
   } catch {
     return {};
   }
@@ -35,6 +54,7 @@ export default function captureFixtureErrors(source: OpenClawAIMockScenario) {
       truncated: boolean;
       status?: string;
       code?: string;
+      providerDiagnostic?: ProviderDiagnostic;
     }>;
   }> = [];
   const capture = (phase: string, request: ChatCompletionRequest, error: unknown) => {

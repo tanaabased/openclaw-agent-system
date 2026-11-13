@@ -69,7 +69,11 @@ node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/appro
 # should complete activated hosted codex maintenance without another native approval
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/codex"
 rm -f "$TMPDIR/agent-system-approval-check" "$TMPDIR/agent-system-approval-apply"
-openclaw agent-system automations sync --json | tee "$TMPDIR/lifecycle-maintenance-sync.json" | jq -e '.status == "synchronized" and any(.outcomes[]; .stepId == "maintenance" and .code == "automation-synchronized" and (.status == "created" or .status == "updated" or .status == "unchanged"))'
+sync_status=0
+openclaw agent-system automations sync --json > "$TMPDIR/lifecycle-maintenance-sync.json" || sync_status=$?
+jq '{status, outcomes: [.outcomes[]? | {stepId, status, code, message, remediation, providerDiagnostic}]}' "$TMPDIR/lifecycle-maintenance-sync.json"
+test "$sync_status" -eq 0
+jq -e '.status == "synchronized" and any(.outcomes[]; .stepId == "maintenance" and .code == "automation-synchronized" and (.status == "created" or .status == "updated" or .status == "unchanged"))' "$TMPDIR/lifecycle-maintenance-sync.json"
 run_id=$(openclaw agent-system automations run maintenance --json | jq -er 'select(.status == "queued") | .runId | strings')
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" maintenance "$run_id"
 grep -Fx applied "$TMPDIR/agent-system-approval-apply"

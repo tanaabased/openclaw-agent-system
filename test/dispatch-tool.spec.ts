@@ -60,7 +60,7 @@ describe('tools/dispatch/tool', () => {
   function fixture(caller = coordinator) {
     const workspaceDir = `/workspaces/${caller.agentId}`;
     const hooks = new Map<string, Hook>();
-    const factories: OpenClawPluginToolFactory<2>[] = [];
+    const factories: Array<OpenClawPluginToolFactory | OpenClawPluginToolFactory<2>> = [];
     let registrationOptions: Parameters<OpenClawPluginApi['registerTool']>[1];
     const session = {
       sessionId: caller.sessionId,
@@ -106,7 +106,7 @@ describe('tools/dispatch/tool', () => {
         hooks.set(name, handler);
       },
       registerTool(
-        value: OpenClawPluginToolFactory<2>,
+        value: OpenClawPluginToolFactory | OpenClawPluginToolFactory<2>,
         options: Parameters<OpenClawPluginApi['registerTool']>[1],
       ) {
         factories.push(value);
@@ -139,18 +139,33 @@ describe('tools/dispatch/tool', () => {
     };
     assert.ok(factories.length);
     const build = (
-      context: OpenClawPluginToolContext = { ...caller, workspaceDir },
+      context: OpenClawPluginToolContext = {
+        ...caller,
+        workspaceDir,
+        assertInvocationCurrent() {},
+      },
       name = 'agent_system_dispatch',
     ) => {
       const tool = factories
-        .map((factory) =>
-          factory.create({
-            ...context,
-            assertInvocationCurrent() {
-              context.assertInvocationCurrent?.();
+        .map((factory) => {
+          if (typeof factory === 'function') return factory(context);
+          const assertInvocationCurrent = () => {
+            if (!context.assertInvocationCurrent)
+              throw new Error(
+                'Plugin tool invocation authority is unavailable outside an admitted run or request',
+              );
+            context.assertInvocationCurrent();
+          };
+          const tool = factory.create({ ...context, assertInvocationCurrent });
+          if (!tool || Array.isArray(tool)) return tool;
+          return {
+            ...tool,
+            execute: (...args: Parameters<typeof tool.execute>) => {
+              assertInvocationCurrent();
+              return tool.execute(...args);
             },
-          }),
-        )
+          };
+        })
         .find((value) => value && !Array.isArray(value) && value.name === name);
       assert.ok(tool && !Array.isArray(tool));
       return tool;
@@ -405,8 +420,15 @@ describe('tools/dispatch/tool', () => {
   });
 
   it('should allow the read-only predicate without a conversation session id', async () => {
-    const { hook } = fixture();
+    const { hook, build, adapter } = fixture();
+    let checked = false;
+    adapter.service.check = async () => {
+      checked = true;
+      return { status: 'ready', changed: false, more: false, outcome: 'idle' };
+    };
     assert.equal(await hook({ ...event, params: { action: 'check' } }, trigger), undefined);
+    await build(trigger).execute('condition', { action: 'check' });
+    assert.equal(checked, true);
   });
 
   it('should retain caller verification for every other dispatch action', async () => {
