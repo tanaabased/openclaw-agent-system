@@ -8,13 +8,17 @@ const allowances = [{ repository: 'owner/repo', milestone: 10, used: 0, limit: 1
 
 describe('agent/issue-pickup-report', () => {
   it('should explain contradictory and no-match criteria without hiding unreadable issues', () => {
-    for (const excluded of ['BUG', 'blocked']) {
+    for (const [required, excluded, contradictory] of [
+      ['bug', 'BUG', true],
+      ['bug', 'blocked', false],
+      ['bug*', 'BUG*', true],
+      ['bug*', 'bug', false],
+      ['bug', 'b*', true],
+    ] as const) {
       const result = report({
         outcome: {
           status: 'empty',
-          allowances: [
-            { ...allowances[0]!, filters: { labels: ['bug'], excludeLabels: [excluded] } },
-          ],
+          allowances: [{ ...allowances[0]!, filters: { labels: [required, `!${excluded}`] } }],
           summary: { eligible: 0, shortlist: [], skipped: 1, remaining: 0 },
         },
       });
@@ -22,7 +26,7 @@ describe('agent/issue-pickup-report', () => {
       assert.match(result.response, /exclude any/);
       assert.match(result.response, /No eligible issues matched/);
       assert.match(result.response, /1 issues could not be read/);
-      assert.equal(result.response.includes('Contradictory'), excluded === 'BUG');
+      assert.equal(result.response.includes('Contradictory'), contradictory);
       assert.doesNotMatch(result.response, /label does not exist/);
     }
   });

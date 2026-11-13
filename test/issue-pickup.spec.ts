@@ -38,10 +38,9 @@ describe('github issue pickup policy', () => {
     for (const filters of [
       undefined,
       {},
-      { labels: [], 'exclude-labels': [] },
+      { labels: [] },
       {
-        labels: ['Priority: HIGH', 'ready-to-go'],
-        'exclude-labels': ['Blocked Work'],
+        labels: ['Priority: HIGH', 'ready-*', '!Blocked Work', '!needs-*'],
       },
     ]) {
       const parsed = parse({
@@ -56,7 +55,6 @@ describe('github issue pickup policy', () => {
           ? undefined
           : {
               ...(filters.labels ? { labels: filters.labels } : {}),
-              ...(filters['exclude-labels'] ? { excludeLabels: filters['exclude-labels'] } : {}),
             },
       );
     }
@@ -64,7 +62,9 @@ describe('github issue pickup policy', () => {
       { labels: 'bug' },
       { labels: [''] },
       { labels: ['   '] },
-      { 'exclude-labels': [3] },
+      { labels: [3] },
+      { 'exclude-labels': [] },
+      { 'exclude-labels': ['blocked'] },
       { unsupported: [] },
     ]) {
       assert.equal(

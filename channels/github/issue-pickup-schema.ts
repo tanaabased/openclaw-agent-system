@@ -45,9 +45,6 @@ export const issuePickupSchema = Type.Object(
             Type.Object(
               {
                 labels: Type.Optional(Type.Array(Type.String({ minLength: 1, pattern: '\\S' }))),
-                'exclude-labels': Type.Optional(
-                  Type.Array(Type.String({ minLength: 1, pattern: '\\S' })),
-                ),
               },
               { additionalProperties: false },
             ),
@@ -79,7 +76,6 @@ export const issuePickupSchema = Type.Object(
 type Declaration = Static<typeof issuePickupSchema>;
 export interface IssuePickupFilters {
   labels?: string[];
-  excludeLabels?: string[];
 }
 export interface IssuePickupPolicy extends AutomationModelSettings {
   paused: boolean;
@@ -130,7 +126,6 @@ export default function decodeIssuePickup(value: Declaration): IssuePickupPolicy
         ? {
             filters: {
               ...(filters.labels ? { labels: filters.labels } : {}),
-              ...(filters['exclude-labels'] ? { excludeLabels: filters['exclude-labels'] } : {}),
             },
           }
         : {}),
