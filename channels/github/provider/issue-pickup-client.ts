@@ -85,18 +85,19 @@ export default class GitHubIssuePickupClient {
     )
       throw new Error('issue-pickup-page-invalid');
     const account = await this.api.request(
-      [`/users/${owner}`, '--jq', '.type'],
+      [`/users/${owner}`, '--jq', '{type}'],
       'pickup namespace',
     );
-    if (account.value !== 'User' && account.value !== 'Organization')
+    const namespaceType = githubResponseRecord(account.value, 'pickup namespace').type;
+    if (namespaceType !== 'User' && namespaceType !== 'Organization')
       throw new Error('issue-pickup-namespace-invalid');
     const self =
-      account.value === 'User' && owner.toLowerCase() === this.api.identity.login.toLowerCase();
+      namespaceType === 'User' && owner.toLowerCase() === this.api.identity.login.toLowerCase();
     const result = await this.api.request(
       [
         '--method',
         'GET',
-        account.value === 'Organization'
+        namespaceType === 'Organization'
           ? `/orgs/${owner}/repos`
           : self
             ? '/user/repos'
@@ -118,7 +119,7 @@ export default class GitHubIssuePickupClient {
     );
     // another user's public listing omits private repositories shared with this account.
     const shared =
-      account.value === 'User' && !self
+      namespaceType === 'User' && !self
         ? await this.api.request(
             [
               '--method',

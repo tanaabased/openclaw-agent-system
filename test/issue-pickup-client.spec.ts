@@ -21,12 +21,17 @@ function fixture() {
         calls.push({ argv, stdin });
         const page = reply.pages.shift();
         if (page) Object.assign(reply, page);
+        // gh prints scalar string projections without JSON quotes.
+        const value =
+          argv[argv.indexOf('--jq') + 1] === '.type'
+            ? (reply.value as { type: string }).type
+            : reply.value;
         return {
           exitCode: reply.status >= 400 ? 1 : 0,
           timedOut: false,
           truncated: false,
           stderr: '',
-          stdout: `HTTP/2 ${reply.status} Response\netag: "pickup"\n${reply.next ? 'link: <https://api.github.com/next>; rel="next"\n' : ''}\n${JSON.stringify(reply.value)}`,
+          stdout: `HTTP/2 ${reply.status} Response\netag: "pickup"\n${reply.next ? 'link: <https://api.github.com/next>; rel="next"\n' : ''}\n${typeof value === 'string' ? value : JSON.stringify(value)}`,
         };
       },
     },
@@ -63,7 +68,7 @@ describe('github issue pickup provider', () => {
       hasIssues: true,
     };
     f.reply.pages = [
-      { value: 'Organization', next: false },
+      { value: { type: 'Organization' }, next: false },
       {
         value: [
           repo,
@@ -82,7 +87,7 @@ describe('github issue pickup provider', () => {
     assert.ok(f.calls[1]!.argv.includes('/orgs/owner/repos'));
     assert.ok(f.calls[1]!.argv.includes('page=2'));
     f.reply.pages = [
-      { value: 'Organization', next: false },
+      { value: { type: 'Organization' }, next: false },
       { value: [{}], next: false },
     ];
     await assert.rejects(f.client.discoverPickupRepositories('owner', 3), /repositories-invalid/);
@@ -95,7 +100,7 @@ describe('github issue pickup provider', () => {
     ]) {
       const f = fixture();
       f.reply.pages = [
-        { value: 'User', next: false },
+        { value: { type: 'User' }, next: false },
         {
           value: [{ owner, name: 'repo', archived: false, disabled: false, hasIssues: true }],
           next: false,
@@ -118,7 +123,7 @@ describe('github issue pickup provider', () => {
       hasIssues: true,
     };
     f.reply.pages = [
-      { value: 'User', next: false },
+      { value: { type: 'User' }, next: false },
       { value: [repo], next: false },
       {
         value: [
