@@ -212,7 +212,7 @@ export default function automationGatewayDiagnostic(
   // Opt-in disposable CI evidence excludes arbitrary details and request payloads.
   if (
     evidence &&
-    method === 'sessions.create' &&
+    (method === 'sessions.create' || method === 'cron.add') &&
     diagnostic.category === 'rejected' &&
     error instanceof Error
   ) {

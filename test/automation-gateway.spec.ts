@@ -40,21 +40,20 @@ describe('agent/automation-gateway', () => {
       ] as const) {
         process.env.CI = ci;
         process.env.OPENCLAW_DEBUG = debug;
-        let calls = 0;
-        const request = createAutomationGateway(async () => {
-          calls++;
-          throw Object.assign(
-            new Error('snapshot rejected for private-session with opaque-test-secret'),
-            {
-              name: 'GatewayClientRequestError',
-              gatewayCode: 'INVALID_REQUEST',
-              retryable: false,
-            },
-          );
-        });
-        await assert.rejects(
-          request('sessions.create', { key: 'private-session' }),
-          (error: unknown) => {
+        for (const method of ['sessions.create', 'cron.add'] as const) {
+          let calls = 0;
+          const request = createAutomationGateway(async () => {
+            calls++;
+            throw Object.assign(
+              new Error('snapshot rejected for private-session with opaque-test-secret'),
+              {
+                name: 'GatewayClientRequestError',
+                gatewayCode: 'INVALID_REQUEST',
+                retryable: false,
+              },
+            );
+          });
+          await assert.rejects(request(method, { key: 'private-session' }), (error: unknown) => {
             assert.ok(error instanceof AutomationError);
             assert.equal(Boolean(error.diagnostic?.nativeRejection), capture);
             assert.doesNotMatch(
@@ -62,9 +61,9 @@ describe('agent/automation-gateway', () => {
               /opaque-test-secret|private-session/,
             );
             return true;
-          },
-        );
-        assert.equal(calls, 1);
+          });
+          assert.equal(calls, 1);
+        }
       }
     } finally {
       for (const [key, value] of Object.entries(previous)) {

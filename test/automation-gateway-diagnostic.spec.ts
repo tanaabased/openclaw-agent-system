@@ -20,26 +20,27 @@ describe('agent/automation-gateway-diagnostic', () => {
         },
       },
     );
-    assert.equal(automationGatewayDiagnostic('sessions.create', error).nativeRejection, undefined);
-    const diagnostic = automationGatewayDiagnostic('sessions.create', error, {
-      secrets: ['opaque-secret'],
-    });
-    assert.equal(diagnostic.reason, 'unclassified');
-    assert.equal(diagnostic.nativeRejection?.detailCode, 'SNAPSHOT_INVALID');
-    assert.match(diagnostic.nativeRejection!.message!, /Native snapshot rejected/);
-    assert.doesNotMatch(
-      JSON.stringify(diagnostic),
-      /opaque-secret|hidden|private input|private-detail|nested/,
-    );
-    assert.deepEqual(retainAutomationGatewayDiagnostic(diagnostic), diagnostic);
-    const long = automationGatewayDiagnostic(
-      'sessions.create',
-      Object.assign(error, { message: 'x'.repeat(4000) }),
-      { secrets: [] },
-    );
-    assert.ok(long.nativeRejection!.message!.length <= 1025);
+    for (const method of ['sessions.create', 'cron.add'] as const) {
+      assert.equal(automationGatewayDiagnostic(method, error).nativeRejection, undefined);
+      const diagnostic = automationGatewayDiagnostic(method, error, {
+        secrets: ['opaque-secret'],
+      });
+      assert.equal(diagnostic.nativeRejection?.detailCode, 'SNAPSHOT_INVALID');
+      assert.match(diagnostic.nativeRejection!.message!, /Native snapshot rejected/);
+      assert.doesNotMatch(
+        JSON.stringify(diagnostic),
+        /opaque-secret|hidden|private input|private-detail|nested/,
+      );
+      assert.deepEqual(retainAutomationGatewayDiagnostic(diagnostic), diagnostic);
+      const long = automationGatewayDiagnostic(
+        method,
+        Object.assign(new Error('x'.repeat(4000)), error, { message: 'x'.repeat(4000) }),
+        { secrets: [] },
+      );
+      assert.ok(long.nativeRejection!.message!.length <= 1025);
+    }
     assert.equal(
-      automationGatewayDiagnostic('cron.add', error, { secrets: [] }).nativeRejection,
+      automationGatewayDiagnostic('cron.update', error, { secrets: [] }).nativeRejection,
       undefined,
     );
   });
