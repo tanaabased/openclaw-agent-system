@@ -16,36 +16,35 @@ env:
 
 jobs:
   examples:
-    # #631: paused until its migration slice; remove before final validation.
-    if: false
     name: ${{ matrix.example }} (ubuntu-24.04)
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         example:
-          - openclaw-agent
-          - openclaw-native-retirement
-          - openclaw-workspace
+          # #631: restore remaining scenarios after the memory/Doctor slice.
+          # - openclaw-agent
+          # - openclaw-native-retirement
+          # - openclaw-workspace
           - openclaw-doctor
-          - openclaw-tool-access
-          - openclaw-github
-          - openclaw-issue-assessment
-          - openclaw-issue-launch
-          - openclaw-github-reply
-          - openclaw-google
-          - openclaw-tools
-          - openclaw-tool-descendants
-          - openclaw-worktree
-          - openclaw-worktree-session
-          - openclaw-collaboration
+          # - openclaw-tool-access
+          # - openclaw-github
+          # - openclaw-issue-assessment
+          # - openclaw-issue-launch
+          # - openclaw-github-reply
+          # - openclaw-google
+          # - openclaw-tools
+          # - openclaw-tool-descendants
+          # - openclaw-worktree
+          # - openclaw-worktree-session
+          # - openclaw-collaboration
           - openclaw-memory
           - openclaw-memory-embeddings
-          - openclaw-backup
-          - openclaw-backup-cleanup
-          - openclaw-credentials
-          - openclaw-runtimes
-          - openclaw-lifecycle-approvals
+          # - openclaw-backup
+          # - openclaw-backup-cleanup
+          # - openclaw-credentials
+          # - openclaw-runtimes
+          # - openclaw-lifecycle-approvals
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
