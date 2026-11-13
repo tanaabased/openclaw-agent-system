@@ -27,6 +27,7 @@ describe('cli/doctor', () => {
         {
           component: 'automations',
           stepId: 'github-issue-assignment',
+          automationName: 'AGENT SYSTEM: GITHUB-ISSUE-ASSIGNMENT',
           code: 'automation-healthy',
           status: 'healthy',
           message:
@@ -66,7 +67,7 @@ describe('cli/doctor', () => {
       const text = output.join('');
       if (json) assert.deepEqual(JSON.parse(text), result);
       else {
-        assert.match(text, /automation\s+healthy\s+name: ISSUE ASSIGNMENTS/u);
+        assert.match(text, /automation\s+healthy\s+name: AGENT SYSTEM: GITHUB-ISSUE-ASSIGNMENT/u);
         assert.ok(text.includes('thread: ***5678'));
         assert.equal(text.includes('native-12345678'), false);
         assert.equal(text.includes('requested:'), false);

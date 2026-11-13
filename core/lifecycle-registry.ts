@@ -54,6 +54,7 @@ export type AgentSystemLifecycleFindingStatus =
   'blocked' | 'drift' | 'healthy' | 'manual' | 'skipped' | 'warning';
 
 export interface AgentSystemLifecycleFinding {
+  automationName?: string;
   settings?: AutomationThreadModelObservation;
   providerDiagnostic?: ProviderDiagnostic;
   sessionDispatchDiagnostic?: SessionDispatchDiagnostic;

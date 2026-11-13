@@ -8,6 +8,7 @@ import {
   type AutomationReportTarget,
 } from './automation-report-delivery.ts';
 import openclawIntakeJobs from './openclaw-intake-policy.ts';
+import automationReportName from './automation-report-name.ts';
 import { issuePickupAutomationId, issuePickupErrorCode } from './issue-pickup-jobs.ts';
 
 import {
@@ -506,6 +507,19 @@ export default class AutomationService {
     if (!this.dependencies.request)
       return [finding('operator', 'manual', 'automation-requires-operator-sync')];
     const observed = snapshot?.observed ?? (await listNativeAutomations(this.dependencies.request));
+    const namedFindings = (items: AgentSystemLifecycleFinding[]) =>
+      items.map((item) => {
+        const id = item.stepId;
+        if (!id) return item;
+        const record = ledger.records.find((entry) => entry.id === id);
+        let name: unknown;
+        try {
+          name = record ? this.owned(record, observed, context.agentId)?.name : undefined;
+        } catch {
+          // conflicting ownership cannot supply a scheduler identity for presentation.
+        }
+        return { ...item, automationName: automationReportName(name, id) };
+      });
     const findings: AgentSystemLifecycleFinding[] = [];
     const status = await this.dependencies.request('cron.status', {});
     if (status.enabled === false)
@@ -515,7 +529,7 @@ export default class AutomationService {
     try {
       context.threads = await this.threads(context, store).resolve(declarations);
     } catch (error) {
-      return [
+      return namedFindings([
         ...findings,
         {
           ...finding(
@@ -530,7 +544,7 @@ export default class AutomationService {
               }
             : {}),
         },
-      ];
+      ]);
     }
     for (const job of declarations) {
       try {
@@ -654,7 +668,7 @@ export default class AutomationService {
         );
       }
     }
-    return findings;
+    return namedFindings(findings);
   }
 
   owned(

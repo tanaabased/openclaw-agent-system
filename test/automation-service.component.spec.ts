@@ -179,6 +179,24 @@ describe('agent/automation-service', () => {
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
   });
+
+  it('should report observed scheduler names without repairing naming drift', async () => {
+    await service.reconcile(manifest, root);
+    calls = [];
+    for (const name of ['🛠️ Smutlord: scheduler-only', '🛠️ Emori: scheduler-only']) {
+      native[0]!.name = name;
+      const findings = await service.inspect(manifest, root);
+      assert.equal(findings[0]?.code, 'automation-drift');
+      assert.equal(
+        findings[0]?.automationName,
+        name.startsWith('🛠️ Smutlord') ? 'SMUTLORD: SCHEDULER-ONLY' : 'EMORI: SCHEDULER-ONLY',
+      );
+      assert.equal(native[0]!.name, name);
+    }
+    assert.ok(
+      calls.every(({ method }) => !['cron.add', 'cron.update', 'cron.remove'].includes(method)),
+    );
+  });
   const mutations = () =>
     calls.filter(({ method }) => ['cron.add', 'cron.update'].includes(method));
 
@@ -1140,6 +1158,13 @@ describe('agent/automation-service', () => {
     const healthy = await service.inspect(manifest, root);
     assert.ok(healthy.every(({ status }) => status === 'healthy'));
     assert.ok(healthy.every(({ settings }) => settings === undefined));
+    assert.deepEqual(
+      healthy.map(({ stepId, automationName }) => ({ stepId, automationName })),
+      [
+        { stepId: 'prompt', automationName: 'TANAABOT: PROMPT' },
+        { stepId: 'report', automationName: 'TANAABOT: REPORT' },
+      ],
+    );
     assert.ok(
       !calls.some(({ method }) =>
         ['sessions.patch', 'sessions.create', 'cron.update'].includes(method),

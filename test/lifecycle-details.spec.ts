@@ -16,6 +16,30 @@ const automations: NonNullable<AgentManifest['automations']> = [
 ];
 
 describe('cli/lifecycle-details', () => {
+  it('should distinguish scheduler identities instead of a shared destination chat', () => {
+    for (const agentId of ['smutlord', 'emori']) {
+      const rows = ['backup', 'review'].map((id) =>
+        lifecycleDetails(
+          {
+            component: 'automations',
+            stepId: id,
+            automationName: `${agentId.toUpperCase()}: ${id.toUpperCase()}`,
+            status: 'healthy',
+            message: `Automation ${id}: healthy (persistent, reused: same-thread-12345678).`,
+          },
+          ['backup', 'review'].map((id) => ({
+            ...automations[0]!,
+            id,
+            thread: { name: 'Updates' },
+          })),
+        ),
+      );
+      assert.ok(rows[0]!.message.startsWith(`name: ${agentId.toUpperCase()}: BACKUP`));
+      assert.ok(rows[1]!.message.startsWith(`name: ${agentId.toUpperCase()}: REVIEW`));
+      assert.ok(rows.every(({ message }) => message.includes('thread: ***5678')));
+    }
+  });
+
   it('should lead with identity and omit matching settings from healthy automation details', () => {
     const raw = {
       component: 'automations',
