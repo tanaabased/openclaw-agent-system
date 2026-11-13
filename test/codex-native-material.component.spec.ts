@@ -1,3 +1,4 @@
+import composeResponseBlocks from '../channels/github/presentation/response-blocks.ts';
 import assert from 'node:assert/strict';
 import renderNativeAssessment from '../agent/tasks/assessment/assessment-render.ts';
 
@@ -104,7 +105,7 @@ describe('codex native material transport', () => {
     });
     assert.equal(sourceReads, 1);
   });
-  it('should deliver a complete fallback through codex tool output', async () => {
+  it('should deliver assessment cards once through codex tool output', async () => {
     const partial = {
       summary: 'Assess only.',
       reviewSummary: 'A concise review.',
@@ -115,7 +116,7 @@ describe('codex native material transport', () => {
       reviewSummary: 'Choose the intended experience.',
       questions: Array.from(
         { length: 5 },
-        (_, i) => `Question ${i}: ` + 'important detail '.repeat(700),
+        (_, i) => `Question ${i}: ` + 'important detail '.repeat(30),
       ),
     };
     const request = {
@@ -130,10 +131,12 @@ describe('codex native material transport', () => {
       minimumPages: 0,
       verify: (output) => {
         assert.equal(output.retained, false);
-        assert.equal(output.status, 'presentation-unavailable');
+        assert.equal(output.status, 'formatted');
+        assert.equal('presentation' in output, false);
+        assert.ok(Array.isArray(output.responseBlocks));
+        const text = composeResponseBlocks(output.responseBlocks);
+        for (const question of source.questions) assert.ok(text.includes(question));
         assert.equal(output.contextMaterials, undefined);
-        assert.match(String(output.instructions), /every unanswered question/);
-        assert.match(String(output.instructions), /ordinary Markdown/);
       },
     });
   });

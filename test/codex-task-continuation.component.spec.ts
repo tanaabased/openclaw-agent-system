@@ -1,3 +1,5 @@
+import composeResponseBlocks from '../channels/github/presentation/response-blocks.ts';
+import { taskResponseOutput } from '../agent/tasks/response/task-response.ts';
 import assert from 'node:assert/strict';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -34,18 +36,21 @@ describe('agent/codex task-continuation', () => {
     const child = { threadId: 'issue-thread' };
     const known = await fixtureState.renderAssessment(fixtureState.result, child);
     assert.match(
-      String(known.presentation),
+      composeResponseBlocks(taskResponseOutput(known)),
       new RegExp(`${fixtureState.commit} \\(origin/main\\)`),
     );
-    assert.match(String(known.presentation), /PR base.*`release`/);
+    assert.match(composeResponseBlocks(taskResponseOutput(known)), /PR base.*`release`/);
     const failed = await fixtureState.renderAssessment(fixtureState.result, {
       ...child,
       connect: async () => {
         throw Error('optional metadata unavailable');
       },
     });
-    assert.match(String(failed.presentation), new RegExp(fixtureState.commit));
-    assert.match(String(failed.presentation), /PR base.*`unknown`/);
+    assert.match(
+      composeResponseBlocks(taskResponseOutput(failed)),
+      new RegExp(fixtureState.commit),
+    );
+    assert.match(composeResponseBlocks(taskResponseOutput(failed)), /PR base.*`unknown`/);
     await writeFile(
       join(fixtureState.workspace, 'agent.yaml'),
       JSON.stringify({ ...fixtureState.manifest, debug: false }),
@@ -56,7 +61,10 @@ describe('agent/codex task-continuation', () => {
         assert.fail('debug off must not connect');
       },
     });
-    assert.doesNotMatch(String(hidden.presentation), /Checkout starting point|PR base/);
+    assert.doesNotMatch(
+      composeResponseBlocks(taskResponseOutput(hidden)),
+      /Checkout starting point|PR base/,
+    );
   });
 
   it('should keep revised plans and questions inside the issue while releasing its slot', async () => {
@@ -747,7 +755,9 @@ describe('agent/codex task-continuation', () => {
         threadId: fixtureState.native!.id,
       });
       assert.equal(recorded.status, 'formatted');
-      assert.ok(String(recorded.presentation).includes(assessment.reviewSummary));
+      assert.ok(
+        composeResponseBlocks(taskResponseOutput(recorded)).includes(assessment.reviewSummary),
+      );
       if (isolatedReader) {
         fixtureState.native!.status = 'notLoaded';
         fixtureState.native!.turnStatus = 'interrupted';

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import composeResponseBlocks from '../channels/github/presentation/response-blocks.ts';
+import { taskResponseOutput } from '../agent/tasks/response/task-response.ts';
 import { runCodexIntake } from '../agent/codex-intake.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
@@ -529,15 +531,15 @@ describe('agent/codex task-handoff', () => {
       threadId: 'issue-thread',
     });
     assert.equal(recorded.status, 'formatted');
-    assert.ok(String(recorded.presentation).includes('Plan ready'));
-    assert.match(String(recorded.presentation), /Skill.*company:assess/);
-    assert.match(String(recorded.presentation), /Guidance.*guidance.md/);
+    assert.ok(composeResponseBlocks(taskResponseOutput(recorded)).includes('Plan ready'));
+    assert.match(composeResponseBlocks(taskResponseOutput(recorded)), /Skill.*company:assess/);
+    assert.match(composeResponseBlocks(taskResponseOutput(recorded)), /Guidance.*guidance.md/);
     assert.ok(
-      String(recorded.presentation).includes(
+      composeResponseBlocks(taskResponseOutput(recorded)).includes(
         `[\`guidance.md\`](<${fixtureState.workspace}/guidance.md>)`,
       ),
     );
-    assert.ok(!String(recorded.presentation).includes('Prefer small fixes.'));
+    assert.ok(!composeResponseBlocks(taskResponseOutput(recorded)).includes('Prefer small fixes.'));
     const question = {
       outcome: 'clarification-needed',
       summary: 'Need a decision.',
@@ -545,7 +547,7 @@ describe('agent/codex task-handoff', () => {
     };
     const revised = await fixtureState.renderAssessment(question, { threadId: 'issue-thread' });
     assert.equal(revised.status, 'formatted');
-    assert.ok(String(revised.presentation).includes('Clarification needed'));
+    assert.ok(composeResponseBlocks(taskResponseOutput(revised)).includes('Clarification needed'));
   });
 
   it('should deliver the assignment despite a missing assessment skill and recover in the same chat', async () => {

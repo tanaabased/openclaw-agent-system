@@ -360,7 +360,7 @@ JSON
 if output=$(node "$runtime" dispatch assessment render --plugin-data "$root/notification-data" < "$TMPDIR/assessment-shape.json" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "assessment-render-request-invalid" and .recovery.fields == ["request.result.summary"] and (tostring | contains("PRIVATE-ASSESSMENT-SOURCE") | not)'
 jq '.result.summary = "Inspect the documented change."' "$TMPDIR/assessment-shape.json" > "$TMPDIR/assessment-corrected.json"
-node "$runtime" dispatch assessment render --plugin-data "$root/notification-data" < "$TMPDIR/assessment-corrected.json" | jq -e '.status == "formatted" and .retained == false and (.presentation | contains("You can review the documented change.")) and (tostring | contains("PRIVATE-ASSESSMENT-SOURCE") | not)'
+node "$runtime" dispatch assessment render --plugin-data "$root/notification-data" < "$TMPDIR/assessment-corrected.json" | jq -e '.status == "formatted" and .retained == false and ([.responseBlocks[].markdown] | join("\n\n") | contains("You can review the documented change.")) and (tostring | contains("PRIVATE-ASSESSMENT-SOURCE") | not)'
 
 # should reject packaged continuation without newly reconciled work authority
 root="$TMPDIR/agent-system-codex-notifications"

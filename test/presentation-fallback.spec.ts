@@ -1,3 +1,4 @@
+import composeResponseBlocks from '../channels/github/presentation/response-blocks.ts';
 import assert from 'node:assert/strict';
 import { mock } from 'node:test';
 
@@ -99,12 +100,12 @@ describe('presentation failure isolation', () => {
       };
       const result = await renderBoundAssessment(input, context);
       assert.equal(result.status, 'formatted');
-      assert.match(String(result.presentation), /How long/);
+      assert.match(composeResponseBlocks(result.responseBlocks), /How long/);
       record.routing = JSON.stringify({ selection: { model: '', effort: '' } });
       const fallback = await renderBoundAssessment(input, context);
       assert.equal(fallback.status, 'formatted');
-      assert.match(String(fallback.presentation), /How long/);
-      assert.ok(String(fallback.presentation).includes(target));
+      assert.match(composeResponseBlocks(fallback.responseBlocks), /How long/);
+      assert.ok(composeResponseBlocks(fallback.responseBlocks).includes(target));
       await assert.rejects(
         renderBoundAssessment({ ...input, target: target.replace('/3', '/4') }, context),
         /assessment-managed-target-mismatch/,

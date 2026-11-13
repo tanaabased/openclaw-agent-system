@@ -282,7 +282,7 @@ describe('scripts/aimock-tool-search', () => {
             text: JSON.stringify({
               status: 'formatted',
               retained: false,
-              presentation: 'Formatted assessment.',
+              responseBlocks: [{ section: 'assessment', markdown: 'Formatted assessment.' }],
             }),
           },
         ],
@@ -416,7 +416,7 @@ describe('scripts/aimock-tool-search', () => {
       status: 'formatted',
       retained: false,
       assessment: {},
-      presentation: 'Choose cleanup behavior.',
+      responseBlocks: [{ section: 'assessment', markdown: 'Choose cleanup behavior.' }],
     });
     await step('native-plan-context', 'agent_system_dispatch', {
       status: 'status-update-context',

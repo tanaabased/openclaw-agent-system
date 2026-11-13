@@ -7,11 +7,6 @@ import safePresentation from '../../../channels/github/presentation/safe.ts';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { cardCopyInstructions } from '../../../channels/github/presentation/card.ts';
-import {
-  implementationContextBudget,
-  implementationMaterialSize,
-} from '../implementation/implementation-material.ts';
-import { assessmentFallbackInstructions } from './assessment-instructions.ts';
 
 import {
   assessmentResponseBlocks,
@@ -156,33 +151,16 @@ export default function renderNativeAssessment(
         .filter(Boolean)
         .join('\n\n'),
   );
-  const response = {
+  return {
     runtime,
     status: 'formatted' as const,
     retained: false as const,
-    presentation,
     responseBlocks: blocks.length ? blocks : responseBlocks('assessment', presentation),
     instructions:
       responseInstructions +
       ' ' +
       cardCopyInstructions +
-      " The complete assessment stays in native conversation; Agent System has not saved it. Include the complete presentation, with all routing, decision and debug cards, in this turn's final response. Commentary or progress output does not count as final presentation. Append any Task Update publication outcome and current blocker to that final response without replacing the assessment cards or duplicating the full engineering source. Continue from native conversation and current direction; do not record or reinject this assessment. Formatting grants no implementation or publication authority. Publish the concise review through Task Update only within its existing authorization.",
-  };
-  if (implementationMaterialSize(response) <= implementationContextBudget) return response;
-  // The authored findings already live in this native call. Never make displaying them
-  // depend on retranscribing that input into page requests or on a new persisted plan.
-  return {
-    runtime,
-    status: 'presentation-unavailable' as const,
-    retained: false as const,
-    presentation:
-      'Card formatting unavailable: the presentation exceeds the native output allowance.',
-    instructions:
-      'Present the completed assessment from this conversation and the original render input directly as ordinary Markdown, including every unanswered question and actual blocker. Do not request pages, resubmit the result, or restart assessment. ' +
-      assessmentFallbackInstructions +
-      (input.assessmentOnly
-        ? ' Assessment only. No implementation or publication is authorized.'
-        : ''),
+      " The complete assessment stays in native conversation; Agent System has not saved it. Include every responseBlocks card, with all routing, decision and debug cards, in this turn's final response. Commentary or progress output does not count as final presentation. Append any Task Update publication outcome and current blocker to that final response without replacing the assessment cards or duplicating the full engineering source. Continue from native conversation and current direction; do not record or reinject this assessment. Formatting grants no implementation or publication authority. Publish the concise review through Task Update only within its existing authorization.",
   };
 }
 
