@@ -417,8 +417,7 @@ describe('issue pickup selection through native journals', () => {
       const f = await fixture(runtime, false, 'prefer');
       await f.configure((source) => {
         source.github['issue-pickup'].projects[0]!.filters = {
-          labels: ['priority: high'],
-          'exclude-labels': ['blocked'],
+          labels: ['PRIORITY:*', '!block*'],
         };
       });
       const preferred = {
@@ -562,8 +561,7 @@ describe('issue pickup selection through native journals', () => {
       });
       await f.configure((source) => {
         source.github['issue-pickup'].projects[0]!.filters = {
-          labels: ['priority: high', 'unknown required'],
-          'exclude-labels': ['blocked'],
+          labels: ['priority:*', 'unknown required', '!block*'],
         };
       });
       const empty = await f.pickup();
@@ -574,8 +572,7 @@ describe('issue pickup selection through native journals', () => {
       f.tick.id = 'edited-filters';
       await f.configure((source) => {
         source.github['issue-pickup'].projects[0]!.filters = {
-          labels: ['PRIORITY: HIGH'],
-          'exclude-labels': ['unknown excluded', 'blocked'],
+          labels: ['!unknown*', '!BLOCK*'],
         };
       });
       const options = await f.pickup();
@@ -609,8 +606,7 @@ describe('issue pickup selection through native journals', () => {
         const f = await fixture(runtime);
         await f.configure((source) => {
           source.github['issue-pickup'].projects[0]!.filters = {
-            labels: ['priority: high'],
-            'exclude-labels': ['blocked'],
+            labels: ['priority:*', '!block*'],
           };
         });
         const selection = await f.select();

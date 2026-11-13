@@ -459,7 +459,7 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
       (project) => project.repository.toLowerCase() === `${owner.login}/${name}`.toLowerCase(),
     )?.filters;
     const observation =
-      readContent || filters?.labels?.length || filters?.excludeLabels?.length
+      readContent || filters?.labels?.length
         ? await client.projectCandidate(owner.login, name, number)
         : undefined;
     const item = observation ? observation.item : await client.getItem(owner.login, name, number);

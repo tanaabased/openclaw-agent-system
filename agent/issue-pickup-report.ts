@@ -4,7 +4,7 @@ import type {
   PickupSelectionGuidance,
 } from './issue-pickup.ts';
 import type { ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
-import issuePickupLabels from './issue-pickup-labels.ts';
+import issuePickupLabels, { issuePickupLabelPatterns } from './issue-pickup-labels.ts';
 import type { PickupCandidateScope } from './issue-pickup-scope.ts';
 import card, {
   githubNotificationMarkdownCode as code,
@@ -88,18 +88,17 @@ export default function issuePickupReport(input: {
       })),
       ...allowances.flatMap((entry) => {
         const filters = entry.filters;
-        if (!filters?.labels?.length && !filters?.excludeLabels?.length) return [];
+        if (!filters?.labels?.length) return [];
+        const { required, excluded } = issuePickupLabelPatterns(filters);
         return [
           {
             label: 'Label filters',
             value: [
               text(entry.repository),
-              filters.labels?.length ? `require all: ${filters.labels.map(code).join(', ')}` : '',
-              filters.excludeLabels?.length
-                ? `exclude any: ${filters.excludeLabels.map(code).join(', ')}`
-                : '',
-              !issuePickupLabels(filters.labels ?? [], filters)
-                ? 'Contradictory criteria: a required label is also excluded. No issue can match.'
+              required.length ? `require all: ${required.map(code).join(', ')}` : '',
+              excluded.length ? `exclude any: ${excluded.map(code).join(', ')}` : '',
+              !issuePickupLabels(required, filters)
+                ? 'Contradictory criteria: a required pattern is excluded. No issue can match.'
                 : '',
             ]
               .filter(Boolean)
@@ -109,9 +108,7 @@ export default function issuePickupReport(input: {
       }),
       ...(outcome.status === 'empty' &&
       summary?.eligible === 0 &&
-      allowances.some(
-        (entry) => entry.filters?.labels?.length || entry.filters?.excludeLabels?.length,
-      )
+      allowances.some((entry) => entry.filters?.labels?.length)
         ? [
             {
               label: 'Filters',
