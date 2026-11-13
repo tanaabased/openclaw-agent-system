@@ -66,6 +66,12 @@ openclaw agent-system automations sync --json | jq -e '.status == "synchronized"
 openclaw agent-system automations list --json | tee "$TMPDIR/automation-before.json" | jq -e '.status == "aligned" and ([.jobs[].id] | sort) == ["identity","prompt"] and all(.jobs[]; .nativeEnabled == true) and any(.jobs[]; .id == "prompt" and (.routing | startswith("session:agent:")))'
 jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' "$TMPDIR/automation-before.json" > "$TMPDIR/automation-identities.json"
 
+# should distinguish scheduler jobs that share one destination chat in doctor output
+cd "$GITHUB_WORKSPACE/examples/openclaw-automation-recovery"
+NO_COLOR=1 openclaw agent-system doctor | tee "$TMPDIR/automation-doctor.txt" | grep -F 'AUTOMATION-RECOVERY-TANAABOT:'
+grep -F 'IDENTITY' "$TMPDIR/automation-doctor.txt"
+grep -F 'PROMPT' "$TMPDIR/automation-doctor.txt"
+
 # should diagnose native drift without repair and reinstall the same jobs
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-recovery"
 native=$(jq -er '.jobs[] | select(.id == "prompt") | .nativeId' "$TMPDIR/automation-before.json")

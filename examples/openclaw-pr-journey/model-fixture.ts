@@ -39,6 +39,7 @@ const dispatchStages = [
   'delivery-announce',
   'delivery-repeat',
   'delivery-present',
+  'task-response',
   'feedback-context',
   'feedback-resume-context',
   'feedback-resume-context-repeat',
@@ -147,6 +148,7 @@ function call(stage: string, name: string, args: unknown): FixtureResponse {
 }
 
 interface PRFixtureOptions {
+  composeResponse?: boolean;
   assessmentSkill?: string;
   explicitInitialLink?: boolean;
   initialQuestion?: boolean;
@@ -924,15 +926,27 @@ function respond(
         operation: 'present',
       });
     if (presented.status !== 'presented' || typeof presented.presentation !== 'string') return;
+    if (!options.composeResponse)
+      return {
+        content: [
+          presented.presentation,
+          !retry && !update && !preserveMetadata
+            ? result('delivery-announce')?.presentation
+            : undefined,
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+      };
+    const assembled = result('task-response');
+    if (!assembled)
+      return dispatch('task-response', {
+        action: 'response',
+        blocks: [{ section: 'work', markdown: 'Implementation and focused checks completed.' }],
+      });
+    if (assembled.status !== 'response-composed' || typeof assembled.presentation !== 'string')
+      return;
     return {
-      content: [
-        presented.presentation,
-        !retry && !update && !preserveMetadata
-          ? result('delivery-announce')?.presentation
-          : undefined,
-      ]
-        .filter(Boolean)
-        .join('\n\n'),
+      content: assembled.presentation + '\n\nAdditional prose after composition remains visible.',
     };
   }
 }

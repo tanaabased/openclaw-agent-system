@@ -11,6 +11,7 @@ type LifecycleItem = AgentSystemLifecyclePresentationItem & {
   remediation?: string;
   code?: string;
   settings?: AutomationThreadModelObservation;
+  automationName?: string;
 };
 
 function maskedId(value: string): string {
@@ -45,6 +46,7 @@ export default function lifecycleDetails(
   if (item.component === 'automations' && item.stepId) {
     const automation = automations.find(({ id }) => id === item.stepId);
     const name =
+      item.automationName ??
       automation?.thread?.name ??
       (item.stepId === openclawIntakeAutomationId
         ? 'ISSUE ASSIGNMENTS'

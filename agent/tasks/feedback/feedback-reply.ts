@@ -1,3 +1,5 @@
+import { responseInstructions } from '../response/task-response.ts';
+import { responseBlocks } from '../../../channels/github/presentation/response-blocks.ts';
 import selectReplyDraft from './reply-selection.ts';
 import { cardCopyInstructions } from '../../../channels/github/presentation/card.ts';
 
@@ -79,7 +81,7 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
   };
   await deps.assertCurrent();
   const store = new ReplyStore(deps.root, deps.binding);
-  return store.exclusive(async (drafts, save) => {
+  const result = await store.exclusive(async (drafts, save) => {
     const independent = !input.purpose && !deps.feedback;
     let draft =
       input.operation !== 'compose' || input.material
@@ -675,6 +677,8 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
       id: record.id,
       ...(publishedUrl ? { url: publishedUrl } : {}),
       instruction:
+        responseInstructions +
+        ' ' +
         cardCopyInstructions +
         feedbackResponseInstructions +
         (purpose
@@ -706,6 +710,18 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
               : '\n\nPublication is unconfirmed; reconcile this retained attempt without reposting.'),
     };
   });
+  return {
+    ...result,
+    ...('presentation' in result && typeof result.presentation === 'string'
+      ? {
+          responseBlocks: responseBlocks(
+            'work',
+            result.presentation,
+            'id' in result ? `reply:${result.id}` : undefined,
+          ),
+        }
+      : {}),
+  };
 }
 
 function replyPublication(

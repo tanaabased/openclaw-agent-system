@@ -262,6 +262,8 @@ because implementation began.
 <complete private response>
 ```
 
+Compose the response from Markdown blocks grouped as assessment, assessment reply, work, delivery, delivery reply, and debug. Preserve the authored order within each group, including ordinary prose and warnings with their affected result. Cards are Markdown, not a separate content format. Keep debug last; never identify a block by parsing its heading. Repeated presentation of the same source replaces that source, not unrelated prose. Use only current-turn output so later turns do not replay the initial plan. Additional prose written after composition remains visible as an addendum, even after debug. Formatting is best-effort and never authorizes, blocks, or repeats external work.
+
 Keep the complete result in ordinary chat prose. Omit generic wrapper headings
 such as “Response,” “Private context,” “Published issue comment,” or “Initial
 assessment update.” Preserve the complete attributed comment and reply cards;
@@ -333,8 +335,8 @@ assessment, questions, or action; the reference section must not be their only h
 The framing follows the structured result; prose headings never select state.
 
 When debug presentation is enabled, include one shared quoted **🔬 Debug** card
-with **Context: Configured workflow** after the initial assessment, questions,
-routing and Auto decision, before any optional reference material.
+with **Context: Configured workflow** at the end of the combined same-turn response,
+after assessment, public replies, work, delivery and any reference material.
 Group routing, assessment, implementation and reply skills and custom guidance in
 that card. Link resolved skill sources when available; show configured future
 skills by name without inventing resolved paths. Link file guidance and preserve

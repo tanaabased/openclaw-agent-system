@@ -7,7 +7,7 @@ import {
 import type { DispatchRequest } from '../../../credentials/session-dispatch.ts';
 import { bindNativeMaterial } from './native-material.ts';
 
-function resultValue(result: Record<string, unknown>): unknown {
+export function resultValue(result: Record<string, unknown>): unknown {
   if (nativeObject(result.details)) return result.details;
   if (!Array.isArray(result.content)) return undefined;
   const text = result.content

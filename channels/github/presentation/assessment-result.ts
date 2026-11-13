@@ -1,3 +1,4 @@
+import composeResponseBlocks, { responseBlocks, type ResponseBlock } from './response-blocks.ts';
 import {
   assessmentDecisionMode,
   type AssessmentResult,
@@ -18,7 +19,7 @@ import {
 } from './workflow-instructions.ts';
 
 export interface AssessmentPresentationContext extends WorkflowInstructionsPresentation {
-  cards?: string[];
+  cards?: ResponseBlock[];
   issue: { label: string; url: string; kind?: 'Issue' | 'Pull request' };
   assessmentOnly?: boolean;
   routing?: Pick<RoutingDecision, 'complexity' | 'profile' | 'reason' | 'source'> & {
@@ -37,10 +38,10 @@ function item(markdown: string): string {
 }
 
 /** frame a validated result without interpreting its prose as state or routing authority. */
-export default function renderAssessmentResult(
+export function assessmentResponseBlocks(
   result: AssessmentResult,
   context: AssessmentPresentationContext,
-): string {
+): ResponseBlock[] {
   const titles = {
     'plan-ready': '🧭 Plan ready',
     'clarification-needed': '❓ Clarification needed',
@@ -71,12 +72,12 @@ export default function renderAssessmentResult(
     ].join('\n\n'),
   );
   const cards = context.cards ?? assessmentContextCards(context);
-  const isDebugCard = (card: string) => card.startsWith('> ## 🔬 Debug\n');
   const content = [
-    outcomeCard,
-    ...cards.filter((card) => !isDebugCard(card)),
+    ...responseBlocks('assessment', outcomeCard, 'outcome'),
+    ...cards.filter((card) => card.section !== 'debug'),
     ...(result.decision && !context.assessmentOnly
-      ? [
+      ? responseBlocks(
+          'assessment',
           githubNotificationCard({
             emoji: assessmentDecisionMode(result.decision) === 'plan' ? '⏸️' : '▶️',
             title: 'Auto mode decision',
@@ -100,40 +101,63 @@ export default function renderAssessmentResult(
               })),
             ],
           }),
-        ]
+          'decision',
+        )
       : []),
     ...(result.reviewSummary && result.reviewSummary.trim() !== result.summary.trim()
-      ? ['## Proposed change', result.reviewSummary]
+      ? responseBlocks('assessment', '## Proposed change\n\n' + result.reviewSummary, 'review')
       : []),
     ...(result.outcome === 'clarification-needed'
-      ? ['## Question', result.questions.map(item).join('\n\n')]
+      ? responseBlocks(
+          'assessment',
+          '## Question\n\n' + result.questions.map(item).join('\n\n'),
+          'questions',
+        )
       : []),
-    ...cards.filter(isDebugCard),
+    ...cards.filter((card) => card.section === 'debug'),
   ];
-  return content.join('\n\n');
+  return content.map((block, index) => ({
+    ...block,
+    source: `assessment:${context.issue.url}:${block.source ?? index}`,
+  }));
+}
+
+export default function renderAssessmentResult(
+  result: AssessmentResult,
+  context: AssessmentPresentationContext,
+): string {
+  return composeResponseBlocks(assessmentResponseBlocks(result, context));
 }
 
 /** display-only context travels with the native render request, never as workflow authority. */
 export function assessmentContextCards(context: Omit<AssessmentPresentationContext, 'issue'>) {
   return [
-    context.routing
-      ? modelRoutingCard({
-          routing: context.routing,
-          effective: context.effective,
-          instructions: context.routingInstructions,
-          workspace: context.workspace,
-          debug: false,
-          manifestPath: context.routingManifestPath,
-        })
-      : undefined,
-    workflowConfigurationCard({
-      ...context,
-      routing: context.routingInstructions && {
-        ...context.routingInstructions,
-        skill: context.routingInstructions.skill ?? {
-          name: context.routingInstructions.requestedSkill,
+    ...responseBlocks(
+      'assessment',
+      context.routing
+        ? modelRoutingCard({
+            routing: context.routing,
+            effective: context.effective,
+            instructions: context.routingInstructions,
+            workspace: context.workspace,
+            debug: false,
+            manifestPath: context.routingManifestPath,
+          })
+        : '',
+      'routing',
+    ),
+    ...responseBlocks(
+      'debug',
+      workflowConfigurationCard({
+        ...context,
+        routing: context.routingInstructions && {
+          ...context.routingInstructions,
+          skill: context.routingInstructions.skill ?? {
+            name: context.routingInstructions.requestedSkill,
+          },
         },
-      },
-    }),
-  ].filter((card): card is string => card !== undefined);
+      }) ?? '',
+      'configuration',
+    ),
+  ];
 }

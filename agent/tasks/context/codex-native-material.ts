@@ -26,39 +26,44 @@ export async function* codexRuntimeReceipts(
         const item = entry.item;
         if (entry.turnId !== turn.id || !nativeObject(item))
           throw new Error('material-native-history-invalid');
-        if (
-          item.type !== 'commandExecution' ||
-          item.status !== 'completed' ||
-          item.exitCode !== 0 ||
-          typeof item.command !== 'string' ||
-          typeof item.aggregatedOutput !== 'string'
-        )
-          continue;
-        const actions = item.commandActions;
-        if (Array.isArray(actions) && actions.length > 1) continue;
-        const action = Array.isArray(actions) ? actions[0] : undefined;
-        const command =
-          nativeObject(action) && action.type === 'unknown' && typeof action.command === 'string'
-            ? action.command
-            : item.command;
-        const argv = literalArguments(command);
-        if (
-          !argv ||
-          (argv[0] !== 'node' && argv[0] !== runtime.node) ||
-          argv[1] !== runtime.entrypoint
-        )
-          continue;
-        const data = argv.indexOf('--plugin-data');
-        if (data < 3 || argv[data + 1] !== runtime.pluginData || data + 2 !== argv.length) continue;
-        try {
-          const result: unknown = JSON.parse(item.aggregatedOutput);
-          if (nativeObject(result))
-            yield { route: argv[2]!, action: data > 3 ? argv[3] : undefined, value: result };
-        } catch {
-          /* Truncated or mixed output is not a version receipt. */
-        }
+        const receipt = codexRuntimeReceipt(item, runtime);
+        if (receipt) yield receipt;
       }
     }
+  }
+}
+
+export function codexRuntimeReceipt(
+  item: Record<string, unknown>,
+  runtime: { entrypoint: string; pluginData: string; node: string },
+) {
+  if (
+    item.type !== 'commandExecution' ||
+    item.status !== 'completed' ||
+    item.exitCode !== 0 ||
+    typeof item.command !== 'string' ||
+    typeof item.aggregatedOutput !== 'string'
+  )
+    return undefined;
+  const actions = item.commandActions;
+  if (Array.isArray(actions) && actions.length > 1) return undefined;
+  const action = Array.isArray(actions) ? actions[0] : undefined;
+  const command =
+    nativeObject(action) && action.type === 'unknown' && typeof action.command === 'string'
+      ? action.command
+      : item.command;
+  const argv = literalArguments(command);
+  if (!argv || (argv[0] !== 'node' && argv[0] !== runtime.node) || argv[1] !== runtime.entrypoint)
+    return undefined;
+  const data = argv.indexOf('--plugin-data');
+  if (data < 3 || argv[data + 1] !== runtime.pluginData || data + 2 !== argv.length)
+    return undefined;
+  try {
+    const result: unknown = JSON.parse(item.aggregatedOutput);
+    if (nativeObject(result))
+      return { route: argv[2]!, action: data > 3 ? argv[3] : undefined, value: result };
+  } catch {
+    /* Truncated or mixed output is not a version receipt. */
   }
 }
 

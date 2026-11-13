@@ -5,6 +5,7 @@ Deliver a Work assignment, then an Auto Work assignment, using one installation 
 ## What Belongs Here
 
 - Initial assignment-to-delivery in the same native chat, worktree, and assessment run.
+- Combined final native text keeps the assessment before delivery, debug last within the composed output, and additional prose visible afterwards.
 - Native plan context, exact linked PR and public receipts, and duplicate prevention.
 
 ## What Does Not Belong Here
@@ -14,6 +15,7 @@ Deliver a Work assignment, then an Auto Work assignment, using one installation 
 
 ## Notes
 
+- Final-text assertions inspect the terminal assistant message separately from the composer tool result. They establish native text ordering, not desktop rendering or live model copying.
 - Strict AIMock supplies the decisions and tool choices. GitHub requests, native execution, stage changes, publication, and native receipts remain real. Model interpretation and desktop rendering need separate verification.
 - Adapted from the automatic-delivery fixtures in #434 (`a17b4f7`, authored by `emoriwan`), with one disposable issue and PR per mode.
 - Account checks use the live provider. Only Tanaabot is assigned. Refreshes target this test issue, and cleanup stops the Gateway before closing external resources.
@@ -100,6 +102,7 @@ jq -e --arg run "$run_id" '.progression.stage == "implementation" and .progressi
 jq -e '.announcement.publicText == null and .announcement.publication == null and .announcement.composition == null and .announcement.snapshot.body == null' "$TMPDIR/notification-delivery.json"
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$run_id" '{sessionKey:$key,inputRunIds:[$run],limit:200,maxChars:100000}')" --json > "$TMPDIR/notification-history.json"
 jq -e --arg run "$run_id" --slurpfile saved "$TMPDIR/notification-delivery.json" 'any(.messages[]; .role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | startswith("> ") and contains("https://github.com/tanaabased/big-test-bucket/pull/" + ($saved[0].delivery.pullRequest.pullRequestNumber | tostring)) and (gsub("(?m)^> ?"; "") | contains("#issuecomment-" + ($saved[0].announcement.receipt.databaseId | tostring)))))' "$TMPDIR/notification-history.json"
+jq -e --arg run "$run_id" '[.messages[] | select(.role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop") | .content | if type == "string" then . else map(.text // "") | join("") end] | last | . as $text | ($text | index("🧭 Plan ready")) as $plan | ($text | index("🔀 Pull request")) as $pr | $plan != null and $pr != null and $plan < $pr and contains("Implementation and focused checks completed.") and endswith("Additional prose after composition remains visible.") and (if contains("🔬 Debug") then index("🔬 Debug") > $pr else true end)' "$TMPDIR/notification-history.json"
 openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e --slurpfile saved "$TMPDIR/notification-delivery.json" '.session.sessionId == $saved[0].sessionCreation.sessionId and .session.spawnedCwd == $saved[0].worktree and .session.thinkingLevel == $saved[0].request.thinkingLevel'
 
 # should retain the linked pr and exact public receipts without repeating delivery
@@ -149,6 +152,7 @@ jq -e --arg run "$run_id" '.progression.stage == "implementation" and .progressi
 jq -e '.announcement.publicText == null and .announcement.publication == null and .announcement.composition == null and .announcement.snapshot.body == null' "$TMPDIR/notification-delivery.json"
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$run_id" '{sessionKey:$key,inputRunIds:[$run],limit:200,maxChars:100000}')" --json > "$TMPDIR/notification-history.json"
 jq -e --arg run "$run_id" --slurpfile saved "$TMPDIR/notification-delivery.json" 'any(.messages[]; .role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | startswith("> ") and contains("https://github.com/tanaabased/big-test-bucket/pull/" + ($saved[0].delivery.pullRequest.pullRequestNumber | tostring)) and (gsub("(?m)^> ?"; "") | contains("#issuecomment-" + ($saved[0].announcement.receipt.databaseId | tostring)))))' "$TMPDIR/notification-history.json"
+jq -e --arg run "$run_id" '[.messages[] | select(.role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop") | .content | if type == "string" then . else map(.text // "") | join("") end] | last | . as $text | ($text | index("🧭 Plan ready")) as $plan | ($text | index("🔀 Pull request")) as $pr | $plan != null and $pr != null and $plan < $pr and contains("Implementation and focused checks completed.") and endswith("Additional prose after composition remains visible.") and (if contains("🔬 Debug") then index("🔬 Debug") > $pr else true end)' "$TMPDIR/notification-history.json"
 openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e --slurpfile saved "$TMPDIR/notification-delivery.json" '.session.sessionId == $saved[0].sessionCreation.sessionId and .session.spawnedCwd == $saved[0].worktree and .session.thinkingLevel == $saved[0].request.thinkingLevel'
 
 # should retain the linked pr and exact public receipts without repeating delivery under auto mode

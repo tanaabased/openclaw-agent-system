@@ -80,6 +80,15 @@ export default function createDispatchTool(input: {
   assessmentGit?: OpenClawDispatchDependencies['assessmentGit'];
 }) {
   const { api } = input;
+  // 10.9 async reads are descriptive; final admission still needs this synchronous guard.
+  const assertSessionCurrent = (sessionKey: string, sessionId: string) => {
+    const entry = api.runtime.agent.session.getSessionEntry({
+      sessionKey,
+      readConsistency: 'latest',
+    });
+    if (!entry || entry.sessionId !== sessionId || entry.archivedAt)
+      throw new Error('dispatch-native-session-diverged');
+  };
   const invocations = new Map<string, DispatchCaller & { agentId: string; operator: boolean }>();
   const loaded = async (context: NativeContext) => {
     if (!context.agentId) throw new Error('dispatch-agent-required');
@@ -132,7 +141,7 @@ export default function createDispatchTool(input: {
         return { block: true, blockReason: 'dispatch-native-hook-context-unavailable' };
       return;
     }
-    const nativeCaller = api.runtime.agent.session.getSessionEntry({
+    const nativeCaller = await api.runtime.agent.session.getSessionEntryAsync({
       sessionKey: context.sessionKey,
       readConsistency: 'latest',
     });
@@ -142,6 +151,7 @@ export default function createDispatchTool(input: {
     try {
       const who = caller(context, event, nativeCaller);
       const inputId = readOpenClawTurnInput(api.runContext, { ...who, agentId: context.agentId });
+      assertSessionCurrent(who.sessionKey, who.sessionId);
       invocations.set(who.toolCallId, {
         ...who,
         ...(inputId ? { inputId } : {}),
@@ -179,6 +189,7 @@ export default function createDispatchTool(input: {
             ? 'Read usable context for this native task with {}. No action, target, path, IDs, or other arguments. The runtime resolves the current task, exact incoming feedback, and configured guidance. Use when native turn context is missing or needs refreshing; no second context call is required. This read does not authorize external effects.'
             : 'Current task context normally arrives through the native hook; if missing, use agent_system_context with {}. Use dispatch for explicitly requested Agent System operations and existing admitted workflows. Ordinary native chat creation, context handoffs, research and authorized implementation stay native; an issue reference or repository does not request enrollment. Do not require repeated human authorization or transfer managed ownership for a native handoff. ' +
               'Operator recovery: action recover selects the predecessor by issue target or explicit chat and same-repository pullRequest. The runtime verifies native operator input and reserves one successor internally; preview:true is optional. Never supply receipt IDs or digests. Preserve old work and native denials. Existing-task delivery bind selects and verifies an explicit PR in one native-approved call. Delivery publish accepts authored title/body and an optional base branch and resolves its task and checkout internally; prepare is an optional preview. Do not supply task IDs or digests to delivery operations. Manual launch: action launch with operation context accepts an explicit issue or open same-repository PR reference without prior assignment or intake activation. New issue-launch requests attempt additive self-assignment and create independent tasks through normal dispatch, bypassing automatic routing and capacity; existing tasks and claims do not veto launch. Use the same target with launch prepare, then reconcile uncertain creation through that target. Retries and existing PR continuation reuse their exact destinations and stages; never fabricate assignment or schedule evidence. Missing enrollment needs explicit Install with manualSessionDispatch:true, never automatic enrollment. See $agent-system-task-launch. ' +
+              'Read-only response assembly: action response gathers current-turn presentation output with optional blocks of {section, markdown} for ordinary prose. No IDs or receipts. Preserve the complete composed Markdown and any later addendum; formatting never gates work or repeats effects. ' +
               'Direct assessment: action assessment with operation context accepts an explicit GitHub issue target and existing checkout path in the current chat. It uses current agent assessment configuration without intake activation. Use the returned selected method once, then assessment render with target and the full result. It returns native tool context and a concise presentation without saving a plan or summary. All outputs remain assessment-only; no assignment, setup, implementation or publication. Invalid managed context never falls back to manual. ' +
               'Manual managed-task retirement: action retire accepts a target issue URL or the current verified issue session, resolves ownership internally, and applies cleanup. Use preview:true for optional inspection; never supply IDs or digests. Only native owner input authorizes retirement. Reuse existing safe cleanup immediately; running work and incomplete native cleanup remain pending. Never fall back to unmanaged cleanup. ' +
               'Explicit unmanaged cleanup: action retire with native set to an exact session key (OpenClaw) or thread id (standalone Codex), performs normal native disposal using existing operator intent. Use preview:true for optional inspection; no copied digest or another conversational confirmation is required. Native cleanup may stop work, archive descendants or reclaim native checkouts/local branches and lose local-only work. No preservation audit, enrollment or issue/assignment/remote-branch changes. Known managed targets must use managed retirement. Honor native denial; reconcile the original attempt and distinguish archived history from disk reclamation. ' +
@@ -226,13 +237,12 @@ export default function createDispatchTool(input: {
                 throw new Error(
                   `dispatch-native-factory-mismatch: agentId=${who.agentId === context.agentId}; sessionKey=${who.sessionKey === context.sessionKey}; sessionIdPresent=${!!context.sessionId}; sessionId=${who.sessionId === context.sessionId}`,
                 );
-              context.assertInvocationCurrent?.();
-              const current = api.runtime.agent.session.getSessionEntry({
-                sessionKey: who.sessionKey,
-                readConsistency: 'latest',
-              });
-              if (!current || current.sessionId !== who.sessionId || current.archivedAt)
-                throw new Error('dispatch-native-session-diverged');
+              const assertCurrent = () => {
+                signal?.throwIfAborted();
+                context.assertInvocationCurrent?.();
+                assertSessionCurrent(who.sessionKey, who.sessionId);
+              };
+              assertCurrent();
               const { operator, ...nativeCaller } = who;
               result = await service
                 .runModel(
@@ -244,15 +254,9 @@ export default function createDispatchTool(input: {
                   {
                     signal,
                     async assertCurrent() {
-                      signal?.throwIfAborted();
-                      context.assertInvocationCurrent?.();
-                      const entry = api.runtime.agent.session.getSessionEntry({
-                        sessionKey: who.sessionKey,
-                        readConsistency: 'latest',
-                      });
-                      if (!entry || entry.sessionId !== who.sessionId || entry.archivedAt)
-                        throw new Error('dispatch-native-session-diverged');
+                      assertCurrent();
                       const fresh = await loaded(context);
+                      assertCurrent();
                       if (
                         fresh.manifest.agent.id !== binding.manifest.agent.id ||
                         fresh.scope.workspaceDir !== binding.scope.workspaceDir

@@ -1,3 +1,6 @@
+import composeResponseBlocks, {
+  responseBlocks,
+} from '../../../channels/github/presentation/response-blocks.ts';
 import {
   selectCodexTaskContext,
   type CodexTaskContextDependencies,
@@ -438,7 +441,10 @@ async function runCodexDeliveryScoped(
               (code !== 'delivery-linkage-retried' ||
                 (current.manifest.debug && record.delivery?.reconciled)),
           )
-          .map((code) => codexIssueNotice({ event: 'failure', changed: true, code }));
+          .map((code) => ({
+            ...codexIssueNotice({ event: 'failure', changed: true, code }),
+            code,
+          }));
       const url = (number: number) => `https://github.com/${repository}/pull/${number}`;
       if (input.action === 'present' || input.action === 'reconcile') {
         const linked = taskPullRequest(record);
@@ -533,6 +539,37 @@ async function runCodexDeliveryScoped(
           announcement: record.announcement,
         });
         await save();
+        const blocks = [
+          ...responseBlocks(
+            'delivery',
+            githubNotificationPullRequestOpenedCard({
+              issueNumber: adoptedPullRequest ? undefined : intake.issue.number,
+              updated: updatedSinceAnnouncement,
+              pullRequestNumber: previous.pullRequest.pullRequestNumber,
+              repositoryOwner: intake.repository.owner.login,
+              repositoryName: intake.repository.name,
+              commentFlow,
+            }),
+            `pr:${pullRequestUrl}`,
+          ),
+          ...responseBlocks(
+            'delivery-reply',
+            announcementPresentation(
+              record.announcement,
+              managedTargetUrl(intake),
+              undefined,
+              record.announcementRecovery,
+            ),
+            `announcement:${managedTargetUrl(intake)}`,
+          ),
+          ...presentationNotices.flatMap((notice) =>
+            responseBlocks(
+              notice.code === 'delivery-linkage-retried' ? 'debug' : 'delivery',
+              notice.message,
+              `delivery-notice:${notice.code}`,
+            ),
+          ),
+        ];
         return {
           status: previous.reconciled ? 'linked' : 'publication-incomplete',
           retained: true,
@@ -543,23 +580,8 @@ async function runCodexDeliveryScoped(
           notices: presentationNotices,
           url: pullRequestUrl,
           pullRequest: previous.pullRequest,
-          presentation: [
-            githubNotificationPullRequestOpenedCard({
-              issueNumber: adoptedPullRequest ? undefined : intake.issue.number,
-              updated: updatedSinceAnnouncement,
-              pullRequestNumber: previous.pullRequest.pullRequestNumber,
-              repositoryOwner: intake.repository.owner.login,
-              repositoryName: intake.repository.name,
-              commentFlow,
-            }),
-            announcementPresentation(
-              record.announcement,
-              managedTargetUrl(intake),
-              undefined,
-              record.announcementRecovery,
-            ),
-            ...presentationNotices.map((notice) => notice.message),
-          ].join('\n\n'),
+          responseBlocks: blocks,
+          presentation: composeResponseBlocks(blocks),
         };
       }
       const feedbackEvent = record.feedback?.events.find(

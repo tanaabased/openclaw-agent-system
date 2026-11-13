@@ -847,13 +847,14 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     toolRegistry,
     async (manifest, workspace, binding) => {
       if (!binding.sessionKey || !binding.sessionId) return;
-      const entry = api.runtime.agent.session.getSessionEntry({
+      const entry = await api.runtime.agent.session.getSessionEntryAsync({
         sessionKey: binding.sessionKey,
         readConsistency: 'latest',
       });
       if (!entry || entry.archivedAt || entry.sessionId !== binding.sessionId) return;
       retainOpenClawTurnInput(api.runContext, binding);
       const context = await dispatchV2.service.promptContext(manifest, workspace, binding);
+      // keep the final session check synchronous after asynchronous context assembly.
       const fresh = api.runtime.agent.session.getSessionEntry({
         sessionKey: binding.sessionKey,
         readConsistency: 'latest',

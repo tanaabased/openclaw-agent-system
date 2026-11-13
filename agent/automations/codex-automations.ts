@@ -8,6 +8,7 @@ import { mkdir, rmdir } from 'node:fs/promises';
 import { codexInstanceStore } from '../tasks/dispatch/codex-assignment-claims.ts';
 import IssuePickupEnrollmentStore from '../issue-pickup-enrollment.ts';
 import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
+import automationReportName from './automation-report-name.ts';
 
 import { Value } from 'typebox/value';
 
@@ -362,7 +363,15 @@ export async function inspectCodexAutomations(
   dependencies: CodexAutomationDependencies = {},
 ) {
   const selected = await snapshot(pluginData, dependencies);
-  return (await plan(selected, inputs)).result;
+  const { result, saved } = await plan(selected, inputs);
+  const owned = ownedCodexAutomations(selected.scope, saved, selected.ledger.records);
+  return {
+    ...result,
+    findings: result.findings.map((finding) => ({
+      ...finding,
+      automationName: automationReportName(owned.get(finding.id)?.definition.name, finding.id),
+    })),
+  };
 }
 
 /** explicit native conversation sync; schedules remain owned by the desktop app tools. */
