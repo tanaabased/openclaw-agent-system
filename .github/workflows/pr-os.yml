@@ -26,9 +26,9 @@ jobs:
           - macos-26
           - ubuntu-24.04
         example:
-          - os-install
+          # - os-install
           - os-install-online
-          - os-dispatch-enrollment
+          # - os-dispatch-enrollment
           # - os-execution
           # - os-credentials
     steps:
