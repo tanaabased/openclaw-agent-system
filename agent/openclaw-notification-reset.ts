@@ -15,7 +15,8 @@ import type { ConnectedGitHubAccountClient } from '../core/github-account-client
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 import automationThreadGateway from './automations/automation-thread-gateway.ts';
 import observeResetUnresolved from './openclaw-reset-unresolved.ts';
-import { listNativeAutomations, nativeObject } from './automations/automation-gateway.ts';
+import { nativeObject } from '../utils/native-object.ts';
+import { listNativeAutomations } from './automations/automation-gateway.ts';
 import { openclawIntakeAutomationId } from './automations/openclaw-intake-policy.ts';
 import observeRetirementSession from './tasks/retirement/openclaw-retirement-observation.ts';
 import OpenClawDispatchStore, {

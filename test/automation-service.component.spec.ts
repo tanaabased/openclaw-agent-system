@@ -43,6 +43,8 @@ describe('agent/automation-service', () => {
   let manifest: AgentManifest;
   let service: AutomationService;
   let native: NativeAutomation[];
+  let modelRows: Record<string, unknown>[];
+  let preparedModelRows: Record<string, unknown>[] | undefined;
   let calls: { method: string; params: Record<string, unknown> }[];
   let now: number;
   let revision: number;
@@ -58,6 +60,8 @@ describe('agent/automation-service', () => {
       automations: jobs([{ id: 'check', schedule: 'in 1 hour', run: ['gh', 'api', 'user'] }]),
     };
     native = [];
+    modelRows = [];
+    preparedModelRows = undefined;
     calls = [];
     now = 1_900_000_000_000;
     revision = 0;
@@ -72,6 +76,25 @@ describe('agent/automation-service', () => {
         (fail === 'second-add' && method === 'cron.add' && native.length === 1)
       )
         throw new Error('secret provider text must not escape');
+      if (
+        fail === 'missing-model-auth' &&
+        method === 'cron.add' &&
+        (params.payload as { kind?: string })?.kind === 'agentTurn'
+      )
+        throw Object.assign(
+          new Error(
+            'invalid cron.add params: No route-compatible authentication source is configured for anthropic.',
+          ),
+          {
+            name: 'GatewayClientRequestError',
+            gatewayCode: 'INVALID_REQUEST',
+            retryable: false,
+          },
+        );
+      if (method === 'models.list') {
+        if (params.refresh === true) preparedModelRows = undefined;
+        return { models: preparedModelRows ?? modelRows };
+      }
       if (method === 'sessions.resolve') return { ok: false };
       if (method === 'cron.status') return { enabled: true, jobs: native.length };
       if (method === 'cron.list') return { jobs: structuredClone(native), hasMore: false };
@@ -176,6 +199,122 @@ describe('agent/automation-service', () => {
       },
     });
   });
+  it('should acquire missing native auth evidence and skip a paused prompt before creating its conversation or receipt', async () => {
+    manifest.automations = jobs([
+      {
+        id: 'paused',
+        enabled: false,
+        schedule: 'every 5 minutes',
+        prompt: 'inspect',
+        model: 'openai/test',
+        thread: { name: 'PAUSED' },
+      },
+    ]);
+    modelRows = [
+      { provider: 'openai', id: 'test', available: false, unavailableReason: 'missing-auth' },
+    ];
+    preparedModelRows = [{ provider: 'openai', id: 'test', agentRuntime: { id: 'codex' } }];
+    const result = await service.reconcile(manifest, root);
+    assert.deepEqual(
+      result.outcomes.map(({ status }) => status),
+      ['skipped'],
+    );
+    assert.equal(native.length, 0);
+    assert.equal(
+      calls.some(({ method }) =>
+        ['sessions.resolve', 'sessions.create', 'sessions.patch', 'cron.add'].includes(method),
+      ),
+      false,
+    );
+    const { store } = await service.scope(manifest, root);
+    assert.deepEqual((await store.read()).records, []);
+    assert.ok((await service.inspect(manifest, root)).some(({ status }) => status === 'skipped'));
+  });
+
+  for (const reason of ['auth-failed', 'cooldown', undefined])
+    it(`should skip a new unavailable prompt with reason ${reason} without claiming missing auth or changing existing jobs`, async () => {
+      manifest.automations = jobs([
+        { id: 'check', schedule: 'in 1 hour', run: ['echo', 'ok'] },
+        { id: 'prompt', schedule: 'in 1 hour', prompt: 'inspect', model: 'openai/test' },
+      ]);
+      modelRows = [{ provider: 'openai', id: 'test', available: false, unavailableReason: reason }];
+      const result = await service.reconcile(manifest, root);
+      const skipped = result.outcomes.find(({ stepId }) => stepId === 'prompt');
+      assert.equal(skipped?.status, 'skipped');
+      assert.equal(skipped?.code, 'automation-model-unavailable');
+      assert.doesNotMatch(skipped!.message, /authentication is not configured/);
+      assert.equal(native.length, 1);
+      assert.equal(native[0]!.payload.kind, 'command');
+      assert.equal(
+        calls.some(({ method }) => method.startsWith('sessions.')),
+        false,
+      );
+      modelRows[0]!.available = true;
+      await service.reconcile(manifest, root);
+      assert.equal(native.length, 2);
+      const before = structuredClone(native);
+      modelRows[0]!.available = false;
+      await assert.rejects(service.reconcile(manifest, root), {
+        code: 'automation-model-unavailable',
+      });
+      assert.deepEqual(native, before);
+      assert.ok(
+        (await service.inspect(manifest, root)).some(
+          ({ stepId, status, code }) =>
+            stepId === 'prompt' && status === 'blocked' && code === 'automation-model-unavailable',
+        ),
+      );
+    });
+
+  it('should skip only new unauthenticated prompts and install them after authentication is configured', async () => {
+    manifest.automations = jobs([
+      { id: 'check', schedule: 'in 1 hour', run: ['echo', 'ok'] },
+      { id: 'prompt', schedule: 'in 1 hour', prompt: 'inspect', model: 'openai/test' },
+    ]);
+    modelRows = [
+      { provider: 'openai', id: 'test', available: false, unavailableReason: 'missing-auth' },
+    ];
+    const first = await service.reconcile(manifest, root);
+    assert.ok(
+      first.outcomes.some(({ stepId, status }) => stepId === 'prompt' && status === 'skipped'),
+    );
+    assert.equal(first.warnings?.length ?? 0, 0);
+    assert.equal(native.length, 1);
+    assert.equal(native[0]!.payload.kind, 'command');
+    const { store } = await service.scope(manifest, root);
+    assert.equal(
+      (await store.read()).records.some(({ id }) => id === 'prompt'),
+      false,
+    );
+    assert.ok(
+      (await service.inspect(manifest, root)).some(
+        ({ stepId, status }) => stepId === 'prompt' && status === 'skipped',
+      ),
+    );
+    modelRows[0] = { ...modelRows[0], available: true, unavailableReason: undefined };
+    await service.reconcile(manifest, root);
+    assert.equal(native.length, 2);
+    const ids = native.map(({ id }) => id);
+    await service.reconcile(manifest, root);
+    assert.deepEqual(
+      native.map(({ id }) => id),
+      ids,
+    );
+    modelRows[0] = { ...modelRows[0], available: false, unavailableReason: 'missing-auth' };
+    assert.ok(
+      (await service.inspect(manifest, root)).some(
+        ({ stepId, status }) => stepId === 'prompt' && status === 'blocked',
+      ),
+    );
+    await assert.rejects(service.reconcile(manifest, root), {
+      code: 'automation-model-auth-missing',
+    });
+    assert.deepEqual(
+      native.map(({ id }) => id),
+      ids,
+    );
+  });
+
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
   });
@@ -611,6 +750,65 @@ describe('agent/automation-service', () => {
     assert.equal(requests, 0);
     assert.equal(native.length, 0);
   });
+
+  for (const available of [true, undefined])
+    it(`should use definitive cron auth rejection with catalog availability ${available} and enroll once auth is configured`, async () => {
+      manifest.automations = jobs([
+        { id: 'prompt', schedule: 'in 1 hour', prompt: 'inspect', model: 'anthropic/test' },
+        { id: 'command', schedule: 'in 1 hour', run: ['echo', 'ok'] },
+      ]);
+      // Both positive and unknown catalog evidence defer to scheduled-auth rejection.
+      modelRows = [{ provider: 'anthropic', id: 'test', available }];
+      fail = 'missing-model-auth';
+      const first = await service.reconcile(manifest, root);
+      assert.ok(
+        first.outcomes.some(
+          (item) =>
+            item.stepId === 'prompt' &&
+            item.status === 'skipped' &&
+            item.code === 'automation-model-auth-missing',
+        ),
+      );
+      assert.equal(native.length, 1);
+      assert.equal(native[0]!.payload.kind, 'command');
+      const { store } = await service.scope(manifest, root);
+      assert.equal(
+        (await store.read()).records.some(({ id }) => id === 'prompt'),
+        false,
+      );
+      if (available === undefined) {
+        const findings = await service.inspect(manifest, root);
+        assert.ok(
+          findings.some(
+            (item) =>
+              item.stepId === 'prompt' &&
+              item.status === 'skipped' &&
+              item.code === 'automation-model-readiness-unresolved',
+          ),
+        );
+      }
+      fail = undefined;
+      await service.reconcile(manifest, root);
+      await service.reconcile(manifest, root);
+      assert.ok(
+        (await service.inspect(manifest, root)).some(
+          (item) => item.stepId === 'prompt' && item.status === 'healthy',
+        ),
+      );
+      assert.equal(native.length, 2);
+      // A previously owned job is not a new optional enrollment. Its recovery
+      // evidence must survive instead of treating it as an optional install.
+      const retained = (await store.read()).records.find(({ id }) => id === 'prompt');
+      native = native.filter((job) => job.payload.kind === 'command');
+      fail = 'missing-model-auth';
+      await assert.rejects(service.reconcile(manifest, root), {
+        code: 'automation-native-job-missing',
+      });
+      assert.deepEqual(
+        (await store.read()).records.find(({ id }) => id === 'prompt'),
+        retained,
+      );
+    });
 
   it('should keep gateway auth rejection and unknown failures fatal during install', async () => {
     for (const [failure, code] of [

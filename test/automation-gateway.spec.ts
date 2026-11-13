@@ -25,6 +25,230 @@ const job = (id: string) => ({
   state: {},
 });
 describe('agent/automation-gateway', () => {
+  const staleInstance = () =>
+    Object.assign(
+      new Error(
+        'PluginInstanceUnavailableError: Plugin codex was reloaded or disabled; use its current tools.',
+      ),
+      {
+        name: 'GatewayClientRequestError',
+        gatewayCode: 'UNAVAILABLE',
+        retryable: false,
+      },
+    );
+
+  it('should recover only the same stale session read with capped backoff and no reload', async () => {
+    let elapsed = 0;
+    const delays: number[] = [];
+    const params = { key: 'owned-session' };
+    const request = createAutomationGateway(
+      async (method, options, input, extra) => {
+        assert.equal(method, 'sessions.resolve');
+        assert.equal(input, params);
+        assert.equal(extra?.sharedStateMode, 'read-only');
+        if (elapsed) assert.equal(Number(options.timeout), 120_000 - elapsed);
+        if (elapsed < 20_000) throw staleInstance();
+        return { key: 'owned-session' };
+      },
+      async (ms) => {
+        delays.push(ms);
+        elapsed += ms;
+      },
+      undefined,
+      () => elapsed,
+    );
+    assert.deepEqual(await request('sessions.resolve', params), params);
+    assert.deepEqual(delays.slice(0, 5), [250, 500, 1_000, 2_000, 4_000]);
+    assert.ok(delays.every((delay) => delay <= 5_000));
+    assert.ok(elapsed < 30_000, 'success must return without waiting out the budget');
+  });
+
+  it('should exhaust one elapsed recovery budget including rpc time and keep the stale error fatal', async () => {
+    let elapsed = 0;
+    let calls = 0;
+    const request = createAutomationGateway(
+      async (_method, options) => {
+        calls++;
+        if (calls === 1) elapsed += 10_000;
+        if (calls > 1) {
+          assert.ok(Number(options.timeout) <= 120_000 - elapsed);
+          elapsed += Math.min(7_000, Number(options.timeout));
+        }
+        throw staleInstance();
+      },
+      async (ms) => {
+        elapsed += ms;
+      },
+      undefined,
+      () => elapsed,
+    );
+    await assert.rejects(request('sessions.resolve', {}), { code: 'automation-gateway-rejected' });
+    assert.equal(elapsed, 120_000);
+    assert.ok(calls < 20);
+  });
+
+  it('should stop stale-session recovery on cancellation or a different native rejection', async () => {
+    for (const cancel of [true, false]) {
+      let elapsed = 0;
+      let calls = 0;
+      const controller = new AbortController();
+      const request = createAutomationGateway(
+        async (_method, _options, _params, extra) => {
+          calls++;
+          if (calls === 1) throw staleInstance();
+          assert.equal(extra?.signal, controller.signal);
+          throw Object.assign(new Error('forbidden'), {
+            name: 'GatewayClientRequestError',
+            gatewayCode: 'FORBIDDEN',
+          });
+        },
+        async (ms, signal) => {
+          elapsed += ms;
+          if (cancel) controller.abort(new Error('cancelled'));
+          signal?.throwIfAborted();
+        },
+        undefined,
+        () => elapsed,
+      );
+      await assert.rejects(
+        withPrivateStateLock({ signal: controller.signal, assertHeld() {} }, () =>
+          request('sessions.resolve', {}),
+        ),
+      );
+      assert.equal(calls, cancel ? 1 : 2);
+      assert.equal(elapsed, 250);
+    }
+  });
+
+  it('should never apply stale-session recovery to writes or model reads', async () => {
+    for (const method of [
+      'sessions.create',
+      'sessions.patch',
+      'cron.add',
+      'models.list',
+    ] as const) {
+      let calls = 0;
+      const request = createAutomationGateway(
+        async () => {
+          calls++;
+          throw staleInstance();
+        },
+        async () => assert.fail('must not retry'),
+      );
+      await assert.rejects(request(method, {}), { code: 'automation-gateway-rejected' });
+      assert.equal(calls, 1);
+    }
+  });
+
+  it('should honor a native retry hint once and re-read after superseded catalog acquisition', async () => {
+    const calls: { method: string; params: unknown }[] = [];
+    const waits: number[] = [];
+    const request = createAutomationGateway(
+      async (method, _options, params) => {
+        calls.push({ method, params });
+        if (calls.length === 1)
+          throw Object.assign(new Error('publication superseded'), {
+            name: 'GatewayClientRequestError',
+            gatewayCode: 'UNAVAILABLE',
+            retryable: true,
+            retryAfterMs: 25,
+          });
+        return { models: [{ available: false, unavailableReason: 'missing-auth' }] };
+      },
+      async (ms) => {
+        waits.push(ms);
+      },
+    );
+    const result = await request('models.list', { agentId: 'a', view: 'all', refresh: true });
+    assert.equal((result.models as { available: boolean }[])[0]!.available, false);
+    assert.deepEqual(waits, [25]);
+    assert.deepEqual(calls, [
+      { method: 'models.list', params: { agentId: 'a', view: 'all', refresh: true } },
+      { method: 'models.list', params: { agentId: 'a', view: 'all', preparedOnly: true } },
+    ]);
+  });
+
+  it('should keep retry exhaustion fatal and retain native retry hints without error text', async () => {
+    let calls = 0;
+    const request = createAutomationGateway(
+      async () => {
+        calls++;
+        throw Object.assign(new Error('private provider detail'), {
+          name: 'GatewayClientRequestError',
+          gatewayCode: 'UNAVAILABLE',
+          retryable: true,
+          retryAfterMs: 0,
+        });
+      },
+      async () => {},
+    );
+    await assert.rejects(request('sessions.resolve', { key: 'owned' }), (error: unknown) => {
+      assert.ok(error instanceof AutomationError);
+      assert.equal(error.diagnostic?.retryable, true);
+      assert.equal(error.diagnostic?.retryAfterMs, 0);
+      assert.doesNotMatch(JSON.stringify(error.diagnostic), /private provider detail/);
+      return true;
+    });
+    assert.equal(calls, 2);
+  });
+
+  it('should not replay writes or read refusals without an explicit transient hint', async () => {
+    for (const method of [
+      'cron.add',
+      'cron.update',
+      'cron.run',
+      'sessions.create',
+      'sessions.patch',
+      'sessions.resolve',
+      'models.list',
+    ] as const) {
+      let calls = 0;
+      const read = method === 'sessions.resolve' || method === 'models.list';
+      const request = createAutomationGateway(
+        async () => {
+          calls++;
+          throw Object.assign(
+            new Error('Plugin codex was reloaded or disabled; use its current tools.'),
+            {
+              name: 'GatewayClientRequestError',
+              gatewayCode: 'UNAVAILABLE',
+              retryable: !read,
+            },
+          );
+        },
+        async () => assert.fail('must not wait'),
+      );
+      await assert.rejects(request(method, {}), { code: 'automation-gateway-rejected' });
+      assert.equal(calls, 1);
+    }
+  });
+
+  it('should stop a hinted retry when the owning lease is cancelled', async () => {
+    const controller = new AbortController();
+    let calls = 0;
+    const request = createAutomationGateway(
+      async () => {
+        calls++;
+        throw Object.assign(new Error('publication superseded'), {
+          name: 'GatewayClientRequestError',
+          gatewayCode: 'UNAVAILABLE',
+          retryable: true,
+        });
+      },
+      async (_ms, signal) => {
+        assert.equal(signal, controller.signal);
+        controller.abort(new Error('cancelled'));
+        signal!.throwIfAborted();
+      },
+    );
+    await assert.rejects(
+      withPrivateStateLock({ signal: controller.signal, assertHeld() {} }, () =>
+        request('models.list', {}),
+      ),
+    );
+    assert.equal(calls, 1);
+  });
+
   it('should enable rejection capture only in explicitly debugged ci without retrying the mutation', async () => {
     const previous = {
       CI: process.env.CI,
@@ -40,21 +264,20 @@ describe('agent/automation-gateway', () => {
       ] as const) {
         process.env.CI = ci;
         process.env.OPENCLAW_DEBUG = debug;
-        let calls = 0;
-        const request = createAutomationGateway(async () => {
-          calls++;
-          throw Object.assign(
-            new Error('snapshot rejected for private-session with opaque-test-secret'),
-            {
-              name: 'GatewayClientRequestError',
-              gatewayCode: 'INVALID_REQUEST',
-              retryable: false,
-            },
-          );
-        });
-        await assert.rejects(
-          request('sessions.create', { key: 'private-session' }),
-          (error: unknown) => {
+        for (const method of ['sessions.create', 'cron.add'] as const) {
+          let calls = 0;
+          const request = createAutomationGateway(async () => {
+            calls++;
+            throw Object.assign(
+              new Error('snapshot rejected for private-session with opaque-test-secret'),
+              {
+                name: 'GatewayClientRequestError',
+                gatewayCode: 'INVALID_REQUEST',
+                retryable: false,
+              },
+            );
+          });
+          await assert.rejects(request(method, { key: 'private-session' }), (error: unknown) => {
             assert.ok(error instanceof AutomationError);
             assert.equal(Boolean(error.diagnostic?.nativeRejection), capture);
             assert.doesNotMatch(
@@ -62,9 +285,9 @@ describe('agent/automation-gateway', () => {
               /opaque-test-secret|private-session/,
             );
             return true;
-          },
-        );
-        assert.equal(calls, 1);
+          });
+          assert.equal(calls, 1);
+        }
       }
     } finally {
       for (const [key, value] of Object.entries(previous)) {

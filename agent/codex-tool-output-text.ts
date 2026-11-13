@@ -1,4 +1,4 @@
-import { nativeObject } from './automations/automation-gateway.ts';
+import { nativeObject } from '../utils/native-object.ts';
 
 /** preserve native text exactly; mixed media is not a workflow envelope. */
 export default function codexToolOutputText(value: unknown): string | undefined {

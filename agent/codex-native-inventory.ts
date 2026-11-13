@@ -1,4 +1,4 @@
-import { nativeObject } from './automations/automation-gateway.ts';
+import { nativeObject } from '../utils/native-object.ts';
 import { nativeHistoryPages } from './tasks/dispatch/codex-dispatch-history.ts';
 import { connectCodexCaller, type CodexThreadRequest } from './codex-thread-client.ts';
 

@@ -37,8 +37,8 @@ openclaw config get agents.entries.memory-embeddings.memory.search --json | jq -
 if grep -Fq synthetic-memory-credential "$OPENCLAW_CONFIG_PATH"; then exit 1; fi
 
 # should retrieve through the gateway after resolving the installed embedding credential
-openclaw-gateway start
 openclaw memory index --agent memory-embeddings
+openclaw-gateway start
 openclaw gateway call memory.search --params '{"agentId":"memory-embeddings","query":"cobalt astrolabes","maxResults":5}' --timeout 120000 --json | jq -e '.agentId == "memory-embeddings" and .provider == "openai" and any(.results[]; .path == "memory/observatory.md")'
 
 # should resolve the same secret reference after gateway restart and preserve retrieval
@@ -47,7 +47,7 @@ openclaw-gateway stop --timeout 340
 openclaw-gateway start
 cd "$GITHUB_WORKSPACE/examples/openclaw-memory-embeddings"
 openclaw agent-system doctor --json | tee "$TMPDIR/openclaw-memory-doctor.json"
-jq -e '.findings | any(.code == "agent-memory-openai-ready" and .status == "healthy")' "$TMPDIR/openclaw-memory-doctor.json"
+jq -e '(.findings | any(.code == "agent-memory-index-ready" and .status == "healthy")) and (.findings | any(.code == "agent-memory-embedding-ready" and .status == "healthy"))' "$TMPDIR/openclaw-memory-doctor.json"
 openclaw gateway call memory.search --params '{"agentId":"memory-embeddings","query":"cobalt astrolabes","maxResults":5}' --timeout 120000 --json | jq -e '.provider == "openai" and any(.results[]; .path == "memory/observatory.md")'
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e --argjson before "$(cat "$TMPDIR/memory-before-restart.json")" '.strictMissCount == 0 and .embeddingAuthentication.accepted > $before.embeddingAuthentication.accepted and .embeddingAuthentication.rejected == 0'
 ```

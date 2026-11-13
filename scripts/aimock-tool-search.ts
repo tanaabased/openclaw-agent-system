@@ -27,10 +27,14 @@ function searchTool(request: ChatCompletionRequest) {
   )?.function.name;
 }
 
-function controls(request: ChatCompletionRequest): boolean {
-  return (
-    !!searchTool(request) && !!request.tools?.some((tool) => tool.function.name === 'tool_call')
+function dispatcher(request: ChatCompletionRequest) {
+  return ['dispatch_action', 'tool_call'].find((name) =>
+    request.tools?.some((tool) => tool.function.name === name),
   );
+}
+
+function controls(request: ChatCompletionRequest): boolean {
+  return !!searchTool(request) && !!dispatcher(request);
 }
 
 function currentMessages(request: ChatCompletionRequest) {
@@ -77,6 +81,7 @@ export function normalizeToolSearchRequest(
   expectedInvalidToolCalls: readonly OpenClawAIMockToolCall[] = [],
 ): ChatCompletionRequest {
   if (!controls(request)) return request;
+  const dispatch = dispatcher(request)!;
   const messages = currentMessages(request);
   const historyLength = request.messages.length - messages.length;
   const available = catalog(request);
@@ -101,7 +106,7 @@ export function normalizeToolSearchRequest(
     const expectedDenial = expectedDeniedToolCalls.some(
       (call) => call.name === name && matchesOpenClawAIMockToolCallId(callId, call.id),
     );
-    // approval may stop the call before tool_call can produce its execution envelope.
+    // approval may stop the call before the dispatcher can produce its execution envelope.
     if (expectedDenial && preExecutionDenial.test(content)) {
       return { name, arguments: JSON.stringify(args.args ?? {}), content };
     }
@@ -109,7 +114,7 @@ export function normalizeToolSearchRequest(
     if (
       expectedDenial &&
       envelope.status === 'error' &&
-      envelope.tool === 'tool_call' &&
+      envelope.tool === dispatch &&
       typeof envelope.error === 'string' &&
       preExecutionDenial.test(envelope.error)
     ) {
@@ -121,7 +126,7 @@ export function normalizeToolSearchRequest(
         (call) => call.name === name && matchesOpenClawAIMockToolCallId(callId, call.id),
       ) &&
       envelope.status === 'error' &&
-      envelope.tool === 'tool_call' &&
+      envelope.tool === dispatch &&
       typeof envelope.error === 'string' &&
       envelope.error.startsWith(`Invalid arguments for tool "${args.id}": `)
     ) {
@@ -174,7 +179,7 @@ export function normalizeToolSearchRequest(
           {
             ...message,
             tool_calls: toolCalls?.map((call) => {
-              if (call.function.name !== 'tool_call') return call;
+              if (call.function.name !== dispatch) return call;
               const result = messages.find(
                 (candidate) => candidate.role === 'tool' && candidate.tool_call_id === call.id,
               );
@@ -193,7 +198,7 @@ export function normalizeToolSearchRequest(
         ];
       }
       const call = calls.get(message.tool_call_id ?? '');
-      if (message.role !== 'tool' || call?.function.name !== 'tool_call') return [message];
+      if (message.role !== 'tool' || call?.function.name !== dispatch) return [message];
       const projected = unwrap(
         call.id,
         call.function.arguments,
@@ -215,7 +220,7 @@ function wrapResponse(request: ChatCompletionRequest, response: FixtureResponse)
       assert.ok(id, `tool search did not expose ${call.name}`);
       return {
         ...call,
-        name: 'tool_call',
+        name: dispatcher(request)!,
         arguments: JSON.stringify({ id, args: JSON.parse(call.arguments) }),
       };
     }),

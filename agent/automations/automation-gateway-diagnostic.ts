@@ -1,4 +1,5 @@
 import providerErrorMessage from '../../utils/provider-error-message.ts';
+import { isGatewayClientRequestError } from 'openclaw/plugin-sdk/gateway-runtime';
 import gatewayErrorDiagnostic, {
   retainGatewayErrorDiagnostic,
   type GatewayErrorDiagnostic,
@@ -8,6 +9,8 @@ import type { AutomationGateway } from './automation-gateway.ts';
 export interface AutomationGatewayDiagnostic extends GatewayErrorDiagnostic {
   method: Parameters<AutomationGateway>[0];
   automationId?: string;
+  retryable?: boolean;
+  retryAfterMs?: number;
   nativeRejection?: { message?: string; detailCode?: string };
   reason?:
     | 'agent-unknown'
@@ -22,6 +25,7 @@ export interface AutomationGatewayDiagnostic extends GatewayErrorDiagnostic {
     | 'runtime-restricted'
     | 'session-key-reserved'
     | 'workspace-invalid'
+    | 'model-auth-missing'
     | 'model-catalog-loading'
     | 'unclassified'
     | 'effort-invalid'
@@ -53,6 +57,8 @@ const settingsReasons = [
 export function retainAutomationGatewayDiagnostic(value: unknown): GatewayErrorDiagnostic & {
   method: AutomationGatewayDiagnostic['method'] | null;
   automationId?: string;
+  retryable?: boolean;
+  retryAfterMs?: number;
   reason?: AutomationGatewayDiagnostic['reason'];
   nativeRejection?: AutomationGatewayDiagnostic['nativeRejection'];
 } {
@@ -61,6 +67,7 @@ export function retainAutomationGatewayDiagnostic(value: unknown): GatewayErrorD
     'method' in input
       ? ((
           [
+            'models.list',
             'sessions.resolve',
             'sessions.list',
             'sessions.create',
@@ -84,7 +91,9 @@ export function retainAutomationGatewayDiagnostic(value: unknown): GatewayErrorD
           ? resolverReasons
           : method === 'sessions.create' || method === 'sessions.patch'
             ? settingsReasons
-            : []
+            : method === 'cron.add'
+              ? (['model-auth-missing'] as const)
+              : []
         ).find((reason) => reason === input.reason)
       : undefined;
   const catalogLoading =
@@ -105,6 +114,19 @@ export function retainAutomationGatewayDiagnostic(value: unknown): GatewayErrorD
     ...diagnostic,
     ...(reason ? { reason } : catalogLoading ? { reason: 'model-catalog-loading' as const } : {}),
     ...(automationId ? { automationId } : {}),
+    ...(diagnostic.gatewayCode === 'UNAVAILABLE' &&
+    'retryable' in input &&
+    typeof input.retryable === 'boolean'
+      ? {
+          retryable: input.retryable,
+          ...('retryAfterMs' in input &&
+          typeof input.retryAfterMs === 'number' &&
+          Number.isSafeInteger(input.retryAfterMs) &&
+          input.retryAfterMs >= 0
+            ? { retryAfterMs: input.retryAfterMs }
+            : {}),
+        }
+      : {}),
     ...(diagnostic.category === 'rejected' && 'nativeRejection' in input
       ? { nativeRejection: rejectionEvidence(input.nativeRejection) }
       : {}),
@@ -137,6 +159,21 @@ export default function automationGatewayDiagnostic(
   evidence?: { secrets: readonly string[] },
 ): AutomationGatewayDiagnostic {
   const diagnostic: AutomationGatewayDiagnostic = { method, ...gatewayErrorDiagnostic(error) };
+  if (diagnostic.gatewayCode === 'UNAVAILABLE' && isGatewayClientRequestError(error)) {
+    diagnostic.retryable = error.retryable;
+    if (error.retryAfterMs !== undefined) diagnostic.retryAfterMs = error.retryAfterMs;
+  }
+  // cron rejects this before creating a job; INVALID_REQUEST alone is not enough.
+  if (
+    method === 'cron.add' &&
+    diagnostic.category === 'rejected' &&
+    diagnostic.gatewayCode === 'INVALID_REQUEST' &&
+    error instanceof Error &&
+    /^invalid cron\.add params: No route-compatible authentication source is configured for [a-zA-Z0-9][a-zA-Z0-9._-]*\.$/.test(
+      error.message,
+    )
+  )
+    diagnostic.reason = 'model-auth-missing';
   // classify only known native rejections; never retain identifiers or raw prose.
   if (
     ['sessions.resolve', 'sessions.create', 'sessions.patch'].includes(method) &&
@@ -212,7 +249,7 @@ export default function automationGatewayDiagnostic(
   // Opt-in disposable CI evidence excludes arbitrary details and request payloads.
   if (
     evidence &&
-    method === 'sessions.create' &&
+    ['models.list', 'sessions.resolve', 'sessions.create', 'cron.add'].includes(method) &&
     diagnostic.category === 'rejected' &&
     error instanceof Error
   ) {
@@ -222,7 +259,10 @@ export default function automationGatewayDiagnostic(
         : undefined;
     diagnostic.nativeRejection = rejectionEvidence(
       {
-        message: error.message,
+        message:
+          method === 'cron.add'
+            ? error.message.replace(/^invalid cron\.add params: /, 'invalid cron.add: ')
+            : error.message,
         detailCode: details && 'code' in details ? details.code : undefined,
       },
       evidence.secrets,

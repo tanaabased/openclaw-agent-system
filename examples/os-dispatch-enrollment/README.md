@@ -61,11 +61,11 @@ openclaw-gateway start
 set -o pipefail
 export OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$GITHUB_WORKSPACE/examples/os-dispatch-enrollment/provider:$PATH"
 cd "$GITHUB_WORKSPACE/examples/os-dispatch-enrollment/data"
-openclaw agent-system install --yes --json | tee "$TMPDIR/enrollment-install.json"
-jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .code == "intake-activated")' "$TMPDIR/enrollment-install.json"
+OPENCLAW_DEBUG=1 openclaw agent-system install --yes --json | tee "$TMPDIR/enrollment-install.json"
+jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .code == "intake-activated") and any(.outcomes[]; .stepId == "github-issue-assignment" and .status == "skipped" and .code == "automation-model-auth-missing")' "$TMPDIR/enrollment-install.json"
 retained_device=$(jq -er '.blocked.message | capture("device (?<id>[a-f0-9]{64})").id' "$TMPDIR/enrollment-failed.json")
 jq -e --arg device "$retained_device" 'any(.outcomes[]; .code == "session-dispatch-enrolled" and (.message | contains($device)))' "$TMPDIR/enrollment-install.json"
-openclaw agent-system automations list --json | jq -e '.status == "aligned" and any(.jobs[]; .id == "github-issue-assignment" and .nativeEnabled == false)'
+openclaw agent-system automations list --json | jq -e '.status == "aligned" and any(.jobs[]; .id == "github-issue-assignment" and .nativeId == null and any(.findings[]; .status == "skipped" and .code == "automation-model-auth-missing"))'
 
 # should reuse enrollment without another explicit consent or bootstrap
 export OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$GITHUB_WORKSPACE/examples/os-dispatch-enrollment/provider:$PATH"

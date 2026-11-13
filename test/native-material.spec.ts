@@ -231,50 +231,51 @@ describe('agent/native-material', () => {
     );
   });
 
-  it('reads native tool-search receipts without accepting other tools, sources or failures', async () => {
-    const output = nativeMaterialResponse(
-      implementationMaterial(source, envelope),
-      'agent_system_dispatch',
-      envelope,
-    );
-    const wrapped = {
-      tool: {
-        id: 'openclaw:agent_system_dispatch',
-        name: 'agent_system_dispatch',
-        source: 'openclaw',
-      },
-      result: { content: [{ type: 'text', text: JSON.stringify(output) }] },
-    };
-    const message = (details: unknown) => ({
-      role: 'toolResult',
-      toolName: 'tool_call',
-      details,
-      __openclaw: {},
+  for (const dispatcher of ['tool_call', 'dispatch_action'])
+    it(`reads native ${dispatcher} receipts without accepting other tools, sources or failures`, async () => {
+      const output = nativeMaterialResponse(
+        implementationMaterial(source, envelope),
+        'agent_system_dispatch',
+        envelope,
+      );
+      const wrapped = {
+        tool: {
+          id: 'openclaw:agent_system_dispatch',
+          name: 'agent_system_dispatch',
+          source: 'openclaw',
+        },
+        result: { content: [{ type: 'text', text: JSON.stringify(output) }] },
+      };
+      const message = (details: unknown) => ({
+        role: 'toolResult',
+        toolName: dispatcher,
+        details,
+        __openclaw: {},
+      });
+      const native = openClawMaterialReceipts(
+        async () => ({
+          sessionId: 'session',
+          messages: [
+            message(wrapped),
+            { ...message(undefined), content: [{ type: 'text', text: JSON.stringify(wrapped) }] },
+            message({ ...wrapped, tool: { ...wrapped.tool, name: 'other' } }),
+            message({ ...wrapped, tool: { ...wrapped.tool, source: 'mcp' } }),
+            message({ ...wrapped, result: { ...wrapped.result, isError: true } }),
+            { ...message(wrapped), isError: true },
+            { ...message(wrapped), role: 'user' },
+          ],
+        }),
+        { sessionKey: 'agent:bound', sessionId: 'session' },
+        'agent_system_dispatch',
+      );
+      const observed = [];
+      for await (const receipt of native) observed.push(receipt);
+      assert.deepEqual(observed, [output, output]);
+      assert.ok(
+        (await bindNativeMaterial('agent_system_dispatch', pageRequest(output), receipts(observed)))
+          .material,
+      );
     });
-    const native = openClawMaterialReceipts(
-      async () => ({
-        sessionId: 'session',
-        messages: [
-          message(wrapped),
-          { ...message(undefined), content: [{ type: 'text', text: JSON.stringify(wrapped) }] },
-          message({ ...wrapped, tool: { ...wrapped.tool, name: 'other' } }),
-          message({ ...wrapped, tool: { ...wrapped.tool, source: 'mcp' } }),
-          message({ ...wrapped, result: { ...wrapped.result, isError: true } }),
-          { ...message(wrapped), isError: true },
-          { ...message(wrapped), role: 'user' },
-        ],
-      }),
-      { sessionKey: 'agent:bound', sessionId: 'session' },
-      'agent_system_dispatch',
-    );
-    const observed = [];
-    for await (const receipt of native) observed.push(receipt);
-    assert.deepEqual(observed, [output, output]);
-    assert.ok(
-      (await bindNativeMaterial('agent_system_dispatch', pageRequest(output), receipts(observed)))
-        .material,
-    );
-  });
 
   it('recovers context pages from the no-argument tool receipt without widening other operations', async () => {
     const root = nativeMaterialResponse(

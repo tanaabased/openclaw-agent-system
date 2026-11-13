@@ -6,6 +6,36 @@ import automationGatewayDiagnostic, {
 import { AutomationError } from '../agent/automations/automation-errors.ts';
 
 describe('agent/automation-gateway-diagnostic', () => {
+  it('should classify only confirmed pre-create missing auth for any provider without retaining its name', () => {
+    for (const provider of ['openai', 'anthropic', 'google', 'local-provider']) {
+      const error = Object.assign(
+        new Error(
+          `invalid cron.add params: No route-compatible authentication source is configured for ${provider}.`,
+        ),
+        {
+          name: 'GatewayClientRequestError',
+          gatewayCode: 'INVALID_REQUEST',
+          retryable: false,
+        },
+      );
+      assert.equal(automationGatewayDiagnostic('cron.add', error).reason, 'model-auth-missing');
+      assert.equal(automationGatewayDiagnostic('cron.update', error).reason, undefined);
+      error.gatewayCode = 'FORBIDDEN';
+      assert.equal(automationGatewayDiagnostic('cron.add', error).reason, undefined);
+    }
+    for (const message of [
+      'invalid cron.add params: invalid schedule',
+      'No route-compatible authentication source is configured for openai.',
+      'invalid cron.add params: No route-compatible authentication source is configured for openai. extra',
+    ]) {
+      const error = Object.assign(new Error(message), {
+        name: 'GatewayClientRequestError',
+        gatewayCode: 'INVALID_REQUEST',
+        retryable: false,
+      });
+      assert.equal(automationGatewayDiagnostic('cron.add', error).reason, undefined);
+    }
+  });
   it('should retain bounded opt-in rejection evidence without credentials payloads or arbitrary details', () => {
     const error = Object.assign(
       new Error('Native snapshot rejected; opaque-secret token=hidden payload={private input}'),
@@ -20,26 +50,28 @@ describe('agent/automation-gateway-diagnostic', () => {
         },
       },
     );
-    assert.equal(automationGatewayDiagnostic('sessions.create', error).nativeRejection, undefined);
-    const diagnostic = automationGatewayDiagnostic('sessions.create', error, {
-      secrets: ['opaque-secret'],
-    });
-    assert.equal(diagnostic.reason, 'unclassified');
-    assert.equal(diagnostic.nativeRejection?.detailCode, 'SNAPSHOT_INVALID');
-    assert.match(diagnostic.nativeRejection!.message!, /Native snapshot rejected/);
-    assert.doesNotMatch(
-      JSON.stringify(diagnostic),
-      /opaque-secret|hidden|private input|private-detail|nested/,
-    );
-    assert.deepEqual(retainAutomationGatewayDiagnostic(diagnostic), diagnostic);
-    const long = automationGatewayDiagnostic(
-      'sessions.create',
-      Object.assign(error, { message: 'x'.repeat(4000) }),
-      { secrets: [] },
-    );
-    assert.ok(long.nativeRejection!.message!.length <= 1025);
+    for (const method of ['sessions.create', 'cron.add'] as const) {
+      error.message = `${method === 'cron.add' ? 'invalid cron.add params: ' : ''}Native snapshot rejected; opaque-secret token=hidden payload={private input}`;
+      assert.equal(automationGatewayDiagnostic(method, error).nativeRejection, undefined);
+      const diagnostic = automationGatewayDiagnostic(method, error, {
+        secrets: ['opaque-secret'],
+      });
+      assert.equal(diagnostic.nativeRejection?.detailCode, 'SNAPSHOT_INVALID');
+      assert.match(diagnostic.nativeRejection!.message!, /Native snapshot rejected/);
+      assert.doesNotMatch(
+        JSON.stringify(diagnostic),
+        /opaque-secret|hidden|private input|private-detail|nested/,
+      );
+      assert.deepEqual(retainAutomationGatewayDiagnostic(diagnostic), diagnostic);
+      const long = automationGatewayDiagnostic(
+        method,
+        Object.assign(new Error('x'.repeat(4000)), error, { message: 'x'.repeat(4000) }),
+        { secrets: [] },
+      );
+      assert.ok(long.nativeRejection!.message!.length <= 1025);
+    }
     assert.equal(
-      automationGatewayDiagnostic('cron.add', error, { secrets: [] }).nativeRejection,
+      automationGatewayDiagnostic('cron.update', error, { secrets: [] }).nativeRejection,
       undefined,
     );
   });

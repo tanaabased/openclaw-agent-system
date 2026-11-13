@@ -305,6 +305,40 @@ describe('task response assembly', () => {
 });
 
 describe('native response recovery boundaries', () => {
+  for (const dispatcher of ['tool_call', 'dispatch_action']) {
+    it(`should assemble ${dispatcher} output only from the current run and owned tool source`, async () => {
+      const wrapped = (name: string, source: string, runId = caller.runId) => ({
+        role: 'toolResult',
+        toolName: dispatcher,
+        details: {
+          tool: { name, source },
+          result: {
+            details: output(
+              'assessment',
+              name === 'agent_system_dispatch' && source === 'openclaw' && runId === caller.runId
+                ? 'Current plan'
+                : 'Wrong plan',
+            ),
+          },
+        },
+        __openclaw: { runId },
+      });
+      const result = await openClawResponse(
+        async () => ({
+          sessionId: caller.sessionId,
+          messages: [
+            { role: 'user', __openclaw: { runId: caller.runId } },
+            wrapped('agent_system_dispatch', 'openclaw', 'old'),
+            wrapped('other', 'openclaw'),
+            wrapped('agent_system_dispatch', 'mcp'),
+            wrapped('agent_system_dispatch', 'openclaw'),
+          ],
+        }),
+        caller,
+      );
+      assert.equal(result.presentation, 'Current plan');
+    });
+  }
   it('should retain supplied prose through read-only recomposition without duplicating the prior response', async () => {
     const first = await taskResponse(
       'codex',

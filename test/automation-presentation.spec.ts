@@ -3,6 +3,7 @@ import { stripVTControlCharacters } from 'node:util';
 
 import stringWidth from 'fast-string-width';
 
+import automationPresentation from '../cli/automation-presentation.ts';
 import { createCliStyles } from '../cli/output.ts';
 import {
   automationHistoryFixture,
@@ -13,6 +14,35 @@ import {
 } from './automation-presentation-fixtures.ts';
 
 describe('cli/automation presentation', () => {
+  it('should show unauthenticated new jobs as skipped and not installed', () => {
+    const result = structuredClone(automationListFixtures.aligned!);
+    result.jobs = [
+      {
+        ...result.jobs[0]!,
+        nativeId: null,
+        nativeEnabled: null,
+        findings: [
+          {
+            component: 'automations',
+            stepId: 'review',
+            status: 'skipped',
+            code: 'automation-model-auth-missing',
+            message: 'model authentication is not configured',
+          },
+        ],
+      },
+    ];
+    const output = automationPresentation(
+      result,
+      '/Workspace/Mixed',
+      createCliStyles({ NO_COLOR: '1' }),
+      160,
+    ).join('\n');
+    assert.match(output, /review +skipped/u);
+    assert.match(output, /native=not-installed/u);
+    assert.doesNotMatch(output, /review +(?:blocked|warning|aligned)/u);
+  });
+
   it('should distinguish desired state, observation and activity without additional service calls', async () => {
     const preview = await captureAutomationPreview('aligned');
     assert.deepEqual(preview.calls, ['list']);

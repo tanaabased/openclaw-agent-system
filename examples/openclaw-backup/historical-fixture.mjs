@@ -22,14 +22,16 @@ const source = JSON.parse(entries[0].bytes.toString('utf8'));
 assert.equal(source.agentId, 'backup-tanaabot');
 assert.equal(source.coverage.openclawState, 'captured');
 const databasePath = join(process.env.TMPDIR, 'prune-historical.sqlite');
+// use the maximum sqlite user version to keep this incompatibility fixture ahead of supported schemas.
+const unsupportedSchema = 2147483647;
 const database = new DatabaseSync(databasePath);
 database.exec(`
-  PRAGMA user_version = 24;
+  PRAGMA user_version = ${unsupportedSchema};
   CREATE TABLE schema_meta (meta_key TEXT PRIMARY KEY, role TEXT, schema_version INTEGER, agent_id TEXT);
 `);
 database
   .prepare('INSERT INTO schema_meta VALUES (?, ?, ?, ?)')
-  .run('primary', 'agent', 24, source.agentId);
+  .run('primary', 'agent', unsupportedSchema, source.agentId);
 database.close();
 const bytes = await readFile(databasePath);
 for (const year of [2000, 2001]) {
@@ -42,7 +44,7 @@ for (const year of [2000, 2001]) {
       role: 'agent',
       agentId: source.agentId,
       basename: 'openclaw-agent.sqlite',
-      userVersion: 24,
+      userVersion: unsupportedSchema,
     },
     artifact: {
       path: 'database.sqlite',

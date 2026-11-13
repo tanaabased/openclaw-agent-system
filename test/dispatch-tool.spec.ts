@@ -60,7 +60,7 @@ describe('tools/dispatch/tool', () => {
   function fixture(caller = coordinator) {
     const workspaceDir = `/workspaces/${caller.agentId}`;
     const hooks = new Map<string, Hook>();
-    const factories: OpenClawPluginToolFactory[] = [];
+    const factories: Array<OpenClawPluginToolFactory | OpenClawPluginToolFactory<2>> = [];
     let registrationOptions: Parameters<OpenClawPluginApi['registerTool']>[1];
     const session = {
       sessionId: caller.sessionId,
@@ -106,7 +106,7 @@ describe('tools/dispatch/tool', () => {
         hooks.set(name, handler);
       },
       registerTool(
-        value: OpenClawPluginToolFactory,
+        value: OpenClawPluginToolFactory | OpenClawPluginToolFactory<2>,
         options: Parameters<OpenClawPluginApi['registerTool']>[1],
       ) {
         factories.push(value);
@@ -117,8 +117,6 @@ describe('tools/dispatch/tool', () => {
           session: {
             getSessionEntryAsync: async ({ sessionKey }: { sessionKey: string }) =>
               sessionKey === caller.sessionKey ? reads.session() : undefined,
-            getSessionEntry: ({ sessionKey }: { sessionKey: string }) =>
-              sessionKey === caller.sessionKey ? session : undefined,
           },
         },
       },
@@ -141,11 +139,33 @@ describe('tools/dispatch/tool', () => {
     };
     assert.ok(factories.length);
     const build = (
-      context: OpenClawPluginToolContext = { ...caller, workspaceDir },
+      context: OpenClawPluginToolContext = {
+        ...caller,
+        workspaceDir,
+        assertInvocationCurrent() {},
+      },
       name = 'agent_system_dispatch',
     ) => {
       const tool = factories
-        .map((factory) => factory(context))
+        .map((factory) => {
+          if (typeof factory === 'function') return factory(context);
+          const assertInvocationCurrent = () => {
+            if (!context.assertInvocationCurrent)
+              throw new Error(
+                'Plugin tool invocation authority is unavailable outside an admitted run or request',
+              );
+            context.assertInvocationCurrent();
+          };
+          const tool = factory.create({ ...context, assertInvocationCurrent });
+          if (!tool || Array.isArray(tool)) return tool;
+          return {
+            ...tool,
+            execute: (...args: Parameters<typeof tool.execute>) => {
+              assertInvocationCurrent();
+              return tool.execute(...args);
+            },
+          };
+        })
         .find((value) => value && !Array.isArray(value) && value.name === name);
       assert.ok(tool && !Array.isArray(tool));
       return tool;
@@ -400,8 +420,15 @@ describe('tools/dispatch/tool', () => {
   });
 
   it('should allow the read-only predicate without a conversation session id', async () => {
-    const { hook } = fixture();
+    const { hook, build, adapter } = fixture();
+    let checked = false;
+    adapter.service.check = async () => {
+      checked = true;
+      return { status: 'ready', changed: false, more: false, outcome: 'idle' };
+    };
     assert.equal(await hook({ ...event, params: { action: 'check' } }, trigger), undefined);
+    await build(trigger).execute('condition', { action: 'check' });
+    assert.equal(checked, true);
   });
 
   it('should retain caller verification for every other dispatch action', async () => {
@@ -532,7 +559,7 @@ describe('tools/dispatch/tool', () => {
     assert.deepEqual(calls, []);
   });
 
-  it('should reject a reset or archive while the descriptive read is suspended', async () => {
+  it('should reject execution after a reset or archive during the hook metadata read', async () => {
     for (const change of ['reset', 'archive'] as const) {
       const f = fixture();
       const started = Promise.withResolvers<void>();
@@ -548,13 +575,44 @@ describe('tools/dispatch/tool', () => {
       if (change === 'reset') f.session.sessionId = 'replacement';
       else f.session.archivedAt = 1;
       resume.resolve();
-      assert.match((await pending)!.blockReason, /dispatch-native-session-diverged/);
+      assert.equal(await pending, undefined);
       await assert.rejects(
         f.build().execute(event.toolCallId, event.params),
-        /dispatch-native-invocation-missing/,
+        /dispatch-native-session-diverged/,
       );
       assert.deepEqual(f.calls, []);
     }
+  });
+
+  it('should dispatch without optional memory audience authority', async () => {
+    const f = fixture();
+    await f.hook(event, coordinator);
+    await f.build().execute(event.toolCallId, event.params);
+    assert.equal(f.calls.length, 1);
+  });
+
+  it('should reject host authority revoked during an awaited session read', async () => {
+    const f = fixture();
+    await f.hook(event, coordinator);
+    let revoked = false;
+    f.reads.session = async () => {
+      const stale = { ...f.session };
+      await Promise.resolve();
+      revoked = true;
+      return stale;
+    };
+    await assert.rejects(
+      f
+        .build({
+          ...coordinator,
+          assertInvocationCurrent() {
+            if (revoked) throw new Error('invocation expired');
+          },
+        })
+        .execute(event.toolCallId, event.params),
+      /invocation expired/,
+    );
+    assert.deepEqual(f.calls, []);
   });
 
   it('should recheck host and session authority after a manifest refresh', async () => {

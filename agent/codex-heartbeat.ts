@@ -1,4 +1,4 @@
-import { nativeObject } from './automations/automation-gateway.ts';
+import { nativeObject } from '../utils/native-object.ts';
 import { automationHash } from './automation-hash.ts';
 
 export const codexQuietHeartbeatInstructions =

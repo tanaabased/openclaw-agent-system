@@ -12,6 +12,8 @@ import createMemoryConfigurationPlan, {
   type ReadyMemoryConfigurationPlan,
 } from './memory-configuration-plan.ts';
 import { memorySecretId } from './memory-secret-provider-configuration.ts';
+import type { MemoryEmbeddingStatus, MemoryIndexStatus } from './inspect-memory-status.ts';
+import { nativeObject } from '../../utils/native-object.ts';
 import type { AgentMemoryConfiguration } from '../../manifest/memory-schema.ts';
 import {
   classifyMemoryEmbeddingFailure,
@@ -20,11 +22,11 @@ import {
 } from './memory-status.ts';
 
 export interface MemoryLifecycleDependencies {
-  inspectMemoryStatus(params: {
+  inspectMemoryIndex(params: { agentId: string; workspaceDir: string }): Promise<MemoryIndexStatus>;
+  inspectMemoryEmbedding(params: {
     agentId: string;
-    deep: boolean;
     workspaceDir: string;
-  }): Promise<MemoryStatus>;
+  }): Promise<MemoryEmbeddingStatus>;
   inspectBinding(params: {
     agentId: string;
     binding: string;
@@ -96,9 +98,11 @@ function indexFinding(status: MemoryStatus['status'], agentId: string): Contribu
   const isEmptyUninitializedIndex =
     state === 'missing' && status.files === 0 && status.chunks === 0 && !status.lastSyncError;
   if (
-    isEmptyUninitializedIndex ||
-    (!status.lastSyncError &&
-      !['incomplete', 'unverified', 'mismatched', 'missing'].includes(state ?? ''))
+    status.vector?.enabled === true &&
+    status.vector.storeAvailable !== false &&
+    !status.dirty &&
+    !status.lastSyncError &&
+    (isEmptyUninitializedIndex || state === 'complete' || state === 'empty')
   ) {
     return [];
   }
@@ -108,24 +112,6 @@ function indexFinding(status: MemoryStatus['status'], agentId: string): Contribu
       message: `OpenClaw reports incomplete or incompatible memory index evidence for ${agentId}.`,
       remediation: `Review openclaw memory status --agent ${agentId} --deep, then run openclaw memory status --index --agent ${agentId} when a rebuild is appropriate.`,
       status: 'drift',
-    },
-  ];
-}
-
-function providerMismatchFinding(
-  status: MemoryStatus['status'],
-  agentId: string,
-  provider: string,
-): ContributionFinding[] {
-  const requested = status.requestedProvider ?? status.provider;
-  if (requested === provider && status.provider === provider && !status.fallback) return [];
-  if (provider === 'local') return [localProviderSetupFinding(agentId)];
-  return [
-    {
-      code: 'agent-memory-provider-unavailable',
-      message: `OpenClaw did not activate the declared ${provider} memory provider for ${agentId}.`,
-      remediation: `Review openclaw memory status --agent ${agentId} --deep and restore the declared provider.`,
-      status: 'blocked',
     },
   ];
 }
@@ -152,10 +138,10 @@ function ftsFinding(status: MemoryStatus['status'], agentId: string): Contributi
 }
 
 function embeddingFailureFinding(
-  status: MemoryStatus,
+  probe: MemoryStatus['embeddingProbe'],
   agentId: string,
+  provider: 'openai' | 'local',
 ): ContributionFinding | undefined {
-  const probe = status.embeddingProbe;
   if (!probe || probe.checked === false) {
     return {
       code: 'agent-memory-provider-unprobed',
@@ -174,9 +160,9 @@ function embeddingFailureFinding(
     unknown: 'the provider returned an unclassified failure',
   }[classification];
   return {
-    code: `agent-memory-openai-${classification}`,
+    code: `agent-memory-${provider}-${classification}`,
     message: `OpenClaw reports that ${explanation} for ${agentId}.`,
-    remediation: `Restore OpenAI embedding access, then run openclaw memory status --agent ${agentId} --deep.`,
+    remediation: `Restore ${provider} embedding access, then run openclaw memory status --agent ${agentId} --deep.`,
     status: 'blocked',
   };
 }
@@ -210,126 +196,138 @@ export default function createMemoryLifecycleContribution(
         ];
       }
 
-      if (memory.search.provider === 'openai' && memory.search.apiKey !== undefined) {
-        const binding = await dependencies.inspectBinding({
-          agentId,
-          binding: memory.search.apiKey,
-        });
-        if (binding !== 'available') {
+      const params = { agentId, workspaceDir: context.workspaceDir };
+      const inspectIndex = async (): Promise<ContributionFinding[]> => {
+        try {
+          const status = await dependencies.inspectMemoryIndex(params);
+          const fts = ftsFinding(status, agentId);
+          if (fts.length) return fts;
+          if (memory.search.provider !== 'none') {
+            const index = indexFinding(status, agentId);
+            if (index.length) return index;
+          } else if (
+            status.dirty ||
+            status.lastSyncError ||
+            ['mismatched', 'missing'].includes(memoryIndexState(status) ?? '')
+          ) {
+            return indexFinding(status, agentId);
+          }
+          // the online health manager does not initialize embeddings. Pending provider
+          // state is not index damage; require independently complete index evidence.
+          if (status.health === 'degraded') {
+            const pending =
+              memory.search.provider !== 'none' &&
+              nativeObject(status.custom?.providerState) &&
+              status.custom.providerState.mode === 'pending';
+            const identity = status.custom?.indexIdentity;
+            if (
+              !pending ||
+              status.dirty !== false ||
+              !nativeObject(identity) ||
+              identity.status !== 'valid'
+            ) {
+              throw new Error('Unexplained memory health degradation.');
+            }
+          }
           return [
             {
               code:
-                binding === 'missing'
-                  ? 'agent-memory-credential-missing'
-                  : 'agent-memory-credential-unavailable',
-              message: `The declared memory credential binding for ${agentId} is ${binding}.`,
-              remediation:
-                'Restore the declared Agent System environment binding, then run doctor again.',
-              status: 'blocked',
-            },
-          ];
-        }
-        const configuredSecret = await dependencies.inspectConfiguredSecret({
-          config,
-          id: memorySecretId(agentId, memory.search.apiKey),
-        });
-        if (configuredSecret !== 'available') {
-          return [
-            {
-              code: 'agent-memory-credential-unresolved',
-              message: `OpenClaw could not resolve the configured memory credential for ${agentId}.`,
-              remediation:
-                'Restore the configured Agent System secret provider, reload OpenClaw, then run doctor again.',
-              status: 'blocked',
-            },
-          ];
-        }
-      }
-
-      let status: MemoryStatus;
-      try {
-        status = await dependencies.inspectMemoryStatus({
-          agentId,
-          deep: memory.search.provider === 'openai',
-          workspaceDir: context.workspaceDir,
-        });
-      } catch {
-        if (memory.search.provider === 'local') return [localProviderSetupFinding(agentId)];
-        return [
-          {
-            code: 'agent-memory-status-unavailable',
-            message: `OpenClaw memory readiness evidence is unavailable for ${agentId}.`,
-            remediation: `Restore openclaw memory status --agent ${agentId}, then run doctor again.`,
-            status: 'blocked',
-          },
-        ];
-      }
-
-      const fts = ftsFinding(status.status, agentId);
-      if (fts.length > 0) return fts;
-      if (memory.search.provider === 'none') {
-        return [
-          {
-            code: 'agent-memory-keyword-ready',
-            message: `OpenClaw keyword memory search for ${agentId} matches the manifest.`,
-            status: 'healthy',
-          },
-        ];
-      }
-
-      const provider = providerMismatchFinding(status.status, agentId, memory.search.provider);
-      if (provider.length > 0) return provider;
-      const index = indexFinding(status.status, agentId);
-      if (index.length > 0) return index;
-
-      if (memory.search.provider === 'local') {
-        if (status.status.vector?.storeAvailable === false) {
-          return providerMismatchFinding(
-            { ...status.status, provider: 'unavailable' },
-            agentId,
-            'local',
-          );
-        }
-        if (status.status.vector?.semanticAvailable === true) {
-          return [
-            {
-              code: 'agent-memory-local-ready',
-              message: `OpenClaw local memory search for ${agentId} matches the manifest and has verified semantic vectors.`,
+                memory.search.provider === 'none'
+                  ? 'agent-memory-keyword-ready'
+                  : 'agent-memory-index-ready',
+              message: `OpenClaw memory index for ${agentId} is ready.`,
               status: 'healthy',
             },
           ];
+        } catch {
+          return [
+            {
+              code: 'agent-memory-index-unavailable',
+              message: `OpenClaw memory index evidence is unavailable for ${agentId}.`,
+              remediation: `Review OpenClaw memory status for ${agentId}, then run doctor again.`,
+              status: 'blocked',
+            },
+          ];
         }
-        return [
-          {
-            code: 'agent-memory-local-unprobed',
-            message: `OpenClaw local memory search for ${agentId} matches the manifest but has not been deeply probed.`,
-            remediation: `Run openclaw memory status --agent ${agentId} --deep when local model initialization is acceptable.`,
-            status: 'manual',
-          },
-        ];
-      }
+      };
+      const inspectEmbedding = async (): Promise<ContributionFinding[]> => {
+        if (memory.search.provider === 'none') return [];
+        try {
+          if (memory.search.provider === 'openai' && memory.search.apiKey !== undefined) {
+            const binding = await dependencies.inspectBinding({
+              agentId,
+              binding: memory.search.apiKey,
+            });
+            if (binding !== 'available') {
+              return [
+                {
+                  code:
+                    binding === 'missing'
+                      ? 'agent-memory-credential-missing'
+                      : 'agent-memory-credential-unavailable',
+                  message: `The declared memory credential binding for ${agentId} is ${binding}.`,
+                  remediation:
+                    'Restore the declared Agent System environment binding, then run doctor again.',
+                  status: 'blocked',
+                },
+              ];
+            }
+            const configuredSecret = await dependencies.inspectConfiguredSecret({
+              config,
+              id: memorySecretId(agentId, memory.search.apiKey),
+            });
+            if (configuredSecret !== 'available') {
+              return [
+                {
+                  code: 'agent-memory-credential-unresolved',
+                  message: `OpenClaw could not resolve the configured memory credential for ${agentId}.`,
+                  remediation:
+                    'Restore the configured Agent System secret provider, reload OpenClaw, then run doctor again.',
+                  status: 'blocked',
+                },
+              ];
+            }
+          }
 
-      const embeddingFailure = embeddingFailureFinding(status, agentId);
-      if (embeddingFailure) return [embeddingFailure];
-      if (
-        status.status.vector?.storeAvailable === false ||
-        status.status.vector?.semanticAvailable === false
-      ) {
-        return [
-          {
-            code: 'agent-memory-semantic-unavailable',
-            message: `OpenClaw did not verify semantic memory search for ${agentId}.`,
-            remediation: `Review openclaw memory status --agent ${agentId} --deep.`,
-            status: 'blocked',
-          },
-        ];
-      }
+          const embedding = await dependencies.inspectMemoryEmbedding(params);
+          const failure = embeddingFailureFinding(embedding.probe, agentId, memory.search.provider);
+          if (failure) return [failure];
+          if (embedding.provider !== memory.search.provider || embedding.fallback) {
+            return [
+              memory.search.provider === 'local'
+                ? localProviderSetupFinding(agentId)
+                : {
+                    code: 'agent-memory-provider-unavailable',
+                    message: `OpenClaw did not activate the declared ${memory.search.provider} embedding provider for ${agentId}.`,
+                    status: 'blocked',
+                  },
+            ];
+          }
+          return [
+            {
+              code: 'agent-memory-embedding-ready',
+              message: `OpenClaw ${memory.search.provider} embeddings for ${agentId} passed their availability probe.`,
+              status: 'healthy',
+            },
+          ];
+        } catch {
+          return [
+            {
+              code: 'agent-memory-embedding-unavailable',
+              message: `OpenClaw embedding readiness evidence is unavailable for ${agentId}.`,
+              remediation: `Review the configured embedding provider for ${agentId}, then run doctor again.`,
+              status: 'blocked',
+            },
+          ];
+        }
+      };
+      // keep both results even when one inspection fails. Offline readers run serially
+      // because OpenClaw's CLI owns the same exclusive memory-store boundary.
+      const index = await inspectIndex();
+      const embedding = await inspectEmbedding();
       return [
-        {
-          code: 'agent-memory-openai-ready',
-          message: `OpenClaw OpenAI memory search for ${agentId} matches the manifest and passed its embedding probe.`,
-          status: 'healthy',
-        },
+        ...index.map((finding) => ({ ...finding, stepId: 'memory-index' })),
+        ...embedding.map((finding) => ({ ...finding, stepId: 'memory-embedding' })),
       ];
     },
     async reconcile(context) {

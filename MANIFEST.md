@@ -357,6 +357,15 @@ discovery without changing jobs; explicit sync and incompatible RPCs still fail.
 Run scheduler synchronization from the operator CLI. Install and Doctor in an agent
 chat report when this step is needed; they do not acquire operator permissions.
 
+When OpenClaw definitively reports a new prompt automation's selected model as
+unavailable, Install skips that automation without creating its conversation or
+scheduled job. Doctor reports `skipped`, not a warning. Missing authentication is
+reported separately from rejected credentials, cooldowns, or unspecified model
+unavailability. Resolve the reported condition and rerun Install to create the job.
+This applies whether the declaration is enabled or paused. Existing jobs are
+preserved; an unavailable model for an installed job remains a failure.
+Unknown model availability and a failed Gateway request do not qualify for a skip.
+
 Command jobs run without a model. Before starting, Agent System verifies the workspace,
 job ownership, enabled state, and that the saved job matches its declaration. It then
 grants temporary authority for that run. Plain `git` and `gh` use the agent's managed
@@ -642,16 +651,21 @@ An operator who can rewrite `openclaw.json` can copy the reference. For linked
 checkouts, follow the [source-install rebuild and restart steps](./DEVELOPMENT.md#install-from-source)
 after changing the provider form or binding.
 
-Doctor preserves the memory database and checks readiness by provider:
+Doctor preserves the memory database and reports index readiness separately from
+embedding availability:
 
 - `none`: keyword index.
-- `local`: local provider availability.
-- `openai`: the configured credential and one bounded embedding probe; an unrelated fallback credential cannot establish readiness.
+- `local`: index readiness and a bounded embedding probe, which can initialize
+  the configured local model.
+- `openai`: index readiness, the configured credential, and a bounded embedding
+  probe; an unrelated fallback credential cannot establish readiness.
 
 Authentication, permission, billing/quota, and transport failures omit upstream
 error bodies. Index identity and synchronization drift are separate findings.
 
-Use OpenClaw's explicit memory commands when you intend to mutate the index:
+The memory CLI commands below require offline ownership; stop the Gateway through
+its service owner before running them. Doctor uses online status APIs when the
+Gateway owns the stores. Rebuild only when you intend to mutate the index:
 
 ```sh
 # inspect the bound agent without rebuilding its index.
@@ -738,7 +752,8 @@ agent's effective `modelPolicy.allow`, which may come from the agent entry or
 
 `doctor` checks configuration, selection policy, model presence, and effort
 support without authentication or inference. OpenClaw owns runtime health.
-Explicit unavailability produces a warning; unknown availability is not failure.
+Confirmed missing authentication is reported as `skipped`. Other explicit unavailability
+produces a warning; unknown availability is not failure.
 Inspection errors remain distinct from known unsupported models or efforts.
 
 Complete work tiers enable [GitHub issue model routing](./tools/model-routing/README.md)

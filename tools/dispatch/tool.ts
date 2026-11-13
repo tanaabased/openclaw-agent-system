@@ -80,9 +80,9 @@ export default function createDispatchTool(input: {
   assessmentGit?: OpenClawDispatchDependencies['assessmentGit'];
 }) {
   const { api } = input;
-  // 10.9 async reads are descriptive; final admission still needs this synchronous guard.
-  const assertSessionCurrent = (sessionKey: string, sessionId: string) => {
-    const entry = api.runtime.agent.session.getSessionEntry({
+  // Descriptive reads do not replace the live host invocation guard at effect boundaries.
+  const assertSessionCurrent = async (sessionKey: string, sessionId: string) => {
+    const entry = await api.runtime.agent.session.getSessionEntryAsync({
       sessionKey,
       readConsistency: 'latest',
     });
@@ -151,7 +151,7 @@ export default function createDispatchTool(input: {
     try {
       const who = caller(context, event, nativeCaller);
       const inputId = readOpenClawTurnInput(api.runContext, { ...who, agentId: context.agentId });
-      assertSessionCurrent(who.sessionKey, who.sessionId);
+      context.abortSignal?.throwIfAborted();
       invocations.set(who.toolCallId, {
         ...who,
         ...(inputId ? { inputId } : {}),
@@ -181,6 +181,7 @@ export default function createDispatchTool(input: {
     registerTools(registration) {
       // Keep this factory with its instance-local hooks; a name hint lets OpenClaw
       // substitute the Gateway tool without its captured caller or approval state.
+      // headless conditions use the compatible factory; v2 requires an admitted model run.
       for (const contextOnly of [false, true])
         registration.registerTool((context) => ({
           name: contextOnly ? 'agent_system_context' : 'agent_system_dispatch',
@@ -240,8 +241,8 @@ export default function createDispatchTool(input: {
               const assertCurrent = () => {
                 signal?.throwIfAborted();
                 context.assertInvocationCurrent?.();
-                assertSessionCurrent(who.sessionKey, who.sessionId);
               };
+              await assertSessionCurrent(who.sessionKey, who.sessionId);
               assertCurrent();
               const { operator, ...nativeCaller } = who;
               result = await service
@@ -256,6 +257,7 @@ export default function createDispatchTool(input: {
                     async assertCurrent() {
                       assertCurrent();
                       const fresh = await loaded(context);
+                      await assertSessionCurrent(who.sessionKey, who.sessionId);
                       assertCurrent();
                       if (
                         fresh.manifest.agent.id !== binding.manifest.agent.id ||

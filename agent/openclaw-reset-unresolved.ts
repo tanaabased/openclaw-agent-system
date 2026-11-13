@@ -1,5 +1,5 @@
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
-import { nativeObject } from './automations/automation-gateway.ts';
+import { nativeObject } from '../utils/native-object.ts';
 import type { NotificationResetRecord } from './notification-reset-state.ts';
 import type { OpenClawDispatchRecord } from './tasks/dispatch/openclaw-dispatch-state.ts';
 

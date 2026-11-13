@@ -1,6 +1,11 @@
 import { realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import automationCompatibilityDiagnostic from './automation-compatibility-diagnostic.ts';
+import automationModelAuth, {
+  automationModelSkipped,
+  automationModelUnavailableCode,
+} from './automation-model-auth.ts';
 import AutomationReportStore, { type AutomationReportRecord } from './automation-report-store.ts';
 
 import {
@@ -11,13 +16,13 @@ import openclawIntakeJobs from './openclaw-intake-policy.ts';
 import automationReportName from './automation-report-name.ts';
 import { issuePickupAutomationId, issuePickupErrorCode } from './issue-pickup-jobs.ts';
 
+import { nativeObject } from '../../utils/native-object.ts';
 import {
   isOperatorAutomationGateway,
   listNativeAutomations,
   nativeAutomation,
   nativeAutomationHistory,
   nativeAutomationRun,
-  nativeObject,
   type AutomationHistoryOptions,
   type AutomationGateway,
   type NativeAutomation,
@@ -521,13 +526,36 @@ export default class AutomationService {
         return { ...item, automationName: automationReportName(name, id) };
       });
     const findings: AgentSystemLifecycleFinding[] = [];
+    const unavailableModels = await automationModelAuth(
+      this.dependencies.request,
+      context.agentId,
+      declarations,
+    );
+    const incompleteThreads = (await this.threads(context, store).read()).records.filter(
+      (record) => record.phase !== 'ready' || record.settingsUpdate,
+    );
+    const skipped = new Set(
+      declarations
+        .filter(
+          (job) =>
+            unavailableModels.has(job.id) &&
+            !incompleteThreads.some(
+              ({ key }) => key === automationThreadSelection(job, 'openclaw')?.key,
+            ) &&
+            !ledger.records.some(({ id }) => id === job.id) &&
+            !observed.some((native) => native.declarationKey === store.marker(job.id)),
+        )
+        .map(({ id }) => id),
+    );
     const status = await this.dependencies.request('cron.status', {});
     if (status.enabled === false)
       findings.push(finding('scheduler', 'blocked', 'automation-scheduler-disabled'));
     else if (status.enabled !== true)
       findings.push(finding('scheduler', 'blocked', 'automation-scheduler-status-unavailable'));
     try {
-      context.threads = await this.threads(context, store).resolve(declarations);
+      context.threads = await this.threads(context, store).resolve(
+        declarations.filter(({ id }) => !skipped.has(id)),
+      );
     } catch (error) {
       return namedFindings([
         ...findings,
@@ -547,6 +575,10 @@ export default class AutomationService {
       ]);
     }
     for (const job of declarations) {
+      if (skipped.has(job.id)) {
+        findings.push(automationModelSkipped(job.id, unavailableModels.get(job.id)!));
+        continue;
+      }
       try {
         effectiveAutomation(job, context);
         const record = ledger.records.find(({ id }) => id === job.id);
@@ -572,6 +604,16 @@ export default class AutomationService {
         }
         if (native.state.autoDisabled) {
           findings.push(finding(job.id, 'blocked', 'automation-native-safety-disabled'));
+          continue;
+        }
+        if (unavailableModels.has(job.id) && unavailableModels.get(job.id) !== 'unresolved') {
+          findings.push(
+            finding(
+              job.id,
+              'blocked',
+              automationModelUnavailableCode(unavailableModels.get(job.id)!),
+            ),
+          );
           continue;
         }
         const desired = projectAutomation(job, record, context, native);
@@ -816,7 +858,31 @@ export default class AutomationService {
             throw new AutomationError('automation-manifest-changed');
         };
         await assertCurrent();
-        context.threads = await this.threads(context, store).resolve(declarations, true);
+        const unavailableModels = await automationModelAuth(
+          request,
+          context.agentId,
+          declarations,
+          'reconcile',
+        );
+        const incompleteThreads = (await this.threads(context, store).read()).records.filter(
+          (record) => record.phase !== 'ready' || record.settingsUpdate,
+        );
+        const skipped = new Set(
+          declarations
+            .filter(
+              (job) =>
+                unavailableModels.has(job.id) &&
+                !ledger.records.some(({ id }) => id === job.id) &&
+                !incompleteThreads.some(
+                  ({ key }) => key === automationThreadSelection(job, 'openclaw')?.key,
+                ),
+            )
+            .map(({ id }) => id),
+        );
+        context.threads = await this.threads(context, store).resolve(
+          declarations.filter(({ id }) => !skipped.has(id)),
+          true,
+        );
         await assertCurrent();
         // absence is re-observed at the retirement boundary, never inferred from not-found.
         for (const record of ledger.records.filter(
@@ -844,6 +910,14 @@ export default class AutomationService {
           });
         }
         for (const job of declarations) {
+          if (skipped.has(job.id)) {
+            outcomes.push(automationModelSkipped(job.id, unavailableModels.get(job.id)!));
+            continue;
+          }
+          if (unavailableModels.has(job.id))
+            throw new AutomationError(
+              automationModelUnavailableCode(unavailableModels.get(job.id)!),
+            );
           const pickup =
             job.id === issuePickupAutomationId && job.enabled
               ? await this.dependencies.pickup?.prepare(manifest, context.workspaceDir)
@@ -852,6 +926,7 @@ export default class AutomationService {
             throw new AutomationError('issue-pickup-activation-required');
           const effective = effectiveAutomation(job, context);
           let record = ledger.records.find(({ id }) => id === job.id);
+          const newRecord = !record;
           if (!record) {
             record = {
               id: job.id,
@@ -906,7 +981,32 @@ export default class AutomationService {
             const disabled = { ...desired, enabled: false };
             record.pending = { kind: 'create', nativeHash: nativeAutomationHash(disabled) };
             await store.write(ledger);
-            const result = await request('cron.add', disabled);
+            let result: Record<string, unknown>;
+            try {
+              result = await request('cron.add', disabled);
+            } catch (error) {
+              if (
+                newRecord &&
+                job.payload.kind === 'prompt' &&
+                error instanceof AutomationError &&
+                error.diagnostic?.method === 'cron.add' &&
+                error.diagnostic.category === 'rejected' &&
+                error.diagnostic.gatewayCode === 'INVALID_REQUEST' &&
+                error.diagnostic.reason === 'model-auth-missing'
+              ) {
+                // Only this confirmed pre-create rejection can discard our new
+                // pending scheduler receipt. Preserve any created conversation.
+                ledger.records = ledger.records.filter((entry) => entry !== record);
+                await store.write(ledger);
+                automationCompatibilityDiagnostic('automation-scheduled-auth', {
+                  source: 'cron.add',
+                  reason: 'missing-auth',
+                });
+                outcomes.push(automationModelSkipped(job.id, 'missing-auth'));
+                continue;
+              }
+              throw error;
+            }
             const added = nativeAutomation(result.job ?? result);
             const readback = nativeAutomation(await request('cron.get', { id: added.id }));
             created = true;

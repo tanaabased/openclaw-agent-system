@@ -28,7 +28,7 @@ import { implementationMaterialSchema } from '../../../tools/dispatch/implementa
 import resolveGitProtocol from '../../../tools/git/protocol.ts';
 import { githubWorktreeRemote } from '../../../tools/git/worktree-remote.ts';
 import type abortableDelay from '../../../utils/abortable-delay.ts';
-import { nativeObject } from '../../automations/automation-gateway.ts';
+import { nativeObject } from '../../../utils/native-object.ts';
 import { automationHash } from '../../automation-hash.ts';
 import { inspectCodexDispatchActivation } from '../../automations/codex-automation-activation.ts';
 import codexCommit from '../../codex-commit.ts';

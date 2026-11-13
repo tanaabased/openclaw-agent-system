@@ -31,6 +31,7 @@ interface ModelListRow {
   available: boolean | null;
   key: string;
   missing: boolean;
+  unavailableReason?: string;
 }
 
 const configuredModels: ModelListRow[] = [
@@ -619,6 +620,25 @@ describe('agent/model-lifecycle', () => {
       ),
       true,
     );
+  });
+
+  it('should report missing authentication neutrally while preserving failed authentication warnings', async () => {
+    for (const reason of ['missing-auth', 'auth-failed', 'cooldown']) {
+      const { contribution } = createHarness(codexConfig(), {
+        configuredModels: configuredModels.map((row) => ({
+          ...row,
+          available: false,
+          unavailableReason: reason,
+        })),
+      });
+      await contribution.reconcile?.(context);
+      const findings = await contribution.inspect?.(context);
+      assert.ok(
+        findings?.every(
+          ({ status }) => status === (reason === 'missing-auth' ? 'skipped' : 'warning'),
+        ),
+      );
+    }
   });
 
   it('should warn about explicit model unavailability without blocking unknown availability', async () => {

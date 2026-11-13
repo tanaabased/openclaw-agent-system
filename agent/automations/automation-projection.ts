@@ -1,5 +1,5 @@
 import scheduleCondition from './automation-schedule-condition.ts';
-import { automationReportTimeoutMs } from './automation-report-delivery.ts';
+import { automationReportTimeoutMs } from './automation-report-timeout.ts';
 import { commandTerminationGraceMs } from '../../api/cli-budget.ts';
 import type { AutomationThreadModelObservation } from './automation-threads.ts';
 import { type NativeAutomation } from './automation-gateway.ts';

@@ -6,7 +6,7 @@ import { realpath } from 'node:fs/promises';
 import { gte } from 'semver';
 
 import { commandTerminationGraceMs, metadataCommandTimeoutMs } from '../api/cli-budget.ts';
-import { nativeObject } from './automations/automation-gateway.ts';
+import { nativeObject } from '../utils/native-object.ts';
 import { AutomationError } from './automations/automation-errors.ts';
 import type {
   AutomationThreadAdapter,

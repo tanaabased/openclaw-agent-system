@@ -1,6 +1,7 @@
 import { realpath } from 'node:fs/promises';
 
-import { nativeObject, type AutomationGateway } from './automation-gateway.ts';
+import { nativeObject } from '../../utils/native-object.ts';
+import { type AutomationGateway } from './automation-gateway.ts';
 import { AutomationError } from './automation-errors.ts';
 import type { AutomationThreadAdapter } from './automation-threads.ts';
 import automationGatewayDiagnostic from './automation-gateway-diagnostic.ts';

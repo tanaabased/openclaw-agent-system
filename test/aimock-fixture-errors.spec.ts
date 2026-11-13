@@ -28,6 +28,16 @@ describe('aimock fixture error diagnostics', () => {
       status: 'blocked',
       code: 'material-native-response-unavailable',
       instructions: 'private context',
+      providerDiagnostic: {
+        provider: 'github',
+        operation: 'api-request',
+        classification: 'rate-limit',
+        httpStatus: 403,
+        retryAfterMs: 12000,
+        quotaScope: 'core',
+        providerMessage: 'API rate limit exceeded token=ghp_abcdefghijklmnopqrstuvwxyz1234567890',
+        extra: 'private context',
+      },
     };
     const wrapped = {
       tool: { source: 'openclaw', name: 'agent_system_dispatch' },
@@ -49,13 +59,17 @@ describe('aimock fixture error diagnostics', () => {
     for (const observed of results.slice(0, 2)) {
       assert.equal(observed.status, 'blocked');
       assert.equal(observed.code, 'material-native-response-unavailable');
+      assert.equal(observed.providerDiagnostic?.httpStatus, 403);
+      assert.equal(observed.providerDiagnostic?.classification, 'rate-limit');
+      assert.equal(observed.providerDiagnostic?.retryAfterMs, 12000);
+      assert.match(observed.providerDiagnostic?.providerMessage ?? '', /API rate limit exceeded/u);
     }
     assert.equal(results[2]!.code, undefined);
     assert.equal(results[2]!.status, undefined);
     assert.deepEqual(captured.errors[0]!.frames, ['    at fixture (/private/tmp/fixture.ts:1:1)']);
     assert.doesNotMatch(
       JSON.stringify(captured.errors),
-      /private (?:assertion detail|context|prose with spaces|status)/u,
+      /private (?:assertion detail|context|prose with spaces|status)|ghp_abcdefghijklmnopqrstuvwxyz1234567890/u,
     );
   });
 });

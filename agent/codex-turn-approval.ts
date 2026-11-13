@@ -1,4 +1,4 @@
-import { nativeObject } from './automations/automation-gateway.ts';
+import { nativeObject } from '../utils/native-object.ts';
 
 /** Only native execution status and native approval errors establish a denial. */
 export default function codexTurnApprovalDenied(items: unknown[]) {

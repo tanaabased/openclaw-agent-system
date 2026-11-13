@@ -45,7 +45,8 @@ import registerAgentCommandSecurity from '../agent/command-security.ts';
 import AutomationService from '../agent/automations/automation-service.ts';
 import automationGatewayDiagnostic from '../agent/automations/automation-gateway-diagnostic.ts';
 import gatewayErrorDiagnostic from '../utils/gateway-error-diagnostic.ts';
-import { nativeObject, requestAutomationGateway } from '../agent/automations/automation-gateway.ts';
+import { nativeObject } from '../utils/native-object.ts';
+import { requestAutomationGateway } from '../agent/automations/automation-gateway.ts';
 import { AutomationError } from '../agent/automations/automation-errors.ts';
 import BoundCommandService from '../agent/bound-command-service.ts';
 import AgentCommandAuthority from '../agent/command-authority.ts';
@@ -83,7 +84,10 @@ import {
   createMemorySecretProviderConfiguration,
   memorySecretProviderAlias,
 } from '../agent/lifecycle/memory-secret-provider-configuration.ts';
-import { parseMemoryStatus } from '../agent/lifecycle/memory-status.ts';
+import inspectMemoryIndex, {
+  inspectMemoryEmbedding,
+  type MemoryStatusDependencies,
+} from '../agent/lifecycle/inspect-memory-status.ts';
 import AgentManifestService, { type ManifestLoadTrigger } from '../manifest/service.ts';
 import AgentPathService from '../paths/service.ts';
 import CodexPathConfigService from '../paths/codex-config-service.ts';
@@ -134,6 +138,34 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   const readRuntimeConfig = () => api.runtime.config.current() as OpenClawConfig;
   const cliEntry = process.argv[1] ? resolve(process.argv[1]) : undefined;
   const openClawCommand = cliEntry ? [process.execPath, cliEntry] : ['openclaw'];
+  const memoryStatusDependencies = (
+    agentId: string,
+    workspaceDir: string,
+    deep: boolean,
+  ): MemoryStatusDependencies => ({
+    readCli: () =>
+      runPluginCommandWithTimeout({
+        argv: [
+          ...openClawCommand,
+          'memory',
+          'status',
+          '--agent',
+          agentId,
+          ...(deep ? ['--deep'] : []),
+          '--json',
+        ],
+        cwd: workspaceDir,
+        timeoutMs: deep ? 120_000 : 30_000,
+      }),
+    async request(method, params) {
+      const { callGatewayFromCli } = await import('openclaw/plugin-sdk/gateway-runtime');
+      return callGatewayFromCli(method, { timeout: String(deep ? 120_000 : 30_000) }, params, {
+        progress: false,
+        scopes: ['operator.read'],
+        sharedStateMode: 'read-only',
+      });
+    },
+  });
   const toolLauncherDirectory = process.env.AGENT_SYSTEM_TOOL_LAUNCHER_DIR?.trim();
   const excludedToolExecutableDirectories = [
     join(packageDir, 'bin'),
@@ -607,7 +639,32 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         if (result.code !== 0) {
           throw new Error(result.stderr.trim() || `OpenClaw models list exited ${result.code}.`);
         }
-        return parseModelCatalogRows(result.stdout);
+        const rows = parseModelCatalogRows(result.stdout);
+        if (!rows.some(({ available }) => available === false)) return rows;
+        // the CLI omits route-specific absence reasons; retain warnings if native evidence is unavailable.
+        try {
+          const catalog = await requestAutomationGateway('models.list', {
+            agentId,
+            view: 'configured',
+            preparedOnly: true,
+            includeDefaultModels: false,
+          });
+          if (!Array.isArray(catalog.models)) return rows;
+          return rows.map((row) => {
+            const matches = (catalog.models as unknown[]).filter(
+              (model: unknown) =>
+                nativeObject(model) && `${model.provider}/${model.id}` === row.key,
+            );
+            const model = matches.length === 1 ? matches[0] : undefined;
+            return nativeObject(model) &&
+              model.available === false &&
+              model.unavailableReason === 'missing-auth'
+              ? { ...row, unavailableReason: 'missing-auth' }
+              : row;
+          });
+        } catch {
+          return rows;
+        }
       },
       mutateConfigFile(params) {
         return api.runtime.config.mutateConfigFile(params);
@@ -642,25 +699,14 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       },
     }),
     createMemoryLifecycleContribution({
-      async inspectMemoryStatus({ agentId, deep, workspaceDir }) {
-        const result = await runPluginCommandWithTimeout({
-          argv: [
-            ...openClawCommand,
-            'memory',
-            'status',
-            '--agent',
-            agentId,
-            ...(deep ? ['--deep'] : []),
-            '--json',
-          ],
-          cwd: workspaceDir,
-          timeoutMs: deep ? 120_000 : 30_000,
-        });
-        try {
-          return parseMemoryStatus(result.stdout, agentId);
-        } catch {
-          throw new Error(result.stderr.trim() || `OpenClaw memory status exited ${result.code}.`);
-        }
+      inspectMemoryIndex({ agentId, workspaceDir }) {
+        return inspectMemoryIndex(agentId, memoryStatusDependencies(agentId, workspaceDir, false));
+      },
+      inspectMemoryEmbedding({ agentId, workspaceDir }) {
+        return inspectMemoryEmbedding(
+          agentId,
+          memoryStatusDependencies(agentId, workspaceDir, true),
+        );
       },
       async inspectBinding({ agentId, binding }) {
         const service = environmentServiceRef.current;
@@ -854,8 +900,8 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       if (!entry || entry.archivedAt || entry.sessionId !== binding.sessionId) return;
       retainOpenClawTurnInput(api.runContext, binding);
       const context = await dispatchV2.service.promptContext(manifest, workspace, binding);
-      // keep the final session check synchronous after asynchronous context assembly.
-      const fresh = api.runtime.agent.session.getSessionEntry({
+      // Refresh metadata; the prompt hook checks live host authority before publication.
+      const fresh = await api.runtime.agent.session.getSessionEntryAsync({
         sessionKey: binding.sessionKey,
         readConsistency: 'latest',
       });

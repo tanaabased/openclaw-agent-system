@@ -69,15 +69,15 @@
       "./dist/index.js"
     ],
     "compat": {
-      "pluginApi": ">=2026.10.9",
-      "minGatewayVersion": "2026.10.9"
+      "pluginApi": ">=2026.11.3",
+      "minGatewayVersion": "2026.11.3"
     },
     "build": {
-      "openclawVersion": "2026.10.9",
-      "pluginSdkVersion": "2026.10.9"
+      "openclawVersion": "2026.11.3",
+      "pluginSdkVersion": "2026.11.3"
     },
     "agentSystem": {
-      "codexPlugin": "@openclaw/codex@2026.10.9"
+      "codexPlugin": "@openclaw/codex@2026.11.3"
     },
     "channel": {
       "id": "agent-system-github",
@@ -141,7 +141,7 @@
     ]
   },
   "peerDependencies": {
-    "openclaw": ">=2026.10.9"
+    "openclaw": ">=2026.11.3"
   },
   "dependencies": {
     "@1password/sdk": "0.5.0",
@@ -171,6 +171,7 @@
     "@eslint/js": "^10.0.1",
     "@lando/leia": "2.0.0",
     "@openai/codex": "0.164.0",
+    "@opentelemetry/api": "1.9.0",
     "@tanaab/codex-tools": "1.0.3",
     "@types/bun": "^1.3.14",
     "@types/lodash-es": "^4.17.12",
@@ -184,7 +185,7 @@
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.7.0",
     "mocha": "^11.7.6",
-    "openclaw": "2026.10.9",
+    "openclaw": "2026.11.3",
     "prettier": "^3.9.6",
     "shellcheck": "^4.1.0",
     "tsx": "^4.22.4",

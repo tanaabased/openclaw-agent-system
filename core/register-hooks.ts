@@ -52,6 +52,7 @@ export default function registerAgentSystemHooks(
             inputId: event.currentUserMessageId,
           });
           if (retained) {
+            context.hookInvocation?.assertActive();
             guidance.push(retained.appendSystemContext);
             facts += '\n\n' + retained.appendContext;
           }

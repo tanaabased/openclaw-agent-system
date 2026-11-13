@@ -24,9 +24,11 @@ Request lifecycle tools through native OpenClaw and hosted Codex, deny installat
 ```bash
 # should prepare the packed plugin with strict lifecycle approval models
 export OPENAI_API_KEY=agent-system-aimock-test
+export NODE_OPTIONS="--import=$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/catalog-fixture.mjs"
 openclaw-setup \
   --workspace "$TMPDIR/main" \
   --agent-system "$AGENT_SYSTEM_PACKAGE" \
+  --needs-secret-service \
   --model openai/gpt-5.4-nano \
   --yolo
 openclaw-aimock prepare --scenario openclaw-lifecycle-approvals
@@ -36,6 +38,8 @@ openclaw config set plugins.entries.codex.config.codexDynamicToolsLoading direct
 openclaw config set plugins.entries.codex.config.appServer.args '["-c","openai_base_url=\"http://127.0.0.1:4010/v1\"","app-server","--listen","stdio://"]' --strict-json
 
 # should install both runtime workspaces without applying approval probe setup
+export OPENAI_API_KEY=agent-system-aimock-test
+export NODE_OPTIONS="--import=$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/catalog-fixture.mjs"
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/source"
 git init --initial-branch=main
 git add tracked.txt
@@ -67,7 +71,11 @@ node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/appro
 # should complete activated hosted codex maintenance without another native approval
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/codex"
 rm -f "$TMPDIR/agent-system-approval-check" "$TMPDIR/agent-system-approval-apply"
-openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
+sync_status=0
+openclaw agent-system automations sync --json > "$TMPDIR/lifecycle-maintenance-sync.json" || sync_status=$?
+jq '{status, outcomes: [.outcomes[]? | {stepId, status, code, message, remediation, providerDiagnostic}]}' "$TMPDIR/lifecycle-maintenance-sync.json"
+test "$sync_status" -eq 0
+jq -e '.status == "synchronized" and any(.outcomes[]; .stepId == "maintenance" and .code == "automation-synchronized" and (.status == "created" or .status == "updated" or .status == "unchanged"))' "$TMPDIR/lifecycle-maintenance-sync.json"
 run_id=$(openclaw agent-system automations run maintenance --json | jq -er 'select(.status == "queued") | .runId | strings')
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" maintenance "$run_id"
 grep -Fx applied "$TMPDIR/agent-system-approval-apply"

@@ -1,5 +1,8 @@
+import { nativeObject } from '../../utils/native-object.ts';
 import { AutomationError } from './automation-errors.ts';
+import { setTimeout } from 'node:timers/promises';
 import type { callGatewayFromCli } from 'openclaw/plugin-sdk/gateway-runtime';
+import retrySessionResolution, { staleSessionInstanceMessage } from './automation-session-retry.ts';
 
 import {
   assertPrivateStateLocksHeld,
@@ -9,6 +12,7 @@ import { openclawSessionCreateTimeoutMs } from '../openclaw-session-timeout.ts';
 
 export type AutomationGateway = (
   method:
+    | 'models.list'
     | 'sessions.resolve'
     | 'sessions.list'
     | 'sessions.create'
@@ -22,10 +26,6 @@ export type AutomationGateway = (
     | 'cron.runs',
   params: Record<string, unknown>,
 ) => Promise<Record<string, unknown>>;
-
-export function nativeObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 
 /** admission is not execution completion; retain only bounded non-secret result fields. */
 export function nativeAutomationRun(value: unknown) {
@@ -120,9 +120,20 @@ export function isOperatorAutomationGateway(request: AutomationGateway): boolean
 }
 
 /** operator transport; only the admitted cli composition supplies this dependency. */
-export function createAutomationGateway(call: AutomationGatewayCaller): AutomationGateway {
+export function createAutomationGateway(
+  call: AutomationGatewayCaller,
+  sleep: (ms: number, signal?: AbortSignal) => Promise<unknown> = (ms, signal) =>
+    setTimeout(ms, undefined, { signal }),
+  waitForReady?: () => Promise<void>,
+  now: () => number = () => performance.now(),
+): AutomationGateway {
   const request: AutomationGateway = async (method, params) => {
     assertPrivateStateLocksHeld();
+    if (method === 'models.list' || method === 'sessions.resolve') {
+      await waitForReady?.();
+      assertPrivateStateLocksHeld();
+      privateStateLockSignal()?.throwIfAborted();
+    }
     const readOnly = ![
       'cron.add',
       'cron.update',
@@ -131,14 +142,18 @@ export function createAutomationGateway(call: AutomationGatewayCaller): Automati
       'sessions.patch',
     ].includes(method);
     const signal = method === 'sessions.create' ? privateStateLockSignal() : undefined;
-    const invoke = () =>
+    const invoke = (requestParams = params, timeoutMs?: number, retrySignal?: AbortSignal) =>
       call(
         method,
-        method === 'sessions.create' ? { timeout: String(openclawSessionCreateTimeoutMs) } : {},
-        params,
+        timeoutMs !== undefined
+          ? { timeout: String(timeoutMs) }
+          : method === 'sessions.create'
+            ? { timeout: String(openclawSessionCreateTimeoutMs) }
+            : {},
+        requestParams,
         {
           progress: false,
-          ...(signal ? { signal } : {}),
+          ...(retrySignal || signal ? { signal: retrySignal ?? signal } : {}),
           // session-only authority prevents native sticky model policy from changing config.
           scopes: [
             readOnly
@@ -150,16 +165,44 @@ export function createAutomationGateway(call: AutomationGatewayCaller): Automati
           ...(readOnly ? { sharedStateMode: 'read-only' as const } : {}),
         },
       );
+    // Bound the complete read/recovery window, not a fixed delay before proceeding.
+    const resolutionDeadline = now() + openclawSessionCreateTimeoutMs;
     try {
       try {
         return await invoke();
       } catch (error) {
+        const { ErrorCodes, isGatewayClientRequestError } =
+          await import('openclaw/plugin-sdk/gateway-runtime');
         const { default: automationGatewayUnavailable } =
           await import('./automation-gateway-unavailable.ts');
-        // Cold installation may overlap the Gateway's plugin/config reload. Reconnect
-        // once for a read that never reached it; never replay a mutation or a denial.
-        if (!readOnly || !automationGatewayUnavailable(error)) throw error;
+        if (
+          method === 'sessions.resolve' &&
+          isGatewayClientRequestError(error) &&
+          error.gatewayCode === ErrorCodes.UNAVAILABLE &&
+          staleSessionInstanceMessage(error.message)
+        ) {
+          return await retrySessionResolution(
+            error,
+            (timeoutMs, signal) => invoke(params, timeoutMs, signal),
+            { sleep, now, deadline: resolutionDeadline, signal: privateStateLockSignal() },
+          );
+        }
+        // Native catalog publication can supersede a read during reload/acquisition.
+        // Follow its explicit retry hint once; never replay scheduler/session writes.
+        const retryable =
+          isGatewayClientRequestError(error) &&
+          error.gatewayCode === ErrorCodes.UNAVAILABLE &&
+          error.retryable === true;
+        if (!readOnly || (!retryable && !automationGatewayUnavailable(error))) throw error;
+        if (retryable) await sleep(error.retryAfterMs ?? 0, privateStateLockSignal());
         assertPrivateStateLocksHeld();
+        if (retryable && method === 'models.list' && params.refresh === true) {
+          // Acquisition may have published before the response was invalidated. Read
+          // the current evidence rather than initiating another catalog replacement.
+          const readParams = { ...params };
+          delete readParams.refresh;
+          return await invoke({ ...readParams, preparedOnly: true });
+        }
         return await invoke();
       }
     } catch (error) {
@@ -204,7 +247,10 @@ export function createAutomationGateway(call: AutomationGatewayCaller): Automati
 
 export const requestAutomationGateway: AutomationGateway = async (method, params) => {
   const { callGatewayFromCli } = await import('openclaw/plugin-sdk/gateway-runtime');
-  return createAutomationGateway(callGatewayFromCli)(method, params);
+  return createAutomationGateway(callGatewayFromCli, undefined, async () => {
+    const { default: waitForAutomationGateway } = await import('./automation-gateway-readiness.ts');
+    await waitForAutomationGateway();
+  })(method, params);
 };
 operatorGateways.add(requestAutomationGateway);
 

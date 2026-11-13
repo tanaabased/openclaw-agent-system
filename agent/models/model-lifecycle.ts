@@ -19,6 +19,7 @@ interface ModelListRow {
   available: boolean | null;
   key: string;
   missing: boolean;
+  unavailableReason?: string;
 }
 
 export interface ModelLifecycleDependencies extends ModelConfigurationDependencies {
@@ -76,6 +77,13 @@ async function modelFindings(
         message: `OpenClaw does not report ${value} in the configured model list for ${agentId}.`,
         remediation: 'Choose a known model or repair its provider installation.',
         status: 'blocked',
+      });
+    } else if (row.available === false && row.unavailableReason === 'missing-auth') {
+      findings.push({
+        code: 'agent-model-auth-missing',
+        message: `Model authentication is not configured for ${value}.`,
+        remediation: 'Configure model authentication, then rerun Install.',
+        status: 'skipped',
       });
     } else if (row.available === false) {
       findings.push({

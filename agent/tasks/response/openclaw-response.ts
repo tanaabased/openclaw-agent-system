@@ -1,5 +1,5 @@
 import type { DispatchRequest } from '../../../credentials/session-dispatch.ts';
-import { nativeObject } from '../../automations/automation-gateway.ts';
+import { nativeObject } from '../../../utils/native-object.ts';
 import { completeOpenClawMessage, openClawHistoryPages } from '../../openclaw-history.ts';
 import type { DispatchCaller } from '../../openclaw-session-create.ts';
 import { resultValue } from '../context/openclaw-native-material.ts';
@@ -35,7 +35,9 @@ export default function openClawResponse(
       foundRun = true;
       if (
         partial.role !== 'toolResult' ||
-        !['agent_system_dispatch', 'tool_call'].includes(String(partial.toolName))
+        !['agent_system_dispatch', 'tool_call', 'dispatch_action'].includes(
+          String(partial.toolName),
+        )
       )
         continue;
       try {
