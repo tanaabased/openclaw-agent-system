@@ -3,6 +3,8 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import properLockfile from 'proper-lockfile';
+import composeResponseBlocks from '../channels/github/presentation/response-blocks.ts';
+import { taskResponseOutput } from '../agent/tasks/response/task-response.ts';
 import connectCodexGitHubAccount from '../agent/codex-github-client.ts';
 import { runCodexIntake } from '../agent/codex-intake.ts';
 import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
@@ -146,10 +148,10 @@ describe('agent/codex dispatch', () => {
       },
     });
     assert.match(
-      String(shown.presentation),
+      composeResponseBlocks(taskResponseOutput(shown)),
       new RegExp(`${fixtureState.commit} \\(origin/collaborator-work\\)`),
     );
-    assert.match(String(shown.presentation), /PR base.*`release`/);
+    assert.match(composeResponseBlocks(taskResponseOutput(shown)), /PR base.*`release`/);
     const intake = await fixtureState.request(
       'next',
       { projects: fixtureState.projects },
@@ -1914,7 +1916,7 @@ describe('agent/codex dispatch', () => {
       const recorded = await fixtureState.renderAssessment(outcome, child);
       assert.equal(recorded.status, 'formatted');
       assert.ok(
-        String(recorded.presentation).includes(
+        composeResponseBlocks(taskResponseOutput(recorded)).includes(
           'questions' in outcome ? outcome.questions[0]! : outcome.remediation,
         ),
       );

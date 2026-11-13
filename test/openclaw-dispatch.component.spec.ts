@@ -2,6 +2,8 @@ import { GatewayClientRequestError } from '@openclaw/gateway-client';
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import composeResponseBlocks from '../channels/github/presentation/response-blocks.ts';
+import { taskResponseOutput } from '../agent/tasks/response/task-response.ts';
 import { automationHash } from '../agent/automation-hash.ts';
 import { issueKey } from '../agent/tasks/dispatch/dispatch-pending.ts';
 import openClawCapacity from '../agent/tasks/dispatch/openclaw-capacity.ts';
@@ -687,11 +689,12 @@ describe('agent/openclaw dispatch', () => {
     await fixtureState.assess(input.id);
     await fixtureState.context(input.id);
     const recorded = await fixtureState.renderAssessment(input.id);
-    assert.ok('presentation' in recorded && typeof recorded.presentation === 'string');
-    assert.match(recorded.presentation, /Routing method.*custom-routing.*custom guidance/);
-    assert.ok(recorded.presentation.includes('Model routing instructions'));
-    assert.ok(recorded.presentation.includes('routing.md'));
-    assert.ok(!recorded.presentation.includes('Prefer complex work.'));
+    assert.ok('responseBlocks' in recorded && Array.isArray(recorded.responseBlocks));
+    const presentation = composeResponseBlocks(taskResponseOutput(recorded));
+    assert.match(presentation, /Routing method.*custom-routing.*custom guidance/);
+    assert.ok(presentation.includes('Model routing instructions'));
+    assert.ok(presentation.includes('routing.md'));
+    assert.ok(!presentation.includes('Prefer complex work.'));
     fixtureState.manifest.models!.routing = {
       guidance: 'Later configuration is not this decision.',
     };
