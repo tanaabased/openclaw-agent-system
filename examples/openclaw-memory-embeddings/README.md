@@ -37,8 +37,8 @@ openclaw config get agents.entries.memory-embeddings.memory.search --json | jq -
 if grep -Fq synthetic-memory-credential "$OPENCLAW_CONFIG_PATH"; then exit 1; fi
 
 # should retrieve through the gateway after resolving the installed embedding credential
-openclaw-gateway start
 openclaw memory index --agent memory-embeddings
+openclaw-gateway start
 openclaw gateway call memory.search --params '{"agentId":"memory-embeddings","query":"cobalt astrolabes","maxResults":5}' --timeout 120000 --json | jq -e '.agentId == "memory-embeddings" and .provider == "openai" and any(.results[]; .path == "memory/observatory.md")'
 
 # should resolve the same secret reference after gateway restart and preserve retrieval

@@ -84,7 +84,7 @@ import {
   createMemorySecretProviderConfiguration,
   memorySecretProviderAlias,
 } from '../agent/lifecycle/memory-secret-provider-configuration.ts';
-import { parseMemoryStatus } from '../agent/lifecycle/memory-status.ts';
+import inspectMemoryStatus from '../agent/lifecycle/inspect-memory-status.ts';
 import AgentManifestService, { type ManifestLoadTrigger } from '../manifest/service.ts';
 import AgentPathService from '../paths/service.ts';
 import CodexPathConfigService from '../paths/codex-config-service.ts';
@@ -669,24 +669,35 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     }),
     createMemoryLifecycleContribution({
       async inspectMemoryStatus({ agentId, deep, workspaceDir }) {
-        const result = await runPluginCommandWithTimeout({
-          argv: [
-            ...openClawCommand,
-            'memory',
-            'status',
-            '--agent',
-            agentId,
-            ...(deep ? ['--deep'] : []),
-            '--json',
-          ],
-          cwd: workspaceDir,
-          timeoutMs: deep ? 120_000 : 30_000,
+        return inspectMemoryStatus(agentId, deep, {
+          readCli: () =>
+            runPluginCommandWithTimeout({
+              argv: [
+                ...openClawCommand,
+                'memory',
+                'status',
+                '--agent',
+                agentId,
+                ...(deep ? ['--deep'] : []),
+                '--json',
+              ],
+              cwd: workspaceDir,
+              timeoutMs: deep ? 120_000 : 30_000,
+            }),
+          async request(method, params) {
+            const { callGatewayFromCli } = await import('openclaw/plugin-sdk/gateway-runtime');
+            return callGatewayFromCli(
+              method,
+              { timeout: String(deep ? 120_000 : 30_000) },
+              params,
+              {
+                progress: false,
+                scopes: ['operator.read'],
+                sharedStateMode: 'read-only',
+              },
+            );
+          },
         });
-        try {
-          return parseMemoryStatus(result.stdout, agentId);
-        } catch {
-          throw new Error(result.stderr.trim() || `OpenClaw memory status exited ${result.code}.`);
-        }
       },
       async inspectBinding({ agentId, binding }) {
         const service = environmentServiceRef.current;
