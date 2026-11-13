@@ -44,6 +44,7 @@ describe('agent/automation-service', () => {
   let service: AutomationService;
   let native: NativeAutomation[];
   let modelRows: Record<string, unknown>[];
+  let preparedModelRows: Record<string, unknown>[] | undefined;
   let calls: { method: string; params: Record<string, unknown> }[];
   let now: number;
   let revision: number;
@@ -60,6 +61,7 @@ describe('agent/automation-service', () => {
     };
     native = [];
     modelRows = [];
+    preparedModelRows = undefined;
     calls = [];
     now = 1_900_000_000_000;
     revision = 0;
@@ -74,7 +76,10 @@ describe('agent/automation-service', () => {
         (fail === 'second-add' && method === 'cron.add' && native.length === 1)
       )
         throw new Error('secret provider text must not escape');
-      if (method === 'models.list') return { models: modelRows };
+      if (method === 'models.list') {
+        if (params.refresh === true) preparedModelRows = undefined;
+        return { models: preparedModelRows ?? modelRows };
+      }
       if (method === 'sessions.resolve') return { ok: false };
       if (method === 'cron.status') return { enabled: true, jobs: native.length };
       if (method === 'cron.list') return { jobs: structuredClone(native), hasMore: false };
@@ -179,7 +184,7 @@ describe('agent/automation-service', () => {
       },
     });
   });
-  it('should skip a paused unauthenticated prompt without creating its conversation or ownership receipt', async () => {
+  it('should acquire missing native auth evidence and skip a paused prompt before creating its conversation or receipt', async () => {
     manifest.automations = jobs([
       {
         id: 'paused',
@@ -193,6 +198,7 @@ describe('agent/automation-service', () => {
     modelRows = [
       { provider: 'openai', id: 'test', available: false, unavailableReason: 'missing-auth' },
     ];
+    preparedModelRows = [{ provider: 'openai', id: 'test', agentRuntime: { id: 'codex' } }];
     const result = await service.reconcile(manifest, root);
     assert.deepEqual(
       result.outcomes.map(({ status }) => status),
@@ -201,7 +207,7 @@ describe('agent/automation-service', () => {
     assert.equal(native.length, 0);
     assert.equal(
       calls.some(({ method }) =>
-        ['sessions.create', 'sessions.patch', 'cron.add'].includes(method),
+        ['sessions.resolve', 'sessions.create', 'sessions.patch', 'cron.add'].includes(method),
       ),
       false,
     );

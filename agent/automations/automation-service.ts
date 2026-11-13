@@ -848,7 +848,12 @@ export default class AutomationService {
             throw new AutomationError('automation-manifest-changed');
         };
         await assertCurrent();
-        const missingAuth = await automationModelAuth(request, context.agentId, declarations);
+        const missingAuth = await automationModelAuth(
+          request,
+          context.agentId,
+          declarations,
+          'reconcile',
+        );
         const incompleteThreads = (await this.threads(context, store).read()).records.filter(
           (record) => record.phase !== 'ready' || record.settingsUpdate,
         );

@@ -5,6 +5,65 @@ import automationModelAuth from '../agent/automations/automation-model-auth.ts';
 import normalizeAutomations, { type ResolvedAutomation } from '../manifest/automation-schema.ts';
 
 describe('agent/automation-model-auth', () => {
+  it('should acquire unknown evidence only during reconciliation and preserve unresolved or non-auth failures', async () => {
+    const normalized = normalizeAutomations([
+      { id: 'prompt', schedule: 'every 5 minutes', prompt: 'inspect' },
+    ]);
+    if (normalized.status !== 'valid') throw new Error('invalid fixture');
+    const jobs = normalized.automations as ResolvedAutomation[];
+    for (const mode of ['inspect', 'reconcile'] as const) {
+      for (const availability of [undefined, true, false]) {
+        for (const reason of ['missing-auth', 'auth-failed']) {
+          const reads: Record<string, unknown>[] = [];
+          const result = await automationModelAuth(
+            async (_method, params) => {
+              reads.push(params);
+              return {
+                models: [
+                  {
+                    provider: 'openai',
+                    id: 'selected',
+                    tags: ['default'],
+                    available: params.refresh ? availability : undefined,
+                    unavailableReason: params.refresh ? reason : undefined,
+                  },
+                ],
+              };
+            },
+            'a',
+            jobs,
+            mode,
+          );
+          assert.deepEqual(
+            [...result],
+            mode === 'reconcile' && availability === false && reason === 'missing-auth'
+              ? ['prompt']
+              : [],
+          );
+          assert.equal(reads.length, mode === 'inspect' ? 1 : 2);
+          if (mode === 'reconcile')
+            assert.deepEqual(reads[1], {
+              agentId: 'a',
+              view: 'all',
+              includeDefaultModels: false,
+              refresh: true,
+            });
+        }
+      }
+    }
+    await assert.rejects(
+      automationModelAuth(
+        async (_method, params) => {
+          if (params.refresh) throw new Error('catalog acquisition failed');
+          return { models: [{ provider: 'openai', id: 'selected', tags: ['default'] }] };
+        },
+        'a',
+        jobs,
+        'reconcile',
+      ),
+      /catalog acquisition failed/,
+    );
+  });
   it('should require explicit native missing-auth evidence for the selected model', async () => {
     const normalized = normalizeAutomations([
       { id: 'prompt', schedule: 'every 5 minutes', prompt: 'inspect', model: 'openai/selected' },
@@ -36,6 +95,7 @@ describe('agent/automation-model-auth', () => {
         },
         'a',
         jobs,
+        'reconcile',
       );
       assert.deepEqual([...result], reason === 'missing-auth' ? ['prompt'] : []);
     }
