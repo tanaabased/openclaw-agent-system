@@ -162,7 +162,7 @@ Use `github.issue-pickup` and routing workflow `issue-pickup` in OpenClaw and
 standalone Codex. The retired `project-pickup` spellings are rejected; rename them
 without changing the settings or the `projects` list.
 
-Declares pickup policy for one or more repositories, with optional milestone restrictions. It requires `issue-assignment`
+Declares pickup policy for exact repositories or `owner/*` namespaces, with optional milestone restrictions. It requires `issue-assignment`
 and each repository must be included by `routing`.
 Pickup uses the existing GitHub access and approved assignment and feedback authors.
 
@@ -171,39 +171,66 @@ Pickup uses the existing GitHub access and approved assignment and feedback auth
 > and approve its native pickup schedule. Doctor checks that installation’s saved
 > enrollment and schedule; routing alone does not activate pickup.
 
-| Field                           | Required | Meaning                                                                                                                                                                                                                                                                                                                              |
-| ------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `effort`                        | no       | Optional [automation effort](../../MANIFEST.md#automations). Inherits the selected profile’s effort; a direct model reference inherits `models.default.effort`.                                                                                                                                                                      |
-| `model`                         | no       | String: `default`, `low`, `medium`, `high`, or a `provider/model` reference. Defaults to `default` in both runtimes. Uses [automation model rules](../../MANIFEST.md#automations).                                                                                                                                                   |
-| `paused`                        | no       | Defaults to `false`; pauses new pickup immediately. Run Install to synchronize the saved native job.                                                                                                                                                                                                                                 |
-| `start`                         | no       | Daily local start time; defaults to `"03:00"`. Accepts `"3 am"`, `"3 A.M."`, `"3:00am"` and 24-hour clocks.                                                                                                                                                                                                                          |
-| `window`                        | no       | Duration, default `"2 hours"`; accepts seconds, minutes, hours, days, short units (`"2h"`) and compounds (`"1 hour 30 minutes"`). Maximum 24 hours. `duration` is an alias.                                                                                                                                                          |
-| `end`                           | no       | Closing clock time instead of a duration. An earlier or equal time closes the following day. Supplied duration fields must agree.                                                                                                                                                                                                    |
-| `scans`                         | no       | Defaults to `8`, evenly distributed from the start up to—but excluding—the closing time, rounded down to minute slots. Multiple scans need at least one minute each.                                                                                                                                                                 |
-| `selection.guidance`            | no       | Inline text or `{file: relative/path.md}`, following [guidance rules](#workflow-customization). Selection guidance cannot override eligibility or authority.                                                                                                                                                                         |
-| `thread`                        | no       | Persistent coordination chat: a name string or `{name, id}`, using the existing [automation thread convention](../../MANIFEST.md#automations). Defaults to `ISSUE PICKUP`. Run Install to reconcile a changed choice; missing conversations use the native automation recovery flow.                                                 |
-| `projects`                      | yes      | One or more distinct entries with `repository: owner/name`, optional `milestone: {number: 10, policy: only}`, and optional `limit`. `number` accepts a positive integer or a nonempty list of distinct positive integers. `policy` defaults to `only`; `prefer` enables fallback. `limit` is a positive integer and defaults to `1`. |
-| `projects[].filters.labels`     | no       | Case-insensitive label patterns, such as `["bug*", "!blocked", "!needs-*"]`. Every positive pattern must match a label; any matching `!` exclusion wins. `*` matches zero or more characters; other metacharacters are literal. Negative-only lists allow other issues; omitted or empty means no label restriction.                 |
-| `projects[].filters.types`      | no       | List of native GitHub issue-type names, such as `["Bug", "Customer Request"]`. Any listed name matches case-insensitively, including organization-defined types. Omitted or empty means no type restriction. Type and label filters must both match; labels never imply a native type.                                               |
-| `projects[].selection.guidance` | no       | Inline text or `{file: relative/path.md}`, using the same guidance rules. Applies only to that repository, after built-in and global selection guidance; cannot widen eligibility or limits.                                                                                                                                         |
+| Field                           | Required | Meaning                                                                                                                                                                                                                                                                                                              |
+| ------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `effort`                        | no       | Optional [automation effort](../../MANIFEST.md#automations). Inherits the selected profile’s effort; a direct model reference inherits `models.default.effort`.                                                                                                                                                      |
+| `model`                         | no       | String: `default`, `low`, `medium`, `high`, or a `provider/model` reference. Defaults to `default` in both runtimes. Uses [automation model rules](../../MANIFEST.md#automations).                                                                                                                                   |
+| `paused`                        | no       | Defaults to `false`; pauses new pickup immediately. Run Install to synchronize the saved native job.                                                                                                                                                                                                                 |
+| `start`                         | no       | Daily local start time; defaults to `"03:00"`. Accepts `"3 am"`, `"3 A.M."`, `"3:00am"` and 24-hour clocks.                                                                                                                                                                                                          |
+| `window`                        | no       | Duration, default `"2 hours"`; accepts seconds, minutes, hours, days, short units (`"2h"`) and compounds (`"1 hour 30 minutes"`). Maximum 24 hours. `duration` is an alias.                                                                                                                                          |
+| `end`                           | no       | Closing clock time instead of a duration. An earlier or equal time closes the following day. Supplied duration fields must agree.                                                                                                                                                                                    |
+| `scans`                         | no       | Defaults to `8`, evenly distributed from the start up to—but excluding—the closing time, rounded down to minute slots. Multiple scans need at least one minute each.                                                                                                                                                 |
+| `selection.guidance`            | no       | Inline text or `{file: relative/path.md}`, following [guidance rules](#workflow-customization). Selection guidance cannot override eligibility or authority.                                                                                                                                                         |
+| `thread`                        | no       | Persistent coordination chat: a name string or `{name, id}`, using the existing [automation thread convention](../../MANIFEST.md#automations). Defaults to `ISSUE PICKUP`. Run Install to reconcile a changed choice; missing conversations use the native automation recovery flow.                                 |
+| `projects`                      | yes      | One or more distinct entries. Each `repository` is an exact `owner/name` or `owner/*` namespace selector. Other glob forms are not supported. Accessible repositories must also pass `routing`; archived, disabled, and issue-disabled repositories are excluded from namespace discovery.                           |
+| `projects[].limit`              | no       | Positive integer, default `1`, or `{quantity: N, scope: selection}`. Counts assignments across that entry per window and installation. `scope: repo` gives each discovered repository its own allowance. Omitted `scope` means `selection`.                                                                          |
+| `projects[].milestone.ids`      | no       | One milestone identifier or a nonempty list. Use `repo#number` relative to the selected owner, or `owner/repo#number`. A positive numeric identifier is also accepted for an exact repository. Every reference must remain inside the entry's scope.                                                                 |
+| `projects[].milestone.number`   | no       | Existing alternative for a positive repository-local number or nonempty list of distinct numbers; available for exact repository entries. At least `ids` or `number` is required when `milestone` is set. Both feed the same union.                                                                                  |
+| `projects[].milestone.policy`   | no       | `only` (default) restricts selection to the milestone union; `prefer` considers that union before fallback work in the same entry.                                                                                                                                                                                   |
+| `projects[].filters.labels`     | no       | Case-insensitive label patterns, such as `["bug*", "!blocked", "!needs-*"]`. Every positive pattern must match a label; any matching `!` exclusion wins. `*` matches zero or more characters; other metacharacters are literal. Negative-only lists allow other issues; omitted or empty means no label restriction. |
+| `projects[].filters.types`      | no       | List of native GitHub issue-type names, such as `["Bug", "Customer Request"]`. Any listed name matches case-insensitively, including organization-defined types. Omitted or empty means no type restriction. Type and label filters must both match; labels never imply a native type.                               |
+| `projects[].selection.guidance` | no       | Inline text or `{file: relative/path.md}`, using the same guidance rules. Applies only to repositories selected by that entry, after built-in and global selection guidance; cannot widen eligibility or limits.                                                                                                     |
 
-Omit `milestone` to consider all otherwise eligible issues in that repository, including
-issues without a milestone. Use `milestone: {number: 10}` or
-`milestone: {number: [10, 11], policy: only}` to restrict pickup to any listed open
-milestone. With `policy: prefer`, the model considers those milestones first and
-chooses elsewhere in the same repository only when no preferred work suits the
-current selection guidance. Preference does not rank repositories. Invalid or
-inaccessible milestones and failed reads remain errors; they do not enable fallback.
-The scan card identifies the selected repository and preferred or fallback choice.
+Exact repository entries replace wildcard defaults for that repository, including filters,
+guidance, milestones, and allowance, regardless of list order. An issue is scanned
+and charged once. Separately declared entries have independent allowances.
+
+Omit `milestone` to consider all otherwise eligible issues in the entry's scope,
+including issues without a milestone. Within `tanaabased/actions`, `1`, `actions#1`,
+and `tanaabased/actions#1` identify the same milestone. Namespace entries require
+repository-qualified identifiers. Use the `#` delimiter without spaces; `actions1`
+is not an identifier. Malformed, closed, or inaccessible references remain errors
+and never enable broader selection or fallback.
+
+For example, allow two assignments total across a namespace, with a separate allowance
+and milestone restriction for one repository:
+
+```yaml
+projects:
+  - repository: tanaabased/*
+    limit: 2
+    milestone:
+      ids: [actions#1, canon#2]
+      policy: prefer
+  - repository: tanaabased/actions
+    limit: { quantity: 1, scope: repo }
+    milestone: { ids: actions#3 }
+```
+
+With `prefer`, pickup considers the listed union before other work within the entry;
+preferred work in one entry does not outrank other entries. Failed preferred-work
+reads prevent fallback for that entry. The scan card identifies the selected
+repository and preferred or fallback choice.
 
 Install adds one `📥 ISSUE PICKUP` job alongside assignment intake. The default native
 schedule has eight daily starts: 03:00, 03:15, 03:30, 03:45, 04:00, 04:15, 04:30 and
 04:45 local time. Each scan can select and self-assign at most one actionable,
 unassigned issue across the configured repositories, subject to ordinary work capacity.
-Each repository's `limit` is the maximum number of confirmed assignments per window
-on that installation. Once a repository reaches its limit, later scans skip it.
+Each entry's `limit` is the maximum number of confirmed assignments per window
+on that installation, across the selection or per repository according to `scope`.
+Once an allowance is exhausted, later scans skip the affected selection.
 Completing an issue leaves the used count in place. The scan card shows how many
-assignments each repository has used out of its allowance, its eligible issue count,
+assignments used out of each allowance, its scope, eligible issue counts,
 and any read warnings. Unreadable or unscanned repositories show an unavailable count.
 If one repository cannot be read, readable repositories remain selectable and the card
 preserves GitHub's diagnostic. Correct access or configuration for the next scan.

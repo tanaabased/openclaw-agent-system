@@ -52,7 +52,7 @@ describe('issue pickup selection through native journals', () => {
   async function fixture(
     runtime: 'codex' | 'openclaw',
     coordinated = false,
-    initialScope?: 'all' | 'multiple' | 'prefer',
+    initialScope?: 'all' | 'multiple' | 'prefer' | 'namespace',
   ) {
     const f = selectionFixture(runtime);
     const workspace = join(root, 'workspace');
@@ -109,7 +109,15 @@ describe('issue pickup selection through native journals', () => {
         },
       },
     };
-    if (initialScope === 'all') {
+    if (initialScope === 'namespace') {
+      declaration.github['issue-pickup'].projects = [
+        {
+          repository: 'owner/*',
+          limit: { quantity: 1, scope: 'selection' },
+          milestone: { ids: ['repo#10'] },
+        },
+      ];
+    } else if (initialScope === 'all') {
       delete declaration.github['issue-pickup'].projects[0]!.milestone;
       f.item.milestone = null;
     } else if (initialScope === 'multiple') {
@@ -249,6 +257,21 @@ describe('issue pickup selection through native journals', () => {
   }
 
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should enroll a namespace and retain its allowance through the native ${runtime} journal`, async () => {
+      const f = await fixture(runtime, false, 'namespace');
+      const selection = await f.select();
+      assert.equal((await f.pickup({ selection })).status, 'assigned');
+      await f.scan();
+      const records = await f.read();
+      assert.equal(records.length, 1);
+      assert.equal(records[0]!.evidence.projectWork!.pickup.issueNodeId, f.item.nodeId);
+      f.tick.id = 'namespace-after-restart';
+      const exhausted = await f.pickup();
+      assert.equal(exhausted.status, 'allowance-reached');
+      const saved = await f.journal.read();
+      assert.equal(saved.projectPickup!.charges![0]!.selection, 'owner/*');
+      assert.equal(f.effects.writes, 1);
+    });
     it(`should keep pickup available beside an independently damaged task in ${runtime}`, async () => {
       const f = await fixture(runtime);
       await f.configure((source) => {

@@ -8,7 +8,7 @@ native OpenClaw and OpenClaw-hosted Codex, then verify the window allows no seco
 
 - Native pickup enrollment and scheduled execution through each runtime.
 - Selected and exhausted-window outcomes through the real automation/tool boundary, with selection triggered by a due-time occurrence.
-- Model selection from a small milestone configured as a list with the default `only` policy, GitHub self-assignment despite the ordinary assigner policy, and ordinary intake receiving the pickup exception and Work mode.
+- Namespace discovery restricted by routing to the disposable repository, with model selection from a repository-qualified milestone list and the default `only` policy, GitHub self-assignment despite the ordinary assigner policy, and ordinary intake receiving the pickup exception and Work mode.
 - A repeat scan preserving the single assignment, chat, and checkout.
 
 ## What Does Not Belong Here
