@@ -57,6 +57,7 @@ supplies the current request, required inputs, and recovery instructions.
 
 | Capability                                           | Action                                | Owning instructions                                                                           |
 | ---------------------------------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Assemble current-turn Markdown output                | `response`                            | [Response assembly](#response-assembly)                                                       |
 | Assess an issue in the current checkout              | `assessment`                          | [Task Assessment](../../skills/task-assessment/SKILL.md)                                      |
 | Implement an authorized plan in the current checkout | `implementation`                      | [Task Implementation](../../skills/task-implementation/SKILL.md)                              |
 | Inspect saved discovery progress                     | `inspect`                             | [Saved discovery inspection](#saved-discovery-inspection)                                     |
@@ -71,6 +72,36 @@ The installed workflow also uses this tool internally. Follow the owning skill a
 returned task context rather than assembling an action sequence. Exact variants are
 in the [tool schema](./tool-schema.ts); shared behavior and recovery are in the
 [GitHub workflow guide](../../channels/github/README.md).
+
+### Response assembly
+
+Assemble this turn's task output without changing workflow state or contacting GitHub.
+Standalone Codex uses the supplied `dispatchRuntime` with `dispatch response` and its
+existing `--plugin-data` argument; OpenClaw uses the request below.
+
+#### Parameters
+
+| Parameter           | Type   | Required | Default | Description                                                                                                                 |
+| ------------------- | ------ | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `action`            | string | yes      | none    | `response`.                                                                                                                 |
+| `blocks`            | array  | no       | empty   | Additional authored Markdown blocks; existing presentation output comes from native current-turn history.                   |
+| `blocks[].markdown` | string | yes      | none    | Ordinary prose or card Markdown, preserved without interpretation.                                                          |
+| `blocks[].section`  | string | no       | `work`  | `assessment`, `assessment-reply`, `work`, `delivery`, `delivery-reply`, or `debug`. Order is preserved within each section. |
+
+#### Usage
+
+```json
+{
+  "action": "response",
+  "blocks": [{ "markdown": "Focused checks passed; live rendering remains unverified." }]
+}
+```
+
+Reproduce the returned Markdown and keep later prose as an addendum. History or
+formatting failure leaves available output readable; if native output limits prevent
+assembly, present the original findings and exact replies directly. Never rerun work
+or publication to recover presentation. The result does not prove final native text
+or desktop rendering.
 
 ### Saved discovery inspection
 

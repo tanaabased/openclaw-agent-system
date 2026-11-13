@@ -1,3 +1,4 @@
+import openClawResponse from '../response/openclaw-response.ts';
 import { selectOpenClawTaskContext } from '../context/openclaw-task-context.ts';
 import { withDispatchTask } from './dispatch-task-scope.ts';
 import dispatchCreationStatus from './dispatch-creation-status.ts';
@@ -165,6 +166,11 @@ export default class OpenClawDispatch {
   ) {
     if (isNativeContextRequest('dispatch', input)) assertNativeContextInput(input);
     assertDispatchModelRequest(input);
+    if (input.action === 'response') {
+      return this.dependencies.credential.use(authority, (request) =>
+        openClawResponse(request, caller, input.blocks as unknown[] | undefined),
+      );
+    }
     const modelInput = input;
     if (input.material)
       input = await this.dependencies.credential.use(authority, (request) =>
@@ -355,6 +361,10 @@ export default class OpenClawDispatch {
     operator = false,
     authority: DispatchAuthority = {},
   ) {
+    if (input.action === 'response')
+      return this.dependencies.credential.use(authority, (request) =>
+        openClawResponse(request, caller, input.blocks),
+      );
     if (
       'material' in input &&
       input.material &&
@@ -535,7 +545,7 @@ export default class OpenClawDispatch {
     input: Exclude<
       Static<typeof dispatchParameters>,
       {
-        action: 'launch';
+        action: 'launch' | 'response';
       }
     >,
     operator = false,

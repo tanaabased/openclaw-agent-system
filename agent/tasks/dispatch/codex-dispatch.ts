@@ -1,3 +1,9 @@
+import { taskResponse } from '../response/task-response.ts';
+import { realpath } from 'node:fs/promises';
+import { Value } from 'typebox/value';
+import { responseRequestSchema } from '../../../tools/dispatch/response-schema.ts';
+import codexResponse from '../response/codex-response.ts';
+import { connectCodexCaller } from '../../codex-thread-client.ts';
 import { withDispatchTask } from './dispatch-task-scope.ts';
 import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { parseDirectImplementationRequest } from '../../../tools/dispatch/implementation-schema.ts';
@@ -75,6 +81,24 @@ async function runCodexDispatchScoped(
   input: unknown,
   deps: CodexDispatchDependencies = {},
 ) {
+  if (action === 'response') {
+    const authored = { ...(input as Record<string, unknown>), action };
+    if (!Value.Check(responseRequestSchema, authored)) throw new Error('response-request-invalid');
+    let connection: Awaited<ReturnType<typeof connectCodexCaller>> | undefined;
+    try {
+      connection = await connectCodexCaller();
+      return await codexResponse(
+        connection.request,
+        process.env.CODEX_THREAD_ID!,
+        { entrypoint: await realpath(process.argv[1]!), pluginData, node: process.execPath },
+        authored.blocks,
+      );
+    } catch {
+      return taskResponse('codex', authored.blocks ?? []);
+    } finally {
+      await connection?.close().catch(() => {});
+    }
+  }
   if (action === 'launch')
     return codexIssueLaunch(pluginData, { ...(input as Record<string, unknown>), action }, deps);
   if (action === 'implementation') {
