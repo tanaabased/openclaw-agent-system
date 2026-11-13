@@ -53,14 +53,15 @@ cat "$TMPDIR/online-first.json" "$TMPDIR/online-first.stderr"
 if ! tail -n 300 "$gateway_log" | node "$gateway_redactor" >"$TMPDIR/online-first.gateway.log"; then printf '%s\n' 'gateway evidence unavailable' >"$TMPDIR/online-first.gateway.log"; fi
 if test "$first_status" -ne 0; then
   cat "$TMPDIR/online-first.gateway.log"
-  if ! node "$gateway_redactor" < "$gateway_log" | grep -E 'plugins:lifecycle|reload|PluginInstanceUnavailable|session-events|state/lease' | tail -n 200 | tail -c 32768 >"$TMPDIR/online-first.lifecycle.log"; then printf '%s\n' 'lifecycle evidence incomplete' >&2; fi
+  if ! node "$gateway_redactor" < "$gateway_log" | grep -E 'plugins:lifecycle|reload|Plugin replacement applied|generation|PluginInstanceUnavailable|session-events|state/lease' | tail -n 200 | tail -c 32768 >"$TMPDIR/online-first.lifecycle.log"; then printf '%s\n' 'lifecycle evidence incomplete' >&2; fi
   cat "$TMPDIR/online-first.lifecycle.log"
   printf '%s\n' 'selected-model snapshot after failed install (not the original preflight response)'
   if timeout --signal=TERM --kill-after=5 30 openclaw gateway call models.list --params '{"agentId":"install-data","view":"all","preparedOnly":true,"includeDefaultModels":false}' --timeout 15000 --json >"$TMPDIR/online-models.raw.json" 2>"$TMPDIR/online-models.stderr"; then
     if ! jq '{models: [.models[] | select(.provider == "openai" and .id == "gpt-6.1-sol") | {provider, id, available, unavailableReason, agentRuntime, tags}]}' "$TMPDIR/online-models.raw.json" | node "$gateway_redactor" >"$TMPDIR/online-models.json"; then printf '%s\n' 'selected-model evidence unavailable' >&2; fi
     cat "$TMPDIR/online-models.json"
   else
-    printf '%s\n' 'selected-model request failed' >&2
+    model_status=$?
+    printf 'selected-model request failed: exit %s\n' "$model_status" >&2
     node "$gateway_redactor" < "$TMPDIR/online-models.stderr" | tail -c 4096 || true
   fi
   exit "$first_status"
