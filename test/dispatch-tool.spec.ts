@@ -149,13 +149,6 @@ describe('tools/dispatch/tool', () => {
             assertInvocationCurrent() {
               context.assertInvocationCurrent?.();
             },
-            assertMemoryAudienceCurrent:
-              'assertMemoryAudienceCurrent' in context
-                ? context.assertMemoryAudienceCurrent
-                : () => {
-                    if (session.sessionId !== caller.sessionId || session.archivedAt)
-                      throw new Error('dispatch-native-session-diverged');
-                  },
           }),
         )
         .find((value) => value && !Array.isArray(value) && value.name === name);
@@ -569,28 +562,34 @@ describe('tools/dispatch/tool', () => {
     }
   });
 
-  it('should require native session authority even when metadata matches', async () => {
+  it('should dispatch without optional memory audience authority', async () => {
     const f = fixture();
     await f.hook(event, coordinator);
-    await assert.rejects(
-      f
-        .build({ ...coordinator, assertMemoryAudienceCurrent: undefined })
-        .execute(event.toolCallId, event.params),
-      /dispatch-native-session-authority-unavailable/,
-    );
-    assert.deepEqual(f.calls, []);
+    await f.build().execute(event.toolCallId, event.params);
+    assert.equal(f.calls.length, 1);
   });
 
-  it('should reject stale metadata returned after a session changes during execution', async () => {
+  it('should reject host authority revoked during an awaited session read', async () => {
     const f = fixture();
     await f.hook(event, coordinator);
+    let revoked = false;
     f.reads.session = async () => {
       const stale = { ...f.session };
       await Promise.resolve();
-      f.session.archivedAt = 1;
+      revoked = true;
       return stale;
     };
-    await assert.rejects(f.build().execute(event.toolCallId, event.params), /session-diverged/);
+    await assert.rejects(
+      f
+        .build({
+          ...coordinator,
+          assertInvocationCurrent() {
+            if (revoked) throw new Error('invocation expired');
+          },
+        })
+        .execute(event.toolCallId, event.params),
+      /invocation expired/,
+    );
     assert.deepEqual(f.calls, []);
   });
 

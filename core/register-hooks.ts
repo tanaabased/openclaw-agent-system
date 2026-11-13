@@ -52,10 +52,6 @@ export default function registerAgentSystemHooks(
             inputId: event.currentUserMessageId,
           });
           if (retained) {
-            // Metadata reads cannot authorize publication after a session incarnation changes.
-            if (!context.assertMemoryAudienceCurrent)
-              throw new Error('turn-context-native-authority-unavailable');
-            context.assertMemoryAudienceCurrent();
             context.hookInvocation?.assertActive();
             guidance.push(retained.appendSystemContext);
             facts += '\n\n' + retained.appendContext;

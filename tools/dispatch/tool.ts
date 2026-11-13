@@ -242,9 +242,6 @@ export default function createDispatchTool(input: {
                 const assertCurrent = () => {
                   signal?.throwIfAborted();
                   context.assertInvocationCurrent();
-                  if (!context.assertMemoryAudienceCurrent)
-                    throw new Error('dispatch-native-session-authority-unavailable');
-                  context.assertMemoryAudienceCurrent();
                 };
                 await assertSessionCurrent(who.sessionKey, who.sessionId);
                 assertCurrent();

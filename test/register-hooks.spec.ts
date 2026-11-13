@@ -46,7 +46,6 @@ describe('core/register-hooks', () => {
       sessionKey: record.threadId,
       sessionId: 'one',
       runId: 'assessment',
-      assertMemoryAudienceCurrent() {},
       hookInvocation: { assertActive() {} },
     };
     const event = { prompt: 'Assess the issue.', messages: [] };
@@ -67,12 +66,6 @@ describe('core/register-hooks', () => {
     assert.doesNotMatch(later.appendContext, /RETAINED-PLAN/);
     assert.match(later.appendContext, /"runId":"later"/);
     for (const authority of [
-      { assertMemoryAudienceCurrent: undefined },
-      {
-        assertMemoryAudienceCurrent() {
-          throw new Error('session reset');
-        },
-      },
       {
         hookInvocation: {
           assertActive() {
