@@ -35,7 +35,9 @@ export default function openClawResponse(
       foundRun = true;
       if (
         partial.role !== 'toolResult' ||
-        !['agent_system_dispatch', 'tool_call'].includes(String(partial.toolName))
+        !['agent_system_dispatch', 'tool_call', 'dispatch_action'].includes(
+          String(partial.toolName),
+        )
       )
         continue;
       try {

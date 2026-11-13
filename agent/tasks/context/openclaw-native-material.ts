@@ -32,7 +32,7 @@ export async function* openClawMaterialReceipts(
     for (const partial of [...page].reverse()) {
       if (
         partial.role !== 'toolResult' ||
-        ![tool, ...aliases, 'tool_call'].includes(String(partial.toolName)) ||
+        ![tool, ...aliases, 'tool_call', 'dispatch_action'].includes(String(partial.toolName)) ||
         partial.isError === true
       )
         continue;
