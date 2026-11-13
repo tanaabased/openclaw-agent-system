@@ -23,7 +23,7 @@ jobs:
       matrix:
         # #631: restore the full matrix incrementally after each migration slice passes.
         os:
-          # - macos-26
+          - macos-26
           - ubuntu-24.04
         example:
           - os-install
