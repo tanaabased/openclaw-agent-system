@@ -101,6 +101,7 @@ export async function issueAssessmentAction(input: {
       sessionKey: caller.sessionKey,
       sessionId: caller.sessionId,
       runId: caller.runId,
+      inputId: caller.inputId,
       retained: [
         record.assessmentCaller,
         ...(record.nativeTurns ?? []).flatMap(({ turn }) =>

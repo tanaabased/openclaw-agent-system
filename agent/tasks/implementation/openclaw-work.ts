@@ -80,6 +80,7 @@ export async function verifyOpenClawWork(input: {
     sessionKey: caller.sessionKey,
     sessionId: caller.sessionId,
     runId: caller.runId,
+    inputId: caller.inputId,
     retained,
   };
   const verifiedInput = input.feedback

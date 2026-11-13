@@ -594,7 +594,9 @@ describe('agent/codex task-continuation', () => {
     work.continuation.activation = async () => {
       throw new Error('native work must not require a schedule');
     };
-    assert.equal((await work.run('context', {}, true)).status, 'verified');
+    fixtureState.native!.turnId = 'later-native-turn';
+    for (let retry = 0; retry < 2; retry++)
+      assert.equal((await work.run('context', {}, true)).status, 'verified');
     const after = (await store.read()).records[0]!;
     assert.deepEqual(after.progression, before.progression);
     assert.equal(after.threadId, before.threadId);

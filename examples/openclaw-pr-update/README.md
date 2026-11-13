@@ -35,8 +35,19 @@ Resume the admitted chat through an authorized native handoff after its earlier 
 turn has completed. Publish a material Task Update from that new run without a fresh
 human message or a recorded assessment/work turn. Verify the exact issue/PR destination
 and one publication receipt; cancelled input, another session incarnation, and reset or
-retired ownership must remain rejected. Component coverage exercises these boundaries;
-the installed handoff and publication remain separate acceptance work.
+retired ownership must remain rejected.
+
+Also resume already-approved work with a trusted native input whose journal identity
+differs from the execution run, then prepare and publish its PR update without another
+approval or handoff. Repeat with queued inputs: select only the exact consumed input,
+never a neighbor or an arbitrary earlier approval. Preserve newer restrictions and the
+original uncertain-publication receipt; reconcile it without creating a duplicate.
+Exercise native OpenClaw and OpenClaw-hosted Codex through their shared managed boundary.
+Standalone Codex uses its own continuation evidence, not OpenClaw history.
+
+Controlled components cover continuation and refusal cases. Installed handoff,
+resume/queue execution and publication remain separate CI acceptance work, not a
+claim established by the ordinary follow-ups below.
 
 ## Setup
 

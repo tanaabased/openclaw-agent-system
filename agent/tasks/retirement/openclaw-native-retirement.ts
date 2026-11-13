@@ -38,6 +38,7 @@ export default async function retireOpenClawNative(input: {
         sessionKey: caller.sessionKey,
         sessionId: caller.sessionId,
         runId: caller.runId,
+        inputId: caller.inputId,
         retained: [],
       });
     const turn = await nativeInput();
