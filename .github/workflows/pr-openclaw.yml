@@ -22,29 +22,28 @@ jobs:
       fail-fast: false
       matrix:
         example:
-          # #631: expand through agent execution and assessment; restore remaining scenarios incrementally.
           - openclaw-agent
-          # - openclaw-native-retirement
-          # - openclaw-workspace
+          - openclaw-native-retirement
+          - openclaw-workspace
           - openclaw-doctor
-          # - openclaw-tool-access
-          # - openclaw-github
+          - openclaw-tool-access
+          - openclaw-github
           - openclaw-issue-assessment
-          # - openclaw-issue-launch
-          # - openclaw-github-reply
-          # - openclaw-google
-          # - openclaw-tools
-          # - openclaw-tool-descendants
-          # - openclaw-worktree
-          # - openclaw-worktree-session
-          # - openclaw-collaboration
+          - openclaw-issue-launch
+          - openclaw-github-reply
+          - openclaw-google
+          - openclaw-tools
+          - openclaw-tool-descendants
+          - openclaw-worktree
+          - openclaw-worktree-session
+          - openclaw-collaboration
           - openclaw-memory
           - openclaw-memory-embeddings
-          # - openclaw-backup
-          # - openclaw-backup-cleanup
-          # - openclaw-credentials
+          - openclaw-backup
+          - openclaw-backup-cleanup
+          - openclaw-credentials
           - openclaw-runtimes
-          # - openclaw-lifecycle-approvals
+          - openclaw-lifecycle-approvals
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
