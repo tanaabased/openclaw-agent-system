@@ -25,7 +25,7 @@ first attempt's evidence before testing repeat installation.
 - Enrollment allows up to 90 seconds for startup or plugin reload, within a 135-second connection deadline including authentication. Terminal reload failure and cancellation stop earlier. Session-creation failures report the automation ID and a safe native reason category; `unclassified` means the native rejection is not yet recognized, not that a timeout occurred.
 - In CI, the first Install enables bounded, redacted native rejection evidence with `OPENCLAW_DEBUG=1`; it retains no request payload or arbitrary error details.
 - Evidence is saved beneath `TMPDIR` before a repeat can change state. A Gateway log observation alone does not establish the failure's cause.
-- Cold-install diagnostics enable native plugin-lifecycle tracing. On failure, preserve the Gateway evidence before a read-only selected-model snapshot; that later snapshot is not the exact model evidence observed by Install. Diagnostic failure never replaces the original Install exit status.
+- Cold-install diagnostics enable native plugin-lifecycle tracing. On failure, preserve the Gateway evidence before a read-only selected-model snapshot; that later snapshot is not the exact model evidence observed by Install. A failed session resolution gets one read-only probe after 60 seconds, before the model snapshot, using the unique materializing thread’s saved key; missing or ambiguous targets are reported rather than guessed. This reconstructs the key lookup, not a captured wire request. No reload, restart, or repeat Install occurs during the wait. Diagnostic failure never replaces the original Install exit status.
 
 ## Setup
 
@@ -47,7 +47,9 @@ gateway_log=$(openclaw-gateway log-path)
 gateway_redactor="$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
 cd "$GITHUB_WORKSPACE/examples/os-install-online"
 first_status=0
+date -u +%Y-%m-%dT%H:%M:%SZ >"$TMPDIR/online-first.started"
 OPENCLAW_DEBUG=1 openclaw agent-system install --yes --json >"$TMPDIR/online-first.json" 2>"$TMPDIR/online-first.stderr" || first_status=$?
+date -u +%Y-%m-%dT%H:%M:%SZ >"$TMPDIR/online-first.finished"
 printf '%s\n' "$first_status" >"$TMPDIR/online-first.exit"
 cat "$TMPDIR/online-first.json" "$TMPDIR/online-first.stderr"
 if ! tail -n 300 "$gateway_log" | node "$gateway_redactor" >"$TMPDIR/online-first.gateway.log"; then printf '%s\n' 'gateway evidence unavailable' >"$TMPDIR/online-first.gateway.log"; fi
@@ -55,6 +57,26 @@ if test "$first_status" -ne 0; then
   cat "$TMPDIR/online-first.gateway.log"
   if ! node "$gateway_redactor" < "$gateway_log" | grep -E 'plugins:lifecycle|reload|Plugin replacement applied|generation|PluginInstanceUnavailable|session-events|state/lease' | tail -n 200 | tail -c 32768 >"$TMPDIR/online-first.lifecycle.log"; then printf '%s\n' 'lifecycle evidence incomplete' >&2; fi
   cat "$TMPDIR/online-first.lifecycle.log"
+  printf 'first install started/finished (UTC):\n'
+  cat "$TMPDIR/online-first.started" "$TMPDIR/online-first.finished"
+  if jq -e '.blocked.automationGatewayDiagnostic.method == "sessions.resolve"' "$TMPDIR/online-first.json" >/dev/null; then
+    if find "$SETUP_OPENCLAW_STATE_DIR" -type f -name 'automation-threads-*.json' -exec cat {} \; | jq -ecs '[.[].records[] | select(.phase == "materializing" and (.nativeId | type == "string")) | select(.nativeId | startswith("agent:install-data:automation:"))] | if length == 1 then {key: .[0].nativeId, agentId: "install-data", allowMissing: true} else error("expected one pending fixture thread") end' >"$TMPDIR/online-delayed-resolve.params.json"; then
+      printf 'diagnostic wait starts (UTC): '
+      date -u +%Y-%m-%dT%H:%M:%SZ
+      sleep 60
+      printf 'delayed sessions.resolve starts (UTC): '
+      date -u +%Y-%m-%dT%H:%M:%SZ
+      probe_status=0
+      timeout --signal=TERM --kill-after=5 30 openclaw gateway call sessions.resolve --params "$(cat "$TMPDIR/online-delayed-resolve.params.json")" --timeout 15000 --json >"$TMPDIR/online-delayed-resolve.stdout" 2>"$TMPDIR/online-delayed-resolve.stderr" || probe_status=$?
+      printf 'delayed sessions.resolve exit: %s; finished (UTC): ' "$probe_status"
+      date -u +%Y-%m-%dT%H:%M:%SZ
+      node "$gateway_redactor" < "$TMPDIR/online-delayed-resolve.stdout" | tail -c 4096 || true
+      node "$gateway_redactor" < "$TMPDIR/online-delayed-resolve.stderr" | tail -c 4096 || true
+      if ! node "$gateway_redactor" < "$gateway_log" | grep -E 'reload|Plugin replacement applied|generation|PluginInstanceUnavailable|session-events' | tail -n 60 | tail -c 16384; then printf '%s\n' 'post-wait reload evidence unavailable' >&2; fi
+    else
+      printf '%s\n' 'delayed session probe unavailable: no unique pending fixture thread' >&2
+    fi
+  fi
   printf '%s\n' 'selected-model snapshot after failed install (not the original preflight response)'
   if timeout --signal=TERM --kill-after=5 30 openclaw gateway call models.list --params '{"agentId":"install-data","view":"all","preparedOnly":true,"includeDefaultModels":false}' --timeout 15000 --json >"$TMPDIR/online-models.raw.json" 2>"$TMPDIR/online-models.stderr"; then
     if ! jq '{models: [.models[] | select(.provider == "openai" and .id == "gpt-6.1-sol") | {provider, id, available, unavailableReason, agentRuntime, tags}]}' "$TMPDIR/online-models.raw.json" | node "$gateway_redactor" >"$TMPDIR/online-models.json"; then printf '%s\n' 'selected-model evidence unavailable' >&2; fi
