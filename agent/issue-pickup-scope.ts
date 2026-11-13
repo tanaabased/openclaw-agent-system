@@ -5,6 +5,7 @@ import type {
 } from '../channels/github/provider/work-item.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import repositoryScope from '../channels/github/repository-scope.ts';
+import { pickupMilestones, pickupProject } from '../channels/github/issue-pickup-projects.ts';
 
 export interface PickupScope {
   policy: 'all' | 'only' | 'prefer';
@@ -33,9 +34,7 @@ export default async function issuePickupScope(
   repository: GitHubRepositoryIdentity,
 ): Promise<PickupScope | undefined> {
   const name = `${repository.owner.login}/${repository.name}`.toLowerCase();
-  const project = policy.issuePickup?.projects.find(
-    (entry) => entry.repository.toLowerCase() === name,
-  );
+  const project = pickupProject(policy.issuePickup?.projects ?? [], name);
   if (
     !project ||
     repository.archived ||
@@ -45,15 +44,24 @@ export default async function issuePickupScope(
     return;
   if (!project.milestone) return { policy: 'all', milestoneNodeIds: [] };
   if (!client.getMilestone) throw new Error('issue-pickup-milestone-unavailable');
-  const numbers = Array.isArray(project.milestone.number)
-    ? project.milestone.number
-    : [project.milestone.number];
+  const references = pickupMilestones(project);
+  const numbers: number[] = [];
   const milestoneNodeIds: string[] = [];
-  for (const number of numbers) {
-    const milestone = await client.getMilestone(repository.owner.login, repository.name, number);
+  for (const reference of references) {
+    const [owner, repo] = reference.repository.split('/') as [string, string];
+    if (reference.repository !== name) {
+      const target = await client.getRepository(owner, repo);
+      if (`${target.owner.login}/${target.name}`.toLowerCase() !== reference.repository)
+        throw new Error('issue-pickup-milestone-changed');
+    }
+    const number = reference.number;
+    const milestone = await client.getMilestone(owner, repo, number);
     if (milestone.number !== number) throw new Error('issue-pickup-milestone-changed');
     if (milestone.state !== 'open') throw new Error('issue-pickup-milestone-closed');
-    milestoneNodeIds.push(milestone.nodeId);
+    if (reference.repository === name) {
+      numbers.push(number);
+      milestoneNodeIds.push(milestone.nodeId);
+    }
   }
   const mode = project.milestone.policy ?? 'only';
   return {

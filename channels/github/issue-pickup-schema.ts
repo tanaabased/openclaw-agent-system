@@ -11,6 +11,15 @@ import {
 import type { AutomationSchedule } from '../../manifest/automation-schedule.ts';
 import pickupTiming from './issue-pickup-timing.ts';
 
+const quantity = Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER });
+const milestoneId = Type.Union([
+  quantity,
+  Type.String({
+    pattern:
+      '^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/)?[A-Za-z0-9_.-]+#[1-9][0-9]*(?![\\s\\S])',
+  }),
+]);
+
 export const issuePickupSchema = Type.Object(
   {
     ...automationModelProperties,
@@ -32,9 +41,23 @@ export const issuePickupSchema = Type.Object(
         {
           repository: Type.String({
             maxLength: 256,
-            pattern: '^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/[A-Za-z0-9_.-]+$',
+            pattern:
+              '^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/(?:[A-Za-z0-9_.-]+|\\*)(?![\\s\\S])',
           }),
-          limit: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
+          limit: Type.Optional(
+            Type.Union([
+              quantity,
+              Type.Object(
+                {
+                  quantity,
+                  scope: Type.Optional(
+                    Type.Union([Type.Literal('selection'), Type.Literal('repo')]),
+                  ),
+                },
+                { additionalProperties: false },
+              ),
+            ]),
+          ),
           selection: Type.Optional(
             Type.Object(
               { guidance: assessmentConfigurationSchema.properties.guidance },
@@ -45,9 +68,7 @@ export const issuePickupSchema = Type.Object(
             Type.Object(
               {
                 labels: Type.Optional(Type.Array(Type.String({ minLength: 1, pattern: '\\S' }))),
-                'exclude-labels': Type.Optional(
-                  Type.Array(Type.String({ minLength: 1, pattern: '\\S' })),
-                ),
+                types: Type.Optional(Type.Array(Type.String({ minLength: 1, pattern: '\\S' }))),
               },
               { additionalProperties: false },
             ),
@@ -55,13 +76,18 @@ export const issuePickupSchema = Type.Object(
           milestone: Type.Optional(
             Type.Object(
               {
-                number: Type.Union([
-                  Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
-                  Type.Array(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }), {
-                    minItems: 1,
-                    uniqueItems: true,
-                  }),
-                ]),
+                number: Type.Optional(
+                  Type.Union([
+                    Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+                    Type.Array(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }), {
+                      minItems: 1,
+                      uniqueItems: true,
+                    }),
+                  ]),
+                ),
+                ids: Type.Optional(
+                  Type.Union([milestoneId, Type.Array(milestoneId, { minItems: 1 })]),
+                ),
                 policy: Type.Optional(Type.Union([Type.Literal('only'), Type.Literal('prefer')])),
               },
               { additionalProperties: false },
@@ -79,7 +105,7 @@ export const issuePickupSchema = Type.Object(
 type Declaration = Static<typeof issuePickupSchema>;
 export interface IssuePickupFilters {
   labels?: string[];
-  excludeLabels?: string[];
+  types?: string[];
 }
 export interface IssuePickupPolicy extends AutomationModelSettings {
   paused: boolean;
@@ -94,8 +120,8 @@ export interface IssuePickupPolicy extends AutomationModelSettings {
     | 'issue-pickup-schedule-unsupported';
   selection?: Declaration['selection'];
   projects: Array<
-    Omit<Declaration['projects'][number], 'filters'> & {
-      limit: number;
+    Omit<Declaration['projects'][number], 'filters' | 'limit'> & {
+      limit: NonNullable<Declaration['projects'][number]['limit']>;
       filters?: IssuePickupFilters;
     }
   >;
@@ -130,7 +156,7 @@ export default function decodeIssuePickup(value: Declaration): IssuePickupPolicy
         ? {
             filters: {
               ...(filters.labels ? { labels: filters.labels } : {}),
-              ...(filters['exclude-labels'] ? { excludeLabels: filters['exclude-labels'] } : {}),
+              ...(filters.types ? { types: filters.types } : {}),
             },
           }
         : {}),

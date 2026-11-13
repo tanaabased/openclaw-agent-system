@@ -38,7 +38,7 @@ describe('channels/github/presentation/workflow-instructions', () => {
   it('should quote the verified posting author and every multiline body line', () => {
     const body = '@contributor\r\n\r\nFirst paragraph.\n\n- Item\n\n> Nested quote';
     const card = feedbackReplyPresentation('posting-agent', body);
-    assert.ok(card.startsWith('> @contributor\n>'));
+    assert.ok(card.startsWith('> [@contributor](https://github.com/contributor)\n>'));
     assert.ok(
       card.endsWith('> *Reply draft from [@posting-agent](https://github.com/posting-agent)*'),
     );

@@ -4,7 +4,7 @@ import type {
   PickupSelectionGuidance,
 } from './issue-pickup.ts';
 import type { ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
-import issuePickupLabels from './issue-pickup-labels.ts';
+import issuePickupLabels, { issuePickupLabelPatterns } from './issue-pickup-labels.ts';
 import type { PickupCandidateScope } from './issue-pickup-scope.ts';
 import card, {
   githubNotificationMarkdownCode as code,
@@ -70,8 +70,14 @@ export default function issuePickupReport(input: {
       ...allowances.map((entry) => ({
         label: 'Window allowance',
         value: [
-          `[${text(entry.repository)}](https://github.com/${entry.repository}${typeof entry.milestone === 'number' ? `/milestone/${entry.milestone}` : '/issues'})`,
+          `[${text(entry.repository)}](https://github.com/${entry.repository.endsWith('/*') ? entry.repository.slice(0, -2) : entry.repository + (typeof entry.milestone === 'number' ? `/milestone/${entry.milestone}` : '/issues')})`,
           Array.isArray(entry.milestone) ? `milestones ${entry.milestone.join(', ')}` : '',
+          typeof entry.milestone === 'string' ? `milestone ${text(entry.milestone)}` : '',
+          entry.scope === 'repo'
+            ? 'per repository'
+            : entry.selection?.endsWith('/*')
+              ? `selection ${text(entry.selection)} total`
+              : '',
           entry.used === undefined
             ? `limit ${entry.limit}`
             : `${entry.used} of ${entry.limit} assigned`,
@@ -87,19 +93,29 @@ export default function issuePickupReport(input: {
           .join(' · '),
       })),
       ...allowances.flatMap((entry) => {
+        const types = entry.filters?.types;
+        return types?.length
+          ? [
+              {
+                label: 'Issue type filters',
+                value: `${text(entry.repository)} · match any: ${types.map(code).join(', ')}`,
+              },
+            ]
+          : [];
+      }),
+      ...allowances.flatMap((entry) => {
         const filters = entry.filters;
-        if (!filters?.labels?.length && !filters?.excludeLabels?.length) return [];
+        if (!filters?.labels?.length) return [];
+        const { required, excluded } = issuePickupLabelPatterns(filters);
         return [
           {
             label: 'Label filters',
             value: [
               text(entry.repository),
-              filters.labels?.length ? `require all: ${filters.labels.map(code).join(', ')}` : '',
-              filters.excludeLabels?.length
-                ? `exclude any: ${filters.excludeLabels.map(code).join(', ')}`
-                : '',
-              !issuePickupLabels(filters.labels ?? [], filters)
-                ? 'Contradictory criteria: a required label is also excluded. No issue can match.'
+              required.length ? `require all: ${required.map(code).join(', ')}` : '',
+              excluded.length ? `exclude any: ${excluded.map(code).join(', ')}` : '',
+              !issuePickupLabels(required, filters)
+                ? 'Contradictory criteria: a required pattern is excluded. No issue can match.'
                 : '',
             ]
               .filter(Boolean)
@@ -109,14 +125,12 @@ export default function issuePickupReport(input: {
       }),
       ...(outcome.status === 'empty' &&
       summary?.eligible === 0 &&
-      allowances.some(
-        (entry) => entry.filters?.labels?.length || entry.filters?.excludeLabels?.length,
-      )
+      allowances.some((entry) => entry.filters?.labels?.length || entry.filters?.types?.length)
         ? [
             {
               label: 'Filters',
               value:
-                'No eligible issues matched within the configured scope. Review the label criteria for a later scan; the search was not widened. Unreadable issues or scopes remain reported separately.',
+                'No eligible issues matched within the configured scope. Review the filter criteria for a later scan; the search was not widened. Unreadable issues or scopes remain reported separately.',
             },
           ]
         : []),
@@ -158,7 +172,12 @@ export default function issuePickupReport(input: {
               value:
                 pickupScope === 'preferred'
                   ? 'Preferred milestone'
-                  : 'Fallback within the selected repository',
+                  : allowances.some(
+                        (entry) =>
+                          entry.repository === repository && entry.selection?.endsWith('/*'),
+                      )
+                    ? 'Fallback within the selected scope'
+                    : 'Fallback within the selected repository',
             },
           ]
         : []),

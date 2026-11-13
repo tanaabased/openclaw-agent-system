@@ -108,7 +108,11 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
     return this.#items.getItem(owner, name, number);
   }
 
-  discoverProject(owner: string, name: string, milestone: number, page: number) {
+  discoverPickupRepositories(owner: string, page: number) {
+    return this.#pickup.discoverPickupRepositories(owner, page);
+  }
+
+  discoverProject(owner: string, name: string, milestone: number | undefined, page: number) {
     return this.#pickup.discoverProject(owner, name, milestone, page);
   }
   projectCandidate(owner: string, name: string, number: number) {

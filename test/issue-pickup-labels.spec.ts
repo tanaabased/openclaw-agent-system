@@ -10,24 +10,74 @@ describe('agent/issue-pickup-labels', () => {
     const labels = ['Bug', 'Ready', 'other'];
     assert.equal(issuePickupLabels(labels), true);
     assert.equal(issuePickupLabels([], {}), true);
-    assert.equal(issuePickupLabels([], { labels: [], excludeLabels: [] }), true);
+    assert.equal(issuePickupLabels([], { labels: [] }), true);
     assert.equal(issuePickupLabels(labels, { labels: ['BUG', 'ready'] }), true);
     assert.equal(issuePickupLabels(labels, { labels: ['bug', 'unknown'] }), false);
-    assert.equal(issuePickupLabels(labels, { excludeLabels: ['unknown', 'READY'] }), false);
-    assert.equal(issuePickupLabels(labels, { excludeLabels: ['unknown'] }), true);
-    assert.equal(issuePickupLabels(labels, { labels: ['bug'], excludeLabels: ['BUG'] }), false);
+    assert.equal(issuePickupLabels(labels, { labels: ['!unknown', '!READY'] }), false);
+    assert.equal(issuePickupLabels(labels, { labels: ['!unknown'] }), true);
+    assert.equal(issuePickupLabels(labels, { labels: ['bug', '!BUG'] }), false);
     assert.deepEqual(labels, ['Bug', 'Ready', 'other']);
+  });
+
+  it('should match only stars as wildcards with positive and exclusion precedence', () => {
+    const cases: Array<[string[], string[], boolean]> = [
+      [['Bug-ui', 'ready'], ['bug*', '*ADY'], true],
+      [['bug'], ['bug*'], true],
+      [['bug'], ['bug*', 'ready*'], false],
+      [['debug-ui'], ['bug*'], false],
+      [['bug-ui-extra'], ['bug*ui'], false],
+      [['bug-ui'], ['b**g*u*i'], true],
+      [['a'], ['a*a'], false],
+      [['aa'], ['a*a'], true],
+      [['ab'], ['*ab*b'], false],
+      [['bug-ui', 'Blocked'], ['bug*', '!block*'], false],
+      [['bug-ui', 'Blocked'], ['!block*', 'bug*'], false],
+      [['bug-ui', 'NEEDS-review'], ['!needs-*', 'bug*'], false],
+      [['bug-ui'], ['!needs-*', '!blocked'], true],
+      [[], ['!needs-*'], true],
+      [['anything'], ['*', '!*'], false],
+      [['!blocked'], ['!!blocked'], false],
+      [['space name'], ['space*name'], true],
+      [['a\nb'], ['a*b'], true],
+    ];
+    for (const [labels, patterns, expected] of cases)
+      assert.equal(
+        issuePickupLabels(labels, { labels: patterns }),
+        expected,
+        JSON.stringify({ labels, patterns }),
+      );
+    for (const literal of [
+      '?',
+      '[bug]',
+      '{bug,task}',
+      '(bug)',
+      'bug|task',
+      'bug+',
+      '^bug$',
+      'bug.ui',
+      'bug\\ui',
+    ]) {
+      assert.equal(issuePickupLabels([literal], { labels: [literal] }), true, literal);
+      assert.equal(issuePickupLabels([literal + '-extra'], { labels: [literal] }), false, literal);
+      assert.equal(
+        issuePickupLabels(['prefix-' + literal], { labels: ['*' + literal] }),
+        true,
+        literal,
+      );
+    }
+    assert.equal(issuePickupLabels(['bug'], { labels: ['[bug]'] }), false);
+    assert.equal(issuePickupLabels(['bugXui'], { labels: ['bug.ui'] }), false);
   });
 
   it('should filter paginated candidates independently per project before dependency reads', async () => {
     const f = fixture();
     const other = f.addRepository('other');
-    f.policy.issuePickup!.projects[0]!.filters = { labels: ['unknown'] };
+    f.policy.issuePickup!.projects[0]!.filters = { labels: ['unknown*'] };
     f.policy.issuePickup!.projects.push({
       repository: 'owner/other',
       limit: 1,
       milestone: { number: 10, policy: 'only' },
-      filters: { labels: ['PRIORITY: HIGH'] },
+      filters: { labels: ['PRIORITY:*', '!block*'] },
     });
     const discover = f.client.discoverProject;
     f.client.discoverProject = async (...args) => ({
@@ -52,8 +102,7 @@ describe('agent/issue-pickup-labels', () => {
     it(`should recheck membership before the write after ${change}`, async () => {
       const f = fixture();
       f.policy.issuePickup!.projects[0]!.filters = {
-        labels: ['priority: high'],
-        excludeLabels: ['blocked'],
+        labels: ['PRIORITY:*', '!block*'],
       };
       const selection = await f.select();
       const current = f.candidates.get(f.item.number)!;
@@ -80,7 +129,7 @@ describe('agent/issue-pickup-labels', () => {
     assert.equal(issuePickupPolicyDigest(f.policy), digest);
     assert.equal((await f.run({ selection })).status, 'empty');
     f.tx.runId = 'next-scan';
-    f.policy.issuePickup!.projects[0]!.filters = { excludeLabels: ['missing'] };
+    f.policy.issuePickup!.projects[0]!.filters = { labels: ['!missing*'] };
     assert.equal(f.effects.writes, 0);
     assert.equal((await f.run({ selection })).status, 'assigned');
     assert.equal(f.effects.writes, 1);

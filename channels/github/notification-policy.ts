@@ -1,5 +1,6 @@
 import { githubIdentitySet } from './provider/work-item.ts';
 import { issuePickupConfigurationCode } from './issue-pickup-schema.ts';
+import { pickupMilestones } from './issue-pickup-projects.ts';
 import { repositoryRoutingDiagnostics, repositoryScopeCandidate } from './repository-scope.ts';
 import type { GitHubNotificationsDeclaration } from './workflow-policy.ts';
 import type { GitHubManifestConfiguration } from '../../manifest/github-schema.ts';
@@ -44,7 +45,18 @@ export function validateGitHubNotificationPolicy(
           severity: 'error',
         });
       repositories.add(repository);
-      if (!repositoryScopeCandidate(policy, owner, name, 'issue-pickup'))
+      try {
+        pickupMilestones(project);
+      } catch {
+        diagnostics.push({
+          code: 'github-issue-pickup-milestone-invalid',
+          fieldPath: `/github/issue-pickup/projects/${index}/milestone`,
+          message:
+            'Use milestone ids within the selected scope; namespace selections require repository-qualified ids.',
+          severity: 'error',
+        });
+      }
+      if (name !== '*' && !repositoryScopeCandidate(policy, owner, name, 'issue-pickup'))
         diagnostics.push({
           code: 'github-issue-pickup-repository-outside-workflow',
           fieldPath,

@@ -42,13 +42,13 @@ describe('presentation failure isolation', () => {
       String.prototype,
       'replace',
       function (this: string, ...args: Parameters<typeof original>) {
-        if (String(this) === 'Exact authored body.') throw new Error('renderer failed');
+        if (String(this).includes('@octocat')) throw new Error('renderer failed');
         return original.apply(this, args);
       },
     );
     try {
       const source = {
-        body: 'Exact authored body.',
+        body: 'Exact authored body from @octocat.',
         author: { label: 'sender', url: 'https://github.com/sender' },
         item: { label: 'owner/repo#3', url: target + '#issuecomment-5' },
       };

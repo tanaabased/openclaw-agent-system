@@ -38,6 +38,36 @@ function load(source: unknown) {
 
 describe('issue pickup configuration', () => {
   for (const runtime of ['openclaw', 'codex'] as const) {
+    it(`should validate namespace selections and milestone reference boundaries in ${runtime}`, () => {
+      const source = document('issue-pickup', 'issue-pickup', runtime);
+      source.github['issue-pickup'] = {
+        projects: [
+          {
+            repository: 'owner/*',
+            limit: { quantity: 2, scope: 'repo' },
+            milestone: { ids: ['repo#1', 'owner/second#2'], policy: 'prefer' },
+          },
+          { repository: 'owner/repo', milestone: { number: 10, ids: 'repo#10' } },
+        ],
+      };
+      const policy = load(source).manifest.github!.notifications!.issuePickup!;
+      assert.deepEqual(policy.projects[0]!.limit, { quantity: 2, scope: 'repo' });
+      for (const project of [
+        { repository: 'owner/*', milestone: { ids: 1 } },
+        { repository: 'owner/*', milestone: { number: [1] } },
+        { repository: 'owner/*', milestone: { ids: 'outside/repo#1' } },
+        { repository: 'owner/repo', milestone: { ids: 'second#1' } },
+        { repository: 'owner/repo', milestone: { policy: 'prefer' } },
+      ]) {
+        source.github['issue-pickup'] = { projects: [project] };
+        const parsed = parse(JSON.stringify(source));
+        assert.equal(parsed.status, 'invalid');
+        assert.ok(
+          parsed.diagnostics.some(({ code }) => code === 'github-issue-pickup-milestone-invalid'),
+        );
+      }
+    });
+
     it(`should retain current settings and saved authority in ${runtime}`, () => {
       const current = load(document('issue-pickup', 'issue-pickup', runtime));
       const canonical = current.manifest.github!.notifications!;
@@ -88,6 +118,23 @@ describe('issue pickup configuration', () => {
         runtime === 'codex' ? 'gpt-6-luna' : 'openai/gpt-6-luna',
       );
       assert.equal(job.overrides[runtime]?.effort, 'medium');
+    });
+
+    it(`should preserve native type filters through ${runtime} configuration`, () => {
+      const source = document('issue-pickup', 'issue-pickup', runtime);
+      const filters = { types: ['Bug', 'Customer Request'], labels: ['ready*', '!blocked'] };
+      source.github['issue-pickup'] = { projects: [{ repository: 'owner/repo', filters }] };
+      const parsed = load(source);
+      assert.deepEqual(
+        parsed.manifest.github!.notifications!.issuePickup!.projects[0]!.filters,
+        filters,
+      );
+      for (const types of ['', 'Bug', [42], [' '], ['']]) {
+        source.github['issue-pickup'] = {
+          projects: [{ repository: 'owner/repo', filters: { types } }],
+        };
+        assert.equal(parse(JSON.stringify(source)).status, 'invalid');
+      }
     });
   }
 

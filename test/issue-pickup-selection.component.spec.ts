@@ -52,7 +52,7 @@ describe('issue pickup selection through native journals', () => {
   async function fixture(
     runtime: 'codex' | 'openclaw',
     coordinated = false,
-    initialScope?: 'all' | 'multiple' | 'prefer',
+    initialScope?: 'all' | 'multiple' | 'prefer' | 'namespace',
   ) {
     const f = selectionFixture(runtime);
     const workspace = join(root, 'workspace');
@@ -109,7 +109,15 @@ describe('issue pickup selection through native journals', () => {
         },
       },
     };
-    if (initialScope === 'all') {
+    if (initialScope === 'namespace') {
+      declaration.github['issue-pickup'].projects = [
+        {
+          repository: 'owner/*',
+          limit: { quantity: 1, scope: 'selection' },
+          milestone: { ids: ['repo#10'] },
+        },
+      ];
+    } else if (initialScope === 'all') {
       delete declaration.github['issue-pickup'].projects[0]!.milestone;
       f.item.milestone = null;
     } else if (initialScope === 'multiple') {
@@ -249,6 +257,21 @@ describe('issue pickup selection through native journals', () => {
   }
 
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should enroll a namespace and retain its allowance through the native ${runtime} journal`, async () => {
+      const f = await fixture(runtime, false, 'namespace');
+      const selection = await f.select();
+      assert.equal((await f.pickup({ selection })).status, 'assigned');
+      await f.scan();
+      const records = await f.read();
+      assert.equal(records.length, 1);
+      assert.equal(records[0]!.evidence.projectWork!.pickup.issueNodeId, f.item.nodeId);
+      f.tick.id = 'namespace-after-restart';
+      const exhausted = await f.pickup();
+      assert.equal(exhausted.status, 'allowance-reached');
+      const saved = await f.journal.read();
+      assert.equal(saved.projectPickup!.charges![0]!.selection, 'owner/*');
+      assert.equal(f.effects.writes, 1);
+    });
     it(`should keep pickup available beside an independently damaged task in ${runtime}`, async () => {
       const f = await fixture(runtime);
       await f.configure((source) => {
@@ -413,12 +436,45 @@ describe('issue pickup selection through native journals', () => {
       assert.deepEqual(result.allowances?.[1]?.providerDiagnostic, diagnostic);
       assert.equal(f.effects.writes, 1);
     });
+    it(`should filter native types and recheck changed types through ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      const enrollment = await f.enrollmentStore.read();
+      await f.configure((source) => {
+        source.github['issue-pickup'].projects[0]!.filters = {
+          types: ['BUG', 'Customer Request'],
+          labels: ['priority:*', '!blocked'],
+        };
+      });
+      const candidate = f.candidates.get(f.item.number)!;
+      candidate.issueType = { name: 'Task' };
+      assert.equal((await f.pickup()).status, 'empty');
+      candidate.issueType = { name: 'Bug' };
+      f.tick.id = 'matching-type';
+      const selection = await f.select();
+      candidate.issueType = null;
+      const rejected = await f.pickup({ selection });
+      assert.equal(rejected.status, 'failed');
+      assert.equal(f.effects.writes, 0);
+      delete candidate.issueType;
+      f.tick.id = 'missing-type-evidence';
+      const unreadable = await f.pickup();
+      assert.equal(unreadable.status, 'empty');
+      assert.match(unreadable.response, /could not be read/);
+      assert.equal(f.effects.writes, 0);
+      candidate.issueType = { name: 'customer request' };
+      f.tick.id = 'matching-custom-type';
+      assert.equal((await f.pickup({ selection: await f.select() })).status, 'assigned');
+      assert.equal(f.effects.writes, 1);
+      assert.deepEqual(await f.enrollmentStore.read(), enrollment);
+      await f.scan();
+      assert.equal((await f.read())[0]!.evidence.mode, 'work');
+    });
+
     it(`should retain label filters for preferred fallback through ${runtime}`, async () => {
       const f = await fixture(runtime, false, 'prefer');
       await f.configure((source) => {
         source.github['issue-pickup'].projects[0]!.filters = {
-          labels: ['priority: high'],
-          'exclude-labels': ['blocked'],
+          labels: ['PRIORITY:*', '!block*'],
         };
       });
       const preferred = {
@@ -562,8 +618,7 @@ describe('issue pickup selection through native journals', () => {
       });
       await f.configure((source) => {
         source.github['issue-pickup'].projects[0]!.filters = {
-          labels: ['priority: high', 'unknown required'],
-          'exclude-labels': ['blocked'],
+          labels: ['priority:*', 'unknown required', '!block*'],
         };
       });
       const empty = await f.pickup();
@@ -574,8 +629,7 @@ describe('issue pickup selection through native journals', () => {
       f.tick.id = 'edited-filters';
       await f.configure((source) => {
         source.github['issue-pickup'].projects[0]!.filters = {
-          labels: ['PRIORITY: HIGH'],
-          'exclude-labels': ['unknown excluded', 'blocked'],
+          labels: ['!unknown*', '!BLOCK*'],
         };
       });
       const options = await f.pickup();
@@ -609,8 +663,7 @@ describe('issue pickup selection through native journals', () => {
         const f = await fixture(runtime);
         await f.configure((source) => {
           source.github['issue-pickup'].projects[0]!.filters = {
-            labels: ['priority: high'],
-            'exclude-labels': ['blocked'],
+            labels: ['priority:*', '!block*'],
           };
         });
         const selection = await f.select();

@@ -36,6 +36,87 @@ import openclawDispatchFixture from './openclaw-dispatch-fixture.ts';
 
 describe('agent/openclaw task-continuation', () => {
   const fixtureState = openclawDispatchFixture();
+  it('should retain approval across native input and execution changes without changing delivery receipts', async () => {
+    const { who, journal } = await fixtureState.publishedFollowup();
+    const before = await fixtureState.record();
+    const original = fixtureState.messages.at(-1)!;
+    original.__openclaw = { ...(original.__openclaw as object), runId: 'resumed-execution' };
+    const caller = { ...who, runId: 'resumed-execution', inputId: 'operator-event' };
+    const entered = await fixtureState.service.runModel(
+      fixtureState.manifest,
+      fixtureState.root,
+      caller,
+      { action: 'implementation-context' },
+      true,
+    );
+    assert.equal(entered.status, 'verified');
+    const permission = (await fixtureState.record()).progression;
+    assert.equal(permission?.stage, 'implementation');
+    fixtureState.manifest.github!.notifications!.issueAssignment!.mode = 'plan';
+    const followup = { ...caller, runId: 'later-execution', inputId: 'later-input' };
+    fixtureState.messages.push({
+      role: 'user',
+      content: 'Continue the agreed work.',
+      __openclaw: {
+        id: followup.inputId,
+        idempotencyKey: 'later-input-run:user',
+        runId: followup.runId,
+      },
+    });
+    for (let retry = 0; retry < 2; retry++) {
+      const continued = await fixtureState.service.runModel(
+        fixtureState.manifest,
+        fixtureState.root,
+        followup,
+        { action: 'implementation-context' },
+        false,
+      );
+      assert.equal(continued.status, 'verified');
+      const presented = await fixtureState.service.runModel(
+        fixtureState.manifest,
+        fixtureState.root,
+        followup,
+        { action: 'delivery', operation: 'present' },
+        false,
+      );
+      assert.equal(presented.status, 'presented', JSON.stringify(presented));
+      assert.deepEqual((await fixtureState.record()).progression, permission);
+      assert.deepEqual((await fixtureState.record()).delivery, before.delivery);
+    }
+    fixtureState.inputReceipts = [
+      {
+        runId: 'later-input-run',
+        state: 'consumed',
+        consumedByEventId: 'later-input',
+        cancelled: true,
+      },
+    ];
+    await assert.rejects(
+      fixtureState.service.runModel(
+        fixtureState.manifest,
+        fixtureState.root,
+        followup,
+        { action: 'implementation-context' },
+        false,
+      ),
+      /dispatch-input-unverified/,
+    );
+    fixtureState.inputReceipts = [];
+    await journal.exclusive(async (state, save) => {
+      state.records[0]!.reset = { at: 30, by: 'operator' };
+      await save();
+    });
+    await assert.rejects(
+      fixtureState.service.runModel(
+        fixtureState.manifest,
+        fixtureState.root,
+        followup,
+        { action: 'implementation-context' },
+        false,
+      ),
+    );
+  });
+
   it('should show independent checkout and base facts through the openclaw assessment adapter', async () => {
     fixtureState.manifest.debug = true;
     const input = await fixtureState.next();
@@ -3305,10 +3386,15 @@ describe('agent/openclaw task-continuation', () => {
           },
         };
       };
+      const publicationInput = fixtureState.messages.at(-1)!;
+      publicationInput.__openclaw = {
+        ...(publicationInput.__openclaw as object),
+        runId: 'delivery-execution',
+      };
       const result = await fixtureState.service.run(
         fixtureState.manifest,
         fixtureState.root,
-        who,
+        { ...who, runId: 'delivery-execution', inputId: 'operator-event' },
         {
           action: 'delivery',
           operation: 'prepare',

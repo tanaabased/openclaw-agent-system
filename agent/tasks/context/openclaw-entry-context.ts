@@ -131,6 +131,7 @@ export default async function openClawEntryContext<T>(
         sessionKey: caller.sessionKey,
         sessionId: caller.sessionId,
         runId: caller.runId,
+        inputId: caller.inputId,
         retained: [],
       });
     const turn = readOnlyNative ? undefined : await nativeInput();

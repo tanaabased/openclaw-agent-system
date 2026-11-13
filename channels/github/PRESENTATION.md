@@ -410,10 +410,12 @@ detail does not wake quiet intake or create repeated notifications.
 
 The native incoming message already displays the complete comment or review card,
 including its attribution and source link. Do not replay that card in the response.
-Show the exact outgoing reply in its own linked card. If the private and public
+Show the outgoing reply in its own linked card. The published source text,
+approval inputs, receipts, and verification remain exact; local cards may link
+ordinary `@mentions` without changing their visible words. If the private and public
 answers match, including a standalone commenter mention added during publication,
 show the answer only in the reply card. Compare line endings and outer whitespace
-without rewriting the displayed text. Keep distinct private information outside
+without rewriting the authored text. Keep distinct private information outside
 the quote; do not infer equivalence from similar wording or discard caveats.
 Private-only answers remain visible without a public reply card. Drafts stay
 unlinked and uncertain or failed publication keeps its notice. Configured instruction cards belong with the initial plan or clarification; do

@@ -7,14 +7,46 @@ import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 const allowances = [{ repository: 'owner/repo', milestone: 10, used: 0, limit: 1 }];
 
 describe('agent/issue-pickup-report', () => {
+  it('should distinguish a namespace total from per-repository window allowances', () => {
+    const result = report({
+      outcome: {
+        status: 'empty',
+        allowances: [
+          { repository: 'owner/one', selection: 'owner/*', scope: 'selection', used: 1, limit: 2 },
+          { repository: 'owner/two', selection: 'owner/*', scope: 'repo', used: 0, limit: 3 },
+        ],
+      },
+    });
+    assert.match(result.response, /selection.*total.*1 of 2 assigned/);
+    assert.match(result.response, /per repository.*0 of 3 assigned/);
+  });
+  it('should explain type-only empty scans and distinguish missing provider evidence', () => {
+    const result = report({
+      outcome: {
+        status: 'empty',
+        allowances: [{ ...allowances[0]!, filters: { types: ['Bug', 'Customer Request'] } }],
+        summary: { eligible: 0, shortlist: [], skipped: 0, remaining: 0 },
+      },
+    });
+    assert.match(result.response, /Issue type filters.*Bug.*Customer Request/);
+    assert.match(result.response, /No eligible issues matched/);
+    const failed = report({ outcome: { status: 'failed', code: 'issue-pickup-type-unavailable' } });
+    assert.match(failed.response, /issue-pickup-type-unavailable/);
+    assert.doesNotMatch(failed.response, /No eligible issues matched/);
+  });
+
   it('should explain contradictory and no-match criteria without hiding unreadable issues', () => {
-    for (const excluded of ['BUG', 'blocked']) {
+    for (const [required, excluded, contradictory] of [
+      ['bug', 'BUG', true],
+      ['bug', 'blocked', false],
+      ['bug*', 'BUG*', true],
+      ['bug*', 'bug', false],
+      ['bug', 'b*', true],
+    ] as const) {
       const result = report({
         outcome: {
           status: 'empty',
-          allowances: [
-            { ...allowances[0]!, filters: { labels: ['bug'], excludeLabels: [excluded] } },
-          ],
+          allowances: [{ ...allowances[0]!, filters: { labels: [required, `!${excluded}`] } }],
           summary: { eligible: 0, shortlist: [], skipped: 1, remaining: 0 },
         },
       });
@@ -22,7 +54,7 @@ describe('agent/issue-pickup-report', () => {
       assert.match(result.response, /exclude any/);
       assert.match(result.response, /No eligible issues matched/);
       assert.match(result.response, /1 issues could not be read/);
-      assert.equal(result.response.includes('Contradictory'), excluded === 'BUG');
+      assert.equal(result.response.includes('Contradictory'), contradictory);
       assert.doesNotMatch(result.response, /label does not exist/);
     }
   });

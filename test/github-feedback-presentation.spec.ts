@@ -87,7 +87,7 @@ describe('channels/github/presentation/feedback', () => {
     ] as const) {
       const connector = label === 'Plan assessment' || label === 'PR announcement' ? 'by' : 'from';
       const card = githubCommentCard({ body, author, label, connector, publication: { url } });
-      assert.ok(card.startsWith('> - @recipient item\n>\n> ```ts'));
+      assert.ok(card.startsWith('> - [@recipient](https://github.com/recipient) item\n>\n> ```ts'));
       assert.ok(card.includes('> run();\n> ```\n>\n> > context'));
       assert.ok(
         card.endsWith(
@@ -140,6 +140,28 @@ describe('channels/github/presentation/feedback', () => {
 
 describe('channels/github/presentation/feedback-response', () => {
   const url = 'https://github.com/owner/repo/issues/3#issuecomment-99';
+
+  it('should decorate draft and published replies and announcements only in local cards', () => {
+    for (const publication of [{ draft: true }, { url }] as const) {
+      for (const label of ['Reply', 'PR announcement'] as const) {
+        const body = 'Thanks, @octocat. See `@literal` and [@linked](https://github.com/already).';
+        const card = githubCommentCard({
+          body,
+          author: { label: 'poster', url: 'https://github.com/poster' },
+          label,
+          connector: label === 'Reply' ? 'from' : 'by',
+          publication,
+        });
+        assert.ok(card.includes('[@octocat](https://github.com/octocat)'));
+        assert.ok(card.includes('`@literal`'));
+        assert.ok(card.includes('[@linked](https://github.com/already)'));
+        assert.equal(
+          body,
+          'Thanks, @octocat. See `@literal` and [@linked](https://github.com/already).',
+        );
+      }
+    }
+  });
 
   it('should show an identical answer only in its exact linked reply card', () => {
     const input = {
@@ -211,6 +233,6 @@ describe('channels/github/presentation/feedback-response', () => {
       publication: { url },
     });
     assert.ok(presentation.includes(privateText));
-    assert.ok(presentation.includes('> @author'));
+    assert.ok(presentation.includes('> [@author](https://github.com/author)'));
   });
 });
