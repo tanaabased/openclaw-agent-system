@@ -1,3 +1,4 @@
+import composeResponseBlocks from '../channels/github/presentation/response-blocks.ts';
 import { matchFixture, type ChatCompletionRequest } from '@copilotkit/aimock';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
@@ -244,8 +245,8 @@ describe('agent/assessment-entry', () => {
                   const result = renderNativeAssessment(args, runtime);
                   assert.equal(result.status, 'formatted');
                   assert.equal(result.retained, false);
-                  assert.ok('presentation' in result);
-                  rendered = result.presentation;
+                  assert.ok('responseBlocks' in result);
+                  rendered = composeResponseBlocks(result.responseBlocks);
                   output = result;
                 } catch (error) {
                   assert.ok(error instanceof Error && error.message.includes('result.summary'));

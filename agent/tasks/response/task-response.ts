@@ -1,9 +1,5 @@
 import { nativeObject } from '../../automations/automation-gateway.ts';
 import composeResponseBlocks from '../../../channels/github/presentation/response-blocks.ts';
-import {
-  implementationContextBudget,
-  implementationMaterialSize,
-} from '../implementation/implementation-material.ts';
 
 export const responseInstructions =
   'For a combined task reply, use dispatch response in Codex (the supplied dispatchRuntime) or agent_system_dispatch action response in OpenClaw. Supply any additional prose as blocks of {section, markdown}; section defaults to work. Omit blocks when there is no additional text. The read-only composer gathers this turn’s existing presentation output and orders assessment, its public reply, work, delivery and debug. Preserve authored prose placement within a section; put prose around a PR in delivery blocks when needed. Reproduce its complete presentation in the final reply, without reordering or paraphrasing. Text written afterwards must remain visible as an addendum; never discard it because it was not composed. This is best-effort formatting, never a prerequisite for work or publication. If unavailable, assemble available output directly, keep all prose and exact public replies, and put debug last. Never repeat external effects to recover presentation.';
@@ -26,9 +22,8 @@ export function taskResponseOutput(value: unknown): unknown[] {
       ? [{ section: 'work', markdown: value.presentation }]
       : [];
   // retain readable fragments even when their siblings are malformed; never inspect headings.
-  const blocks: unknown[] =
-    malformed && fallback.length ? fallback : available.length ? [...available] : fallback;
-  if (malformed && !fallback.length)
+  const blocks: unknown[] = available.length ? [...available] : fallback;
+  if (malformed)
     blocks.push({
       section: 'work',
       markdown:
@@ -78,7 +73,7 @@ export async function taskResponse(
   if (incomplete)
     presentation +=
       '\n\nPresentation history or formatting was incomplete; available output is preserved. Underlying work is unchanged.';
-  const response = {
+  return {
     runtime,
     status: 'response-composed' as const,
     presentation,
@@ -86,14 +81,5 @@ export async function taskResponse(
     responseAdditions: authored,
     instructions:
       'Show this complete Markdown in the final reply. Preserve additional text written afterwards as an addendum. This read-only result does not establish visible delivery or authorize any effect. Missing output may be supplied directly from native conversation; never repeat work or publication for formatting.',
-  };
-  if (implementationMaterialSize(response) <= implementationContextBudget) return response;
-  // do not silently trim findings or exact published replies to fit a tool envelope.
-  return {
-    runtime,
-    status: 'presentation-unavailable' as const,
-    presentation:
-      'Combined presentation exceeds the native output allowance. Preserve the available blocks and authored prose directly in the final response; underlying work is unchanged.',
-    instructions: responseInstructions,
   };
 }

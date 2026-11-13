@@ -1,3 +1,4 @@
+import composeResponseBlocks from '../channels/github/presentation/response-blocks.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -14,8 +15,6 @@ import AssessmentValidationError from '../agent/tasks/assessment/assessment-vali
 import { runCodexDispatch } from '../agent/tasks/dispatch/codex-dispatch.ts';
 import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
 import implementationMaterial, {
-  implementationContextBudget,
-  implementationMaterialSize,
   type ImplementationMaterialRead,
 } from '../agent/tasks/implementation/implementation-material.ts';
 import OpenClawDispatch from '../agent/tasks/dispatch/openclaw-dispatch.ts';
@@ -81,10 +80,13 @@ describe('agent/assessment-render', () => {
         };
         const shown = await renderBoundAssessment(request, renderContext);
         assert.equal(shown.status, 'formatted');
-        assert.ok('presentation' in shown);
-        assert.match(String(shown.presentation), /Which subject/);
-        assert.match(String(shown.presentation), managed ? /task:override/ : /configured:assess/);
-        assert.match(String(shown.presentation), /unavailable.md/);
+        assert.ok('responseBlocks' in shown);
+        assert.match(String(composeResponseBlocks(shown.responseBlocks)), /Which subject/);
+        assert.match(
+          String(composeResponseBlocks(shown.responseBlocks)),
+          managed ? /task:override/ : /configured:assess/,
+        );
+        assert.match(String(composeResponseBlocks(shown.responseBlocks)), /unavailable.md/);
         assert.doesNotMatch(JSON.stringify(shown), /⚠️ Warning|stale:skill/);
         assert.equal('contextLimitations' in shown, false);
         assert.deepEqual(owner, before);
@@ -239,23 +241,27 @@ describe('agent/assessment-render', () => {
           /assessment-render-request-invalid/,
         );
         assert.ok(shown.status === 'formatted');
-        assert.match(shown.presentation, /Model routing/);
-        assert.match(shown.presentation, /provider\/model/);
-        assert.match(shown.presentation, /Auto mode decision/);
+        assert.match(composeResponseBlocks(shown.responseBlocks), /Model routing/);
+        assert.match(composeResponseBlocks(shown.responseBlocks), /provider\/model/);
+        assert.match(composeResponseBlocks(shown.responseBlocks), /Auto mode decision/);
         assert.match(
-          shown.presentation,
+          composeResponseBlocks(shown.responseBlocks),
           outcome === 'plan-ready'
             ? /Assessment instructions/
             : /What subject should the haiku cover/,
         );
-        if (outcome === 'clarification-needed') assert.doesNotMatch(shown.presentation, /Debug/);
+        if (outcome === 'clarification-needed')
+          assert.doesNotMatch(composeResponseBlocks(shown.responseBlocks), /Debug/);
         else {
-          assert.match(shown.presentation, /configured:work/);
-          assert.match(shown.presentation, /configured:reply/);
-          assert.equal(shown.presentation.match(/## 🔬 Debug/g)?.length, 1);
+          assert.match(composeResponseBlocks(shown.responseBlocks), /configured:work/);
+          assert.match(composeResponseBlocks(shown.responseBlocks), /configured:reply/);
+          assert.equal(
+            composeResponseBlocks(shown.responseBlocks).match(/## 🔬 Debug/g)?.length,
+            1,
+          );
           assert.ok(
-            shown.presentation.indexOf('## 🔬 Debug') >
-              shown.presentation.indexOf('Auto mode decision'),
+            composeResponseBlocks(shown.responseBlocks).indexOf('## 🔬 Debug') >
+              composeResponseBlocks(shown.responseBlocks).indexOf('Auto mode decision'),
           );
         }
         assert.equal(shown.retained, false);
@@ -285,13 +291,22 @@ describe('agent/assessment-render', () => {
       const restored = await hydrateImplementation(first, async (read) =>
         renderNativeAssessment({ ...request, ...read }, runtime, metadata),
       );
-      assert.match(String(restored.presentation), /provider\/model/);
-      assert.match(String(restored.presentation), /Shared behavior needs investigation/);
-      assert.match(String(restored.presentation), /Not independently verified/);
-      assert.match(String(restored.presentation), /company:assessment/);
+      assert.match(composeResponseBlocks(restored.responseBlocks as unknown[]), /provider\/model/);
+      assert.match(
+        composeResponseBlocks(restored.responseBlocks as unknown[]),
+        /Shared behavior needs investigation/,
+      );
+      assert.match(
+        composeResponseBlocks(restored.responseBlocks as unknown[]),
+        /Not independently verified/,
+      );
+      assert.match(
+        composeResponseBlocks(restored.responseBlocks as unknown[]),
+        /company:assessment/,
+      );
       assert.ok(
-        String(restored.presentation).indexOf('## 🔬 Debug') >
-          String(restored.presentation).lastIndexOf('Review detail.'),
+        composeResponseBlocks(restored.responseBlocks as unknown[]).indexOf('## 🔬 Debug') >
+          composeResponseBlocks(restored.responseBlocks as unknown[]).lastIndexOf('Review detail.'),
       );
       const quiet = renderNativeAssessment(
         {
@@ -302,8 +317,8 @@ describe('agent/assessment-render', () => {
         { ...metadata, debug: false },
       );
       assert.equal(quiet.status, 'formatted');
-      assert.match(quiet.presentation, /Model routing/);
-      assert.doesNotMatch(quiet.presentation, /company:assessment|Debug/);
+      assert.match(composeResponseBlocks(quiet.responseBlocks), /Model routing/);
+      assert.doesNotMatch(composeResponseBlocks(quiet.responseBlocks), /company:assessment|Debug/);
     });
 
   it('should validate complete native input and return only the concise visible review', () => {
@@ -311,9 +326,9 @@ describe('agent/assessment-render', () => {
     assert.equal(response.status, 'formatted');
     assert.equal(response.retained, false);
     assert.equal('assessment' in response, false);
-    assert.ok(response.presentation.includes(result.reviewSummary!));
-    assert.doesNotMatch(response.presentation, /saved for implementation/);
-    assert.match(response.presentation, /> ## 🧭/);
+    assert.ok(composeResponseBlocks(response.responseBlocks).includes(result.reviewSummary!));
+    assert.doesNotMatch(composeResponseBlocks(response.responseBlocks), /saved for implementation/);
+    assert.match(composeResponseBlocks(response.responseBlocks), /> ## 🧭/);
   });
 
   it('should keep direct assessment presentation separate from implementation permission', () => {
@@ -322,8 +337,8 @@ describe('agent/assessment-render', () => {
       result: { ...result, decision: { mode: 'work', reasons: ['Technically ready.'] } },
     });
     assert.equal(response.status, 'formatted');
-    assert.match(response.presentation, /Assessment only/);
-    assert.doesNotMatch(response.presentation, /Continue automatically/);
+    assert.match(composeResponseBlocks(response.responseBlocks), /Assessment only/);
+    assert.doesNotMatch(composeResponseBlocks(response.responseBlocks), /Continue automatically/);
   });
 
   it('should keep questions visible without a waiting record', () => {
@@ -338,7 +353,10 @@ describe('agent/assessment-render', () => {
     });
     assert.equal(response.status, 'formatted');
     assert.equal(response.retained, false);
-    assert.match(response.presentation, /Should existing tasks keep their current settings/);
+    assert.match(
+      composeResponseBlocks(response.responseBlocks),
+      /Should existing tasks keep their current settings/,
+    );
   });
 
   for (const runtime of ['codex', 'openclaw'] as const)
@@ -357,12 +375,12 @@ describe('agent/assessment-render', () => {
       );
       assert.equal(response.status, 'formatted');
       assert.equal(response.retained, false);
-      assert.ok(response.presentation.includes('Clarification needed'));
-      assert.ok(response.presentation.includes(question));
+      assert.ok(composeResponseBlocks(response.responseBlocks).includes('Clarification needed'));
+      assert.ok(composeResponseBlocks(response.responseBlocks).includes(question));
     });
 
   for (const runtime of ['codex', 'openclaw'] as const)
-    it(`should use native ${runtime} findings when presentation exceeds the output allowance`, () => {
+    it(`should preserve oversized ${runtime} cards without a cross-runtime cutoff`, () => {
       const source = {
         outcome: 'clarification-needed',
         summary: 'Choose the scope.',
@@ -371,13 +389,13 @@ describe('agent/assessment-render', () => {
       const request = { ...assessmentPresentationRequest(target), result: source };
       const before = structuredClone(request);
       const response = renderNativeAssessment(request, runtime);
-      assert.equal(response.status, 'presentation-unavailable');
+      assert.equal(response.status, 'formatted');
       assert.equal(response.retained, false);
       assert.equal('contextMaterials' in response, false);
       assert.equal('next' in response, false);
-      assert.ok(implementationMaterialSize(response) <= implementationContextBudget);
-      assert.match(response.instructions, /every unanswered question/);
-      assert.match(response.instructions, /ordinary Markdown/);
+      assert.equal('presentation' in response, false);
+      for (const question of source.questions)
+        assert.ok(composeResponseBlocks(response.responseBlocks).includes(question));
       assert.deepEqual(request, before);
       assert.throws(
         () =>

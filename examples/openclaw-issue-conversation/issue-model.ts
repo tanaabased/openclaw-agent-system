@@ -1,3 +1,4 @@
+import composeResponseBlocks from '../../channels/github/presentation/response-blocks.ts';
 import assessmentSource from '../../scripts/aimock-assessment-source.ts';
 import { currentFacts, nativePlanResponse } from '../openclaw-pr-journey/model-fixture.ts';
 import assert from 'node:assert/strict';
@@ -193,7 +194,8 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (!saved) return dispatch('direct-assessment-result', assessmentRequest(context, payload));
     assert.equal(saved.status, 'formatted');
     assert.equal(saved.retained, false);
-    return { content: String(saved.presentation) };
+    assert.ok(Array.isArray(saved.responseBlocks));
+    return { content: composeResponseBlocks(saved.responseBlocks) };
   }
   const updateTarget =
     /(?:Operator status update|Check current status) target: (https:\/\/github\.com\/[^\s]+)/u.exec(
