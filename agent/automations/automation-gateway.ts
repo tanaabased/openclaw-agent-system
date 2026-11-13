@@ -126,9 +126,15 @@ export function createAutomationGateway(
   call: AutomationGatewayCaller,
   sleep: (ms: number, signal?: AbortSignal) => Promise<unknown> = (ms, signal) =>
     setTimeout(ms, undefined, { signal }),
+  waitForReady?: () => Promise<void>,
 ): AutomationGateway {
   const request: AutomationGateway = async (method, params) => {
     assertPrivateStateLocksHeld();
+    if (method === 'models.list' || method === 'sessions.resolve') {
+      await waitForReady?.();
+      assertPrivateStateLocksHeld();
+      privateStateLockSignal()?.throwIfAborted();
+    }
     const readOnly = ![
       'cron.add',
       'cron.update',
@@ -224,7 +230,10 @@ export function createAutomationGateway(
 
 export const requestAutomationGateway: AutomationGateway = async (method, params) => {
   const { callGatewayFromCli } = await import('openclaw/plugin-sdk/gateway-runtime');
-  return createAutomationGateway(callGatewayFromCli)(method, params);
+  return createAutomationGateway(callGatewayFromCli, undefined, async () => {
+    const { default: waitForAutomationGateway } = await import('./automation-gateway-readiness.ts');
+    await waitForAutomationGateway();
+  })(method, params);
 };
 operatorGateways.add(requestAutomationGateway);
 
