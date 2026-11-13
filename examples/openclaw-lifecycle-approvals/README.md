@@ -24,9 +24,11 @@ Request lifecycle tools through native OpenClaw and hosted Codex, deny installat
 ```bash
 # should prepare the packed plugin with strict lifecycle approval models
 export OPENAI_API_KEY=agent-system-aimock-test
+export NODE_OPTIONS="--import=$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/catalog-fixture.mjs"
 openclaw-setup \
   --workspace "$TMPDIR/main" \
   --agent-system "$AGENT_SYSTEM_PACKAGE" \
+  --needs-secret-service \
   --model openai/gpt-5.4-nano \
   --yolo
 openclaw-aimock prepare --scenario openclaw-lifecycle-approvals
@@ -67,7 +69,7 @@ node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/appro
 # should complete activated hosted codex maintenance without another native approval
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/codex"
 rm -f "$TMPDIR/agent-system-approval-check" "$TMPDIR/agent-system-approval-apply"
-openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
+openclaw agent-system automations sync --json | tee "$TMPDIR/lifecycle-maintenance-sync.json" | jq -e '.status == "synchronized" and any(.outcomes[]; .stepId == "maintenance" and .code == "automation-synchronized" and (.status == "created" or .status == "updated" or .status == "unchanged"))'
 run_id=$(openclaw agent-system automations run maintenance --json | jq -er 'select(.status == "queued") | .runId | strings')
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" maintenance "$run_id"
 grep -Fx applied "$TMPDIR/agent-system-approval-apply"

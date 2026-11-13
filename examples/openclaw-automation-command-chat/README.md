@@ -66,7 +66,7 @@ jq -e 'any(.models[]; .provider == "openai" and .id == "gpt-5.5" and .available 
 
 ```bash
 # should retain both mock-formatted reports without rerunning their commands
-trap 'result=$?; if test "$result" -ne 0; then grep -F "automation report hook:" "$(openclaw-gateway log-path)" | tail -n 60 >&2 || true; cat "$TMPDIR/command-chat-model.jsonl" >&2 || true; cat "$TMPDIR/command-chat-hooks.jsonl" >&2 || true; curl --silent --show-error --max-time 5 http://127.0.0.1:4010/proof/diagnostics >&2 || true; curl --silent --show-error --max-time 5 http://127.0.0.1:4010/proof/evidence >&2 || true; fi; exit "$result"' EXIT
+trap 'result=$?; if test "$result" -ne 0; then grep -aF "automation report hook:" "$(openclaw-gateway log-path)" | tail -n 60 >&2 || true; cat "$TMPDIR/command-chat-model.jsonl" >&2 || true; cat "$TMPDIR/command-chat-hooks.jsonl" >&2 || true; curl --silent --show-error --max-time 5 http://127.0.0.1:4010/proof/diagnostics >&2 || true; curl --silent --show-error --max-time 5 http://127.0.0.1:4010/proof/evidence >&2 || true; fi; exit "$result"' EXIT
 for runtime in openclaw codex; do
   workspace="$GITHUB_WORKSPACE/examples/openclaw-automation-command-chat"
   model=aimock/gpt-5.5
@@ -95,7 +95,7 @@ for runtime in openclaw codex; do
       exit 1
     fi
     if test "$runtime" = openclaw; then
-      grep -F 'embedded run start:' "$(openclaw-gateway log-path)" | grep -F "runId=$report_id " | grep -F 'provider=aimock model=gpt-5.5 thinking=high '
+      grep -aF 'embedded run start:' "$(openclaw-gateway log-path)" | grep -F "runId=$report_id " | grep -F 'provider=aimock model=gpt-5.5 thinking=high '
     fi
     message_id=$(jq -er '.reports[0].messageId' "$TMPDIR/report-$runtime-$mode.json")
     jq -er --arg id "$message_id" '.messages[] | select(.__openclaw.id == $id and .role == "assistant") | [.content[]? | select(.type == "text") | .text] | join("\n")' "$TMPDIR/history-$runtime-$mode.json" > "$TMPDIR/card-$runtime-$mode.md"

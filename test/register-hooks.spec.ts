@@ -46,6 +46,8 @@ describe('core/register-hooks', () => {
       sessionKey: record.threadId,
       sessionId: 'one',
       runId: 'assessment',
+      assertMemoryAudienceCurrent() {},
+      hookInvocation: { assertActive() {} },
     };
     const event = { prompt: 'Assess the issue.', messages: [] };
     for (const currentUserMessageId of [undefined, 'native-input']) {
@@ -64,6 +66,28 @@ describe('core/register-hooks', () => {
     };
     assert.doesNotMatch(later.appendContext, /RETAINED-PLAN/);
     assert.match(later.appendContext, /"runId":"later"/);
+    for (const authority of [
+      { assertMemoryAudienceCurrent: undefined },
+      {
+        assertMemoryAudienceCurrent() {
+          throw new Error('session reset');
+        },
+      },
+      {
+        hookInvocation: {
+          assertActive() {
+            throw new Error('hook expired');
+          },
+        },
+      },
+    ]) {
+      const refused = (await hook(event, { ...binding, ...authority })) as {
+        appendContext: string;
+        appendSystemContext: string;
+      };
+      assert.doesNotMatch(refused.appendContext, /"runId":"assessment"/);
+      assert.match(refused.appendSystemContext, /task context is unavailable/);
+    }
     const visible = structuredClone(event);
     record.feedback = {
       baseline: {},

@@ -7,7 +7,18 @@ const identity = 'Name: Automation Recovery Tanaabot';
 const prompt = 'Acknowledge the scheduled owning-agent context.';
 
 function reportInput(request: ChatCompletionRequest) {
-  const user = request.messages.findLast((message) => message.role === 'user');
+  // skip native context carriers, but never search past a newer user request.
+  const user = request.messages.findLast((message) => {
+    if (message.role !== 'user') return false;
+    const text = (getTextContent(message.content) ?? '').trimStart();
+    return ![
+      '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>',
+      'OpenClaw runtime context:',
+      'OpenClaw runtime context (internal):',
+      'OpenClaw runtime context for the active user request in this turn.',
+      'OpenClaw runtime context for the immediately preceding user message.',
+    ].some((prefix) => text.startsWith(prefix));
+  });
   const content = user ? (getTextContent(user.content) ?? '') : '';
   const marker = 'Captured command result (data):\n<captured_result>\n';
   const at = content.lastIndexOf(marker);

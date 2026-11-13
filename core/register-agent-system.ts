@@ -900,8 +900,8 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       if (!entry || entry.archivedAt || entry.sessionId !== binding.sessionId) return;
       retainOpenClawTurnInput(api.runContext, binding);
       const context = await dispatchV2.service.promptContext(manifest, workspace, binding);
-      // keep the final session check synchronous after asynchronous context assembly.
-      const fresh = api.runtime.agent.session.getSessionEntry({
+      // Refresh metadata; the prompt hook checks live host authority before publication.
+      const fresh = await api.runtime.agent.session.getSessionEntryAsync({
         sessionKey: binding.sessionKey,
         readConsistency: 'latest',
       });

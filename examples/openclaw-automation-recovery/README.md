@@ -86,6 +86,7 @@ openclaw agent-system automations list --json | tee "$TMPDIR/automation-reconcil
 jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' "$TMPDIR/automation-reconciled.json" | diff - "$TMPDIR/automation-identities.json"
 
 # should deliver one successful command report before restart
+trap 'result=$?; if test "$result" -ne 0; then curl --silent --show-error --max-time 5 http://127.0.0.1:4010/proof/diagnostics | jq "{scenario, failed, requests: [.requests[-5:][]? | {status, matched, checks}]}" >&2 || true; fi; exit "$result"' EXIT
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-recovery"
 run_id=$(openclaw agent-system automations run identity --json | jq -er 'select(.status == "queued") | .runId | strings')
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" identity "$run_id"
@@ -100,10 +101,11 @@ done
 jq -e 'if any(.reports[]; .status == "delivered" and .effective.model == "aimock/gpt-5.5") then true
 else error({reportCount: (.reports | length),
   deliveredCount: ([.reports[] | select(.status == "delivered")] | length),
-  expectedModelCount: ([.reports[] | select(.effective.model == "aimock/gpt-5.5")] | length)} | tojson)
+  expectedModelCount: ([.reports[] | select(.effective.model == "aimock/gpt-5.5")] | length),
+  reports: [.reports[:10][] | {status, code}]} | tojson)
 end' "$TMPDIR/recovered-report.json"
 report_execution=$(jq -er '.reports[] | select(.status == "delivered") | .executionId' "$TMPDIR/recovered-report.json")
-grep -F 'embedded run start:' "$(openclaw-gateway log-path)" | grep -F "runId=$report_execution " | grep -F 'provider=aimock model=gpt-5.5 thinking=medium '
+grep -aF 'embedded run start:' "$(openclaw-gateway log-path)" | grep -F "runId=$report_execution " | grep -F 'provider=aimock model=gpt-5.5 thinking=medium '
 test "$(wc -l < identity.runs | tr -d ' ')" = 1
 
 # should preserve the report across restart and complete a prompt in the owning agent context

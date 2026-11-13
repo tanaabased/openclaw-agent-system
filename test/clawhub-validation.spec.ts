@@ -34,17 +34,8 @@ describe('scripts/clawhub-validation', () => {
     validateClawHubReport(report(), target);
   });
 
-  it('should accept only the owned 11.3 config and final session exceptions with their bundles', () => {
-    validateClawHubReport(
-      report([
-        config(),
-        config('dist/index.js'),
-        session(),
-        session('core/register-agent-system.ts'),
-        session('dist/index.js'),
-      ]),
-      target,
-    );
+  it('should accept only the owned 11.3 config exception with their bundles', () => {
+    validateClawHubReport(report([config(), config('dist/index.js')]), target);
   });
 
   it('should reject new APIs owners records and non-deprecation warnings', () => {
@@ -53,7 +44,9 @@ describe('scripts/clawhub-validation', () => {
       config('environment/unrelated.ts'),
       config('environment/memory-secret-provider-entry.ts'),
       config('dist/memory-secret-provider-entry.js'),
-      session('core/unrelated.ts'),
+      session(),
+      session('core/register-agent-system.ts'),
+      session('dist/index.js'),
       { ...config(), compatRecord: 'different-record' },
       { ...config(), code: 'some-other-warning' },
       { ...config(), issueClass: 'compat-warning' },
