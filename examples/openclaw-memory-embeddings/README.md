@@ -46,7 +46,13 @@ curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence
 openclaw-gateway stop --timeout 340
 openclaw-gateway start
 cd "$GITHUB_WORKSPACE/examples/openclaw-memory-embeddings"
-openclaw agent-system doctor --json | tee "$TMPDIR/openclaw-memory-doctor.json"
+if ! openclaw agent-system doctor --json > "$TMPDIR/openclaw-memory-doctor.json"; then
+  cat "$TMPDIR/openclaw-memory-doctor.json"
+  openclaw gateway call doctor.memory.status --params '{"agentId":"memory-embeddings","probe":true}' --timeout 120000 --json | jq '{agentId, provider, embedding: {ok: .embedding.ok, checked: .embedding.checked}}' || true
+  openclaw gateway call memory.status --params '{"agentId":"memory-embeddings"}' --timeout 120000 --json | jq '{agentId, version, providerId, status, legacy: (.details.legacy | {provider, requestedProvider, dirty, files, chunks, fts: {enabled: .fts.enabled, available: .fts.available}, vector: {enabled: .vector.enabled, storeAvailable: .vector.storeAvailable, semanticAvailable: .vector.semanticAvailable, index: .vector.index}, providerState: .custom.providerState, indexIdentityStatus: .custom.indexIdentity.status})}' || true
+  exit 1
+fi
+cat "$TMPDIR/openclaw-memory-doctor.json"
 jq -e '.findings | any(.code == "agent-memory-openai-ready" and .status == "healthy")' "$TMPDIR/openclaw-memory-doctor.json"
 openclaw gateway call memory.search --params '{"agentId":"memory-embeddings","query":"cobalt astrolabes","maxResults":5}' --timeout 120000 --json | jq -e '.provider == "openai" and any(.results[]; .path == "memory/observatory.md")'
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e --argjson before "$(cat "$TMPDIR/memory-before-restart.json")" '.strictMissCount == 0 and .embeddingAuthentication.accepted > $before.embeddingAuthentication.accepted and .embeddingAuthentication.rejected == 0'
