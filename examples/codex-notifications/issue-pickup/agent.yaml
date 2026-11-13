@@ -24,6 +24,7 @@ github:
           guidance: prefer bounded test coverage improvements
         filters:
           labels: ['ready*', '!blocked', '!needs-*']
+          types: ['Bug', 'Task']
         milestone:
           number: 10
           policy: only

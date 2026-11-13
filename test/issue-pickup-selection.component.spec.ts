@@ -413,6 +413,40 @@ describe('issue pickup selection through native journals', () => {
       assert.deepEqual(result.allowances?.[1]?.providerDiagnostic, diagnostic);
       assert.equal(f.effects.writes, 1);
     });
+    it(`should filter native types and recheck changed types through ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      const enrollment = await f.enrollmentStore.read();
+      await f.configure((source) => {
+        source.github['issue-pickup'].projects[0]!.filters = {
+          types: ['BUG', 'Customer Request'],
+          labels: ['priority:*', '!blocked'],
+        };
+      });
+      const candidate = f.candidates.get(f.item.number)!;
+      candidate.issueType = { name: 'Task' };
+      assert.equal((await f.pickup()).status, 'empty');
+      candidate.issueType = { name: 'Bug' };
+      f.tick.id = 'matching-type';
+      const selection = await f.select();
+      candidate.issueType = null;
+      const rejected = await f.pickup({ selection });
+      assert.equal(rejected.status, 'failed');
+      assert.equal(f.effects.writes, 0);
+      delete candidate.issueType;
+      f.tick.id = 'missing-type-evidence';
+      const unreadable = await f.pickup();
+      assert.equal(unreadable.status, 'empty');
+      assert.match(unreadable.response, /could not be read/);
+      assert.equal(f.effects.writes, 0);
+      candidate.issueType = { name: 'customer request' };
+      f.tick.id = 'matching-custom-type';
+      assert.equal((await f.pickup({ selection: await f.select() })).status, 'assigned');
+      assert.equal(f.effects.writes, 1);
+      assert.deepEqual(await f.enrollmentStore.read(), enrollment);
+      await f.scan();
+      assert.equal((await f.read())[0]!.evidence.mode, 'work');
+    });
+
     it(`should retain label filters for preferred fallback through ${runtime}`, async () => {
       const f = await fixture(runtime, false, 'prefer');
       await f.configure((source) => {

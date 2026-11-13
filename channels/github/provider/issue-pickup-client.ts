@@ -31,6 +31,15 @@ export const projectCandidateSchema = Type.Object(
       ),
     ),
     labels: Type.Array(Type.String({ maxLength: 4096 }), { maxItems: 100 }),
+    issueType: Type.Optional(
+      Type.Union([
+        Type.Null(),
+        Type.Object(
+          { name: Type.String({ minLength: 1, maxLength: 4096, pattern: '\\S' }) },
+          { additionalProperties: false },
+        ),
+      ]),
+    ),
   },
   { additionalProperties: false },
 );
@@ -56,7 +65,9 @@ export interface IssuePickupClient extends GitHubNotificationIntakeClient {
   assignProjectIssue(owner: string, name: string, number: number): Promise<void>;
 }
 
-const projection = '{nodeId:.node_id,number,title,labels:[.labels[].name]}';
+const projection =
+  '{nodeId:.node_id,number,title,labels:[.labels[].name]} + ' +
+  '(if has("type") then {issueType:(if .type == null then null else {name:.type.name} end)} else {} end)';
 
 /** fixed provider operations; selection and mutation recovery belong to the runtime journal. */
 export default class GitHubIssuePickupClient {
