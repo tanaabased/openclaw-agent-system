@@ -22,7 +22,7 @@ export interface GitHubCommentCardInput {
   publication: { url: string } | { draft: true };
 }
 
-/** wrap exact public prose once; only confirmed sources receive a comment link. */
+/** decorate local prose, then wrap it once; only confirmed sources receive a comment link. */
 export function githubCommentCard(
   input: GitHubCommentCardInput,
   { style = 'quoted' }: { style?: 'quoted' | 'unquoted' } = {},
@@ -36,7 +36,7 @@ export function githubCommentCard(
       const author = input.author
         ? `[@${githubNotificationMarkdownText(input.author.label)}](${input.author.url})`
         : 'author unavailable';
-      const body = input.body.replace(/\r\n|\r/gu, '\n');
+      const body = mentionLinks(input.body).replace(/\r\n|\r/gu, '\n');
       const card = `${body}\n\n&nbsp;  \n*${label} ${input.connector} ${author}*`;
       return style === 'quoted' ? githubNotificationQuote(card) : card;
     },

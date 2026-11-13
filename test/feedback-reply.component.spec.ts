@@ -1016,7 +1016,9 @@ describe('agent/feedback-reply', () => {
       );
       assert.ok(done.presentation.includes(privateText));
       assert.ok(
-        done.presentation.includes('> @author\n>\n> Haiku about overengineering confirmed.'),
+        done.presentation.includes(
+          '> [@author](https://github.com/author)\n>\n> Haiku about overengineering confirmed.',
+        ),
       );
       assert.ok(done.presentation.includes('[Reply ↗](' + url + '#issuecomment-9)'));
       assert.ok(!done.presentation.includes('Feedback reply instructions'));
@@ -1043,7 +1045,9 @@ describe('agent/feedback-reply', () => {
       assert.equal(done.status, 'published');
       assert.ok('presentation' in done && typeof done.presentation === 'string');
       assert.equal(done.presentation.split(text).length - 1, 1);
-      assert.ok(done.presentation.startsWith('> @author'));
+      assert.ok(done.presentation.startsWith('> [@author](https://github.com/author)'));
+      assert.ok(posted!.body.startsWith('@author\n\n' + text));
+      assert.ok(!posted!.body.includes('[@author]'));
       assert.ok(!done.presentation.includes('[Comment ↗]'));
       assert.ok(done.presentation.includes('[Reply ↗](' + url + '#issuecomment-9)'));
       assert.equal(deps.feedback!.source, source);

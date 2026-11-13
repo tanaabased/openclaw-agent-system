@@ -432,6 +432,37 @@ for (const scenario of [
   }
 
   describe(`examples/${scenario.id} model fixture`, () => {
+    if (scenario.id === 'openclaw-pr-journey')
+      it('should report unverified native history without retrying composition or publishing', async () => {
+        const input = request(
+          `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`,
+        );
+        supplyFacts(input, {
+          status: 'verified',
+          runtime: 'openclaw',
+          project: { path: '/fixture' },
+          evidence: { source },
+          assessment: { defaultSkill: true, skill: { path: '/fixture/SKILL.md' } },
+          resultFormat: assessmentResultFormat,
+        });
+        append(input, 'git', { exitCode: 0, stdout: '/fixture', truncated: false });
+        append(input, 'assessment-skill', 'Assess the cleanup note.');
+        await readAssessmentSource(input);
+        const formatting = await action(input, 'assessment');
+        append(input, 'native-plan-render', renderNativeAssessment(formatting));
+        assert.equal((await action(input, 'reply')).operation, 'context');
+        append(input, 'native-plan-context', { status: 'status-update-context' });
+        assert.equal((await action(input, 'reply')).operation, 'compose');
+        append(input, 'native-plan-compose', {
+          status: 'blocked',
+          code: 'session-dispatch-history-unavailable-unverified',
+        });
+        const stopped = await response(input);
+        assert.deepEqual(stopped, {
+          content:
+            'notification-delivery-stopped: {"status":"blocked","code":"session-dispatch-history-unavailable-unverified"}',
+        });
+      });
     if (scenario.id === 'openclaw-notifications-retirement')
       it('should retry the selected waiting assignment without internal identifiers', async () => {
         const input = request(`Retry waiting assignment ${source}`);

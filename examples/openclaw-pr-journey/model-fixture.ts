@@ -231,6 +231,8 @@ export function nativePlanResponse(
         facts: [{ reference: target, text: plan }],
       },
     });
+  const obstacle = deliveryObstacle(composed);
+  if (obstacle) return obstacle;
   assert.equal(composed.status, 'composition-ready');
   const skill = (composed.selection as { skill: { path: string } }).skill;
   if (!skillRead) return call('plan-reply-skill', 'read', { path: skill.path });
