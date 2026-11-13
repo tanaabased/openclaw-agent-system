@@ -25,7 +25,7 @@ first attempt's evidence before testing repeat installation.
 - Enrollment allows up to 90 seconds for startup or plugin reload, within a 135-second connection deadline including authentication. Terminal reload failure and cancellation stop earlier. Session-creation failures report the automation ID and a safe native reason category; `unclassified` means the native rejection is not yet recognized, not that a timeout occurred.
 - In CI, the first Install enables bounded, redacted native rejection evidence with `OPENCLAW_DEBUG=1`; it retains no request payload or arbitrary error details.
 - Evidence is saved beneath `TMPDIR` before a repeat can change state. A Gateway log observation alone does not establish the failure's cause.
-- Cold-install diagnostics enable native plugin-lifecycle tracing. On failure, preserve the Gateway evidence before a read-only selected-model snapshot; that later snapshot is not the exact model evidence observed by Install. A failed session resolution gets one read-only probe after 60 seconds, before the model snapshot, using the unique materializing thread’s saved key; missing or ambiguous targets are reported rather than guessed. This reconstructs the key lookup, not a captured wire request. No reload, restart, or repeat Install occurs during the wait. Diagnostic failure never replaces the original Install exit status.
+- Cold-install diagnostics enable native plugin-lifecycle tracing and a temporary Gateway-only Node loader hook for unavailable-instance stacks and reload start/publication/completion timestamps. The hook instruments the pinned upstream modules in memory, never installed files; unmatched instrumentation fails explicitly. It adds logging overhead, so timing is diagnostic, not an uninstrumented benchmark. Stack capture excludes error messages and request data; output still passes through the shared redactor. On failure, preserve the Gateway evidence before a read-only selected-model snapshot; that later snapshot is not the exact model evidence observed by Install. A failed session resolution gets one read-only probe after 60 seconds, before the model snapshot, using the unique materializing thread’s saved key; missing or ambiguous targets are reported rather than guessed. This reconstructs the key lookup, not a captured wire request. No reload, restart, or repeat Install occurs during the wait. Diagnostic failure never replaces the original Install exit status.
 
 ## Setup
 
@@ -42,7 +42,8 @@ openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE"
 export OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$GITHUB_WORKSPACE/examples/os-dispatch-enrollment/provider:$PATH"
 openclaw config set cron.enabled false --strict-json
 export OPENCLAW_PLUGIN_LIFECYCLE_TRACE=1
-openclaw-gateway start
+trace_node_options=$(printenv NODE_OPTIONS || true)
+NODE_OPTIONS="$trace_node_options --import=$GITHUB_WORKSPACE/scripts/plugin-lifetime-trace.mjs" openclaw-gateway start
 gateway_log=$(openclaw-gateway log-path)
 gateway_redactor="$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
 cd "$GITHUB_WORKSPACE/examples/os-install-online"
@@ -55,8 +56,9 @@ cat "$TMPDIR/online-first.json" "$TMPDIR/online-first.stderr"
 if ! tail -n 300 "$gateway_log" | node "$gateway_redactor" >"$TMPDIR/online-first.gateway.log"; then printf '%s\n' 'gateway evidence unavailable' >"$TMPDIR/online-first.gateway.log"; fi
 if test "$first_status" -ne 0; then
   cat "$TMPDIR/online-first.gateway.log"
-  if ! node "$gateway_redactor" < "$gateway_log" | grep -E 'plugins:lifecycle|reload|Plugin replacement applied|generation|PluginInstanceUnavailable|session-events|state/lease' | tail -n 200 | tail -c 32768 >"$TMPDIR/online-first.lifecycle.log"; then printf '%s\n' 'lifecycle evidence incomplete' >&2; fi
+  if ! node "$gateway_redactor" < "$gateway_log" | grep -E 'agent-system:lifetime|plugins:lifecycle|reload|Plugin replacement applied|generation|PluginInstanceUnavailable|session-events|state/lease' | tail -n 200 | tail -c 32768 >"$TMPDIR/online-first.lifecycle.log"; then printf '%s\n' 'lifecycle evidence incomplete' >&2; fi
   cat "$TMPDIR/online-first.lifecycle.log"
+  if ! node "$gateway_redactor" < "$gateway_log" | grep -F '[agent-system:lifetime]' | tail -n 80 | tail -c 32768; then printf '%s\n' 'lifetime evidence unavailable' >&2; fi
   printf 'first install started/finished (UTC):\n'
   cat "$TMPDIR/online-first.started" "$TMPDIR/online-first.finished"
   if jq -e '.blocked.automationGatewayDiagnostic.method == "sessions.resolve"' "$TMPDIR/online-first.json" >/dev/null; then
@@ -72,7 +74,7 @@ if test "$first_status" -ne 0; then
       date -u +%Y-%m-%dT%H:%M:%SZ
       node "$gateway_redactor" < "$TMPDIR/online-delayed-resolve.stdout" | tail -c 4096 || true
       node "$gateway_redactor" < "$TMPDIR/online-delayed-resolve.stderr" | tail -c 4096 || true
-      if ! node "$gateway_redactor" < "$gateway_log" | grep -E 'reload|Plugin replacement applied|generation|PluginInstanceUnavailable|session-events' | tail -n 60 | tail -c 16384; then printf '%s\n' 'post-wait reload evidence unavailable' >&2; fi
+      if ! node "$gateway_redactor" < "$gateway_log" | grep -E 'agent-system:lifetime|reload|Plugin replacement applied|generation|PluginInstanceUnavailable|session-events' | tail -n 60 | tail -c 16384; then printf '%s\n' 'post-wait reload evidence unavailable' >&2; fi
     else
       printf '%s\n' 'delayed session probe unavailable: no unique pending fixture thread' >&2
     fi
