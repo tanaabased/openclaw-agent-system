@@ -22,9 +22,9 @@ jobs:
       fail-fast: false
       matrix:
         example:
-          # - codex-notifications
+          - codex-notifications
           - openclaw-notifications-scheduling
-          # - openclaw-notifications-retirement
+          - openclaw-notifications-retirement
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

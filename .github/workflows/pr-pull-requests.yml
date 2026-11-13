@@ -23,8 +23,8 @@ jobs:
       matrix:
         example:
           - openclaw-pr-journey
-          # - openclaw-pr-update
-          # - openclaw-pr-discovery
+          - openclaw-pr-update
+          - openclaw-pr-discovery
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

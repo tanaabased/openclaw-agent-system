@@ -38,6 +38,8 @@ openclaw config set plugins.entries.codex.config.codexDynamicToolsLoading direct
 openclaw config set plugins.entries.codex.config.appServer.args '["-c","openai_base_url=\"http://127.0.0.1:4010/v1\"","app-server","--listen","stdio://"]' --strict-json
 
 # should install both runtime workspaces without applying approval probe setup
+export OPENAI_API_KEY=agent-system-aimock-test
+export NODE_OPTIONS="--import=$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/catalog-fixture.mjs"
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/source"
 git init --initial-branch=main
 git add tracked.txt
