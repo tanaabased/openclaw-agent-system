@@ -114,7 +114,6 @@ import createAgentToolAccessGrants from '../api/tool-access-grants.ts';
 import createToolSecurityLifecycleContribution from '../api/security-lifecycle.ts';
 import WorkspaceGitignoreService from '../paths/workspace-gitignore-service.ts';
 import WorkspaceBackupService from '../agent/backup/backup-service.ts';
-import readFreshRuntimeConfig from './read-fresh-runtime-config.ts';
 import resolvePackageDirectory from './package-directory.ts';
 import registerOpCache from './register-op-cache.ts';
 import { requestOpCacheGateway } from '../cli/credentials-cache.ts';
@@ -129,13 +128,13 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     },
   });
   const privateStateRoot = resolveFileCredentialStoreRoot(process.env);
-  const readConfig = readFreshRuntimeConfig;
+  const readConfig = () => api.runtime.config.current() as OpenClawConfig;
   const sessionDispatch = createSessionDispatchCredential({
     logger: lifecycleLogger,
     stateDir: api.runtime.state.resolveStateDir(),
     readConfig,
   });
-  const readRuntimeConfig = () => api.runtime.config.current() as OpenClawConfig;
+  const readRuntimeConfig = readConfig;
   const cliEntry = process.argv[1] ? resolve(process.argv[1]) : undefined;
   const openClawCommand = cliEntry ? [process.execPath, cliEntry] : ['openclaw'];
   const memoryStatusDependencies = (

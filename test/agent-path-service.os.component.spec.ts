@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
@@ -78,6 +78,51 @@ describe('paths/service', () => {
       workspaceDir,
     });
     assert.deepEqual(repeated.actions, []);
+  });
+
+  it('should reject broken codex file output without rereading openclaw config', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agent-system-path-verification-'));
+    try {
+      const codex = new CodexPathConfigService();
+      const config: OpenClawConfig = { agents: { entries: { data: {} } } };
+      const service = new AgentPathService({
+        basePath: '/usr/bin',
+        packageDir: root,
+        codexConfigService: {
+          inspect: (...args) => codex.inspect(...args),
+          async reconcile(...args) {
+            const result = await codex.reconcile(...args);
+            await writeFile(join(root, '.codex', 'config.toml'), 'allow_login_shell = true\n');
+            return result;
+          },
+        },
+        async mutateConfigFile({ mutate }) {
+          return { result: mutate(config) as boolean | undefined };
+        },
+        projectionStore: {
+          async read() {
+            return undefined;
+          },
+          async write() {},
+        },
+        readConfig() {
+          throw new Error('runtime readback must not be needed');
+        },
+      });
+      await assert.rejects(
+        () =>
+          service.reconcile({
+            manifest: { schemaVersion: 1, agent: { id: 'data' } },
+            workspaceDir: root,
+          }),
+        (error: unknown) =>
+          error instanceof Error &&
+          'code' in error &&
+          error.code === 'codex-path-verification-failed',
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it('should remove only the previously owned prefix when paths change', async () => {

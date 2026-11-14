@@ -99,13 +99,6 @@ export default function createGitHubChannelLifecycle(
             return true;
           },
         });
-        const verified = plan(await dependencies.readConfig(), agentId, workspace, enabled);
-        if (verified !== 'aligned')
-          throw new AgentSystemLifecycleError(
-            component,
-            'github-channel-verification-failed',
-            'The GitHub readiness account did not retain the installed configuration.',
-          );
       }
       return {
         outcomes:

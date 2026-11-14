@@ -163,26 +163,6 @@ export default function createPathLifecycleContribution(
       let result: Awaited<ReturnType<AgentPathService['reconcile']>>;
       try {
         result = await dependencies.pathService.reconcile(context);
-        const verification = await dependencies.pathService.inspect(context);
-        if (!verification.openClawMatches) {
-          throw new AgentSystemLifecycleError(
-            'path',
-            'openclaw-exec-path-verification-failed',
-            `OpenClaw agent ${context.manifest.agent.id} did not retain its Agent System executable path after installation.`,
-          );
-        }
-        if (
-          result.codexStatus === 'managed' &&
-          (!verification.codex.pathMatches ||
-            !verification.codex.loginShellDisabled ||
-            !verification.codex.gitignored)
-        ) {
-          throw new AgentSystemLifecycleError(
-            'path',
-            'codex-path-verification-failed',
-            `Codex execution configuration for ${context.manifest.agent.id} did not match after installation.`,
-          );
-        }
       } catch (error) {
         if (error instanceof AgentSystemLifecycleError) throw error;
         throw new AgentSystemLifecycleError(

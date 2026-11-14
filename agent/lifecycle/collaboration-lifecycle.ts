@@ -21,7 +21,7 @@ export interface CollaborationDependencies {
     base: 'source';
     afterWrite: { mode: 'auto' };
     mutate(config: OpenClawConfig): Promise<boolean>;
-  }): Promise<unknown>;
+  }): Promise<{ nextConfig: OpenClawConfig }>;
 }
 
 /** discover selected registered agents without environment resolution or lifecycle effects. */
@@ -101,7 +101,7 @@ export default function createCollaborationLifecycleContribution(
     async reconcile() {
       let changed = false;
       let connectedExternalEntries: string[] = [];
-      await dependencies.mutateConfigFile({
+      const mutation = await dependencies.mutateConfigFile({
         base: 'source',
         afterWrite: { mode: 'auto' },
         async mutate(config) {
@@ -114,33 +114,28 @@ export default function createCollaborationLifecycleContribution(
           return true;
         },
       });
-      const verified = await plan(await dependencies.readConfig());
-      if (verified.changed)
-        throw collaborationError(
-          'verification-failed',
-          'Collaboration configuration changed during reconciliation; inspect Doctor before retrying.',
-        );
+      const installed = await plan(mutation.nextConfig);
       return {
         outcomes: [
           {
             code: changed
               ? 'collaboration-updated'
-              : verified.notApplicable
+              : installed.notApplicable
                 ? 'collaboration-not-applicable'
                 : 'collaboration-unchanged',
             status: changed ? 'updated' : 'unchanged',
             message:
-              verified.notApplicable && !changed
+              installed.notApplicable && !changed
                 ? 'Collaboration is not applicable with fewer than two managed agents.'
-                : `Selected collaboration: ${verified.members.join(', ') || 'none'}. Effective entries: ${verified.effectiveEntries.join(', ') || 'none'}.`,
+                : `Selected collaboration: ${installed.members.join(', ') || 'none'}. Effective entries: ${installed.effectiveEntries.join(', ') || 'none'}.`,
           },
         ],
         warnings: [
-          ...(verified.unavailableMembers.length
+          ...(installed.unavailableMembers.length
             ? [
                 {
                   code: 'collaboration-unavailable-members',
-                  message: `Selected IDs are not registered agents: ${verified.unavailableMembers.join(', ')}.`,
+                  message: `Selected IDs are not registered agents: ${installed.unavailableMembers.join(', ')}.`,
                 },
               ]
             : []),

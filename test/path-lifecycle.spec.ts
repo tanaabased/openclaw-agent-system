@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 
 import createPathLifecycleContribution from '../paths/lifecycle.ts';
-import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 
 const context = {
   manifest: { schemaVersion: 1 as const, agent: { id: 'data', name: 'Data' } },
@@ -180,7 +179,7 @@ describe('paths/lifecycle', () => {
     assert.equal(finding?.status, 'drift');
   });
 
-  it('should reconcile, verify, and translate path actions', async () => {
+  it('should translate successful path reconciliation without repeating inspection', async () => {
     let inspections = 0;
     const contribution = createPathLifecycleContribution({
       pathService: {
@@ -206,7 +205,7 @@ describe('paths/lifecycle', () => {
 
     const result = await contribution.reconcile?.(context);
 
-    assert.equal(inspections, 1);
+    assert.equal(inspections, 0);
     assert.deepEqual(
       result?.outcomes.map(({ code, status }) => ({ code, status })),
       [
@@ -217,7 +216,7 @@ describe('paths/lifecycle', () => {
     );
   });
 
-  it('should report a verified no-op as an explicit unchanged outcome', async () => {
+  it('should report a no-op as an explicit unchanged outcome', async () => {
     const contribution = createPathLifecycleContribution({
       pathService: {
         async inspect() {
@@ -278,35 +277,5 @@ describe('paths/lifecycle', () => {
         status: 'updated',
       },
     ]);
-  });
-
-  it('should fail when managed path state does not converge', async () => {
-    const contribution = createPathLifecycleContribution({
-      pathService: {
-        async inspect() {
-          return {
-            codex: healthyCodex,
-            openClawMatches: false,
-            projection,
-          };
-        },
-        async reconcile() {
-          return {
-            actions: [],
-            codexBaseline: unchangedBaseline,
-            codexStatus: 'managed',
-            projection,
-            warnings: [],
-          };
-        },
-      },
-    });
-
-    await assert.rejects(
-      () => contribution.reconcile!(context),
-      (error: unknown) =>
-        error instanceof AgentSystemLifecycleError &&
-        error.code === 'openclaw-exec-path-verification-failed',
-    );
   });
 });
