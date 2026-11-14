@@ -25,6 +25,31 @@ describe('examples/openclaw-issue-intake fixture selection', () => {
     assert.notEqual(execute(code, fixtures, [...owned, owned[0]!, ...unrelated]).status, 0);
     assert.notEqual(execute(code, fixtures, [owned[0]!, owned[0]!, owned[2]!]).status, 0);
   });
+
+  it('should reject unstarted assessments and retain readable diagnostics without native turns', async () => {
+    const source = await readFile('examples/openclaw-issue-intake/README.md', 'utf8');
+    const start = [...source.matchAll(/jq -es --slurpfile fixtures "[^"]+" '([^']+)'/gu)]
+      .map((match) => match[1]!)
+      .find((text) => text.includes('.claimAccepted == true'));
+    const diagnostic = [...source.matchAll(/jq -s --slurpfile fixtures "[^"]+" '([^']+)'/gu)]
+      .map((match) => match[1]!)
+      .find((text) => text.includes('assessmentTurn:'));
+    assert.ok(start && diagnostic);
+    const records = [1, 2, 3].map((id) => ({
+      id: `dispatch-${id}`,
+      intakeId: `intake-${id}`,
+      threadId: `thread-${id}`,
+      claimAccepted: true,
+      sessionCreation: { verified: true },
+    }));
+    const fixtures = [records.map(({ intakeId }) => ({ id: intakeId }))];
+    const unstarted = execute(start, fixtures, records);
+    assert.equal(unstarted.status, 1);
+    assert.equal(unstarted.stderr, '');
+    const result = execute(diagnostic, fixtures, records);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).count, 3);
+  });
 });
 
 for (const scenario of ['openclaw-pr-journey', 'openclaw-pr-discovery']) {
