@@ -4,7 +4,7 @@ import { deniedAgentCommandEnvironment } from '../agent/command-authority.ts';
 import registerAgentCommandAuthority from '../core/register-agent-command-authority.ts';
 
 describe('core/register-agent-command-authority', () => {
-  it('should issue a capability only for a loaded Gateway agent context', async () => {
+  it('should issue a capability only for a loaded gateway agent context', async () => {
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
     const services: Array<{ id: string; start(): unknown; stop?(): unknown }> = [];
     const calls: string[] = [];
@@ -19,6 +19,7 @@ describe('core/register-agent-command-authority', () => {
       } as never,
       {
         authority: {
+          unavailableReason: 'issuer-inactive',
           issue(agentId) {
             calls.push(`issue:${agentId}`);
             return { AGENT_SYSTEM_EXEC_CAPABILITY: 'opaque' };
@@ -90,11 +91,12 @@ describe('core/register-agent-command-authority', () => {
       } as never,
       {
         authority: {
+          unavailableReason: 'issuer-directory-unsafe',
           issue() {
             throw new Error('issue must not be reached without a resolved agent');
           },
           async start() {
-            throw new Error('authority unavailable');
+            throw new Error('private startup detail that must not be logged');
           },
           async stop() {},
         },
@@ -119,7 +121,12 @@ describe('core/register-agent-command-authority', () => {
       { agentId: 'data' },
     );
 
-    assert.deepEqual(gateway, deniedAgentCommandEnvironment());
-    assert.deepEqual(errors, ['security: agent_command_authority_start_failed']);
+    assert.deepEqual(gateway, deniedAgentCommandEnvironment('context-unresolved'));
+    assert.equal(errors.length, 1);
+    assert.match(
+      errors[0]!,
+      /agent_command_authority_start_failed reason=issuer-directory-unsafe/u,
+    );
+    assert.ok(!errors[0]!.includes('private startup detail'));
   });
 });
