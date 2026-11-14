@@ -771,6 +771,7 @@ export default class OpenClawDispatch {
         const reuse =
           startedAt !== undefined &&
           snapshot.discoveryCheckedAt !== undefined &&
+          !snapshot.discoveryProgress?.pending &&
           snapshot.discoveryCheckedAt >= startedAt;
         if (!reuse) {
           const checked = await this.check(manifest, workspace, authority.signal);

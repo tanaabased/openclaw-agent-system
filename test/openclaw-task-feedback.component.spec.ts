@@ -1490,14 +1490,25 @@ describe('agent/openclaw task-feedback', () => {
       { action: 'report' },
     );
     assert.ok('response' in unchanged && unchanged.response === '');
+    const occurrenceStartedAt = Date.now();
+    await fixtureState.service.check(fixtureState.manifest, fixtureState.root);
     paused = false;
     fixtureState.coordinator.runId = 'pr-recovery';
-    await fixtureState.service.run(
+    fixtureState.coordinator.jobId = 'native-intake-job';
+    fixtureState.service.dependencies.occurrenceStartedAt = async () => occurrenceStartedAt;
+    const resumed = await fixtureState.service.run(
       fixtureState.manifest,
       fixtureState.root,
       fixtureState.coordinator,
       { action: 'next' },
     );
+    if (resumed.status === 'discovery-progress')
+      await fixtureState.service.run(
+        fixtureState.manifest,
+        fixtureState.root,
+        fixtureState.coordinator,
+        { action: 'next' },
+      );
     const event = (await fixtureState.record()).feedback!.events[0]!;
     assert.equal(event.sourceId, comments[0]!.nodeId);
     assert.equal(event.nodeId, 'PR_7');
