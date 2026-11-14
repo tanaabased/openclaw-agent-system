@@ -332,15 +332,6 @@ function respond(
     );
   const manual = prompt.includes('Advance previously admitted issue or feedback work.');
   if (manual || prompt.includes('Fill initially available intake slots in one bounded pass.')) {
-    if (!manual && !prompt.includes('Consume saved discoveries')) {
-      const scan = result('scan');
-      if (!scan)
-        return call('scan', 'agent_system_intake', {
-          action: 'scan',
-        });
-      if (scan.status === 'blocked') return report();
-      if (scan.status !== 'ready') return;
-    }
     const terminal = (value: Record<string, unknown>) => {
       if (value.status === 'waiting' && typeof value.code === 'string' && !value.nextAction)
         return report();
@@ -1008,7 +999,6 @@ export function createPRExampleScenario(
         id: prefix + `routing-source-${index}`,
         name: 'agent_system_github',
       })),
-      { id: prefix + 'scan', name: 'agent_system_intake' },
       { id: prefix + 'feedback-skill', name: 'read' },
       { id: prefix + 'feedback-implementation-skill', name: 'read' },
       { id: prefix + 'delivery-skill', name: 'read' },

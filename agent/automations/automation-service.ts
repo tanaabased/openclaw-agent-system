@@ -228,20 +228,45 @@ export default class AutomationService {
     };
   }
 
-  private async resolveOwned(manifest: AgentManifest, workspaceDir: string, id: string) {
+  private async resolveOwned(
+    manifest: AgentManifest,
+    workspaceDir: string,
+    id: string,
+    read?: (nativeId: string) => Promise<unknown>,
+  ) {
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(id)) throw new AutomationError('automation-id-invalid');
-    if (!this.dependencies.request) throw new AutomationError('automation-requires-operator-sync');
+    if (!read && !this.dependencies.request)
+      throw new AutomationError('automation-requires-operator-sync');
     const { context, store } = await this.scope(manifest, workspaceDir);
     const ledger = await store.read();
     const record = ledger.records.find((entry) => entry.id === id);
     if (!record?.nativeId || record.pending || record.retired)
       throw new AutomationError('automation-owned-job-missing');
     const native = nativeAutomation(
-      await this.dependencies.request('cron.get', { id: record.nativeId }),
+      read
+        ? await read(record.nativeId)
+        : await this.dependencies.request!('cron.get', { id: record.nativeId }),
     );
     if (!this.owned(record, [native], context.agentId))
       throw new AutomationError('automation-owned-job-missing');
     return { context, record, native };
+  }
+
+  async occurrenceStartedAt(
+    manifest: AgentManifest,
+    workspace: string,
+    id: string,
+    caller: { jobId?: string; sessionKey: string },
+    read: (nativeId: string) => Promise<unknown>,
+  ) {
+    if (!caller.jobId) return;
+    const { native } = await this.resolveOwned(manifest, workspace, id, read);
+    if (native.id !== caller.jobId || native.sessionTarget !== `session:${caller.sessionKey}`)
+      return;
+    const startedAt = native.state.runningAtMs;
+    return typeof startedAt === 'number' && Number.isSafeInteger(startedAt) && startedAt > 0
+      ? startedAt
+      : undefined;
   }
 
   async notificationResetSnapshot(manifest: AgentManifest, workspace: string, id: string) {

@@ -25,8 +25,39 @@ interface OpenClawAIMockDiagnostics {
       toolSearch: boolean;
       tools: Record<string, boolean>;
     };
-    results: Array<{ callId: string | undefined; content: string }>;
+    results: Array<{
+      callId: string | undefined;
+      content: string;
+      summary: ReturnType<typeof toolResultSummary>;
+    }>;
   }>;
+}
+
+function toolResultSummary(text: string) {
+  const label = (value: unknown) =>
+    typeof value === 'string' && /^[a-z][a-z0-9-]{0,127}$/u.test(value) ? value : undefined;
+  try {
+    let value = JSON.parse(text);
+    for (let depth = 0; depth < 4 && typeof value === 'string'; depth++) value = JSON.parse(value);
+    if (Array.isArray(value)) value = JSON.parse(getTextContent(value) ?? '');
+    if (value?.tool?.source === 'openclaw' && Array.isArray(value.result?.content))
+      value = JSON.parse(getTextContent(value.result.content) ?? '');
+    return {
+      json: true,
+      status: label(value?.status),
+      code: label(value?.code),
+      nextAction: label(value?.nextAction),
+      outcome: label(value?.outcome),
+      hasId: typeof value?.id === 'string',
+      hasTarget: typeof value?.target === 'string',
+      hasContext: Boolean(value?.context),
+      hasMaterial: Boolean(value?.contextMaterials || value?.materialPage),
+      phase: label(value?.diagnostic?.phase),
+      reason: label(value?.diagnostic?.reason),
+    };
+  } catch {
+    return { json: false };
+  }
 }
 
 /** Extract only generated condition diagnostics, never the surrounding prompt or provider text. */
@@ -162,6 +193,11 @@ export default function openClawAIMockDiagnostics(
         .slice(-3)
         .map((message) => ({
           callId: message.tool_call_id,
+          summary: toolResultSummary(
+            typeof message.content === 'string'
+              ? message.content
+              : (JSON.stringify(message.content) ?? ''),
+          ),
           content: (typeof message.content === 'string'
             ? message.content
             : (JSON.stringify(message.content) ?? '')

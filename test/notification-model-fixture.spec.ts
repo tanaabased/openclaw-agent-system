@@ -43,6 +43,44 @@ import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 import { intakeParameters } from '../tools/intake/tool-schema.ts';
 
 describe('examples/pr discovery inspection fixture', () => {
+  for (const scenario of [prDiscoveryExampleScenario, issueExampleScenario, intakeExampleScenario])
+    it(`should let dispatch own discovery for the installed ${scenario.id} intake prompt`, async () => {
+      const job = openclawIntakeJobs({
+        schemaVersion: 1,
+        agent: { id: 'receiver' },
+        models: { default: { model: 'openai/gpt-6-luna', effort: 'medium' } },
+        github: {
+          username: 'receiver',
+          notifications: { ...intakeFixture().policy, runtimes: ['openclaw'] },
+        },
+      })[0]!;
+      assert.equal(job.payload.kind, 'prompt');
+      if (job.payload.kind !== 'prompt') return;
+      const input: ChatCompletionRequest = {
+        model: 'gpt-5.5',
+        messages: [
+          { role: 'system', content: 'Name: Notification Tanaabot' },
+          { role: 'user', content: job.payload.prompt },
+        ],
+        tools: ['agent_system_dispatch', 'agent_system_intake'].map((name) => ({
+          type: 'function',
+          function: { name },
+        })),
+      };
+      if (scenario.id === 'openclaw-issue-intake')
+        input.messages.push({
+          role: 'tool',
+          tool_call_id: 'call_intake_unmanaged_context',
+          content: JSON.stringify({ status: 'unmanaged-turn' }),
+        });
+      const fixture = matchFixture([...scenario.fixtures], input);
+      assert.ok(fixture && typeof fixture.response === 'function');
+      const first = await fixture.response(input);
+      assert.ok('toolCalls' in first && first.toolCalls?.length === 1);
+      assert.equal(first.toolCalls[0]!.name, 'agent_system_dispatch');
+      assert.deepEqual(JSON.parse(first.toolCalls[0]!.arguments), { action: 'next' });
+    });
+
   it('should request the installed native inspection and return only its observed result', async () => {
     const target = 'https://github.com/tanaabased/big-test-bucket/issues/69';
     const input: ChatCompletionRequest = {
@@ -717,7 +755,7 @@ for (const scenario of [
           role: 'user',
           content: `Fill initially available intake slots in one bounded pass. Policy digest: ${digest}`,
         });
-        await action(input, 'scan');
+        await action(input, scenario.id === 'openclaw-issue-auto-plan' ? 'scan' : 'next');
       }
       const invalid = request(
         `Fill initially available intake slots in one bounded pass. Policy digest: ${digest}`,
@@ -873,7 +911,9 @@ for (const scenario of [
       const scan = request(
         `Fill initially available intake slots in one bounded pass. Policy digest: ${digest}`,
       );
-      append(scan, 'scan', { status: 'blocked' });
+      append(scan, scenario.id === 'openclaw-issue-auto-plan' ? 'scan' : 'next-0', {
+        status: 'blocked',
+      });
       await action(scan, 'report');
       append(scan, 'report', { status: 'reported', response: '> ## ⚠️ Intake needs attention' });
       assert.deepEqual(await response(scan), { content: '> ## ⚠️ Intake needs attention' });

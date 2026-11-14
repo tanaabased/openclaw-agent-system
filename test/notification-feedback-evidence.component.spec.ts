@@ -4,6 +4,9 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { claimBody } from '../channels/github/provider/assignment-claim.ts';
+import { githubNotificationPublicationComment } from '../channels/github/publication/publication-contract.ts';
+
 for (const scenario of ['openclaw-pr-journey', 'openclaw-pr-discovery']) {
   describe(`examples/${scenario} retained feedback evidence`, () => {
     it('should permit only verified consumption on the earlier feedback event', async () => {
@@ -65,6 +68,7 @@ for (const scenario of ['openclaw-pr-journey', 'openclaw-pr-discovery']) {
 for (const [scenario, itemType] of [
   ['openclaw-issue-assignment-policy', 'issue'],
   ['openclaw-pr-journey', 'pull-request'],
+  ['openclaw-pr-discovery', 'pull-request'],
 ]) {
   describe(`examples/${scenario} feedback evidence`, () => {
     it('should inspect only its requested run while rejecting real duplicate responses', async () => {
@@ -74,6 +78,16 @@ for (const [scenario, itemType] of [
         .find((text) => text.includes('const record=read("feedback")'));
       assert.ok(code);
       const root = await mkdtemp(join(tmpdir(), 'feedback-evidence-'));
+      const runId =
+        scenario === 'openclaw-pr-discovery' ? 'notification-feedback-resume' : 'current';
+      const replyBody = githubNotificationPublicationComment(
+        'Public answer.',
+        `<!-- agent-system-github-publication:github-reply:${'a'.repeat(32)} -->`,
+      );
+      const summaryBody = githubNotificationPublicationComment(
+        'Proposed plan.',
+        `<!-- agent-system-github-publication:status-update:${'b'.repeat(32)} -->`,
+      );
       const providerSource = {
         node_id: 'source',
         body: '@tanaabot explain the retained plan.',
@@ -87,7 +101,7 @@ for (const [scenario, itemType] of [
       };
       const answer = {
         role: 'assistant',
-        __openclaw: { runId: 'current' },
+        __openclaw: { runId },
         stopReason: 'stop',
         content:
           'Private explanation. Public answer.\n> *[Reply ↗](https://github.com/owner/repo/issues/3#issuecomment-99) from [@tanaabot](https://github.com/tanaabot)*',
@@ -104,7 +118,7 @@ for (const [scenario, itemType] of [
         await write('feedback', {
           feedback: {
             events: [
-              ...(scenario === 'openclaw-pr-journey'
+              ...(itemType === 'pull-request'
                 ? [{ itemType: 'issue', turn: { runId: 'earlier' } }]
                 : []),
               {
@@ -130,7 +144,7 @@ for (const [scenario, itemType] of [
           ...summaries.map((node_id) => ({
             node_id,
             user: { login: 'tanaabot' },
-            body: 'Proposed plan.',
+            body: summaryBody,
           })),
           {
             node_id: 'source',
@@ -141,25 +155,36 @@ for (const [scenario, itemType] of [
             node_id: 'reply',
             html_url: 'https://github.com/owner/repo/issues/3#issuecomment-99',
             user: { login: 'tanaabot' },
-            body: 'Public answer.',
+            body: replyBody,
+          },
+          {
+            node_id: 'other-instance-claim',
+            user: { login: 'tanaabot' },
+            body: claimBody(
+              {
+                instanceId: '11111111-1111-4111-8111-111111111111',
+                assignmentEventId: 'assignment',
+              },
+              'other-instance',
+            ),
           },
         ];
         await write('feedback-replies', replies);
         const prior = { ...answer, __openclaw: { runId: 'earlier' } };
         await write('feedback-history', {
-          requestedRunId: 'current',
+          requestedRunId: runId,
           messages: [incoming, prior, prior, prior, answer],
         });
         const valid = execute();
         assert.equal(valid.status, 0, valid.stderr);
         await write('feedback-replies', [
           ...replies,
-          { node_id: 'unexpected-reply', user: { login: 'tanaabot' }, body: 'Public answer.' },
+          { node_id: 'unexpected-reply', user: { login: 'tanaabot' }, body: replyBody },
         ]);
         assert.notEqual(execute().status, 0);
         await write('feedback-replies', replies);
         await write('feedback-history', {
-          requestedRunId: 'current',
+          requestedRunId: runId,
           messages: [incoming, answer, answer],
         });
         assert.notEqual(execute().status, 0);

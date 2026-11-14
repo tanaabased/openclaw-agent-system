@@ -17,7 +17,7 @@ import { sessionDispatchRequest } from '../credentials/session-dispatch-client.t
 import type { AgentManifest } from '../manifest/types.ts';
 import { baseline, intakeFixture, originalIntakeDigest } from './github-intake-fixture.ts';
 
-export default function openclawDispatchFixture() {
+export default function openclawDispatchFixture(options: { discover?: boolean } = {}) {
   const fixtureState = {} as {
     fixtureIntake: OpenClawIntake;
     root: string;
@@ -76,6 +76,8 @@ export default function openclawDispatchFixture() {
   };
   beforeEach(async () => {
     coordinator.runId = 'intake-turn';
+    if (options.discover === false) coordinator.jobId = 'fixture-job';
+    else delete coordinator.jobId;
     fixtureState.root = await realpath(await mkdtemp('/tmp/openclaw-dispatch-'));
     fixtureState.fixture = intakeFixture();
     fixtureState.manifest = {
@@ -117,14 +119,24 @@ export default function openclawDispatchFixture() {
       now: () => now,
       connect: async () => fixtureState.fixture.client,
     }));
+    const discoverAssigned = fixtureState.fixture.client.discoverAssigned;
+    if (options.discover === false)
+      fixtureState.fixture.client.discoverAssigned = async () => ({
+        candidates: [],
+        incomplete: false,
+        totalCount: 0,
+        truncated: false,
+      });
     await intake.run(fixtureState.manifest, fixtureState.root, 'activate');
+    fixtureState.fixture.client.discoverAssigned = discoverAssigned;
     now += 120000;
-    await intake.run(
-      fixtureState.manifest,
-      fixtureState.root,
-      'scan',
-      (await intake.select(fixtureState.manifest, fixtureState.root)).selected!.digest,
-    );
+    if (options.discover !== false)
+      await intake.run(
+        fixtureState.manifest,
+        fixtureState.root,
+        'scan',
+        (await intake.select(fixtureState.manifest, fixtureState.root)).selected!.digest,
+      );
     const worktree = {
       path: join(fixtureState.root, 'worktree'),
       branch: 'issue-3',

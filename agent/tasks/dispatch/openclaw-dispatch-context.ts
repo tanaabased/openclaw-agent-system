@@ -78,6 +78,29 @@ import taskTurnContext from '../context/task-turn-context.ts';
 import WorkflowRequestError from '../workflow-request-error.ts';
 export interface OpenClawTaskDependencies {
   root: string;
+  discoveryTrace?(event: {
+    runId: string;
+    phase: 'entry' | 'reuse' | 'check' | 'feedback';
+    hasJobId?: boolean;
+    sameRun?: boolean;
+    reuse?: boolean;
+    pending?: boolean;
+    checkedAt?: number;
+    startedAt?: number;
+    outcome?: string;
+    code?: string;
+    more?: boolean;
+    checkPhase?: string;
+    reason?: string;
+    elapsedMs?: number;
+    scan?: boolean;
+  }): void;
+  occurrenceStartedAt?(
+    manifest: AgentManifest,
+    workspace: string,
+    caller: DispatchCaller,
+    authority: DispatchAuthority,
+  ): Promise<number | undefined>;
   claimStore?: AssignmentClaimStore;
   claims?: OpenClawAssignmentClaims;
   config(): OpenClawConfig;

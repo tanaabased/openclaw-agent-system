@@ -80,6 +80,36 @@ export default function createDispatchTool(input: {
   assessmentGit?: OpenClawDispatchDependencies['assessmentGit'];
 }) {
   const { api } = input;
+  api.on('before_prompt_build', async (_event, context) => {
+    api.logger?.debug?.(
+      `code=dispatch-discovery ${JSON.stringify({
+        phase: 'hook',
+        runId: context.runId,
+        hasJobId: Boolean(context.jobId),
+        hasAgentId: Boolean(context.agentId),
+        hasSessionKey: Boolean(context.sessionKey),
+        hasSessionId: Boolean(context.sessionId),
+      })}`,
+    );
+    if (
+      !context.runId ||
+      !context.jobId ||
+      !context.agentId ||
+      !context.sessionKey ||
+      !context.sessionId
+    )
+      return;
+    api.runContext.setRunContext({
+      runId: context.runId,
+      namespace: 'dispatch-occurrence',
+      value: {
+        agentId: context.agentId,
+        sessionKey: context.sessionKey,
+        sessionId: context.sessionId,
+        jobId: context.jobId,
+      },
+    });
+  });
   // Descriptive reads do not replace the live host invocation guard at effect boundaries.
   const assertSessionCurrent = async (sessionKey: string, sessionId: string) => {
     const entry = await api.runtime.agent.session.getSessionEntryAsync({
@@ -111,6 +141,18 @@ export default function createDispatchTool(input: {
     feedbackConnect: input.feedbackConnect,
     retirementDelivery: input.retirementDelivery,
     assessmentGit: input.assessmentGit,
+    discoveryTrace: (event) =>
+      api.logger?.debug?.(`code=dispatch-discovery ${JSON.stringify(event)}`),
+    occurrenceStartedAt: (manifest, workspace, caller, authority) =>
+      input.credential.use(authority, (request) =>
+        input.automations.occurrenceStartedAt(
+          manifest,
+          workspace,
+          openclawIntakeAutomationId,
+          caller,
+          (id) => request('cron.get', { id }),
+        ),
+      ),
     async coordinator(manifest, workspace) {
       const { store } = await input.automations.scope(manifest, workspace);
       const job = openclawIntakeJobs(manifest).find(
@@ -150,6 +192,20 @@ export default function createDispatchTool(input: {
       return;
     try {
       const who = caller(context, event, nativeCaller);
+      const occurrence = api.runContext.getRunContext({
+        runId: who.runId,
+        namespace: 'dispatch-occurrence',
+      });
+      if (
+        occurrence &&
+        typeof occurrence === 'object' &&
+        !Array.isArray(occurrence) &&
+        occurrence.agentId === context.agentId &&
+        occurrence.sessionKey === who.sessionKey &&
+        occurrence.sessionId === who.sessionId &&
+        typeof occurrence.jobId === 'string'
+      )
+        who.jobId = occurrence.jobId;
       const inputId = readOpenClawTurnInput(api.runContext, { ...who, agentId: context.agentId });
       context.abortSignal?.throwIfAborted();
       invocations.set(who.toolCallId, {

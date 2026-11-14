@@ -349,15 +349,6 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   }
   const manual = prompt.includes('Advance previously admitted issue or feedback work.');
   if (manual || prompt.includes('Fill initially available intake slots in one bounded pass.')) {
-    if (!manual && !prompt.includes('Consume saved discoveries')) {
-      const scan = result('scan');
-      if (!scan)
-        return call('scan', 'agent_system_intake', {
-          action: 'scan',
-        });
-      if (scan.status === 'blocked') return report();
-      if (scan.status !== 'ready') return;
-    }
     const terminal = (value: Record<string, unknown>) => {
       if (
         ['idle', 'at-capacity', 'pass-completed', 'blocked', 'uncertain'].includes(
@@ -616,7 +607,6 @@ export const issueExampleScenario: OpenClawAIMockScenario = {
       id: prefix + `routing-source-${index}`,
       name: 'agent_system_github',
     })),
-    { id: prefix + 'scan', name: 'agent_system_intake' },
     { id: prefix + 'assessment-skill', name: 'read' },
     { id: prefix + 'direct-assessment-skill', name: 'read' },
     { id: prefix + 'direct-assessment-invalid', name: 'agent_system_dispatch' },

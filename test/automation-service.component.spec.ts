@@ -22,6 +22,8 @@ import {
   effectiveAutomation,
 } from '../agent/automations/automation-projection.ts';
 import AutomationService from '../agent/automations/automation-service.ts';
+import createDispatchTool from '../tools/dispatch/tool.ts';
+import type { DispatchAuthority, DispatchRequest } from '../credentials/session-dispatch.ts';
 import notificationAutomationReadiness from '../agent/automations/automation-readiness.ts';
 import AgentInstallService from '../agent/lifecycle/install-service.ts';
 import AgentSystemLifecycleRegistry, {
@@ -621,6 +623,58 @@ describe('agent/automation-service', () => {
     }
   });
 
+  it('should reuse discovery only for the owned running cron occurrence and target session', async () => {
+    await service.reconcile(manifest, root);
+    const job = native[0]!;
+    job.sessionTarget = 'session:coordinator';
+    job.state.runningAtMs = now;
+    const caller = { jobId: job.id, sessionKey: 'coordinator' };
+    const passive = new AutomationService({ ...service.dependencies, request: undefined });
+    const read = (id: string) => service.dependencies.request!('cron.get', { id });
+    assert.equal(await passive.occurrenceStartedAt(manifest, root, 'check', caller, read), now);
+    assert.equal(
+      await passive.occurrenceStartedAt(
+        manifest,
+        root,
+        'check',
+        { ...caller, jobId: 'foreign' },
+        read,
+      ),
+      undefined,
+    );
+    assert.equal(
+      await passive.occurrenceStartedAt(
+        manifest,
+        root,
+        'check',
+        {
+          ...caller,
+          sessionKey: 'foreign',
+        },
+        read,
+      ),
+      undefined,
+    );
+    delete job.state.runningAtMs;
+    assert.equal(
+      await passive.occurrenceStartedAt(manifest, root, 'check', caller, read),
+      undefined,
+    );
+    await assert.rejects(
+      passive.occurrenceStartedAt(manifest, root, 'check', caller, async () => ({
+        ...job,
+        agentId: 'foreign',
+      })),
+      { code: 'automation-ownership-conflict' },
+    );
+    await assert.rejects(
+      passive.occurrenceStartedAt(manifest, root, 'check', caller, async () => {
+        throw new Error('read-denied');
+      }),
+      /read-denied/u,
+    );
+  });
+
   it('should pause and restore exact native settings without changing the installed receipt', async () => {
     await service.reconcile(manifest, root);
     const { store } = await service.scope(manifest, root);
@@ -969,6 +1023,44 @@ describe('agent/automation-service', () => {
     assert.equal([...sessions.values()][0]!.displayName, 'ISSUE ASSIGNMENTS');
     assert.ok(native[0]!.trigger);
     assert.equal([...sessions.values()][0]!.category, 'AGENT SYSTEM');
+    const passive = new AutomationService({ ...service.dependencies, request: undefined });
+    const authority = { signal: new AbortController().signal };
+    const dispatch = createDispatchTool({
+      api: { on() {} },
+      automations: passive,
+      credential: {
+        async use<T>(
+          received: DispatchAuthority,
+          callback: (request: DispatchRequest) => Promise<T>,
+        ) {
+          assert.equal(received, authority);
+          return callback((method, params) =>
+            original(method as Parameters<AutomationGateway>[0], params),
+          );
+        },
+      },
+    } as unknown as Parameters<typeof createDispatchTool>[0]);
+    native[0]!.state.runningAtMs = now;
+    const observationStart = calls.length;
+    assert.equal(
+      await dispatch.service.dependencies.occurrenceStartedAt!(
+        manifest,
+        root,
+        {
+          jobId: native[0]!.id,
+          sessionKey: String(native[0]!.sessionTarget).slice('session:'.length),
+          sessionId: 'intake-session',
+          runId: 'manual-intake',
+          toolCallId: 'next',
+        },
+        authority,
+      ),
+      now,
+    );
+    assert.deepEqual(calls.slice(observationStart), [
+      { method: 'cron.get', params: { id: native[0]!.id } },
+    ]);
+    delete native[0]!.state.runningAtMs;
     const identity = native[0]!.id;
     const coordinator = native[0]!.sessionTarget;
     const schedule = structuredClone(native[0]!.schedule);
