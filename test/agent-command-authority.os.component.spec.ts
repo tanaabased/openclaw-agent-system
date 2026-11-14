@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
 import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
+import { createServer } from 'node:net';
 import { join } from 'node:path';
 
 import AgentCommandAuthority, {
@@ -9,6 +11,21 @@ import AgentCommandAuthority, {
 } from '../agent/command-authority.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import AgentSystemToolError from '../api/error.ts';
+import runAgentSystemTool from '../cli/tool.ts';
+
+function contextFailure(reason: string, privateValues: string[] = []) {
+  return (error: unknown) => {
+    assert.ok(error instanceof AgentSystemToolError);
+    assert.equal(error.code, 'agent_not_resolved');
+    assert.equal(error.failureDiagnostic?.reasonCode, `command-context-${reason}`);
+    assert.match(error.message, new RegExp(`reason=command-context-${reason}`));
+    for (const value of privateValues) {
+      assert.ok(!error.message.includes(value));
+      assert.ok(!JSON.stringify(error.failureDiagnostic).includes(value));
+    }
+    return true;
+  };
+}
 
 describe('agent/command-authority', () => {
   let root: string;
@@ -179,8 +196,7 @@ describe('agent/command-authority', () => {
         },
         workspaceDir,
       ),
-      (error: unknown) =>
-        error instanceof AgentSystemToolError && error.code === 'agent_not_resolved',
+      contextFailure('codex-binding-unavailable', [root, 'codex-thread-one']),
     );
   });
 
@@ -190,8 +206,7 @@ describe('agent/command-authority', () => {
 
     await assert.rejects(
       authority.resolve(environment, otherAgentWorkspace),
-      (error: unknown) =>
-        error instanceof AgentSystemToolError && error.code === 'agent_not_resolved',
+      contextFailure('scope-rejected', [otherAgentWorkspace, ...Object.values(environment)]),
     );
   });
 
@@ -203,9 +218,15 @@ describe('agent/command-authority', () => {
       [agentCommandCapabilityEnvironmentName]: 'x'.repeat(43),
     };
 
-    await assert.rejects(authority.resolve(forged, workspaceDir));
+    await assert.rejects(
+      authority.resolve(forged, workspaceDir),
+      contextFailure('authority-rejected', Object.values(forged)),
+    );
     now += 1_001;
-    await assert.rejects(authority.resolve(environment, workspaceDir));
+    await assert.rejects(
+      authority.resolve(environment, workspaceDir),
+      contextFailure('authority-rejected', Object.values(environment)),
+    );
   });
 
   it('should fail closed when gateway authority is unavailable', async () => {
@@ -215,8 +236,7 @@ describe('agent/command-authority', () => {
     assert.deepEqual(environment, deniedAgentCommandEnvironment());
     await assert.rejects(
       authority.resolve(environment, workspaceDir),
-      (error: unknown) =>
-        error instanceof AgentSystemToolError && error.code === 'agent_not_resolved',
+      contextFailure('issuer-unavailable'),
     );
   });
 
@@ -229,7 +249,10 @@ describe('agent/command-authority', () => {
     ]) {
       const context = await authority.classify(environment, outside);
       assert.equal(context.status, 'outside-agent-scope');
-      await assert.rejects(authority.resolve(environment, outside));
+      await assert.rejects(
+        authority.resolve(environment, outside),
+        contextFailure('scope-rejected'),
+      );
       await assert.rejects(authority.classify(environment, otherAgentWorkspace));
     }
     assert.deepEqual(await authority.classify({}, outside), { status: 'unbound' });
@@ -254,6 +277,111 @@ describe('agent/command-authority', () => {
 
   it('should leave ordinary operator commands unbound', async () => {
     assert.equal(await authority.resolve({}, workspaceDir), undefined);
+  });
+
+  it('should distinguish malformed context from an unreachable authority without exposing inputs', async () => {
+    const privateValue = 'private-capability-value';
+    await assert.rejects(
+      authority.resolve({ AGENT_SYSTEM_EXEC_CAPABILITY: privateValue }, workspaceDir),
+      contextFailure('invalid', [privateValue, workspaceDir]),
+    );
+    const environment = authority.issue('data');
+    await authority.stop();
+    await assert.rejects(
+      authority.resolve(environment, workspaceDir),
+      contextFailure('connection-failed', [root, ...Object.values(environment)]),
+    );
+  });
+
+  it('should distinguish manifest rejection after a capability was issued', async () => {
+    const environment = authority.issue('missing-agent');
+    await assert.rejects(
+      authority.resolve(environment, workspaceDir),
+      contextFailure('manifest-unavailable', Object.values(environment)),
+    );
+  });
+
+  it('should expose only recognized response reasons and distinguish a socket timeout', async () => {
+    const authorityId = 'a'.repeat(16);
+    const environment = {
+      AGENT_SYSTEM_EXEC_AUTHORITY: authorityId,
+      AGENT_SYSTEM_EXEC_CAPABILITY: 'b'.repeat(43),
+    };
+    let response: string | undefined;
+    const server = createServer((socket) => {
+      socket.on('error', () => socket.destroy());
+      socket.once('data', () => {
+        if (response !== undefined) socket.end(`${response}\n`);
+      });
+    });
+    const socketRoot = join(root, 'authority');
+    server.listen(join(socketRoot, `${authorityId}.sock`));
+    await once(server, 'listening');
+    const client = new AgentCommandAuthority({
+      manifestService: {
+        async loadForAgentId() {
+          assert.fail('must not fall back');
+        },
+      },
+      rootDir: socketRoot,
+      socketTimeoutMs: 50,
+    });
+    try {
+      for (const [wireResponse, reason] of [
+        ['not-json private-value', 'response-invalid'],
+        [JSON.stringify({ status: 'denied', reason: 'private-value' }), 'authority-rejected'],
+        [JSON.stringify({ status: 'denied' }), 'authority-rejected'],
+        [JSON.stringify({ status: 'unexpected', reason: 'scope-rejected' }), 'response-invalid'],
+        [undefined, 'connection-timeout'],
+      ] as const) {
+        response = wireResponse;
+        await assert.rejects(
+          client.resolve(environment, workspaceDir),
+          contextFailure(reason, ['private-value', root, ...Object.values(environment)]),
+        );
+      }
+    } finally {
+      await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
+    }
+  });
+
+  it('should retain the binding reason in normal cli failure output without invoking a tool', async () => {
+    const stderr: string[] = [];
+    let exitCode: number | undefined;
+    await runAgentSystemTool({
+      invocationMode: 'contextual',
+      command: 'gh',
+      argv: ['api', 'user', '--jq', '.login'],
+      workspaceDir,
+      resolveCommandContext: () =>
+        authority.classify(deniedAgentCommandEnvironment(), workspaceDir),
+      manifestService: {
+        async loadForCommandDirectory() {
+          assert.fail('must not fall back');
+        },
+      },
+      toolRegistry: {
+        invoke() {
+          assert.fail('must not execute');
+        },
+        hostFallback() {
+          assert.fail('must not fall back');
+        },
+      },
+      toolRuntime: {} as never,
+      output: {
+        writeStdout() {
+          assert.fail('must not write stdout');
+        },
+        writeStderr: (value) => stderr.push(value),
+      },
+      setExitCode: (value) => {
+        exitCode = value;
+      },
+    });
+    assert.equal(exitCode, 1);
+    assert.match(stderr.join(''), /agent_not_resolved/u);
+    assert.match(stderr.join(''), /command-context-issuer-unavailable/u);
   });
 
   it('should revalidate setup execution capabilities and reject oversized requests before dispatch', async () => {

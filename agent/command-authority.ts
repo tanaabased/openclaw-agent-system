@@ -23,6 +23,17 @@ const maximumLeases = 1_024;
 const defaultLeaseLifetimeMs = 30 * 60 * 1_000;
 const defaultSocketTimeoutMs = 2_000;
 
+type CommandContextFailure =
+  | 'invalid'
+  | 'issuer-unavailable'
+  | 'connection-failed'
+  | 'connection-timeout'
+  | 'response-invalid'
+  | 'authority-rejected'
+  | 'scope-rejected'
+  | 'manifest-unavailable'
+  | 'codex-binding-unavailable';
+
 type AuthorityManifestService = Pick<AgentManifestService, 'loadForAgentId'> &
   Partial<Pick<AgentManifestService, 'loadForCommandDirectory'>>;
 
@@ -65,7 +76,7 @@ type AuthorityResponse =
       executesCommands?: true;
       setupMode?: 'check' | 'apply';
     }
-  | { status: 'denied' };
+  | { status: 'denied'; reason?: 'scope-rejected' | 'manifest-unavailable' };
 
 export interface AgentCommandBinding {
   admittedWorkingDirectories: readonly string[];
@@ -335,7 +346,7 @@ export default class AgentCommandAuthority {
     cwd: string,
   ): Promise<AgentCommandBinding | undefined> {
     const context = await this.classify(environment, cwd);
-    if (context.status === 'outside-agent-scope') throw this.#unresolved();
+    if (context.status === 'outside-agent-scope') throw this.#unresolved('scope-rejected');
     return context.status === 'managed' ? context.binding : undefined;
   }
 
@@ -358,17 +369,23 @@ export default class AgentCommandAuthority {
       !capabilityPattern.test(capability) ||
       !isAbsolute(cwd)
     ) {
-      throw this.#unresolved();
+      throw this.#unresolved(
+        authorityId === 'denied' && capability === 'denied' ? 'issuer-unavailable' : 'invalid',
+      );
     }
 
     const socketPath = join(this.#rootDir, `${authorityId}.sock`);
     const socket = createConnection(socketPath);
-    socket.setTimeout(this.#socketTimeoutMs, () => socket.destroy());
+    let timedOut = false;
+    socket.setTimeout(this.#socketTimeoutMs, () => {
+      timedOut = true;
+      socket.destroy();
+    });
     try {
       await once(socket, 'connect');
       socket.write(`${JSON.stringify({ capability, cwd })}\n`);
       const response = JSON.parse(await readSocketMessage(socket)) as unknown;
-      if (!isContextResponse(response)) throw this.#unresolved();
+      if (!isContextResponse(response)) throw this.#responseFailure(response);
       if (response.status === 'outside-agent-scope') {
         return {
           status: 'outside-agent-scope',
@@ -392,7 +409,13 @@ export default class AgentCommandAuthority {
       };
     } catch (error) {
       if (error instanceof AgentSystemToolError) throw error;
-      throw this.#unresolved();
+      throw this.#unresolved(
+        timedOut
+          ? 'connection-timeout'
+          : error instanceof SyntaxError
+            ? 'response-invalid'
+            : 'connection-failed',
+      );
     } finally {
       socket.destroy();
     }
@@ -506,7 +529,7 @@ export default class AgentCommandAuthority {
   async #authorizeAgent(agentId: string, cwd: string): Promise<AuthorityResponse> {
     const loaded = await this.#manifestService.loadForAgentId(agentId, 'service');
     if (loaded.status !== 'loaded' || loaded.manifest.agent.id !== agentId) {
-      return { status: 'denied' };
+      return { status: 'denied', reason: 'manifest-unavailable' };
     }
 
     const roots = [loaded.scope.workspaceDir];
@@ -518,7 +541,7 @@ export default class AgentCommandAuthority {
         );
         roots.push(layout.worktreeRoot, ...Object.values(layout.localRepositories));
       } catch {
-        return { status: 'denied' };
+        return { status: 'denied', reason: 'scope-rejected' };
       }
     }
     const canonicalRoots = await Promise.all(
@@ -531,7 +554,7 @@ export default class AgentCommandAuthority {
         }
       }),
     );
-    if (!canonicalRoots[0]) return { status: 'denied' };
+    if (!canonicalRoots[0]) return { status: 'denied', reason: 'scope-rejected' };
     const admittedWorkingDirectories = canonicalRoots.filter(
       (path): path is string => path !== undefined,
     );
@@ -539,7 +562,7 @@ export default class AgentCommandAuthority {
     try {
       workingDirectory = await realpath(cwd);
     } catch {
-      return { status: 'denied' };
+      return { status: 'denied', reason: 'scope-rejected' };
     }
     if (!admittedWorkingDirectories.some((root) => isPathContained(root, workingDirectory))) {
       const target = await this.#manifestService.loadForCommandDirectory?.(
@@ -551,7 +574,7 @@ export default class AgentCommandAuthority {
         (target.status !== 'unmanaged' &&
           (target.status !== 'loaded' || target.manifest.agent.id !== agentId))
       ) {
-        return { status: 'denied' };
+        return { status: 'denied', reason: 'scope-rejected' };
       }
       return {
         status: 'outside-agent-scope',
@@ -574,7 +597,7 @@ export default class AgentCommandAuthority {
   ): Promise<AgentCommandContext> {
     const threadId = environment.CODEX_THREAD_ID?.trim();
     if (!threadId) {
-      if (environment.CODEX_THREAD_ID !== undefined) throw this.#unresolved();
+      if (environment.CODEX_THREAD_ID !== undefined) throw this.#unresolved('invalid');
       return { status: 'unbound' };
     }
     const codexHome = environment.CODEX_HOME?.trim();
@@ -589,7 +612,7 @@ export default class AgentCommandAuthority {
       !isAbsolute(cwd) ||
       !this.#resolveCodexAgentId
     ) {
-      throw this.#unresolved();
+      throw this.#unresolved('invalid');
     }
     let agentId: string | undefined;
     try {
@@ -599,20 +622,20 @@ export default class AgentCommandAuthority {
         threadId,
       });
     } catch {
-      throw this.#unresolved();
+      throw this.#unresolved('codex-binding-unavailable');
     }
     if (!agentId) {
-      if (openClawStateDir !== undefined) throw this.#unresolved();
+      if (openClawStateDir !== undefined) throw this.#unresolved('codex-binding-unavailable');
       return { status: 'unbound' };
     }
-    if (!agentIdPattern.test(agentId)) throw this.#unresolved();
+    if (!agentIdPattern.test(agentId)) throw this.#unresolved('codex-binding-unavailable');
     let response: AuthorityResponse;
     try {
       response = await this.#authorizeAgent(agentId, cwd);
     } catch {
-      throw this.#unresolved();
+      throw this.#unresolved('authority-rejected');
     }
-    if (!isContextResponse(response)) throw this.#unresolved();
+    if (!isContextResponse(response)) throw this.#responseFailure(response);
     if (response.status === 'outside-agent-scope') {
       return {
         status: 'outside-agent-scope',
@@ -636,10 +659,31 @@ export default class AgentCommandAuthority {
     }
   }
 
-  #unresolved(): AgentSystemToolError {
+  #responseFailure(response: unknown): AgentSystemToolError {
+    if (
+      response &&
+      typeof response === 'object' &&
+      'status' in response &&
+      response.status === 'denied'
+    ) {
+      const reason = 'reason' in response ? response.reason : undefined;
+      return this.#unresolved(
+        reason === 'scope-rejected' || reason === 'manifest-unavailable'
+          ? reason
+          : 'authority-rejected',
+      );
+    }
+    return this.#unresolved('response-invalid');
+  }
+
+  #unresolved(reason: CommandContextFailure = 'authority-rejected'): AgentSystemToolError {
+    const reasonCode = `command-context-${reason}`;
     return new AgentSystemToolError(
       'agent_not_resolved',
-      'Agent System could not verify the active agent command context.',
+      `Agent System could not verify the active agent command context. reason=${reasonCode}`,
+      false,
+      undefined,
+      { stage: 'authorization', category: 'state-or-configuration', reasonCode },
     );
   }
 }

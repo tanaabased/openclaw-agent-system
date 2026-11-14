@@ -28,6 +28,7 @@ if (cd "$root/$peer" && git var GIT_AUTHOR_IDENT) > "$root/$runtime/cross-agent.
 fi
 test ! -s "$root/$runtime/cross-agent.stdout"
 grep -F 'code=agent_not_resolved' "$root/$runtime/cross-agent.stderr"
+grep -F 'reason=command-context-scope-rejected' "$root/$runtime/cross-agent.stderr"
 
 if env CI=1 NONINTERACTIVE=on openclaw as install --non-interactive --json > "$root/$runtime/operator.stdout" 2> "$root/$runtime/operator.stderr"; then
   printf '%s\n' 'a runtime descendant executed an operator install' >&2
