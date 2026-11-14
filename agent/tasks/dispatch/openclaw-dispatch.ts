@@ -183,7 +183,12 @@ export default class OpenClawDispatch {
         { ...caller, agentId: manifest.agent.id },
         authority,
       );
-      if (!retained) throw new Error('native-context-owner-unavailable');
+      if (!retained)
+        return {
+          status: 'unmanaged-turn',
+          instructions:
+            'No admitted task was verified for this native chat. Continue ordinary native work; do not enroll or invent a task.',
+        };
       return nativeMaterialResponse(
         assessmentMaterial(
           retained.context,

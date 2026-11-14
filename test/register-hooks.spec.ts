@@ -79,7 +79,7 @@ describe('core/register-hooks', () => {
         appendSystemContext: string;
       };
       assert.doesNotMatch(refused.appendContext, /"runId":"assessment"/);
-      assert.match(refused.appendSystemContext, /task context is unavailable/);
+      assert.match(refused.appendSystemContext, /context lookup is unavailable/);
     }
     const visible = structuredClone(event);
     record.feedback = {
@@ -106,6 +106,53 @@ describe('core/register-hooks', () => {
       assert.equal(JSON.parse(output.appendContext!.split('\n')[1]!).git.protocol, 'ssh');
       assert.doesNotMatch(output.appendContext!, /receipt|currentTurn/);
     }
+  });
+
+  it('should leave unmanaged prompts quiet and qualify failed lookup recovery', async () => {
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    let fail = false;
+    registerAgentSystemHooks(
+      {
+        on(name: string, handler: (...args: unknown[]) => unknown) {
+          handlers.set(name, handler);
+        },
+      } as never,
+      {
+        async loadForRuntimeContext() {
+          return {
+            status: 'loaded',
+            scope: { agentId: 'data', workspaceDir: '/workspace' },
+            path: '/workspace/agent.yaml',
+            digest: 'digest',
+            manifest: { schemaVersion: 1, agent: { id: 'data' } },
+            diagnostics: [],
+            validationChecks: [],
+          } as const;
+        },
+      },
+      { guidance: () => [] },
+      async () => {
+        if (fail) throw new Error('private-lookup-error');
+        return undefined;
+      },
+    );
+    const hook = handlers.get('before_prompt_build')!;
+    const binding = {
+      agentId: 'data',
+      sessionKey: 'agent:data:main',
+      sessionId: 'one',
+      runId: 'run',
+    };
+    const quiet = (await hook({}, binding)) as { appendSystemContext: string };
+    assert.doesNotMatch(quiet.appendSystemContext, /agent_system_context|task context/);
+    fail = true;
+    const failed = (await hook({}, binding)) as { appendSystemContext: string };
+    assert.match(
+      failed.appendSystemContext,
+      /If this conversation is expected to own managed issue work/,
+    );
+    assert.match(failed.appendSystemContext, /unmanaged-turn/);
+    assert.doesNotMatch(failed.appendSystemContext, /private-lookup-error/);
   });
 
   it('should load manifest metadata for lifecycle and prompt hooks', async () => {

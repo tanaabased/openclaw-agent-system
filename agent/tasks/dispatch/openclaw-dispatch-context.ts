@@ -385,13 +385,21 @@ export default class OpenClawDispatchContext {
     );
     const journal = new OpenClawDispatchStore(this.dependencies.root, current.store.location.scope);
     const records = (await journal.read()).records.filter(
-      (entry) => entry.threadId === binding.sessionKey,
+      (entry) =>
+        entry.threadId === binding.sessionKey ||
+        (entry.request && 'key' in entry.request && entry.request.key === binding.sessionKey),
     );
     if (records.length > 1) throw new Error('native-context-owner-ambiguous');
     const record = records[0];
     const admission =
       record && dispatchAdmission(record, (await current.store.read())?.records ?? []);
-    if (!record || !openclawTurnContext(record, binding)) return;
+    if (!record) {
+      // generated issue keys establish expected ownership, never execution authority.
+      if (/^agent:[^:]+:dashboard:agent-system-issue-/.test(binding.sessionKey ?? ''))
+        throw new Error('native-context-owner-unavailable');
+      return;
+    }
+    if (!openclawTurnContext(record, binding)) throw new Error('native-context-owner-unverified');
     if (!admission) throw new Error('turn-context-admission-unavailable');
     const assertCurrent = async () => {
       authority.signal?.throwIfAborted();

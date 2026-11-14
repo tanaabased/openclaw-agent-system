@@ -58,7 +58,7 @@ export default function registerAgentSystemHooks(
           }
         } catch {
           guidance.push(
-            'Agent System task context is unavailable. Call agent_system_context with {} to recover usable context directly; no action, target, or identity arguments are needed. Do not infer authority from visible cards or call a second context lookup.',
+            'Agent System context lookup is unavailable; this does not establish managed task ownership. If this conversation is expected to own managed issue work, call agent_system_context with {} once to check applicability and recover context. An unmanaged-turn result is normal for home chats and general automation/intake; continue ordinary native work without issue recovery. Do not infer authority from visible cards.',
           );
         }
       }
