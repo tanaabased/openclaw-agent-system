@@ -11,6 +11,7 @@ update, then verify that an already-current issue needs no further post.
 - Feedback queued behind an active native turn retains its exact source; delivery settles on verified input consumption independently of the answer.
 - Prior private feedback supplied to later GitHub and direct questions, with source-bound publication only for GitHub feedback.
 - Native clarification and answer history without a saved assessment checkpoint.
+- Operator direction forwarded from another native chat can read managed status context without publishing.
 
 ## What Does Not Belong Here
 
@@ -197,6 +198,20 @@ number=$(jq -er .number "$TMPDIR/notification-issue.json")
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 jq -es '[.[].records[]] | length == 1 and .[0].progression == null and .[0].work == null and (.[0].feedback.events | length) == 2 and all(.[0].feedback.events[]; .phase == "delivered" and .turn.status == "consumed")' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile before "$TMPDIR/notification-followup-replies.json" '[.[] | select(.user.login == "tanaabot") | .node_id] == [$before[0][] | select(.user.login == "tanaabot") | .node_id]'
+
+# should forward an operator status-context read from another native chat
+cd "$GITHUB_WORKSPACE/examples/openclaw-issue-conversation/tanaabot"
+conversation=$(jq -er .threadId "$TMPDIR/notification-followup.json")
+target=$(jq -er .html_url "$TMPDIR/notification-issue.json")
+params=$(jq -nc --arg key "$conversation" --arg target "$target" '{sessionKey:"agent:issue-conversation-tanaabot:owner-direction",agentId:"issue-conversation-tanaabot",message:("Forward owner status request to: " + $key + " target: " + $target),deliver:false,idempotencyKey:"notification-forward-owner"}')
+node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-forward-owner"'
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-forward-owner 600000
+openclaw gateway call chat.history --params '{"sessionKey":"agent:issue-conversation-tanaabot:owner-direction","inputRunIds":["notification-forward-owner"],"limit":200,"maxChars":100000}' --json > "$TMPDIR/notification-forward-owner-history.json"
+openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200,maxChars:100000}')" --json > "$TMPDIR/notification-forwarded-history.json"
+node --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; const read=n=>JSON.parse(readFileSync(process.env.TMPDIR+"/notification-"+n+".json","utf8")); const text=m=>typeof m.content==="string"?m.content:m.content.map(c=>c.text??"").join(""); assert.ok(read("forward-owner-history").messages.some(m=>m.role==="assistant" && m.__openclaw?.runId==="notification-forward-owner" && m.stopReason==="stop" && text(m)==="owner-cross-chat-read-complete")); const forwarded=read("forwarded-history").messages.filter(m=>m.provenance?.kind==="inter_session" && m.provenance?.sourceTool==="sessions_send" && text(m).includes("Forwarded owner status context target:")); assert.equal(forwarded.length,1); assert.equal(forwarded[0].role,"assistant");'
+jq -es --slurpfile before "$TMPDIR/notification-followup.json" '[.[].records[]] | length == 1 and .[0].id == $before[0].id and .[0].threadId == $before[0].threadId and .[0].worktree == $before[0].worktree and .[0].progression == null and .[0].work == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile before "$TMPDIR/notification-followup-replies.json" '[.[] | select(.user.login == "tanaabot") | .node_id] == [$before[0][] | select(.user.login == "tanaabot") | .node_id]'
 
 # should retain ordinary clarification and the later answer in the same native owner

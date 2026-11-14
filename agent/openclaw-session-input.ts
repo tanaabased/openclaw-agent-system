@@ -133,9 +133,7 @@ async function readNativeInputEvent(input: {
       const id = issueInputEventId(candidate, inputRunId, runId);
       if (
         !id ||
-        (input.requireOwner &&
-          (isForwardedInput(candidate) ||
-            sessionObject(candidate.__openclaw).senderIsOwner === false))
+        (input.requireOwner && sessionObject(candidate.__openclaw).senderIsOwner === false)
       )
         fail();
       anchors.push(id!);
@@ -173,10 +171,7 @@ async function readNativeInputEvent(input: {
   if (matches.length !== 1) fail('bound-input-missing-or-duplicate');
   const entry = await completeOpenClawMessage(request, input, matches[0]!);
   if (issueInputEventId(entry, inputRunId, runId) !== inputEventId) fail();
-  if (
-    input.requireOwner &&
-    (isForwardedInput(entry) || sessionObject(entry.__openclaw).senderIsOwner === false)
-  )
+  if (input.requireOwner && sessionObject(entry.__openclaw).senderIsOwner === false)
     fail('input-owner-unverified');
   return {
     runId,

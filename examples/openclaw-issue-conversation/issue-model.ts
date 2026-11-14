@@ -46,6 +46,7 @@ const dispatchStages = [
   'update-context',
   'update-compose',
   'update-candidate',
+  'forwarded-update-context',
 ];
 
 function assessmentRequest(context: Record<string, unknown>, payload: object) {
@@ -119,6 +120,46 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   };
   const dispatch = (stage: string, args: unknown) =>
     call(retryStage(stage, attempts.get(stage) ?? 0), 'agent_system_dispatch', args);
+  if (prompt.includes('Agent-to-agent announce step.')) return { content: 'ANNOUNCE_SKIP' };
+  if (
+    prompt.includes('forwarded-status-context-verified') &&
+    request.messages.some(
+      ({ role, content }) =>
+        role === 'system' &&
+        /Another session returned|Agent-to-agent reply step:/u.test(getTextContent(content) ?? ''),
+    )
+  )
+    return { content: 'REPLY_SKIP' };
+  const forward =
+    /Forward owner status request to: (\S+) target: (https:\/\/github\.com\/\S+)/u.exec(prompt);
+  if (forward) {
+    const sent = result('forward-owner-context');
+    if (!sent)
+      return call('forward-owner-context', 'sessions_send', {
+        sessionKey: forward[1],
+        message: `Forwarded owner status context target: ${forward[2]}\nRead context only; do not compose or publish.`,
+        timeoutSeconds: 60,
+      });
+    assert.equal(sent.status, 'ok');
+    assert.equal(sent.reply, 'forwarded-status-context-verified');
+    return { content: 'owner-cross-chat-read-complete' };
+  }
+  const forwardedTarget =
+    /Forwarded owner status context target: (https:\/\/github\.com\/\S+)/u.exec(prompt)?.[1];
+  if (forwardedTarget) {
+    const current = result('forwarded-update-context');
+    if (!current)
+      return dispatch('forwarded-update-context', {
+        action: 'reply',
+        operation: 'context',
+        purpose: 'status-update',
+        target: forwardedTarget,
+      });
+    assert.equal(current.status, 'status-update-context');
+    assert.equal(current.entry, 'managed');
+    assert.equal(typeof current.observation, 'string');
+    return { content: 'forwarded-status-context-verified' };
+  }
   const report = (): FixtureResponse | undefined => {
     const retained = result('report');
     if (!retained) return dispatch('report', { action: 'report' });
@@ -569,6 +610,7 @@ export const issueExampleScenario: OpenClawAIMockScenario = {
   ],
   dynamicFinalResponseFixtures: [final],
   toolCalls: [
+    { id: prefix + 'forward-owner-context', name: 'sessions_send' },
     { id: prefix + 'assessment-source', name: 'agent_system_github' },
     ...Array.from({ length: 8 }, (_, index) => ({
       id: prefix + `routing-source-${index}`,

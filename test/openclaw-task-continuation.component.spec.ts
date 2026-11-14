@@ -2330,11 +2330,11 @@ describe('agent/openclaw task-continuation', () => {
   });
 
   for (const operator of [true, false])
-    it(`should reuse the managed issue for later status composition with operator ${operator}`, async () => {
+    it(`should reuse the managed issue for forwarded status composition with operator ${operator}`, async () => {
       const { who } = await fixtureState.operatorFollowup(operator);
       fixtureState.session!.spawnedCwd = join(fixtureState.root, 'different-checkout');
       fixtureState.messages.at(-1)!.content = 'Draft a public status update; do not implement.';
-      if (!operator) {
+      {
         const input = fixtureState.messages.at(-1)!;
         input.role = 'assistant';
         input.provenance = {
