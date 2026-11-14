@@ -6,6 +6,47 @@ import resolveScenario from '../scripts/example-model-scenarios.ts';
 type Entry = Parameters<typeof diagnostics>[1][number];
 
 describe('scripts/aimock-diagnostics', () => {
+  it('should retain leading dispatch decisions without including provider prose in their summary', () => {
+    const value = {
+      status: 'waiting',
+      code: 'feedback-discovery-no-progress',
+      diagnostic: { phase: 'assignment-search', reason: 'discovery-budget-exhausted' },
+      context: 'private-context'.repeat(1000),
+    };
+    for (const content of [
+      JSON.stringify(value),
+      JSON.stringify({
+        tool: { source: 'openclaw' },
+        result: { content: [{ type: 'text', text: JSON.stringify(value) }] },
+      }),
+    ]) {
+      const result = diagnostics(resolveScenario('openclaw-pr-discovery'), [
+        {
+          method: 'POST',
+          path: '/responses',
+          response: { fixture: null, status: 503 },
+          body: {
+            model: 'gpt-5.5',
+            messages: [
+              {
+                role: 'tool',
+                tool_call_id: 'call_notifications_next-0',
+                content,
+              },
+            ],
+          },
+        },
+      ]);
+      const summary = result.requests![0]!.results[0]!.summary;
+      assert.equal(summary.status, 'waiting');
+      assert.equal(summary.code, 'feedback-discovery-no-progress');
+      assert.equal(summary.phase, 'assignment-search');
+      assert.equal(summary.reason, 'discovery-budget-exhausted');
+      assert.equal(summary.hasContext, true);
+      assert.doesNotMatch(JSON.stringify(summary), /private-context/u);
+    }
+  });
+
   it('should retain only condition diagnostics from an unexpected scheduled payload', () => {
     for (const [content, expected] of [
       [

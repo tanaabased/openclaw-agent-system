@@ -757,8 +757,14 @@ export default class OpenClawDispatch {
         );
       }
     }
-    if (input.action === 'next')
+    if (input.action === 'next') {
+      this.dependencies.discoveryTrace?.({
+        runId: caller.runId,
+        phase: 'entry',
+        hasJobId: Boolean(caller.jobId),
+      });
       await reconcileOpenClawLifecycle({ service: this, manifest, workspace, authority });
+    }
     if (input.action === 'next' && caller.jobId) {
       const snapshot = await current.journal.read();
       if (!snapshot.discoveryRun || !sameIntakeRun(snapshot.discoveryRun, caller)) {
@@ -773,8 +779,36 @@ export default class OpenClawDispatch {
           snapshot.discoveryCheckedAt !== undefined &&
           !snapshot.discoveryProgress?.pending &&
           snapshot.discoveryCheckedAt >= startedAt;
+        this.dependencies.discoveryTrace?.({
+          runId: caller.runId,
+          phase: 'reuse',
+          reuse,
+          pending: snapshot.discoveryProgress?.pending,
+          checkedAt: snapshot.discoveryCheckedAt,
+          startedAt,
+        });
         if (!reuse) {
-          const checked = await this.check(manifest, workspace, authority.signal);
+          const checked = await this.check(manifest, workspace, authority.signal).catch(
+            (error: unknown) => {
+              this.dependencies.discoveryTrace?.({
+                runId: caller.runId,
+                phase: 'check',
+                outcome: 'threw',
+                code: openClawDispatchFailureCode(error),
+              });
+              throw error;
+            },
+          );
+          this.dependencies.discoveryTrace?.({
+            runId: caller.runId,
+            phase: 'check',
+            outcome: checked.outcome,
+            code: checked.code,
+            more: checked.more,
+            checkPhase: checked.diagnostic?.phase,
+            reason: checked.diagnostic?.reason,
+            elapsedMs: checked.diagnostic?.elapsedMs,
+          });
           if (checked.outcome === 'failed')
             throw new Error(checked.code ?? 'dispatch-check-failed');
           await authority.assertCurrent?.();
@@ -816,6 +850,14 @@ export default class OpenClawDispatch {
         await save();
         return true;
       }));
+    if (input.action === 'next')
+      this.dependencies.discoveryTrace?.({
+        runId: caller.runId,
+        phase: 'feedback',
+        sameRun: Boolean(snapshot.discoveryRun && sameIntakeRun(snapshot.discoveryRun, caller)),
+        scan: discoverFeedback,
+        pending: snapshot.discoveryProgress?.pending,
+      });
     const scans = discoverFeedback
       ? await scanOpenClawFeedback({
           service: this,

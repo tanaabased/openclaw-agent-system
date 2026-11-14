@@ -70,6 +70,7 @@ jobs:
       - name: Run Leia-backed example
         shell: bash
         env:
+          OPENCLAW_LOG_LEVEL: debug
           AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
           CODEX_HOME: ${{ runner.temp }}/codex-home
           CODEX_TOOLS_CODEX_HOME: ${{ runner.temp }}/codex-home
@@ -82,6 +83,10 @@ jobs:
         if: failure()
         shell: bash
         run: |
+          mkdir -p "$RUNNER_TEMP/discovery-diagnostics"
+          curl --max-time 5 --silent --show-error http://127.0.0.1:4010/proof/diagnostics | jq '{scenario,failed,fixtureErrors,requests:[.requests[]? | {status,matched,intakeCondition,toolCalls,checks,results:[.results[]? | {callId,summary}]}]}' > "$RUNNER_TEMP/discovery-diagnostics/model.json" || true
+          jq -c . "$RUNNER_TEMP/discovery-diagnostics/model.json" || true
+          jq -s '[.[] | {discoveryCheckedAt,discoveryRun,discoveryProgress,discoveryTimings,records:[.records[] | {id,nativeInactive,blocker,feedback:(.feedback | {code,discoveryPending,scannedTime,discoveryStalls,events:[.events[]? | {phase,code,policyHeld,turnStatus:.turn.status}]})}]}]' "$RUNNER_TEMP/agent-system-config/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$RUNNER_TEMP/discovery-diagnostics/state.json" || true
           jq -s '[.. | objects | select(.providerDiagnostic? != null) | {code, providerDiagnostic, retry, retryAfter}]' "$RUNNER_TEMP/agent-system-config/tanaab/agent-system/agent-system-dispatch-v2/"*.json || true
           if command -v openclaw-diagnostics >/dev/null; then
             helper_dir=$(dirname "$(command -v openclaw-diagnostics)")
@@ -92,7 +97,17 @@ jobs:
                 node "$helper_dir/lib/redact-stream.mjs" < "$setup_log" | tail -n 30 | tail -c 8192
               done
             fi
+            if gateway_log=$(openclaw-gateway log-path); then
+              node "$helper_dir/lib/redact-stream.mjs" < "$gateway_log" | grep -F 'code=dispatch-discovery ' > "$RUNNER_TEMP/discovery-diagnostics/trace.log" || true
+            fi
             openclaw-diagnostics --debug
           else
             echo "OpenClaw setup helpers are unavailable; see the setup action failure above."
           fi
+      - name: Retain discovery diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.example }}-discovery-diagnostics
+          path: ${{ runner.temp }}/discovery-diagnostics/
+          if-no-files-found: ignore

@@ -15,6 +15,8 @@ describe('agent/openclaw manual dispatch discovery', () => {
   });
 
   it('should reuse this scheduled occurrence scan without rescanning on repeated next calls', async () => {
+    const traces: Array<{ phase: string; reuse?: boolean }> = [];
+    fixture.service.dependencies.discoveryTrace = (event) => traces.push(event);
     const startedAt = Date.now();
     await fixture.service.check(fixture.manifest, fixture.root);
     fixture.service.dependencies.occurrenceStartedAt = async () => startedAt;
@@ -29,6 +31,8 @@ describe('agent/openclaw manual dispatch discovery', () => {
     });
     assert.equal(fixture.creates().length, 1);
     assert.equal(fixture.sends().length, 1);
+    assert.ok(traces.some((event) => event.phase === 'reuse' && event.reuse));
+    assert.ok(!traces.some((event) => event.phase === 'check'));
   });
 
   it('should not reuse a recent scan from a previous occurrence for manual entry', async () => {
@@ -59,6 +63,8 @@ describe('agent/openclaw manual dispatch discovery', () => {
   });
 
   it('should not treat failed discovery as completed on another next call', async () => {
+    const traces: Array<{ phase: string; outcome?: string }> = [];
+    fixture.service.dependencies.discoveryTrace = (event) => traces.push(event);
     let checks = 0;
     fixture.service.check = async () => {
       checks++;
@@ -73,6 +79,7 @@ describe('agent/openclaw manual dispatch discovery', () => {
       );
     assert.equal(checks, 2);
     assert.equal(fixture.creates().length, 0);
+    assert.ok(traces.some((event) => event.phase === 'check' && event.outcome === 'threw'));
   });
 
   it('should discover and route feedback in a manual run without a trigger check', async () => {

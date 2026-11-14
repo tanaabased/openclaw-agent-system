@@ -61,6 +61,7 @@ describe('tools/dispatch/tool', () => {
   };
 
   function fixture(caller = coordinator) {
+    const logs: string[] = [];
     const workspaceDir = `/workspaces/${caller.agentId}`;
     const hooks = new Map<string, Hook>();
     const factories: Array<OpenClawPluginToolFactory | OpenClawPluginToolFactory<2>> = [];
@@ -101,6 +102,7 @@ describe('tools/dispatch/tool', () => {
       async manifest() {},
     };
     const api = {
+      logger: { debug: (message: string) => logs.push(message) },
       runContext,
       source: '/plugin/index.ts',
       runtimeSource: '/plugin/dist/index.js',
@@ -185,6 +187,7 @@ describe('tools/dispatch/tool', () => {
       reads,
       adapter,
       manifest,
+      logs,
     };
   }
 
@@ -212,6 +215,13 @@ describe('tools/dispatch/tool', () => {
   it('should carry native cron identity only into its exact invocation', async () => {
     const f = fixture();
     await f.hooks.get('before_prompt_build')!(event, { ...coordinator, jobId: 'native-job' });
+    assert.ok(
+      f.logs.some(
+        (line) =>
+          line.includes('code=dispatch-discovery ') &&
+          JSON.parse(line.split('code=dispatch-discovery ')[1]!).hasJobId === true,
+      ),
+    );
     await f.hook(event, coordinator);
     await f.build().execute(event.toolCallId, event.params);
     assert.equal(f.calls[0]?.jobId, 'native-job');

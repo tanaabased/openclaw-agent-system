@@ -81,6 +81,16 @@ export default function createDispatchTool(input: {
 }) {
   const { api } = input;
   api.on('before_prompt_build', async (_event, context) => {
+    api.logger?.debug?.(
+      `code=dispatch-discovery ${JSON.stringify({
+        phase: 'hook',
+        runId: context.runId,
+        hasJobId: Boolean(context.jobId),
+        hasAgentId: Boolean(context.agentId),
+        hasSessionKey: Boolean(context.sessionKey),
+        hasSessionId: Boolean(context.sessionId),
+      })}`,
+    );
     if (
       !context.runId ||
       !context.jobId ||
@@ -131,6 +141,8 @@ export default function createDispatchTool(input: {
     feedbackConnect: input.feedbackConnect,
     retirementDelivery: input.retirementDelivery,
     assessmentGit: input.assessmentGit,
+    discoveryTrace: (event) =>
+      api.logger?.debug?.(`code=dispatch-discovery ${JSON.stringify(event)}`),
     occurrenceStartedAt: (manifest, workspace, caller) =>
       input.automations.occurrenceStartedAt(
         manifest,
