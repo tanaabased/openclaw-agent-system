@@ -1418,7 +1418,9 @@ describe('agent/codex-feedback', () => {
         ) => {
           assert.equal(number, 45);
           roots.push(rootId);
-          return (publishedReply = { nodeId: 'PRRC_published', databaseId: 99, body });
+          publishedReply = { nodeId: 'PRRC_published', databaseId: 99, body };
+          if (kind === 'group') throw new Error('publication-response-lost');
+          return publishedReply;
         },
         find: async () => publishedReply,
       } as unknown as typeof provider.replies;
@@ -1470,16 +1472,30 @@ describe('agent/codex-feedback', () => {
           /material-stale/,
         );
         assert.notEqual((await call('context', request)).status, 'material');
-        return;
+      } else {
+        assert.ok('presentation' in context && typeof context.presentation === 'string');
+        assert.ok(context.presentation.includes('[@receiver](https://github.com/receiver)'));
       }
-      assert.ok('presentation' in context && typeof context.presentation === 'string');
-      assert.ok(context.presentation.includes('[@receiver](https://github.com/receiver)'));
       await replyTransport();
+      if (kind === 'group')
+        await assert.rejects(
+          call(
+            'reply',
+            {
+              operation: 'compose',
+              target: 'https://github.com/owner/repo/pull/45#discussion_r70',
+              privateText: 'Wrong member.',
+            },
+            true,
+          ),
+          /reply-feedback-target-mismatch/,
+        );
+      const sourceBefore = (await store.read()).records[0]!.feedback!.events[0]!.source;
       const composed = await call(
         'reply',
         {
           operation: 'compose',
-          target: `https://github.com/owner/repo/pull/45#discussion_r${reply.databaseId}`,
+          target: `https://github.com/owner/repo/pull/45#discussion_r${kind === 'group' ? findings[0]!.databaseId : reply.databaseId}`,
           privateText: 'Full analysis.',
         },
         true,
@@ -1493,10 +1509,15 @@ describe('agent/codex-feedback', () => {
         },
         true,
       );
-      const completed = await call('reply', { operation: 'publish' }, true);
-      assert.equal(completed.status, 'published');
+      if (kind === 'group')
+        await assert.rejects(
+          call('reply', { operation: 'publish' }, true),
+          /publication-response-lost/,
+        );
+      else assert.equal((await call('reply', { operation: 'publish' }, true)).status, 'published');
       assert.equal((await call('reply', { operation: 'reconcile' }, true)).status, 'published');
-      assert.deepEqual(roots, [70]);
+      assert.deepEqual(roots, [kind === 'group' ? 100 : 70]);
+      assert.equal((await store.read()).records[0]!.feedback!.events[0]!.source, sourceBefore);
       assert.equal(creates, 0);
     });
   for (const stale of [false, true]) {

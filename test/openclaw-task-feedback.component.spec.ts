@@ -415,6 +415,57 @@ describe('agent/openclaw task-feedback', () => {
       }),
       /feedback-owner-caller-required/,
     );
+    const sourceBefore = event.source;
+    const outsider = reviewCommentFixture({ author, nodeId: 'outsider', databaseId: 200 });
+    const roots: number[] = [];
+    let posted: { nodeId: string; databaseId: number; body: string } | undefined;
+    const connection = await fixtureState.service.dependencies.feedbackConnect!(
+      { manifest: fixtureState.manifest, workspaceDir: fixtureState.root },
+      new AbortController().signal,
+    );
+    fixtureState.service.dependencies.feedbackConnect = async () => ({
+      ...connection,
+      reviews: {
+        ...connection.reviews!,
+        getComment: async (_o, _n, _number, id) =>
+          id === 200 ? outsider : findings.find((finding) => finding.databaseId === id)!,
+      },
+      replies: {
+        create: async (_o, _n, number, root, body) => {
+          assert.equal(number, 7);
+          roots.push(root);
+          posted = { nodeId: 'reply', databaseId: 999, body };
+          throw new Error('response-lost');
+        },
+        find: async () => (posted ? reviewCommentFixture(posted) : undefined),
+      },
+    });
+    const reply = (operation: string, extra: object = {}) =>
+      fixtureState.service.runModel(
+        fixtureState.manifest,
+        fixtureState.root,
+        who,
+        { action: 'reply', operation, ...extra },
+        false,
+      );
+    await assert.rejects(
+      reply('compose', {
+        target: 'https://github.com/owner/repo/pull/7#discussion_r200',
+        privateText: 'Not an admitted member.',
+      }),
+      /reply-feedback-target-mismatch/,
+    );
+
+    const target = 'https://github.com/owner/repo/pull/7#discussion_r100';
+    assert.equal(
+      (await reply('compose', { target, privateText: 'Answer this finding.' })).status,
+      'composition-ready',
+    );
+    await reply('candidate', { publicText: 'Fixed this finding.' });
+    await assert.rejects(reply('publish'), /response-lost/);
+    assert.equal((await reply('reconcile')).status, 'published');
+    assert.deepEqual(roots, [100]);
+    assert.equal((await fixtureState.record()).feedback!.events[0]!.source, sourceBefore);
   });
 
   it('should reuse one issue observation per feedback authorization and refresh on the next call', async () => {
