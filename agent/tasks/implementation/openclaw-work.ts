@@ -93,7 +93,7 @@ export async function verifyOpenClawWork(input: {
       : await nativeInputEvent(context);
   const { runId, inputEventId } = verifiedInput;
   if (input.decision) {
-    record.implementationDecision = input.decision;
+    record.implementationDecision = structuredClone(input.decision);
     await workflowFailureStep('decision-persistence', () => input.save?.());
   }
   const message =

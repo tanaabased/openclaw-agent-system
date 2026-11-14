@@ -185,7 +185,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     });
     if (!turn.ready) return turn.response;
     if (input.action === 'context' && input.decision)
-      record.implementationDecision = input.decision;
+      record.implementationDecision = structuredClone(input.decision);
     await save();
     if (input.action === 'context') {
       if (record.handoff) {

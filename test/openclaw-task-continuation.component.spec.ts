@@ -436,11 +436,14 @@ describe('agent/openclaw task-continuation', () => {
       await fixtureState.prepare(input);
       await fixtureState.assess(input.id);
       await fixtureState.context(input.id);
+      const reasons = ['Ready.'];
+      Object.freeze(reasons);
+      const decision = Object.freeze({ mode: 'work' as const, reasons });
       const assessment: AssessmentSubmission = {
         ...fixtureState.plan,
         reviewSummary:
           'You would receive the missing result. Docs clarify it; tests cover the return.',
-        ...(mode === 'auto' ? { decision: { mode: 'work', reasons: ['Ready.'] } } : {}),
+        ...(mode === 'auto' ? { decision } : {}),
       };
       const result = await fixtureState.renderAssessment(input.id, assessment);
       assert.ok(
@@ -449,6 +452,8 @@ describe('agent/openclaw task-continuation', () => {
       );
       fixtureState.inputReceipts = [];
       const who = fixtureState.assessor(input.id);
+      assert.equal((await fixtureState.record()).implementationDecision, undefined);
+      assert.equal((await fixtureState.record()).progression, undefined);
       const verified = await fixtureState.service.run(
         fixtureState.manifest,
         fixtureState.root,
@@ -463,6 +468,24 @@ describe('agent/openclaw task-continuation', () => {
       assert.equal('assessment' in verified, false);
       assert.equal((await fixtureState.record()).work?.implementation?.runId, who.runId);
       assert.equal((await fixtureState.record()).progression?.via, mode);
+      if (mode === 'auto') {
+        assert.deepEqual((await fixtureState.record()).implementationDecision, decision);
+        assert.deepEqual(decision, { mode: 'work', reasons: ['Ready.'] });
+        assert.ok(Object.isFrozen(decision));
+        assert.ok(Object.isFrozen(decision.reasons));
+        const resumed = await fixtureState.service.run(
+          fixtureState.manifest,
+          fixtureState.root,
+          who,
+          {
+            action: 'implementation-context',
+            id: input.id,
+          },
+        );
+        assert.equal(resumed.status, 'verified');
+        assert.deepEqual((await fixtureState.record()).implementationDecision, decision);
+        assert.equal((await fixtureState.record()).progression?.via, 'auto');
+      }
       assert.equal(fixtureState.sends().length, 1);
       await fixtureState.service.run(fixtureState.manifest, fixtureState.root, who, {
         action: 'implementation-result',

@@ -26,14 +26,18 @@ describe('implementation failure diagnostics', () => {
   it('should distinguish session validation from decision persistence without replacing errors', async () => {
     for (const step of ['session-validation', 'decision-persistence'] as const) {
       const error = Object.assign(new Error('SECRET token /private/path'), { code: 'ENOSPC' });
+      const task = record();
+      const reasons = ['bounded task'];
+      Object.freeze(reasons);
+      const decision = Object.freeze({ mode: 'work' as const, reasons });
       await assert.rejects(
         verifyOpenClawWork({
-          record: record(),
+          record: task,
           caller,
           operator: false,
           feedback: { inputId: 'input', message: 'SECRET prompt' },
           mode: 'auto',
-          decision: { mode: 'work', reasons: ['bounded task'] },
+          decision,
           now: 1,
           config: {},
           request: async () => {
@@ -48,6 +52,11 @@ describe('implementation failure diagnostics', () => {
             };
           },
           save: async () => {
+            assert.deepEqual(task.implementationDecision, decision);
+            assert.notEqual(task.implementationDecision, decision);
+            assert.notEqual(task.implementationDecision?.reasons, decision.reasons);
+            assert.equal(Object.isFrozen(task.implementationDecision), false);
+            assert.equal(Object.isFrozen(task.implementationDecision?.reasons), false);
             throw error;
           },
         }),

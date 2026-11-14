@@ -260,8 +260,9 @@ describe('agent/codex task-continuation', () => {
       fixtureState.native!.status = 'active';
       fixtureState.native!.turnStatus = 'inProgress';
       fixtureState.native!.turnEnded = false;
-      const decision =
-        mode === 'auto' ? { mode: 'work', reasons: ['Requirements are clear.'] } : undefined;
+      const reasons = ['Requirements are clear.'];
+      Object.freeze(reasons);
+      const decision = mode === 'auto' ? Object.freeze({ mode: 'work', reasons }) : undefined;
       const assessmentContext = await fixtureState.request(
         'context',
         { id: work.id },
@@ -271,6 +272,9 @@ describe('agent/codex task-continuation', () => {
         action: 'context',
         id: work.id,
       });
+      const before = (await (await fixtureState.workStore()).read()).records[0]!;
+      assert.equal(before.implementationDecision, undefined);
+      assert.equal(before.progression, undefined);
       const context = await runCodexContinuation(
         fixtureState.pluginData,
         {
@@ -324,6 +328,11 @@ describe('agent/codex task-continuation', () => {
       const record = (await (await fixtureState.workStore()).read()).records[0]!;
       assert.equal(record.progression?.via, mode);
       assert.deepEqual(record.implementationDecision, decision);
+      if (decision) {
+        assert.deepEqual(decision, { mode: 'work', reasons: ['Requirements are clear.'] });
+        assert.ok(Object.isFrozen(decision));
+        assert.ok(Object.isFrozen(decision.reasons));
+      }
       const restored = await hydrateImplementation(context, async (read) =>
         work.run('context', read, true),
       );
