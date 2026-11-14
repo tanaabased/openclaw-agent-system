@@ -621,6 +621,28 @@ describe('agent/automation-service', () => {
     }
   });
 
+  it('should reuse discovery only for the owned running cron occurrence and target session', async () => {
+    await service.reconcile(manifest, root);
+    const job = native[0]!;
+    job.sessionTarget = 'session:coordinator';
+    job.state.runningAtMs = now;
+    const caller = { jobId: job.id, sessionKey: 'coordinator' };
+    assert.equal(await service.occurrenceStartedAt(manifest, root, 'check', caller), now);
+    assert.equal(
+      await service.occurrenceStartedAt(manifest, root, 'check', { ...caller, jobId: 'foreign' }),
+      undefined,
+    );
+    assert.equal(
+      await service.occurrenceStartedAt(manifest, root, 'check', {
+        ...caller,
+        sessionKey: 'foreign',
+      }),
+      undefined,
+    );
+    delete job.state.runningAtMs;
+    assert.equal(await service.occurrenceStartedAt(manifest, root, 'check', caller), undefined);
+  });
+
   it('should pause and restore exact native settings without changing the installed receipt', async () => {
     await service.reconcile(manifest, root);
     const { store } = await service.scope(manifest, root);

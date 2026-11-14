@@ -21,6 +21,7 @@ import { parseReplyRequest } from '../tools/dispatch/reply-schema.ts';
 import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
 
 interface HookContext {
+  jobId?: string;
   requester?: { senderIsOwner?: boolean };
   agentId?: string;
   sessionKey?: string;
@@ -206,6 +207,20 @@ describe('tools/dispatch/tool', () => {
       true,
       'explicit native cleanup must not require GitHub configuration',
     );
+  });
+
+  it('should carry native cron identity only into its exact invocation', async () => {
+    const f = fixture();
+    await f.hooks.get('before_prompt_build')!(event, { ...coordinator, jobId: 'native-job' });
+    await f.hook(event, coordinator);
+    await f.build().execute(event.toolCallId, event.params);
+    assert.equal(f.calls[0]?.jobId, 'native-job');
+    await f.hook(
+      { ...event, runId: 'other-run', toolCallId: 'other-call' },
+      { ...coordinator, runId: 'other-run' },
+    );
+    await f.build().execute('other-call', event.params);
+    assert.equal(f.calls[1]?.jobId, undefined);
   });
 
   it('should resolve context through a no-argument tool and reject selectors before execution', async () => {
