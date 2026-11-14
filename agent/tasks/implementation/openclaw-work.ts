@@ -6,6 +6,7 @@ import nativeClarification from '../context/native-clarification.ts';
 import nativeTaskInstructions from '../context/native-task-instructions.ts';
 import openClawNativeTurns from '../../openclaw-native-turns.ts';
 import workflowRecovery from '../workflow-recovery.ts';
+import { workflowFailureStep } from '../workflow-failure.ts';
 
 import type { DispatchRequest } from '../../../credentials/session-dispatch.ts';
 import type { dispatchParameters } from '../../../tools/dispatch/tool-schema.ts';
@@ -43,7 +44,9 @@ export async function verifyOpenClawWork(input: {
     caller.sessionId !== record.sessionCreation?.sessionId
   )
     throw new Error('dispatch-work-context-mismatch');
-  await describeIssueSession(input.request, record, input.config);
+  await workflowFailureStep('session-validation', () =>
+    describeIssueSession(input.request, record, input.config),
+  );
   const operator =
     input.operator &&
     !openClawNativeTurns(record).some(
@@ -91,7 +94,7 @@ export async function verifyOpenClawWork(input: {
   const { runId, inputEventId } = verifiedInput;
   if (input.decision) {
     record.implementationDecision = input.decision;
-    await input.save?.();
+    await workflowFailureStep('decision-persistence', () => input.save?.());
   }
   const message =
     'message' in verifiedInput && typeof verifiedInput.message === 'string'
@@ -116,7 +119,7 @@ export default async function openClawWorkAction(input: {
   save(): Promise<void>;
 }) {
   const { record, source, action } = input;
-  await input.assertCurrent();
+  await workflowFailureStep('session-validation', () => input.assertCurrent());
   if (action.action === 'handoff') {
     const digest = automationHash({
       id: record.id,
@@ -158,16 +161,17 @@ export default async function openClawWorkAction(input: {
       record.handoff ??= { at: input.now, by: input.caller.sessionKey, turnId: source.runId };
       record.work.implementation ??= source;
       record.work.caller = source;
-      await input.save();
+      await workflowFailureStep('implementation-persistence', () => input.save());
     }
     if (!record.work) throw new Error('implementation-material-context-required');
-    return {
+    const work = record.work;
+    return workflowFailureStep('implementation-material', () => ({
       ...implementationContext({
         runtime: 'openclaw',
         id: record.id,
         path: record.worktree!,
-        implementation: record.work.selection,
-        scope: record.work.scope,
+        implementation: work.selection,
+        scope: work.scope,
       }),
       issueStage: record.progression?.stage ?? 'planning',
       assignmentObservation: record.assignmentObservation,
@@ -176,7 +180,7 @@ export default async function openClawWorkAction(input: {
       routing: record.routing && JSON.parse(record.routing),
       effective: record.effective,
       instructions: nativeTaskInstructions('openclaw'),
-    };
+    }));
   }
   if (!record.work?.caller || automationHash(record.work.caller) !== automationHash(source))
     throw new Error('implementation-context-missing');

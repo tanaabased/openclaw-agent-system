@@ -269,7 +269,7 @@ export default function createDispatchTool(input: {
                 )
                 .catch((error: unknown) => {
                   const failure = {
-                    ...workflowFailure(error, openClawDispatchFailureCode(error)),
+                    ...workflowFailure(error, openClawDispatchFailureCode(error), 'dispatch'),
                     code: openClawDispatchFailureCode(error),
                   };
                   return {

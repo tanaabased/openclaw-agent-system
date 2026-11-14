@@ -33,6 +33,7 @@ import {
 } from './github-review-fixtures.ts';
 
 import hydrateImplementation from './implementation-material-fixture.ts';
+import workflowFailure from '../agent/tasks/workflow-failure.ts';
 const url = 'https://github.com/owner/repo/issues/3';
 describe('agent/feedback-reply', () => {
   let root: string, deps: FeedbackReplyDependencies, provider: FeedbackProvider;
@@ -294,6 +295,26 @@ describe('agent/feedback-reply', () => {
     return selection(composed);
   }
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should identify candidate failures without changing the thrown error in ${runtime}`, async () => {
+      deps.binding.runtime = runtime;
+      const choice = await candidate();
+      const error = new TypeError('SECRET token /private/path');
+      deps.assertCurrent = async () => {
+        throw error;
+      };
+      await assert.rejects(
+        call('candidate', { ...choice, publicText: 'Replacement answer.' }),
+        (caught) => {
+          assert.equal(caught, error);
+          assert.deepEqual(workflowFailure(caught, 'dispatch-operation-failed'), {
+            code: 'dispatch-operation-failed',
+            failureDiagnostic: { step: 'reply-candidate', category: 'type-error' },
+          });
+          return true;
+        },
+      );
+      assert.equal(writes, 0);
+    });
     it(`should select exact semantic reply drafts and reconcile uncertain publication in ${runtime}`, async () => {
       deps.binding.runtime = runtime;
       deps.defaultTarget = url;

@@ -256,6 +256,8 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
           'The operator selected the shared reply approach. Implementation remains unstarted.',
       });
     assert.equal(candidate.status, 'candidate-recorded');
+    assert.equal('failureDiagnostic' in candidate, false);
+    assert.equal('notice' in candidate, false);
     return { content: String(candidate.presentation) };
   }
   const directTarget = /Direct reply draft target: (https:\/\/github\.com\/[^\s]+)/u.exec(
@@ -287,6 +289,8 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
           'The disposable manual reply fixture is ready. No implementation or test result is claimed.',
       });
     assert.equal(candidate.status, 'candidate-recorded');
+    assert.equal('failureDiagnostic' in candidate, false);
+    assert.equal('notice' in candidate, false);
     return { content: String(candidate.presentation) };
   }
   const directReply = /Direct reply publish: (\{[^\n]+\})/u.exec(prompt)?.[1];

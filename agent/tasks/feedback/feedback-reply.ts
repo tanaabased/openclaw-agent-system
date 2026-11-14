@@ -1,6 +1,7 @@
 import { responseInstructions } from '../response/task-response.ts';
 import { responseBlocks } from '../../../channels/github/presentation/response-blocks.ts';
 import selectReplyDraft from './reply-selection.ts';
+import { workflowFailureStep } from '../workflow-failure.ts';
 import { cardCopyInstructions } from '../../../channels/github/presentation/card.ts';
 
 import assessmentGuidance from '../assessment/assessment-guidance.ts';
@@ -75,6 +76,14 @@ function replyOwnerId(
 /** direct entry prepares the ordinary composition contract; native owners keep all effects. */
 export default async function feedbackReply(request: unknown, deps: FeedbackReplyDependencies) {
   const authored = parseReplyRequest(request);
+  const run = () => runFeedbackReply(authored, deps);
+  return authored.operation === 'candidate' ? workflowFailureStep('reply-candidate', run) : run();
+}
+
+async function runFeedbackReply(
+  authored: ReturnType<typeof parseReplyRequest>,
+  deps: FeedbackReplyDependencies,
+) {
   const input: Omit<ReplyExecutionRequest, 'update'> & { update?: StatusUpdate } = {
     ...authored,
     update: undefined,

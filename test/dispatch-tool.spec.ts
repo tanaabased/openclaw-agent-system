@@ -451,6 +451,7 @@ describe('tools/dispatch/tool', () => {
         code,
         runtime: 'openclaw',
         operation: 'dispatch:next',
+        failureDiagnostic: { step: 'dispatch', category: 'error' },
       });
       assert.ok(!JSON.stringify(result).includes('private fixture'));
     }

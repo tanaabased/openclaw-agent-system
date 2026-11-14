@@ -9,6 +9,7 @@ import type { revalidateDispatchAssignment } from '../dispatch/codex-dispatch-co
 import type { DispatchRecord } from '../dispatch/codex-dispatch-state.ts';
 import type { ManagedIssue } from '../managed-issue.ts';
 import workflowRecovery from '../workflow-recovery.ts';
+import { workflowFailureStep } from '../workflow-failure.ts';
 
 /** Prepare the issue branch and skill context under the verified native task binding. */
 export default async function codexWorkContext(
@@ -40,8 +41,8 @@ export default async function codexWorkContext(
         prepare: true,
       });
   if (!readOnly && context.operatorInput && deps.directScope) work.scope = deps.directScope;
-  if (!readOnly) await save();
-  return {
+  if (!readOnly) await workflowFailureStep('implementation-persistence', save);
+  return workflowFailureStep('implementation-material', () => ({
     ...implementationContext({
       runtime: 'codex',
       id: record.id,
@@ -62,5 +63,5 @@ export default async function codexWorkContext(
     continuationRequest: { action: 'context' as const, id: record.id },
     deliveryPrepareRequest: { action: 'prepare' as const, id: record.id },
     instructions: nativeTaskInstructions('codex'),
-  };
+  }));
 }

@@ -770,7 +770,14 @@ function respond(
           context.publicationAuthorized !== true
         )
           return;
-        for (const key of ['resultContract', 'resultSchema', 'recording', 'handoff'])
+        for (const key of [
+          'resultContract',
+          'resultSchema',
+          'recording',
+          'handoff',
+          'failureDiagnostic',
+          'notice',
+        ])
           assert.equal(key in context, false);
         assert.match(String(context.instructions), /latest authorized scope/u);
         assert.match(String(context.instructions), /preserves unrelated behavior/u);

@@ -1,9 +1,14 @@
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 import { completeOpenClawMessage, openClawHistoryPages } from './openclaw-history.ts';
 import { sessionObject } from './openclaw-session-create.ts';
+import { workflowFailureStep } from './tasks/workflow-failure.ts';
 
 /** native tool context establishes owner authority; history establishes exact input custody. */
-export async function nativeInputEvent(input: {
+export function nativeInputEvent(input: Parameters<typeof readNativeInputEvent>[0]) {
+  return workflowFailureStep('input-verification', () => readNativeInputEvent(input));
+}
+
+async function readNativeInputEvent(input: {
   request: DispatchRequest;
   requireOwner?: boolean;
   sessionKey: string;

@@ -6,6 +6,8 @@ import issueInputEvent, {
   operatorInputEvent,
 } from '../agent/openclaw-session-input.ts';
 
+import workflowFailure from '../agent/tasks/workflow-failure.ts';
+
 const turn = { runId: 'owned-run', message: 'exact admitted input' };
 const entry = {
   role: 'user',
@@ -15,6 +17,47 @@ const entry = {
 };
 
 describe('agent/openclaw-session-input', () => {
+  it('should locate history failures while preserving rpc codes and custody reasons', async () => {
+    for (const error of [
+      new TypeError('SECRET history /private/path'),
+      new Error('session-dispatch-history-forbidden'),
+      new Error('session-dispatch-history-timeout-unverified'),
+    ]) {
+      await assert.rejects(
+        nativeInputEvent({
+          sessionKey: 'SECRET',
+          sessionId: 'SECRET',
+          runId: 'SECRET',
+          retained: [],
+          request: async () => {
+            throw error;
+          },
+        }),
+        (caught) => {
+          assert.equal(caught, error);
+          const failure = workflowFailure(caught, 'dispatch-operation-failed');
+          assert.equal(
+            failure.code,
+            error instanceof TypeError ? 'dispatch-operation-failed' : error.message,
+          );
+          assert.deepEqual(failure.failureDiagnostic, {
+            step: 'input-verification',
+            category: error instanceof TypeError ? 'type-error' : 'error',
+          });
+          assert.doesNotMatch(JSON.stringify(failure), /SECRET|private/);
+          return true;
+        },
+      );
+    }
+    await assert.rejects(verify({ receipts: [{ ...consumed, cancelled: true }] }), (error) => {
+      const failure = workflowFailure(error, 'fallback');
+      assert.equal(failure.code, 'dispatch-operator-input-unverified');
+      assert.equal(failure.inputVerificationReason, 'input-receipt-invalid-or-cancelled');
+      assert.equal(failure.failureDiagnostic?.step, 'input-verification');
+      return true;
+    });
+  });
+
   it('should adopt native user input custody without requiring assistant run metadata', () => {
     assert.equal(issueInputEvent(entry, turn), 'input-event');
     assert.equal(

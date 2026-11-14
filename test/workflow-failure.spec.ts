@@ -1,6 +1,9 @@
 import { PrivateStateFileLockBusyError } from '../core/private-state-file-lock.ts';
 import assert from 'node:assert/strict';
-import workflowFailure, { workflowFailureScope } from '../agent/tasks/workflow-failure.ts';
+import workflowFailure, {
+  workflowFailureScope,
+  workflowFailureStep,
+} from '../agent/tasks/workflow-failure.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import {
   scheduleDispatchRetry,
@@ -8,6 +11,59 @@ import {
 } from '../agent/tasks/dispatch/dispatch-retry.ts';
 
 describe('agent/workflow-failure', () => {
+  it('should preserve original failures and expose only allowlisted exception evidence', async () => {
+    const error = Object.freeze(
+      Object.assign(new TypeError('SECRET prompt /private/path'), {
+        code: 'EACCES',
+        token: 'SECRET',
+        name: 'SECRET',
+      }),
+    );
+    await assert.rejects(
+      workflowFailureStep('reply-candidate', () =>
+        workflowFailureStep('reply-candidate-persistence', () => {
+          throw error;
+        }),
+      ),
+      (caught) => {
+        assert.equal(caught, error);
+        assert.deepEqual(workflowFailure(caught, 'dispatch-operation-failed'), {
+          code: 'dispatch-operation-failed',
+          failureDiagnostic: {
+            step: 'reply-candidate-persistence',
+            category: 'type-error',
+            code: 'EACCES',
+          },
+        });
+        return true;
+      },
+    );
+    assert.deepEqual(
+      workflowFailure(
+        { code: 'SECRET', name: 'TypeError', failureDiagnostic: { step: 'SECRET' } },
+        'dispatch-operation-failed',
+        'dispatch',
+      ),
+      {
+        code: 'dispatch-operation-failed',
+        failureDiagnostic: { step: 'dispatch', category: 'unknown' },
+      },
+    );
+    const result = { status: 'verified' };
+    assert.equal(await workflowFailureStep('implementation-material', () => result), result);
+    const abort = new DOMException('SECRET', 'AbortError');
+    await assert.rejects(
+      workflowFailureStep('session-validation', () => {
+        throw abort;
+      }),
+      (caught) => {
+        assert.equal(caught, abort);
+        assert.equal(workflowFailure(caught, 'fallback').failureDiagnostic?.category, 'aborted');
+        return true;
+      },
+    );
+  });
+
   it('should retain only bounded input-verification reasons without message contents', () => {
     const error = Object.assign(new Error('dispatch-input-unverified'), {
       inputVerificationReason: 'input-receipt-invalid-or-cancelled',

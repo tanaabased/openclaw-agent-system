@@ -7,18 +7,82 @@ import AssessmentValidationError from './assessment/assessment-validation.ts';
 import WorkflowRequestError from './workflow-request-error.ts';
 import { ContextMaterialError } from './implementation/implementation-material.ts';
 
+type FailureStep =
+  | 'dispatch'
+  | 'session-validation'
+  | 'input-verification'
+  | 'decision-persistence'
+  | 'implementation-selection'
+  | 'implementation-persistence'
+  | 'implementation-material'
+  | 'reply-candidate'
+  | 'reply-candidate-persistence';
+
+// Exception-local evidence only: keep the original error identity and never persist a stage.
+const failureSteps = new WeakMap<object, FailureStep>();
+
+export async function workflowFailureStep<T>(step: FailureStep, operation: () => T | Promise<T>) {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error && typeof error === 'object' && !failureSteps.has(error))
+      failureSteps.set(error, step);
+    throw error;
+  }
+}
+
+function exceptionCategory(error: unknown) {
+  if (error instanceof TypeError) return 'type-error';
+  if (error instanceof SyntaxError) return 'syntax-error';
+  if (error instanceof RangeError) return 'range-error';
+  if (error instanceof ReferenceError) return 'reference-error';
+  if (error instanceof DOMException && error.name === 'AbortError') return 'aborted';
+  return error instanceof Error ? 'error' : 'unknown';
+}
+
+const exceptionCodes = new Set([
+  'EACCES',
+  'EPERM',
+  'ENOENT',
+  'ENOSPC',
+  'EDQUOT',
+  'EROFS',
+  'EIO',
+  'EEXIST',
+  'ENOTDIR',
+  'EISDIR',
+  'EMFILE',
+  'ENFILE',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ENOTFOUND',
+  'EPIPE',
+  'ETIMEDOUT',
+  'ABORT_ERR',
+]);
+
 /** preserve public codes and bounded provider evidence through wrapped runtime failures. */
-export default function workflowFailure(error: unknown, fallback: string) {
+export default function workflowFailure(
+  error: unknown,
+  fallback: string,
+  fallbackStep?: FailureStep,
+) {
   let code: string | undefined;
   let diagnostic: ProviderDiagnostic | undefined;
   let contention: PrivateStateContention | undefined;
   let snapshotConflict: 'owner' | 'occurrence' | undefined;
   let inputVerificationReason: string | undefined;
   let recovery: { instruction: string; fields?: string[] } | undefined;
+  let step: FailureStep | undefined;
+  let category = exceptionCategory(error);
+  let exceptionCode: string | undefined;
   const seen = new Set<unknown>();
   for (let value = error; value && typeof value === 'object' && !seen.has(value);) {
     seen.add(value);
     if (seen.size > 8) break;
+    step ??= failureSteps.get(value);
+    const innerCategory = exceptionCategory(value);
+    if (category === 'error' || category === 'unknown') category = innerCategory;
     if (value instanceof PrivateStateFileLockBusyError) contention ??= value.contention;
     if (value instanceof AssessmentValidationError || value instanceof WorkflowRequestError)
       recovery ??= value.recovery;
@@ -51,6 +115,8 @@ export default function workflowFailure(error: unknown, fallback: string) {
     )
       inputVerificationReason ??= entry.inputVerificationReason;
     const candidate = typeof entry.code === 'string' ? entry.code : entry.message;
+    if (typeof entry.code === 'string' && exceptionCodes.has(entry.code))
+      exceptionCode ??= entry.code;
     if (!code && typeof candidate === 'string' && /^[a-z][a-z0-9-]{0,127}$/u.test(candidate))
       code = candidate;
     const source = entry.providerDiagnostic;
@@ -70,6 +136,15 @@ export default function workflowFailure(error: unknown, fallback: string) {
     ...(snapshotConflict ? { snapshotConflict } : {}),
     ...(inputVerificationReason ? { inputVerificationReason } : {}),
     ...(recovery ? { recovery } : {}),
+    ...(step || fallbackStep
+      ? {
+          failureDiagnostic: {
+            step: step ?? fallbackStep!,
+            category,
+            ...(exceptionCode ? { code: exceptionCode } : {}),
+          },
+        }
+      : {}),
   };
 }
 

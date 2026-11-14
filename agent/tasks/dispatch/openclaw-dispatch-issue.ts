@@ -57,7 +57,7 @@ import openClawFeedback, {
 import { describeIssueSession, type DispatchCaller } from '../../openclaw-session-create.ts';
 import openClawSkill from '../../openclaw-skill.ts';
 import openClawWorkAction, { verifyOpenClawWork } from '../implementation/openclaw-work.ts';
-import workflowFailure from '../workflow-failure.ts';
+import workflowFailure, { workflowFailureStep } from '../workflow-failure.ts';
 import workflowRecovery from '../workflow-recovery.ts';
 import { selectWorkflowStage } from '../workflow-stage.ts';
 
@@ -382,11 +382,13 @@ export default class OpenClawDispatchIssue {
       return this.context.dependencies.credential.use(
         { signal, assertCurrent },
         async (request) => {
-          const nativeFeedback = await resolveOpenClawTurnFeedback(
-            record,
-            caller,
-            request,
-            this.context.dependencies.config(),
+          const nativeFeedback = await workflowFailureStep('input-verification', () =>
+            resolveOpenClawTurnFeedback(
+              record,
+              caller,
+              request,
+              this.context.dependencies.config(),
+            ),
           );
           feedbackEvent = nativeFeedback?.event;
           await assertCurrent();
@@ -466,21 +468,23 @@ export default class OpenClawDispatchIssue {
             const selected = input.material
               ? previous!
               : (
-                  await selectWorkflowStage({
-                    stage: 'implementation',
-                    configuration: {
-                      ...configured,
-                      ...record.manualIssue?.selections?.implementation,
-                    },
-                    workspace: current.workspace,
-                    observedAt: previous?.observedAt ?? now,
-                    resolveSkill: (id) =>
-                      openClawSkill(
-                        request,
-                        record.request as { key: string; agentId: string },
-                        id,
-                      ),
-                  })
+                  await workflowFailureStep('implementation-selection', () =>
+                    selectWorkflowStage({
+                      stage: 'implementation',
+                      configuration: {
+                        ...configured,
+                        ...record.manualIssue?.selections?.implementation,
+                      },
+                      workspace: current.workspace,
+                      observedAt: previous?.observedAt ?? now,
+                      resolveSkill: (id) =>
+                        openClawSkill(
+                          request,
+                          record.request as { key: string; agentId: string },
+                          id,
+                        ),
+                    }),
+                  )
                 ).selection;
             // retain selection with the context that first enters implementation.
             const response = await openClawWorkAction({
@@ -497,7 +501,7 @@ export default class OpenClawDispatchIssue {
             if (record.work) {
               record.work.selection ??= selected;
               if (!input.material) record.work.selection = selected;
-              await save();
+              await workflowFailureStep('implementation-persistence', save);
             }
             return {
               ...response,

@@ -778,7 +778,7 @@ runCodexRuntime().catch((error: unknown) => {
         })
       : undefined;
   process.stderr.write(
-    `${JSON.stringify({ status: 'error', ...failureScope, ...evidence, ...details, message: codexHostAccess(error) ? 'Native host approval is required to access private plugin state.' : message, ...(pickup ? { response: codexHeartbeatEnvelope(pickup.automationId ?? issuePickupAutomationId, pickup.failure.response, true) } : {}), ...(notice ? { presentationInstructions: workflowNoticeInstructions(true) } : {}), ...(notice ? (process.argv[2] === 'delivery' ? { notices: error instanceof CodexDeliveryFailure ? error.notices : [notice] } : { notice }) : {}) })}\n`,
+    `${JSON.stringify({ status: 'error', ...failureScope, ...evidence, ...details, message: codexHostAccess(error) ? 'Native host approval is required to access private plugin state.' : evidence.failureDiagnostic ? details.code : message, ...(pickup ? { response: codexHeartbeatEnvelope(pickup.automationId ?? issuePickupAutomationId, pickup.failure.response, true) } : {}), ...(notice ? { presentationInstructions: workflowNoticeInstructions(true) } : {}), ...(notice ? (process.argv[2] === 'delivery' ? { notices: error instanceof CodexDeliveryFailure ? error.notices : [notice] } : { notice }) : {}) })}\n`,
   );
   process.exitCode = 1;
 });

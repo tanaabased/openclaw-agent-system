@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 
 import taskUpdate, { type TaskUpdateDraft } from '../agent/tasks/feedback/task-update.ts';
 
-function fixture() {
+import workflowFailure from '../agent/tasks/workflow-failure.ts';
+
+function fixture(save = async () => {}) {
   const draft: TaskUpdateDraft = {};
   const comments = new Map<string, { nodeId: string; databaseId: number; body: string }>();
   let writes = 0;
@@ -53,7 +55,7 @@ function fixture() {
       draft,
       publication,
       dependencies,
-      save: async () => {},
+      save,
     });
   return {
     draft,
@@ -78,6 +80,25 @@ describe('agent/task-update', () => {
     expectedDigest: 'current',
   } as const;
   const publish = { operation: 'publish', digest: 'preview', expectedDigest: 'preview' } as const;
+  it('should identify a failed candidate save without publishing or changing its exception', async () => {
+    const error = Object.assign(new Error('SECRET state /private/path'), { code: 'ENOSPC' });
+    const f = fixture(async () => {
+      throw error;
+    });
+    await assert.rejects(f.run(candidate), (caught) => {
+      assert.equal(caught, error);
+      assert.deepEqual(workflowFailure(caught, 'dispatch-operation-failed'), {
+        code: 'dispatch-operation-failed',
+        failureDiagnostic: {
+          step: 'reply-candidate-persistence',
+          category: 'error',
+          code: 'ENOSPC',
+        },
+      });
+      return true;
+    });
+    assert.equal(f.writes, 0);
+  });
   it('should retain and publish current conversation facts without an assessment or implementation result', async () => {
     const f = fixture();
     assert.equal((await f.run(candidate)).status, 'candidate-recorded');

@@ -1,6 +1,7 @@
 import type { GitHubNotificationCommentPublicationInput } from '../../../channels/github/publication/comment-publisher.ts';
 import { automationHash } from '../../automation-hash.ts';
 import publicResponse, { type PublicResponseReceipt } from './public-response.ts';
+import { workflowFailureStep } from '../workflow-failure.ts';
 
 export interface TaskUpdateDraft {
   publicText?: string;
@@ -36,7 +37,7 @@ export default async function taskUpdate(input: {
       throw new Error('task-update-destination-changed');
     draft.publicText = request.text;
     draft.publication = publication;
-    await input.save();
+    await workflowFailureStep('reply-candidate-persistence', () => input.save());
     return { status: 'candidate-recorded' as const };
   }
   if (!draft.publicText) throw new Error('task-update-candidate-required');
