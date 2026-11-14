@@ -382,20 +382,6 @@ export default function createMemoryLifecycleContribution(
         },
       });
 
-      const verification = await resolveMemoryConfigurationPlan(
-        dependencies,
-        await dependencies.readConfig(),
-        agentId,
-        memory,
-      );
-      if (verification.status !== 'ready' || verification.changed) {
-        throw new AgentSystemLifecycleError(
-          'memory',
-          'agent-memory-verification-failed',
-          `OpenClaw memory configuration for ${agentId} did not match the manifest after installation.`,
-        );
-      }
-
       return {
         outcomes: [
           mutation.result === true

@@ -259,21 +259,6 @@ export default function createModelLifecycleContribution(
         },
       });
 
-      const verification = createConfigurationPlan(
-        await dependencies.readConfig(),
-        agentId,
-        models,
-        dependencies,
-        context.manifest.agent.runtime,
-      );
-      if (verification.status !== 'ready' || verification.changed) {
-        throw new AgentSystemLifecycleError(
-          'models',
-          'agent-model-verification-failed',
-          `OpenClaw model defaults for ${agentId} did not match the manifest after installation.`,
-        );
-      }
-
       return {
         outcomes: [
           mutation.result === true

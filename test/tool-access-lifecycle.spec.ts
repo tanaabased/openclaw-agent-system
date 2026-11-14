@@ -254,22 +254,36 @@ describe('api/access-lifecycle', () => {
     assert.equal(mutations(), 0);
   });
 
-  it('should fail when config mutation does not converge', async () => {
+  it('should trust a committed mutation when the runtime snapshot has not activated it', async () => {
+    const runtime: OpenClawConfig = {
+      agents: { entries: { emori: { tools: { alsoAllow: ['message'] } } } },
+    };
+    const committed = structuredClone(runtime);
     const contribution = createToolAccessLifecycleContribution({
-      async mutateConfigFile() {
-        return { result: true };
+      async mutateConfigFile({ mutate }) {
+        return { result: mutate(committed) as boolean | undefined };
       },
-      readConfig: () => ({
-        agents: { entries: { emori: { tools: { alsoAllow: ['message'] } } } },
-      }),
+      readConfig: () => runtime,
       toolGrants,
     });
+    const result = await contribution.reconcile!(context);
+    assert.equal(result.outcomes[0]?.status, 'updated');
+    assert.ok(committed.agents?.entries?.emori?.tools?.alsoAllow?.includes('agent_system_git'));
+    assert.deepEqual(runtime.agents?.entries?.emori?.tools?.alsoAllow, ['message']);
+  });
 
+  it('should propagate a rejected mutation rather than report installation success', async () => {
+    const failure = new Error('write rejected');
+    const contribution = createToolAccessLifecycleContribution({
+      async mutateConfigFile() {
+        throw failure;
+      },
+      readConfig: () => ({ agents: { entries: { emori: {} } } }),
+      toolGrants,
+    });
     await assert.rejects(
       () => contribution.reconcile!(context),
-      (error: unknown) =>
-        error instanceof AgentSystemLifecycleError &&
-        error.code === 'agent-tool-access-verification-failed',
+      (error) => error === failure,
     );
   });
 });

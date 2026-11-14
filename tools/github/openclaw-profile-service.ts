@@ -266,13 +266,6 @@ export default class OpenClawGitHubProfileService {
       bindingStatus = mutation.result === false ? 'unchanged' : 'updated';
     }
 
-    const verification = this.#binding(await this.#readConfig(), agentId);
-    if (!sameBinding(verification, expected)) {
-      throw new OpenClawGitHubProfileError(
-        'openclaw-github-profile-verification-failed',
-        `OpenClaw GitHub identity for ${agentId} did not match after installation.`,
-      );
-    }
     await connected.verifyConfiguredIdentity(this.#paths(agentId, expected.profileId).profileDir);
     return { bindingStatus, profileId: expected.profileId, profileStatus };
   }
