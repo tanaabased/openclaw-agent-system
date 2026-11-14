@@ -42,7 +42,7 @@ interface PluginInspection {
 type Finding = Omit<AgentSystemLifecycleFinding, 'component'>;
 
 export interface CodexPluginLifecycleDependencies {
-  readConfig(): OpenClawConfig;
+  readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   readRequirement(): Promise<CodexPluginRequirement | undefined>;
   readPluginPackage(rootDir: string): Promise<{
     name?: string;
@@ -276,7 +276,7 @@ export default function createCodexPluginLifecycleContribution(
       const context = executionContext(input);
       if (!context) return [];
       try {
-        if (!codexPluginApplies(context.manifest, dependencies.readConfig)) return [];
+        if (!(await codexPluginApplies(context.manifest, dependencies.readConfig))) return [];
         return [(await inspect(context)).finding];
       } catch (error) {
         context.signal?.throwIfAborted();
@@ -296,7 +296,8 @@ export default function createCodexPluginLifecycleContribution(
     async reconcile(input) {
       const context = executionContext(input);
       if (!context) return { outcomes: [] };
-      if (!codexPluginApplies(context.manifest, dependencies.readConfig)) return { outcomes: [] };
+      if (!(await codexPluginApplies(context.manifest, dependencies.readConfig)))
+        return { outcomes: [] };
       const preflight = await inspect(context);
       if (preflight.finding.status === 'blocked') {
         throw new AgentSystemLifecycleError(

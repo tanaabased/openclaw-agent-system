@@ -16,12 +16,12 @@ function selectedModels(
 }
 
 /** Decide from this agent's effective bindings, without loading the Codex plugin. */
-export default function codexPluginApplies(
+export default async function codexPluginApplies(
   manifest: AgentManifest,
-  readConfig: () => OpenClawConfig,
-): boolean {
+  readConfig: () => OpenClawConfig | Promise<OpenClawConfig>,
+): Promise<boolean> {
   if (manifest.agent.runtime === 'codex') return true;
-  const config = readConfig();
+  const config = await readConfig();
   const agent = configuredAgentValue(config, manifest.agent.id);
   const defaults = config.agents?.defaults;
   const refs = new Set([

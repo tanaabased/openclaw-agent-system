@@ -10,6 +10,7 @@ const supportedPluginSdkSubpaths = new Set([
   'cli-argv',
   'command-auth',
   'config-contracts',
+  'config-mutation',
   // resolveGatewayPort has no narrower public export in the supported SDK.
   'core',
   'device-bootstrap',
