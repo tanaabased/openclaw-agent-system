@@ -38,7 +38,11 @@ describe('agent/tasks/feedback/reply-target', () => {
   it('should distinguish an exact source from its retained inline member without changing either', () => {
     assert.equal(feedbackReplyTarget(event, target()), true);
     assert.equal(feedbackReplyTarget(event, target({ source, revision: event.revision })), true);
-    assert.equal(feedbackReplyTarget(event, target({ source, revision: 'changed' })), false);
+    assert.equal(feedbackReplyTarget(event, target({ source, revision: 'changed' })), true);
+    assert.equal(
+      feedbackReplyTarget(event, target({ source: { ...source, databaseId: 999 } })),
+      false,
+    );
     assert.equal(JSON.parse(event.source).nodeId, review.nodeId);
   });
   it('should reject other items, nonmembers, changed comments and cross-review metadata', () => {
@@ -57,7 +61,7 @@ describe('agent/tasks/feedback/reply-target', () => {
     const inline = reviewReplyFeedback(review, comment);
     assert.equal(
       feedbackReplyTarget(
-        { ...event, source: JSON.stringify(inline), revision: feedbackRevision(inline) },
+        { ...event, source: JSON.stringify(inline) },
         target({ source: reviewReplyFeedback(review, { ...comment, nodeId: 'sibling' }) }),
       ),
       false,

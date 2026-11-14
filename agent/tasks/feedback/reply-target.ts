@@ -27,7 +27,7 @@ export function feedbackTarget(
 
 /** the admitted source stays exact; only its retained review members may select another thread. */
 export function feedbackReplyTarget(
-  event: { source: string; revision: string; nodeId: string; number: number; itemType: string },
+  event: { source: string; nodeId: string; number: number; itemType: string },
   target: ReplyTarget,
 ): boolean {
   if (
@@ -38,8 +38,8 @@ export function feedbackReplyTarget(
   )
     return false;
   const source = JSON.parse(event.source) as GitHubCanonicalFeedback;
-  if (target.source.nodeId === source.nodeId)
-    return target.source.databaseId === source.databaseId && target.revision === event.revision;
+  // Exact-source freshness belongs to source authorization, not target membership.
+  if (target.source.nodeId === source.nodeId) return target.source.databaseId === source.databaseId;
   if (
     !isReviewFeedback(source) ||
     source.feedback.receipt.kind !== 'review' ||
