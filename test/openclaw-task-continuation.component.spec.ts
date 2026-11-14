@@ -2334,6 +2334,17 @@ describe('agent/openclaw task-continuation', () => {
       const { who } = await fixtureState.operatorFollowup(operator);
       fixtureState.session!.spawnedCwd = join(fixtureState.root, 'different-checkout');
       fixtureState.messages.at(-1)!.content = 'Draft a public status update; do not implement.';
+      if (!operator) {
+        const input = fixtureState.messages.at(-1)!;
+        input.role = 'assistant';
+        input.provenance = {
+          kind: 'inter_session',
+          sourceTool: 'sessions_send',
+          sourceSessionKey: 'agent:sender:main',
+        };
+        who.inputId = `${who.runId}:user`;
+        fixtureState.inputReceipts = [];
+      }
       const { journal } = await fixtureState.service.scope(
         fixtureState.manifest,
         fixtureState.root,
