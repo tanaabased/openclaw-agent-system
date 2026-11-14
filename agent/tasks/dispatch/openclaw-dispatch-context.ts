@@ -78,6 +78,11 @@ import taskTurnContext from '../context/task-turn-context.ts';
 import WorkflowRequestError from '../workflow-request-error.ts';
 export interface OpenClawTaskDependencies {
   root: string;
+  occurrenceStartedAt?(
+    manifest: AgentManifest,
+    workspace: string,
+    caller: DispatchCaller,
+  ): Promise<number | undefined>;
   claimStore?: AssignmentClaimStore;
   claims?: OpenClawAssignmentClaims;
   config(): OpenClawConfig;

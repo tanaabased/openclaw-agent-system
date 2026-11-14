@@ -16,6 +16,7 @@ export interface DispatchCaller {
   runId: string;
   toolCallId: string;
   inputId?: string;
+  jobId?: string;
 }
 
 export class IssueSessionMismatchError extends Error {

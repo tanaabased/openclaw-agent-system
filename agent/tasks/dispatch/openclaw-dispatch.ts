@@ -714,7 +714,7 @@ export default class OpenClawDispatch {
       input.action === 'delivery';
     const feedbackChild = input.action === 'feedback' && input.operation !== 'reconcile';
     const childAction = input.action === 'context' || workAction || feedbackChild;
-    const current = await this.scope(manifest, workspace);
+    let current = await this.scope(manifest, workspace);
     const retained =
       'id' in input
         ? (await current.journal.read()).records.find((record) => record.id === input.id)
@@ -759,9 +759,43 @@ export default class OpenClawDispatch {
     }
     if (input.action === 'next')
       await reconcileOpenClawLifecycle({ service: this, manifest, workspace, authority });
+    if (input.action === 'next' && caller.jobId) {
+      const snapshot = await current.journal.read();
+      if (!snapshot.discoveryRun || !sameIntakeRun(snapshot.discoveryRun, caller)) {
+        const startedAt = await this.dependencies.occurrenceStartedAt?.(
+          manifest,
+          workspace,
+          caller,
+        );
+        // a recent scan from a previous run cannot stand in for this occurrence.
+        const reuse =
+          startedAt !== undefined &&
+          snapshot.discoveryCheckedAt !== undefined &&
+          snapshot.discoveryCheckedAt >= startedAt;
+        const discover = await current.journal.exclusive(async (state, save) => {
+          await authority.assertCurrent?.();
+          if (state.discoveryRun && sameIntakeRun(state.discoveryRun, caller)) return false;
+          state.discoveryRun = {
+            sessionKey: caller.sessionKey,
+            sessionId: caller.sessionId,
+            runId: caller.runId,
+          };
+          await save();
+          return !reuse;
+        });
+        if (discover) {
+          const checked = await this.check(manifest, workspace, authority.signal);
+          if (checked.outcome === 'failed')
+            throw new Error(checked.code ?? 'dispatch-check-failed');
+          await authority.assertCurrent?.();
+          current = await this.scope(manifest, workspace);
+        }
+      }
+    }
     const snapshot = await current.journal.read();
-    const discover =
+    const discoverFeedback =
       input.action === 'next' &&
+      !caller.jobId &&
       (!snapshot.discoveryCheckedAt ||
         Date.now() - snapshot.discoveryCheckedAt > 120000 ||
         snapshot.records.some(
@@ -782,7 +816,7 @@ export default class OpenClawDispatch {
         await save();
         return true;
       }));
-    const scans = discover
+    const scans = discoverFeedback
       ? await scanOpenClawFeedback({
           service: this,
           state: snapshot,

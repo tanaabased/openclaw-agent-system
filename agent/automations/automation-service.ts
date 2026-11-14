@@ -244,6 +244,22 @@ export default class AutomationService {
     return { context, record, native };
   }
 
+  async occurrenceStartedAt(
+    manifest: AgentManifest,
+    workspace: string,
+    id: string,
+    caller: { jobId?: string; sessionKey: string },
+  ) {
+    if (!caller.jobId) return;
+    const { native } = await this.resolveOwned(manifest, workspace, id);
+    if (native.id !== caller.jobId || native.sessionTarget !== `session:${caller.sessionKey}`)
+      return;
+    const startedAt = native.state.runningAtMs;
+    return typeof startedAt === 'number' && Number.isSafeInteger(startedAt) && startedAt > 0
+      ? startedAt
+      : undefined;
+  }
+
   async notificationResetSnapshot(manifest: AgentManifest, workspace: string, id: string) {
     const { native } = await this.resolveOwned(manifest, workspace, id);
     return {
