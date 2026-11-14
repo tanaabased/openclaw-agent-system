@@ -179,15 +179,15 @@ describe('scripts/aimock-diagnostics', () => {
             { role: 'system', content: scenario.systemPromptSignals[0]! + ' private-system' },
             { role: 'user', content: 'private-user' },
           ],
-          tools: [{ function: { name: 'agent_system_intake' } }],
+          tools: [{ function: { name: 'agent_system_dispatch' } }],
         },
       },
     ]);
     const checks = result.requests?.[0]?.checks;
     assert.equal(checks?.model, false);
     assert.equal(checks?.systemPrompt, true);
-    assert.equal(checks?.tools.agent_system_intake, true);
-    assert.equal(checks?.tools.agent_system_dispatch, false);
+    assert.equal(checks?.tools.agent_system_dispatch, true);
+    assert.equal(checks?.tools.agent_system_github, false);
     assert.doesNotMatch(JSON.stringify(result), /private-|Name:/u);
   });
 });
