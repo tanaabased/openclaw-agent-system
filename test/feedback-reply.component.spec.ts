@@ -34,6 +34,8 @@ import {
 
 import hydrateImplementation from './implementation-material-fixture.ts';
 import workflowFailure from '../agent/tasks/workflow-failure.ts';
+import { openClawDispatchFailureCode } from '../agent/tasks/dispatch/openclaw-dispatch-context.ts';
+import WorkflowRequestError from '../agent/tasks/workflow-request-error.ts';
 const url = 'https://github.com/owner/repo/issues/3';
 describe('agent/feedback-reply', () => {
   let root: string, deps: FeedbackReplyDependencies, provider: FeedbackProvider;
@@ -619,6 +621,44 @@ describe('agent/feedback-reply', () => {
     assert.equal(writes, 0);
     assert.deepEqual(await readdir(deps.root), []);
   });
+  for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should recover a revised status candidate and publish only the selected draft in ${runtime}`, async () => {
+      deps.binding.runtime = runtime;
+      const earlier = await call('compose', {
+        target: url,
+        purpose: 'status-update',
+        privateText: 'Earlier findings.',
+        update: { facts: [progressFact] },
+      });
+      await call('candidate', { ...selection(earlier), publicText: 'Earlier public findings.' });
+      const revised = await call('compose', {
+        target: url,
+        purpose: 'status-update',
+        privateText: 'Revised findings with the remaining gap.',
+        update: {
+          facts: [
+            { reference: 'commit:def', text: 'A remaining configuration handoff needs repair.' },
+          ],
+        },
+      });
+      const publicText = 'The first pass is complete; configuration handoff remains.';
+      await assert.rejects(call('candidate', { target: url, publicText }), (error) => {
+        assert.ok(error instanceof WorkflowRequestError);
+        assert.equal(openClawDispatchFailureCode(error), 'reply-draft-selection-required');
+        assert.match(error.recovery.instruction, /privateText/);
+        assert.ok(!error.recovery.instruction.includes('Earlier findings.'));
+        return true;
+      });
+      assert.equal(writes, 0);
+      await call('candidate', { ...selection(revised), publicText });
+      assert.equal((await call('publish', { target: url, publicText })).status, 'published');
+      assert.equal((await call('reconcile', { target: url, publicText })).status, 'published');
+      assert.equal(writes, 1);
+      assert.ok(posted?.body.startsWith(publicText));
+      assert.equal((await stored(selection(earlier))).attempted, undefined);
+    });
+  }
+
   it('should publish a source-less status update once and retain composition facts without echoing them', async () => {
     const reply = await updateCandidate();
     deps.turnId = 'later';
