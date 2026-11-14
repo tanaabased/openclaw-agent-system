@@ -24,7 +24,7 @@ Activate notification intake, exclude fixture assignments through repository rou
 - Strict AIMock holds each assessment behind a per-receipt release barrier. The test releases one after verifying three native starts, requires its native completion while two responses remain held, then releases the others; model judgment is not under test.
 - Swarm adds one coordinator turn to verify that claims precede native creation. This single-installation journey does not prove cross-installation exclusion; the comment-only POC can overlap under incomplete provider views.
 - V3 object identities pin assignment actors; repository routing selects repository scope and placement. Only Tanaabot receives the three disposable assignments.
-- Scoped refreshes and a 24-hour schedule bound discovery. The job owns its workspaces, issues, native state, and SSH registration; cleanup stops the Gateway before changing external fixtures.
+- Manual discovery may retain other jobs’ assignments in the shared test repository. Assertions select this scenario’s three issue URLs and their claims, sessions, and worktrees; unrelated records do not count. Targeted refreshes and a 24-hour schedule bound subsequent discovery. The job owns its workspaces, issues, native state, and SSH registration; cleanup stops the Gateway before changing external fixtures.
 
 ## Setup
 
@@ -119,6 +119,7 @@ for slot in 1 2 3; do
   node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" assign --number "$number" | jq -e 'any(.assignees[]; .login == "tanaabot")'
 done
 cp "$TMPDIR/notification-issue-1.json" "$TMPDIR/notification-issue.json"
+jq -s . "$TMPDIR/notification-issue-1.json" "$TMPDIR/notification-issue-2.json" "$TMPDIR/notification-issue-3.json" > "$TMPDIR/notification-fixture-issues.json"
 
 # should exclude assignments with the first route
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-intake/tanaabot"
@@ -131,8 +132,9 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-issue-intake/tanaabot"
 TARGET_INSTANCE=$(openclaw agent-system instance inspect --json | jq -er .instanceId) node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import {parse,stringify} from "yaml"; const path="agent.yaml"; const value=parse(readFileSync(path,"utf8")); value.github.routing.reverse(); value.github.routing[0]={"tanaabased/*":process.env.TARGET_INSTANCE}; writeFileSync(path,stringify(value));'
 run_id=$(openclaw agent-system automations run github-issue-assignment --json | jq -er 'select(.status == "queued") | .runId')
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-assignment "$run_id"
-jq -es '[.[].records[]] | length == 3 and all(.[]; .threadId == null and .sessionCreation == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
-jq -e '.claims | length == 3 and all(.[]; .attempted == true and .commentId != null and .nativeReceipt == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-instance/assignment-claims.json"
+jq -es --slurpfile fixtures "$TMPDIR/notification-fixture-issues.json" '[.[].records[] | select((.context | fromjson).source as $source | any($fixtures[0][]; .html_url == $source))] | length == 3 and ([.[].context | fromjson | .source] | unique | length) == 3 and all(.[]; .threadId == null and .sessionCreation == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+jq -s --slurpfile fixtures "$TMPDIR/notification-fixture-issues.json" '[.[].records[] | select(.issue.nodeId as $id | any($fixtures[0][]; .node_id == $id))]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-intake-v2/"github-intake-*.json > "$TMPDIR/notification-fixture-intake.json"
+node --import tsx --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; const {assignmentClaimKey}=await import(process.env.GITHUB_WORKSPACE+"/agent/tasks/dispatch/assignment-claim.ts"); const {default:source}=await import(process.env.GITHUB_WORKSPACE+"/agent/tasks/dispatch/assignment-claim-source.ts"); const intake=JSON.parse(readFileSync(process.env.TMPDIR+"/notification-fixture-intake.json","utf8")); const state=JSON.parse(readFileSync(process.argv[1],"utf8")); assert.equal(intake.length,3); assert.equal(new Set(intake.map(r=>r.issue.nodeId)).size,3); for (const record of intake) {const claim=state.claims[assignmentClaimKey(source(record))]; assert.ok(claim); assert.equal(claim.attempted,true); assert.ok(claim.commentId); assert.equal(claim.nativeReceipt,undefined);}' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-instance/assignment-claims.json"
 
 # should start three native assessments with unused stored fields after expanding the target pool
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-intake/tanaabot"
@@ -142,11 +144,11 @@ done
 node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import {parse,stringify} from "yaml"; const path="agent.yaml"; const value=parse(readFileSync(path,"utf8")); const target=value.github.routing[0]["tanaabased/*"]; value.github.routing[0]["tanaabased/*"]=["11111111-1111-4111-8111-111111111111",target]; writeFileSync(path,stringify(value));'
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
-if ! jq -es '[.[].records[]] | length == 3 and ([.[].threadId] | unique | length) == 3 and all(.[]; .claimAccepted == true and .sessionCreation.verified == true and ((.nativeTurns | map(select(.role == "assessment")) | last | .turn).status == "accepted" or ((.nativeTurns | map(select(.role == "assessment")) | last | .turn).status == "consumed" and ((.nativeTurns | map(select(.role == "assessment")) | last | .turn).consumedByEventId | type == "string" and length > 0))) and (.nativeTurns | map(select(.role == "assessment")) | last | .turn).failed != true and (.nativeTurns | map(select(.role == "assessment")) | last | .turn).cancelled != true and .result == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json; then
-  jq -s '[.[].records[]] | {count: length, records: (.[0:10] | map({id, nativeInactive, blocker, threadId, sessionVerified: .sessionCreation.verified, assessmentTurn: ((.nativeTurns | map(select(.role == "assessment")) | last | .turn) | {runId, status, consumedByEventId, failed, cancelled})}))}' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json >&2
+if ! jq -es --slurpfile fixtures "$TMPDIR/notification-fixture-issues.json" '[.[].records[] | select((.context | fromjson).source as $source | any($fixtures[0][]; .html_url == $source))] | length == 3 and ([.[].context | fromjson | .source] | unique | length) == 3 and ([.[].threadId] | unique | length) == 3 and all(.[]; .claimAccepted == true and .sessionCreation.verified == true and ((.nativeTurns | map(select(.role == "assessment")) | last | .turn).status == "accepted" or ((.nativeTurns | map(select(.role == "assessment")) | last | .turn).status == "consumed" and ((.nativeTurns | map(select(.role == "assessment")) | last | .turn).consumedByEventId | type == "string" and length > 0))) and (.nativeTurns | map(select(.role == "assessment")) | last | .turn).failed != true and (.nativeTurns | map(select(.role == "assessment")) | last | .turn).cancelled != true and .result == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json; then
+  jq -s --slurpfile fixtures "$TMPDIR/notification-fixture-issues.json" '[.[].records[] | select((.context | fromjson).source as $source | any($fixtures[0][]; .html_url == $source))] | {count: length, records: (.[0:10] | map({id, nativeInactive, blocker, threadId, sessionVerified: .sessionCreation.verified, assessmentTurn: ((.nativeTurns | map(select(.role == "assessment")) | last | .turn) | {runId, status, consumedByEventId, failed, cancelled})}))}' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json >&2
   exit 1
 fi
-jq -es '[.[].records[]]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-started.json"
+jq -es --slurpfile fixtures "$TMPDIR/notification-fixture-issues.json" '[.[].records[] | select((.context | fromjson).source as $source | any($fixtures[0][]; .html_url == $source))]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-started.json"
 jq -e 'all(.[]; .routingInstructions.requestedSkill == "intake-routing" and .routingInstructions.skill.name == "intake-routing" and (.routingInstructions.skill.digest | length) == 64 and .routingInstructions.guidance.source == "file" and (.routingInstructions.guidance.content | contains("Keep disposable cleanup plans bounded.")))' "$TMPDIR/notification-started.json"
 for conversation in $(jq -r '.[].threadId' "$TMPDIR/notification-started.json"); do
   openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session.parentSessionKey == "agent:intake-tanaabot:main" and .session.spawnDepth == 0 and .session.spawnedBy == null'
@@ -157,7 +159,7 @@ receipt=$(jq -er '.[0].id' "$TMPDIR/notification-started.json")
 assessment_run=$(jq -er '(.[0] | .nativeTurns | map(select(.role == "assessment")) | last | .turn).runId' "$TMPDIR/notification-started.json")
 touch "$TMPDIR/notification-assessment-released-$receipt"
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$assessment_run" 600000
-jq -es '[.[].records[]] | length == 3' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+jq -es --slurpfile fixtures "$TMPDIR/notification-fixture-issues.json" '[.[].records[] | select((.context | fromjson).source as $source | any($fixtures[0][]; .html_url == $source))] | length == 3 and ([.[].context | fromjson | .source] | unique | length) == 3' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 jq -es --arg run "$assessment_run" '[.[] | . | select(.update != null and .receipt != null)] | length == 1 and .[0].turnId == $run' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json
 
 # should release the remaining responses and complete every native assessment
@@ -172,7 +174,7 @@ for slot in 1 2 3; do
 done
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
-jq -es '[.[].records[]] | length == 3 and all(.[]; (.nativeTurns | map(select(.role == "assessment")) | last | .turn).status == "completed")' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+jq -es --slurpfile fixtures "$TMPDIR/notification-fixture-issues.json" '[.[].records[] | select((.context | fromjson).source as $source | any($fixtures[0][]; .html_url == $source))] | length == 3 and ([.[].context | fromjson | .source] | unique | length) == 3 and all(.[]; (.nativeTurns | map(select(.role == "assessment")) | last | .turn).status == "completed")' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 
 # should show the retained custom routing method in the native private assessment
 conversation=$(jq -er '.[0].threadId' "$TMPDIR/notification-started.json")
@@ -185,22 +187,22 @@ for slot in 1 2 3; do
   source=$(jq -er .html_url "$TMPDIR/notification-issue-$slot.json")
   jq -es --arg source "$source" '[.[].records[] | select((.context | fromjson).source == $source)] | if length == 1 then .[0] else error("one issue owner required") end | true and (.threadId | length > 0) and (.worktree | length > 0) and ((.nativeTurns | map(select(.role == "assessment")) | last | .turn).runId | length > 0) and .sessionCreation.verified == true' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 done
-openclaw agent-system tool worktree -- list | tee "$TMPDIR/notification-worktrees-before.json" | jq -e 'length == 3'
+openclaw agent-system tool worktree -- list | tee "$TMPDIR/notification-worktrees-before.json" | jq -e --slurpfile owned "$TMPDIR/notification-started.json" '[.[] | select(.path as $path | any($owned[0][]; .worktree == $path))] | length == 3'
 
 # should preserve all three native owners after routing new work to a different installation
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-intake/tanaabot"
 node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import {parse,stringify} from "yaml"; const path="agent.yaml"; const value=parse(readFileSync(path,"utf8")); value.github.routing=[{"tanaabased/*":"11111111-1111-4111-8111-111111111111"}]; writeFileSync(path,stringify(value));'
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
-jq -es '[.[].records[]]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-all-after.json"
+jq -es --slurpfile fixtures "$TMPDIR/notification-fixture-issues.json" '[.[].records[] | select((.context | fromjson).source as $source | any($fixtures[0][]; .html_url == $source))]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-all-after.json"
 jq -e --slurp '.[0] as $before | .[1] as $after | ($after | length) == 3 and all($after[]; (.nativeTurns | map(select(.role == "assessment")) | last | .turn).status == "completed") and ([$before[] | {id,intakeId,threadId,worktree,run:(.nativeTurns | map(select(.role == "assessment")) | last | .turn).runId}] | sort_by(.id)) == ([$after[] | {id,intakeId,threadId,worktree,run:(.nativeTurns | map(select(.role == "assessment")) | last | .turn).runId}] | sort_by(.id))' "$TMPDIR/notification-started.json" "$TMPDIR/notification-all-after.json"
 for conversation in $(jq -r '.[].threadId' "$TMPDIR/notification-all-after.json"); do
   run_id=$(jq -er --arg key "$conversation" '.[] | select(.threadId == $key) | (.nativeTurns | map(select(.role == "assessment")) | last | .turn).runId' "$TMPDIR/notification-all-after.json")
   openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json | jq -e --arg run "$run_id" '([.messages[] | select(.role == "user" and .idempotencyKey == ($run + ":user"))] | length) == 1'
 done
-openclaw agent-system tool worktree -- list | jq -S 'sort_by(.path)' > "$TMPDIR/notification-worktrees-after.json"
-jq -S 'sort_by(.path)' "$TMPDIR/notification-worktrees-before.json" | diff - "$TMPDIR/notification-worktrees-after.json"
-openclaw gateway call sessions.list --params '{"agentId":"intake-tanaabot","limit":100}' --json | jq -e '.hasMore == false and ([.sessions[] | select(.key | startswith("agent:intake-tanaabot:dashboard:agent-system-issue-"))] | length == 3 and all(.[]; .category == "BIG-TEST-BUCKET"))'
+openclaw agent-system tool worktree -- list | jq -S --slurpfile owned "$TMPDIR/notification-started.json" '[.[] | select(.path as $path | any($owned[0][]; .worktree == $path))] | sort_by(.path)' > "$TMPDIR/notification-worktrees-after.json"
+jq -S --slurpfile owned "$TMPDIR/notification-started.json" '[.[] | select(.path as $path | any($owned[0][]; .worktree == $path))] | sort_by(.path)' "$TMPDIR/notification-worktrees-before.json" | diff - "$TMPDIR/notification-worktrees-after.json"
+openclaw gateway call sessions.list --params '{"agentId":"intake-tanaabot","limit":100}' --json | jq -e --slurpfile owned "$TMPDIR/notification-started.json" '.hasMore == false and ([.sessions[] | select(.key as $key | any($owned[0][]; .threadId == $key))] | length == 3 and all(.[]; .category == "BIG-TEST-BUCKET"))'
 ```
 
 ## Cleanup
