@@ -35,6 +35,13 @@ import { baseline, removeFixtureAssignment } from './github-intake-fixture.ts';
 import hydrateImplementation from './implementation-material-fixture.ts';
 import { reservedIssuePickup } from './issue-pickup-fixture.ts';
 import openclawDispatchFixture from './openclaw-dispatch-fixture.ts';
+import createDispatchTool from '../tools/dispatch/tool.ts';
+import { retainOpenClawTurnInput } from '../agent/openclaw-turn-binding.ts';
+import type {
+  OpenClawPluginApi,
+  OpenClawPluginToolFactory,
+  OpenClawPluginToolContext,
+} from 'openclaw/plugin-sdk/plugin-entry';
 
 describe('agent/openclaw task-continuation', () => {
   const fixtureState = openclawDispatchFixture();
@@ -2329,14 +2336,120 @@ describe('agent/openclaw task-continuation', () => {
     }
   });
 
+  it('should authorize forwarded status context through both native tool authority checks', async () => {
+    const { who } = await fixtureState.operatorFollowup();
+    const message = fixtureState.messages.at(-1)!;
+    message.role = 'assistant';
+    message.provenance = {
+      kind: 'inter_session',
+      sourceTool: 'sessions_send',
+      sourceSessionKey: 'agent:sender:main',
+    };
+    message.__openclaw = { ...(message.__openclaw as object), senderIsOwner: false };
+    fixtureState.inputReceipts = [];
+    const hooks = new Map<string, (event: unknown, context: unknown) => Promise<unknown>>();
+    const factories: OpenClawPluginToolFactory[] = [];
+    const values = new Map<string, unknown>();
+    const api = {
+      on(name: string, hook: (event: unknown, context: unknown) => Promise<unknown>) {
+        hooks.set(name, hook);
+      },
+      registerTool(factory: OpenClawPluginToolFactory) {
+        factories.push(factory);
+      },
+      runContext: {
+        setRunContext({
+          runId,
+          namespace,
+          value,
+        }: {
+          runId: string;
+          namespace: string;
+          value: unknown;
+        }) {
+          values.set(`${runId}:${namespace}`, value);
+          return true;
+        },
+        getRunContext({ runId, namespace }: { runId: string; namespace: string }) {
+          return values.get(`${runId}:${namespace}`);
+        },
+      },
+      runtime: { agent: { session: { getSessionEntryAsync: async () => fixtureState.session } } },
+    } as unknown as OpenClawPluginApi;
+    const adapter = createDispatchTool({
+      ...fixtureState.service.dependencies,
+      api,
+      manifestService: fixtureState.service.dependencies.taskContext.manifestService,
+    } as unknown as Parameters<typeof createDispatchTool>[0]);
+    adapter.tool.registerTools(api, {} as Parameters<typeof adapter.tool.registerTools>[1]);
+    const before = await fixtureState.record();
+    const target = 'https://github.com/owner/repo/issues/3';
+    const invoke = async (
+      params: Record<string, unknown>,
+      hookOwner: boolean | undefined,
+      factoryOwner: boolean | undefined,
+      inputId: string,
+    ) => {
+      const caller = { ...who, agentId: fixtureState.manifest.agent.id };
+      retainOpenClawTurnInput(api.runContext, { ...caller, inputId });
+      assert.equal(
+        await hooks.get('before_tool_call')!(
+          { toolName: 'agent_system_dispatch', toolCallId: who.toolCallId, params },
+          { ...caller, requester: { senderIsOwner: hookOwner } },
+        ),
+        undefined,
+      );
+      const context = {
+        ...caller,
+        workspaceDir: fixtureState.root,
+        senderIsOwner: factoryOwner,
+        assertInvocationCurrent() {},
+      } as OpenClawPluginToolContext;
+      const tool = factories
+        .map((factory) => factory(context))
+        .find((tool) => tool && !Array.isArray(tool) && tool.name === 'agent_system_dispatch');
+      assert.ok(tool && !Array.isArray(tool));
+      return (await tool.execute(who.toolCallId, params)).details as Record<string, unknown>;
+    };
+    for (const inputId of ['operator:user', 'operator-event']) {
+      const read = await invoke(
+        { action: 'reply', operation: 'context', purpose: 'status-update', target },
+        true,
+        true,
+        inputId,
+      );
+      assert.equal(read.status, 'status-update-context', JSON.stringify(read));
+      assert.equal(read.entry, 'managed');
+      assert.equal(typeof read.observation, 'string');
+    }
+    const compose = {
+      action: 'reply',
+      operation: 'compose',
+      target,
+      privateText: 'Owner-only independent reply.',
+    };
+    assert.equal((await invoke(compose, true, true, 'operator:user')).status, 'composition-ready');
+    for (const [hookOwner, factoryOwner] of [
+      [false, true],
+      [undefined, true],
+      [true, false],
+      [true, undefined],
+    ]) {
+      const denied = await invoke(compose, hookOwner, factoryOwner, 'operator:user');
+      assert.equal(denied.code, 'reply-operator-required');
+    }
+    assert.deepEqual(await fixtureState.record(), before);
+  });
+
   for (const operator of [true, false])
-    it(`should reuse the managed issue for later status composition with operator ${operator}`, async () => {
+    it(`should reuse the managed issue for forwarded status composition with operator ${operator}`, async () => {
       const { who } = await fixtureState.operatorFollowup(operator);
       fixtureState.session!.spawnedCwd = join(fixtureState.root, 'different-checkout');
       fixtureState.messages.at(-1)!.content = 'Draft a public status update; do not implement.';
-      if (!operator) {
+      {
         const input = fixtureState.messages.at(-1)!;
         input.role = 'assistant';
+        input.__openclaw = { ...(input.__openclaw as object), senderIsOwner: false };
         input.provenance = {
           kind: 'inter_session',
           sourceTool: 'sessions_send',

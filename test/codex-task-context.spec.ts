@@ -104,6 +104,11 @@ describe('agent/codex-task-context', () => {
     assert.equal(context?.status, 'verified');
     assert.equal(context?.feedback, undefined);
     assert.equal(context?.feedbackLimitation?.code, 'feedback-native-input-unverified');
+    assert.match(context!.instructions, /not a prerequisite.*independently verifies/);
+    assert.match(
+      context!.instructions,
+      /effect-time verification failures or denials remain binding/,
+    );
     assert.equal(context?.evidence.source, 'https://github.com/org/repo/issues/1');
   });
 

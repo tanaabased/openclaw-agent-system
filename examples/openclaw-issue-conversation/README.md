@@ -11,6 +11,7 @@ update, then verify that an already-current issue needs no further post.
 - Feedback queued behind an active native turn retains its exact source; delivery settles on verified input consumption independently of the answer.
 - Prior private feedback supplied to later GitHub and direct questions, with source-bound publication only for GitHub feedback.
 - Native clarification and answer history without a saved assessment checkpoint.
+- Operator direction forwarded from another native chat can read managed status context without publishing.
 
 ## What Does Not Belong Here
 
@@ -23,6 +24,7 @@ update, then verify that an already-current issue needs no further post.
 - The paired-question check compares retained fixture answers. It proves context transport and publication boundaries, not genuine model interpretation.
 - Feedback context resolves the active-stage and reply skills from one request-local catalog. Component tests cover discovery reuse, fresh discovery on the next request, and scoped missing-skill failures; the existing installed feedback turns exercise consumption of both selections without another model turn solely to count reads.
 - The shared fixture requires the private native turn probe before answering queued GitHub feedback, including when the accepted delivery and consuming execution have different identities. If source lookup fails, it uses the private recovery request instead of guessing a comment or restarting assessment. Component tests inject those failures; this installed scenario exercises ordinary queued-source resolution. Exact source authorization remains with the feedback context tool; the probe introduces no admission or completion gate.
+- Native feedback identity acceptance: run the selected and queued feedback turns with hook submission keys as well as transcript message IDs. Each must recover the same exact source and publish one reply at its retained destination. Cancelled, conflicting, or foreign-session evidence must still stop the affected action. Controlled component regressions cover identifier equivalence and optional context-read failure; installed hook readback remains a CI-only acceptance check.
 - Repository preparation recovery is component-covered for fetch locks, repaired path permissions, disk failures, retained attempts, and native non-replay. Installed recovery acceptance must retain the same issue/checkout and create only one session after repair; identity or ownership conflicts remain explicit stops.
 - Native context calls exercise asynchronous session lookup while final admission keeps a synchronous authority check. Reset/archive races during reads and revocation during manifest refresh belong to the dispatch tool's unit tests.
 - Only Tanaabot is assigned; refreshes target this job's issue and cleanup stops the Gateway before external changes.
@@ -197,6 +199,20 @@ number=$(jq -er .number "$TMPDIR/notification-issue.json")
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 jq -es '[.[].records[]] | length == 1 and .[0].progression == null and .[0].work == null and (.[0].feedback.events | length) == 2 and all(.[0].feedback.events[]; .phase == "delivered" and .turn.status == "consumed")' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile before "$TMPDIR/notification-followup-replies.json" '[.[] | select(.user.login == "tanaabot") | .node_id] == [$before[0][] | select(.user.login == "tanaabot") | .node_id]'
+
+# should forward an operator status-context read from another native chat
+cd "$GITHUB_WORKSPACE/examples/openclaw-issue-conversation/tanaabot"
+conversation=$(jq -er .threadId "$TMPDIR/notification-followup.json")
+target=$(jq -er .html_url "$TMPDIR/notification-issue.json")
+params=$(jq -nc --arg key "$conversation" --arg target "$target" '{sessionKey:"agent:issue-conversation-tanaabot:owner-direction",agentId:"issue-conversation-tanaabot",message:("Forward owner status request to: " + $key + " target: " + $target),deliver:false,idempotencyKey:"notification-forward-owner"}')
+node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-forward-owner"'
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-forward-owner 600000
+openclaw gateway call chat.history --params '{"sessionKey":"agent:issue-conversation-tanaabot:owner-direction","inputRunIds":["notification-forward-owner"],"limit":200,"maxChars":100000}' --json > "$TMPDIR/notification-forward-owner-history.json"
+openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200,maxChars:100000}')" --json > "$TMPDIR/notification-forwarded-history.json"
+node --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; const read=n=>JSON.parse(readFileSync(process.env.TMPDIR+"/notification-"+n+".json","utf8")); const text=m=>typeof m.content==="string"?m.content:m.content.map(c=>c.text??"").join(""); assert.ok(read("forward-owner-history").messages.some(m=>m.role==="assistant" && m.__openclaw?.runId==="notification-forward-owner" && m.stopReason==="stop" && text(m)==="owner-cross-chat-read-complete")); const forwarded=read("forwarded-history").messages.filter(m=>m.provenance?.kind==="inter_session" && m.provenance?.sourceTool==="sessions_send" && text(m).includes("Forwarded owner status context target:")); assert.equal(forwarded.length,1); assert.equal(forwarded[0].role,"assistant"); assert.equal(forwarded[0].__openclaw?.senderIsOwner,false);'
+jq -es --slurpfile before "$TMPDIR/notification-followup.json" '[.[].records[]] | length == 1 and .[0].id == $before[0].id and .[0].threadId == $before[0].threadId and .[0].worktree == $before[0].worktree and .[0].progression == null and .[0].work == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile before "$TMPDIR/notification-followup-replies.json" '[.[] | select(.user.login == "tanaabot") | .node_id] == [$before[0][] | select(.user.login == "tanaabot") | .node_id]'
 
 # should retain ordinary clarification and the later answer in the same native owner

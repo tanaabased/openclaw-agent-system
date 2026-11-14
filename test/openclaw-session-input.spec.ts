@@ -139,7 +139,7 @@ describe('agent/openclaw-session-input', () => {
       },
     });
   }
-  it('should resolve forwarded display inputs without promoting them to owner input', async () => {
+  it('should resolve forwarded display inputs under native owner authority', async () => {
     const forwarded = {
       ...owner,
       role: 'assistant',
@@ -167,44 +167,54 @@ describe('agent/openclaw-session-input', () => {
     );
     assert.deepEqual(await verify(options), expected);
     assert.deepEqual(await verify({ ...options, inputId: 'input-event' }), expected);
-    for (const role of ['user', 'assistant']) {
-      const purportedOwner = {
-        ...forwarded,
-        role,
-        __openclaw: { ...owner.__openclaw, senderIsOwner: true },
-      };
-      await assert.rejects(
-        verify({
+    for (const inputId of ['owned-run:user', 'input-event']) {
+      for (const senderIsOwner of [true, false, undefined]) {
+        const authorized = { ...forwarded, __openclaw: { ...owner.__openclaw, senderIsOwner } };
+        const ownerOptions = {
           ...options,
+          inputId,
           native: false,
-          inputId: role === 'assistant' ? 'input-event' : options.inputId,
-          recent: [purportedOwner],
-          exact: [purportedOwner],
-        }),
+          recent: [authorized],
+          exact: [authorized],
+        };
+        assert.deepEqual(await verify(ownerOptions), expected);
+        await assert.rejects(
+          verify({ ...ownerOptions, senderIsOwner: false }),
+          /dispatch-operator-input-unverified/,
+        );
+      }
+      const direct = { ...forwarded, role: 'user', provenance: undefined };
+      await assert.rejects(
+        verify({ ...options, inputId, native: false, recent: [direct], exact: [direct] }),
         /dispatch-operator-input-unverified/,
       );
     }
+    const authorized = forwarded;
+    const ownerOptions = { ...options, native: false, recent: [authorized], exact: [authorized] };
     for (const change of [
       { receipts: [{ ...consumed, cancelled: true }] },
       { receipts: [{ ...consumed, state: 'pending' }] },
       { receipts: [{ ...consumed, consumedByEventId: 'other' }] },
-      { recent: [forwarded, forwarded] },
-      { exact: [forwarded, forwarded] },
+      { recent: [authorized, authorized] },
+      { exact: [authorized, authorized] },
       { sessionId: 'replacement' },
-      { exact: [{ ...forwarded, idempotencyKey: 'other:user' }] },
-      { exact: [{ ...forwarded, __openclaw: { ...forwarded.__openclaw, runId: 'other' } }] },
+      { exact: [{ ...authorized, idempotencyKey: 'other:user' }] },
+      { exact: [{ ...authorized, __openclaw: { ...authorized.__openclaw, runId: 'other' } }] },
     ])
-      await assert.rejects(verify({ ...options, ...change }), /dispatch-input-unverified/);
+      await assert.rejects(
+        verify({ ...ownerOptions, ...change }),
+        /dispatch-operator-input-unverified/,
+      );
     for (const provenance of [
       undefined,
       { kind: 'external_user', sourceTool: 'sessions_send' },
       { kind: 'inter_session', sourceTool: 'other' },
     ]) {
-      const assistant = { ...forwarded, provenance, senderLabel: 'Forwarded agent message' };
+      const assistant = { ...authorized, provenance, senderLabel: 'Forwarded agent message' };
       assert.equal(issueInputEventId(assistant, turn.runId), undefined);
       await assert.rejects(
-        verify({ ...options, recent: [assistant], exact: [assistant] }),
-        /dispatch-input-unverified/,
+        verify({ ...ownerOptions, recent: [assistant], exact: [assistant] }),
+        /dispatch-operator-input-unverified/,
       );
     }
   });

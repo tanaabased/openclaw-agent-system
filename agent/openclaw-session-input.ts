@@ -134,8 +134,8 @@ async function readNativeInputEvent(input: {
       if (
         !id ||
         (input.requireOwner &&
-          (isForwardedInput(candidate) ||
-            sessionObject(candidate.__openclaw).senderIsOwner === false))
+          !isForwardedInput(candidate) &&
+          sessionObject(candidate.__openclaw).senderIsOwner === false)
       )
         fail();
       anchors.push(id!);
@@ -173,9 +173,11 @@ async function readNativeInputEvent(input: {
   if (matches.length !== 1) fail('bound-input-missing-or-duplicate');
   const entry = await completeOpenClawMessage(request, input, matches[0]!);
   if (issueInputEventId(entry, inputRunId, runId) !== inputEventId) fail();
+  // forwarded history deliberately clears owner metadata; native invocation owns authority.
   if (
     input.requireOwner &&
-    (isForwardedInput(entry) || sessionObject(entry.__openclaw).senderIsOwner === false)
+    !isForwardedInput(entry) &&
+    sessionObject(entry.__openclaw).senderIsOwner === false
   )
     fail('input-owner-unverified');
   return {
