@@ -167,21 +167,6 @@ export default function createToolAccessLifecycleContribution(
         },
       });
 
-      const verification = planAgentToolAccess(
-        dependencies.toolGrants(context.manifest),
-        currentAgentToolAccess(await dependencies.readConfig(), agentId),
-      );
-      if (verification.status !== 'missing-agent' && verification.denied.length > 0) {
-        throw deniedToolAccessError(agentId, verification.denied);
-      }
-      if (verification.status === 'missing-agent' || verification.changed) {
-        throw new AgentSystemLifecycleError(
-          'tool-access',
-          'agent-tool-access-verification-failed',
-          `OpenClaw tool access for ${agentId} did not match its manifest after installation.`,
-        );
-      }
-
       return {
         outcomes: [
           mutation.result === true

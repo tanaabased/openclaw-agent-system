@@ -272,20 +272,8 @@ export default function createAgentLifecycleContribution(
         if (result.code !== 0) throw commandFailure(args, result);
       }
 
-      const config = await dependencies.readConfig();
-      const verification = planAgentInstall(
-        desired,
-        currentAgentState(config, desired.agentId, dependencies.resolveAgentWorkspaceDir),
-      );
-      if (verification.status !== 'ready' || verification.actions.length > 0) {
-        throw lifecycleError(
-          'agent-verification-failed',
-          `OpenClaw agent ${desired.agentId} did not match its manifest after installation.`,
-        );
-      }
-
       dependencies.logger?.debug?.(
-        `agent registration config verified: ${JSON.stringify({ agentId: desired.agentId, actions: plan.actions, reloadMode: config.gateway?.reload?.mode ?? 'hybrid' })}`,
+        `agent registration commands completed: ${JSON.stringify({ agentId: desired.agentId, actions: plan.actions })}`,
       );
       await dependencies.waitForGatewayAgent?.(desired.agentId);
 

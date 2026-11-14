@@ -29,7 +29,9 @@ export type ManifestLoadTrigger =
   | 'session_start';
 
 export interface AgentManifestServiceDependencies {
-  getConfig(): ReturnType<OpenClawPluginApi['runtime']['config']['current']>;
+  getConfig():
+    | ReturnType<OpenClawPluginApi['runtime']['config']['current']>
+    | Promise<ReturnType<OpenClawPluginApi['runtime']['config']['current']>>;
   logger: {
     debug?(message: string): void;
     error(message: string): void;
@@ -144,7 +146,7 @@ export default class AgentManifestService {
     }
 
     try {
-      const config = this.#dependencies.getConfig();
+      const config = await this.#dependencies.getConfig();
       const workspaceDir = this.#dependencies.resolveAgentWorkspaceDir(config, normalizedAgentId);
       return await this.loadForWorkspace(workspaceDir, normalizedAgentId, trigger);
     } catch {

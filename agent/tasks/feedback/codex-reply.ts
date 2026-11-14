@@ -18,7 +18,7 @@ import replyOwnerContext from './reply-owner-context.ts';
 import replyOwner from './reply-owner.ts';
 import selectReplyDraft from './reply-selection.ts';
 import ReplyStore, { type ReplyDraft } from './reply-store.ts';
-import { feedbackTarget } from './reply-target.ts';
+import { feedbackReplyTarget, feedbackTarget } from './reply-target.ts';
 export { default as codexReplyInput } from '../../codex-direct-input.ts';
 /** standalone execution uses the portable binding and native GitHub account, never OpenClaw secrets. */
 export default function codexReply(...args: Parameters<typeof codexReplyScoped>) {
@@ -208,7 +208,8 @@ async function codexReplyScoped(
           !retained ||
           !admitted ||
           retained.revision !== source.revision ||
-          retained.sourceId !== target.source?.nodeId ||
+          retained.sourceId !== JSON.parse(source.source).nodeId ||
+          !feedbackReplyTarget(retained, target) ||
           retained.nodeId !== target.nodeId ||
           target.nodeId !== event.nodeId
         )

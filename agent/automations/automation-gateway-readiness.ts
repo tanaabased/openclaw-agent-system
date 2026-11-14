@@ -22,7 +22,9 @@ export default async function waitForAutomationGateway(dependencies?: Dependenci
     const { isImplicitLocalGatewayTargetFromCli } =
       await import('openclaw/plugin-sdk/gateway-runtime');
     const { resolveGatewayPort } = await import('openclaw/plugin-sdk/core');
-    const { default: readConfig } = await import('../../core/read-fresh-runtime-config.ts');
+    const { captureRuntimeConfigAsyncReader, readRuntimeConfig: readConfig } =
+      await import('openclaw/plugin-sdk/runtime-config-snapshot');
+    await captureRuntimeConfigAsyncReader()();
     dependencies = {
       isLocal: () => isImplicitLocalGatewayTargetFromCli({}),
       readConfig,

@@ -53,7 +53,7 @@ describe('agent/lifecycle', () => {
     });
   });
 
-  it('should add an absent agent, set identity, and verify the result', async () => {
+  it('should add an absent agent and set identity through successful native commands', async () => {
     let config: OpenClawConfig = {};
     const commands: string[][] = [];
     const contribution = createAgentLifecycleContribution({
@@ -234,13 +234,7 @@ describe('agent/lifecycle', () => {
       workspaceDir: '/workspace/data',
     });
 
-    assert.deepEqual(events, [
-      'environment',
-      'config',
-      'command:add',
-      'command:set-identity',
-      'config',
-    ]);
+    assert.deepEqual(events, ['environment', 'config', 'command:add', 'command:set-identity']);
   });
 
   it('should expose declaration failures as blocked doctor findings', async () => {
@@ -265,18 +259,40 @@ describe('agent/lifecycle', () => {
     ]);
   });
 
-  it('should fail when post-install verification does not converge', async () => {
+  it('should trust successful commands with an unchanged snapshot and still await gateway visibility', async () => {
+    let gatewayChecks = 0;
     const contribution = createAgentLifecycleContribution({
       readConfig: () => ({}),
       async runOpenClawCommand() {
         return successfulResult();
       },
+      async waitForGatewayAgent(agentId) {
+        assert.equal(agentId, 'data');
+        gatewayChecks++;
+      },
     });
+    const result = await contribution.reconcile!(context);
+    assert.deepEqual(
+      result.outcomes.map(({ code }) => code),
+      ['add-agent', 'set-identity'],
+    );
+    assert.equal(gatewayChecks, 1);
+  });
 
+  it('should preserve native gateway readiness failures after successful registration', async () => {
+    const failure = new Error('gateway registration pending');
+    const contribution = createAgentLifecycleContribution({
+      readConfig: () => ({}),
+      async runOpenClawCommand() {
+        return successfulResult();
+      },
+      async waitForGatewayAgent() {
+        throw failure;
+      },
+    });
     await assert.rejects(
       () => contribution.reconcile!(context),
-      (error: unknown) =>
-        error instanceof AgentSystemLifecycleError && error.code === 'agent-verification-failed',
+      (error) => error === failure,
     );
   });
 });

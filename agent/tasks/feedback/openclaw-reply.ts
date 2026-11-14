@@ -19,7 +19,7 @@ import replyOwnerContext from './reply-owner-context.ts';
 import replyOwner from './reply-owner.ts';
 import selectReplyDraft from './reply-selection.ts';
 import ReplyStore, { type ReplyDraft } from './reply-store.ts';
-import { feedbackTarget } from './reply-target.ts';
+import { feedbackReplyTarget, feedbackTarget } from './reply-target.ts';
 /** ordinary chats need neither an intake occurrence nor an enabled notification schedule. */
 export default async function openClawReply(input: {
   manifest: AgentManifest;
@@ -189,7 +189,8 @@ export default async function openClawReply(input: {
           !admitted ||
           !policy ||
           retained.revision !== source.revision ||
-          retained.sourceId !== target.source?.nodeId ||
+          retained.sourceId !== JSON.parse(source.source).nodeId ||
+          !feedbackReplyTarget(retained, target) ||
           retained.nodeId !== target.nodeId ||
           target.nodeId !== event.nodeId
         )

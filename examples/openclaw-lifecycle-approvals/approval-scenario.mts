@@ -5,7 +5,10 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
-import { getRuntimeConfig } from 'openclaw/plugin-sdk/runtime-config-snapshot';
+import {
+  captureRuntimeConfigAsyncReader,
+  readRuntimeConfig,
+} from 'openclaw/plugin-sdk/runtime-config-snapshot';
 import { GatewayClient } from 'openclaw/plugin-sdk/gateway-runtime';
 import type { PluginApprovalRequest } from 'openclaw/plugin-sdk/approval-runtime';
 
@@ -28,7 +31,8 @@ const testCase =
         decision: agentId === 'runtime-codex' ? ('allow-once' as const) : ('deny' as const),
         toolName: 'agent_system_install' as const,
       };
-const config = getRuntimeConfig({ pin: false });
+await captureRuntimeConfigAsyncReader()();
+const config = readRuntimeConfig();
 assert.equal(typeof config.gateway?.auth?.token, 'string', 'fixture must use token auth');
 const token = config.gateway!.auth!.token as string;
 const port = config.gateway?.port ?? 18789;

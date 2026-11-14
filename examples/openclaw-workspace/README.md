@@ -22,6 +22,7 @@ healthy state and setup drift.
 - Host and agent setup checks use argv and command-object forms alongside shell apply scripts; successful setup and convergence exercise all three forms.
 
 - Direct Ubuntu checks need no Gateway, model, or provider credential. The installed name proves environment resolution; direct configuration reads prove routing and the Codex prerequisite.
+- The first install registers an absent agent and configures its models in the same CLI invocation. This is the installed check that later steps consume newly saved registration rather than an older process snapshot.
 - Setup writes receipts beside the checked-in manifest on the disposable runner. Independent configuration snapshots prove validation, repeat install, and Doctor leave the relevant state unchanged.
 - The upgrade check deliberately installs Codex `2026.10.6` after the missing-plugin path, then explicitly restores the release-owned version. These two extra plugin installs prove the installed conflict/reconciliation boundary without another Gateway or model turn.
 - Pending relocation: the final setup-failure fixture verifies safe child termination and diagnostic redaction through the installed CLI.

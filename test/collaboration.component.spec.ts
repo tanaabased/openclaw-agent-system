@@ -230,6 +230,7 @@ describe('collaboration lifecycle', () => {
         if (rejectWrite) throw new Error('write failed');
         if (JSON.stringify(draft) !== JSON.stringify(config)) writes++;
         config = draft;
+        return { nextConfig: structuredClone(config) };
       },
     });
   }

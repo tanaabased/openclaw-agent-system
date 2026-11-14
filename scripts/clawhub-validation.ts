@@ -25,22 +25,6 @@ const reportSchema = Type.Object({
   ),
 });
 
-// Async config reads reuse pinned snapshots; track freshness migration in #723.
-// Keep the exception API- and owner-specific, including its emitted bundle entry.
-const exceptions = [
-  {
-    api: 'openclaw/plugin-sdk/runtime-config-snapshot.getRuntimeConfig',
-    record: 'runtime-config-sync-load',
-    sources: ['core/read-fresh-runtime-config.ts'],
-    bundles: ['dist/index.js'],
-  },
-];
-
-function warningPath(evidence: string, api: string): string {
-  const prefix = `${api} @ `;
-  return evidence.startsWith(prefix) ? evidence.slice(prefix.length).replace(/:\d+$/u, '') : '';
-}
-
 export default function validateClawHubReport(
   report: unknown,
   target: { path: string; version: string },
@@ -52,37 +36,5 @@ export default function validateClawHubReport(
   assert.equal(report.targetOpenClaw.version, target.version, 'clawhub-version-mismatch');
   assert.equal(report.summary.breakageCount, 0, 'clawhub-breakages');
   assert.equal(report.issues.length, report.summary.warningCount, 'clawhub-findings-mismatch');
-  for (const issue of report.issues) {
-    const exception =
-      target.version === '2026.11.3' &&
-      exceptions.find(
-        (entry) => entry.api === issue.deprecatedApi && entry.record === issue.compatRecord,
-      );
-    assert.ok(
-      exception &&
-        issue.code === 'sdk-deprecated-api' &&
-        issue.issueClass === 'deprecation-warning',
-      `clawhub-unexpected-warning: ${issue.code}: ${issue.deprecatedApi ?? issue.compatRecord ?? ''}`,
-    );
-    const locations = issue.evidence.map((evidence) => warningPath(evidence, exception.api));
-    assert.ok(
-      locations.every(
-        (path) => exception.sources.includes(path) || exception.bundles.includes(path),
-      ),
-      `clawhub-unexpected-warning-owner: ${issue.evidence.join(', ')}`,
-    );
-    // a bundled exception requires its source finding in the same inspected package.
-    assert.ok(
-      !locations.some((path) => exception.bundles.includes(path)) ||
-        report.issues.some(
-          (source) =>
-            source.deprecatedApi === exception.api &&
-            source.compatRecord === exception.record &&
-            source.evidence.some((evidence) =>
-              exception.sources.includes(warningPath(evidence, exception.api)),
-            ),
-        ),
-      'clawhub-bundle-source-missing',
-    );
-  }
+  assert.equal(report.issues.length, 0, 'clawhub-unexpected-warning');
 }

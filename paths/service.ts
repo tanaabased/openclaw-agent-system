@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import type { AgentManifest } from '../manifest/types.ts';
+import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import { configuredAgentValue } from '../core/configured-agents.ts';
 import resolveAgentPaths, { type AgentPathProjection } from './resolve.ts';
 import type CodexPathConfigService from './codex-config-service.ts';
@@ -123,6 +124,26 @@ export default class AgentPathService {
       previousManagedPaths: previousOwned,
       rebuildBaseline: input.rebuildCodexPath === true,
     });
+    if (codex.status !== 'manual') {
+      const verification = await this.#dependencies.codexConfigService.inspect(
+        workspaceDir,
+        projection,
+        {
+          previousManagedPaths: previousOwned,
+        },
+      );
+      if (
+        !verification.pathMatches ||
+        !verification.loginShellDisabled ||
+        !verification.gitignored
+      ) {
+        throw new AgentSystemLifecycleError(
+          'path',
+          'codex-path-verification-failed',
+          `Codex execution configuration for ${agentId} did not match after installation.`,
+        );
+      }
+    }
     await this.#dependencies.projectionStore.write({
       schemaVersion: 1,
       agentId,

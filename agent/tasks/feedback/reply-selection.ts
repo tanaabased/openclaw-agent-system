@@ -1,3 +1,4 @@
+import WorkflowRequestError from '../workflow-request-error.ts';
 import type { ReplyDraft } from './reply-store.ts';
 import type { ReplyTarget } from './reply-target.ts';
 import type { ReplyExecutionRequest } from '../../../tools/dispatch/reply-schema.ts';
@@ -40,11 +41,9 @@ export default function selectReplyDraft(
   );
   const selected = current.length ? current : matches;
   if (selected.length > 1)
-    throw Object.assign(
-      new Error(
-        'reply-draft-selection-required: select the destination or the exact authored privateText/publicText',
-      ),
-      { code: 'reply-draft-selection-required' },
+    throw new WorkflowRequestError(
+      'reply-draft-selection-required',
+      "More than one reply draft matches. For candidate, retry with the intended composition's exact privateResponse as privateText and the new publicText. For publish or reconcile, select the retained publicText. Do not recompose or choose by draft order.",
     );
   return selected[0];
 }

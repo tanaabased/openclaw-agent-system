@@ -13,7 +13,7 @@ describe('scripts/clawhub-validation', () => {
       evidence: [`${api} @ ${path}:47`],
     };
   }
-  const config = (path = 'core/read-fresh-runtime-config.ts') =>
+  const config = (path = 'core/register-agent-system.ts') =>
     warning(
       'openclaw/plugin-sdk/runtime-config-snapshot.getRuntimeConfig',
       'runtime-config-sync-load',
@@ -34,13 +34,9 @@ describe('scripts/clawhub-validation', () => {
     validateClawHubReport(report(), target);
   });
 
-  it('should accept only the owned 11.3 config exception with their bundles', () => {
-    validateClawHubReport(report([config(), config('dist/index.js')]), target);
-  });
-
   it('should reject new APIs owners records and non-deprecation warnings', () => {
     for (const issue of [
-      warning('different.api', 'runtime-config-sync-load', 'core/read-fresh-runtime-config.ts'),
+      warning('different.api', 'runtime-config-sync-load', 'core/register-agent-system.ts'),
       config('environment/unrelated.ts'),
       config('environment/memory-secret-provider-entry.ts'),
       config('dist/memory-secret-provider-entry.js'),
@@ -55,13 +51,6 @@ describe('scripts/clawhub-validation', () => {
       config('dist/other.js'),
     ])
       assert.throws(() => validateClawHubReport(report([issue]), target), /clawhub-/);
-  });
-
-  it('should reject an orphaned bundled exception', () => {
-    assert.throws(
-      () => validateClawHubReport(report([config('dist/index.js')]), target),
-      /bundle-source-missing/,
-    );
   });
 
   it('should reject malformed missing mismatched or uninspected reports', () => {
@@ -81,7 +70,7 @@ describe('scripts/clawhub-validation', () => {
       assert.throws(() => validateClawHubReport(value, target), /clawhub-/);
   });
 
-  it('should not carry 11.3 exceptions into a different sdk target', () => {
+  it('should reject deprecated config reads for every sdk target', () => {
     const value = report([config()]);
     value.targetOpenClaw.version = '2027.1.1';
     assert.throws(
