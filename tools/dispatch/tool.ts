@@ -143,12 +143,15 @@ export default function createDispatchTool(input: {
     assessmentGit: input.assessmentGit,
     discoveryTrace: (event) =>
       api.logger?.debug?.(`code=dispatch-discovery ${JSON.stringify(event)}`),
-    occurrenceStartedAt: (manifest, workspace, caller) =>
-      input.automations.occurrenceStartedAt(
-        manifest,
-        workspace,
-        openclawIntakeAutomationId,
-        caller,
+    occurrenceStartedAt: (manifest, workspace, caller, authority) =>
+      input.credential.use(authority, (request) =>
+        input.automations.occurrenceStartedAt(
+          manifest,
+          workspace,
+          openclawIntakeAutomationId,
+          caller,
+          (id) => request('cron.get', { id }),
+        ),
       ),
     async coordinator(manifest, workspace) {
       const { store } = await input.automations.scope(manifest, workspace);

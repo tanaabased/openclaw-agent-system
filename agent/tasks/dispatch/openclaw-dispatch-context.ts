@@ -99,6 +99,7 @@ export interface OpenClawTaskDependencies {
     manifest: AgentManifest,
     workspace: string,
     caller: DispatchCaller,
+    authority: DispatchAuthority,
   ): Promise<number | undefined>;
   claimStore?: AssignmentClaimStore;
   claims?: OpenClawAssignmentClaims;

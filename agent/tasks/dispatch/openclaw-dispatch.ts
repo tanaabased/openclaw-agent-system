@@ -772,6 +772,7 @@ export default class OpenClawDispatch {
           manifest,
           workspace,
           caller,
+          authority,
         );
         // a recent scan from a previous run cannot stand in for this occurrence.
         const reuse =
