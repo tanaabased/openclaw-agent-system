@@ -1,3 +1,6 @@
+import assert from 'node:assert/strict';
+import { getTextContent } from '@copilotkit/aimock';
+import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
 import { currentTurn, issueExampleScenario } from '../openclaw-issue-conversation/issue-model.ts';
 import { currentFacts } from '../openclaw-pr-journey/model-fixture.ts';
 import waitForAssessmentRelease from './assessment-barrier.ts';
@@ -10,9 +13,38 @@ export function createIntakeExampleScenario(
   return {
     ...issueExampleScenario,
     id: 'openclaw-issue-intake',
+    toolCalls: [
+      ...issueExampleScenario.toolCalls,
+      { id: 'call_intake_unmanaged_context', name: 'agent_system_context' },
+    ],
     fixtures: issueExampleScenario.fixtures.map((fixture) => ({
       ...fixture,
       response: async (request) => {
+        const messages = currentTurn(request);
+        const prompt = messages
+          .filter(({ role }) => role === 'user')
+          .map(({ content }) => getTextContent(content) ?? '')
+          .join('\n');
+        if (
+          prompt.includes('Advance previously admitted issue or feedback work.') ||
+          prompt.includes('Fill initially available intake slots in one bounded pass.')
+        ) {
+          const text = openClawAIMockToolResultText(messages, 'call_intake_unmanaged_context');
+          if (text === undefined)
+            return {
+              toolCalls: [
+                {
+                  id: 'call_intake_unmanaged_context',
+                  name: 'agent_system_context',
+                  arguments: '{}',
+                },
+              ],
+            };
+          let context = JSON.parse(text);
+          while (typeof context === 'string') context = JSON.parse(context);
+          assert.equal(context.status, 'unmanaged-turn');
+          assert.equal(context.notice, undefined);
+        }
         const value =
           typeof fixture.response === 'function'
             ? await fixture.response(request)

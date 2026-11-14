@@ -7,6 +7,7 @@ Activate notification intake, exclude fixture assignments through repository rou
 - Native channel readiness and a safe intake baseline before fixture assignment.
 - First-match repository routing, with singleton-to-pool two-pass admission and live rule changes preserving admitted work.
 - Custom routing skill/guidance selection during concurrent admission with distinct verified native owners and assessments kept in native chat.
+- An explicit unmanaged context read in the coordinator before successful intake, without a false issue-workflow failure.
 - One repeat scan proving that admission does not duplicate chats, checkouts, or turns.
 
 ## What Does Not Belong Here
