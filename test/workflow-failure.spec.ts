@@ -8,6 +8,21 @@ import {
 } from '../agent/tasks/dispatch/dispatch-retry.ts';
 
 describe('agent/workflow-failure', () => {
+  it('should retain only bounded input-verification reasons without message contents', () => {
+    const error = Object.assign(new Error('dispatch-input-unverified'), {
+      inputVerificationReason: 'input-receipt-invalid-or-cancelled',
+    });
+    assert.deepEqual(workflowFailure(new Error('private message', { cause: error }), 'fallback'), {
+      code: 'dispatch-input-unverified',
+      inputVerificationReason: 'input-receipt-invalid-or-cancelled',
+    });
+    assert.equal(
+      workflowFailure({ inputVerificationReason: 'private message' }, 'fallback')
+        .inputVerificationReason,
+      undefined,
+    );
+  });
+
   it('should retain bounded conflict categories through wrapped publication failures', () => {
     const failure = workflowFailure(
       new Error('wrapper', {

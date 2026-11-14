@@ -1,4 +1,6 @@
 import { retainOpenClawTurnInput } from '../agent/openclaw-turn-binding.ts';
+import { nativeInputEvent } from '../agent/openclaw-session-input.ts';
+import registerAgentSystemHooks from '../core/register-hooks.ts';
 import assert from 'node:assert/strict';
 import { ContextMaterialError } from '../agent/tasks/implementation/implementation-material.ts';
 
@@ -171,6 +173,7 @@ describe('tools/dispatch/tool', () => {
       return tool;
     };
     return {
+      api,
       registrationOptions,
       runContext,
       hooks,
@@ -238,6 +241,82 @@ describe('tools/dispatch/tool', () => {
     await f.hook(event, coordinator);
     await f.build().execute(event.toolCallId, event.params);
     assert.equal(f.calls[1]?.inputId, undefined);
+  });
+
+  it('should resolve a hosted prompt key through binding and dispatch to its history event', async () => {
+    const f = fixture();
+    const inputId = 'submission:assessment:user';
+    let verified: Awaited<ReturnType<typeof nativeInputEvent>> | undefined;
+    registerAgentSystemHooks(
+      f.api,
+      {
+        async loadForRuntimeContext() {
+          return {
+            status: 'loaded',
+            manifest: { schemaVersion: 1, agent: { id: coordinator.agentId } },
+            scope: { agentId: coordinator.agentId, workspaceDir: '/workspaces/receiver' },
+            path: '/workspaces/receiver/agent.yaml',
+            digest: 'fixture',
+            diagnostics: [],
+            validationChecks: [],
+          };
+        },
+      },
+      { guidance: () => [] },
+      async (_manifest, _workspace, binding) => {
+        retainOpenClawTurnInput(f.runContext, binding);
+        return undefined;
+      },
+    );
+    const promptHook = f.hooks.get('before_prompt_build')!;
+    await promptHook(
+      { prompt: 'untrusted contents', messages: [], currentUserMessageId: inputId } as never,
+      coordinator,
+    );
+    f.adapter.service.run = async (_manifest, _workspace, who) => {
+      assert.equal(who.inputId, inputId);
+      verified = await nativeInputEvent({
+        ...coordinator,
+        inputId: who.inputId,
+        retained: [],
+        request: async (_method, params) => {
+          if (!params.messageId) {
+            assert.deepEqual(params.inputRunIds, ['submission:assessment']);
+            return {
+              sessionId: coordinator.sessionId,
+              messages: [],
+              inputReceipts: [
+                {
+                  runId: 'submission:assessment',
+                  state: 'consumed',
+                  consumedByEventId: 'event-uuid',
+                },
+              ],
+            };
+          }
+          assert.equal(params.sessionId, coordinator.sessionId);
+          return {
+            sessionId: coordinator.sessionId,
+            messages:
+              params.messageId === 'event-uuid'
+                ? [
+                    {
+                      role: 'user',
+                      content: 'original assignment',
+                      idempotencyKey: inputId,
+                      __openclaw: { id: 'event-uuid', idempotencyKey: inputId },
+                    },
+                  ]
+                : [],
+          };
+        },
+      });
+      return { status: 'idle' };
+    };
+    await f.hook(event, coordinator);
+    await f.build().execute(event.toolCallId, event.params);
+    assert.equal(verified?.inputEventId, 'event-uuid');
+    assert.equal(verified?.runId, coordinator.runId);
   });
 
   it('should explain malformed authored arguments at both public entry points', async () => {

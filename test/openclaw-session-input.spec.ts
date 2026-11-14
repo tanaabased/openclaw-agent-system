@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import issueInputEvent, {
   issueInputEventId,
+  nativeInputEvent,
   operatorInputEvent,
 } from '../agent/openclaw-session-input.ts';
 
@@ -77,11 +78,12 @@ describe('agent/openclaw-session-input', () => {
       request: async (method, params) => {
         assert.equal(method, 'chat.history');
         if (params.messageId) {
-          assert.equal(params.messageId, options.inputId ?? 'input-event');
           assert.equal(params.sessionId, 'original-session');
           return {
             sessionId: options.sessionId ?? 'original-session',
-            messages: options.exact ?? [owner],
+            messages: (options.exact ?? [owner]).filter(
+              (entry) => (entry as typeof owner).__openclaw?.id === params.messageId,
+            ),
           };
         }
         return {
@@ -125,7 +127,17 @@ describe('agent/openclaw-session-input', () => {
     const options = {
       inputId: 'input-event',
       runId: 'resumed-execution',
-      recent: [owner, { ...exact, __openclaw: { ...exact.__openclaw, id: 'queued-input' } }],
+      recent: [
+        {
+          ...owner,
+          idempotencyKey: 'queued-run:user',
+          __openclaw: {
+            ...owner.__openclaw,
+            id: 'queued-input',
+            idempotencyKey: 'queued-run:user',
+          },
+        },
+      ],
       exact: [exact],
       retained: [{ runId: 'resumed-execution', inputEventId: 'previous-input' }],
     };
@@ -160,6 +172,69 @@ describe('agent/openclaw-session-input', () => {
       message: turn.message,
     });
     await assert.rejects(verify({ senderIsOwner: false }), /dispatch-operator-input-unverified/);
+  });
+
+  it('should resolve a hook submission key on the initial run without assistant run metadata', async () => {
+    assert.deepEqual(await verify({ inputId: 'owned-run:user', exact: [entry] }), {
+      runId: turn.runId,
+      inputEventId: 'input-event',
+      message: turn.message,
+    });
+  });
+
+  it('should search older pages by exact submission key without adopting neighboring or retained input', async () => {
+    const scope = { sessionKey: 'issue-chat', sessionId: 'original-session' };
+    const lookup = async (includeInput: boolean) =>
+      nativeInputEvent({
+        ...scope,
+        runId: 'resumed-run',
+        inputId: 'owned-run:user',
+        retained: [{ runId: 'resumed-run', inputEventId: 'unrelated' }],
+        request: async (_method, params) => {
+          if (params.messageId) {
+            assert.equal(params.messageId, 'input-event');
+            assert.equal(params.sessionId, scope.sessionId);
+            return { sessionId: scope.sessionId, messages: [entry] };
+          }
+          if (params.cursor) {
+            assert.equal(params.cursor, 'older');
+            return { sessionId: scope.sessionId, messages: includeInput ? [entry] : [] };
+          }
+          assert.deepEqual(params.inputRunIds, ['owned-run']);
+          return {
+            sessionId: scope.sessionId,
+            inputReceipts: [],
+            olderCursor: 'older',
+            messages: [
+              {
+                ...entry,
+                idempotencyKey: 'resumed-run:user',
+                __openclaw: { id: 'unrelated', idempotencyKey: 'resumed-run:user' },
+              },
+            ],
+          };
+        },
+      });
+    assert.equal((await lookup(true)).inputEventId, 'input-event');
+    await assert.rejects(lookup(false), {
+      message: 'dispatch-input-unverified',
+      inputVerificationReason: 'bound-input-missing',
+    });
+    for (const change of [
+      { receipts: [consumed, consumed] },
+      { receipts: [{ ...consumed, cancelled: true }] },
+      { receipts: [{ ...consumed, state: 'pending' }] },
+      { receipts: [{ ...consumed, consumedByEventId: 'other' }] },
+      { exact: [entry, entry] },
+      { exact: [] },
+      { receipts: [], recent: [entry, entry] },
+      { exact: [{ ...entry, idempotencyKey: 'other:user' }] },
+      { sessionId: 'replacement-session' },
+    ])
+      await assert.rejects(
+        verify({ inputId: 'owned-run:user', ...change }),
+        /dispatch-operator-input-unverified/u,
+      );
   });
   it('should reject missing conflicting cancelled and replaced owner evidence', async () => {
     for (const options of [

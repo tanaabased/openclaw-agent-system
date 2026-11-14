@@ -13,26 +13,33 @@ export async function nativeInputEvent(input: {
   retained: Array<{ runId: string; inputEventId: string } | undefined>;
 }) {
   const { request, sessionKey, sessionId, runId } = input;
-  const fail = (): never => {
-    throw new Error(
-      input.requireOwner ? 'dispatch-operator-input-unverified' : 'dispatch-input-unverified',
+  const fail = (inputVerificationReason = 'input-identity-conflict'): never => {
+    throw Object.assign(
+      new Error(
+        input.requireOwner ? 'dispatch-operator-input-unverified' : 'dispatch-input-unverified',
+      ),
+      { inputVerificationReason },
     );
   };
-  const boundHistory = input.inputId
-    ? sessionObject(
-        await request('chat.history', {
-          sessionKey,
-          sessionId,
-          messageId: input.inputId,
-          limit: 1,
-        }),
-      )
-    : undefined;
+  // Prompt hooks may bind a submission key; history anchors accept only event IDs.
+  const boundInputKey = input.inputId?.endsWith(':user') ? input.inputId : undefined;
+  if (boundInputKey && boundInputKey.length <= 5) fail('bound-input-missing');
+  const boundHistory =
+    input.inputId && !boundInputKey
+      ? sessionObject(
+          await request('chat.history', {
+            sessionKey,
+            sessionId,
+            messageId: input.inputId,
+            limit: 1,
+          }),
+        )
+      : undefined;
   if (
     boundHistory &&
     (boundHistory.sessionId !== sessionId || !Array.isArray(boundHistory.messages))
   )
-    fail();
+    fail('session-evidence-mismatch');
   const boundEntries = (boundHistory?.messages as unknown[] | undefined)
     ?.map(sessionObject)
     .filter((entry) => {
@@ -41,7 +48,7 @@ export async function nativeInputEvent(input: {
         meta.id === input.inputId || (meta.idempotencyKey ?? entry.idempotencyKey) === input.inputId
       );
     });
-  if (boundEntries && boundEntries.length !== 1) fail();
+  if (boundEntries && boundEntries.length !== 1) fail('bound-input-missing-or-duplicate');
   const boundEntry = boundEntries?.[0];
   const boundKey =
     boundEntry &&
@@ -51,7 +58,8 @@ export async function nativeInputEvent(input: {
     (typeof boundKey !== 'string' || !boundKey.endsWith(':user') || boundKey.length <= 5)
   )
     fail();
-  const inputRunId = typeof boundKey === 'string' ? boundKey.slice(0, -5) : runId;
+  const inputRunId =
+    (boundInputKey ?? (typeof boundKey === 'string' ? boundKey : undefined))?.slice(0, -5) ?? runId;
   const boundEventId =
     boundEntry &&
     issueInputEventId(await completeOpenClawMessage(request, input, boundEntry), inputRunId, runId);
@@ -62,11 +70,12 @@ export async function nativeInputEvent(input: {
       inputRunIds: [inputRunId],
     }),
   );
-  if (history.sessionId !== sessionId || !Array.isArray(history.messages)) fail();
+  if (history.sessionId !== sessionId || !Array.isArray(history.messages))
+    fail('session-evidence-mismatch');
   const receipts = Array.isArray(history.inputReceipts)
     ? history.inputReceipts.map(sessionObject).filter((entry) => entry.runId === inputRunId)
     : [];
-  if (receipts.length > 1) fail();
+  if (receipts.length > 1) fail('input-receipt-conflict');
   const receipt = receipts[0];
   if (
     receipt &&
@@ -75,10 +84,14 @@ export async function nativeInputEvent(input: {
       typeof receipt.consumedByEventId !== 'string' ||
       !receipt.consumedByEventId)
   )
-    fail();
+    fail('input-receipt-invalid-or-cancelled');
   const anchors = boundEventId
     ? [boundEventId]
-    : input.retained.filter((entry) => entry?.runId === runId).map((entry) => entry!.inputEventId);
+    : input.inputId
+      ? []
+      : input.retained
+          .filter((entry) => entry?.runId === runId)
+          .map((entry) => entry!.inputEventId);
   if (receipt) anchors.push(receipt.consumedByEventId as string);
   for await (const messages of openClawHistoryPages(request, input, { first: history })) {
     if (boundEventId) break;
@@ -86,15 +99,15 @@ export async function nativeInputEvent(input: {
       const meta = sessionObject(entry.__openclaw);
       return (
         entry.role === 'user' &&
-        (meta.runId === runId ||
-          meta.idempotencyKey === `${runId}:user` ||
-          entry.idempotencyKey === `${runId}:user`)
+        ((!boundInputKey && meta.runId === runId) ||
+          meta.idempotencyKey === `${inputRunId}:user` ||
+          entry.idempotencyKey === `${inputRunId}:user`)
       );
     });
     if (candidates.length > 1) fail();
     if (candidates.length) {
       const candidate = await completeOpenClawMessage(request, input, candidates[0]!);
-      const id = issueInputEventId(candidate, runId);
+      const id = issueInputEventId(candidate, inputRunId, runId);
       if (
         !id ||
         (input.requireOwner && sessionObject(candidate.__openclaw).senderIsOwner === false)
@@ -105,7 +118,8 @@ export async function nativeInputEvent(input: {
     // a native consumption receipt or retained exact identity avoids unrelated history reads.
     if (anchors.length) break;
   }
-  if (!anchors.length || anchors.some((id) => !id || id !== anchors[0])) fail();
+  if (!anchors.length) fail('bound-input-missing');
+  if (anchors.some((id) => !id || id !== anchors[0])) fail('input-identity-conflict');
   const inputEventId = anchors[0]!;
   // anchor to the session incarnation, never a similarly named replacement session.
   const exact =
@@ -118,25 +132,24 @@ export async function nativeInputEvent(input: {
         limit: 1,
       }),
     );
-  if (exact.sessionId !== sessionId || !Array.isArray(exact.messages)) fail();
+  if (exact.sessionId !== sessionId || !Array.isArray(exact.messages))
+    fail('session-evidence-mismatch');
   const matches = (exact.messages as unknown[]).map(sessionObject).filter((entry) => {
     const meta = sessionObject(entry.__openclaw);
     return (
       meta.id === inputEventId ||
-      (!boundEventId &&
+      (!input.inputId &&
         entry.role === 'user' &&
         (meta.runId === runId ||
           meta.idempotencyKey === `${runId}:user` ||
           entry.idempotencyKey === `${runId}:user`))
     );
   });
-  if (matches.length !== 1) fail();
+  if (matches.length !== 1) fail('bound-input-missing-or-duplicate');
   const entry = await completeOpenClawMessage(request, input, matches[0]!);
-  if (
-    issueInputEventId(entry, inputRunId, runId) !== inputEventId ||
-    (input.requireOwner && sessionObject(entry.__openclaw).senderIsOwner === false)
-  )
-    fail();
+  if (issueInputEventId(entry, inputRunId, runId) !== inputEventId) fail();
+  if (input.requireOwner && sessionObject(entry.__openclaw).senderIsOwner === false)
+    fail('input-owner-unverified');
   return {
     runId,
     inputEventId,

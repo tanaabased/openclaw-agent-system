@@ -13,6 +13,7 @@ export default function workflowFailure(error: unknown, fallback: string) {
   let diagnostic: ProviderDiagnostic | undefined;
   let contention: PrivateStateContention | undefined;
   let snapshotConflict: 'owner' | 'occurrence' | undefined;
+  let inputVerificationReason: string | undefined;
   let recovery: { instruction: string; fields?: string[] } | undefined;
   const seen = new Set<unknown>();
   for (let value = error; value && typeof value === 'object' && !seen.has(value);) {
@@ -28,6 +29,7 @@ export default function workflowFailure(error: unknown, fallback: string) {
       };
     const entry = value as {
       snapshotConflict?: unknown;
+      inputVerificationReason?: unknown;
       code?: unknown;
       message?: unknown;
       providerDiagnostic?: ProviderDiagnostic;
@@ -35,6 +37,19 @@ export default function workflowFailure(error: unknown, fallback: string) {
     };
     if (entry.snapshotConflict === 'owner' || entry.snapshotConflict === 'occurrence')
       snapshotConflict ??= entry.snapshotConflict;
+    if (
+      typeof entry.inputVerificationReason === 'string' &&
+      [
+        'bound-input-missing',
+        'bound-input-missing-or-duplicate',
+        'input-identity-conflict',
+        'session-evidence-mismatch',
+        'input-receipt-conflict',
+        'input-receipt-invalid-or-cancelled',
+        'input-owner-unverified',
+      ].includes(entry.inputVerificationReason)
+    )
+      inputVerificationReason ??= entry.inputVerificationReason;
     const candidate = typeof entry.code === 'string' ? entry.code : entry.message;
     if (!code && typeof candidate === 'string' && /^[a-z][a-z0-9-]{0,127}$/u.test(candidate))
       code = candidate;
@@ -53,6 +68,7 @@ export default function workflowFailure(error: unknown, fallback: string) {
     ...(diagnostic ? { providerDiagnostic: diagnostic } : {}),
     ...(contention ? { contention } : {}),
     ...(snapshotConflict ? { snapshotConflict } : {}),
+    ...(inputVerificationReason ? { inputVerificationReason } : {}),
     ...(recovery ? { recovery } : {}),
   };
 }
