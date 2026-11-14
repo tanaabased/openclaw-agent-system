@@ -18,6 +18,7 @@ import type replyOwner from './reply-owner.ts';
 import ReplyStore, { type ReplyBinding, type ReplyDraft } from './reply-store.ts';
 import readReplyTarget, {
   feedbackTarget,
+  feedbackReplyTarget,
   replyLocator,
   verifyReplyDestination,
   type ReplyTarget,
@@ -139,20 +140,21 @@ async function runFeedbackReply(
     if (feedback && !draft?.attempted && !draft?.receipt) {
       const selected = replyLocator(url);
       const exact = feedbackTarget(`${selected.owner}/${selected.name}`, feedback);
-      const source = replyLocator(exact);
-      if (
-        selected.number !== source.number ||
-        selected.itemType !== source.itemType ||
-        (selected.kind &&
-          (selected.kind !== source.kind || selected.commentId !== source.commentId))
-      )
+      if (selected.number !== feedback.number || selected.itemType !== feedback.itemType)
         throw new Error('reply-feedback-target-mismatch');
-      url = exact;
+      if (!selected.kind) url = exact;
     }
     const currentTarget =
       draft?.attempted || draft?.receipt
         ? await verifyReplyDestination(deps.provider, JSON.parse(draft.target) as ReplyTarget)
         : await readReplyTarget(deps.provider, url);
+    if (
+      feedback &&
+      !draft?.attempted &&
+      !draft?.receipt &&
+      !feedbackReplyTarget(feedback, currentTarget)
+    )
+      throw new Error('reply-feedback-target-mismatch');
     const sameDestination = (left: ReplyTarget, right: ReplyTarget) => {
       const key = (value: ReplyTarget) => ({
         repository: value.repositoryNodeId,

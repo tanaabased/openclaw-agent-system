@@ -25,6 +25,41 @@ export function feedbackTarget(
   return `https://github.com/${repository}/${event.itemType === 'issue' ? 'issues' : 'pull'}/${event.number}#${kind}${source.databaseId}`;
 }
 
+/** the admitted source stays exact; only its retained review members may select another thread. */
+export function feedbackReplyTarget(
+  event: { source: string; revision: string; nodeId: string; number: number; itemType: string },
+  target: ReplyTarget,
+): boolean {
+  if (
+    target.nodeId !== event.nodeId ||
+    target.number !== event.number ||
+    target.itemType !== event.itemType ||
+    !target.source
+  )
+    return false;
+  const source = JSON.parse(event.source) as GitHubCanonicalFeedback;
+  if (target.source.nodeId === source.nodeId)
+    return target.source.databaseId === source.databaseId && target.revision === event.revision;
+  if (
+    !isReviewFeedback(source) ||
+    source.feedback.receipt.kind !== 'review' ||
+    !isReviewFeedback(target.source) ||
+    target.source.feedback.receipt.kind !== 'review-comment'
+  )
+    return false;
+  const member = source.feedback.receipt.members[target.source.nodeId];
+  const current = target.source.feedback.receipt.members[target.source.nodeId];
+  return Boolean(
+    member &&
+    current &&
+    target.source.feedback.comments[0]?.reviewId === source.feedback.receipt.reviewId &&
+    member.databaseId === target.source.databaseId &&
+    member.digest === current.digest &&
+    target.source.feedback.receipt.reviewId === source.feedback.receipt.reviewId &&
+    target.source.feedback.review.nodeId === source.feedback.review.nodeId,
+  );
+}
+
 export function replyLocator(value: string) {
   const match =
     /^https:\/\/github\.com\/([A-Za-z0-9-]+)\/([A-Za-z0-9_.-]+)\/(issues|pull)\/([1-9]\d*)(?:#(issuecomment-|discussion_r|pullrequestreview-)([1-9]\d*))?$/u.exec(
