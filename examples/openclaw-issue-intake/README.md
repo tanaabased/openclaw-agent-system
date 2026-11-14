@@ -1,6 +1,6 @@
 # OpenClaw Issue Intake Example
 
-Activate notification intake, exclude fixture assignments through repository routing, then target this installation to claim three assignments and start their assessments on a second native pass before any result completes. Complete all three native assessments and verify that narrowing routing preserves the same chats, worktrees, and assessment turns.
+Activate notification intake, exclude fixture assignments through repository routing, then force a manual intake run to claim three assignments and start their assessments on a second native pass before any result completes. Complete all three native assessments and verify that narrowing routing preserves the same chats, worktrees, and assessment turns.
 
 ## What Belongs Here
 
@@ -8,7 +8,7 @@ Activate notification intake, exclude fixture assignments through repository rou
 - First-match repository routing, with singleton-to-pool two-pass admission and live rule changes preserving admitted work.
 - Custom routing skill/guidance selection during concurrent admission with distinct verified native owners and assessments kept in native chat.
 - An explicit unmanaged context read in the coordinator before successful intake, without a false issue-workflow failure.
-- One repeat scan proving that admission does not duplicate chats, checkouts, or turns.
+- Manual invocation without a trigger scan discovers assignments; one repeat scan proves that admission does not duplicate chats, checkouts, or turns.
 
 ## What Does Not Belong Here
 
@@ -126,15 +126,11 @@ number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system notifications refresh --repository tanaabased/big-test-bucket --kind issue --number "$number" --json | jq -e '.status == "completed" and .admitted == 0 and any(.repositoryScope[]; .source == "routing" and .reason == "excluded" and .index == 0)'
 jq -es '[.[].records[]] | length == 0' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-intake-v2/"github-intake-*.json
 
-# should register three targeted claims without starting native assessments
+# should discover three assignments and register claims through forced manual intake
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-intake/tanaabot"
 TARGET_INSTANCE=$(openclaw agent-system instance inspect --json | jq -er .instanceId) node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import {parse,stringify} from "yaml"; const path="agent.yaml"; const value=parse(readFileSync(path,"utf8")); value.github.routing.reverse(); value.github.routing[0]={"tanaabased/*":process.env.TARGET_INSTANCE}; writeFileSync(path,stringify(value));'
-for slot in 1 2 3; do
-  number=$(jq -er .number "$TMPDIR/notification-issue-$slot.json")
-  openclaw agent-system notifications refresh --repository tanaabased/big-test-bucket --kind issue --number "$number" --json | jq -e '.status == "completed"'
-done
-run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
+run_id=$(openclaw agent-system automations run github-issue-assignment --json | jq -er 'select(.status == "queued") | .runId')
+node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-assignment "$run_id"
 jq -es '[.[].records[]] | length == 3 and all(.[]; .threadId == null and .sessionCreation == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 jq -e '.claims | length == 3 and all(.[]; .attempted == true and .commentId != null and .nativeReceipt == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-instance/assignment-claims.json"
 

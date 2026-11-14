@@ -772,24 +772,23 @@ export default class OpenClawDispatch {
           startedAt !== undefined &&
           snapshot.discoveryCheckedAt !== undefined &&
           snapshot.discoveryCheckedAt >= startedAt;
-        const discover = await current.journal.exclusive(async (state, save) => {
-          await authority.assertCurrent?.();
-          if (state.discoveryRun && sameIntakeRun(state.discoveryRun, caller)) return false;
-          state.discoveryRun = {
-            sessionKey: caller.sessionKey,
-            sessionId: caller.sessionId,
-            runId: caller.runId,
-          };
-          await save();
-          return !reuse;
-        });
-        if (discover) {
+        if (!reuse) {
           const checked = await this.check(manifest, workspace, authority.signal);
           if (checked.outcome === 'failed')
             throw new Error(checked.code ?? 'dispatch-check-failed');
           await authority.assertCurrent?.();
           current = await this.scope(manifest, workspace);
         }
+        await current.journal.exclusive(async (state, save) => {
+          await authority.assertCurrent?.();
+          // retain only successful preparation; a failed scan must not become an empty pass.
+          state.discoveryRun = {
+            sessionKey: caller.sessionKey,
+            sessionId: caller.sessionId,
+            runId: caller.runId,
+          };
+          await save();
+        });
       }
     }
     const snapshot = await current.journal.read();

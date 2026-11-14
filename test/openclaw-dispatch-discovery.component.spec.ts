@@ -58,6 +58,23 @@ describe('agent/openclaw manual dispatch discovery', () => {
     assert.equal(fixture.creates().length, 0);
   });
 
+  it('should not treat failed discovery as completed on another next call', async () => {
+    let checks = 0;
+    fixture.service.check = async () => {
+      checks++;
+      throw new Error('fixture-discovery-failed');
+    };
+    for (let attempt = 0; attempt < 2; attempt++)
+      await assert.rejects(
+        fixture.service.run(fixture.manifest, fixture.root, fixture.coordinator, {
+          action: 'next',
+        }),
+        /fixture-discovery-failed/,
+      );
+    assert.equal(checks, 2);
+    assert.equal(fixture.creates().length, 0);
+  });
+
   it('should discover and route feedback in a manual run without a trigger check', async () => {
     const { id } = await fixture.feedbackOwner(true, false);
     await fixture.service.run(fixture.manifest, fixture.root, fixture.coordinator, {
