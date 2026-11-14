@@ -25,6 +25,12 @@ export interface CredentialStoreProblem {
   code: string;
   message: string;
   status: 'unavailable' | 'unsafe';
+  diagnostic?: {
+    operation: 'load' | 'read' | 'write' | 'remove';
+    code?: string;
+    domain?: string;
+    osStatus?: number;
+  };
 }
 
 export type CredentialStoreReadResult =

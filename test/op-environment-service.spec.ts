@@ -2,6 +2,8 @@ import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import assert from 'node:assert/strict';
 
 import OpEnvironmentService from '../environment/op-service.ts';
+import OpCredentialService from '../credentials/op-service.ts';
+import KeychainCredentialStore from '../credentials/keychain-store.ts';
 
 describe('environment/op-service', () => {
   it('should remain lazy when no op resources are declared', async () => {
@@ -55,6 +57,10 @@ describe('environment/op-service', () => {
               '1password',
               'credential-resolve',
               'missing-credential',
+              {
+                providerMessage:
+                  'Local bootstrap credential resolution: missing. No 1Password request was made.',
+              },
             ),
             fieldPath: '/environment',
             message: 'OP resource resolution requires an available service-account credential.',
@@ -63,6 +69,55 @@ describe('environment/op-service', () => {
         ],
       },
     );
+  });
+
+  it('should expose local bootstrap failure evidence before contacting 1password', async () => {
+    const credentialService = new OpCredentialService({
+      hostEnvironment: {},
+      stores: [
+        new KeychainCredentialStore({
+          platform: 'darwin',
+          loadKeychain: async () => {
+            throw Object.assign(new Error('private-token'), { code: 'EPERM' });
+          },
+        }),
+        {
+          id: 'file',
+          async read() {
+            return { status: 'missing' as const };
+          },
+          async write() {
+            throw new Error('unexpected write');
+          },
+          async remove() {
+            throw new Error('unexpected removal');
+          },
+        },
+      ],
+    });
+    let contactedProvider = false;
+    const service = new OpEnvironmentService({
+      credentialService,
+      integrationVersion: 'test',
+      createClient: async () => {
+        contactedProvider = true;
+        throw new Error('unexpected provider call');
+      },
+    });
+    const result = await service.load('data', {
+      environmentIds: ['private-environment-id'],
+      secrets: [],
+    });
+    assert.equal(result.status, 'invalid');
+    assert.equal(contactedProvider, false);
+    assert.ok(result.status === 'invalid');
+    assert.equal(result.diagnostics[0]?.code, 'credential-keychain-unavailable');
+    const evidence = result.diagnostics[0]?.providerDiagnostic;
+    assert.equal(evidence?.operation, 'credential-resolve');
+    assert.match(evidence?.providerMessage ?? '', /bootstrap.*unavailable/u);
+    assert.match(evidence?.providerMessage ?? '', /EPERM/u);
+    assert.match(evidence?.providerMessage ?? '', /file.*missing/u);
+    assert.doesNotMatch(JSON.stringify(result), /private-token|private-environment-id/u);
   });
 
   it('should hide credential-provider failures', async () => {

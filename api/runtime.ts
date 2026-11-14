@@ -247,7 +247,7 @@ export default class AgentSystemToolRuntime {
       ) {
         throw new AgentSystemToolError(
           'credential_unavailable',
-          `The ${definition.id} tool environment is unavailable for agent ${agentId}.`,
+          `The ${definition.id} tool environment is unavailable for agent ${agentId} (route: ${scope.source}).`,
           false,
           environmentResult.status === 'loaded'
             ? undefined

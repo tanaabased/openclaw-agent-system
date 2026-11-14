@@ -8,14 +8,22 @@ export interface OpCredentialSource {
   type: 'environment' | 'store';
 }
 
-export type OpCredentialResolution =
+export interface OpCredentialStoreAttempt {
+  storeId: string;
+  status: 'found' | 'missing' | 'unavailable' | 'unsafe';
+  code?: string;
+  diagnostic?: CredentialStoreProblem['diagnostic'];
+}
+
+export type OpCredentialResolution = (
   | CredentialStoreProblem
   | {
       source: OpCredentialSource;
       status: 'resolved';
       token: string;
     }
-  | { status: 'missing' };
+  | { status: 'missing' }
+) & { attempts?: OpCredentialStoreAttempt[] };
 
 export interface OpCredentialResolveOptions {
   allowEnvironmentFallback?: boolean;
@@ -68,20 +76,27 @@ export default class OpCredentialService {
       };
     }
 
-    let missing = false;
+    const attempts: OpCredentialStoreAttempt[] = [];
+    const evidence = () => (attempts.length ? { attempts } : {});
     let unavailable: CredentialStoreProblem | undefined;
     for (const store of stores) {
       const result = await store.read({ agentId, credentialId: opCredentialId });
+      attempts.push({
+        storeId: store.id,
+        status: result.status,
+        ...('code' in result ? { code: result.code } : {}),
+        ...('diagnostic' in result ? { diagnostic: result.diagnostic } : {}),
+      });
       if (result.status === 'found') {
         return {
           status: 'resolved',
           source: { id: store.id, type: 'store' },
           token: result.value,
+          ...evidence(),
         };
       }
-      if (result.status === 'unsafe') return result;
+      if (result.status === 'unsafe') return { ...result, ...evidence() };
       if (result.status === 'unavailable') unavailable ??= result;
-      if (result.status === 'missing') missing = true;
     }
 
     if (!options.storeId && options.allowEnvironmentFallback !== false) {
@@ -91,11 +106,12 @@ export default class OpCredentialService {
           status: 'resolved',
           source: { id: 'process-environment', type: 'environment' },
           token,
+          ...evidence(),
         };
       }
     }
 
-    return missing ? { status: 'missing' } : (unavailable ?? { status: 'missing' });
+    return { ...(unavailable ?? { status: 'missing' as const }), ...evidence() };
   }
 
   async storeServiceAccountToken(

@@ -43,6 +43,7 @@ describe('credentials/op-service', () => {
       status: 'resolved',
       source: { id: 'file', type: 'store' },
       token: 'stored-token',
+      attempts: [{ storeId: 'file', status: 'found' }],
     });
     assert.deepEqual(calls, [
       {
@@ -66,6 +67,10 @@ describe('credentials/op-service', () => {
       status: 'resolved',
       source: { id: 'file', type: 'store' },
       token: 'stored-token',
+      attempts: [
+        { storeId: 'keychain', status: 'missing' },
+        { storeId: 'file', status: 'found' },
+      ],
     });
     assert.deepEqual(
       calls.map(({ operation }) => operation),
@@ -97,6 +102,7 @@ describe('credentials/op-service', () => {
 
     assert.deepEqual(await service.resolveServiceAccountToken('data', { storeId: 'file' }), {
       status: 'missing',
+      attempts: [{ storeId: 'file', status: 'missing' }],
     });
   });
 
@@ -121,7 +127,7 @@ describe('credentials/op-service', () => {
         ),
       ],
     });
-    const missing = new OpCredentialService({
+    const inaccessible = new OpCredentialService({
       hostEnvironment: {},
       stores: [
         createStore(
@@ -134,11 +140,56 @@ describe('credentials/op-service', () => {
     });
 
     assert.equal((await unavailable.resolveServiceAccountToken('data')).status, 'resolved');
-    assert.deepEqual(await missing.resolveServiceAccountToken('data'), { status: 'missing' });
+    assert.deepEqual(await inaccessible.resolveServiceAccountToken('data'), {
+      status: 'unavailable',
+      code: 'store-down',
+      message: 'Store unavailable.',
+      attempts: [
+        { storeId: 'keychain', status: 'unavailable', code: 'store-down' },
+        { storeId: 'file', status: 'missing' },
+      ],
+    });
     assert.deepEqual(await unsafe.resolveServiceAccountToken('data'), {
       status: 'unsafe',
       code: 'store-unsafe',
       message: 'Store unsafe.',
+      attempts: [{ storeId: 'file', status: 'unsafe', code: 'store-unsafe' }],
+    });
+  });
+
+  it('should retain store outcomes without credential values and allow a successful fallback', async () => {
+    const calls: Array<{ key: CredentialKey; operation: string }> = [];
+    const service = new OpCredentialService({
+      hostEnvironment: {},
+      stores: [
+        createStore(
+          'keychain',
+          { status: 'unavailable', code: 'store-down', message: 'Unavailable.' },
+          calls,
+        ),
+        createStore('file', { status: 'found', value: 'private-token' }, calls),
+      ],
+    });
+    const result = await service.resolveServiceAccountToken('data');
+    assert.equal(result.status, 'resolved');
+    assert.deepEqual(result.attempts, [
+      { storeId: 'keychain', status: 'unavailable', code: 'store-down' },
+      { storeId: 'file', status: 'found' },
+    ]);
+    assert.equal(JSON.stringify(result.attempts).includes('private-token'), false);
+  });
+
+  it('should report missing only when all consulted stores are missing', async () => {
+    const service = new OpCredentialService({
+      hostEnvironment: {},
+      stores: ['keychain', 'file'].map((id) => createStore(id, { status: 'missing' }, [])),
+    });
+    assert.deepEqual(await service.resolveServiceAccountToken('data'), {
+      status: 'missing',
+      attempts: [
+        { storeId: 'keychain', status: 'missing' },
+        { storeId: 'file', status: 'missing' },
+      ],
     });
   });
 

@@ -48,6 +48,47 @@ async function loadInstalledKeychain(): Promise<KeychainModule> {
   return import('@napi-rs/keyring');
 }
 
+function failureDiagnostic(
+  error: unknown,
+  operation: NonNullable<CredentialStoreProblem['diagnostic']>['operation'],
+): NonNullable<CredentialStoreProblem['diagnostic']> {
+  const value = error && typeof error === 'object' ? (error as Record<string, unknown>) : {};
+  const code = [
+    'EPERM',
+    'EACCES',
+    'ENOENT',
+    'ERR_DLOPEN_FAILED',
+    'MODULE_NOT_FOUND',
+    'ERR_MODULE_NOT_FOUND',
+    'GenericFailure',
+    'AbortError',
+    'TimeoutError',
+  ].find((candidate) => candidate === value.code || candidate === value.name);
+  const domain = ['NSOSStatusErrorDomain', 'NSPOSIXErrorDomain', 'NSCocoaErrorDomain'].find(
+    (candidate) => candidate === value.domain,
+  );
+  // The native binding may retain only Security Framework's numeric fallback message.
+  const numericMessage =
+    typeof value.message === 'string'
+      ? /^error code (-?\d{1,10})$/u.exec(value.message)?.[1]
+      : undefined;
+  const osStatus =
+    value.osStatus ??
+    (typeof value.code === 'number' ? value.code : undefined) ??
+    (numericMessage === undefined ? undefined : Number(numericMessage));
+  return {
+    operation,
+    ...(code ? { code } : {}),
+    ...(domain ? { domain } : {}),
+    ...(typeof osStatus === 'number' &&
+    Number.isInteger(osStatus) &&
+    osStatus >= -2147483648 &&
+    osStatus <= 2147483647
+      ? { osStatus }
+      : {}),
+  };
+}
+
 /** Persist credentials in the current user's macOS login Keychain. */
 export default class KeychainCredentialStore implements CredentialStore {
   readonly id = 'keychain';
@@ -65,8 +106,10 @@ export default class KeychainCredentialStore implements CredentialStore {
     const unavailable = this.#unavailable(key);
     if (unavailable) return unavailable;
 
+    let operation: 'load' | 'read' = 'load';
     try {
       const keychain = await this.#loadKeychain();
+      operation = 'read';
       const credentials = await keychain.findCredentialsAsync(
         this.#service(key),
         undefined,
@@ -90,12 +133,15 @@ export default class KeychainCredentialStore implements CredentialStore {
         );
       }
       return { status: 'found', value };
-    } catch {
-      return problem(
-        'unavailable',
-        'credential-keychain-unavailable',
-        'The macOS Keychain is not available.',
-      );
+    } catch (error) {
+      return {
+        ...problem(
+          'unavailable',
+          'credential-keychain-unavailable',
+          'The macOS Keychain is not available.',
+        ),
+        diagnostic: failureDiagnostic(error, operation),
+      };
     }
   }
 

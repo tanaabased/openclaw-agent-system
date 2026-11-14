@@ -271,19 +271,22 @@ export default class OpEnvironmentService {
       );
     }
     if (credential.status === 'resolved') return credential;
+    const evidence = {
+      providerMessage: `Local bootstrap credential resolution: ${credential.status}. No 1Password request was made.${credential.attempts ? ` Stores: ${JSON.stringify(credential.attempts)}` : ''}`,
+    };
     if (credential.status === 'missing') {
       return invalid(
         'op-credential-missing',
         'OP resource resolution requires an available service-account credential.',
         environmentFieldPath,
-        providerDiagnostic('1password', 'credential-resolve', 'missing-credential'),
+        providerDiagnostic('1password', 'credential-resolve', 'missing-credential', evidence),
       );
     }
     return invalid(
       credential.code,
       credential.message,
       environmentFieldPath,
-      providerDiagnostic('1password', 'credential-resolve', 'unknown'),
+      providerDiagnostic('1password', 'credential-resolve', 'unknown', evidence),
     );
   }
 

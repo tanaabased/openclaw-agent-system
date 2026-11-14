@@ -76,6 +76,7 @@ describe('credentials/keychain-store', () => {
       status: 'unavailable',
       code: 'credential-keychain-unavailable',
       message: 'The macOS Keychain is not available.',
+      diagnostic: { operation: 'load' },
     });
     assert.equal(
       (await unsupported.read({ agentId: 'data', credentialId: 'op' })).status,
@@ -99,5 +100,39 @@ describe('credentials/keychain-store', () => {
     });
 
     assert.equal((await store.read({ agentId: 'data', credentialId: 'op' })).status, 'unsafe');
+  });
+
+  it('should preserve safe native failure codes without raw error contents', async () => {
+    for (const error of [
+      Object.assign(new Error('private-token /private/path'), {
+        code: 'EPERM',
+        domain: 'NSOSStatusErrorDomain',
+        osStatus: -25308,
+      }),
+      Object.assign(new Error('error code -25308'), { code: 'GenericFailure' }),
+      Object.assign(new Error('private-token'), {
+        code: 'private-token',
+        domain: 'private-domain',
+      }),
+    ]) {
+      const store = new KeychainCredentialStore({
+        platform: 'darwin',
+        loadKeychain: async () => ({
+          ...createKeychain().keychain,
+          async findCredentialsAsync() {
+            throw error;
+          },
+        }),
+      });
+      const result = await store.read({ agentId: 'data', credentialId: 'op' });
+      assert.equal(result.status, 'unavailable');
+      assert.ok('diagnostic' in result);
+      assert.equal(result.diagnostic?.operation, 'read');
+      if (error.code !== 'private-token') {
+        assert.equal(result.diagnostic?.osStatus, -25308);
+        assert.equal(result.diagnostic?.code, error.code);
+      }
+      assert.doesNotMatch(JSON.stringify(result), /private-token|private-domain|private\/path/u);
+    }
   });
 });

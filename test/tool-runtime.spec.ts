@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 
 import AgentSystemToolError from '../api/error.ts';
 import AgentSystemToolRuntime from '../api/runtime.ts';
+import type { AgentEnvironmentLoadResult } from '../environment/service.ts';
+import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import type { AgentSystemAuditEvent, AgentSystemCliRunRequest } from '../api/types.ts';
 import {
   createSemanticToolTestDefinition,
@@ -16,6 +18,7 @@ function createRuntime(options: {
   events?: string[];
   logs?: string[];
   invalidations?: string[];
+  environmentResult?: AgentEnvironmentLoadResult;
   runCli?: (request: AgentSystemCliRunRequest) => Promise<{
     exitCode: number | null;
     stderr: string;
@@ -45,6 +48,7 @@ function createRuntime(options: {
       async loadForAgentId(agentId) {
         environmentCalls.push(agentId);
         events.push('environment');
+        if (options.environmentResult) return options.environmentResult;
         return {
           ...loadedToolTestManifest(),
           environment: {
@@ -86,6 +90,49 @@ function createRuntime(options: {
 }
 
 describe('api/runtime', () => {
+  it('should preserve bootstrap diagnostics and invocation source before launching the cli', async () => {
+    const evidence = providerDiagnostic('1password', 'credential-resolve', 'unknown', {
+      providerMessage: 'Local bootstrap unavailable: keychain EPERM; file missing.',
+    });
+    for (const source of ['tool', 'agent-command'] as const) {
+      const runtime = createRuntime({
+        environmentResult: {
+          ...loadedToolTestManifest(),
+          status: 'invalid',
+          diagnostics: [
+            {
+              code: 'credential-keychain-unavailable',
+              message: 'Keychain unavailable.',
+              severity: 'error',
+              providerDiagnostic: evidence,
+            },
+          ],
+        },
+        runCli: async () => assert.fail('must not launch before resolving credentials'),
+      });
+      await assert.rejects(
+        runtime.executeCli(
+          createToolTestDefinition(),
+          { argument: 'status' },
+          {
+            agentId: 'data',
+            source,
+            workspaceDir: toolTestWorkspaceDir,
+            toolContext: { agentId: 'data', workspaceDir: toolTestWorkspaceDir },
+          },
+        ),
+        (error: unknown) => {
+          assert.ok(error instanceof AgentSystemToolError);
+          assert.equal(error.code, 'credential_unavailable');
+          assert.equal(error.credentialRejected, false);
+          assert.deepEqual(error.providerDiagnostic, evidence);
+          assert.ok(error.message.includes(`route: ${source}`));
+          return true;
+        },
+      );
+    }
+  });
+
   it('should preserve only typed validation messages without forwarding metadata or resolving credentials', async () => {
     const safeReason = 'Use the managed tool instead.';
     const genericReason = 'The agent_system_test_tool request is invalid.';
