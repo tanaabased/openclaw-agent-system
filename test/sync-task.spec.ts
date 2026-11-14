@@ -3,19 +3,16 @@ import assert from 'node:assert/strict';
 import { runSync } from '../scripts/sync-task.mjs';
 
 describe('scripts/sync-task', () => {
-  it('should reconcile, build, and verify in order', async () => {
+  it('should reconcile and build without executing an openclaw provider', async () => {
     const steps: string[] = [];
 
     await runSync({
       async run(command, args) {
         steps.push(`${command} ${args.join(' ')}`);
       },
-      async verify() {
-        steps.push('verify provider');
-      },
     });
 
-    assert.deepEqual(steps, ['bun install --frozen-lockfile', 'bun run build', 'verify provider']);
+    assert.deepEqual(steps, ['bun install --frozen-lockfile', 'bun run build']);
   });
 
   it('should stop when a synchronization step fails', async () => {
@@ -28,9 +25,6 @@ describe('scripts/sync-task', () => {
           steps.push(step);
           if (step === 'bun run build') throw new Error('build failed');
         },
-        async verify() {
-          steps.push('verify provider');
-        },
       }),
       /build failed/u,
     );
@@ -38,15 +32,17 @@ describe('scripts/sync-task', () => {
     assert.deepEqual(steps, ['bun install --frozen-lockfile', 'bun run build']);
   });
 
-  it('should propagate provider verification failures', async () => {
+  it('should not build when dependency installation fails', async () => {
+    const steps: string[] = [];
     await assert.rejects(
       runSync({
-        async run() {},
-        async verify() {
-          throw new Error('invalid provider response');
+        async run(command, args) {
+          steps.push(`${command} ${args.join(' ')}`);
+          throw new Error('dependency installation failed');
         },
       }),
-      /invalid provider response/u,
+      /dependency installation failed/u,
     );
+    assert.deepEqual(steps, ['bun install --frozen-lockfile']);
   });
 });
