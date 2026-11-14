@@ -168,7 +168,7 @@ describe('agent/openclaw-session-input', () => {
     assert.deepEqual(await verify(options), expected);
     assert.deepEqual(await verify({ ...options, inputId: 'input-event' }), expected);
     for (const inputId of ['owned-run:user', 'input-event']) {
-      for (const senderIsOwner of [true, undefined]) {
+      for (const senderIsOwner of [true, false, undefined]) {
         const authorized = { ...forwarded, __openclaw: { ...owner.__openclaw, senderIsOwner } };
         const ownerOptions = {
           ...options,
@@ -183,15 +183,13 @@ describe('agent/openclaw-session-input', () => {
           /dispatch-operator-input-unverified/,
         );
       }
+      const direct = { ...forwarded, role: 'user', provenance: undefined };
       await assert.rejects(
-        verify({ ...options, inputId, native: false }),
+        verify({ ...options, inputId, native: false, recent: [direct], exact: [direct] }),
         /dispatch-operator-input-unverified/,
       );
     }
-    const authorized = {
-      ...forwarded,
-      __openclaw: { ...forwarded.__openclaw, senderIsOwner: true },
-    };
+    const authorized = forwarded;
     const ownerOptions = { ...options, native: false, recent: [authorized], exact: [authorized] };
     for (const change of [
       { receipts: [{ ...consumed, cancelled: true }] },
