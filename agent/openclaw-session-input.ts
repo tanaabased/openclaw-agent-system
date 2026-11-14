@@ -3,6 +3,24 @@ import { completeOpenClawMessage, openClawHistoryPages } from './openclaw-histor
 import { sessionObject } from './openclaw-session-create.ts';
 import { workflowFailureStep } from './tasks/workflow-failure.ts';
 
+// Native chat history projects sessions_send inputs as assistant messages; labels are not evidence.
+function isForwardedInput(entry: Record<string, unknown>) {
+  const provenance = entry.provenance;
+  return Boolean(
+    provenance &&
+    typeof provenance === 'object' &&
+    !Array.isArray(provenance) &&
+    'kind' in provenance &&
+    provenance.kind === 'inter_session' &&
+    'sourceTool' in provenance &&
+    provenance.sourceTool === 'sessions_send',
+  );
+}
+
+function isNativeInput(entry: Record<string, unknown>) {
+  return entry.role === 'user' || (entry.role === 'assistant' && isForwardedInput(entry));
+}
+
 /** native tool context establishes owner authority; history establishes exact input custody. */
 export function nativeInputEvent(input: Parameters<typeof readNativeInputEvent>[0]) {
   return workflowFailureStep('input-verification', () => readNativeInputEvent(input));
@@ -103,7 +121,7 @@ async function readNativeInputEvent(input: {
     const candidates = messages.filter((entry) => {
       const meta = sessionObject(entry.__openclaw);
       return (
-        entry.role === 'user' &&
+        isNativeInput(entry) &&
         ((!boundInputKey && meta.runId === runId) ||
           meta.idempotencyKey === `${inputRunId}:user` ||
           entry.idempotencyKey === `${inputRunId}:user`)
@@ -115,7 +133,9 @@ async function readNativeInputEvent(input: {
       const id = issueInputEventId(candidate, inputRunId, runId);
       if (
         !id ||
-        (input.requireOwner && sessionObject(candidate.__openclaw).senderIsOwner === false)
+        (input.requireOwner &&
+          (isForwardedInput(candidate) ||
+            sessionObject(candidate.__openclaw).senderIsOwner === false))
       )
         fail();
       anchors.push(id!);
@@ -144,7 +164,7 @@ async function readNativeInputEvent(input: {
     return (
       meta.id === inputEventId ||
       (!input.inputId &&
-        entry.role === 'user' &&
+        isNativeInput(entry) &&
         (meta.runId === runId ||
           meta.idempotencyKey === `${runId}:user` ||
           entry.idempotencyKey === `${runId}:user`))
@@ -153,7 +173,10 @@ async function readNativeInputEvent(input: {
   if (matches.length !== 1) fail('bound-input-missing-or-duplicate');
   const entry = await completeOpenClawMessage(request, input, matches[0]!);
   if (issueInputEventId(entry, inputRunId, runId) !== inputEventId) fail();
-  if (input.requireOwner && sessionObject(entry.__openclaw).senderIsOwner === false)
+  if (
+    input.requireOwner &&
+    (isForwardedInput(entry) || sessionObject(entry.__openclaw).senderIsOwner === false)
+  )
     fail('input-owner-unverified');
   return {
     runId,
@@ -179,7 +202,7 @@ export function issueInputEventId(
   const key = `${runId}:user`;
   const meta = sessionObject(entry.__openclaw);
   if (
-    entry.role !== 'user' ||
+    !isNativeInput(entry) ||
     (meta.runId !== undefined && meta.runId !== executionRunId) ||
     typeof meta.id !== 'string' ||
     !meta.id ||

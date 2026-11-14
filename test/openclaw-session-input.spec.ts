@@ -101,6 +101,7 @@ describe('agent/openclaw-session-input', () => {
   const consumed = { runId: turn.runId, state: 'consumed', consumedByEventId: 'input-event' };
   function verify(
     options: {
+      native?: boolean;
       runId?: string;
       inputId?: string;
       recent?: unknown[];
@@ -111,7 +112,8 @@ describe('agent/openclaw-session-input', () => {
       senderIsOwner?: boolean;
     } = {},
   ) {
-    return operatorInputEvent({
+    const read = options.native ? nativeInputEvent : operatorInputEvent;
+    return read({
       senderIsOwner: options.senderIsOwner ?? true,
       sessionKey: 'issue-chat',
       sessionId: 'original-session',
@@ -137,6 +139,76 @@ describe('agent/openclaw-session-input', () => {
       },
     });
   }
+  it('should resolve forwarded display inputs without promoting them to owner input', async () => {
+    const forwarded = {
+      ...owner,
+      role: 'assistant',
+      provenance: {
+        kind: 'inter_session',
+        sourceTool: 'sessions_send',
+        sourceSessionKey: 'agent:sender:main',
+      },
+      __openclaw: { ...owner.__openclaw, senderIsOwner: false },
+    };
+    const options = {
+      native: true,
+      inputId: 'owned-run:user',
+      receipts: [],
+      recent: [forwarded],
+      exact: [forwarded],
+    };
+    const expected = { runId: turn.runId, inputEventId: 'input-event', message: turn.message };
+    assert.equal(
+      issueInputEventId(
+        { ...forwarded, __openclaw: { ...forwarded.__openclaw, truncated: true } },
+        turn.runId,
+      ),
+      undefined,
+    );
+    assert.deepEqual(await verify(options), expected);
+    assert.deepEqual(await verify({ ...options, inputId: 'input-event' }), expected);
+    for (const role of ['user', 'assistant']) {
+      const purportedOwner = {
+        ...forwarded,
+        role,
+        __openclaw: { ...owner.__openclaw, senderIsOwner: true },
+      };
+      await assert.rejects(
+        verify({
+          ...options,
+          native: false,
+          inputId: role === 'assistant' ? 'input-event' : options.inputId,
+          recent: [purportedOwner],
+          exact: [purportedOwner],
+        }),
+        /dispatch-operator-input-unverified/,
+      );
+    }
+    for (const change of [
+      { receipts: [{ ...consumed, cancelled: true }] },
+      { receipts: [{ ...consumed, state: 'pending' }] },
+      { receipts: [{ ...consumed, consumedByEventId: 'other' }] },
+      { recent: [forwarded, forwarded] },
+      { exact: [forwarded, forwarded] },
+      { sessionId: 'replacement' },
+      { exact: [{ ...forwarded, idempotencyKey: 'other:user' }] },
+      { exact: [{ ...forwarded, __openclaw: { ...forwarded.__openclaw, runId: 'other' } }] },
+    ])
+      await assert.rejects(verify({ ...options, ...change }), /dispatch-input-unverified/);
+    for (const provenance of [
+      undefined,
+      { kind: 'external_user', sourceTool: 'sessions_send' },
+      { kind: 'inter_session', sourceTool: 'other' },
+    ]) {
+      const assistant = { ...forwarded, provenance, senderLabel: 'Forwarded agent message' };
+      assert.equal(issueInputEventId(assistant, turn.runId), undefined);
+      await assert.rejects(
+        verify({ ...options, recent: [assistant], exact: [assistant] }),
+        /dispatch-input-unverified/,
+      );
+    }
+  });
+
   it('should resolve an out-of-page owner input from a native consumption receipt', async () => {
     assert.deepEqual(await verify(), {
       runId: turn.runId,
