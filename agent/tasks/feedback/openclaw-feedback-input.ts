@@ -7,7 +7,7 @@ import {
   sessionObject,
   type DispatchCaller,
 } from '../../openclaw-session-create.ts';
-import issueInputEvent from '../../openclaw-session-input.ts';
+import issueInputEvent, { nativeInputEvent } from '../../openclaw-session-input.ts';
 import { openClawConsumedInput } from '../../openclaw-turn.ts';
 /** recover queued source identity from the native input, without asking the model to select it. */
 export async function resolveOpenClawTurnFeedback(
@@ -18,6 +18,20 @@ export async function resolveOpenClawTurnFeedback(
   inputId = caller.inputId,
 ) {
   const selected = selectedOpenClawFeedback(record, caller.runId);
+  const events = (record.feedback?.events ?? []).filter(
+    (event) => event.turn && !event.turn.cancelled,
+  );
+  if (!selected && !events.length) return;
+  if (
+    record.threadId !== caller.sessionKey ||
+    record.sessionCreation?.sessionId !== caller.sessionId ||
+    record.reset ||
+    record.supersededBy
+  )
+    throw new Error('reply-managed-context-invalid');
+  const canonicalInputId = inputId
+    ? (await nativeInputEvent({ ...caller, inputId, request, retained: [] })).inputEventId
+    : undefined;
   if (selected) {
     const verified = await openClawFeedbackInput(
       structuredClone(record),
@@ -26,20 +40,10 @@ export async function resolveOpenClawTurnFeedback(
       config,
       selected.id,
     );
-    if (inputId && verified?.inputId !== inputId) throw new Error('feedback-input-unverified');
+    if (canonicalInputId && verified?.inputId !== canonicalInputId)
+      throw new Error('feedback-input-unverified');
     return verified;
   }
-  const events = (record.feedback?.events ?? []).filter(
-    (event) => event.turn && !event.turn.cancelled,
-  );
-  if (!events.length) return;
-  if (
-    record.threadId !== caller.sessionKey ||
-    record.sessionCreation?.sessionId !== caller.sessionId ||
-    record.reset ||
-    record.supersededBy
-  )
-    throw new Error('reply-managed-context-invalid');
   const history = sessionObject(
     await request('chat.history', {
       sessionKey: caller.sessionKey,
@@ -54,7 +58,7 @@ export async function resolveOpenClawTurnFeedback(
       const meta = sessionObject(candidate.__openclaw);
       if (
         candidate.role !== 'user' ||
-        (inputId ? meta.id !== inputId : meta.runId !== caller.runId)
+        (canonicalInputId ? meta.id !== canonicalInputId : meta.runId !== caller.runId)
       )
         continue;
       const message = await completeOpenClawMessage(request, caller, candidate);

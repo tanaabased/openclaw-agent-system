@@ -1,6 +1,6 @@
 import { GatewayClientRequestError } from '@openclaw/gateway-client';
 import assert from 'node:assert/strict';
-import { rm } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { automationHash } from '../agent/automation-hash.ts';
@@ -101,6 +101,108 @@ describe('agent/openclaw task-feedback', () => {
           );
         assert.deepEqual(await fixtureState.record(), before);
       });
+
+  for (const identifier of ['transcript', 'submission'] as const)
+    it(`should recover feedback context and pass delivery preflight with the ${identifier} identifier`, async () => {
+      const { id } = await fixtureState.feedbackOwner();
+      fixtureState.consumeSend = true;
+      await fixtureState.service.run(
+        fixtureState.manifest,
+        fixtureState.root,
+        fixtureState.coordinator,
+        { action: 'next' },
+      );
+      const before = await fixtureState.record();
+      const event = before.feedback!.events[0]!;
+      const who = {
+        ...fixtureState.assessor(id, event.turn!.runId),
+        inputId: `${event.turn!.runId}:${identifier === 'submission' ? 'user' : 'input'}`,
+      };
+      fixtureState.historyRejected = true;
+      const unavailable = await fixtureState.service.promptContext(
+        fixtureState.manifest,
+        fixtureState.root,
+        { ...who, agentId: fixtureState.manifest.agent.id },
+      );
+      assert.ok(unavailable);
+      assert.ok(JSON.parse(unavailable.appendContext.split('\n')[1]!).feedbackLimitation);
+      assert.match(unavailable.appendSystemContext, /not a prerequisite.*independently verifies/);
+      fixtureState.historyRejected = false;
+      await mkdir(before.worktree!, { recursive: true });
+      fixtureState.service.dependencies.delivery = async () => ({
+        account: {
+          identity: fixtureState.fixture.client.identity,
+          execute: async () => {
+            throw new Error('unexpected publication');
+          },
+        },
+        async git(argv) {
+          if (argv[0] === 'branch') return 'task-branch';
+          if (argv.includes('--show-toplevel')) return before.worktree!;
+          if (argv[0] === 'rev-parse') return 'a'.repeat(40);
+          if (argv[0] === 'rev-list') return '1';
+          if (argv[0] === 'remote') return 'git@github.com:owner/repo.git';
+          if (argv[0] === 'status' || argv[0] === 'check-ref-format') return '';
+          throw new Error('unexpected git operation');
+        },
+      });
+      const prepared = await fixtureState.service.runModel(
+        fixtureState.manifest,
+        fixtureState.root,
+        who,
+        {
+          action: 'delivery',
+          operation: 'prepare',
+          title: '#3: repair requested behavior',
+          body: 'Closes #3',
+        },
+        true,
+      );
+      assert.equal(prepared.status, 'prepared', JSON.stringify(prepared));
+      const recovered = await fixtureState.service.promptContext(
+        fixtureState.manifest,
+        fixtureState.root,
+        { ...who, agentId: fixtureState.manifest.agent.id },
+      );
+      assert.ok(recovered);
+      const facts = JSON.parse(recovered.appendContext.split('\n')[1]!);
+      assert.equal(facts.feedbackLimitation, undefined);
+      assert.equal(
+        facts.feedback.replyTarget,
+        'https://github.com/owner/repo/issues/3#issuecomment-99',
+      );
+      const context = await fixtureState.service.runModel(
+        fixtureState.manifest,
+        fixtureState.root,
+        who,
+        { action: 'feedback', operation: 'context' },
+        true,
+      );
+      assert.equal(context.status, 'verified', JSON.stringify(context));
+      fixtureState.inputReceipts = [
+        {
+          runId: event.turn!.runId,
+          state: 'consumed',
+          consumedByEventId: `${event.turn!.runId}:input`,
+          cancelled: true,
+        },
+      ];
+      await assert.rejects(
+        fixtureState.service.runModel(
+          fixtureState.manifest,
+          fixtureState.root,
+          who,
+          {
+            action: 'delivery',
+            operation: 'prepare',
+            title: '#3: repair requested behavior',
+            body: 'Closes #3',
+          },
+          true,
+        ),
+        /dispatch-input-unverified/,
+      );
+    });
 
   it('should deliver feedback without waiting for the assessment reconciliation pass', async () => {
     await fixtureState.feedbackOwner(false);
