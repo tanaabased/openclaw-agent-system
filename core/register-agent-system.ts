@@ -67,6 +67,10 @@ import AutomationLifecycleAuthority, {
 } from '../agent/automations/automation-lifecycle-authority.ts';
 import registerAutomationLifecycleHooks from './automation-lifecycle-hook.ts';
 import registerAutomationReportHooks from './automation-report-hook.ts';
+import registerAutomationSmokeHooks from './automation-smoke-hook.ts';
+import automationSmokeTest, {
+  automationSmokeTestId,
+} from '../agent/automations/automation-smoke-test.ts';
 import { reconcileAutomationReport } from '../agent/automations/automation-report-delivery.ts';
 import automationLifecycleCommand from '../cli/automation-lifecycle.ts';
 import SetupCommandService from '../agent/lifecycle/setup-command-service.ts';
@@ -846,6 +850,31 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   });
   const automationLifecycle = new AutomationLifecycleAuthority(logger);
   registerAutomationLifecycleHooks(api, automationLifecycle);
+  registerAutomationSmokeHooks(
+    api,
+    () => readScheduler?.(),
+    async (run) => {
+      const loaded = await manifestService.loadForRuntimeContext(run, 'before_prompt_build');
+      if (
+        loaded.status !== 'loaded' ||
+        (await realpath(loaded.scope.workspaceDir)) !== (await realpath(run.workspaceDir))
+      )
+        throw new AutomationError('automation-smoke-binding-unverified');
+      await verifyAutomationLifecycleRun(
+        automationService,
+        readScheduler?.(),
+        loaded.manifest,
+        run,
+        automationSmokeTestId,
+        undefined,
+        true,
+      );
+      const job = automationSmokeTest();
+      if (job.payload.kind !== 'prompt')
+        throw new AutomationError('automation-smoke-instructions-missing');
+      return job.payload.prompt;
+    },
+  );
   const lifecycleApproval = new AgentLifecycleApproval({
     manifestService,
     doctorService,

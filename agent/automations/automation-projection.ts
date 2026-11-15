@@ -1,4 +1,5 @@
 import scheduleCondition from './automation-schedule-condition.ts';
+import { automationSmokeTestRequest, isAutomationSmokeTest } from './automation-smoke-test.ts';
 import { automationReportTimeoutMs } from './automation-report-timeout.ts';
 import { commandTerminationGraceMs } from '../../api/cli-budget.ts';
 import type { AutomationThreadModelObservation } from './automation-threads.ts';
@@ -139,7 +140,9 @@ export function projectAutomation(
           }
         : {
             kind: 'agentTurn',
-            message: job.payload.prompt.trim(),
+            message: isAutomationSmokeTest(job)
+              ? automationSmokeTestRequest
+              : job.payload.prompt.trim(),
             timeoutSeconds,
             lightContext: false,
             allowUnsafeExternalContent: false,

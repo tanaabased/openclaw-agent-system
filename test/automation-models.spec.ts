@@ -238,8 +238,8 @@ describe('agent/automation-models', () => {
         runtime === 'codex'
           ? codexIntakeJobs(parsed.manifest)
           : openclawIntakeJobs(parsed.manifest);
-      assert.equal(nativeJobs.length, 2);
-      for (const job of nativeJobs) assert.equal(job.overrides[runtime]!.effort, 'low');
+      for (const id of ['github-issue-assignment', 'github-issue-pickup'])
+        assert.equal(nativeJobs.find((job) => job.id === id)!.overrides[runtime]!.effort, 'low');
     });
   }
   it('should reject malformed built-in settings and missing selected profiles during manifest validation', () => {

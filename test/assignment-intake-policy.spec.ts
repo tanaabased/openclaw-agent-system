@@ -34,11 +34,17 @@ describe('assignment intake policy', () => {
     const manifest = fixture();
     manifest.github!.notifications!.issueAssignment!.allowed = [];
     assert.equal(codexIntakeJobs(manifest).length, 1);
-    assert.equal(openclawIntakeJobs(manifest).length, 1);
+    assert.equal(
+      openclawIntakeJobs(manifest).some(({ id }) => id === 'github-issue-assignment'),
+      true,
+    );
     manifest.github!.notifications!.reviewRequest = { allowed: [] };
     delete manifest.github!.notifications!.issueAssignment;
     assert.equal(codexIntakeJobs(manifest).length, 0);
-    assert.equal(openclawIntakeJobs(manifest).length, 0);
+    assert.equal(
+      openclawIntakeJobs(manifest).some(({ id }) => id === 'github-issue-assignment'),
+      false,
+    );
   });
 
   for (const runtime of ['codex', 'openclaw'] as const) {

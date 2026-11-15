@@ -1,5 +1,10 @@
 import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
 import issuePickupJobs from '../agent/automations/issue-pickup-jobs.ts';
+import {
+  automationSmokeTestId,
+  automationSmokeTestRequest,
+} from '../agent/automations/automation-smoke-test.ts';
+import { verifyAutomationLifecycleRun } from '../agent/automations/automation-lifecycle-authority.ts';
 import IssuePickupEnrollmentStore from '../agent/issue-pickup-enrollment.ts';
 import selectionFixture from './issue-pickup-selection-fixture.ts';
 import assert from 'node:assert/strict';
@@ -62,6 +67,7 @@ describe('agent/automation-service', () => {
       automations: jobs([{ id: 'check', schedule: 'in 1 hour', run: ['gh', 'api', 'user'] }]),
     };
     native = [];
+    const sessions = new Map<string, Record<string, unknown>>();
     modelRows = [];
     preparedModelRows = undefined;
     calls = [];
@@ -97,7 +103,24 @@ describe('agent/automation-service', () => {
         if (params.refresh === true) preparedModelRows = undefined;
         return { models: preparedModelRows ?? modelRows };
       }
-      if (method === 'sessions.resolve') return { ok: false };
+      if (method === 'sessions.resolve') {
+        const row = [...sessions.values()].find(
+          (row) => row.key === params.key || row.sessionId === params.sessionId,
+        );
+        return row ? { ok: true, key: row.key, agentId: 'tanaabot' } : { ok: false };
+      }
+      if (method === 'sessions.create') {
+        const row = { key: params.key, sessionId: randomUUID(), workspaceDir: root };
+        sessions.set(String(params.key), row);
+        return { ok: true, ...row };
+      }
+      if (method === 'sessions.list') return { sessions: [...sessions.values()] };
+      if (method === 'sessions.patch') {
+        const row = sessions.get(String(params.key))!;
+        Object.assign(row, params);
+        row.displayName = row.label ?? row.autoLabel;
+        return { ok: true };
+      }
       if (method === 'cron.status') return { enabled: true, jobs: native.length };
       if (method === 'cron.list') return { jobs: structuredClone(native), hasMore: false };
       if (method === 'cron.get') {
@@ -200,6 +223,79 @@ describe('agent/automation-service', () => {
         },
       },
     });
+  });
+  it('should discover the smoke test without installing it during ordinary reconciliation', async () => {
+    manifest.automations = [];
+    assert.deepEqual(await service.reconcile(manifest, root), { outcomes: [], warnings: [] });
+    const listed = await service.list(manifest, root);
+    const smoke = listed.jobs.find(({ id }) => id === automationSmokeTestId)!;
+    assert.equal(smoke.declared, true);
+    assert.equal(smoke.enabled, false);
+    assert.equal(smoke.nativeId, null);
+    assert.ok(
+      !calls.some(({ method }) =>
+        ['cron.add', 'sessions.create', 'sessions.patch'].includes(method),
+      ),
+    );
+  });
+  it('should install only the selected smoke test on first run and reuse its disabled persistent job', async () => {
+    await service.reconcile(manifest, root);
+    native[0]!.payload.argv = ['externally-edited'];
+    const unrelated = structuredClone(native[0]);
+    const first = await service.run(manifest, root, automationSmokeTestId);
+    assert.equal(first.status, 'queued');
+    assert.deepEqual(native[0], unrelated);
+    const smoke = native.find(({ declarationKey }) =>
+      declarationKey?.endsWith(`:${automationSmokeTestId}`),
+    )!;
+    assert.equal(smoke.enabled, false);
+    assert.equal(smoke.payload.message, automationSmokeTestRequest);
+    assert.equal(typeof smoke.sessionTarget, 'string');
+    if (typeof smoke.sessionTarget !== 'string') throw new Error('missing smoke session target');
+    assert.ok(smoke.sessionTarget.startsWith('session:agent:tanaabot:'));
+    const creates = calls.filter(({ method }) =>
+      ['cron.add', 'sessions.create'].includes(method),
+    ).length;
+    await service.run(manifest, root, automationSmokeTestId);
+    assert.equal(
+      calls.filter(({ method }) => ['cron.add', 'sessions.create'].includes(method)).length,
+      creates,
+    );
+    assert.ok(
+      calls
+        .filter(({ method }) => method === 'cron.run')
+        .every(({ params }) => params.mode === 'force'),
+    );
+    const run = {
+      agentId: 'tanaabot',
+      workspaceDir: root,
+      sessionKey: smoke.sessionTarget.slice(8),
+      sessionId: 'session',
+      runId: 'native-run',
+      jobId: smoke.id,
+    };
+    await verifyAutomationLifecycleRun(
+      service,
+      undefined,
+      manifest,
+      run,
+      automationSmokeTestId,
+      service.dependencies.request,
+      true,
+    );
+    smoke.payload.message = 'changed';
+    await assert.rejects(
+      verifyAutomationLifecycleRun(
+        service,
+        undefined,
+        manifest,
+        run,
+        automationSmokeTestId,
+        service.dependencies.request,
+        true,
+      ),
+      /drift/,
+    );
   });
   it('should acquire missing native auth evidence and skip a paused prompt before creating its conversation or receipt', async () => {
     manifest.automations = jobs([
@@ -1744,7 +1840,10 @@ describe('agent/automation-service', () => {
     });
     manifest.automations = [];
     await service.reconcile(manifest, root);
-    assert.equal((await service.list(manifest, root)).jobs[0]!.removed, true);
+    assert.equal(
+      (await service.list(manifest, root)).jobs.find(({ id }) => id === 'check')!.removed,
+      true,
+    );
     assert.equal(
       (await service.runs(manifest, root, 'check', { limit: 10, offset: 0 })).entries.length,
       1,

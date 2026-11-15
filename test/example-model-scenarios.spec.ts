@@ -67,6 +67,20 @@ function request(
 }
 
 describe('scripts/example-model-scenarios', () => {
+  it('should require the smoke instruction marker at user priority rather than in system policy', () => {
+    const scenario = resolveExampleModelScenario('openclaw-automation-prompt');
+    const compact = '\n> Run scheduled automation: 🧪 COMPACT PROMPT SMOKE TEST.';
+    const valid = request('automation-tanaabot', compact + '\ncompact-smoke-v1-violet-47', []);
+    valid.messages[0]!.content = scenario.systemPromptSignals[0]!;
+    assert.ok(matchFixture([...scenario.fixtures], valid));
+    const promoted = structuredClone(valid);
+    promoted.messages[0]!.content += '\ncompact-smoke-v1-violet-47';
+    promoted.messages[1]!.content = compact;
+    assert.equal(matchFixture([...scenario.fixtures], promoted), null);
+    const missing = structuredClone(valid);
+    missing.messages[1]!.content = compact;
+    assert.equal(matchFixture([...scenario.fixtures], missing), null);
+  });
   async function reportContext() {
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
     registerAgentSystemHooks(

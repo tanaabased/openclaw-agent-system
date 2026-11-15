@@ -13,6 +13,7 @@ import {
   type AutomationReportTarget,
 } from './automation-report-delivery.ts';
 import openclawIntakeJobs from './openclaw-intake-policy.ts';
+import { automationSmokeTestId, isAutomationSmokeTest } from './automation-smoke-test.ts';
 import automationReportName from './automation-report-name.ts';
 import { issuePickupAutomationId, issuePickupErrorCode } from './issue-pickup-jobs.ts';
 
@@ -389,15 +390,24 @@ export default class AutomationService {
     if (!job) throw new AutomationError('automation-id-missing');
     if (!job.runtimes.includes('openclaw'))
       throw new AutomationError('automation-runtime-unsupported');
+    if (isAutomationSmokeTest(job)) {
+      const { store } = await this.scope(manifest, workspaceDir);
+      const record = (await store.read()).records.find((entry) => entry.id === id);
+      if (!record?.nativeId) {
+        if (!this.dependencies.request || !isOperatorAutomationGateway(this.dependencies.request))
+          throw new AutomationError('automation-requires-operator-sync');
+        await this.reconcile(manifest, workspaceDir, { smokeTestOnly: true });
+      }
+    }
     const { context, record, native } = await this.resolveOwned(manifest, workspaceDir, id);
     if (automationThreadSelection(job, 'openclaw')) {
       const { store } = await this.scope(manifest, workspaceDir);
       context.threads = await this.threads(context, store).resolve([job]);
     }
     if (
-      !job.enabled ||
+      (!job.enabled && !isAutomationSmokeTest(job)) ||
       record.removed ||
-      !native.enabled ||
+      (!native.enabled && !isAutomationSmokeTest(job)) ||
       native.state.autoDisabled ||
       retainedOneShot(native)
     )
@@ -427,7 +437,10 @@ export default class AutomationService {
     )
       throw new AutomationError('automation-manifest-changed');
     const result = nativeAutomationRun(
-      await this.dependencies.request!('cron.run', { id: native.id, mode: 'if-enabled' }),
+      await this.dependencies.request!('cron.run', {
+        id: native.id,
+        mode: isAutomationSmokeTest(job) ? 'force' : 'if-enabled',
+      }),
     );
     return {
       runtime: 'openclaw',
@@ -503,8 +516,10 @@ export default class AutomationService {
   ): Promise<AgentSystemLifecycleFinding[]> {
     const { store, context } = snapshot ?? (await this.scope(manifest, workspaceDir));
     const ledger = snapshot?.ledger ?? (await store.read());
-    const declarations = openclawIntakeJobs(manifest).filter((job) =>
-      job.runtimes.includes('openclaw'),
+    const declarations = openclawIntakeJobs(manifest).filter(
+      (job) =>
+        job.runtimes.includes('openclaw') &&
+        (!isAutomationSmokeTest(job) || ledger.records.some(({ id }) => id === job.id)),
     );
     if (!declarations.length && !ledger.records.length) return [];
     const finding = (
@@ -764,14 +779,21 @@ export default class AutomationService {
   async reconcile(
     manifest: AgentManifest,
     workspaceDir: string,
-    options: { deferUnavailableGateway?: boolean } = {},
+    options: { deferUnavailableGateway?: boolean; smokeTestOnly?: boolean } = {},
   ): Promise<AgentSystemLifecycleReconcileResult> {
     const { context, store } = await this.scope(manifest, workspaceDir);
     const initial = await store.read();
-    const declarations = openclawIntakeJobs(manifest).filter((job) =>
-      job.runtimes.includes('openclaw'),
+    const selectedRecord = (record: AutomationRecord) =>
+      !options.smokeTestOnly || record.id === automationSmokeTestId;
+    const declarations = openclawIntakeJobs(manifest).filter(
+      (job) =>
+        job.runtimes.includes('openclaw') &&
+        (options.smokeTestOnly
+          ? isAutomationSmokeTest(job)
+          : !isAutomationSmokeTest(job) || initial.records.some(({ id }) => id === job.id)),
     );
-    if (!declarations.length && !initial.records.length) return { outcomes: [], warnings: [] };
+    if (!declarations.length && !initial.records.some(selectedRecord))
+      return { outcomes: [], warnings: [] };
     if (!this.dependencies.request)
       return {
         outcomes: [],
@@ -814,7 +836,7 @@ export default class AutomationService {
             warnings: [deferred],
           };
         }
-        for (const record of ledger.records) {
+        for (const record of ledger.records.filter(selectedRecord)) {
           const native = this.owned(record, observed, context.agentId);
           const declaration = declarations.find(({ id }) => id === record.id);
           if (declaration && record.retired) throw new AutomationError('automation-retired-id');
@@ -852,14 +874,17 @@ export default class AutomationService {
             throw new AutomationError('automation-recovery-diverged');
           }
         }
-        for (const native of observed.filter((job) =>
-          job.declarationKey?.startsWith(`agent-system:${store.scope}:`),
+        for (const native of observed.filter(
+          (job) =>
+            job.declarationKey?.startsWith(`agent-system:${store.scope}:`) &&
+            (!options.smokeTestOnly || job.declarationKey === store.marker(automationSmokeTestId)),
         )) {
           if (!ledger.records.some((record) => record.marker === native.declarationKey))
             throw new AutomationError('automation-ownership-missing');
         }
         const absent = ledger.records.filter(
           (record) =>
+            selectedRecord(record) &&
             !declarations.some(({ id }) => id === record.id) &&
             !this.owned(record, observed, context.agentId),
         );
@@ -912,6 +937,7 @@ export default class AutomationService {
         // absence is re-observed at the retirement boundary, never inferred from not-found.
         for (const record of ledger.records.filter(
           (entry) =>
+            selectedRecord(entry) &&
             !entry.retired &&
             !declarations.some(({ id }) => id === entry.id) &&
             !this.owned(entry, observed, context.agentId),
@@ -1091,7 +1117,7 @@ export default class AutomationService {
           });
         }
         for (const record of ledger.records.filter(
-          (entry) => !declarations.some(({ id }) => id === entry.id),
+          (entry) => selectedRecord(entry) && !declarations.some(({ id }) => id === entry.id),
         )) {
           await assertCurrent();
           if (record.retired) {

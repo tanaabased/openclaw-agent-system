@@ -7,6 +7,7 @@ Complete a scheduled prompt in its owning agent context, then preserve its job a
 - Native scheduling, configured model/effort, and completion.
 - The job's medium effort overriding the agent's high default at execution.
 - Install and Doctor through an activated prompt without per-run approval.
+- An operator-invoked, disabled built-in smoke job delivering its full prompt at user priority while scheduling only a compact request.
 
 ## What does not belong here
 
@@ -17,6 +18,7 @@ Complete a scheduled prompt in its owning agent context, then preserve its job a
 - Reuses the strict AIMock tool exchange. Native scheduling and lifecycle effects remain real.
 - Group, name, and label permutations remain in thread, projection, and service source tests.
 - Poll deadlines include CLI startup and RPC time.
+- The smoke fixture checks transport and instruction priority, not live model judgment or rendered UI. Actual embedded and hosted-Codex chat rendering remains an operator pilot check.
 
 ## Testing
 
@@ -57,4 +59,14 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-automation-prompt"
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
 jq -S '[.jobs[] | {id,nativeId,routing}]' "$TMPDIR/automation-before.json" > "$TMPDIR/prompt-identities.json"
 openclaw agent-system automations list --json | jq -S '[.jobs[] | {id,nativeId,routing}]' | diff - "$TMPDIR/prompt-identities.json"
+```
+
+```bash
+# should manually run the compact smoke test without enabling its timer
+cd "$GITHUB_WORKSPACE/examples/openclaw-automation-prompt"
+run_id=$(openclaw agent-system automations run compact-prompt-smoke-test --json | jq -er '.runId')
+node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" compact-prompt-smoke-test "$run_id"
+native=$(openclaw agent-system automations list --json | jq -er '.jobs[] | select(.id == "compact-prompt-smoke-test") | .nativeId')
+openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e '.enabled == false and .payload.message == "\n> Run scheduled automation: 🧪 COMPACT PROMPT SMOKE TEST."'
+curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0 and .finalResponseCount == 2'
 ```

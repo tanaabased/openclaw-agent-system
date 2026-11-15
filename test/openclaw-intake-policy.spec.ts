@@ -73,7 +73,6 @@ describe('agent/openclaw-intake-policy', () => {
       allowed: [{ login: 'operator', nodeId: 'U_operator' }],
     };
     const jobs = openclawIntakeJobs(value);
-    assert.equal(jobs.length, 2);
     assert.deepEqual(jobs[0], value.automations![0]);
     assert.equal(jobs[1]?.id, 'github-issue-assignment');
     assert.equal(jobs[1]?.displayName, '📥 ISSUE ASSIGNMENTS');
@@ -86,7 +85,6 @@ describe('agent/openclaw-intake-policy', () => {
     value.models = { default: { model: 'openai/gpt-6-luna', effort: 'medium' } };
     value.github!.notifications!.reviewRequest = { paused: true, allowed: [] };
     const jobs = openclawIntakeJobs(value);
-    assert.equal(jobs.length, 2);
     assert.deepEqual(jobs[0], value.automations![0]);
     assert.equal(jobs[1]?.id, 'github-issue-assignment');
     assert.equal(jobs[1]?.enabled, true);
