@@ -4,7 +4,7 @@ import discoverManifest, { discoverManifestAtPath } from './discover.ts';
 import { loadDiscoveredManifest, type DiscoveredAgentManifestLoadResult } from './load.ts';
 
 export type { AgentManifest, ManifestDiagnostic } from './types.ts';
-export type { ResolvedAutomation } from './automation-schema.ts';
+export type { CodexEnvironmentSelector, ResolvedAutomation } from './automation-schema.ts';
 export type LoadManifestResult = DiscoveredAgentManifestLoadResult;
 
 export interface LoadManifestOptions {

@@ -329,6 +329,7 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
       'automation-retired',
       'automation-removal-pending',
       'automation-target-migration-pending',
+      'automation-environment-unsupported',
     ]);
     result.status = result.findings.every((finding) => synchronizable.has(finding.code))
       ? 'requires-native-app-sync'
@@ -404,6 +405,7 @@ export async function syncCodexAutomationThreads(
       'automation-drift',
       'automation-removal-pending',
       'automation-target-migration-pending',
+      'automation-environment-unsupported',
     ]);
     if (result.findings.some((finding) => !allowed.has(finding.code)))
       throw new CodexAutomationError('automation-plan-stale-or-blocked');
