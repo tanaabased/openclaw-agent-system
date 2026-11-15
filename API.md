@@ -13,9 +13,9 @@ This reads shared definitions for both OpenClaw and standalone Codex; it does no
 check whether a runtime can execute them.
 
 ```ts
-import { loadManifestDefinitions } from '@tanaab/openclaw-agent-system/manifest';
+import { loadManifest } from '@tanaab/openclaw-agent-system/manifest';
 
-const result = await loadManifestDefinitions({
+const result = await loadManifest({
   workspaceDir: '/path/to/agent',
   // optional; relative to workspaceDir or absolute, bypassing discovery.
   // manifestPath: '.agent-system/agent.yaml',
@@ -36,7 +36,7 @@ if (result.status === 'loaded') {
 `agent.local.yaml` overlay applies. An explicit missing file does not fall back
 to workspace discovery.
 
-The exported `ManifestDefinitionsResult` is a discriminated union:
+The exported `LoadManifestResult` is a discriminated union:
 
 | `status`    | Data                                                                                                                                                                                           |
 | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -57,7 +57,7 @@ return `invalid`, not an empty automation list. Diagnostics include `code`, `sev
 Full manifest declaration validation still applies, but installed runtime readiness and
 unresolved credential references do not gate loading. Unexpected programming errors can
 reject the promise. `AgentManifest`, `ManifestDiagnostic`, `ResolvedAutomation`,
-`ManifestDefinitionsOptions` and `ManifestDefinitionsResult` types ship with this subpath.
+`LoadManifestOptions` and `LoadManifestResult` types ship with this subpath.
 The package root remains the plugin entrypoint; private source imports are unsupported.
 
 ## Tool API

@@ -1,5 +1,0 @@
-- id: review
-  display-name: '🔎 REVIEW DEFINITIONS'
-  schedule: every 1 hour
-  prompt: { file: ./review.md }
-  runtimes: [openclaw, codex]

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { loadManifestDefinitions } from '../manifest/public.ts';
+import { loadManifest } from '../manifest/public.ts';
 
 describe('manifest/public', () => {
   let root: string;
@@ -28,7 +28,7 @@ automations:
     runtimes: [openclaw, codex]
 `,
     );
-    const result = await loadManifestDefinitions({ workspaceDir: root });
+    const result = await loadManifest({ workspaceDir: root });
     assert.equal(result.status, 'loaded', JSON.stringify(result.diagnostics));
     if (result.status !== 'loaded') return;
     assert.equal(result.manifest.agent.id, 'portable');
@@ -53,7 +53,7 @@ automations:
     );
     await writeFile(join(root, 'definitions/jobs/review.md'), 'External prompt.\n');
     await writeFile(join(root, 'definitions/agent.local.yaml'), 'debug: true\n');
-    const result = await loadManifestDefinitions({
+    const result = await loadManifest({
       workspaceDir: root,
       manifestPath: 'definitions/custom.yaml',
     });
@@ -70,9 +70,9 @@ automations:
   });
 
   it('should distinguish an absent workspace manifest from a missing explicitly selected file', async () => {
-    assert.equal((await loadManifestDefinitions({ workspaceDir: root })).status, 'unmanaged');
+    assert.equal((await loadManifest({ workspaceDir: root })).status, 'unmanaged');
     await writeFile(join(root, 'agent.yaml'), 'schema-version: 1\nagent: {id: fallback}\n');
-    const result = await loadManifestDefinitions({
+    const result = await loadManifest({
       workspaceDir: root,
       manifestPath: 'missing.yaml',
     });

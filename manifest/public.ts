@@ -5,18 +5,16 @@ import { loadDiscoveredManifest, type DiscoveredAgentManifestLoadResult } from '
 
 export type { AgentManifest, ManifestDiagnostic } from './types.ts';
 export type { ResolvedAutomation } from './automation-schema.ts';
-export type ManifestDefinitionsResult = DiscoveredAgentManifestLoadResult;
+export type LoadManifestResult = DiscoveredAgentManifestLoadResult;
 
-export interface ManifestDefinitionsOptions {
+export interface LoadManifestOptions {
   workspaceDir: string;
   /** optional manifest path, absolute or relative to workspaceDir; no workspace discovery. */
   manifestPath?: string;
 }
 
 /** load definitions only: no runtime binding, credential resolution, setup or scheduling. */
-export async function loadManifestDefinitions(
-  options: ManifestDefinitionsOptions,
-): Promise<ManifestDefinitionsResult> {
+export async function loadManifest(options: LoadManifestOptions): Promise<LoadManifestResult> {
   const workspaceDir = resolve(options.workspaceDir);
   const discovery =
     options.manifestPath === undefined

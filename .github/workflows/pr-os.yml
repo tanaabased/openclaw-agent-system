@@ -30,7 +30,6 @@ jobs:
           - os-dispatch-enrollment
           - os-execution
           - os-credentials
-          - shared-manifest
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
