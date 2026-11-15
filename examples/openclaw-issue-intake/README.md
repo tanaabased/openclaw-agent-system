@@ -145,14 +145,8 @@ TARGET_INSTANCE=$(openclaw agent-system instance inspect --json | jq -er .instan
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
 native=$(openclaw agent-system automations list --json | jq -er '.jobs[] | select(.id == "github-issue-assignment") | .nativeId')
 due=$(openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -er '.state.nextRunAtMs | numbers')
-deadline=$((SECONDS + 180))
-while test "$SECONDS" -lt "$deadline"; do
-  openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" '{id:$id,limit:10,offset:0}')" --json > "$TMPDIR/intake-timer-run.json"
-  if jq -e --argjson due "$due" 'any(.entries[]; .runAtMs >= $due and .action == "finished" and .sessionId != null)' "$TMPDIR/intake-timer-run.json" >/dev/null; then break; fi
-  sleep 2
-done
-session=$(jq -er --argjson due "$due" '[.entries[] | select(.runAtMs >= $due and .action == "finished" and .status == "ok" and .sessionId != null)] | last | .sessionKey' "$TMPDIR/intake-timer-run.json")
-openclaw gateway call chat.history --params "$(jq -nc --arg key "$session" '{sessionKey:$key,limit:20}')" --json | jq -e '[.messages[] | select(.role == "user") | (.content | if type == "string" then . else map(.text // "") | join("") end) | select(contains("Run scheduled automation:"))] | length > 0 and all(.[]; (contains("Task-update authorization:") | not))'
+node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" --scheduled-after github-issue-assignment "$native" "$due" > "$TMPDIR/intake-timer-run.json"
+node --import tsx "$GITHUB_WORKSPACE/scripts/assert-scheduled-automation-input.ts" "$TMPDIR/intake-timer-run.json"
 node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import {parse,stringify} from "yaml"; const path="agent.yaml"; const value=parse(readFileSync(path,"utf8")); value.github["interval-minutes"]=1440; writeFileSync(path,stringify(value));'
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
 jq -s --slurpfile fixtures "$TMPDIR/notification-fixture-issues.json" '[.[].records[] | select(.issue.nodeId as $id | any($fixtures[0][]; .node_id == $id))]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-intake-v2/"github-intake-*.json > "$TMPDIR/notification-fixture-intake.json"

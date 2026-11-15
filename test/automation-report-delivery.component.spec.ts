@@ -374,7 +374,7 @@ describe('agent/automation-report-delivery', () => {
       ['delivered', 'delivered'],
     );
     assert.equal(f.messages.length, 2);
-    assert.equal(f.messages[0], '> ## 💾 BACKUP ran\n>\n> Preparing 📄 report · `backup`');
+    assert.equal(f.messages[0], '> 💾 **BACKUP** ran · Preparing 📄 report · `backup`');
     assert.ok(!f.messages[0]!.includes('Exit 17'));
     assert.ok(!f.messages[0]!.includes('# Saved'));
     const saved = await f.store.read(input.executionId);

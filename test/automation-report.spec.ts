@@ -23,7 +23,7 @@ const input: AutomationReportInput = {
 describe('agent/automation-report legacy', () => {
   it('should announce a named command run without implying its outcome', () => {
     const expected =
-      '> ## 💾 BACKUP AGENT NIGHTLY ran\n>\n> Preparing 📄 report · `backup-agent-nightly`';
+      '> 💾 **BACKUP AGENT NIGHTLY** ran · Preparing 📄 report · `backup-agent-nightly`';
     for (const exitCode of [0, 17]) {
       const report = prepareAutomationReport({
         ...input,
@@ -35,11 +35,11 @@ describe('agent/automation-report legacy', () => {
     }
     assert.equal(
       automationReportRequest({ id: 'legacy' }),
-      '> ## LEGACY ran\n>\n> Preparing 📄 report · `legacy`',
+      '> **LEGACY** ran · Preparing 📄 report · `legacy`',
     );
     assert.equal(
       automationReportRequest({ id: 'a`b', displayName: '📦 Name\n> injected' }),
-      '> ## 📦 NAME \\> INJECTED ran\n>\n> Preparing 📄 report · ``a`b``',
+      '> 📦 **NAME \\> INJECTED** ran · Preparing 📄 report · ``a`b``',
     );
   });
 

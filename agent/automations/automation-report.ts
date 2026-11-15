@@ -238,7 +238,9 @@ export function automationReportRequest(
     .toUpperCase()
     .replace(/[\\`*_{}[\]<>|]/gu, '\\$&');
   const id = githubNotificationMarkdownCode(sanitizeReportText(input.id));
-  return `> ## ${name} ran\n>\n> Preparing 📄 report · ${id}`;
+  const emojiName = name.match(/^(\p{Extended_Pictographic}\S*)\s+(.+)$/u);
+  const title = emojiName ? `${emojiName[1]} **${emojiName[2]}**` : `**${name}**`;
+  return `> ${title} ran · Preparing 📄 report · ${id}`;
 }
 
 /** check the owned envelope only; model explanations are not mechanically verified facts. */

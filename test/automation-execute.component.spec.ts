@@ -131,7 +131,7 @@ describe('cli/automation-execute', () => {
     assert.equal(run.code, 1);
     assert.equal(run.runs, 1);
     assert.equal(run.reports.length, 1);
-    assert.equal(run.reports[0], '> ## ⚙️ TEST JOB ran\n>\n> Preparing 📄 report · `job`');
+    assert.equal(run.reports[0], '> ⚙️ **TEST JOB** ran · Preparing 📄 report · `job`');
     assert.ok(!run.reports[0]!.includes('# Partial backup'));
     assert.ok(run.stdout.includes('# Partial backup'));
     assert.ok(!run.reports[0]!.includes('stdoutTruncatedBytes'));
