@@ -27,7 +27,11 @@
     "tanaab"
   ],
   "exports": {
-    ".": "./dist/index.js"
+    ".": "./dist/index.js",
+    "./manifest": {
+      "types": "./dist/types/manifest/public.d.ts",
+      "import": "./dist/manifest.js"
+    }
   },
   "files": [
     ".codex-plugin/",

@@ -1,3 +1,5 @@
+import { rm } from 'node:fs/promises';
+
 import { format, resolveConfig } from 'prettier';
 
 import { automationReportSchema } from '../agent/automations/automation-report-schema.ts';
@@ -11,6 +13,14 @@ await Bun.write(
 );
 
 const results = await Promise.all([
+  Bun.build({
+    entrypoints: ['manifest/public.ts'],
+    outdir: 'dist',
+    target: 'node',
+    format: 'esm',
+    packages: 'external',
+    naming: 'manifest.js',
+  }),
   Bun.build({
     entrypoints: ['index.ts', 'environment/memory-secret-provider-entry.ts'],
     outdir: 'dist',
@@ -53,5 +63,12 @@ if (results.some(({ success }) => !success)) {
   }
   process.exit(1);
 }
+
+await rm('dist/types', { recursive: true, force: true });
+const declarations = Bun.spawn(
+  ['node', './node_modules/typescript/bin/tsc', '-p', 'manifest/tsconfig.build.json'],
+  { stdout: 'inherit', stderr: 'inherit' },
+);
+if ((await declarations.exited) !== 0) process.exit(1);
 
 export {};

@@ -1,12 +1,14 @@
 import { Type, type Static } from 'typebox';
 
-import type { AgentSystemManifestValueResolver } from '../../api/types.ts';
 import AgentSystemToolError from '../../api/error.ts';
 import {
   decodeResolvableString,
   externalResolvableStringSchema,
 } from '../../manifest/value-schemas.ts';
-import type { ResolvableString } from '../../manifest/value-types.ts';
+import type {
+  AgentSystemManifestValueResolver,
+  ResolvableString,
+} from '../../manifest/value-types.ts';
 
 const binding = Type.String({ pattern: '^[A-Za-z_][A-Za-z0-9_]*$' });
 export const externalGoogleSectionSchema = Type.Object(

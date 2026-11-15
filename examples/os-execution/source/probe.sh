@@ -25,6 +25,13 @@ grep -Fx os-stderr-ready "$root/$mode.stderr"
 stage source-identity
 identity=$(agent-system-git var GIT_AUTHOR_IDENT)
 printf '%s\n' "$identity" | grep -F 'OS Execution <os-execution@example.invalid>'
+stage unavailable-context-diagnostic
+if AGENT_SYSTEM_EXEC_AUTHORITY=denied AGENT_SYSTEM_EXEC_CAPABILITY=denied:context-unresolved agent-system-git var GIT_AUTHOR_IDENT >"$root/$mode.unresolved-identity" 2>"$root/$mode.unresolved"; then
+  exit 1
+fi
+test ! -s "$root/$mode.unresolved-identity"
+grep -F 'reason=command-context-context-unresolved' "$root/$mode.unresolved"
+grep -F 'code=agent_not_resolved' "$root/$mode.unresolved"
 stage cross-agent-rejection
 cd ../peer
 if agent-system-git var GIT_AUTHOR_IDENT >"$root/$mode.cross-identity" 2>"$root/$mode.denied"; then

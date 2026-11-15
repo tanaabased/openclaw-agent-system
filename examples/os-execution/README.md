@@ -6,6 +6,7 @@ Run real shell and PTY commands on macOS and Linux, preserving manifest PATH, ar
 
 - Actual native process/terminal behavior through the installed execution boundary.
 - Workspace paths containing spaces and identity/containment after changing directory.
+- A denied context retains its specific diagnostic through the installed launcher without producing an identity.
 - One shell command and one PTY command, each requiring its probe's completed receipt.
 
 ## What Does Not Belong Here

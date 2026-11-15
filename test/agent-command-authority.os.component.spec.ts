@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 
@@ -233,10 +233,46 @@ describe('agent/command-authority', () => {
     await authority.stop();
     const environment = authority.issue('data');
 
-    assert.deepEqual(environment, deniedAgentCommandEnvironment());
+    assert.deepEqual(environment, deniedAgentCommandEnvironment('issuer-inactive'));
     await assert.rejects(
       authority.resolve(environment, workspaceDir),
+      contextFailure('issuer-inactive'),
+    );
+  });
+
+  it('should report startup failure without exposing paths and recover after a successful start', async () => {
+    await authority.stop();
+    await chmod(join(root, 'authority'), 0o755);
+    await assert.rejects(authority.start());
+    assert.equal(authority.unavailableReason, 'issuer-directory-unsafe');
+    await assert.rejects(
+      authority.resolve(authority.issue('data'), workspaceDir),
+      contextFailure('issuer-directory-unsafe', [root]),
+    );
+    await chmod(join(root, 'authority'), 0o700);
+    await authority.start();
+    assert.equal((await authority.resolve(authority.issue('data'), workspaceDir))?.agentId, 'data');
+  });
+
+  it('should decode only known denial reasons without granting authority or exposing input', async () => {
+    await assert.rejects(
+      authority.resolve(deniedAgentCommandEnvironment('context-unresolved'), workspaceDir),
+      contextFailure('context-unresolved'),
+    );
+    await assert.rejects(
+      authority.resolve(deniedAgentCommandEnvironment(), workspaceDir),
       contextFailure('issuer-unavailable'),
+    );
+    const privateValue = 'private-untrusted-detail';
+    await assert.rejects(
+      authority.resolve(
+        {
+          [agentCommandAuthorityEnvironmentName]: 'denied',
+          [agentCommandCapabilityEnvironmentName]: `denied:${privateValue}`,
+        },
+        workspaceDir,
+      ),
+      contextFailure('invalid', [privateValue]),
     );
   });
 

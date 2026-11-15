@@ -5,7 +5,7 @@ import type {
 import type { Static, TSchema } from 'typebox';
 
 import type { AgentManifest } from '../manifest/types.ts';
-import type { ResolvableString } from '../manifest/value-types.ts';
+import type { AgentSystemManifestValueResolver } from '../manifest/value-types.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type AgentSystemToolRuntime from './runtime.ts';
 
@@ -31,9 +31,7 @@ export interface AgentSystemToolCommand {
   hostFallback?: string;
 }
 
-export interface AgentSystemManifestValueResolver {
-  resolve(value: ResolvableString, fieldPath: string): string;
-}
+export type { AgentSystemManifestValueResolver } from '../manifest/value-types.ts';
 
 export interface AgentSystemCliResult {
   exitCode: number | null;
