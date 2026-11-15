@@ -110,10 +110,14 @@ export function reportAutomationFailure(
     const tail = run('tail', ['-n', '120', log.stdout.trim()]);
     assert.equal(tail.status, 0);
     evidence.push('gateway diagnostic tail:\n' + tail.stdout);
-    const lifecycle = run('grep', ['-F', 'code=automation-lifecycle-', log.stdout.trim()]);
+    const lifecycle = run('grep', [
+      '-E',
+      'code=automation-(lifecycle-|prompt-)',
+      log.stdout.trim(),
+    ]);
     if (lifecycle.status === 0)
       evidence.push(
-        'automation lifecycle trace:\n' + lifecycle.stdout.split('\n').slice(-80).join('\n'),
+        'automation hook trace:\n' + lifecycle.stdout.split('\n').slice(-80).join('\n'),
       );
   } catch {
     evidence.push('gateway diagnostic tail: unavailable');

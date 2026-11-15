@@ -50,7 +50,7 @@ openclaw agent-system tool worktree -- prepare fixture lifecycle-approval-codex 
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/openclaw"
 openclaw agent-system install --skip-setup --yes
 openclaw agent-system tool worktree -- prepare fixture lifecycle-approval-openclaw HEAD > "$TMPDIR/lifecycle-runtime-openclaw-worktree.json"
-openclaw-gateway start
+OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 ```
 
 ## Testing
