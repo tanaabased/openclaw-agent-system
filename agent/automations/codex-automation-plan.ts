@@ -202,6 +202,11 @@ export default async function planCodexAutomations(options: {
       }
       const record = records.find((r) => r.id === job.id);
       if (record?.retired) throw new CodexAutomationError('automation-retired-id');
+      if (
+        job.overrides.codex?.environment !== undefined &&
+        job.overrides.codex.environment.type !== 'native'
+      )
+        throw new CodexAutomationError('automation-environment-unsupported');
       const rrule = codexAutomationSchedule(job.schedule, record?.definition.rrule);
       const override = job.overrides.codex;
       const selection = automationThreadSelection(job, 'codex');
@@ -350,6 +355,7 @@ export default async function planCodexAutomations(options: {
     'automation-drift',
     'automation-removal-pending',
     'automation-target-migration-pending',
+    'automation-environment-unsupported',
   ]);
   const blocked = findings.some((finding) => !ordinary.has(finding.code));
   const digest = automationHash({

@@ -24,16 +24,38 @@ export const automationFileSchema = Type.Object(
   { additionalProperties: false },
 );
 const promptSchema = Type.Union([commandScriptSchema, automationFileSchema]);
-const overrideSchema = Type.Object(
+const automationOverrideProperties = {
+  model: Type.Optional(textSchema),
+  effort: Type.Optional(textSchema),
+  target: Type.Optional(
+    Type.Union([
+      Type.Literal('independent'),
+      Type.Object({ thread: textSchema }, { additionalProperties: false }),
+    ]),
+  ),
+};
+const overrideSchema = Type.Object(automationOverrideProperties, { additionalProperties: false });
+const environmentNameSchema = Type.String({
+  minLength: 1,
+  pattern: '^(?=[\\s\\S]*\\S)[^\\u0000\\r\\n]*(?![\\s\\S])',
+});
+export const codexEnvironmentSelectorSchema = Type.Union([
+  Type.Object({ type: Type.Literal('native') }, { additionalProperties: false }),
+  Type.Object({ type: Type.Literal('dot') }, { additionalProperties: false }),
+  Type.Object({ type: Type.Literal('auto') }, { additionalProperties: false }),
+  Type.Object(
+    { type: Type.Literal('cloud'), name: Type.Optional(environmentNameSchema) },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    { type: Type.Literal('computer'), name: environmentNameSchema },
+    { additionalProperties: false },
+  ),
+]);
+const codexOverrideSchema = Type.Object(
   {
-    model: Type.Optional(textSchema),
-    effort: Type.Optional(textSchema),
-    target: Type.Optional(
-      Type.Union([
-        Type.Literal('independent'),
-        Type.Object({ thread: textSchema }, { additionalProperties: false }),
-      ]),
-    ),
+    ...automationOverrideProperties,
+    environment: Type.Optional(codexEnvironmentSelectorSchema),
   },
   { additionalProperties: false },
 );
@@ -98,7 +120,7 @@ const jobSchema = Type.Object(
       Type.Object(
         {
           openclaw: Type.Optional(overrideSchema),
-          codex: Type.Optional(overrideSchema),
+          codex: Type.Optional(codexOverrideSchema),
         },
         { additionalProperties: false },
       ),
@@ -110,6 +132,10 @@ export const automationListSchema = Type.Array(jobSchema);
 export const externalAutomationsSchema = Type.Union([automationListSchema, automationFileSchema]);
 export type AutomationRuntime = 'openclaw' | 'codex';
 export type AutomationOverride = Static<typeof overrideSchema>;
+export type CodexEnvironmentSelector = Static<typeof codexEnvironmentSelectorSchema>;
+export type CodexAutomationOverride = AutomationOverride & {
+  environment?: CodexEnvironmentSelector;
+};
 export interface AgentAutomation {
   id: string;
   displayName?: string;
@@ -124,7 +150,7 @@ export interface AgentAutomation {
   thread?: { id?: string; name?: string };
   group?: string;
   timeoutSeconds?: number;
-  overrides: Partial<Record<AutomationRuntime, AutomationOverride>>;
+  overrides: { openclaw?: AutomationOverride; codex?: CodexAutomationOverride };
 }
 export type ResolvedAutomation = Omit<AgentAutomation, 'payload'> & {
   /** trusted declaration origin; omitted for manifest-owned jobs, never accepted from yaml. */

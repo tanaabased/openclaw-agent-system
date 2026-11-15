@@ -29,6 +29,51 @@ describe('manifest/automation-schema', () => {
     );
   });
 
+  it('should retain valid codex environment selectors and reject malformed or openclaw selectors', () => {
+    const openclawBaseline = automationContent(
+      normalize([{ ...base, prompt: 'hello' }])[0]!,
+      'openclaw',
+    ).hash;
+    assert.deepEqual(normalize([{ ...base, prompt: 'hello' }])[0]!.overrides, {});
+    const selectors = [
+      { type: 'native' },
+      { type: 'dot' },
+      { type: 'auto' },
+      { type: 'cloud' },
+      { type: 'cloud', name: 'Team cloud' },
+      { type: 'computer', name: 'Workstation' },
+    ];
+    for (const environment of selectors) {
+      const [job] = normalize([
+        { ...base, prompt: 'hello', overrides: { codex: { environment } } },
+      ]);
+      assert.deepEqual(job!.overrides.codex?.environment, environment);
+      assert.equal(automationContent(job!, 'openclaw').hash, openclawBaseline);
+    }
+    for (const environment of [
+      { type: 'unknown' },
+      { type: 'cloud', name: '' },
+      { type: 'cloud', name: '  ' },
+      { type: 'computer' },
+      { type: 'computer', name: '  ' },
+      { type: 'native', name: 'unexpected' },
+      { type: 'cloud', extra: true },
+      'native',
+    ]) {
+      assert.equal(
+        normalizeAutomations([{ ...base, prompt: 'hello', overrides: { codex: { environment } } }])
+          .status,
+        'invalid',
+      );
+    }
+    assert.equal(
+      normalizeAutomations([
+        { ...base, prompt: 'hello', overrides: { openclaw: { environment: { type: 'native' } } } },
+      ]).status,
+      'invalid',
+    );
+  });
+
   it('should reject invalid display names without exposing their text', () => {
     for (const label of [
       null,

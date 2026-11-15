@@ -26,6 +26,8 @@ automations:
     schedule: every 1 hour
     prompt: Review.
     runtimes: [openclaw, codex]
+    overrides:
+      codex: {environment: {type: cloud, name: team}}
 `,
     );
     const result = await loadManifest({ workspaceDir: root });
@@ -38,6 +40,10 @@ automations:
       kind: 'prompt',
       prompt: 'Review.',
     });
+    assert.deepEqual(result.manifest.automations?.[0]?.overrides.codex?.environment, {
+      type: 'cloud',
+      name: 'team',
+    });
   });
 
   it('should load an explicit manifest and resolve references relative to their yaml files', async () => {
@@ -49,7 +55,7 @@ automations:
     );
     await writeFile(
       join(root, 'definitions/jobs/automations.yaml'),
-      '- id: external\n  schedule: in 1 hour\n  prompt: {file: ./review.md}\n',
+      '- id: external\n  schedule: in 1 hour\n  prompt: {file: ./review.md}\n  overrides:\n    codex: {environment: {type: computer, name: workstation}}\n',
     );
     await writeFile(join(root, 'definitions/jobs/review.md'), 'External prompt.\n');
     await writeFile(join(root, 'definitions/agent.local.yaml'), 'debug: true\n');
@@ -65,6 +71,10 @@ automations:
     assert.deepEqual(result.manifest.automations?.[0]?.payload, {
       kind: 'prompt',
       prompt: 'External prompt.\n',
+    });
+    assert.deepEqual(result.manifest.automations?.[0]?.overrides.codex?.environment, {
+      type: 'computer',
+      name: 'workstation',
     });
     assert.equal(result.automationFiles?.length, 2);
   });

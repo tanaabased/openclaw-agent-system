@@ -204,13 +204,23 @@ settings select the report-formatting turn and later conversation, never command
 > Without shared or runtime settings and without `models`, native inheritance remains.
 > Removing a desired field stops managing it; it does not reset the chat's saved native setting.
 
-Each `overrides.openclaw` or `overrides.codex` object accepts only:
+Each `overrides.openclaw` or `overrides.codex` object accepts these shared fields:
 
 | Field    | Type                                              | Required | Default                                |
 | -------- | ------------------------------------------------- | -------- | -------------------------------------- |
 | `effort` | nonblank string                                   | no       | adapter-resolved                       |
 | `model`  | nonblank string                                   | no       | adapter-resolved                       |
 | `target` | `independent` or `{ thread: existing-native-id }` | no       | shared `thread`, otherwise independent |
+
+`overrides.codex.environment` declares the intended Codex environment for consumers
+of the public manifest reader. Set `type` to `native`, `dot`, or `auto`; choose
+`cloud` with an optional nonblank `name`, or `computer` with a required nonblank
+`name`. A cloud selector without a name uses the platform's default Cloud
+environment. This is declaration support only:
+Agent System's current Codex scheduler reports `automation-environment-unsupported`
+and leaves the affected job unchanged for non-native selections. Omission and
+explicit `native` retain current scheduling behavior. Install does not migrate or
+alter saved schedules when this field is added.
 
 ```yaml
 # .agent-system/agent.yaml

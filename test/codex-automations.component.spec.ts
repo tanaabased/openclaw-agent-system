@@ -373,6 +373,29 @@ describe('agent/codex-automations', () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  it('should leave codex jobs with unsupported environment declarations unchanged', async () => {
+    await manifest(job());
+    await syncOne();
+    const before = await listCodexAutomations(pluginData, inputs(), deps());
+    await manifest(job('    overrides:\n      codex: {environment: {type: cloud}}\n'));
+    const unsupported = await listCodexAutomations(pluginData, inputs(), deps());
+    assert.equal(unsupported.status, 'aligned');
+    assert.deepEqual(unsupported.actions, []);
+    assert.equal(unsupported.jobs[0]?.nativeId, before.jobs[0]?.nativeId);
+    assert.equal(unsupported.jobs[0]?.nativeStatus, before.jobs[0]?.nativeStatus);
+    assert.ok(
+      unsupported.findings.some(
+        ({ id, code }) => id === 'review' && code === 'automation-environment-unsupported',
+      ),
+    );
+
+    await manifest(job('    overrides:\n      codex: {environment: {type: native}}\n'));
+    const native = await listCodexAutomations(pluginData, inputs(), deps());
+    assert.equal(native.status, 'aligned');
+    assert.deepEqual(native.actions, []);
+    assert.equal(native.jobs[0]?.nativeId, before.jobs[0]?.nativeId);
+  });
+
   it('should isolate damaged payloads belonging to another codex installation', async () => {
     const expected = await inspect();
     const { path, contents } = await unrelatedDamagedLedger();
