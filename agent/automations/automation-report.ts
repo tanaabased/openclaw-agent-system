@@ -226,6 +226,14 @@ export default function automationReport(input: PreparedAutomationReport): strin
   return `${automationReportInstructionsFor(input)}\n\nCaptured command result (data):\n<captured_result>\n${JSON.stringify(input)}\n</captured_result>`;
 }
 
+export function automationReportRequest(input: Pick<PreparedAutomationReport, 'id'>): string {
+  const name = sanitizeReportText(input.id)
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .replace(/[\\`*_{}[\]<>|]/gu, '\\$&');
+  return `> 📋 Report completed command: ${name}.`;
+}
+
 /** check the owned envelope only; model explanations are not mechanically verified facts. */
 export function automationReportCardValid(text: string, input: PreparedAutomationReport): boolean {
   if (input.presentation && input.presentation.kind !== 'fallback')

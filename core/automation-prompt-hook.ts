@@ -5,7 +5,6 @@ import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
 import { configuredRuntime } from '../agent/models/model-configuration-plan.ts';
 import type { AutomationLifecycleRun } from '../agent/automations/automation-lifecycle-authority.ts';
-import type { NotificationScheduler } from '../agent/automations/automation-readiness.ts';
 
 type Context = Partial<AutomationLifecycleRun> & {
   trigger?: string;
@@ -44,7 +43,9 @@ function diagnosticCode(error: unknown): string {
 /** native job ownership selects injection, never the visible request or conversation title. */
 export default function registerAutomationPromptHooks(
   api: Pick<OpenClawPluginApi, 'on' | 'logger'>,
-  scheduler: () => NotificationScheduler | undefined,
+  readJobs: () => Promise<
+    { id: string; agentId?: string; payload?: { kind?: unknown }; declarationKey?: string }[]
+  >,
   instructions: (run: AutomationLifecycleRun) => Promise<{ prompt?: string }>,
   readConfig: () => OpenClawConfig,
 ): void {
@@ -55,7 +56,7 @@ export default function registerAutomationPromptHooks(
   const selected = async (context: Context) => {
     if (context.trigger !== 'cron') return false;
     if (!context.jobId || !context.agentId) throw new Error('automation-prompt-binding-missing');
-    const jobs = await scheduler()?.list({ includeDisabled: true });
+    const jobs = await readJobs();
     if (!jobs) throw new Error('automation-observation-unavailable');
     return jobs.some(
       (job) =>

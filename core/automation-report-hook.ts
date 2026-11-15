@@ -58,7 +58,10 @@ export default function registerAutomationReportHooks(
       current.guarded = true;
     });
     // codex rejects restrictive prompt-hook allowlists; block execution below instead.
-    return { appendSystemContext: automationReportInstructionsFor(record.input) };
+    return {
+      appendSystemContext: automationReportInstructionsFor(record.input),
+      prependContext: automationReport(record.input),
+    };
   });
   api.on('before_tool_call', async (event, context) => {
     try {

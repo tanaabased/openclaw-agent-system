@@ -37,20 +37,17 @@ function fixture(runtime = 'codex') {
         debug: (text) => logs.push(text),
       },
     },
-    () =>
-      ({
-        list: async () => {
-          if (observationFailure) throw new Error('private provider diagnostic');
-          return [
-            {
-              id: 'native-job',
-              agentId: 'test',
-              declarationKey: 'agent-system:scope:custom',
-              payload: { kind: payloadKind },
-            },
-          ];
+    async () => {
+      if (observationFailure) throw new Error('private provider diagnostic');
+      return [
+        {
+          id: 'native-job',
+          agentId: 'test',
+          declarationKey: 'agent-system:scope:custom',
+          payload: { kind: payloadKind },
         },
-      }) as never,
+      ];
+    },
     async () => {
       loads++;
       if (failure) throw failure;

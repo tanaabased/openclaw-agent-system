@@ -45,14 +45,19 @@ describe('agent/automation-prompt', () => {
         removed: false,
         nativeHash: '',
       };
-      const native = { ...projectAutomation(job, record, context), id: record.nativeId };
+      const native = {
+        ...projectAutomation(job, record, context),
+        id: record.nativeId,
+        configRevision: 'fixture-revision',
+        state: {},
+      };
       record.nativeHash = nativeAutomationHash(native);
       const service = {
         scope: async () => ({ context, store: { read: async () => ({ records: [record] }) } }),
       } as never;
       const result = await resolveAutomationPrompt(
         service,
-        { list: async () => [native] } as never,
+        id === 'github-issue-assignment' ? ({ list: async () => [native] } as never) : undefined,
         manifest,
         {
           ...context,
@@ -60,6 +65,10 @@ describe('agent/automation-prompt', () => {
           runId: 'run',
           sessionKey: 'agent:receiver:scheduled',
           sessionId: 'session',
+        },
+        async (method) => {
+          assert.equal(method, 'cron.list');
+          return { jobs: [native], hasMore: false };
         },
       );
       assert.deepEqual(result, {

@@ -130,8 +130,9 @@ describe('cli/automation-execute', () => {
     assert.equal(run.code, 1);
     assert.equal(run.runs, 1);
     assert.equal(run.reports.length, 1);
-    assert.match(run.reports[0]!, /Timed out/u);
-    assert.ok(run.reports[0]!.includes('# Partial backup'));
+    assert.match(run.reports[0]!, /^> .*Report completed command: job\.$/u);
+    assert.ok(!run.reports[0]!.includes('# Partial backup'));
+    assert.ok(run.stdout.includes('# Partial backup'));
     assert.ok(!run.reports[0]!.includes('stdoutTruncatedBytes'));
     const completion = JSON.parse(run.stdout.trimEnd().split('\n').at(-1)!);
     assert.equal(completion.reporting.status, 'pending');

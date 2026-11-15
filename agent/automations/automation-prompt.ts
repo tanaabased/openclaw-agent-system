@@ -7,12 +7,14 @@ import {
 } from './automation-lifecycle-authority.ts';
 import type { NotificationScheduler } from './automation-readiness.ts';
 import { AutomationError } from './automation-errors.ts';
+import type { AutomationGateway } from './automation-gateway.ts';
 
 export async function resolveAutomationPrompt(
   service: Pick<AutomationService, 'scope'>,
   scheduler: NotificationScheduler | undefined,
   manifest: AgentManifest,
   run: AutomationLifecycleRun,
+  request?: AutomationGateway,
 ): Promise<{ prompt?: string }> {
   const { job, native } = await verifyAutomationLifecycleRun(
     service,
@@ -20,7 +22,7 @@ export async function resolveAutomationPrompt(
     manifest,
     run,
     undefined,
-    undefined,
+    request,
     true,
   );
   const payload = native.payload;
