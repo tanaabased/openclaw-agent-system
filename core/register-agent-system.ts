@@ -859,6 +859,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         throw new AutomationError('automation-prompt-binding-unverified');
       return resolveAutomationPrompt(automationService, readScheduler?.(), loaded.manifest, run);
     },
+    readRuntimeConfig,
   );
   registerAutomationLifecycleHooks(api, automationLifecycle);
   const lifecycleApproval = new AgentLifecycleApproval({

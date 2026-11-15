@@ -1,11 +1,17 @@
 import { createHash } from 'node:crypto';
 
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
+import { configuredRuntime } from '../agent/models/model-configuration-plan.ts';
 import type { AutomationLifecycleRun } from '../agent/automations/automation-lifecycle-authority.ts';
 import type { NotificationScheduler } from '../agent/automations/automation-readiness.ts';
 
-type Context = Partial<AutomationLifecycleRun> & { trigger?: string };
+type Context = Partial<AutomationLifecycleRun> & {
+  trigger?: string;
+  modelProviderId?: string;
+  modelId?: string;
+};
 const bindingKeys = [
   'runId',
   'jobId',
@@ -40,6 +46,7 @@ export default function registerAutomationPromptHooks(
   api: Pick<OpenClawPluginApi, 'on' | 'logger'>,
   scheduler: () => NotificationScheduler | undefined,
   instructions: (run: AutomationLifecycleRun) => Promise<{ prompt?: string }>,
+  readConfig: () => OpenClawConfig,
 ): void {
   const prepared = new Map<
     string,
@@ -104,14 +111,29 @@ export default function registerAutomationPromptHooks(
     else api.logger.debug?.(message);
   };
 
-  const stopped = () => ({
-    handled: true,
-    reason: 'automation-prompt-load-blocked',
-    reply: {
-      isError: true,
-      text: 'Scheduled automation stopped (automation-prompt-load-blocked): its job binding or instructions could not be verified. Check automation configuration and synchronize it before retrying.',
-    },
-  });
+  const stopped = (context: Context) => {
+    try {
+      if (context.agentId && context.modelProviderId && context.modelId) {
+        const runtime = configuredRuntime(readConfig(), context.agentId, {
+          provider: context.modelProviderId,
+          model: context.modelId,
+        });
+        // the embedded reply shortcut reports success; its input gate carries a native failure.
+        if (runtime?.trim().toLowerCase() === 'openclaw') return;
+      }
+    } catch {
+      // unavailable runtime configuration must still stop admission before inference.
+    }
+    if (context.runId) prepared.delete(context.runId);
+    return {
+      handled: true,
+      reason: 'automation-prompt-load-blocked',
+      reply: {
+        isError: true,
+        text: 'Scheduled automation stopped (automation-prompt-load-blocked): its job binding or instructions could not be verified. Check automation configuration and synchronize it before retrying.',
+      },
+    };
+  };
   api.on(
     'before_agent_reply',
     async (_event, context) => {
@@ -119,7 +141,7 @@ export default function registerAutomationPromptHooks(
       const prior = context.runId ? prepared.get(context.runId) : undefined;
       if (prior) {
         trace('before_agent_reply', 'reuse', context);
-        return prior.ready && matches(prior.run, context) ? undefined : stopped();
+        return prior.ready && matches(prior.run, context) ? undefined : stopped(context);
       }
       if (context.trigger !== 'cron') {
         trace('before_agent_reply', 'skip', context, 'not-cron');
@@ -154,10 +176,8 @@ export default function registerAutomationPromptHooks(
         entry.ready = true;
         trace('before_agent_reply', 'ready', context);
       } catch (error) {
-        // the shared reply hook can stop both harnesses before inference; prompt hooks cannot.
         trace('before_agent_reply', 'failed', context, diagnosticCode(error), true, phase);
-        if (context.runId && prepared.get(context.runId) === entry) prepared.delete(context.runId);
-        return stopped();
+        return stopped(context);
       }
     },
     { eligibleTriggers: ['cron'] },
@@ -196,7 +216,7 @@ export default function registerAutomationPromptHooks(
       outcome: 'block',
       reason: 'automation-prompt-load-blocked',
       message:
-        'Scheduled automation stopped: its job binding or instructions could not be verified. Check automation configuration and synchronize it before retrying.',
+        'Scheduled automation stopped (automation-prompt-load-blocked): its job binding or instructions could not be verified. Check automation configuration and synchronize it before retrying.',
     };
   });
   api.on('agent_end', (_event, context) => {

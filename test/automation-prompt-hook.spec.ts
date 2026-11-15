@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import registerAutomationPromptHooks from '../core/automation-prompt-hook.ts';
 import { AutomationError } from '../agent/automations/automation-errors.ts';
 
-function fixture() {
+function fixture(runtime = 'codex') {
+  let configFailure = false;
+  let modelRuntime: string | undefined;
   const hooks = new Map<string, (event: unknown, context: unknown) => Promise<unknown>>();
   let prompt: string | undefined = 'hidden instructions one';
   let failure: Error | undefined;
@@ -15,6 +18,8 @@ function fixture() {
   const logs: string[] = [];
   const context = {
     trigger: 'cron',
+    modelProviderId: 'test-provider',
+    modelId: 'test-model',
     runId: 'run-one',
     jobId: 'native-job',
     agentId: 'test',
@@ -51,10 +56,40 @@ function fixture() {
       if (failure) throw failure;
       return { prompt };
     },
+    (): OpenClawConfig => {
+      if (configFailure) throw new Error('private config diagnostic');
+      return {
+        agents: {
+          entries: {
+            test: {
+              models:
+                modelRuntime === undefined
+                  ? {}
+                  : { 'test-provider/test-model': { agentRuntime: { id: modelRuntime } } },
+            },
+          },
+        },
+        models: {
+          providers: {
+            'test-provider': {
+              baseUrl: 'https://example.invalid',
+              models: [],
+              agentRuntime: { id: runtime },
+            },
+          },
+        },
+      };
+    },
   );
   return {
     context,
     logs,
+    selectModelRuntime: (value: string) => {
+      modelRuntime = value;
+    },
+    loseConfig: () => {
+      configFailure = true;
+    },
     events: () => logs.map((line) => JSON.parse(line.slice(line.indexOf('{')))),
     call: (hook: string, ctx: object = context, event: unknown = {}) =>
       hooks.get(hook)!(event, ctx),
@@ -123,6 +158,62 @@ describe('core/automation-prompt-hook', () => {
       assert.match(result.reply.text, /automation-prompt-load-blocked/);
       assert.equal(await f.call('before_prompt_build'), undefined);
       assert.equal(((await f.call('before_agent_run')) as { outcome: string }).outcome, 'block');
+      assert.ok(!f.logs.join().includes('private'));
+    }
+  });
+
+  it('should defer embedded refusals to the native input gate without projecting unresolved instructions', async () => {
+    for (const runtime of ['openclaw', ' OPENCLAW ']) {
+      const f = fixture(runtime);
+      f.fail(new AutomationError('automation-lifecycle-drift'));
+      assert.equal(await f.call('before_agent_reply'), undefined);
+      assert.equal(await f.call('before_prompt_build'), undefined);
+      // repeated admission must not replace a failed entry with newly loaded instructions.
+      f.edit('changed instructions');
+      assert.equal(await f.call('before_agent_reply'), undefined);
+      assert.equal(f.loads(), 1);
+      const result = (await f.call('before_agent_run')) as { outcome: string; message: string };
+      assert.equal(result.outcome, 'block');
+      assert.match(result.message, /automation-prompt-load-blocked/);
+      await f.call('agent_end');
+    }
+  });
+
+  it('should select the failure path from the current model binding rather than the provider default', async () => {
+    const embedded = fixture('codex');
+    embedded.selectModelRuntime('openclaw');
+    embedded.fail();
+    assert.equal(await embedded.call('before_agent_reply'), undefined);
+    assert.equal(
+      ((await embedded.call('before_agent_run')) as { outcome: string }).outcome,
+      'block',
+    );
+    const codex = fixture('openclaw');
+    codex.selectModelRuntime('codex');
+    codex.fail();
+    assert.equal(((await codex.call('before_agent_reply')) as { handled: boolean }).handled, true);
+  });
+
+  it('should retain a pre-inference error reply when the native runtime cannot be established', async () => {
+    for (const mode of [
+      'missing-model',
+      'unavailable-config',
+      'other-runtime',
+      'auto',
+      'default',
+      '',
+    ]) {
+      const f = fixture(['missing-model', 'unavailable-config'].includes(mode) ? 'openclaw' : mode);
+      if (mode === 'unavailable-config') f.loseConfig();
+      f.fail();
+      const context = mode === 'missing-model' ? { ...f.context, modelId: undefined } : f.context;
+      const result = (await f.call('before_agent_reply', context)) as {
+        handled: boolean;
+        reply: { isError: boolean };
+      };
+      assert.equal(result.handled, true);
+      assert.equal(result.reply.isError, true);
+      assert.equal(await f.call('before_prompt_build', context), undefined);
       assert.ok(!f.logs.join().includes('private'));
     }
   });
@@ -223,13 +314,17 @@ describe('core/automation-prompt-hook', () => {
     await f.call('before_agent_run', { ...f.context, sessionId: 'changed-private-session' });
     assert.deepEqual(f.events().at(-1).changed, ['sessionId']);
     for (const event of f.events().slice(0, -2))
-      for (const [key, value] of Object.entries(f.context).filter(([key]) => key !== 'trigger'))
+      for (const [key, value] of Object.entries(f.context).filter(
+        ([key]) => !['trigger', 'modelProviderId', 'modelId'].includes(key),
+      ))
         assert.equal(
           event.identity[key],
           createHash('sha256').update(value).digest('hex').slice(0, 16),
         );
     for (const value of [
-      ...Object.values(f.context).filter((v) => v !== 'cron'),
+      ...Object.entries(f.context)
+        .filter(([key]) => !['trigger', 'modelProviderId', 'modelId'].includes(key))
+        .map(([, value]) => value),
       'hidden instructions one',
       'changed-private-session',
     ])
