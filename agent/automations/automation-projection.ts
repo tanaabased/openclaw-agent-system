@@ -1,5 +1,4 @@
 import scheduleCondition from './automation-schedule-condition.ts';
-import { automationSmokeTestRequest, isAutomationSmokeTest } from './automation-smoke-test.ts';
 import { automationReportTimeoutMs } from './automation-report-timeout.ts';
 import { commandTerminationGraceMs } from '../../api/cli-budget.ts';
 import type { AutomationThreadModelObservation } from './automation-threads.ts';
@@ -49,6 +48,15 @@ export function effectiveAutomation(job: ResolvedAutomation, context: Automation
       ...(job.internalOpenClaw ? { internal: job.internalOpenClaw } : {}),
     }),
   };
+}
+
+/** keep the quote on its own line even after the host trims and prefixes the request. */
+export function automationPromptRequest(job: ResolvedAutomation): string {
+  const name = (job.displayName ?? job.id)
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .replace(/[\\`*_{}[\]<>|]/gu, '\\$&');
+  return `Scheduled request\n\n> Run scheduled automation: ${name}.`;
 }
 
 export function projectAutomation(
@@ -140,9 +148,7 @@ export function projectAutomation(
           }
         : {
             kind: 'agentTurn',
-            message: isAutomationSmokeTest(job)
-              ? automationSmokeTestRequest
-              : job.payload.prompt.trim(),
+            message: automationPromptRequest(job),
             timeoutSeconds,
             lightContext: false,
             allowUnsafeExternalContent: false,

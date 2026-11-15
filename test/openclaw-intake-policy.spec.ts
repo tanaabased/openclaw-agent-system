@@ -73,11 +73,15 @@ describe('agent/openclaw-intake-policy', () => {
       allowed: [{ login: 'operator', nodeId: 'U_operator' }],
     };
     const jobs = openclawIntakeJobs(value);
-    assert.deepEqual(jobs[0], value.automations![0]);
-    assert.equal(jobs[1]?.id, 'github-issue-assignment');
-    assert.equal(jobs[1]?.displayName, '📥 ISSUE ASSIGNMENTS');
-    assert.deepEqual(jobs[1]?.thread, { name: 'ISSUE ASSIGNMENTS' });
-    assert.equal(jobs[1]?.enabled, true);
+    assert.deepEqual(
+      jobs.find(({ id }) => id === 'independent-check'),
+      value.automations![0],
+    );
+    const assignment = jobs.find(({ id }) => id === 'github-issue-assignment');
+    assert.ok(assignment);
+    assert.equal(assignment.displayName, '📥 ISSUE ASSIGNMENTS');
+    assert.deepEqual(assignment.thread, { name: 'ISSUE ASSIGNMENTS' });
+    assert.equal(assignment.enabled, true);
   });
 
   it('should still derive supported planning when unsupported triggers are disabled', () => {
@@ -85,8 +89,12 @@ describe('agent/openclaw-intake-policy', () => {
     value.models = { default: { model: 'openai/gpt-6-luna', effort: 'medium' } };
     value.github!.notifications!.reviewRequest = { paused: true, allowed: [] };
     const jobs = openclawIntakeJobs(value);
-    assert.deepEqual(jobs[0], value.automations![0]);
-    assert.equal(jobs[1]?.id, 'github-issue-assignment');
-    assert.equal(jobs[1]?.enabled, true);
+    assert.deepEqual(
+      jobs.find(({ id }) => id === 'independent-check'),
+      value.automations![0],
+    );
+    const assignment = jobs.find(({ id }) => id === 'github-issue-assignment');
+    assert.ok(assignment);
+    assert.equal(assignment.enabled, true);
   });
 });

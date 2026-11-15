@@ -1,10 +1,6 @@
+import { resolveAutomationPrompt } from '../agent/automations/automation-prompt.ts';
 import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
 import issuePickupJobs from '../agent/automations/issue-pickup-jobs.ts';
-import {
-  automationSmokeTestId,
-  automationSmokeTestRequest,
-} from '../agent/automations/automation-smoke-test.ts';
-import { verifyAutomationLifecycleRun } from '../agent/automations/automation-lifecycle-authority.ts';
 import IssuePickupEnrollmentStore from '../agent/issue-pickup-enrollment.ts';
 import selectionFixture from './issue-pickup-selection-fixture.ts';
 import assert from 'node:assert/strict';
@@ -23,6 +19,7 @@ import { AutomationError } from '../agent/automations/automation-errors.ts';
 import openclawIntakeJobs from '../agent/automations/openclaw-intake-policy.ts';
 import {
   automationPatch,
+  automationPromptRequest,
   nativeAutomationHash,
   effectiveAutomation,
 } from '../agent/automations/automation-projection.ts';
@@ -59,6 +56,74 @@ describe('agent/automation-service', () => {
   let afterWriteFailure: boolean;
   let loaded: boolean;
   let manifestDigest: string;
+  it('should inject the installed prompt and reject stale, changed and cross-session bindings', async () => {
+    manifest.automations = jobs([
+      {
+        id: 'prompt',
+        schedule: 'every 1 hour',
+        prompt: 'hidden version one',
+      },
+    ]);
+    await service.reconcile(manifest, root);
+    const scheduler = { list: async () => native } as never;
+    const run = {
+      agentId: manifest.agent.id,
+      workspaceDir: root,
+      sessionKey: 'agent:tanaabot:scheduled',
+      sessionId: 'session',
+      runId: 'run',
+      jobId: native[0]!.id,
+    };
+    assert.equal(native[0]!.payload.message, automationPromptRequest(manifest.automations[0]!));
+    assert.deepEqual(await resolveAutomationPrompt(service, scheduler, manifest, run), {
+      prompt: 'hidden version one',
+    });
+    manifest.automations[0]!.displayName = 'Renamed without synchronization';
+    assert.deepEqual(await resolveAutomationPrompt(service, scheduler, manifest, run), {
+      prompt: 'hidden version one',
+    });
+    delete manifest.automations[0]!.displayName;
+    const { store } = await service.scope(manifest, root);
+    const originalLedger = await store.read();
+    const routed = structuredClone(originalLedger);
+    native[0]!.sessionTarget = `session:${run.sessionKey}`;
+    routed.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
+    await store.write(routed);
+    await assert.rejects(
+      resolveAutomationPrompt(service, scheduler, manifest, { ...run, sessionKey: 'other' }),
+      /session-diverged/,
+    );
+    native[0]!.sessionTarget = 'isolated';
+    await store.write(originalLedger);
+    const original = structuredClone(native[0]!);
+    native[0]!.payload.message = 'unmanaged edit';
+    await assert.rejects(resolveAutomationPrompt(service, scheduler, manifest, run), /drift/);
+    native[0] = original;
+    manifest.automations[0]!.payload = { kind: 'prompt', prompt: 'hidden version two' };
+    await assert.rejects(resolveAutomationPrompt(service, scheduler, manifest, run), /unverified/);
+    await service.reconcile(manifest, root);
+    assert.deepEqual(
+      await resolveAutomationPrompt(service, scheduler, manifest, { ...run, runId: 'next' }),
+      { prompt: 'hidden version two' },
+    );
+    const ledger = await store.read();
+    native[0]!.payload.message = 'hidden version two';
+    ledger.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
+    await store.write(ledger);
+    assert.deepEqual(
+      await resolveAutomationPrompt(service, scheduler, manifest, run),
+      {},
+      'legacy full prompts must not be injected twice',
+    );
+    await service.reconcile(manifest, root);
+    assert.deepEqual(await resolveAutomationPrompt(service, scheduler, manifest, run), {
+      prompt: 'hidden version two',
+    });
+    const missing = await store.read();
+    missing.records = [];
+    await store.write(missing);
+    await assert.rejects(resolveAutomationPrompt(service, scheduler, manifest, run), /unverified/);
+  });
   beforeEach(async () => {
     root = await realpath(await mkdtemp('/tmp/automation-'));
     manifest = {
@@ -67,7 +132,6 @@ describe('agent/automation-service', () => {
       automations: jobs([{ id: 'check', schedule: 'in 1 hour', run: ['gh', 'api', 'user'] }]),
     };
     native = [];
-    const sessions = new Map<string, Record<string, unknown>>();
     modelRows = [];
     preparedModelRows = undefined;
     calls = [];
@@ -103,24 +167,7 @@ describe('agent/automation-service', () => {
         if (params.refresh === true) preparedModelRows = undefined;
         return { models: preparedModelRows ?? modelRows };
       }
-      if (method === 'sessions.resolve') {
-        const row = [...sessions.values()].find(
-          (row) => row.key === params.key || row.sessionId === params.sessionId,
-        );
-        return row ? { ok: true, key: row.key, agentId: 'tanaabot' } : { ok: false };
-      }
-      if (method === 'sessions.create') {
-        const row = { key: params.key, sessionId: randomUUID(), workspaceDir: root };
-        sessions.set(String(params.key), row);
-        return { ok: true, ...row };
-      }
-      if (method === 'sessions.list') return { sessions: [...sessions.values()] };
-      if (method === 'sessions.patch') {
-        const row = sessions.get(String(params.key))!;
-        Object.assign(row, params);
-        row.displayName = row.label ?? row.autoLabel;
-        return { ok: true };
-      }
+      if (method === 'sessions.resolve') return { ok: false };
       if (method === 'cron.status') return { enabled: true, jobs: native.length };
       if (method === 'cron.list') return { jobs: structuredClone(native), hasMore: false };
       if (method === 'cron.get') {
@@ -223,79 +270,6 @@ describe('agent/automation-service', () => {
         },
       },
     });
-  });
-  it('should discover the smoke test without installing it during ordinary reconciliation', async () => {
-    manifest.automations = [];
-    assert.deepEqual(await service.reconcile(manifest, root), { outcomes: [], warnings: [] });
-    const listed = await service.list(manifest, root);
-    const smoke = listed.jobs.find(({ id }) => id === automationSmokeTestId)!;
-    assert.equal(smoke.declared, true);
-    assert.equal(smoke.enabled, false);
-    assert.equal(smoke.nativeId, null);
-    assert.ok(
-      !calls.some(({ method }) =>
-        ['cron.add', 'sessions.create', 'sessions.patch'].includes(method),
-      ),
-    );
-  });
-  it('should install only the selected smoke test on first run and reuse its disabled persistent job', async () => {
-    await service.reconcile(manifest, root);
-    native[0]!.payload.argv = ['externally-edited'];
-    const unrelated = structuredClone(native[0]);
-    const first = await service.run(manifest, root, automationSmokeTestId);
-    assert.equal(first.status, 'queued');
-    assert.deepEqual(native[0], unrelated);
-    const smoke = native.find(({ declarationKey }) =>
-      declarationKey?.endsWith(`:${automationSmokeTestId}`),
-    )!;
-    assert.equal(smoke.enabled, false);
-    assert.equal(smoke.payload.message, automationSmokeTestRequest);
-    assert.equal(typeof smoke.sessionTarget, 'string');
-    if (typeof smoke.sessionTarget !== 'string') throw new Error('missing smoke session target');
-    assert.ok(smoke.sessionTarget.startsWith('session:agent:tanaabot:'));
-    const creates = calls.filter(({ method }) =>
-      ['cron.add', 'sessions.create'].includes(method),
-    ).length;
-    await service.run(manifest, root, automationSmokeTestId);
-    assert.equal(
-      calls.filter(({ method }) => ['cron.add', 'sessions.create'].includes(method)).length,
-      creates,
-    );
-    assert.ok(
-      calls
-        .filter(({ method }) => method === 'cron.run')
-        .every(({ params }) => params.mode === 'force'),
-    );
-    const run = {
-      agentId: 'tanaabot',
-      workspaceDir: root,
-      sessionKey: smoke.sessionTarget.slice(8),
-      sessionId: 'session',
-      runId: 'native-run',
-      jobId: smoke.id,
-    };
-    await verifyAutomationLifecycleRun(
-      service,
-      undefined,
-      manifest,
-      run,
-      automationSmokeTestId,
-      service.dependencies.request,
-      true,
-    );
-    smoke.payload.message = 'changed';
-    await assert.rejects(
-      verifyAutomationLifecycleRun(
-        service,
-        undefined,
-        manifest,
-        run,
-        automationSmokeTestId,
-        service.dependencies.request,
-        true,
-      ),
-      /drift/,
-    );
   });
   it('should acquire missing native auth evidence and skip a paused prompt before creating its conversation or receipt', async () => {
     manifest.automations = jobs([
@@ -1213,7 +1187,14 @@ describe('agent/automation-service', () => {
     assert.equal(native[0]!.displayName, '📥 ISSUE ASSIGNMENTS');
     assert.equal(native[0]!.sessionTarget, coordinator);
     assert.equal(sessions.size, 1);
-    assert.match(String(native[0]!.payload.message), /Fill initially available intake slots/);
+    assert.match(
+      String(native[0]!.payload.message),
+      /Run scheduled automation:.*ISSUE ASSIGNMENTS/,
+    );
+    assert.doesNotMatch(
+      String(native[0]!.payload.message),
+      /Fill initially available intake slots/,
+    );
     assert.equal(native[0]!.payload.kind, 'agentTurn');
     assert.equal(native[0]!.payload.outputMaxBytes, undefined);
     assert.equal(calls.filter((call) => call.method === 'cron.update').length, 1);
@@ -1735,10 +1716,25 @@ describe('agent/automation-service', () => {
       await service.reconcile(manifest, root);
       assert.deepEqual(
         mutations().map(({ params }) => params.patch),
-        [{ displayName: label ?? null }],
+        [
+          {
+            displayName: label ?? null,
+            payload: {
+              ...originalJob.payload,
+              message: automationPromptRequest(manifest.automations[0]!),
+              model: null,
+              thinking: null,
+              fallbacks: null,
+            },
+          },
+        ],
       );
       assert.deepEqual(native[0], {
         ...originalJob,
+        payload: {
+          ...originalJob.payload,
+          message: automationPromptRequest(manifest.automations[0]!),
+        },
         configRevision: native[0]!.configRevision,
         ...(label ? { displayName: label } : {}),
       });
@@ -1840,10 +1836,7 @@ describe('agent/automation-service', () => {
     });
     manifest.automations = [];
     await service.reconcile(manifest, root);
-    assert.equal(
-      (await service.list(manifest, root)).jobs.find(({ id }) => id === 'check')!.removed,
-      true,
-    );
+    assert.equal((await service.list(manifest, root)).jobs[0]!.removed, true);
     assert.equal(
       (await service.runs(manifest, root, 'check', { limit: 10, offset: 0 })).entries.length,
       1,

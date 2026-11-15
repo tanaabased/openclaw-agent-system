@@ -20,6 +20,14 @@ function matchesPrompt(request: ChatCompletionRequest): boolean {
     model: model.test(request.model),
     identity: systemText.includes(identity),
     prompt: hasPrompt,
+    userPriority: !systemText.includes(prompt),
+    compactRequest: request.messages.some(
+      (message) =>
+        message.role === 'user' &&
+        (getTextContent(message.content) ?? '').includes(
+          '> Run scheduled automation: 🔄 AUTOMATION STATUS.',
+        ),
+    ),
     noToolResult: !request.messages.some((message) => message.role === 'tool'),
   };
   const matches = Object.values(checks).every(Boolean);
@@ -30,10 +38,7 @@ function matchesPrompt(request: ChatCompletionRequest): boolean {
 export const automationExampleScenario: OpenClawAIMockScenario = {
   id: 'openclaw-automation-prompt',
   model: { match: model, reference: 'aimock/gpt-5.5' },
-  finalResponses: [
-    'automation-owner-ready',
-    '> compact-smoke-v1-violet-47; candidate A; no external work performed.',
-  ],
+  finalResponses: ['automation-owner-ready'],
   systemPromptSignals: [identity],
   userPromptSignals: [prompt],
   toolCalls: [
@@ -41,30 +46,6 @@ export const automationExampleScenario: OpenClawAIMockScenario = {
     { id: 'call_automation_doctor', name: 'agent_system_doctor' },
   ],
   fixtures: [
-    {
-      match: {
-        model,
-        predicate(request) {
-          const roleText = (role: string) =>
-            request.messages
-              .filter((message) => message.role === role)
-              .map((message) => getTextContent(message.content) ?? '')
-              .join('\n');
-          const system = roleText('system');
-          const user = roleText('user');
-          return (
-            system.includes(identity) &&
-            !system.includes('compact-smoke-v1-violet-47') &&
-            user.includes('compact-smoke-v1-violet-47') &&
-            user.includes('> Run scheduled automation: 🧪 COMPACT PROMPT SMOKE TEST.')
-          );
-        },
-      },
-      response: {
-        id: 'automation-compact-smoke',
-        content: '> compact-smoke-v1-violet-47; candidate A; no external work performed.',
-      },
-    },
     {
       match: { predicate: matchesPrompt },
       response: {

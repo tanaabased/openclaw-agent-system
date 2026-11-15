@@ -106,23 +106,6 @@ consumed, drifted, or unowned jobs are rejected; native skips exit 1. The comman
 not sync or retry automatically. A native UI edit after the preflight check can still
 change what runs.
 
-The built-in `compact-prompt-smoke-test` is an experimental exception: it is
-discoverable for every OpenClaw agent, but ordinary Install does not create its
-job or chat. Its first operator invocation installs only this disabled job and
-its persistent test chat, then queues one run without enabling recurring runs:
-
-```sh
-openclaw agent-system automations run compact-prompt-smoke-test --agent emori
-```
-
-Open the **🧪 COMPACT PROMPT SMOKE TEST** chat. A successful instruction receipt
-includes `compact-smoke-v1-violet-47` and a short assessment of synthetic
-candidates; it performs no GitHub scan or dispatch. Inspect the compact scheduled
-request live and after reload on both the embedded and OpenClaw-hosted Codex
-harnesses. The pilot does not change other prompts or standalone Codex scheduling,
-and a response marker alone does not prove correct rendering. Doctor only inspects;
-it does not install or execute the test.
-
 ## `openclaw agent-system automations runs`
 
 Read execution and delivery history by manifest ID, including saved history for removed jobs.

@@ -66,11 +66,9 @@ import AutomationLifecycleAuthority, {
   verifyAutomationLifecycleRun,
 } from '../agent/automations/automation-lifecycle-authority.ts';
 import registerAutomationLifecycleHooks from './automation-lifecycle-hook.ts';
+import registerAutomationPromptHooks from './automation-prompt-hook.ts';
+import { resolveAutomationPrompt } from '../agent/automations/automation-prompt.ts';
 import registerAutomationReportHooks from './automation-report-hook.ts';
-import registerAutomationSmokeHooks from './automation-smoke-hook.ts';
-import automationSmokeTest, {
-  automationSmokeTestId,
-} from '../agent/automations/automation-smoke-test.ts';
 import { reconcileAutomationReport } from '../agent/automations/automation-report-delivery.ts';
 import automationLifecycleCommand from '../cli/automation-lifecycle.ts';
 import SetupCommandService from '../agent/lifecycle/setup-command-service.ts';
@@ -850,7 +848,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   });
   const automationLifecycle = new AutomationLifecycleAuthority(logger);
   registerAutomationLifecycleHooks(api, automationLifecycle);
-  registerAutomationSmokeHooks(
+  registerAutomationPromptHooks(
     api,
     () => readScheduler?.(),
     async (run) => {
@@ -859,20 +857,8 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         loaded.status !== 'loaded' ||
         (await realpath(loaded.scope.workspaceDir)) !== (await realpath(run.workspaceDir))
       )
-        throw new AutomationError('automation-smoke-binding-unverified');
-      await verifyAutomationLifecycleRun(
-        automationService,
-        readScheduler?.(),
-        loaded.manifest,
-        run,
-        automationSmokeTestId,
-        undefined,
-        true,
-      );
-      const job = automationSmokeTest();
-      if (job.payload.kind !== 'prompt')
-        throw new AutomationError('automation-smoke-instructions-missing');
-      return job.payload.prompt;
+        throw new AutomationError('automation-prompt-binding-unverified');
+      return resolveAutomationPrompt(automationService, readScheduler?.(), loaded.manifest, run);
     },
   );
   const lifecycleApproval = new AgentLifecycleApproval({

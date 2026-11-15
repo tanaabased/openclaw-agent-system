@@ -1,5 +1,4 @@
 import automationModels from './automation-models.ts';
-import automationSmokeTest, { automationSmokeTestId } from './automation-smoke-test.ts';
 import issuePickupJobs, { issuePickupAutomationId } from './issue-pickup-jobs.ts';
 import { issueChatTitleGuidance } from '../tasks/dispatch/issue-chat-title.ts';
 import { taskUpdateConsent } from '../tasks/feedback/task-update-instructions.ts';
@@ -15,14 +14,13 @@ export default function openclawIntakeJobs(manifest: AgentManifest): ResolvedAut
   const declarations = manifest.automations ?? [];
   if (
     declarations.some((job) =>
-      [openclawIntakeAutomationId, issuePickupAutomationId, automationSmokeTestId].includes(job.id),
+      [openclawIntakeAutomationId, issuePickupAutomationId].includes(job.id),
     )
   )
     throw new IntakeError('intake-automation-id-reserved');
   const jobs = automationModels(declarations, manifest.models, 'openclaw');
   const selected = assignmentIntakePolicy(manifest, 'openclaw');
-  if (!selected)
-    return [...jobs, ...automationModels([automationSmokeTest()], manifest.models, 'openclaw')];
+  if (!selected) return jobs;
   const settings = selected.policy.issueAssignment!;
   if (settings.model === undefined && !manifest.models?.default)
     throw new IntakeError('intake-default-profile-required');
@@ -76,6 +74,5 @@ export default function openclawIntakeJobs(manifest: AgentManifest): ResolvedAut
       'openclaw',
     ),
     ...issuePickupJobs(manifest, 'openclaw'),
-    ...automationModels([automationSmokeTest()], manifest.models, 'openclaw'),
   ];
 }
