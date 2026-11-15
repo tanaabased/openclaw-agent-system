@@ -23,7 +23,18 @@ const maximumLeases = 1_024;
 const defaultLeaseLifetimeMs = 30 * 60 * 1_000;
 const defaultSocketTimeoutMs = 2_000;
 
+const denialReasons = [
+  'context-unresolved',
+  'issuer-inactive',
+  'issuer-directory-unavailable',
+  'issuer-directory-unsafe',
+  'issuer-socket-path-too-long',
+  'issuer-socket-unavailable',
+] as const;
+type CommandDenialReason = (typeof denialReasons)[number];
+
 type CommandContextFailure =
+  | CommandDenialReason
   | 'invalid'
   | 'issuer-unavailable'
   | 'connection-failed'
@@ -108,10 +119,12 @@ export interface AgentCommandAuthorityDependencies {
 }
 
 /** Mark one Gateway command descendant as explicitly unbound when authority is unavailable. */
-export function deniedAgentCommandEnvironment(): Record<string, string> {
+export function deniedAgentCommandEnvironment(
+  reason?: CommandDenialReason,
+): Record<string, string> {
   return {
     [agentCommandAuthorityEnvironmentName]: 'denied',
-    [agentCommandCapabilityEnvironmentName]: 'denied',
+    [agentCommandCapabilityEnvironmentName]: reason ? `denied:${reason}` : 'denied',
   };
 }
 
@@ -252,6 +265,11 @@ export default class AgentCommandAuthority {
   #authorityId?: string;
   #server?: Server;
   #socketPath?: string;
+  #unavailableReason: CommandDenialReason = 'issuer-inactive';
+
+  get unavailableReason(): CommandDenialReason {
+    return this.#unavailableReason;
+  }
 
   constructor(dependencies: AgentCommandAuthorityDependencies) {
     this.#currentUid = dependencies.currentUid;
@@ -266,37 +284,47 @@ export default class AgentCommandAuthority {
 
   async start(): Promise<void> {
     if (this.#server) return;
-    await mkdir(this.#rootDir, { mode: 0o700, recursive: true });
-    const root = await lstat(this.#rootDir);
-    if (
-      !root.isDirectory() ||
-      root.isSymbolicLink() ||
-      (this.#currentUid !== undefined && root.uid !== this.#currentUid) ||
-      (root.mode & 0o077) !== 0 ||
-      (await realpath(this.#rootDir)) !== this.#rootDir
-    ) {
-      throw new Error('The Agent System command-authority directory is unsafe.');
-    }
-
-    const authorityId = randomBytes(8).toString('hex');
-    const socketPath = join(this.#rootDir, `${authorityId}.sock`);
-    if (Buffer.byteLength(socketPath) > 96) {
-      throw new Error('The Agent System command-authority socket path is too long.');
-    }
-    const server = createServer((socket) => this.#accept(socket));
-    server.unref();
-    server.listen(socketPath);
+    let failure: CommandDenialReason = 'issuer-directory-unavailable';
     try {
-      await once(server, 'listening');
-      await chmod(socketPath, 0o600);
+      await mkdir(this.#rootDir, { mode: 0o700, recursive: true });
+      const root = await lstat(this.#rootDir);
+      failure = 'issuer-directory-unsafe';
+      if (
+        !root.isDirectory() ||
+        root.isSymbolicLink() ||
+        (this.#currentUid !== undefined && root.uid !== this.#currentUid) ||
+        (root.mode & 0o077) !== 0 ||
+        (await realpath(this.#rootDir)) !== this.#rootDir
+      ) {
+        throw new Error('The Agent System command-authority directory is unsafe.');
+      }
+
+      const authorityId = randomBytes(8).toString('hex');
+      const socketPath = join(this.#rootDir, `${authorityId}.sock`);
+      if (Buffer.byteLength(socketPath) > 96) {
+        failure = 'issuer-socket-path-too-long';
+        throw new Error('The Agent System command-authority socket path is too long.');
+      }
+      failure = 'issuer-socket-unavailable';
+      const server = createServer((socket) => this.#accept(socket));
+      server.unref();
+      server.listen(socketPath);
+      try {
+        await once(server, 'listening');
+        await chmod(socketPath, 0o600);
+      } catch (error) {
+        server.close();
+        await unlink(socketPath).catch(() => undefined);
+        throw error;
+      }
+      this.#authorityId = authorityId;
+      this.#server = server;
+      this.#socketPath = socketPath;
+      this.#unavailableReason = 'issuer-inactive';
     } catch (error) {
-      server.close();
-      await unlink(socketPath).catch(() => undefined);
+      this.#unavailableReason = failure;
       throw error;
     }
-    this.#authorityId = authorityId;
-    this.#server = server;
-    this.#socketPath = socketPath;
   }
 
   async stop(): Promise<void> {
@@ -305,6 +333,7 @@ export default class AgentCommandAuthority {
     this.#server = undefined;
     this.#socketPath = undefined;
     this.#authorityId = undefined;
+    this.#unavailableReason = 'issuer-inactive';
     this.#leases.clear();
     const executions = [...this.#executions.entries()];
     for (const [socket, execution] of executions) {
@@ -321,7 +350,7 @@ export default class AgentCommandAuthority {
   issue(agentId: string, setupMode?: 'check' | 'apply'): Record<string, string> {
     const normalizedAgentId = agentId.trim();
     if (!this.#server || !this.#authorityId || !agentIdPattern.test(normalizedAgentId)) {
-      return deniedAgentCommandEnvironment();
+      return deniedAgentCommandEnvironment(this.#unavailableReason);
     }
     this.#prune();
     while (this.#leases.size >= maximumLeases) {
@@ -369,6 +398,10 @@ export default class AgentCommandAuthority {
       !capabilityPattern.test(capability) ||
       !isAbsolute(cwd)
     ) {
+      if (authorityId === 'denied') {
+        const reason = denialReasons.find((value) => capability === `denied:${value}`);
+        if (reason) throw this.#unresolved(reason);
+      }
       throw this.#unresolved(
         authorityId === 'denied' && capability === 'denied' ? 'issuer-unavailable' : 'invalid',
       );

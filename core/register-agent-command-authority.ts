@@ -12,7 +12,7 @@ type RegistrationApi = Pick<OpenClawPluginApi, 'on' | 'registerService'>;
 type AuthorityManifestService = Pick<AgentManifestService, 'loadForRuntimeContext'>;
 
 export interface RegisterAgentCommandAuthorityDependencies {
-  authority: Pick<AgentCommandAuthority, 'issue' | 'start' | 'stop'>;
+  authority: Pick<AgentCommandAuthority, 'issue' | 'start' | 'stop' | 'unavailableReason'>;
   logger: Logger;
   launcherDirectory: string;
   manifestService: AuthorityManifestService;
@@ -30,7 +30,9 @@ export default function registerAgentCommandAuthority(
       try {
         await dependencies.authority.start();
       } catch {
-        dependencies.logger.error('security: agent_command_authority_start_failed');
+        dependencies.logger.error(
+          `security: agent_command_authority_start_failed reason=${dependencies.authority.unavailableReason}`,
+        );
       }
     },
     async stop() {
@@ -43,7 +45,7 @@ export default function registerAgentCommandAuthority(
       context,
       'resolve_exec_env',
     );
-    if (loaded.status !== 'loaded') return deniedAgentCommandEnvironment();
+    if (loaded.status !== 'loaded') return deniedAgentCommandEnvironment('context-unresolved');
     return {
       ...dependencies.authority.issue(loaded.manifest.agent.id),
       ...dependencies.toolRegistry.launcherBindings(
