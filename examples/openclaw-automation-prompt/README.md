@@ -68,6 +68,10 @@ openclaw agent-system automations list --json | jq -S '[.jobs[] | {id,nativeId,r
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-prompt"
 native=$(jq -er '.jobs[] | select(.id == "prompt") | .nativeId' "$TMPDIR/automation-before.json")
 printf '\nUnsynchronized instruction edit.\n' >> prompt.md
-openclaw gateway call cron.run --timeout 180000 --params "$(jq -nc --arg id "$native" '{id:$id,mode:"force",waitTimeoutMs:120000}')" --json | jq -e '.run.status == "error" and (.run.error | contains("automation-prompt-load-blocked"))'
+openclaw gateway call cron.run --params "$(jq -nc --arg id "$native" '{id:$id,mode:"force"}')" --json | tee "$TMPDIR/automation-refusal-ack.json"
+run_id=$(jq -er 'select(.ok == true and .enqueued == true) | .runId | strings | select(length > 0)' "$TMPDIR/automation-refusal-ack.json")
+node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" prompt "$run_id" error
+openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" --arg run "$run_id" '{id:$id,runId:$run,limit:1,offset:0}')" --json > "$TMPDIR/automation-refusal-run.json"
+jq -e --arg id "$native" --arg run "$run_id" 'if any(.entries[]; .jobId == $id and .runId == $run and .status == "error" and ((.error // "") | contains("automation-prompt-load-blocked"))) then true else error("unexpected refusal outcome: " + (.entries | map({jobId,runId,status,error}) | tojson)) end' "$TMPDIR/automation-refusal-run.json"
 openclaw-aimock evidence --scenario openclaw-automation-prompt --expected-evidence "$GITHUB_WORKSPACE/examples/openclaw-automation-prompt/expected-evidence.json"
 ```
