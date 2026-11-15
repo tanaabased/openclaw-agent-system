@@ -1,0 +1,7 @@
+schema-version: 1
+agent: { id: portable, runtime: codex }
+debug: true
+environment:
+  dotenv: ./not-provisioned.env
+  required: [NOT_PROVISIONED]
+automations: { file: ./jobs/automations.yaml }

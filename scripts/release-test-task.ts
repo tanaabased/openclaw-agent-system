@@ -215,6 +215,8 @@ try {
     'package.json',
     'openclaw.plugin.json',
     'dist/index.js',
+    'dist/manifest.js',
+    'dist/types/manifest/public.d.ts',
     'dist/memory-secret-provider-entry.js',
     'dist/codex/codex-runtime.js',
     'hooks/hooks.json',

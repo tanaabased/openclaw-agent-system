@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+
+import {
+  loadManifestDefinitions,
+  type AgentManifest,
+  type ManifestDefinitionsResult,
+  type ResolvedAutomation,
+} from '@tanaab/openclaw-agent-system/manifest';
+
+const result: ManifestDefinitionsResult = await loadManifestDefinitions({
+  workspaceDir: new URL('./definitions/', import.meta.url).pathname,
+  manifestPath: 'agent.yaml',
+});
+assert.equal(result.status, 'loaded', JSON.stringify(result.diagnostics));
+if (result.status !== 'loaded') throw new Error('definitions unavailable');
+const manifest: AgentManifest = result.manifest;
+assert.equal(manifest.agent.id, 'portable');
+assert.equal(manifest.debug, true);
+const job: ResolvedAutomation = manifest.automations![0]!;
+assert.equal(job.id, 'review');
+assert.equal(job.displayName, '🔎 REVIEW DEFINITIONS');
+assert.deepEqual(job.runtimes, ['openclaw', 'codex']);
+assert.deepEqual(job.payload, { kind: 'prompt', prompt: 'Review the definitions.\n' });
+assert.deepEqual(result.validationChecks, []);
+console.log('portable definitions loaded');
