@@ -21,6 +21,7 @@ export type {
 } from './load.ts';
 
 export type ManifestLoadTrigger =
+  | 'before_agent_reply'
   | 'before_prompt_build'
   | 'before_tool_call'
   | 'cli'

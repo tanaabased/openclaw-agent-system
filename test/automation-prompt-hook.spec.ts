@@ -56,7 +56,8 @@ function fixture() {
     context,
     logs,
     events: () => logs.map((line) => JSON.parse(line.slice(line.indexOf('{')))),
-    call: (hook: string, ctx = context, event: unknown = {}) => hooks.get(hook)!(event, ctx),
+    call: (hook: string, ctx: object = context, event: unknown = {}) =>
+      hooks.get(hook)!(event, ctx),
     edit: (value: string | undefined) => {
       prompt = value;
     },
@@ -74,124 +75,59 @@ function fixture() {
 }
 
 describe('core/automation-prompt-hook', () => {
-  it('should correlate hook order, prepared state and decisions without logging raw bindings', async () => {
+  it('should carry native admission into hosted codex prompt hooks without a job id or an input gate', async () => {
     const f = fixture();
-    await f.call('before_prompt_build');
-    await f.call('before_agent_run');
-    await f.call('before_prompt_build');
-    await f.call('agent_end');
-    await f.call('before_agent_run');
-    const events = f.events();
-    assert.deepEqual(
-      events.map(({ hook, outcome }) => [hook, outcome]),
-      [
-        ['before_prompt_build', 'enter'],
-        ['before_prompt_build', 'ready'],
-        ['before_agent_run', 'enter'],
-        ['before_agent_run', 'pass'],
-        ['before_prompt_build', 'enter'],
-        ['before_prompt_build', 'reuse'],
-        ['agent_end', 'clear'],
-        ['before_agent_run', 'enter'],
-        ['before_agent_run', 'block'],
-      ],
-    );
-    assert.equal(events[1].prepared, 'injected');
-    assert.equal(events.at(-1).prepared, 'absent');
-    assert.equal(events.at(-1).reason, 'prompt-hook-missing');
-    for (const event of events)
-      for (const [key, value] of Object.entries(f.context).filter(([key]) => key !== 'trigger'))
-        assert.equal(
-          event.identity[key],
-          createHash('sha256').update(value).digest('hex').slice(0, 16),
-        );
-    for (const value of [
-      ...Object.values(f.context).filter((v) => v !== 'cron'),
-      'hidden instructions one',
-    ])
-      assert.ok(!f.logs.join().includes(JSON.stringify(value)));
-  });
-
-  it('should expose missing and changed bindings and an early non-cron gate without changing decisions', async () => {
-    const f = fixture();
-    assert.equal(await f.call('before_agent_run', { ...f.context, trigger: 'user' }), undefined);
-    assert.equal(f.events().at(-1).reason, 'unmanaged-or-not-cron');
-    const context = { ...f.context, jobId: '' };
-    assert.equal(await f.call('before_prompt_build', context), undefined);
-    const failed = f.events().at(-1);
-    assert.deepEqual(failed.missing, ['jobId']);
-    assert.equal(failed.identity.jobId, null);
-    assert.equal(failed.reason, 'automation-prompt-binding-missing');
-    assert.equal(failed.phase, 'selection');
-    assert.equal(failed.prepared, 'pending');
-    assert.equal(
-      ((await f.call('before_agent_run', context)) as { outcome: string }).outcome,
-      'block',
-    );
-    await f.call('before_agent_run', { ...context, sessionId: 'changed-private-session' });
-    assert.deepEqual(f.events().at(-1).changed, ['sessionId']);
-    assert.ok(!f.logs.join().includes('changed-private-session'));
-  });
-
-  it('should retain only known failure codes and never emit arbitrary error details', async () => {
-    for (const [error, reason] of [
-      [new AutomationError('automation-lifecycle-drift'), 'automation-lifecycle-drift'],
-      [Object.assign(new Error('private filesystem path'), { code: 'EACCES' }), 'EACCES'],
-      [Object.assign(new Error('private token'), { code: 'private-code' }), 'unclassified'],
-    ] as const) {
-      const f = fixture();
-      f.fail(error);
-      assert.equal(await f.call('before_prompt_build'), undefined);
-      const failed = f.events().at(-1);
-      assert.equal(failed.reason, reason);
-      assert.equal(failed.phase, 'instructions');
-      assert.equal(failed.outcome, 'failed');
-      assert.equal(((await f.call('before_agent_run')) as { outcome: string }).outcome, 'block');
-      assert.ok(!f.logs.join().includes('private'));
-    }
-  });
-
-  it('should inject at user priority and pin the instructions to one exact native run', async () => {
-    const f = fixture();
-    assert.deepEqual(await f.call('before_prompt_build'), {
-      prependContext: 'hidden instructions one',
-    });
-    assert.deepEqual(await f.call('before_agent_run'), { outcome: 'pass' });
-    f.edit('hidden instructions two');
-    assert.deepEqual(await f.call('before_prompt_build'), {
+    assert.equal(await f.call('before_agent_reply'), undefined);
+    const context = { ...f.context, jobId: undefined };
+    assert.deepEqual(await f.call('before_prompt_build', context), {
       prependContext: 'hidden instructions one',
     });
     assert.equal(f.loads(), 1);
+    assert.deepEqual(await f.call('before_agent_run', context), { outcome: 'pass' });
+    const events = f.events();
+    assert.equal(events.find(({ outcome }) => outcome === 'ready').hook, 'before_agent_reply');
+    assert.deepEqual(events.find(({ hook }) => hook === 'before_prompt_build').missing, ['jobId']);
+  });
+
+  it('should inject once per prompt projection at user priority and pin instructions until run completion', async () => {
+    const f = fixture();
+    await f.call('before_agent_reply');
+    f.edit('hidden instructions two');
+    assert.equal(await f.call('before_agent_reply'), undefined);
+    for (let projection = 0; projection < 2; projection++)
+      assert.deepEqual(await f.call('before_prompt_build'), {
+        prependContext: 'hidden instructions one',
+      });
+    assert.equal(f.loads(), 1);
+    await f.call('agent_end');
+    assert.equal(await f.call('before_prompt_build'), undefined);
+    await f.call('before_agent_reply', { ...f.context, runId: 'run-two' });
     assert.deepEqual(await f.call('before_prompt_build', { ...f.context, runId: 'run-two' }), {
       prependContext: 'hidden instructions two',
     });
     assert.equal(f.loads(), 2);
   });
-  it('should ignore copied human requests and unrelated native jobs', async () => {
-    const f = fixture();
-    for (const context of [
-      { ...f.context, trigger: 'user' },
-      { ...f.context, jobId: 'unrelated' },
-      { ...f.context, agentId: 'peer' },
-    ]) {
-      assert.equal(
-        await f.call('before_prompt_build', context, {
-          prompt: '> Run scheduled automation: custom.',
-        }),
-        undefined,
-      );
-      assert.equal(await f.call('before_agent_run', context), undefined);
+
+  it('should handle missing, failed and empty instructions before either harness starts inference', async () => {
+    for (const mode of ['failed', 'empty', 'observation'] as const) {
+      const f = fixture();
+      if (mode === 'failed') f.fail(new AutomationError('automation-lifecycle-drift'));
+      if (mode === 'empty') f.edit('  ');
+      if (mode === 'observation') f.loseObservation();
+      const result = (await f.call('before_agent_reply')) as {
+        handled: boolean;
+        reply: { isError: boolean; text: string };
+      };
+      assert.equal(result.handled, true);
+      assert.equal(result.reply.isError, true);
+      assert.match(result.reply.text, /automation-prompt-load-blocked/);
+      assert.equal(await f.call('before_prompt_build'), undefined);
+      assert.equal(((await f.call('before_agent_run')) as { outcome: string }).outcome, 'block');
+      assert.ok(!f.logs.join().includes('private'));
     }
-    assert.equal(f.loads(), 0);
   });
-  it('should leave command jobs and their report turns unchanged', async () => {
-    const f = fixture();
-    f.command();
-    assert.equal(await f.call('before_prompt_build'), undefined);
-    assert.equal(await f.call('before_agent_run'), undefined);
-    assert.equal(f.loads(), 0);
-  });
-  it('should stop cron execution when native binding fields are missing', async () => {
+
+  it('should stop native admission when any scheduler binding field is missing', async () => {
     for (const key of [
       'runId',
       'jobId',
@@ -202,68 +138,134 @@ describe('core/automation-prompt-hook', () => {
     ] as const) {
       const f = fixture();
       const context = { ...f.context, [key]: '' };
+      const result = (await f.call('before_agent_reply', context)) as {
+        handled: boolean;
+        reply: { isError: boolean };
+      };
+      assert.equal(result.handled, true, key);
+      assert.equal(result.reply.isError, true, key);
+      assert.equal(f.loads(), 0);
       assert.equal(await f.call('before_prompt_build', context), undefined);
+    }
+  });
+
+  it('should not inject instructions for changed run bindings or recover them from request prose', async () => {
+    const f = fixture();
+    await f.call('before_agent_reply');
+    for (const key of [
+      'runId',
+      'jobId',
+      'agentId',
+      'workspaceDir',
+      'sessionKey',
+      'sessionId',
+    ] as const) {
+      const context = { ...f.context, [key]: 'other' };
+      assert.equal(await f.call('before_prompt_build', context), undefined, key);
       assert.equal(
         ((await f.call('before_agent_run', context)) as { outcome: string }).outcome,
         'block',
+        key,
       );
     }
+    const other = fixture();
+    assert.equal(
+      await other.call('before_prompt_build', other.context, {
+        prompt: '> Run scheduled automation: custom.',
+      }),
+      undefined,
+    );
+    assert.equal(other.loads(), 0);
   });
-  it('should block an owned run with a missing prompt hook, failed load or empty instructions', async () => {
-    for (const mode of ['missing', 'failed', 'empty', 'observation'] as const) {
+
+  it('should leave human turns, unrelated jobs, command jobs and legacy prompts unchanged', async () => {
+    for (const mode of ['human', 'unrelated', 'command', 'legacy'] as const) {
       const f = fixture();
-      if (mode === 'failed') f.fail();
-      if (mode === 'empty') f.edit('  ');
-      if (mode === 'observation') f.loseObservation();
-      if (mode !== 'missing') assert.equal(await f.call('before_prompt_build'), undefined);
-      assert.equal(((await f.call('before_agent_run')) as { outcome: string }).outcome, 'block');
+      if (mode === 'command') f.command();
+      if (mode === 'legacy') f.edit(undefined);
+      const context =
+        mode === 'human'
+          ? { ...f.context, trigger: 'user' }
+          : mode === 'unrelated'
+            ? { ...f.context, jobId: 'unrelated' }
+            : f.context;
+      assert.equal(await f.call('before_agent_reply', context), undefined);
+      assert.equal(await f.call('before_prompt_build', context), undefined);
+      assert.deepEqual(
+        await f.call('before_agent_run', context),
+        mode === 'legacy' ? { outcome: 'pass' } : undefined,
+      );
+      assert.equal(f.loads(), mode === 'legacy' ? 1 : 0);
+    }
+  });
+
+  it('should retain redacted failure phases and known codes without arbitrary error details', async () => {
+    for (const [error, reason] of [
+      [new AutomationError('automation-lifecycle-drift'), 'automation-lifecycle-drift'],
+      [Object.assign(new Error('private filesystem path'), { code: 'EACCES' }), 'EACCES'],
+      [Object.assign(new Error('private token'), { code: 'private-code' }), 'unclassified'],
+    ] as const) {
+      const f = fixture();
+      f.fail(error);
+      await f.call('before_agent_reply');
+      const failed = f.events().at(-1);
+      assert.equal(failed.reason, reason);
+      assert.equal(failed.phase, 'instructions');
+      assert.equal(failed.outcome, 'failed');
       assert.ok(!f.logs.join().includes('private'));
     }
   });
-  it('should reject mismatched bindings and discard prepared instructions at completion', async () => {
+
+  it('should hash binding correlation and preserve missing and changed field diagnostics', async () => {
     const f = fixture();
+    await f.call('before_agent_reply');
     await f.call('before_prompt_build');
-    for (const key of ['jobId', 'agentId', 'workspaceDir', 'sessionKey', 'sessionId'] as const) {
-      assert.equal(
-        await f.call('before_prompt_build', { ...f.context, [key]: 'other' }),
-        undefined,
-      );
-      assert.equal(
-        (
-          (await f.call('before_agent_run', { ...f.context, [key]: 'other' })) as {
-            outcome: string;
-          }
-        ).outcome,
-        'block',
-      );
-    }
-    await f.call('agent_end');
-    assert.equal(((await f.call('before_agent_run')) as { outcome: string }).outcome, 'block');
-    f.edit('next run instructions');
-    assert.deepEqual(await f.call('before_prompt_build'), {
-      prependContext: 'next run instructions',
-    });
+    await f.call('before_agent_run', { ...f.context, sessionId: 'changed-private-session' });
+    assert.deepEqual(f.events().at(-1).changed, ['sessionId']);
+    for (const event of f.events().slice(0, -2))
+      for (const [key, value] of Object.entries(f.context).filter(([key]) => key !== 'trigger'))
+        assert.equal(
+          event.identity[key],
+          createHash('sha256').update(value).digest('hex').slice(0, 16),
+        );
+    for (const value of [
+      ...Object.values(f.context).filter((v) => v !== 'cron'),
+      'hidden instructions one',
+      'changed-private-session',
+    ])
+      assert.ok(!f.logs.join().includes(JSON.stringify(value)));
+    const missing = fixture();
+    await missing.call('before_agent_reply', { ...missing.context, jobId: '' });
+    const failed = missing.events().at(-1);
+    assert.deepEqual(failed.missing, ['jobId']);
+    assert.equal(failed.identity.jobId, null);
+    assert.equal(failed.reason, 'automation-prompt-binding-missing');
+    assert.equal(failed.phase, 'selection');
   });
-  it('should allow verified legacy full-prompt jobs without injecting a duplicate', async () => {
+
+  it('should reject prompt projections after their native hook lifetime expires', async () => {
     const f = fixture();
-    f.edit(undefined);
-    assert.equal(await f.call('before_prompt_build'), undefined);
-    assert.deepEqual(await f.call('before_agent_run'), { outcome: 'pass' });
-  });
-  it('should stop when native prompt-hook lifetime expires before loading completes', async () => {
-    const f = fixture();
-    const context = {
-      ...f.context,
-      hookInvocation: {
-        assertActive() {
-          throw new Error('expired');
-        },
-      },
-    };
-    assert.equal(await f.call('before_prompt_build', context), undefined);
-    assert.equal(
-      ((await f.call('before_agent_run', context)) as { outcome: string }).outcome,
-      'block',
+    await f.call('before_agent_reply');
+    assert.throws(
+      () =>
+        f.call('before_prompt_build', {
+          ...f.context,
+          hookInvocation: {
+            assertActive() {
+              throw new Error('expired');
+            },
+          },
+        }),
+      /expired/,
     );
+    assert.equal(((await f.call('before_agent_run')) as { outcome: string }).outcome, 'block');
+  });
+
+  it('should keep the embedded input gate closed until prompt projection actually occurs', async () => {
+    const f = fixture();
+    await f.call('before_agent_reply');
+    assert.equal(((await f.call('before_agent_run')) as { outcome: string }).outcome, 'block');
+    await f.call('before_prompt_build');
+    assert.deepEqual(await f.call('before_agent_run'), { outcome: 'pass' });
   });
 });

@@ -8,6 +8,7 @@ Complete a scheduled prompt in its owning agent context, then preserve its job a
 - Compact requests with the file-backed instructions injected at user priority.
 - The job's medium effort overriding the agent's high default at execution.
 - Install and Doctor through an activated prompt without per-run approval.
+- Refuse a scheduled request before inference when its file-backed instructions drift.
 
 ## What does not belong here
 
@@ -60,4 +61,13 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-automation-prompt"
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
 jq -S '[.jobs[] | {id,nativeId,routing}]' "$TMPDIR/automation-before.json" > "$TMPDIR/prompt-identities.json"
 openclaw agent-system automations list --json | jq -S '[.jobs[] | {id,nativeId,routing}]' | diff - "$TMPDIR/prompt-identities.json"
+```
+
+```bash
+# should stop a native scheduled request when its instruction file no longer matches the installed job
+cd "$GITHUB_WORKSPACE/examples/openclaw-automation-prompt"
+native=$(jq -er '.jobs[] | select(.id == "prompt") | .nativeId' "$TMPDIR/automation-before.json")
+printf '\nUnsynchronized instruction edit.\n' >> prompt.md
+openclaw gateway call cron.run --timeout 180000 --params "$(jq -nc --arg id "$native" '{id:$id,mode:"force",waitTimeoutMs:120000}')" --json | jq -e '.run.status == "error" and (.run.error | contains("automation-prompt-load-blocked"))'
+openclaw-aimock evidence --scenario openclaw-automation-prompt --expected-evidence "$GITHUB_WORKSPACE/examples/openclaw-automation-prompt/expected-evidence.json"
 ```

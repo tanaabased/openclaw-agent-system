@@ -7,6 +7,7 @@ Request lifecycle tools through native OpenClaw and hosted Codex, deny installat
 - Native approval requests and decisions bound to the originating agent/tool call.
 - Denied Install leaves check/apply markers absent, approved Install applies once, and both Doctor routes inspect the canonical agent from verified managed worktree sessions without applying setup.
 - Activated scheduled hosted-Codex maintenance uses the same native tools without approval, while the ordinary interactive calls still require it.
+- Unsynchronized prompt edits stop scheduled hosted-Codex execution before inference.
 
 ## What Does Not Belong Here
 
@@ -81,6 +82,13 @@ node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" maintenance "$run_i
 grep -Fx applied "$TMPDIR/agent-system-approval-apply"
 test "$(wc -l < "$TMPDIR/agent-system-approval-apply" | tr -d ' ')" = 1
 grep -Fx checked "$TMPDIR/agent-system-approval-check"
+
+# should stop hosted codex maintenance before inference when its instructions drift
+cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/codex"
+native=$(openclaw agent-system automations list --json | jq -er '.jobs[] | select(.id == "maintenance") | .nativeId')
+node --input-type=module -e 'import fs from "node:fs"; import {parse,stringify} from "yaml"; const manifest=parse(fs.readFileSync("agent.yaml","utf8")); manifest.automations[0].prompt += " Unsynchronized instruction edit."; fs.writeFileSync("agent.yaml",stringify(manifest));'
+openclaw gateway call cron.run --timeout 180000 --params "$(jq -nc --arg id "$native" '{id:$id,mode:"force",waitTimeoutMs:120000}')" --json | jq -e '.run.status == "error" and (.run.error | contains("automation-prompt-load-blocked"))'
+test "$(wc -l < "$TMPDIR/agent-system-approval-apply" | tr -d ' ')" = 1
 
 # should complete all lifecycle approval turns through strict aimock
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/diagnostics

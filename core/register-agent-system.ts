@@ -847,12 +847,11 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     lifecycleRegistry,
   });
   const automationLifecycle = new AutomationLifecycleAuthority(logger);
-  registerAutomationLifecycleHooks(api, automationLifecycle);
   registerAutomationPromptHooks(
     api,
     () => readScheduler?.(),
     async (run) => {
-      const loaded = await manifestService.loadForRuntimeContext(run, 'before_prompt_build');
+      const loaded = await manifestService.loadForRuntimeContext(run, 'before_agent_reply');
       if (
         loaded.status !== 'loaded' ||
         (await realpath(loaded.scope.workspaceDir)) !== (await realpath(run.workspaceDir))
@@ -861,6 +860,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       return resolveAutomationPrompt(automationService, readScheduler?.(), loaded.manifest, run);
     },
   );
+  registerAutomationLifecycleHooks(api, automationLifecycle);
   const lifecycleApproval = new AgentLifecycleApproval({
     manifestService,
     doctorService,
