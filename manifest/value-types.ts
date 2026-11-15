@@ -11,3 +11,7 @@ export type EnvironmentBinding = string;
 export type EnvironmentSetValue = string | OpSecretReference;
 
 export type ResolvableString = string | EnvironmentReference;
+
+export interface AgentSystemManifestValueResolver {
+  resolve(value: ResolvableString, fieldPath: string): string;
+}

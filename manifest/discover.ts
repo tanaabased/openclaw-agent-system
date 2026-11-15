@@ -187,6 +187,30 @@ export default async function discoverManifest(workspaceDir: string): Promise<Ma
   };
 }
 
+/** inspect an explicitly selected manifest and its sibling overlay without workspace discovery. */
+export async function discoverManifestAtPath(
+  workspaceDir: string,
+  manifestPath: string,
+): Promise<ManifestDiscovery> {
+  const selected = await inspectCandidate(manifestPath);
+  const overlay =
+    selected.status === 'readable'
+      ? await inspectCandidate(join(dirname(manifestPath), 'agent.local.yaml'), true)
+      : undefined;
+  return {
+    workspaceDir,
+    selected,
+    overlay,
+    fingerprint: `${selected.fingerprint}|${overlay?.fingerprint ?? 'no-base'}`,
+    diagnostics: [
+      ...(selected.status === 'invalid' ? selected.diagnostics : []),
+      ...(overlay?.status === 'invalid'
+        ? overlay.diagnostics.map((diagnostic) => ({ ...diagnostic, sourcePath: overlay.path }))
+        : []),
+    ],
+  };
+}
+
 /** Find the nearest manifest at or above a command working directory. */
 export async function discoverManifestFromDirectory(
   commandDirectory: string,

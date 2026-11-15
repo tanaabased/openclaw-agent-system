@@ -92,7 +92,13 @@ function normalizeRule(route: RepositoryRoute): Rule {
 }
 
 /** preserve rule order while canonicalizing the unordered destination sets. */
-export function normalizeRepositoryRouting(routes: RepositoryRoute[]) {
+export function normalizeRepositoryRouting(
+  routes: RepositoryRoute[],
+): Array<
+  | string
+  | Record<string, string[] | 'swarm'>
+  | { match: string; workflows: string[]; target: string[] | 'local' | 'deny' | 'swarm' }
+> {
   return routes.map((entry) => {
     const { match: pattern, workflows: eligible, target } = normalizeRule(entry);
     const match = pattern.toLowerCase();
