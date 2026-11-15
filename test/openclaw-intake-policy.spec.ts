@@ -25,6 +25,28 @@ function manifest(): AgentManifest {
 }
 
 describe('agent/openclaw-intake-policy', () => {
+  it('should wake intake without appending workflow instructions to the visible request', async () => {
+    const value = manifest();
+    value.models = { default: { model: 'openai/test', effort: 'medium' } };
+    const job = openclawIntakeJobs(value).find((job) => job.id === 'github-issue-assignment')!;
+    for (const diagnostic of [undefined, { phase: 'discovery', code: 'intake-scan-incomplete' }]) {
+      let result: { fire: boolean; message?: string } | undefined;
+      await runInNewContext(`(async()=>{${job.internalOpenClaw!.trigger.script}})()`, {
+        agent_system_dispatch: async () => ({ status: 'ready', changed: true, diagnostic }),
+        json: (value: typeof result) => {
+          result = value;
+        },
+      });
+      assert.equal(result?.fire, true);
+      if (diagnostic) assert.match(result?.message ?? '', /intake-scan-incomplete/);
+      else assert.equal(result?.message, undefined);
+      assert.equal(
+        (result?.message ?? '').includes('Fill initially available intake slots'),
+        false,
+      );
+    }
+  });
+
   it('should preserve bounded failure codes without mistaking contention for authorization loss', async () => {
     const value = manifest();
     value.models = { default: { model: 'openai/gpt-6-luna', effort: 'medium' } };
