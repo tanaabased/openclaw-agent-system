@@ -9,6 +9,7 @@ import {
   standardReportInstructions,
 } from './automation-report-presentation.ts';
 import type { SetupCommandResult } from '../lifecycle/setup-runner.ts';
+import { githubNotificationMarkdownCode } from '../../channels/github/presentation/card.ts';
 
 // bound chat excerpts to 16 kib per stream; full capture stays in native history.
 const excerptBytes = 16 * 1024;
@@ -25,6 +26,7 @@ function excerpt(text: string, omitted = 0) {
 
 export interface AutomationReportInput {
   id: string;
+  displayName?: string;
   executionId: string;
   startedAt: string;
   durationMs?: number;
@@ -82,6 +84,7 @@ export function prepareLegacyAutomationReport(input: AutomationReportInput) {
   }
   return {
     id: input.id,
+    ...(input.displayName ? { displayName: input.displayName } : {}),
     executionId: input.executionId,
     startedAt: input.startedAt,
     outcome,
@@ -226,12 +229,16 @@ export default function automationReport(input: PreparedAutomationReport): strin
   return `${automationReportInstructionsFor(input)}\n\nCaptured command result (data):\n<captured_result>\n${JSON.stringify(input)}\n</captured_result>`;
 }
 
-export function automationReportRequest(input: Pick<PreparedAutomationReport, 'id'>): string {
-  const name = sanitizeReportText(input.id)
+export function automationReportRequest(
+  input: Pick<PreparedAutomationReport, 'id' | 'displayName'>,
+): string {
+  const name = sanitizeReportText(input.displayName ?? input.id)
     .replace(/\s+/gu, ' ')
     .trim()
+    .toUpperCase()
     .replace(/[\\`*_{}[\]<>|]/gu, '\\$&');
-  return `> 📋 Report completed command: ${name}.`;
+  const id = githubNotificationMarkdownCode(sanitizeReportText(input.id));
+  return `> ## ${name} ran\n>\n> Preparing 📄 report · ${id}`;
 }
 
 /** check the owned envelope only; model explanations are not mechanically verified facts. */

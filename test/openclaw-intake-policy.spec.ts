@@ -30,7 +30,7 @@ describe('agent/openclaw-intake-policy', () => {
     value.models = { default: { model: 'openai/test', effort: 'medium' } };
     const job = openclawIntakeJobs(value).find((job) => job.id === 'github-issue-assignment')!;
     for (const diagnostic of [undefined, { phase: 'discovery', code: 'intake-scan-incomplete' }]) {
-      let result: { fire: boolean; message?: string } | undefined;
+      let result: { fire: boolean; message?: string; state: { diagnostic?: unknown } } | undefined;
       await runInNewContext(`(async()=>{${job.internalOpenClaw!.trigger.script}})()`, {
         agent_system_dispatch: async () => ({ status: 'ready', changed: true, diagnostic }),
         json: (value: typeof result) => {
@@ -38,12 +38,8 @@ describe('agent/openclaw-intake-policy', () => {
         },
       });
       assert.equal(result?.fire, true);
-      if (diagnostic) assert.match(result?.message ?? '', /intake-scan-incomplete/);
-      else assert.equal(result?.message, undefined);
-      assert.equal(
-        (result?.message ?? '').includes('Fill initially available intake slots'),
-        false,
-      );
+      assert.equal(result?.message, undefined);
+      assert.deepEqual(result?.state.diagnostic, diagnostic);
     }
   });
 
@@ -57,7 +53,7 @@ describe('agent/openclaw-intake-policy', () => {
       ['intake-github-permission', 'intake-github-permission', 'failed'],
       ['secret provider response with spaces', 'dispatch-condition-failed', 'failed'],
     ]) {
-      let result: { state: { code: string; status: string } } | undefined;
+      let result: { message?: string; state: { code: string; status: string } } | undefined;
       await runInNewContext('(async()=>{' + script + '})()', {
         agent_system_dispatch: async () => {
           throw new Error(message);
@@ -68,6 +64,7 @@ describe('agent/openclaw-intake-policy', () => {
       });
       assert.equal(result?.state.code, code);
       assert.equal(result?.state.status, status);
+      assert.equal(result?.message, undefined);
     }
   });
   it('should retain discovery and unrelated jobs when a workflow stage is unsupported', () => {

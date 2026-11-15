@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import automationReport, {
   automationReportCardValid,
+  automationReportRequest,
   prepareLegacyAutomationReport as prepareAutomationReport,
   type AutomationReportInput,
 } from '../agent/automations/automation-report.ts';
@@ -20,6 +21,28 @@ const input: AutomationReportInput = {
   },
 };
 describe('agent/automation-report legacy', () => {
+  it('should announce a named command run without implying its outcome', () => {
+    const expected =
+      '> ## 💾 BACKUP AGENT NIGHTLY ran\n>\n> Preparing 📄 report · `backup-agent-nightly`';
+    for (const exitCode of [0, 17]) {
+      const report = prepareAutomationReport({
+        ...input,
+        id: 'backup-agent-nightly',
+        displayName: '💾 Backup Agent Nightly',
+        result: { ...input.result, exitCode },
+      });
+      assert.equal(automationReportRequest(report), expected);
+    }
+    assert.equal(
+      automationReportRequest({ id: 'legacy' }),
+      '> ## LEGACY ran\n>\n> Preparing 📄 report · `legacy`',
+    );
+    assert.equal(
+      automationReportRequest({ id: 'a`b', displayName: '📦 Name\n> injected' }),
+      '> ## 📦 NAME \\> INJECTED ran\n>\n> Preparing 📄 report · ``a`b``',
+    );
+  });
+
   it('should retain useful markdown and separately classify both streams without promoting stderr to failure', () => {
     const markdown =
       '# Backup\n\n- [archive](https://example.test/archive)\n\n| item | result |\n| --- | --- |\n| data | saved |\n\n```sh\necho done\n```';

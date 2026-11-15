@@ -78,6 +78,7 @@ describe('cli/automation-execute', () => {
           reports: new AutomationReportStore(`${workspaceDir}/reports`),
           admit: async () => ({
             command: { kind: 'exec', executable: 'true', args: [], timeoutSeconds: 10 },
+            displayName: '⚙️ TEST JOB',
             context: { agentId: 'a', workspaceDir },
             reportTarget: reporting
               ? { sessionKey: 'agent:a:reports', agentId: 'a', workspaceDir, scope: 'fixture' }
@@ -130,7 +131,7 @@ describe('cli/automation-execute', () => {
     assert.equal(run.code, 1);
     assert.equal(run.runs, 1);
     assert.equal(run.reports.length, 1);
-    assert.match(run.reports[0]!, /^> .*Report completed command: job\.$/u);
+    assert.equal(run.reports[0], '> ## ⚙️ TEST JOB ran\n>\n> Preparing 📄 report · `job`');
     assert.ok(!run.reports[0]!.includes('# Partial backup'));
     assert.ok(run.stdout.includes('# Partial backup'));
     assert.ok(!run.reports[0]!.includes('stdoutTruncatedBytes'));

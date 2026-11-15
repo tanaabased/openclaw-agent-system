@@ -90,7 +90,7 @@ for runtime in openclaw codex; do
     done
     report_id=$(jq -er '.reports[0].executionId' "$TMPDIR/report-$runtime-$mode.json")
     openclaw gateway call chat.history --params "$(jq -nc --arg key "$chat" '{sessionKey:$key,limit:100,maxChars:100000}')" --json > "$TMPDIR/history-$runtime-$mode.json"
-    jq -e --arg name "$mode" '[.messages[] | select(.role == "user") | .content | if type == "string" then . else [.[]? | select(.type == "text") | .text] | join("\n") end] | any(.[]; contains("> 📋 Report completed command: " + $name + ".") and (contains("<captured_result>") | not))' "$TMPDIR/history-$runtime-$mode.json"
+    jq -e --arg name "$mode" '[.messages[] | select(.role == "user") | .content | if type == "string" then . else [.[]? | select(.type == "text") | .text] | join("\n") end] | any(.[]; contains("> ## ⚙️ " + ($name | ascii_upcase) + " COMMAND ran") and (split("\n") | any(.[]; startswith("> Preparing 📄 report · ") and contains($name))) and (contains("<captured_result>") | not))' "$TMPDIR/history-$runtime-$mode.json"
     if ! jq -e --arg reason "$reason" --arg model "$model" --arg runtime "$runtime" '.reports | length == 1 and all(.[]; .status == "delivered" and .reason == $reason and (.messageId | type == "string") and .requested == {model:$model,effort:"high"} and .effective.model == .requested.model and .effective.harness == $runtime and (.effective.effort == null or .effective.effort == "high"))' "$TMPDIR/report-$runtime-$mode.json"; then
       jq '{id,reports}' "$TMPDIR/report-$runtime-$mode.json"
       jq --arg run "$report_id" '.messages[] | select(.__openclaw.runId == $run)' "$TMPDIR/history-$runtime-$mode.json"

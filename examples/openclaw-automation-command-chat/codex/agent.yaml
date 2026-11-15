@@ -9,6 +9,7 @@ models:
     effort: medium
 automations:
   - id: success
+    display-name: '⚙️ SUCCESS COMMAND'
     effort: high
     runtimes: [openclaw]
     schedule: every 1 hour
@@ -17,6 +18,7 @@ automations:
     group: REPORTS
     thread: { id: reports, name: Automation reports }
   - id: failure
+    display-name: '⚙️ FAILURE COMMAND'
     effort: high
     runtimes: [openclaw]
     schedule: every 1 hour

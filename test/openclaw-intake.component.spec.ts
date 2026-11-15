@@ -733,7 +733,11 @@ describe('openclaw v2 intake slice', () => {
     ];
     for (const sample of cases) {
       let output:
-        | { fire: boolean; message: string; state: { status: string; stage: string; code: string } }
+        | {
+            fire: boolean;
+            message?: string;
+            state: { status: string; stage: string; code: string };
+          }
         | undefined;
       await runInNewContext(`(async()=>{${script}})()`, {
         agent_system_intake: async () => {
@@ -751,7 +755,7 @@ describe('openclaw v2 intake slice', () => {
       assert.equal(output!.state.status, 'failed');
       assert.equal(output!.state.stage, sample.stage);
       assert.equal(output!.state.code, sample.code);
-      assert.ok(output!.message.includes(sample.code));
+      assert.equal(output!.message, undefined);
       assert.equal(JSON.stringify(output).includes('private'), false);
     }
   });

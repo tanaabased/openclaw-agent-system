@@ -1329,6 +1329,7 @@ export default class AutomationService {
           : undefined;
       return {
         command: { ...job.payload.run, timeoutSeconds: job.timeoutSeconds ?? 1800 },
+        displayName: job.displayName,
         context,
         reportTarget,
       };

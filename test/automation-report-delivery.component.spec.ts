@@ -18,6 +18,7 @@ import { AutomationError } from '../agent/automations/automation-errors.ts';
 
 const input: AutomationReportInput = {
   id: 'backup',
+  displayName: '💾 BACKUP',
   executionId: randomUUID(),
   startedAt: '2026-10-30T00:00:00Z',
   cancelled: false,
@@ -373,10 +374,11 @@ describe('agent/automation-report-delivery', () => {
       ['delivered', 'delivered'],
     );
     assert.equal(f.messages.length, 2);
-    assert.match(f.messages[0]!, /^> .*Report completed command: backup\.$/u);
+    assert.equal(f.messages[0], '> ## 💾 BACKUP ran\n>\n> Preparing 📄 report · `backup`');
     assert.ok(!f.messages[0]!.includes('Exit 17'));
     assert.ok(!f.messages[0]!.includes('# Saved'));
     const saved = await f.store.read(input.executionId);
+    assert.equal(saved?.input.displayName, '💾 BACKUP');
     assert.deepEqual(saved?.effective, { model: 'test/formatter' });
     assert.equal(saved?.target.effort, 'high');
     assert.equal(
