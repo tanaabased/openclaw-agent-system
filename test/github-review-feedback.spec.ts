@@ -25,9 +25,10 @@ const admit = (comment: ReturnType<typeof reviewFeedback>) =>
 
 describe('channels/github/provider/review-feedback', () => {
   it('should link summary and finding prose without rewriting sources or diff literals', () => {
-    const review = reviewFixture({ body: '@reviewer check `@summary-code`.' });
+    const marker = `<!-- agent-system-github-publication:manual-response:${'a'.repeat(32)} -->`;
+    const review = reviewFixture({ body: '@reviewer check `@summary-code`.\n\n' + marker });
     const finding = reviewCommentFixture({
-      body: 'Ask @finder; keep [@linked](https://example.com) and email@example.com.',
+      body: 'Ask @finder; keep [@linked](https://example.com) and email@example.com.\n\n' + marker,
       path: '@file.ts',
       diffHunk: '+ @diff-literal',
     });
@@ -37,6 +38,7 @@ describe('channels/github/provider/review-feedback', () => {
     ]) {
       const original = JSON.stringify(feedback);
       const card = reviewFeedbackPresentation(feedback);
+      assert.ok(!card.includes(marker));
       assert.ok(card.includes('[@finder](https://github.com/finder)'));
       assert.ok(card.includes('[@linked](https://example.com) and email@example.com'));
       assert.ok(card.includes('```diff\n+ @diff-literal\n```'));

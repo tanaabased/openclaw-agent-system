@@ -1,5 +1,6 @@
 import safePresentation from './safe.ts';
 import { githubNotificationMarkdownText, githubNotificationQuote } from './card.ts';
+import incomingBody from './incoming-body.ts';
 import mentionLinks from './mention-links.ts';
 
 export interface GitHubNotificationCommentEventProjection {
@@ -53,11 +54,12 @@ export function githubCommentCard(
 export function githubNotificationCommentPresentation(
   projection: GitHubNotificationCommentEventProjection,
 ): string {
+  const body = incomingBody(projection.body);
   return safePresentation(
     () =>
       githubCommentCard(
         {
-          body: mentionLinks(projection.body),
+          body: mentionLinks(body),
           author: projection.author,
           label: 'Comment',
           connector: 'from',
@@ -66,6 +68,6 @@ export function githubNotificationCommentPresentation(
         { style: 'unquoted' },
       ),
     () =>
-      `${projection.body}\n\nComment: ${projection.item.url}\nAuthor: ${projection.author.label} (${projection.author.url})`,
+      `${body}\n\nComment: ${projection.item.url}\nAuthor: ${projection.author.label} (${projection.author.url})`,
   );
 }

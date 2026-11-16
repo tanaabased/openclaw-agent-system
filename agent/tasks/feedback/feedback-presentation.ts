@@ -1,3 +1,4 @@
+import incomingBody from '../../../channels/github/presentation/incoming-body.ts';
 import safePresentation from '../../../channels/github/presentation/safe.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
 import {
@@ -33,9 +34,10 @@ export default function feedbackPresentation(
           }),
     () =>
       [
-        source.body,
-        ...(review?.findings.map((finding) => `${finding.body}\n${finding.url}\n${finding.path}`) ??
-          []),
+        incomingBody(source.body),
+        ...(review?.findings.map(
+          (finding) => `${incomingBody(finding.body)}\n${finding.url}\n${finding.path}`,
+        ) ?? []),
         `Source: ${isReviewFeedback(source) ? source.feedback.review.url : url}`,
         `Author: ${source.author!.login}`,
       ].join('\n\n'),
