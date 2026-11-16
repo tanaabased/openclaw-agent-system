@@ -42,7 +42,7 @@ grep -F 'code=github-repository-owners-removed' "$TMPDIR/retired-scope.stderr" |
 
 # should install the scenario agent with a component-first table without color
 cd "$GITHUB_WORKSPACE/examples/os-install/data"
-NO_COLOR=1 openclaw agent-system install | grep -E '^agent[[:space:]]+created[[:space:]]' | grep -F 'OpenClaw agent install-data'
+NO_COLOR=1 openclaw agent-system install | grep -F 'agent' | grep -F 'created' | grep -F 'id: install-data'
 
 # should report every foundational component as unchanged in json on repeated install
 cd "$GITHUB_WORKSPACE/examples/os-install/data"

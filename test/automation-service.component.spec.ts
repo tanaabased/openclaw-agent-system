@@ -4,6 +4,7 @@ import issuePickupJobs from '../agent/automations/issue-pickup-jobs.ts';
 import IssuePickupEnrollmentStore from '../agent/issue-pickup-enrollment.ts';
 import selectionFixture from './issue-pickup-selection-fixture.ts';
 import assert from 'node:assert/strict';
+import lifecycleDetails from '../cli/lifecycle-details.ts';
 import { randomUUID } from 'node:crypto';
 
 import { prepareAutomationReport } from '../agent/automations/automation-report.ts';
@@ -1508,7 +1509,7 @@ describe('agent/automation-service', () => {
         thread: { id: 'activity', name: 'Activity' },
       },
     ]);
-    await service.reconcile(manifest, root);
+    const installed = await service.reconcile(manifest, root);
     assert.equal(disconnected, true);
     assert.equal(calls.filter(({ method }) => method === 'sessions.create').length, 1);
     const [chat] = [...sessions.values()];
@@ -1537,6 +1538,18 @@ describe('agent/automation-service', () => {
         ['sessions.patch', 'sessions.create', 'cron.update'].includes(method),
       ),
     );
+    for (const finding of healthy) {
+      const outcome = installed.outcomes.find(({ stepId }) => stepId === finding.stepId)!;
+      assert.equal(outcome.automationName, finding.automationName);
+      assert.equal(outcome.automationRouting?.mode, 'persistent');
+      assert.equal(finding.automationRouting?.mode, 'persistent');
+      for (const item of [outcome, finding]) {
+        const row = lifecycleDetails(item);
+        assert.ok(row.message.startsWith(`name: TANAABOT: ${item.stepId!.toUpperCase()}`));
+        assert.equal(row.message.includes('Activity'), false);
+        assert.ok(row.message.includes('thread: ***'));
+      }
+    }
     const identities = native.map(({ id }) => id);
     manifest.models.default.effort = 'high';
     await service.reconcile(manifest, root);
@@ -2445,6 +2458,11 @@ describe('agent/automation-service', () => {
       assert.ok(error instanceof AgentSystemLifecycleError);
       assert.equal(error.progress!.outcomes[0]!.stepId, 'first');
       assert.equal(error.progress!.outcomes[0]!.status, 'created');
+      assert.equal(error.progress!.outcomes[0]!.automationName, 'TANAABOT: FIRST');
+      assert.deepEqual(error.progress!.outcomes[0]!.automationRouting, { mode: 'independent' });
+      assert.ok(
+        lifecycleDetails(error.progress!.outcomes[0]!).message.startsWith('name: TANAABOT: FIRST'),
+      );
       assert.ok(!JSON.stringify(error.progress).includes('secret'));
       return true;
     });

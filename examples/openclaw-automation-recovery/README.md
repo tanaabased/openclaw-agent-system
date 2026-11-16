@@ -8,7 +8,7 @@ preserving the unrelated prompt.
 ## What Belongs Here
 
 - Offline diagnostics with an actionable connectivity recovery.
-- Read-only drift inspection, explicit repair, and preservation of both changed and unrelated native job identities.
+- Consistent job names in Doctor and Install, read-only drift inspection, explicit repair, and preservation of both changed and unrelated native job identities.
 - Restored routing after restart and a completed prompt in the owning native context.
 - A delivered command report preserved across restart without rerunning the command.
 - Retirement after declaration removal and native deletion, without recreating the job or blocking the unrelated prompt.
@@ -66,11 +66,15 @@ openclaw agent-system automations sync --json | jq -e '.status == "synchronized"
 openclaw agent-system automations list --json | tee "$TMPDIR/automation-before.json" | jq -e '.jobs as $jobs | .status == "aligned" and all(["identity","prompt"][]; . as $id | ([$jobs[] | select(.id == $id and .nativeEnabled == true)] | length) == 1) and any(.jobs[]; .id == "prompt" and (.routing | startswith("session:agent:")))'
 jq -S '[.jobs[] | select(.id == "identity" or .id == "prompt") | {id, nativeId, routing}] | sort_by(.id)' "$TMPDIR/automation-before.json" > "$TMPDIR/automation-identities.json"
 
-# should distinguish scheduler jobs that share one destination chat in doctor output
+# should distinguish shared-chat jobs with matching scheduler names in doctor and install
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-recovery"
-NO_COLOR=1 openclaw agent-system doctor | tee "$TMPDIR/automation-doctor.txt" | grep -F 'AUTOMATION-RECOVERY-TANAABOT:'
-grep -F 'IDENTITY' "$TMPDIR/automation-doctor.txt"
-grep -F 'PROMPT' "$TMPDIR/automation-doctor.txt"
+NO_COLOR=1 openclaw agent-system doctor | tee "$TMPDIR/automation-doctor.txt"
+NO_COLOR=1 openclaw agent-system install --yes | tee "$TMPDIR/automation-install.txt"
+for report in "$TMPDIR/automation-doctor.txt" "$TMPDIR/automation-install.txt"; do
+  grep -F 'name: AUTOMATION-RECOVERY-TANAABOT:' "$report"
+  grep -F 'IDENTITY' "$report"
+  grep -F 'PROMPT' "$report"
+done
 
 # should diagnose native drift without repair and reinstall the same jobs
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-recovery"
