@@ -10,6 +10,9 @@ import {
   githubNotificationCommentPresentation,
 } from '../channels/github/presentation/comment.ts';
 import { githubNotificationPullRequestOpenedCard } from '../channels/github/presentation/pull-request-opened.ts';
+import feedbackPresentation from '../agent/tasks/feedback/feedback-presentation.ts';
+import { reviewFeedback } from '../channels/github/provider/review-feedback.ts';
+import { reviewFixture, reviewCommentFixture } from './github-review-fixtures.ts';
 import safePresentation from '../channels/github/presentation/safe.ts';
 
 const target = 'https://github.com/owner/repo/issues/3';
@@ -48,12 +51,27 @@ describe('presentation failure isolation', () => {
       },
     );
     try {
+      const marker = `<!-- agent-system-github-publication:manual-response:${'a'.repeat(32)} -->`;
       const source = {
         body: 'Exact authored body from @octocat.',
         author: { label: 'sender', url: 'https://github.com/sender' },
         item: { label: 'owner/repo#3', url: target + '#issuecomment-5' },
       };
-      const incoming = githubNotificationCommentPresentation(source);
+      const incoming = githubNotificationCommentPresentation({
+        ...source,
+        body: source.body + '\n\n' + marker,
+      });
+      assert.ok(!incoming.includes(marker));
+      const review = reviewFeedback(reviewFixture({ body: source.body + marker }), [
+        reviewCommentFixture({ body: source.body + marker }),
+      ]);
+      const fallback = feedbackPresentation(
+        { source: JSON.stringify(review), itemType: 'pull-request', number: 3 },
+        'owner/repo',
+      );
+      assert.ok(fallback.includes(source.body));
+      assert.ok(!fallback.includes(marker));
+      assert.ok(fallback.includes('Author:'));
       const published = githubCommentCard({
         ...source,
         label: 'Reply',
