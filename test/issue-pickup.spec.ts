@@ -421,10 +421,10 @@ describe('github issue pickup policy', () => {
       undefined,
     );
     f.milestone.state = 'closed';
-    await assert.rejects(
-      issuePickupScope(f.policy, f.client, f.repository),
-      /issue-pickup-milestone-closed/,
-    );
+    assert.deepEqual(await issuePickupScope(f.policy, f.client, f.repository), {
+      policy: 'only',
+      milestoneNodeIds: [],
+    });
     f.client.getMilestone = undefined;
     await assert.rejects(
       issuePickupScope(f.policy, f.client, f.repository),

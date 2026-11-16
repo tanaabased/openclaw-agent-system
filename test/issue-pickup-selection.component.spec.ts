@@ -1,3 +1,4 @@
+import { inspectSelectedCodexPickup } from '../agent/automations/codex-pickup-readiness.ts';
 import { withDispatchTask } from '../agent/tasks/dispatch/dispatch-task-scope.ts';
 import { omit } from 'lodash-es';
 import type { RepositoryRoute } from '../channels/github/repository-scope.ts';
@@ -143,6 +144,7 @@ describe('issue pickup selection through native journals', () => {
     const manifest = parsed.manifest;
     f.clock.now = baseline;
     let pickup: (input?: PickupInput) => ReturnType<typeof runCodexIssuePickup>;
+    let inspect: () => Promise<Array<{ code: string; status: string }>>;
     let scan: () => Promise<unknown>;
     let read: () => Promise<IntakeRecord[]>;
     let journal: CodexDispatchStore | OpenClawDispatchStore;
@@ -182,6 +184,10 @@ describe('issue pickup selection through native journals', () => {
         withDispatchTask('codex', 'pickup-thread', () =>
           runCodexIssuePickup(data, input, 'UTC', deps),
         );
+      inspect = () =>
+        inspectSelectedCodexPickup(data, manifest.github!.notifications!, scope, async () => ({
+          nativeId: occurrence.nativeId,
+        }));
       scan = () => runCodexIntake(data, false, deps);
       read = async () => (await selected.store.read())!.records;
     } else {
@@ -212,6 +218,7 @@ describe('issue pickup selection through native journals', () => {
       await enrollmentStore.activate(enrollment.enrollment.id, occurrence.nativeId);
       Object.assign(f.authority.enrollment, enrollment.enrollment);
       pickup = (input = {}) => intake.pickup(manifest, workspace, input, 'UTC', occurrence);
+      inspect = () => intake.inspectPickup(manifest, workspace);
       scan = () => intake.run(manifest, workspace, 'scan');
       read = async () => (await selected.store.read())!.records;
     }
@@ -242,6 +249,7 @@ describe('issue pickup selection through native journals', () => {
     return {
       ...f,
       pickup,
+      inspect,
       scan,
       read,
       journal,
@@ -257,6 +265,30 @@ describe('issue pickup selection through native journals', () => {
   }
 
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should report closed scope and skipped repositories without losing activation through ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      const before = (await f.enrollmentStore.read()).records;
+      f.milestone.state = 'closed';
+      f.connectionFailure.error = Error('inspection must not connect or scan');
+      assert.ok(
+        (await f.inspect()).some(
+          (entry) => entry.code === 'issue-pickup-ready' && entry.status === 'healthy',
+        ),
+      );
+      delete f.connectionFailure.error;
+      let result = await f.pickup();
+      assert.equal(result.status, 'empty');
+      assert.match(result.response, /⚠️.*no eligible issues/);
+      assert.doesNotMatch(result.response, /milestone-closed|could not finish/);
+      f.tick.id = 'skipped-repository';
+      f.repository.disabled = true;
+      result = await f.pickup();
+      assert.equal(result.status, 'empty');
+      assert.match(result.response, /repository-disabled/);
+      assert.deepEqual((await f.enrollmentStore.read()).records, before);
+      assert.equal(f.effects.writes, 0);
+    });
+
     it(`should enroll a namespace and retain its allowance through the native ${runtime} journal`, async () => {
       const f = await fixture(runtime, false, 'namespace');
       const selection = await f.select();
@@ -1157,7 +1189,7 @@ describe('issue pickup selection through native journals', () => {
         f.tick.id = `empty-scan-${index}`;
         const result = await f.pickup();
         assert.equal(result.status, 'empty');
-        assert.match(result.response, /> ## 📥/);
+        assert.match(result.response, /⚠️.*no eligible issues/);
         if (runtime === 'codex') assert.match(result.response, /<decision>NOTIFY<\/decision>/);
         assert.deepEqual((await f.journal.read()).projectPickup!.operations, []);
       }

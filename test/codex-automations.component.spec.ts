@@ -739,6 +739,10 @@ describe('agent/codex-automations', () => {
     const legacyHistory = structuredClone(conversations.get(legacyChat));
     await saveManifest();
     const enrollments = new IssuePickupEnrollmentStore(codexInstanceStore(pluginData).root);
+    provider.milestone.state = 'closed';
+    provider.client.discoverProject = async () => {
+      throw Error('installation must not scan');
+    };
     const priorEnrollment = await prepareCodexPickupEnrollment(pluginData, {
       ...dependencies.intake,
       codexHome,

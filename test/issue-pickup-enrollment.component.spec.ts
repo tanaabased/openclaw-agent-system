@@ -41,6 +41,27 @@ describe('issue pickup installation enrollment', () => {
       return { ...f, store, identity, input };
     }
 
+    it(`should enroll closed milestones and excluded repositories without scanning in ${runtime}`, async () => {
+      const f = await fixture();
+      f.milestone.state = 'closed';
+      f.repository.archived = true;
+      f.policy.routing = ['!owner/repo'];
+      f.client.discoverProject = async () => {
+        throw Error('enrollment must not scan');
+      };
+      const first = await f.store.prepare(f.input);
+      await f.store.activate(first.enrollment.id, 'native-job');
+      assert.equal(first.enrollment.milestoneNodeId, f.milestone.nodeId);
+      assert.equal((await f.store.inspect(f.policy, runtime, 'scope')).nativeId, 'native-job');
+      f.policy.issuePickup!.projects[0]!.repository = 'owner/*';
+      f.policy.issuePickup!.projects[0]!.milestone = { ids: 'repo#10' };
+      const wildcard = await f.store.prepare({ ...f.input, scope: 'wildcard' });
+      assert.equal(wildcard.enrollment.repositoryNodeId, 'selection:owner/*');
+      f.client.getMilestone = async () => ({ ...f.milestone, number: 99 });
+      await assert.rejects(f.store.prepare({ ...f.input, scope: 'invalid' }), /milestone-invalid/);
+      assert.equal((await f.store.read()).records.length, 2);
+    });
+
     it(`should retain the enrollment anchor and native job across install and pause in ${runtime}`, async () => {
       const f = await fixture();
       const first = await f.store.prepare(f.input);

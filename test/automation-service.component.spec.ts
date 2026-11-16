@@ -1,3 +1,4 @@
+import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import { resolveAutomationPrompt } from '../agent/automations/automation-prompt.ts';
 import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
 import issuePickupJobs from '../agent/automations/issue-pickup-jobs.ts';
@@ -125,6 +126,115 @@ describe('agent/automation-service', () => {
     await store.write(missing);
     await assert.rejects(resolveAutomationPrompt(service, scheduler, manifest, run), /unverified/);
   });
+  it('should isolate invalid pickup preparation and reconcile unrelated automation work', async () => {
+    const f = selectionFixture('openclaw');
+    manifest.models = { default: { model: 'openai/gpt-6-luna', effort: 'medium' } };
+    manifest.github = { username: 'receiver', notifications: f.policy };
+    const sessions = new Map<string, Record<string, unknown>>();
+    const request = service.dependencies.request!;
+    service.dependencies.request = async (method, params) => {
+      if (!method.startsWith('sessions.')) return request(method, params);
+      const key = String(params.key ?? params.sessionId);
+      if (method === 'sessions.resolve')
+        return sessions.has(key) ? { ok: true, key, agentId: 'tanaabot' } : { ok: false };
+      if (method === 'sessions.list') return { sessions: [...sessions.values()] };
+      if (method === 'sessions.create') {
+        sessions.set(key, {
+          key,
+          sessionId: key,
+          workspaceDir: root,
+          model: params.model,
+          thinkingLevel: params.thinkingLevel,
+        });
+        return { ok: true };
+      }
+      if (method === 'sessions.patch') {
+        Object.assign(sessions.get(key)!, {
+          category: params.category,
+          autoLabel: params.autoLabel,
+          displayName: params.autoLabel,
+        });
+        return { ok: true };
+      }
+      throw Error('unexpected session operation');
+    };
+    const pickupRoot = join(root, 'pickup');
+    await new AssignmentClaimStore(pickupRoot).identity();
+    const enrollments = new IssuePickupEnrollmentStore(pickupRoot);
+    f.client.getMilestone = async () => ({ ...f.milestone, number: 99 });
+    service.dependencies.pickup = {
+      prepare: () =>
+        enrollments.prepare({
+          policy: f.policy,
+          runtime: 'openclaw',
+          scope: 'pickup',
+          workspaceDir: root,
+          agentId: manifest.agent.id,
+          client: f.client,
+          timezone: 'UTC',
+          now,
+        }),
+      activate: async () => {
+        assert.fail('invalid pickup must not activate');
+      },
+    };
+    let laterWork = false;
+    const install = new AgentInstallService({
+      lifecycleRegistry: new AgentSystemLifecycleRegistry([
+        service.contribution(),
+        {
+          id: 'after',
+          isConfigured: () => true,
+          reconcile: async () => {
+            laterWork = true;
+            return { outcomes: [] };
+          },
+        },
+      ]),
+    });
+    const result = await install.install({
+      runtime: 'openclaw',
+      manifest,
+      workspaceDir: root,
+      sessionDispatchConsent: true,
+    });
+    assert.equal(laterWork, true);
+    assert.ok(
+      result.outcomes.some(
+        (entry) =>
+          entry.stepId === 'github-issue-pickup' && entry.code === 'issue-pickup-milestone-invalid',
+      ),
+    );
+    assert.ok(result.warnings?.some((entry) => entry.code === 'issue-pickup-milestone-invalid'));
+    assert.ok(
+      result.outcomes.some((entry) => entry.stepId === 'check' && entry.status === 'created'),
+    );
+    assert.ok(!native.some((job) => String(job.name).endsWith('github-issue-pickup')));
+    laterWork = false;
+    f.client.getMilestone = async () => {
+      throw new GitHubWorkEventClientError(
+        'github-notification-resource-missing',
+        'milestone unavailable',
+        {},
+      );
+    };
+    const missing = await install.install({
+      runtime: 'openclaw',
+      manifest,
+      workspaceDir: root,
+      sessionDispatchConsent: true,
+    });
+    assert.equal(laterWork, true);
+    assert.ok(
+      missing.warnings.some(
+        (entry) =>
+          entry.stepId === 'github-issue-pickup' &&
+          entry.code === 'github-notification-resource-missing',
+      ),
+    );
+    assert.deepEqual((await enrollments.read()).records, []);
+  });
+
   beforeEach(async () => {
     root = await realpath(await mkdtemp('/tmp/automation-'));
     manifest = {
@@ -1319,6 +1429,10 @@ describe('agent/automation-service', () => {
     );
 
     const fixture = selectionFixture('openclaw');
+    fixture.milestone.state = 'closed';
+    fixture.client.discoverProject = async () => {
+      throw Error('install and inspection must not scan');
+    };
     const instanceRoot = join(root, 'instance');
     await new AssignmentClaimStore(instanceRoot).identity();
     const enrollments = new IssuePickupEnrollmentStore(instanceRoot);

@@ -270,6 +270,74 @@ describe('agent/issue-pickup', () => {
       });
     }
 
+    it(`should exhaust closed only scope without discovery or scope expansion in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      f.milestone.state = 'closed';
+      f.client.discoverProject = async () => {
+        throw Error('closed only scope must not scan');
+      };
+      const result = await f.run();
+      assert.equal(result.status, 'empty');
+      assert.ok('summary' in result);
+      assert.equal(result.summary?.eligible, 0);
+      assert.equal(f.effects.writes, 0);
+    });
+
+    it(`should retain open milestones in a mixed scope and allow configured exhausted fallback in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      f.policy.issuePickup!.projects[0]!.milestone = { number: [9, 10] };
+      f.client.getMilestone = async (_owner, _repo, number) => ({
+        ...f.milestone,
+        number,
+        state: number === 9 ? 'closed' : 'open',
+        nodeId: number === 9 ? 'M_closed' : f.milestone.nodeId,
+      });
+      assert.equal((await f.run()).status, 'selection-required');
+      f.tx.runId = 'fallback-scan';
+      f.policy.issuePickup!.projects[0]!.milestone = { number: 9, policy: 'prefer' };
+      const result = await f.run();
+      assert.equal(result.status, 'selection-required');
+      assert.ok('candidates' in result);
+      assert.equal(result.candidates[0]!.pickupScope, 'fallback');
+      const assigned = await f.run({
+        selection: {
+          issueNodeId: f.item.nodeId,
+          rationale: 'ready fallback',
+          fallback: { repository: 'owner/repo', reason: 'preferred milestone is exhausted' },
+        },
+      });
+      assert.equal(assigned.status, 'assigned');
+    });
+
+    for (const reason of ['archived', 'disabled', 'excluded'] as const) {
+      it(`should report a skipped ${reason} repository as an ordinary scan outcome in ${runtime}`, async () => {
+        const f = fixture(runtime);
+        if (reason === 'excluded') f.policy.routing = ['!owner/repo'];
+        else f.repository[reason] = true;
+        const result = await f.run();
+        assert.equal(result.status, 'empty');
+        assert.ok(result.allowances?.[0]?.code);
+        assert.equal(f.effects.writes, 0);
+        const other = f.addRepository('other');
+        other.repository.archived = false;
+        other.repository.disabled = false;
+        f.policy.issuePickup!.projects.push({
+          repository: 'owner/other',
+          milestone: { number: 10 },
+          limit: 1,
+        });
+        if (reason === 'excluded') f.policy.routing.push('owner/*');
+        f.tx.runId = 'mixed-repository-scan';
+        const mixed = await f.run();
+        assert.equal(mixed.status, 'selection-required');
+        assert.ok('candidates' in mixed);
+        assert.deepEqual(
+          mixed.candidates.map((entry) => entry.nodeId),
+          [other.items.get(f.item.number)!.nodeId],
+        );
+      });
+    }
+
     it(`should compare preferred suitability before selecting eligible fallback in ${runtime}`, async () => {
       const f = fixture(runtime);
       f.policy.issuePickup!.projects[0]!.milestone = { number: [10], policy: 'prefer' };

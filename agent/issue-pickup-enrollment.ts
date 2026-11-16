@@ -7,7 +7,6 @@ import { Value } from 'typebox/value';
 
 import AssignmentClaimStore from './tasks/dispatch/assignment-claim-store.ts';
 import { issuePickupEnrollmentSchema, issuePickupPolicyDigest } from './issue-pickup-authority.ts';
-import issuePickupScope from './issue-pickup-scope.ts';
 import { pickupMilestones } from '../channels/github/issue-pickup-projects.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import type { IssuePickupClient } from '../channels/github/provider/issue-pickup-client.ts';
@@ -96,28 +95,30 @@ export default class IssuePickupEnrollmentStore {
     const targets = new Map<string, string | undefined>();
     for (const project of pickup.projects) {
       const [owner, name] = project.repository.split('/') as [string, string];
-      if (name === '*') {
-        for (const reference of pickupMilestones(project)) {
-          const [milestoneOwner, repo] = reference.repository.split('/') as [string, string];
+      const repository = name === '*' ? undefined : await input.client.getRepository(owner, name);
+      if (
+        repository &&
+        `${repository.owner.login}/${repository.name}`.toLowerCase() !==
+          project.repository.toLowerCase()
+      )
+        throw new IntakeError('issue-pickup-repository-changed');
+      let milestoneNodeId: string | undefined;
+      for (const reference of pickupMilestones(project)) {
+        const [milestoneOwner, repo] = reference.repository.split('/') as [string, string];
+        if (reference.repository !== project.repository.toLowerCase()) {
           const target = await input.client.getRepository(milestoneOwner, repo);
           if (`${target.owner.login}/${target.name}`.toLowerCase() !== reference.repository)
             throw new IntakeError('issue-pickup-milestone-invalid');
-          const milestone = await input.client.getMilestone?.(
-            milestoneOwner,
-            repo,
-            reference.number,
-          );
-          if (!milestone || milestone.number !== reference.number || milestone.state !== 'open')
-            throw new IntakeError('issue-pickup-milestone-invalid');
         }
-        continue;
+        const milestone = await input.client.getMilestone?.(milestoneOwner, repo, reference.number);
+        if (!milestone || milestone.number !== reference.number)
+          throw new IntakeError('issue-pickup-milestone-invalid');
+        milestoneNodeId ??= milestone.nodeId;
       }
-      const repository = await input.client.getRepository(owner, name);
-      const milestone = await issuePickupScope(input.policy, input.client, repository);
-      if (!milestone) throw new IntakeError('issue-pickup-milestone-invalid');
+      if (!repository) continue;
       if (targets.has(repository.nodeId))
         throw new IntakeError('issue-pickup-repository-duplicate');
-      targets.set(repository.nodeId, milestone.milestoneNodeIds[0]);
+      targets.set(repository.nodeId, milestoneNodeId);
     }
     // keep the original enrollment shape readable by existing intake receipts.
     // namespace enrollment has no repository identity; selected effects always bind a real one.

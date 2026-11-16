@@ -16,6 +16,7 @@ import openclawIntakeJobs from './openclaw-intake-policy.ts';
 import automationReportName from './automation-report-name.ts';
 import { issuePickupAutomationId, issuePickupErrorCode } from './issue-pickup-jobs.ts';
 
+import { GitHubWorkEventClientError } from '../../channels/github/provider/work-event-api-client.ts';
 import { nativeObject } from '../../utils/native-object.ts';
 import {
   isOperatorAutomationGateway,
@@ -53,6 +54,7 @@ import {
   type AgentSystemLifecycleContribution,
   type AgentSystemLifecycleFinding,
   type AgentSystemLifecycleOutcome,
+  type AgentSystemLifecycleWarning,
   type AgentSystemLifecycleReconcileResult,
 } from '../../core/lifecycle-registry.ts';
 import type AgentManifestService from '../../manifest/service.ts';
@@ -819,6 +821,7 @@ export default class AutomationService {
       };
     const request = this.dependencies.request;
     const outcomes: AgentSystemLifecycleOutcome[] = [];
+    const warnings: AgentSystemLifecycleWarning[] = [];
     try {
       return await store.withLock(async () => {
         const ledger = await store.read();
@@ -981,10 +984,29 @@ export default class AutomationService {
             throw new AutomationError(
               automationModelUnavailableCode(unavailableModels.get(job.id)!),
             );
-          const pickup =
-            job.id === issuePickupAutomationId && job.enabled
-              ? await this.dependencies.pickup?.prepare(manifest, context.workspaceDir)
-              : undefined;
+          let pickup:
+            | Awaited<ReturnType<NonNullable<AutomationServiceDependencies['pickup']>['prepare']>>
+            | undefined;
+          try {
+            pickup =
+              job.id === issuePickupAutomationId && job.enabled
+                ? await this.dependencies.pickup?.prepare(manifest, context.workspaceDir)
+                : undefined;
+          } catch (error) {
+            const code =
+              error instanceof GitHubWorkEventClientError
+                ? error.code
+                : issuePickupErrorCode(error);
+            const diagnostic = {
+              component: 'automations',
+              stepId: job.id,
+              code,
+              message: `Issue pickup configuration could not be prepared (${code}); other automations continue.`,
+            };
+            outcomes.push({ ...diagnostic, status: 'skipped' });
+            warnings.push(diagnostic);
+            continue;
+          }
           if (job.id === issuePickupAutomationId && job.enabled && !pickup)
             throw new AutomationError('issue-pickup-activation-required');
           const effective = effectiveAutomation(job, context);
@@ -1182,7 +1204,7 @@ export default class AutomationService {
             message: `Automation ${record.id} is disabled; ownership and native history are retained.`,
           });
         }
-        return { outcomes, warnings: [] };
+        return { outcomes, warnings };
       });
     } catch (error) {
       const pickupCode = issuePickupErrorCode(error);
@@ -1200,7 +1222,7 @@ export default class AutomationService {
         error instanceof AutomationError ? { cause: error } : undefined,
         undefined,
         undefined,
-        { outcomes, warnings: [], unattempted: [{ component: 'automations' }] },
+        { outcomes, warnings, unattempted: [{ component: 'automations' }] },
       );
     }
   }
