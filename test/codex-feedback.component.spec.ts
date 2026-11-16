@@ -1329,8 +1329,11 @@ describe('agent/codex-feedback', () => {
     assert.ok(Object.keys(state.records[0]!.feedback!.watermarks!).length);
   });
   it('should preserve the incoming body and attribution without outer quotes or a private result', async () => {
+    const marker = `<!-- agent-system-github-publication:manual-response:${'a'.repeat(32)} -->`;
     const body =
-      '@receiver **question** for @Octo-Cat\n\n> quoted context\n\n```ts\nconst value = "@code";\n```\n\nperson@example.com';
+      '@receiver **question** for @Octo-Cat\n\n> quoted context\n\n```ts\nconst value = "@code";\n```\n\nperson@example.com' +
+      '\n\n' +
+      marker;
     const ref = await prepare(account, body);
     const attempt = (await store.read()).records[0]!.feedback!.events[0]!.attempt!;
     assert.ok(
@@ -1339,6 +1342,7 @@ describe('agent/codex-feedback', () => {
     assert.ok(attempt.request.prompt.includes('[@Octo-Cat](https://github.com/Octo-Cat)'));
     assert.ok(attempt.request.prompt.includes('const value = "@code";'));
     assert.ok(attempt.request.prompt.includes('person@example.com'));
+    assert.ok(!attempt.request.prompt.includes(marker));
     assert.ok(attempt.request.prompt.includes('> quoted context'));
     assert.ok(attempt.request.prompt.includes('#issuecomment-42)'));
     sent = true;
@@ -1348,6 +1352,7 @@ describe('agent/codex-feedback', () => {
     assert.ok('presentation' in context && typeof context.presentation === 'string');
     assert.ok(attempt.request.prompt.startsWith(context.presentation));
     assert.ok(context.presentation.includes('from [@receiver]'));
+    assert.ok(!context.presentation.includes(marker));
     assert.ok('source' in context);
     assert.equal(context.source.body, body);
     const retained = (await store.read()).records[0]!.feedback!.events[0]!;

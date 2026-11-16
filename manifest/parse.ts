@@ -1,6 +1,6 @@
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
-import { isAlias, parseDocument, visit } from 'yaml';
+import { isAlias, isCollection, isPair, parseDocument, visit } from 'yaml';
 
 import normalizeAutomations, {
   automationFileSchema,
@@ -28,6 +28,7 @@ import { validateGitHubNotificationPolicy } from '../channels/github/notificatio
 import { decodeAgentMemory, externalAgentMemorySchema } from './memory-schema.ts';
 import { decodeAgentModels, externalAgentModelsSchema } from './models-schema.ts';
 import { decodeBackup, externalBackupSchema } from './backup-schema.ts';
+import { maximumManifestBytes } from './read-bytes.ts';
 import type { AgentManifest, ManifestDiagnostic, ParsedAgentManifest } from './types.ts';
 import { decodeEnvironmentSetValue, externalOpSecretReferenceSchema } from './value-schemas.ts';
 
@@ -35,6 +36,7 @@ const externalAgentManifestSchema = Type.Object(
   {
     'schema-version': Type.Literal(1),
     debug: Type.Optional(Type.Boolean()),
+    definitions: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
     automations: Type.Optional(externalAutomationsSchema),
     agent: externalAgentSectionSchema,
     environment: Type.Optional(
@@ -264,13 +266,15 @@ function decodeManifest(value: ExternalAgentManifest): AgentManifest {
   };
 }
 
-/** Parse YAML without permitting aliases, anchors, tags, or schema extensions. */
+/** resolve document-local YAML reuse before schema validation or recursive consumers. */
 export function parseManifestYaml(
   source: string,
 ): { status: 'valid'; value: unknown } | { status: 'invalid'; diagnostics: ManifestDiagnostic[] } {
   const document = parseDocument(source, {
+    schema: 'core',
     customTags: [],
-    merge: false,
+    resolveKnownTags: false,
+    merge: true,
     prettyErrors: false,
     strict: true,
     uniqueKeys: true,
@@ -284,59 +288,81 @@ export function parseManifestYaml(
         : 'The manifest contains invalid YAML.',
     severity: 'error',
   }));
-  let hasAlias = false;
-  let hasAnchor = false;
-  let hasTag = false;
-
+  const supportedTags = new Set(
+    ['str', 'int', 'float', 'bool', 'null', 'map', 'seq', 'merge'].map(
+      (name) => `tag:yaml.org,2002:${name}`,
+    ),
+  );
   visit(document, (_key, node) => {
-    if (!node || typeof node !== 'object') return;
-    if (isAlias(node)) hasAlias = true;
-    if ('anchor' in node && typeof node.anchor === 'string' && node.anchor.length > 0) {
-      hasAnchor = true;
+    if (
+      node &&
+      typeof node === 'object' &&
+      'tag' in node &&
+      typeof node.tag === 'string' &&
+      !supportedTags.has(node.tag)
+    ) {
+      diagnostics.push({
+        code: 'yaml-tag',
+        message: 'Only YAML core tags and the merge extension are supported.',
+        severity: 'error',
+      });
     }
-    if ('tag' in node && typeof node.tag === 'string' && node.tag.length > 0) hasTag = true;
   });
-
-  if (hasAlias) {
-    diagnostics.push({
-      code: 'yaml-alias',
-      message: 'YAML aliases are not supported.',
-      severity: 'error',
-    });
-  }
-  if (hasAnchor) {
-    diagnostics.push({
-      code: 'yaml-anchor',
-      message: 'YAML anchors are not supported.',
-      severity: 'error',
-    });
-  }
-  if (hasTag) {
-    diagnostics.push({
-      code: 'yaml-tag',
-      message: 'Explicit YAML tags are not supported.',
-      severity: 'error',
-    });
-  }
   if (diagnostics.length > 0) return { status: 'invalid', diagnostics };
 
-  let value: unknown;
+  // YAML permits recursive graphs; manifest merging and schema consumers require a DAG.
+  const active = new Set<object>();
+  const sizes = new Map<object, number>();
+  function checkGraph(node: unknown): number {
+    if (!node || typeof node !== 'object') return 1;
+    const known = sizes.get(node);
+    if (known !== undefined) return known;
+    if (active.has(node)) throw new Error('yaml-cycle');
+    active.add(node);
+    let size = 1;
+    if (isAlias(node)) {
+      const target = node.resolve(document);
+      if (!target) throw new Error('yaml-alias-unresolved');
+      size += checkGraph(target);
+    } else if (isCollection(node)) {
+      for (const item of node.items) size += checkGraph(item);
+    } else if (isPair(node)) {
+      size += checkGraph(node.key) + checkGraph(node.value);
+    }
+    active.delete(node);
+    // Merge aliases bypass toJS's alias counter. Bound expanded traversal as well,
+    // using the existing input budget: no more nodes than the permitted input bytes.
+    if (size > maximumManifestBytes) throw new Error('yaml-expansion-limit');
+    sizes.set(node, size);
+    return size;
+  }
   try {
-    value = document.toJS({ maxAliasCount: 0 });
-  } catch {
+    checkGraph(document.contents);
+    // Keep the library's bounded alias-expansion default rather than disabling its protection.
+    return { status: 'valid', value: document.toJS() };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : '';
+    const code = ['yaml-cycle', 'yaml-alias-unresolved', 'yaml-expansion-limit'].includes(reason)
+      ? reason
+      : 'yaml-conversion';
     return {
       status: 'invalid',
       diagnostics: [
         {
-          code: 'yaml-conversion',
-          message: 'The YAML document could not be converted safely.',
+          code,
+          message:
+            code === 'yaml-cycle'
+              ? 'YAML aliases must not form cycles.'
+              : code === 'yaml-alias-unresolved'
+                ? 'YAML aliases must reference an earlier anchor in the same document.'
+                : code === 'yaml-expansion-limit'
+                  ? 'YAML expanded traversal exceeds the manifest size budget; reduce nested alias reuse.'
+                  : 'YAML conversion failed: check merge operands and alias expansion limits.',
           severity: 'error',
         },
       ],
     };
   }
-
-  return { status: 'valid', value };
 }
 
 /** Parse one manifest without reading files or executing setup commands. */

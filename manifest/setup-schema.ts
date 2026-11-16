@@ -212,3 +212,20 @@ export function normalizeAgentSetup(value: unknown, fieldPath = '/setup'): Norma
     ? { status: 'invalid', diagnostics }
     : { status: 'valid', setup: { steps }, diagnostics: [] };
 }
+
+/** select external named steps without treating helper siblings as setup configuration. */
+export function normalizeSetupFile(value: unknown, fieldPath: string): NormalizedAgentSetup {
+  if (Array.isArray(value)) return normalizeAgentSetup({ steps: value }, fieldPath);
+  if (isRecord(value) && Object.hasOwn(value, 'steps')) {
+    if (Object.hasOwn(value, 'apply') || Object.hasOwn(value, 'check'))
+      return {
+        status: 'invalid',
+        diagnostics: [diagnostic('manifest-setup-mixed-forms', fieldPath)],
+      };
+    return normalizeAgentSetup(
+      { steps: value.steps, ...(Object.hasOwn(value, 'shell') ? { shell: value.shell } : {}) },
+      fieldPath,
+    );
+  }
+  return normalizeAgentSetup(value, fieldPath);
+}

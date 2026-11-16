@@ -249,9 +249,8 @@ backup: { include: [], exclude: [] }
     ['', 'manifest-schema'],
     ['agent: [', 'yaml-parse-error'],
     ['agent: { name: one, name: two }', 'yaml-duplicate-key'],
-    ['agent: &local { name: private }', 'yaml-anchor'],
-    ['agent: *local', 'yaml-alias'],
-    ['agent: !!map { name: private }', 'yaml-tag'],
+    ['agent: *local', 'yaml-alias-unresolved'],
+    ['agent: !custom { name: private }', 'yaml-tag'],
   ];
   for (const [overlay, code] of invalidOverlays) {
     it(`should reject and attribute ${code} from ${JSON.stringify(overlay)}`, async () => {
@@ -297,7 +296,8 @@ environment:
   dotenv: [missing-local.env]
   set: { LOCAL: machine-${index}, SECRET: { from-op: 'op://vault/item/password' } }
 github: { username: data, schema-version: 3, runtimes: [codex], routing: ['tanaabased/*'], issue-assignment: {allowed: ${index === 0 ? '[]' : '[{login: operator, node-id: U_operator}]'}} }
-setup-agent: { apply: 'touch must-not-run' }
+definitions: {setup: &setup {apply: 'touch must-not-run'}}
+setup-agent: {<<: *setup}
 `,
       );
       const before = await readdir(f.root, { recursive: true });
@@ -328,6 +328,23 @@ setup-agent: { apply: 'touch must-not-run' }
       effective.push(openclaw.manifest);
     }
     assert.notDeepEqual(effective[0], effective[1]);
+  });
+
+  it('should reject cyclic yaml before either runtime consumes helpers', async () => {
+    const f = await fixture();
+    await writeFile(f.overlayPath, 'definitions: {cycle: &cycle [*cycle]}');
+    const openclaw = await f.service.loadForRuntimeContext(
+      { agentId: 'data' },
+      'before_prompt_build',
+    );
+    const codex = await previewCodexWorkspace(f.root);
+    assert.equal(openclaw.status, 'invalid');
+    assert.ok(openclaw.diagnostics.some(({ code }) => code === 'yaml-cycle'));
+    assert.equal(codex.status, 'ready');
+    if (codex.status === 'ready') {
+      assert.equal(codex.manifest.status, 'invalid');
+      assert.ok(codex.manifest.diagnostics.some(({ code }) => code === 'yaml-cycle'));
+    }
   });
 
   it('should preserve authoritative workspace binding even when another workspace claims the same agent', async () => {

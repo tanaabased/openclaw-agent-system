@@ -9,7 +9,7 @@ import mergeManifestDocuments, {
   type ManifestSources,
 } from './merge-documents.ts';
 import readManifestDocument from './read-document.ts';
-import { normalizeAgentSetup } from './setup-schema.ts';
+import { normalizeSetupFile } from './setup-schema.ts';
 import type { AgentManifest, ManifestDiagnostic } from './types.ts';
 
 export interface AgentManifestValidationCheck {
@@ -120,11 +120,11 @@ async function loadSetupFile(
         ...diagnostic,
         fieldPath,
         sourcePath: path,
-        message: `Setup file ${JSON.stringify(reference)} contains invalid YAML (${diagnostic.code}).`,
+        message: `Setup file ${JSON.stringify(reference)} contains invalid YAML: ${diagnostic.message} (${diagnostic.code}).`,
       })),
     };
   }
-  const normalized = normalizeAgentSetup(yaml.value, fieldPath);
+  const normalized = normalizeSetupFile(yaml.value, fieldPath);
   if (normalized.status === 'invalid') {
     return {
       status: 'invalid',

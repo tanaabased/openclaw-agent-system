@@ -294,11 +294,11 @@ environment:
     );
   });
 
-  it('should reject yaml anchors and aliases', () => {
-    assert.deepEqual(
-      diagnosticCodes('schema-version: &version 1\nagent:\n  id: tanaabot\n  name: *version\n'),
-      new Set(['yaml-anchor', 'yaml-alias']),
+  it('should accept yaml anchors and aliases before schema validation', () => {
+    const parsed = parseAgentManifest(
+      'schema-version: 1\nagent: &identity {id: tanaabot}\ndefinitions: {identity: *identity}\n',
     );
+    assert.equal(parsed.status, 'valid');
   });
 
   it('should reject explicit yaml tags', () => {

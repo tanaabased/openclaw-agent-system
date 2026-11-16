@@ -1,6 +1,7 @@
+common: &common { runtimes: [openclaw] }
 steps:
   - id: agent-ready
-    runtimes: [openclaw]
+    <<: *common
     check:
       command: test
       args: [-f, agent-ready]

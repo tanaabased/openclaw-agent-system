@@ -33,8 +33,33 @@ agent.yaml                 # shorthand
 If both base files exist, Agent System uses the preferred file without merging them.
 Loading a manifest checks its structure without resolving environment values or changing state.
 The strict loader rejects unknown or incorrectly cased keys, unsafe symlinks, files
-larger than 1 MiB, invalid UTF-8, duplicate keys, and unsupported YAML features such as
-anchors, aliases, and explicit tags.
+larger than 1 MiB, invalid UTF-8, duplicate keys, unresolved aliases, cycles, and
+unsupported tags. All manifest and included setup/automation YAML uses YAML 1.2
+core scalar rules, core tags such as `!!str`, and YAML's shallow merge extension.
+Alias expansion is bounded by the YAML library's safety limit; expanded traversal
+(including merge aliases) may not exceed one node per permitted input byte.
+
+Use the optional `definitions` mapping in `agent.yaml` or `agent.local.yaml` to
+hold arbitrary helper data. Helpers become configuration only where you explicitly
+reference them; `definitions` is omitted from the normalized manifest. Other
+manifest keys remain strict.
+
+```yaml
+schema-version: 1
+agent: { id: tanaabot }
+definitions:
+  common: &common { shell: bash, apply: mkdir -p reports }
+setup-agent:
+  <<: *common
+  apply: mkdir -p local-reports
+```
+
+Explicit keys override merged keys. Merges are shallow: replacing a nested mapping
+replaces that entire mapping, not individual fields within it. Anchors and aliases
+can appear anywhere valid in a document, but cannot refer across files. Each base
+and local manifest resolves its YAML independently before the existing
+[machine-local overlay merge](#machine-local-overrides); changing only a local
+helper does not rewrite an alias already resolved in the base manifest.
 
 A minimal manifest binds one workspace to one agent:
 
@@ -242,9 +267,22 @@ automations:
 
 File references resolve relative to the file that contains them. Commands still run from
 the workspace root. References stay within the workspace and follow the
-[loader's size and encoding rules](#discovery). External YAML contains a list, without
-recursive inclusion. Missing or invalid references fail validation rather than declaring
-no jobs.
+[loader's size and encoding rules](#discovery). External YAML accepts either the
+existing bare list or a mapping whose `automations` field contains that list:
+
+```yaml
+common: &common { enabled: false, runtimes: [codex] }
+automations:
+  - <<: *common
+    id: sync
+    schedule: '0 0 * * *'
+    prompt: Synchronize automations.
+```
+
+Other wrapper fields may contain arbitrary helper data and are not returned as
+jobs or read as includes. Selected jobs remain strictly validated. There is no
+recursive inclusion; missing or malformed `automations` fails validation rather
+than declaring no jobs. Prompt and guidance files remain plain text, not YAML.
 
 #### Persistent conversations
 
@@ -810,8 +848,7 @@ setup-agent:
 ```
 
 Either top-level key may use `file` to name one YAML file relative to the
-containing `agent.yaml`. The file contains the setup value itself, without a
-second wrapper:
+containing `agent.yaml`. The file contains the setup value itself:
 
 ```yaml
 # agent.yaml
@@ -821,15 +858,22 @@ setup-agent:
 
 ```yaml
 # setup.yaml
+common: &common { runtimes: [codex] }
 shell: bash
 steps:
-  - id: directories
+  - <<: *common
+    id: directories
     check: test -d repos
     apply: mkdir -p repos
 ```
 
 The referenced file may use any inline setup form shown below: a scalar script,
-a short mapping, or named steps. `file` cannot be combined with inline fields or
+a short mapping, or named steps. External files also accept a bare list of named
+steps. A mapping with `steps` selects that list and optional `shell`; other siblings
+may hold arbitrary helper data and are not execution configuration. Individual
+steps remain strict. Missing or malformed steps fail validation, and `steps`
+cannot mix with `apply` or `check`. Inline setup mappings remain strict.
+`file` cannot be combined with inline fields or
 another file reference. Absolute paths, URLs, and paths escaping the workspace
 (including through symlinks) are rejected. Commands still run from the bound
 workspace, not from the setup file's directory.

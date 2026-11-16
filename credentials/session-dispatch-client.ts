@@ -1,4 +1,5 @@
 import { createPublicKey, sign } from 'node:crypto';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 import {
   DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS,
@@ -32,8 +33,10 @@ import {
 import { sessionDispatchScopes } from '../agent/lifecycle/session-dispatch-requirements.ts';
 import { openclawSessionCreateTimeoutMs } from '../agent/openclaw-session-timeout.ts';
 import automationGatewayDiagnostic from '../agent/automations/automation-gateway-diagnostic.ts';
+import retrySessionRead, { staleSessionRead } from '../agent/openclaw-session-read-retry.ts';
 
 interface SessionDispatchClientDependencies {
+  readRecovery?: Parameters<typeof sessionDispatchRequest>[2];
   createClient(
     options: GatewayClientOptions,
   ): Pick<GatewayClient, 'start' | 'stop' | 'stopAndWait' | 'request'>;
@@ -197,14 +200,17 @@ export async function useSessionDispatchClient<T>(
     assertCurrent();
     return await operation(
       sessionDispatchRequest(
-        (method, params) =>
-          method === 'sessions.create'
-            ? client.request(method, params, {
-                timeoutMs: openclawSessionCreateTimeoutMs,
-                signal: authority.signal,
-              })
-            : client.request(method, params),
+        (method, params, options) =>
+          options
+            ? client.request(method, params, options)
+            : method === 'sessions.create'
+              ? client.request(method, params, {
+                  timeoutMs: openclawSessionCreateTimeoutMs,
+                  signal: authority.signal,
+                })
+              : client.request(method, params),
         authority,
+        dependencies.readRecovery,
       ),
       hello,
     );
@@ -227,8 +233,16 @@ export async function useSessionDispatchClient<T>(
 
 /** admit workflow method families; gateway grants and handler policy still govern every call. */
 export function sessionDispatchRequest(
-  request: DispatchRequest,
+  request: (
+    method: string,
+    params: Record<string, unknown>,
+    options?: { timeoutMs: number; signal?: AbortSignal },
+  ) => Promise<unknown>,
   authority: DispatchAuthority,
+  dependencies: { sleep(ms: number, signal?: AbortSignal): Promise<unknown>; now(): number } = {
+    sleep: (ms, signal) => sleep(ms, undefined, { signal }),
+    now: () => performance.now(),
+  },
 ): DispatchRequest {
   const assertCurrent = () => {
     authority.signal?.throwIfAborted();
@@ -271,8 +285,16 @@ export function sessionDispatchRequest(
     const operation = Object.hasOwn(operations, method)
       ? operations[method]
       : method.replaceAll('.', '-').toLowerCase();
-    const result = await request(method, params).catch((error: unknown) => {
+    const deadline = dependencies.now() + openclawSessionCreateTimeoutMs;
+    const isStale = (error: unknown) =>
+      error instanceof GatewayClientRequestError &&
+      staleSessionRead(method, error.code, error.message);
+    const assertRequestCurrent = async () => {
       assertCurrent();
+      await authority.assertCurrent?.();
+      assertCurrent();
+    };
+    const rejectNative = (error: unknown): never => {
       // preserve only the known settings rejection, never the native model name or prose.
       if (
         method === 'sessions.patch' &&
@@ -290,7 +312,28 @@ export function sessionDispatchRequest(
                 ? 'unavailable-unverified'
                 : 'request-unverified';
       throw new Error(`session-dispatch-${operation}-${reason}`);
-    });
+    };
+    const invoke = (options?: { timeoutMs: number; signal?: AbortSignal }) =>
+      request(method, params, options).catch((error: unknown) => {
+        assertCurrent();
+        if (isStale(error)) throw error;
+        return rejectNative(error);
+      });
+    const result = await invoke()
+      .catch(async (error: unknown) => {
+        if (!isStale(error)) throw error;
+        return retrySessionRead(error, (timeoutMs, signal) => invoke({ timeoutMs, signal }), {
+          ...dependencies,
+          deadline,
+          signal: authority.signal,
+          isStale,
+          assertCurrent: assertRequestCurrent,
+        });
+      })
+      .catch((error: unknown) => {
+        if (isStale(error)) return rejectNative(error);
+        throw error;
+      });
     assertCurrent();
     return result;
   };

@@ -231,7 +231,8 @@ describe('agent/openclaw-feedback', () => {
     return action('context');
   }
   it('should send only the native unquoted comment card without workflow instructions or identifiers', async () => {
-    source.body = '@receiver ask @Octo-Cat. Keep `@code` and person@example.com.';
+    const marker = `<!-- agent-system-github-publication:manual-response:${'a'.repeat(32)} -->`;
+    source.body = '@receiver ask @Octo-Cat. Keep `@code` and person@example.com.' + '\n\n' + marker;
     event.source = JSON.stringify(source);
     event.revision = feedbackRevision(source);
     input.sourcePresentation = feedbackPresentation(event, 'owner/repo');
@@ -242,12 +243,14 @@ describe('agent/openclaw-feedback', () => {
     assert.ok(event.turn!.message.includes('`@code` and person@example.com'));
     assert.ok(event.turn!.message.includes('from [@operator](https://github.com/operator)'));
     assert.ok(event.turn!.message.includes('#issuecomment-42)'));
+    assert.ok(!event.turn!.message.includes(marker));
     assert.ok(!event.turn!.message.startsWith('>'));
     assert.ok(!event.turn!.message.includes(record.id));
     assert.ok(!event.turn!.message.includes(event.id));
     const context = await action('context');
     assert.ok('source' in context);
     assert.equal(context.source.body, source.body);
+    assert.ok('presentation' in context && !String(context.presentation).includes(marker));
     assert.equal(event.source, original);
   });
   it('should answer a delivered comment from a later run without execution metadata', async () => {

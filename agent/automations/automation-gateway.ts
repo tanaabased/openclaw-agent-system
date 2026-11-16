@@ -2,7 +2,11 @@ import { nativeObject } from '../../utils/native-object.ts';
 import { AutomationError } from './automation-errors.ts';
 import { setTimeout } from 'node:timers/promises';
 import type { callGatewayFromCli } from 'openclaw/plugin-sdk/gateway-runtime';
-import retrySessionResolution, { staleSessionInstanceMessage } from './automation-session-retry.ts';
+import retrySessionRead, {
+  isSessionRead,
+  staleSessionRead,
+} from '../openclaw-session-read-retry.ts';
+import automationCompatibilityDiagnostic from './automation-compatibility-diagnostic.ts';
 
 import {
   assertPrivateStateLocksHeld,
@@ -129,7 +133,7 @@ export function createAutomationGateway(
 ): AutomationGateway {
   const request: AutomationGateway = async (method, params) => {
     assertPrivateStateLocksHeld();
-    if (method === 'models.list' || method === 'sessions.resolve') {
+    if (method === 'models.list' || isSessionRead(method)) {
       await waitForReady?.();
       assertPrivateStateLocksHeld();
       privateStateLockSignal()?.throwIfAborted();
@@ -175,16 +179,23 @@ export function createAutomationGateway(
           await import('openclaw/plugin-sdk/gateway-runtime');
         const { default: automationGatewayUnavailable } =
           await import('./automation-gateway-unavailable.ts');
-        if (
-          method === 'sessions.resolve' &&
+        const isStale = (error: unknown) =>
           isGatewayClientRequestError(error) &&
-          error.gatewayCode === ErrorCodes.UNAVAILABLE &&
-          staleSessionInstanceMessage(error.message)
-        ) {
-          return await retrySessionResolution(
+          staleSessionRead(method, error.gatewayCode, error.message);
+        if (isStale(error)) {
+          return await retrySessionRead(
             error,
             (timeoutMs, signal) => invoke(params, timeoutMs, signal),
-            { sleep, now, deadline: resolutionDeadline, signal: privateStateLockSignal() },
+            {
+              sleep,
+              now,
+              deadline: resolutionDeadline,
+              signal: privateStateLockSignal(),
+              isStale,
+              assertCurrent: assertPrivateStateLocksHeld,
+              onRecovery: (evidence) =>
+                automationCompatibilityDiagnostic('automation-session-recovery', evidence),
+            },
           );
         }
         // Native catalog publication can supersede a read during reload/acquisition.

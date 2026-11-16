@@ -434,6 +434,195 @@ describe('credentials/session-dispatch-client', () => {
     }
   });
 
+  it('should pass the remaining read budget and cancellation to the enrolled native client', async () => {
+    let elapsed = 0;
+    let calls = 0;
+    const controller = new AbortController();
+    const params = { agentId: 'owned', offset: 100 };
+    const result = { sessions: [] };
+    assert.equal(
+      await useSessionDispatchClient(
+        {},
+        {
+          version: 1,
+          device: { deviceId: 'a'.repeat(64), privateKeyPem: 'fixture', publicKeyPem: 'fixture' },
+          token: 'fixture',
+        },
+        false,
+        { signal: controller.signal },
+        (request) => request('sessions.list', params),
+        {
+          scheduleDeadline: () => () => {},
+          readRecovery: {
+            now: () => elapsed,
+            async sleep(ms) {
+              elapsed += ms;
+            },
+          },
+          createClient(options) {
+            return {
+              start() {
+                options.onHelloOk!({ auth: { scopes: [] } } as unknown as Parameters<
+                  NonNullable<GatewayClientOptions['onHelloOk']>
+                >[0]);
+              },
+              stop() {},
+              async stopAndWait() {},
+              async request<T>(
+                method: string,
+                input: unknown,
+                requestOptions?: Parameters<GatewayClient['request']>[2],
+              ) {
+                calls++;
+                assert.equal(method, 'sessions.list');
+                assert.equal(input, params);
+                if (calls === 1) {
+                  assert.equal(requestOptions, undefined);
+                  elapsed += 1_000;
+                  throw new GatewayClientRequestError({
+                    code: 'UNAVAILABLE',
+                    message:
+                      'PluginInstanceUnavailableError: Plugin codex was reloaded or disabled; use its current tools.',
+                  });
+                }
+                assert.equal(requestOptions?.timeoutMs, 118_750);
+                assert.equal(requestOptions?.signal, controller.signal);
+                return result as T;
+              },
+            };
+          },
+        },
+      ),
+      result,
+    );
+    assert.equal(calls, 2);
+  });
+
+  for (const method of ['sessions.list', 'sessions.resolve']) {
+    it(`should recover stale ${method} with bounded rpc options and current authority`, async () => {
+      let elapsed = 0;
+      let calls = 0;
+      let checks = 0;
+      const controller = new AbortController();
+      const params = { agentId: 'owned', offset: 100 };
+      const result = { sessions: [{ key: 'retained' }] };
+      const delays: number[] = [];
+      const request = sessionDispatchRequest(
+        async (name, input, options) => {
+          calls++;
+          assert.equal(name, method);
+          assert.equal(input, params);
+          if (calls > 1) {
+            assert.equal(options?.signal, controller.signal);
+            assert.equal(options?.timeoutMs, 120_000 - elapsed);
+            assert.ok(checks >= calls, 'must revalidate authority before retrying');
+          }
+          if (elapsed < 20_000)
+            throw new GatewayClientRequestError({
+              code: 'UNAVAILABLE',
+              retryable: false,
+              message:
+                'PluginInstanceUnavailableError: Plugin codex was reloaded or disabled; use its current tools.',
+            });
+          return result;
+        },
+        {
+          signal: controller.signal,
+          async assertCurrent() {
+            checks++;
+          },
+        },
+        {
+          now: () => elapsed,
+          async sleep(ms) {
+            delays.push(ms);
+            elapsed += ms;
+          },
+        },
+      );
+      assert.equal(await request(method, params), result);
+      assert.ok(delays.every((ms) => ms <= 5_000));
+      assert.ok(elapsed < 30_000);
+    });
+  }
+
+  for (const ending of ['deadline', 'cancelled', 'enrollment', 'authority', 'forbidden']) {
+    it(`should stop stale read recovery on ${ending} without replaying after authority loss`, async () => {
+      let elapsed = 0;
+      let calls = 0;
+      let changed = false;
+      const controller = new AbortController();
+      const request = sessionDispatchRequest(
+        async (_method, _params, options) => {
+          calls++;
+          if (ending === 'forbidden' && calls > 1)
+            throw new GatewayClientRequestError({ code: 'FORBIDDEN', message: 'private-token' });
+          if (options) elapsed += Math.min(7_000, options.timeoutMs);
+          throw new GatewayClientRequestError({
+            code: 'UNAVAILABLE',
+            message:
+              'PluginInstanceUnavailableError: Plugin codex was reloaded or disabled; use its current tools.',
+          });
+        },
+        {
+          signal: controller.signal,
+          assertEnrollmentCurrent() {
+            if (changed && ending === 'enrollment') throw new Error(ending);
+          },
+          async assertCurrent() {
+            if (changed && ending === 'authority') throw new Error(ending);
+          },
+        },
+        {
+          now: () => elapsed,
+          async sleep(ms) {
+            elapsed += ms;
+            changed = true;
+            if (ending === 'cancelled') controller.abort(new Error(ending));
+          },
+        },
+      );
+      await assert.rejects(request('sessions.list', {}), {
+        message:
+          ending === 'deadline'
+            ? 'session-dispatch-sessions-list-unavailable-unverified'
+            : ending === 'forbidden'
+              ? 'session-dispatch-sessions-list-forbidden'
+              : ending,
+      });
+      if (ending === 'deadline') {
+        assert.equal(elapsed, 120_000);
+        assert.ok(calls < 20);
+      } else assert.equal(calls, ending === 'forbidden' ? 2 : 1);
+    });
+  }
+
+  it('should not retry stale writes, other methods, or unrelated read failures', async () => {
+    const stale =
+      'PluginInstanceUnavailableError: Plugin codex was reloaded or disabled; use its current tools.';
+    for (const [method, code, message] of [
+      ['sessions.create', 'UNAVAILABLE', stale],
+      ['sessions.patch', 'UNAVAILABLE', stale],
+      ['chat.send', 'UNAVAILABLE', stale],
+      ['sessions.futureOperation', 'UNAVAILABLE', stale],
+      ['models.list', 'UNAVAILABLE', stale],
+      ['sessions.list', 'FORBIDDEN', stale],
+      ['sessions.resolve', 'UNAVAILABLE', 'private-token'],
+    ]) {
+      let calls = 0;
+      const request = sessionDispatchRequest(
+        async () => {
+          calls++;
+          throw new GatewayClientRequestError({ code: code!, message: message! });
+        },
+        {},
+        { now: () => 0, sleep: async () => assert.fail('must not retry') },
+      );
+      await assert.rejects(request(method!, {}));
+      assert.equal(calls, 1);
+    }
+  });
+
   it('should identify rejected methods without exposing provider payloads or retrying', async () => {
     for (const [method, expected] of [
       ['sessions.create', 'session-dispatch-create-request-invalid'],
