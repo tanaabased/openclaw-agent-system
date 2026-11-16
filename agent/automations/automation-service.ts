@@ -49,6 +49,7 @@ import AutomationStore, {
 } from './automation-store.ts';
 import {
   AgentSystemLifecycleError,
+  type AgentSystemLifecycleAutomationFacts,
   type AgentSystemLifecycleContribution,
   type AgentSystemLifecycleFinding,
   type AgentSystemLifecycleOutcome,
@@ -56,6 +57,7 @@ import {
 } from '../../core/lifecycle-registry.ts';
 import type AgentManifestService from '../../manifest/service.ts';
 import type { AgentManifest } from '../../manifest/types.ts';
+import type { ResolvedAutomation } from '../../manifest/automation-schema.ts';
 import type { DispatchRequest } from '../../credentials/session-dispatch.ts';
 import { assertPrivateStateLocksHeld } from '../../core/private-state-lock-context.ts';
 
@@ -161,6 +163,30 @@ export default class AutomationService {
       { root: this.dependencies.root, scope: store.scope, runtime: 'openclaw' },
       automationThreadGateway(request, { ...context, scope: store.scope }),
     );
+  }
+
+  private reporting(
+    id: string,
+    context: AutomationProjectionContext,
+    schedulerName?: unknown,
+    job?: ResolvedAutomation,
+  ): AgentSystemLifecycleAutomationFacts {
+    const thread = context.threads?.get(id);
+    return {
+      automationName: automationReportName(schedulerName, id),
+      ...(thread
+        ? {
+            automationRouting: {
+              mode: 'persistent' as const,
+              threadId: thread.id,
+              outcome: thread.outcome,
+            },
+            ...(thread.settings ? { settings: thread.settings } : {}),
+          }
+        : job && !automationThreadSelection(job, 'openclaw')
+          ? { automationRouting: { mode: 'independent' as const } }
+          : {}),
+    };
   }
 
   contribution(): AgentSystemLifecycleContribution {
@@ -548,7 +574,15 @@ export default class AutomationService {
         } catch {
           // conflicting ownership cannot supply a scheduler identity for presentation.
         }
-        return { ...item, automationName: automationReportName(name, id) };
+        return {
+          ...item,
+          ...this.reporting(
+            id,
+            context,
+            name,
+            declarations.find((job) => job.id === id),
+          ),
+        };
       });
     const findings: AgentSystemLifecycleFinding[] = [];
     const unavailableModels = await automationModelAuth(
@@ -929,6 +963,7 @@ export default class AutomationService {
           outcomes.push({
             component: 'automations',
             stepId: record.id,
+            ...this.reporting(record.id, context),
             code: 'automation-retired',
             status: 'updated',
             message: `Automation ${record.id} is retired; historical ownership evidence is retained.`,
@@ -936,7 +971,10 @@ export default class AutomationService {
         }
         for (const job of declarations) {
           if (skipped.has(job.id)) {
-            outcomes.push(automationModelSkipped(job.id, unavailableModels.get(job.id)!));
+            outcomes.push({
+              ...automationModelSkipped(job.id, unavailableModels.get(job.id)!),
+              ...this.reporting(job.id, context, undefined, job),
+            });
             continue;
           }
           if (unavailableModels.has(job.id))
@@ -1027,7 +1065,10 @@ export default class AutomationService {
                   source: 'cron.add',
                   reason: 'missing-auth',
                 });
-                outcomes.push(automationModelSkipped(job.id, 'missing-auth'));
+                outcomes.push({
+                  ...automationModelSkipped(job.id, 'missing-auth'),
+                  ...this.reporting(job.id, context, undefined, job),
+                });
                 continue;
               }
               throw error;
@@ -1085,6 +1126,7 @@ export default class AutomationService {
           outcomes.push({
             component: 'automations',
             stepId: job.id,
+            ...this.reporting(job.id, context, native.name, job),
             code: 'automation-synchronized',
             status: created ? 'created' : changed ? 'updated' : 'unchanged',
             message: `Automation ${job.id} is synchronized (${context.threads?.get(job.id)?.outcome ?? 'independent'}${context.threads?.has(job.id) ? ': ' + context.threads.get(job.id)!.id : ''}).`,
@@ -1102,6 +1144,7 @@ export default class AutomationService {
               outcomes.push({
                 component: 'automations',
                 stepId: record.id,
+                ...this.reporting(record.id, context),
                 code: 'automation-retired',
                 status: 'unchanged',
                 message: `Automation ${record.id} remains retired.`,
@@ -1133,6 +1176,7 @@ export default class AutomationService {
           outcomes.push({
             component: 'automations',
             stepId: record.id,
+            ...this.reporting(record.id, context, before.name),
             code: 'automation-disabled-retained',
             status: before.enabled ? 'updated' : 'unchanged',
             message: `Automation ${record.id} is disabled; ownership and native history are retained.`,

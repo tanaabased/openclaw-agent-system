@@ -33,11 +33,7 @@ async function doctorAgentSystem(options: DoctorAgentSystemOptions): Promise<voi
       options.output,
       lifecycleTableLines(
         orderDoctorFindings(result.findings).map((finding) =>
-          lifecycleDetails(
-            finding,
-            manifest.manifest.automations ?? [],
-            manifest.manifest.agent.id,
-          ),
+          lifecycleDetails(finding, manifest.manifest.agent.id),
         ),
       ),
       result.workspaceDir,

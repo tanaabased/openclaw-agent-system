@@ -197,9 +197,7 @@ async function installAgentSystem(options: InstallAgentSystemOptions): Promise<v
       writeCliLifecycleTable(
         options.output,
         lifecycleTableLines(
-          installed.outcomes.map((outcome) =>
-            lifecycleDetails(outcome, result.manifest.automations ?? []),
-          ),
+          installed.outcomes.map((outcome) => lifecycleDetails(outcome, result.manifest.agent.id)),
         ),
         installed.workspaceDir,
         options.styles,
@@ -264,7 +262,7 @@ async function installAgentSystem(options: InstallAgentSystemOptions): Promise<v
       writeCliLifecycleTable(
         options.output,
         lifecycleTableLines(
-          outcomes.map((outcome) => lifecycleDetails(outcome, result.manifest.automations ?? [])),
+          outcomes.map((outcome) => lifecycleDetails(outcome, result.manifest.agent.id)),
         ),
         result.scope.workspaceDir,
         options.styles,

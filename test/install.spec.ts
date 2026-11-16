@@ -462,10 +462,30 @@ describe('cli/install', () => {
       {
         component: 'automations',
         stepId: 'backup-drive-nightly',
+        automationRouting: { mode: 'independent' as const },
         code: 'automation-synchronized',
         status: 'unchanged' as const,
         message: 'Automation backup-drive-nightly is synchronized (independent).',
       },
+      {
+        component: 'automations',
+        stepId: 'review',
+        automationName: 'TANAABOT: REVIEW',
+        automationRouting: {
+          mode: 'persistent' as const,
+          threadId: 'native-12345678',
+          outcome: 'reused',
+        },
+        code: 'automation-synchronized',
+        status: 'updated' as const,
+        message: 'Automation review is synchronized (reused: native-12345678).',
+      },
+      ...['agent', 'tool-access'].map((component) => ({
+        component,
+        code: 'fixture-ready',
+        status: 'unchanged' as const,
+        message: 'Identity matches.',
+      })),
     ];
     for (const failed of [false, true]) {
       const install = failed
@@ -488,6 +508,15 @@ describe('cli/install', () => {
           assert.match(text, /automation\s+unchanged\s+name: BACKUP DRIVE NIGHTLY/u);
           assert.ok(text.replace(/\s+/gu, ' ').includes('mode: independent'));
           assert.equal(text.includes('backup-drive-nightly'), false);
+          assert.ok(text.includes('name: TANAABOT: REVIEW'));
+          assert.ok(
+            text
+              .replace(/\s+/gu, ' ')
+              .includes('mode: persistent; thread: ***5678; outcome: reused'),
+          );
+          assert.equal(text.includes('native-12345678'), false);
+          for (const component of ['agent', 'tool-access'])
+            assert.match(text, new RegExp(`${component}\\s+unchanged\\s+id: tanaabot;`));
         }
         assert.deepEqual(harness.exitCodes, failed ? [1] : []);
       }

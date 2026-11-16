@@ -28,6 +28,7 @@ describe('cli/doctor', () => {
           component: 'automations',
           stepId: 'github-issue-assignment',
           automationName: 'AGENT SYSTEM: GITHUB-ISSUE-ASSIGNMENT',
+          automationRouting: { mode: 'persistent', threadId: 'native-12345678', outcome: 'reused' },
           code: 'automation-healthy',
           status: 'healthy',
           message:

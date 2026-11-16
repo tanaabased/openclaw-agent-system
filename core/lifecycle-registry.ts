@@ -35,7 +35,14 @@ export interface AgentSystemLifecycleExecutionContext extends AgentSystemLifecyc
 export type AgentSystemLifecycleOutcomeStatus =
   'created' | 'removed' | 'skipped' | 'unchanged' | 'updated';
 
-export interface AgentSystemLifecycleOutcome {
+export interface AgentSystemLifecycleAutomationFacts {
+  automationName?: string;
+  automationRouting?:
+    { mode: 'independent' } | { mode: 'persistent'; threadId: string; outcome: string };
+  settings?: AutomationThreadModelObservation;
+}
+
+export interface AgentSystemLifecycleOutcome extends AgentSystemLifecycleAutomationFacts {
   code: string;
   component: string;
   stepId?: string;
@@ -53,9 +60,7 @@ export interface AgentSystemLifecycleWarning {
 export type AgentSystemLifecycleFindingStatus =
   'blocked' | 'drift' | 'healthy' | 'manual' | 'skipped' | 'warning';
 
-export interface AgentSystemLifecycleFinding {
-  automationName?: string;
-  settings?: AutomationThreadModelObservation;
+export interface AgentSystemLifecycleFinding extends AgentSystemLifecycleAutomationFacts {
   providerDiagnostic?: ProviderDiagnostic;
   sessionDispatchDiagnostic?: SessionDispatchDiagnostic;
   code: string;

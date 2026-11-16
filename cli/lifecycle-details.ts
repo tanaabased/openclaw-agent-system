@@ -1,18 +1,14 @@
-import { openclawIntakeAutomationId } from '../agent/automations/openclaw-intake-policy.ts';
-import {
-  automationSettingsMessage,
-  type AutomationThreadModelObservation,
-} from '../agent/automations/automation-threads.ts';
+import automationReportName from '../agent/automations/automation-report-name.ts';
+import { automationSettingsMessage } from '../agent/automations/automation-threads.ts';
 import type { AgentSystemLifecyclePresentationItem } from '../core/lifecycle-presentation.ts';
-import type { AgentManifest } from '../manifest/types.ts';
+import type { AgentSystemLifecycleAutomationFacts } from '../core/lifecycle-registry.ts';
 
-type LifecycleItem = AgentSystemLifecyclePresentationItem & {
-  stepId?: string;
-  remediation?: string;
-  code?: string;
-  settings?: AutomationThreadModelObservation;
-  automationName?: string;
-};
+type LifecycleItem = AgentSystemLifecyclePresentationItem &
+  AgentSystemLifecycleAutomationFacts & {
+    stepId?: string;
+    remediation?: string;
+    code?: string;
+  };
 
 function maskedId(value: string): string {
   return `***${value.slice(-4)}`;
@@ -21,7 +17,6 @@ function maskedId(value: string): string {
 /** human-only projection; retain raw lifecycle results and exact literal values in json. */
 export default function lifecycleDetails(
   item: LifecycleItem,
-  automations: NonNullable<AgentManifest['automations']>,
   agentId?: string,
 ): AgentSystemLifecyclePresentationItem {
   const component =
@@ -44,35 +39,30 @@ export default function lifecycleDetails(
       (_match, id: string) => `id: ${maskedId(id)}`,
     );
   if (item.component === 'automations' && item.stepId) {
-    const automation = automations.find(({ id }) => id === item.stepId);
-    const name =
-      item.automationName ??
-      automation?.thread?.name ??
-      (item.stepId === openclawIntakeAutomationId
-        ? 'ISSUE ASSIGNMENTS'
-        : item.stepId.replaceAll('-', ' ').toUpperCase());
+    const name = automationReportName(item.automationName, item.stepId);
+    const routing = item.automationRouting;
+    if (routing?.mode === 'persistent') {
+      // remove only the known legacy fragments; routing facts come from fields, not prose.
+      message = message
+        .replace(` (persistent, ${routing.outcome}: ${routing.threadId})`, '')
+        .replace(` (${routing.outcome}: ${routing.threadId})`, '');
+    } else if (routing?.mode === 'independent') message = message.replace(' (independent)', '');
     if (item.settings) {
       const comparison = automationSettingsMessage(item.settings);
       message = message.replace(`${comparison}; `, '').replace(`; ${comparison}`, '');
     }
     message = message
-      .replace(
-        / \(persistent, ([^:]+): ([^)]+)\)/u,
-        (_match, outcome: string, id: string) =>
-          `; mode: persistent; thread: ${maskedId(id)}; outcome: ${outcome}`,
-      )
-      .replace(
-        / \((created|bound|reused): ([^)]+)\)/u,
-        (_match, outcome: string, id: string) =>
-          `; mode: persistent; thread: ${maskedId(id)}; outcome: ${outcome}`,
-      )
       .replace('removal-pending', 'pause pending; native job retained')
-      .replace(' (independent)', '; mode: independent')
       .replace(`Automation ${item.stepId}: healthy`, () => `name: ${name}`)
       .replace(`Automation ${item.stepId}:`, () => `name: ${name}; condition:`)
       .replace(`Automation ${item.stepId} is synchronized`, () => `name: ${name}; synchronized`)
       .replace(`Automation ${item.stepId} is disabled`, () => `name: ${name}; disabled`);
     if (!message.startsWith(`name: ${name}`)) message = `name: ${name}; condition: ${message}`;
+    if (routing) {
+      message = `${message.replace(/\.$/u, '')}; mode: ${routing.mode}`;
+      if (routing.mode === 'persistent')
+        message += `; thread: ${maskedId(routing.threadId)}; outcome: ${routing.outcome}`;
+    }
     if (
       item.settings &&
       item.status !== 'healthy' &&
@@ -120,6 +110,8 @@ export default function lifecycleDetails(
   const identifiers = [...text.matchAll(/\b(?:Device|request) ([A-Za-z0-9_-]{8,})/giu)].map(
     (match) => match[1]!,
   );
+  if (item.automationRouting?.mode === 'persistent')
+    identifiers.push(item.automationRouting.threadId);
   const masked = identifiers.reduce((value, id) => value.replaceAll(id, maskedId(id)), text);
   return {
     component,
