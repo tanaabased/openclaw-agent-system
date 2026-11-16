@@ -1,26 +1,37 @@
-import automationCompatibilityDiagnostic from './automation-compatibility-diagnostic.ts';
-import { assertPrivateStateLocksHeld } from '../../core/private-state-lock-context.ts';
+/** intentional 11.3 compatibility for the two supported read-only session lookups. */
+export function isSessionRead(method: string): boolean {
+  return method === 'sessions.resolve' || method === 'sessions.list';
+}
 
-/** Intentional 11.3 compatibility: keep until upstream session resolution is verified across reload. */
-export function staleSessionInstanceMessage(message: string): boolean {
-  return /^PluginInstanceUnavailableError: Plugin [\w-]+ was reloaded or disabled; use its current tools\.$/.test(
-    message,
+export function staleSessionRead(method: string, code: string, message: string): boolean {
+  return (
+    isSessionRead(method) &&
+    code === 'UNAVAILABLE' &&
+    /^PluginInstanceUnavailableError: Plugin [\w-]+ was reloaded or disabled; use its current tools\.$/.test(
+      message,
+    )
   );
 }
 
-/** Read-only recovery: one elapsed budget includes backoff and subsequent RPCs. */
-export default async function retrySessionResolution(
+/** read-only recovery: one elapsed budget includes backoff and subsequent rpcs. */
+export default async function retrySessionRead<T>(
   firstError: unknown,
-  invoke: (timeoutMs: number, signal?: AbortSignal) => Promise<Record<string, unknown>>,
+  invoke: (timeoutMs: number, signal?: AbortSignal) => Promise<T>,
   dependencies: {
     sleep(ms: number, signal?: AbortSignal): Promise<unknown>;
     now(): number;
     deadline: number;
     signal?: AbortSignal;
+    isStale(error: unknown): boolean;
+    assertCurrent(): void | Promise<void>;
+    onRecovery?(evidence: {
+      attempts: number;
+      recoveryElapsedMs: number;
+      remainingMs: number;
+      outcome: string;
+    }): void;
   },
-): Promise<Record<string, unknown>> {
-  const { isGatewayClientRequestError, ErrorCodes } =
-    await import('openclaw/plugin-sdk/gateway-runtime');
+): Promise<T> {
   const deadline = dependencies.deadline;
   const started = dependencies.now();
   let attempts = 1;
@@ -28,12 +39,8 @@ export default async function retrySessionResolution(
   try {
     let error = firstError;
     let delay = 250;
-    while (
-      isGatewayClientRequestError(error) &&
-      error.gatewayCode === ErrorCodes.UNAVAILABLE &&
-      staleSessionInstanceMessage(error.message)
-    ) {
-      assertPrivateStateLocksHeld();
+    while (dependencies.isStale(error)) {
+      await dependencies.assertCurrent();
       dependencies.signal?.throwIfAborted();
       const remaining = deadline - dependencies.now();
       if (remaining <= 0) {
@@ -41,7 +48,7 @@ export default async function retrySessionResolution(
         throw error;
       }
       await dependencies.sleep(Math.min(delay, remaining), dependencies.signal);
-      assertPrivateStateLocksHeld();
+      await dependencies.assertCurrent();
       dependencies.signal?.throwIfAborted();
       const timeoutMs = Math.floor(deadline - dependencies.now());
       if (timeoutMs <= 0) {
@@ -51,7 +58,7 @@ export default async function retrySessionResolution(
       try {
         attempts += 1;
         const result = await invoke(timeoutMs, dependencies.signal);
-        assertPrivateStateLocksHeld();
+        await dependencies.assertCurrent();
         dependencies.signal?.throwIfAborted();
         outcome = 'success';
         return result;
@@ -62,7 +69,7 @@ export default async function retrySessionResolution(
     }
     throw error;
   } finally {
-    automationCompatibilityDiagnostic('automation-session-recovery', {
+    dependencies.onRecovery?.({
       attempts,
       recoveryElapsedMs: Math.round(dependencies.now() - started),
       remainingMs: Math.max(0, Math.round(deadline - dependencies.now())),
