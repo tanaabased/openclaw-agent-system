@@ -19,6 +19,8 @@ healthy state and setup drift.
 
 ## Notes
 
+- The external setup wrapper uses a document-local helper; installed setup must still run the selected steps.
+
 - Host and agent setup checks use argv and command-object forms alongside shell apply scripts; successful setup and convergence exercise all three forms.
 
 - Direct Ubuntu checks need no Gateway, model, or provider credential. The installed name proves environment resolution; direct configuration reads prove routing and the Codex prerequisite.
