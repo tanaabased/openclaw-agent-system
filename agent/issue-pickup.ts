@@ -675,8 +675,21 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
           skip(failure.code, failure.providerDiagnostic);
           continue;
         }
+        if (repository.archived || repository.disabled) {
+          skip(
+            repository.archived
+              ? 'issue-pickup-repository-archived'
+              : 'issue-pickup-repository-disabled',
+          );
+          continue;
+        }
         let scope: PickupScope | undefined;
         try {
+          const code = await routingEligibility(policy, repository);
+          if (code) {
+            skip(code);
+            continue;
+          }
           if (!operation.repositoryGuidance?.[allowance.repository]) {
             const guidance = await assessmentGuidance(
               tx.workspaceDir,
@@ -691,21 +704,13 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
               };
             }
           }
-          const code = await routingEligibility(policy, repository);
-          if (code) {
-            if (allowances.length === 1) return finish(operation, 'pending', code);
-            skip(code);
-            continue;
-          }
           scope = await issuePickupScope(policy, client, repository);
         } catch (error) {
           if (
             allowances.length === 1 ||
             !(
               repositoryReadFailure(error) ||
-              (error instanceof Error &&
-                (error.message === 'issue-pickup-milestone-closed' ||
-                  error.message.startsWith('dispatch-assessment-guidance-')))
+              (error instanceof Error && error.message.startsWith('dispatch-assessment-guidance-'))
             )
           )
             throw error;
@@ -721,9 +726,13 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
           continue;
         }
         if (!scope) {
-          if (allowances.length === 1)
-            return finish(operation, 'failed', 'issue-pickup-milestone-invalid');
-          skip('issue-pickup-milestone-unavailable');
+          skip('issue-pickup-repository-excluded');
+          continue;
+        }
+        if (scope.policy === 'only' && !scope.milestoneNodeIds.length) {
+          allowance.eligible = 0;
+          operation.page = 1;
+          delete operation.discovery;
           continue;
         }
         if (!operation.discovery) {

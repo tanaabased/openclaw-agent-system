@@ -7,6 +7,18 @@ import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 const allowances = [{ repository: 'owner/repo', milestone: 10, used: 0, limit: 1 }];
 
 describe('agent/issue-pickup-report', () => {
+  it('should warn for a completed empty scan without manufacturing a closed-milestone diagnostic', () => {
+    const result = report({
+      outcome: {
+        status: 'empty',
+        allowances,
+        summary: { eligible: 0, shortlist: [], skipped: 0, remaining: 0 },
+      },
+    });
+    assert.match(result.response, /⚠️.*no eligible issues/);
+    assert.doesNotMatch(result.response, /milestone-closed|Diagnostic/);
+  });
+
   it('should distinguish a namespace total from per-repository window allowances', () => {
     const result = report({
       outcome: {
@@ -122,7 +134,7 @@ describe('agent/issue-pickup-report', () => {
       const input = { outcome: { status, allowances }, capacity: { occupied: 1, limit: 1 } };
       const result = report(input);
       assert.equal(result.notify, true);
-      assert.match(result.response, /> ## 📥/);
+      assert.match(result.response, status === 'empty' ? /> ## ⚠️/ : /> ## 📥/);
     });
   }
 

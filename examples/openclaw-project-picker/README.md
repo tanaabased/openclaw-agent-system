@@ -6,7 +6,7 @@ native OpenClaw and OpenClaw-hosted Codex, then verify the window allows no seco
 
 ## What Belongs Here
 
-- Native pickup enrollment and scheduled execution through each runtime.
+- Native pickup enrollment with closed milestone scope, read-only Doctor inspection, and scheduled execution after that milestone reopens through each runtime.
 - Selected and exhausted-window outcomes through the real automation/tool boundary, with selection triggered by a due-time occurrence.
 - Namespace discovery restricted by routing to the disposable repository, with model selection from a repository-qualified milestone list and the default `only` policy, GitHub self-assignment despite the ordinary assigner policy, and ordinary intake receiving the pickup exception and Work mode.
 - A repeat scan preserving the single assignment, chat, and checkout.
@@ -21,6 +21,7 @@ native OpenClaw and OpenClaw-hosted Codex, then verify the window allows no seco
 ## Notes
 
 - Strict AIMock supplies the selection and assessment. Scheduler authority, GitHub reads/writes, intake, chat creation, and checkout creation remain real. Hosted Codex keeps its native searchable-tool default. AIMock declines Responses WebSocket upgrades so Codex falls back to HTTP with full request history. This does not prove model judgment, long-running unattended reliability, or desktop rendering.
+- Closed-scope enrollment adds two provider updates and one Doctor inspection per execution path, without another install, restart, or model turn. It catches installation rejection at the real runtime boundary before the existing scheduled assignment.
 - Each execution path gets its own disposable milestone, two issues, agent workspace, and native job. The exhausted-window check runs on demand. Selection waits for the installed daily schedule, moved through the manifest to a slot two to three minutes ahead; it never substitutes a forced run if that occurrence fails. This adds up to three minutes of scheduler waiting per runtime.
 - Debug logs correlate native cron initialization, pickup lookup, and cleanup with hashed identities.
 - Ordinary assignments permit EMORI, not Tanaabot, and default to Plan. The selected issue asks a clarification question: the assessment asserts Work mode, retains the question, and stops before implementation or publication.
@@ -83,9 +84,15 @@ for runtime in codex openclaw; do
   mkdir -p keys
   cp "$HOME/.ssh/big-test-bucket-ssh" keys/id_ed25519
   cp "$HOME/.ssh/big-test-bucket-ssh.pub" keys/id_ed25519.pub
+  stage=close-installation-scope
+  GH_TOKEN="$GH_TOKEN_TANAABOT" gh api --method PATCH "repos/tanaabased/big-test-bucket/milestones/$milestone" -f state=closed > /dev/null
   stage=install-pickup
   openclaw agent-system install --yes --json > "$TMPDIR/pickup-$runtime-install.json"
   jq -e 'any(.outcomes[]; .stepId == "github-issue-pickup" and .status == "created")' "$TMPDIR/pickup-$runtime-install.json"
+  stage=inspect-closed-scope
+  openclaw agent-system doctor --json | jq -e 'any(.findings[]; .code == "issue-pickup-ready" and .status == "healthy")'
+  stage=reopen-scheduled-scope
+  GH_TOKEN="$GH_TOKEN_TANAABOT" gh api --method PATCH "repos/tanaabased/big-test-bucket/milestones/$milestone" -f state=open > /dev/null
   stage=verify-pickup-install
   openclaw agent-system notifications wait --for baseline-ready --timeout 30 --json | jq -e '.status == "completed"'
   openclaw agent-system automations list --json | tee "$TMPDIR/pickup-$runtime-jobs.json"

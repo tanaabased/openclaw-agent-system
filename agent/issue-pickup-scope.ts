@@ -57,7 +57,7 @@ export default async function issuePickupScope(
     const number = reference.number;
     const milestone = await client.getMilestone(owner, repo, number);
     if (milestone.number !== number) throw new Error('issue-pickup-milestone-changed');
-    if (milestone.state !== 'open') throw new Error('issue-pickup-milestone-closed');
+    if (milestone.state !== 'open') continue;
     if (reference.repository === name) {
       numbers.push(number);
       milestoneNodeIds.push(milestone.nodeId);

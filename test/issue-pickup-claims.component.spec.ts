@@ -139,7 +139,11 @@ describe('issue pickup handoff to ordinary assignment claims', () => {
       const admitA = await intake(a, 'intake-a'),
         admitB = await intake(b, 'intake-b');
       const held = await a.run();
-      assert.ok('code' in held && held.code === 'claim-route-instance-ineligible');
+      assert.equal(held.status, 'empty');
+      assert.equal(
+        held.allowances?.find((entry) => entry.repository === 'owner/repo')?.code,
+        'claim-route-instance-ineligible',
+      );
       assert.equal(a.effects.writes, 0);
       assert.equal((await b.run({ selection: await b.select() })).status, 'assigned');
       assert.equal(ca.comments.length, 0);

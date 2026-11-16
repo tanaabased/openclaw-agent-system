@@ -39,6 +39,7 @@ export default function issuePickupReport(input: {
   const failed = outcome.status === 'failed';
   const warning =
     uncertain ||
+    (outcome.status === 'empty' && !summary?.eligible) ||
     Boolean(outcome.code) ||
     allowances.some((entry) => entry.code || entry.providerDiagnostic);
   const selected = outcome.status === 'assigned';
@@ -63,6 +64,13 @@ export default function issuePickupReport(input: {
   };
   const issueLink = (repo: string, number: number) =>
     `[${text(repo)}#${number}](https://github.com/${repo}/issues/${number})`;
+  const skipReasons: Record<string, string> = {
+    'issue-pickup-repository-archived': 'Skipped: repository is archived.',
+    'issue-pickup-repository-disabled': 'Skipped: repository is disabled.',
+    'issue-pickup-repository-excluded': 'Skipped: repository is outside pickup scope.',
+    'claim-route-denied': 'Skipped: repository routing excludes this selection.',
+    'claim-route-instance-ineligible': 'Skipped: repository routing selects another installation.',
+  };
   const message = card({
     emoji: failed ? '❌' : warning ? '⚠️' : '📥',
     title: titles[outcome.status] ?? 'Issue pickup checked',
@@ -84,7 +92,7 @@ export default function issuePickupReport(input: {
           entry.eligible === undefined
             ? 'eligible count unavailable'
             : `${entry.eligible} eligible`,
-          entry.code ? code(entry.code) : '',
+          entry.code ? [skipReasons[entry.code], code(entry.code)].filter(Boolean).join(' ') : '',
           entry.providerDiagnostic
             ? text(entry.providerDiagnostic.providerMessage ?? entry.providerDiagnostic.explanation)
             : '',
