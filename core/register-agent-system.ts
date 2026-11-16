@@ -46,7 +46,11 @@ import AutomationService from '../agent/automations/automation-service.ts';
 import automationGatewayDiagnostic from '../agent/automations/automation-gateway-diagnostic.ts';
 import gatewayErrorDiagnostic from '../utils/gateway-error-diagnostic.ts';
 import { nativeObject } from '../utils/native-object.ts';
-import { requestAutomationGateway } from '../agent/automations/automation-gateway.ts';
+import {
+  listNativeAutomations,
+  requestAutomationGateway,
+  type AutomationGateway,
+} from '../agent/automations/automation-gateway.ts';
 import { AutomationError } from '../agent/automations/automation-errors.ts';
 import BoundCommandService from '../agent/bound-command-service.ts';
 import AgentCommandAuthority from '../agent/command-authority.ts';
@@ -66,6 +70,8 @@ import AutomationLifecycleAuthority, {
   verifyAutomationLifecycleRun,
 } from '../agent/automations/automation-lifecycle-authority.ts';
 import registerAutomationLifecycleHooks from './automation-lifecycle-hook.ts';
+import registerAutomationPromptHooks from './automation-prompt-hook.ts';
+import { resolveAutomationPrompt } from '../agent/automations/automation-prompt.ts';
 import registerAutomationReportHooks from './automation-report-hook.ts';
 import { reconcileAutomationReport } from '../agent/automations/automation-report-delivery.ts';
 import automationLifecycleCommand from '../cli/automation-lifecycle.ts';
@@ -845,6 +851,38 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     lifecycleRegistry,
   });
   const automationLifecycle = new AutomationLifecycleAuthority(logger);
+  // run-scoped registrations need not share the gateway service's startup closure.
+  const observeAutomation: AutomationGateway = (method, params) =>
+    sessionDispatch.use({}, async (request) => {
+      const result = await request(method, params);
+      if (!nativeObject(result)) throw new AutomationError('automation-native-response-invalid');
+      return result;
+    });
+  registerAutomationPromptHooks(
+    api,
+    async () => {
+      const scheduler = readScheduler?.();
+      return scheduler
+        ? scheduler.list({ includeDisabled: true })
+        : listNativeAutomations(observeAutomation);
+    },
+    async (run) => {
+      const loaded = await manifestService.loadForRuntimeContext(run, 'before_agent_reply');
+      if (
+        loaded.status !== 'loaded' ||
+        (await realpath(loaded.scope.workspaceDir)) !== (await realpath(run.workspaceDir))
+      )
+        throw new AutomationError('automation-prompt-binding-unverified');
+      return resolveAutomationPrompt(
+        automationService,
+        readScheduler?.(),
+        loaded.manifest,
+        run,
+        observeAutomation,
+      );
+    },
+    readRuntimeConfig,
+  );
   registerAutomationLifecycleHooks(api, automationLifecycle);
   const lifecycleApproval = new AgentLifecycleApproval({
     manifestService,
@@ -865,6 +903,8 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
           readScheduler?.(),
           loaded.manifest,
           admitted.run,
+          undefined,
+          observeAutomation,
         );
         admitted.assertCurrent();
       };

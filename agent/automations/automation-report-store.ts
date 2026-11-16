@@ -40,6 +40,7 @@ const schema = Type.Object(
     input: Type.Object(
       {
         id: text,
+        displayName: Type.Optional(text),
         executionId: text,
         startedAt: text,
         outcome: Type.Union([

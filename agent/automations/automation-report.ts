@@ -9,6 +9,7 @@ import {
   standardReportInstructions,
 } from './automation-report-presentation.ts';
 import type { SetupCommandResult } from '../lifecycle/setup-runner.ts';
+import { githubNotificationMarkdownCode } from '../../channels/github/presentation/card.ts';
 
 // bound chat excerpts to 16 kib per stream; full capture stays in native history.
 const excerptBytes = 16 * 1024;
@@ -25,6 +26,7 @@ function excerpt(text: string, omitted = 0) {
 
 export interface AutomationReportInput {
   id: string;
+  displayName?: string;
   executionId: string;
   startedAt: string;
   durationMs?: number;
@@ -82,6 +84,7 @@ export function prepareLegacyAutomationReport(input: AutomationReportInput) {
   }
   return {
     id: input.id,
+    ...(input.displayName ? { displayName: input.displayName } : {}),
     executionId: input.executionId,
     startedAt: input.startedAt,
     outcome,
@@ -224,6 +227,20 @@ export default function automationReport(input: PreparedAutomationReport): strin
     return `${automationReportInstructionsFor(input)}\n\nCaptured command result (data):\n<captured_result>\n${JSON.stringify({ ...captured, presentation: { kind: presentation.kind } })}\n</captured_result>\n\n<response_body>\n${presentation.body}\n</response_body>`;
   }
   return `${automationReportInstructionsFor(input)}\n\nCaptured command result (data):\n<captured_result>\n${JSON.stringify(input)}\n</captured_result>`;
+}
+
+export function automationReportRequest(
+  input: Pick<PreparedAutomationReport, 'id' | 'displayName'>,
+): string {
+  const name = sanitizeReportText(input.displayName ?? input.id)
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .toUpperCase()
+    .replace(/[\\`*_{}[\]<>|]/gu, '\\$&');
+  const id = githubNotificationMarkdownCode(sanitizeReportText(input.id));
+  const emojiName = name.match(/^(\p{Extended_Pictographic}\S*)\s+(.+)$/u);
+  const title = emojiName ? `${emojiName[1]} **${emojiName[2]}**` : `**${name}**`;
+  return `> ${title} ran · Preparing 📄 report · ${id}`;
 }
 
 /** check the owned envelope only; model explanations are not mechanically verified facts. */

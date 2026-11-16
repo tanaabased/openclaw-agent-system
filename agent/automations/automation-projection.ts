@@ -50,6 +50,15 @@ export function effectiveAutomation(job: ResolvedAutomation, context: Automation
   };
 }
 
+/** keep the quote on its own line even after the host trims and prefixes the request. */
+export function automationPromptRequest(job: ResolvedAutomation): string {
+  const name = (job.displayName ?? job.id)
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .replace(/[\\`*_{}[\]<>|]/gu, '\\$&');
+  return `Scheduled request\n\n> Run scheduled automation: ${name}.`;
+}
+
 export function projectAutomation(
   job: ResolvedAutomation,
   record: AutomationRecord,
@@ -139,7 +148,7 @@ export function projectAutomation(
           }
         : {
             kind: 'agentTurn',
-            message: job.payload.prompt.trim(),
+            message: automationPromptRequest(job),
             timeoutSeconds,
             lightContext: false,
             allowUnsafeExternalContent: false,

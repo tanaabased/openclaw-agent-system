@@ -46,7 +46,7 @@ export default async function executeAutomation(options: {
       (await realpath(installed.scope.workspaceDir)) !== (await realpath(options.workspaceDir))
     )
       throw new AutomationError('automation-agent-not-installed');
-    const { command, context, reportTarget } = await options.automations.admit(
+    const { command, context, reportTarget, displayName } = await options.automations.admit(
       installed.manifest,
       installed.scope.workspaceDir,
       options.id,
@@ -134,6 +134,7 @@ export default async function executeAutomation(options: {
           manifestDigest: snapshot.digest,
           input: {
             id: options.id,
+            displayName,
             executionId,
             startedAt,
             durationMs: Date.now() - Date.parse(startedAt),

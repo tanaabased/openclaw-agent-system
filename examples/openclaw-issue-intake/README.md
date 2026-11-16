@@ -1,6 +1,6 @@
 # OpenClaw Issue Intake Example
 
-Activate notification intake, exclude fixture assignments through repository routing, then force a manual intake run to claim three assignments and start their assessments on a second native pass before any result completes. Complete all three native assessments and verify that narrowing routing preserves the same chats, worktrees, and assessment turns.
+Activate notification intake, exclude fixture assignments through repository routing, then let timer-fired intake claim three assignments and start their assessments on a second native pass before any result completes. Complete all three native assessments and verify that narrowing routing preserves the same chats, worktrees, and assessment turns.
 
 ## What Belongs Here
 
@@ -8,7 +8,7 @@ Activate notification intake, exclude fixture assignments through repository rou
 - First-match repository routing, with singleton-to-pool two-pass admission and live rule changes preserving admitted work.
 - Custom routing skill/guidance selection during concurrent admission with distinct verified native owners and assessments kept in native chat.
 - An explicit unmanaged context read in the coordinator before successful intake, without a false issue-workflow failure.
-- Manual invocation without a trigger scan discovers assignments; one repeat scan proves that admission does not duplicate chats, checkouts, or turns.
+- Timer-fired intake keeps its request compact when the discovery trigger fires; repeat discovery does not duplicate chats, checkouts, or turns.
 
 ## What Does Not Belong Here
 
@@ -24,7 +24,7 @@ Activate notification intake, exclude fixture assignments through repository rou
 - Strict AIMock holds each assessment behind a per-receipt release barrier. The test releases one after verifying three native starts, requires its native completion while two responses remain held, then releases the others; model judgment is not under test.
 - Swarm adds one coordinator turn to verify that claims precede native creation. This single-installation journey does not prove cross-installation exclusion; the comment-only POC can overlap under incomplete provider views.
 - V3 object identities pin assignment actors; repository routing selects repository scope and placement. Only Tanaabot receives the three disposable assignments.
-- A forwarding GitHub fixture scopes assignment search to this run’s intake issue titles. Real discovery, pagination, claims, and dispatch still run; other scenarios cannot occupy the three held assessment slots. Assertions select owned records rather than installation-wide totals. Targeted refreshes and a 24-hour schedule bound subsequent discovery. Cleanup stops the Gateway before changing external fixtures.
+- A forwarding GitHub fixture scopes assignment search to this run’s intake issue titles. Real discovery, pagination, claims, and dispatch still run; other scenarios cannot occupy the three held assessment slots. Assertions select owned records rather than installation-wide totals. The first pass uses a one-minute timer instead of a forced run to exercise trigger-supplied input, without adding a model turn. It then restores the 24-hour schedule; targeted refreshes bound subsequent discovery. Cleanup stops the Gateway before changing external fixtures.
 
 ## Setup
 
@@ -139,11 +139,16 @@ number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system notifications refresh --repository tanaabased/big-test-bucket --kind issue --number "$number" --json | jq -e '.status == "completed" and .admitted == 0 and any(.repositoryScope[]; .source == "routing" and .reason == "excluded" and .index == 0)'
 jq -es '[.[].records[]] | length == 0' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-intake-v2/"github-intake-*.json
 
-# should discover three assignments and register claims through forced manual intake
+# should discover three assignments through the timer without exposing workflow instructions
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-intake/tanaabot"
-TARGET_INSTANCE=$(openclaw agent-system instance inspect --json | jq -er .instanceId) node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import {parse,stringify} from "yaml"; const path="agent.yaml"; const value=parse(readFileSync(path,"utf8")); value.github.routing.reverse(); value.github.routing[0]={"tanaabased/*":process.env.TARGET_INSTANCE}; writeFileSync(path,stringify(value));'
-run_id=$(openclaw agent-system automations run github-issue-assignment --json | jq -er 'select(.status == "queued") | .runId')
-node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-assignment "$run_id"
+TARGET_INSTANCE=$(openclaw agent-system instance inspect --json | jq -er .instanceId) node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import {parse,stringify} from "yaml"; const path="agent.yaml"; const value=parse(readFileSync(path,"utf8")); value.github.routing.reverse(); value.github.routing[0]={"tanaabased/*":process.env.TARGET_INSTANCE}; value.github["interval-minutes"]=1; writeFileSync(path,stringify(value));'
+openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
+native=$(openclaw agent-system automations list --json | jq -er '.jobs[] | select(.id == "github-issue-assignment") | .nativeId')
+due=$(openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -er '.state.nextRunAtMs | numbers')
+node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" --scheduled-after github-issue-assignment "$native" "$due" > "$TMPDIR/intake-timer-run.json"
+node --import tsx "$GITHUB_WORKSPACE/scripts/assert-scheduled-automation-input.ts" "$TMPDIR/intake-timer-run.json"
+node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import {parse,stringify} from "yaml"; const path="agent.yaml"; const value=parse(readFileSync(path,"utf8")); value.github["interval-minutes"]=1440; writeFileSync(path,stringify(value));'
+openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
 jq -s --slurpfile fixtures "$TMPDIR/notification-fixture-issues.json" '[.[].records[] | select(.issue.nodeId as $id | any($fixtures[0][]; .node_id == $id))]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-intake-v2/"github-intake-*.json > "$TMPDIR/notification-fixture-intake.json"
 jq -es --slurpfile fixtures "$TMPDIR/notification-fixture-intake.json" '[.[].records[] | select(.intakeId as $id | any($fixtures[0][]; .id == $id))] | length == 3 and ([.[].intakeId] | unique | length) == 3 and all(.[]; .threadId == null and .sessionCreation == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 node --import tsx --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; const {assignmentClaimKey}=await import(process.env.GITHUB_WORKSPACE+"/agent/tasks/dispatch/assignment-claim.ts"); const {default:source}=await import(process.env.GITHUB_WORKSPACE+"/agent/tasks/dispatch/assignment-claim-source.ts"); const intake=JSON.parse(readFileSync(process.env.TMPDIR+"/notification-fixture-intake.json","utf8")); const state=JSON.parse(readFileSync(process.argv[1],"utf8")); assert.equal(intake.length,3); assert.equal(new Set(intake.map(r=>r.issue.nodeId)).size,3); for (const record of intake) {const claim=state.claims[assignmentClaimKey(source(record))]; assert.ok(claim); assert.equal(claim.attempted,true); assert.ok(claim.commentId); assert.equal(claim.nativeReceipt,undefined);}' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-instance/assignment-claims.json"

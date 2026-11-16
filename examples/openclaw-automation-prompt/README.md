@@ -5,8 +5,10 @@ Complete a scheduled prompt in its owning agent context, then preserve its job a
 ## What belongs here
 
 - Native scheduling, configured model/effort, and completion.
+- Compact requests with the file-backed instructions injected at user priority.
 - The job's medium effort overriding the agent's high default at execution.
 - Install and Doctor through an activated prompt without per-run approval.
+- Refuse a scheduled request before inference when its file-backed instructions drift.
 
 ## What does not belong here
 
@@ -17,6 +19,7 @@ Complete a scheduled prompt in its owning agent context, then preserve its job a
 - Reuses the strict AIMock tool exchange. Native scheduling and lifecycle effects remain real.
 - Group, name, and label permutations remain in thread, projection, and service source tests.
 - Poll deadlines include CLI startup and RPC time.
+- Provider assertions prove instruction transport, not live/reloaded UI rendering on either harness.
 
 ## Testing
 
@@ -36,6 +39,7 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-automation-prompt"
 node --input-type=module -e 'import fs from "node:fs"; import {parse,stringify} from "yaml"; const jobs=parse(fs.readFileSync("automations.yaml","utf8")); jobs.find(({id})=>id==="prompt").schedule="in 1 minute"; fs.writeFileSync("automations.yaml",stringify(jobs));'
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
 native=$(jq -er '.jobs[] | select(.id == "prompt") | .nativeId' "$TMPDIR/automation-before.json")
+openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e '(.payload.message | contains("\n\n> Run scheduled automation: 🔄 AUTOMATION STATUS.")) and (.payload.message | contains("Acknowledge the scheduled owning-agent context.") | not)'
 due=$(openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -er '.state.nextRunAtMs | numbers')
 deadline=$((SECONDS + 180))
 while test "$SECONDS" -lt "$deadline"; do
@@ -57,4 +61,17 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-automation-prompt"
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
 jq -S '[.jobs[] | {id,nativeId,routing}]' "$TMPDIR/automation-before.json" > "$TMPDIR/prompt-identities.json"
 openclaw agent-system automations list --json | jq -S '[.jobs[] | {id,nativeId,routing}]' | diff - "$TMPDIR/prompt-identities.json"
+```
+
+```bash
+# should stop a native scheduled request when its instruction file no longer matches the installed job
+cd "$GITHUB_WORKSPACE/examples/openclaw-automation-prompt"
+native=$(jq -er '.jobs[] | select(.id == "prompt") | .nativeId' "$TMPDIR/automation-before.json")
+printf '\nUnsynchronized instruction edit.\n' >> prompt.md
+openclaw gateway call cron.run --params "$(jq -nc --arg id "$native" '{id:$id,mode:"force"}')" --json | tee "$TMPDIR/automation-refusal-ack.json"
+run_id=$(jq -er 'select(.ok == true and .enqueued == true) | .runId | strings | select(length > 0)' "$TMPDIR/automation-refusal-ack.json")
+node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" prompt "$run_id" error
+openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" --arg run "$run_id" '{id:$id,runId:$run,limit:1,offset:0}')" --json > "$TMPDIR/automation-refusal-run.json"
+jq -e --arg id "$native" --arg run "$run_id" 'if any(.entries[]; .jobId == $id and .runId == $run and .status == "error" and ((.error // "") | contains("automation-prompt-load-blocked"))) then true else error("unexpected refusal outcome: " + (.entries | map({jobId,runId,status,error}) | tojson)) end' "$TMPDIR/automation-refusal-run.json"
+openclaw-aimock evidence --scenario openclaw-automation-prompt --expected-evidence "$GITHUB_WORKSPACE/examples/openclaw-automation-prompt/expected-evidence.json"
 ```

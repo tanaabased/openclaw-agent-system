@@ -26,18 +26,18 @@ const attemptStage = (stage: string, attempt: number) => `${stage}-${attempt}`;
 
 /** model choices are fixed; identities, eligibility, assignment and work mode must come from tools. */
 export function pickupResponse(request: ChatCompletionRequest): FixtureResponse | undefined {
-  const messages = request.messages.slice(
-    Math.max(
-      0,
-      request.messages.findLastIndex(
-        ({ role, content }) =>
-          role === 'user' &&
-          !['<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>', 'OpenClaw runtime context:'].some((prefix) =>
-            getTextContent(content)?.trimStart().startsWith(prefix),
-          ),
-      ),
-    ),
+  const isContext = ({ role, content }: ChatCompletionRequest['messages'][number]) =>
+    role === 'user' &&
+    ['<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>', 'OpenClaw runtime context:'].some((prefix) =>
+      getTextContent(content)?.trimStart().startsWith(prefix),
+    );
+  let start = Math.max(
+    0,
+    request.messages.findLastIndex((message) => message.role === 'user' && !isContext(message)),
   );
+  // Native prepend context carries the instructions before the compact user request.
+  while (start > 0 && isContext(request.messages[start - 1]!)) start--;
+  const messages = request.messages.slice(start);
   const prompt = messages
     .filter(({ role }) => role === 'user')
     .map(({ content }) => getTextContent(content) ?? '')

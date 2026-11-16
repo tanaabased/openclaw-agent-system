@@ -32,6 +32,32 @@ function argumentsOf(response: FixtureResponse | undefined) {
 const prompt = 'Run the activated issue pickup once.';
 
 describe('examples/openclaw-project-picker model fixture', () => {
+  it('should retain prepended automation instructions without replaying the previous scan', () => {
+    for (const [begin, end] of [
+      ['OpenClaw runtime context:', 'End OpenClaw runtime context.'],
+      ['<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>', '<<<END_OPENCLAW_INTERNAL_CONTEXT>>>'],
+    ]) {
+      const input = request(prompt, [['scan-0', { status: 'empty', response: '📥 empty' }]]);
+      input.messages.push(
+        { role: 'assistant', content: '📥 empty' },
+        { role: 'user', content: `${begin}\n${prompt}\n${end}` },
+        ...request('Scheduled request:\n> Run scheduled automation: 📥 ISSUE PICKUP.').messages,
+      );
+      assert.deepEqual(argumentsOf(pickupResponse(input)), { action: 'pickup' });
+      input.messages.push({
+        role: 'tool',
+        tool_call_id: 'call_pickup_scan-0-0',
+        content: JSON.stringify({ status: 'empty', response: '📥 current scan' }),
+      });
+      assert.deepEqual(pickupResponse(input), { content: '📥 current scan' });
+      input.messages.push(
+        { role: 'assistant', content: '📥 current scan' },
+        ...request('An unrelated new request.').messages,
+      );
+      assert.equal(pickupResponse(input), undefined);
+    }
+  });
+
   it('should read candidate links before selecting through native snapshot identifiers', () => {
     const candidates = [
       { nodeId: 'larger-issue', url: 'https://github.com/owner/repo/issues/1' },

@@ -18,6 +18,7 @@ import { AutomationError } from '../agent/automations/automation-errors.ts';
 
 const input: AutomationReportInput = {
   id: 'backup',
+  displayName: '💾 BACKUP',
   executionId: randomUUID(),
   startedAt: '2026-10-30T00:00:00Z',
   cancelled: false,
@@ -75,6 +76,7 @@ describe('agent/automation-report-delivery', () => {
       | {
           toolsAllow?: string[];
           appendSystemContext?: string;
+          prependContext?: string;
           block?: boolean;
           retry?: { maxAttempts?: number; instruction?: string; idempotencyKey?: string };
         }
@@ -154,6 +156,9 @@ describe('agent/automation-report-delivery', () => {
             const guard = await hooks.get('before_prompt_build')!({}, context);
             assert.equal(guard?.toolsAllow, undefined);
             assert.ok(guard?.appendSystemContext);
+            assert.ok(guard?.prependContext?.includes('Exit 17'));
+            assert.ok(guard?.prependContext?.includes('<captured_result>'));
+            assert.ok(guard?.prependContext?.includes(String(params.idempotencyKey)));
           }
           assert.equal(
             (await hooks.get('before_tool_call')!({ toolName: 'exec' }, context))?.block,
@@ -369,9 +374,11 @@ describe('agent/automation-report-delivery', () => {
       ['delivered', 'delivered'],
     );
     assert.equal(f.messages.length, 2);
-    assert.ok(f.messages[0]!.includes('Exit 17'));
-    assert.ok(f.messages[0]!.includes('# Saved'));
+    assert.equal(f.messages[0], '> 💾 **BACKUP** ran · Preparing 📄 report · `backup`');
+    assert.ok(!f.messages[0]!.includes('Exit 17'));
+    assert.ok(!f.messages[0]!.includes('# Saved'));
     const saved = await f.store.read(input.executionId);
+    assert.equal(saved?.input.displayName, '💾 BACKUP');
     assert.deepEqual(saved?.effective, { model: 'test/formatter' });
     assert.equal(saved?.target.effort, 'high');
     assert.equal(

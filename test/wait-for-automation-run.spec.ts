@@ -279,7 +279,15 @@ describe('scripts/wait-for-automation-run', () => {
           stdout = JSON.stringify({ entries: [entry] });
         } else if (command === 'openclaw-gateway') stdout = '/tmp/gateway.log\n';
         else if (command === 'tail') stdout = 'gateway command failure: sensitive-value';
-        else if (command === 'grep') stdout = 'code=automation-lifecycle-begin sensitive-value';
+        else if (command === 'grep')
+          stdout = [
+            'code=automation-lifecycle-begin sensitive-value',
+            'code=automation-prompt-load-blocked sensitive-value',
+            'code=automation-prompt-trace before_agent_run block',
+            'unrelated log entry',
+          ]
+            .filter((line) => new RegExp(args[1]!).test(line))
+            .join('\n');
         else if (command === '/bin/sh') stdout = '/ci/helpers/openclaw-gateway\n';
         else {
           assert.equal(command, process.execPath);
@@ -288,6 +296,9 @@ describe('scripts/wait-for-automation-run', () => {
           assert.ok(input?.includes('condition observation: sensitive-value'));
           assert.ok(input?.includes('gateway command failure: sensitive-value'));
           assert.ok(input?.includes('code=automation-lifecycle-begin sensitive-value'));
+          assert.ok(input?.includes('code=automation-prompt-load-blocked sensitive-value'));
+          assert.ok(input?.includes('code=automation-prompt-trace before_agent_run block'));
+          assert.ok(!input?.includes('unrelated log entry'));
           assert.ok(!input?.includes(entry.summary));
           stdout = input!.replaceAll('sensitive-value', '[REDACTED]');
         }
@@ -299,6 +310,8 @@ describe('scripts/wait-for-automation-run', () => {
     assert.ok(output.join('').includes('command failed: [REDACTED]'));
     assert.ok(output.join('').includes('condition observation: [REDACTED]'));
     assert.ok(output.join('').includes('gateway command failure: [REDACTED]'));
+    assert.ok(output.join('').includes('code=automation-prompt-load-blocked [REDACTED]'));
+    assert.ok(output.join('').includes('code=automation-prompt-trace before_agent_run block'));
     assert.ok(!output.join('').includes('sensitive-value'));
   });
 

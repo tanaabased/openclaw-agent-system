@@ -37,7 +37,7 @@ export async function verifyAutomationLifecycleRun(
   expectedId?: string,
   request?: AutomationGateway,
   acceptedOccurrence = false,
-): Promise<void> {
+) {
   const { context, store } = await service.scope(manifest, run.workspaceDir);
   const records = (await store.read()).records.filter(({ nativeId }) => nativeId === run.jobId);
   const record = records[0];
@@ -82,6 +82,7 @@ export async function verifyAutomationLifecycleRun(
     )
   )
     throw new AutomationError('automation-lifecycle-drift');
+  return { job: declared, native };
 }
 
 /** retain native scheduler facts alongside this instance's native tool-call bindings. */

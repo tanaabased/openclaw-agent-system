@@ -20,6 +20,14 @@ function matchesPrompt(request: ChatCompletionRequest): boolean {
     model: model.test(request.model),
     identity: systemText.includes(identity),
     prompt: hasPrompt,
+    userPriority: !systemText.includes(prompt),
+    compactRequest: request.messages.some(
+      (message) =>
+        message.role === 'user' &&
+        (getTextContent(message.content) ?? '').includes(
+          '> Run scheduled automation: 🔄 AUTOMATION STATUS.',
+        ),
+    ),
     noToolResult: !request.messages.some((message) => message.role === 'tool'),
   };
   const matches = Object.values(checks).every(Boolean);

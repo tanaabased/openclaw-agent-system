@@ -1,7 +1,8 @@
 import { validateChatSendParams } from '@openclaw/gateway-protocol';
 
-import automationReport, {
+import {
   automationReportCardValid,
+  automationReportRequest,
   prepareAutomationReport,
   type AutomationReportInput,
 } from './automation-report.ts';
@@ -119,7 +120,7 @@ export async function reconcileAutomationReport(options: {
             sessionKey,
             sessionId,
             agentId: record.target.agentId,
-            message: automationReport(record.input),
+            message: automationReportRequest(record.input),
             idempotencyKey: executionId,
             queueMode: 'followup',
             deliver: false,

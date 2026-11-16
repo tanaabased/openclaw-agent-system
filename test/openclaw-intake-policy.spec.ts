@@ -25,6 +25,24 @@ function manifest(): AgentManifest {
 }
 
 describe('agent/openclaw-intake-policy', () => {
+  it('should wake intake without appending workflow instructions to the visible request', async () => {
+    const value = manifest();
+    value.models = { default: { model: 'openai/test', effort: 'medium' } };
+    const job = openclawIntakeJobs(value).find((job) => job.id === 'github-issue-assignment')!;
+    for (const diagnostic of [undefined, { phase: 'discovery', code: 'intake-scan-incomplete' }]) {
+      let result: { fire: boolean; message?: string; state: { diagnostic?: unknown } } | undefined;
+      await runInNewContext(`(async()=>{${job.internalOpenClaw!.trigger.script}})()`, {
+        agent_system_dispatch: async () => ({ status: 'ready', changed: true, diagnostic }),
+        json: (value: typeof result) => {
+          result = value;
+        },
+      });
+      assert.equal(result?.fire, true);
+      assert.equal(result?.message, undefined);
+      assert.deepEqual(result?.state.diagnostic, diagnostic);
+    }
+  });
+
   it('should preserve bounded failure codes without mistaking contention for authorization loss', async () => {
     const value = manifest();
     value.models = { default: { model: 'openai/gpt-6-luna', effort: 'medium' } };
@@ -35,7 +53,7 @@ describe('agent/openclaw-intake-policy', () => {
       ['intake-github-permission', 'intake-github-permission', 'failed'],
       ['secret provider response with spaces', 'dispatch-condition-failed', 'failed'],
     ]) {
-      let result: { state: { code: string; status: string } } | undefined;
+      let result: { message?: string; state: { code: string; status: string } } | undefined;
       await runInNewContext('(async()=>{' + script + '})()', {
         agent_system_dispatch: async () => {
           throw new Error(message);
@@ -46,6 +64,7 @@ describe('agent/openclaw-intake-policy', () => {
       });
       assert.equal(result?.state.code, code);
       assert.equal(result?.state.status, status);
+      assert.equal(result?.message, undefined);
     }
   });
   it('should retain discovery and unrelated jobs when a workflow stage is unsupported', () => {
@@ -73,12 +92,15 @@ describe('agent/openclaw-intake-policy', () => {
       allowed: [{ login: 'operator', nodeId: 'U_operator' }],
     };
     const jobs = openclawIntakeJobs(value);
-    assert.equal(jobs.length, 2);
-    assert.deepEqual(jobs[0], value.automations![0]);
-    assert.equal(jobs[1]?.id, 'github-issue-assignment');
-    assert.equal(jobs[1]?.displayName, '📥 ISSUE ASSIGNMENTS');
-    assert.deepEqual(jobs[1]?.thread, { name: 'ISSUE ASSIGNMENTS' });
-    assert.equal(jobs[1]?.enabled, true);
+    assert.deepEqual(
+      jobs.find(({ id }) => id === 'independent-check'),
+      value.automations![0],
+    );
+    const assignment = jobs.find(({ id }) => id === 'github-issue-assignment');
+    assert.ok(assignment);
+    assert.equal(assignment.displayName, '📥 ISSUE ASSIGNMENTS');
+    assert.deepEqual(assignment.thread, { name: 'ISSUE ASSIGNMENTS' });
+    assert.equal(assignment.enabled, true);
   });
 
   it('should still derive supported planning when unsupported triggers are disabled', () => {
@@ -86,9 +108,12 @@ describe('agent/openclaw-intake-policy', () => {
     value.models = { default: { model: 'openai/gpt-6-luna', effort: 'medium' } };
     value.github!.notifications!.reviewRequest = { paused: true, allowed: [] };
     const jobs = openclawIntakeJobs(value);
-    assert.equal(jobs.length, 2);
-    assert.deepEqual(jobs[0], value.automations![0]);
-    assert.equal(jobs[1]?.id, 'github-issue-assignment');
-    assert.equal(jobs[1]?.enabled, true);
+    assert.deepEqual(
+      jobs.find(({ id }) => id === 'independent-check'),
+      value.automations![0],
+    );
+    const assignment = jobs.find(({ id }) => id === 'github-issue-assignment');
+    assert.ok(assignment);
+    assert.equal(assignment.enabled, true);
   });
 });

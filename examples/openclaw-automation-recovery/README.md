@@ -63,8 +63,8 @@ openclaw agent-system install --yes --json
 # should synchronize both jobs without duplicating native identities or routing
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-recovery"
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
-openclaw agent-system automations list --json | tee "$TMPDIR/automation-before.json" | jq -e '.status == "aligned" and ([.jobs[].id] | sort) == ["identity","prompt"] and all(.jobs[]; .nativeEnabled == true) and any(.jobs[]; .id == "prompt" and (.routing | startswith("session:agent:")))'
-jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' "$TMPDIR/automation-before.json" > "$TMPDIR/automation-identities.json"
+openclaw agent-system automations list --json | tee "$TMPDIR/automation-before.json" | jq -e '.jobs as $jobs | .status == "aligned" and all(["identity","prompt"][]; . as $id | ([$jobs[] | select(.id == $id and .nativeEnabled == true)] | length) == 1) and any(.jobs[]; .id == "prompt" and (.routing | startswith("session:agent:")))'
+jq -S '[.jobs[] | select(.id == "identity" or .id == "prompt") | {id, nativeId, routing}] | sort_by(.id)' "$TMPDIR/automation-before.json" > "$TMPDIR/automation-identities.json"
 
 # should distinguish scheduler jobs that share one destination chat in doctor output
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-recovery"
@@ -83,7 +83,7 @@ jq -e 'any(.findings[]; .component == "automations" and .code == "automation-dri
 openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e '.payload.thinking == "high"'
 openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .component == "automations" and .status == "updated")'
 openclaw agent-system automations list --json | tee "$TMPDIR/automation-reconciled.json" | jq -e '.status == "aligned"'
-jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' "$TMPDIR/automation-reconciled.json" | diff - "$TMPDIR/automation-identities.json"
+jq -S '[.jobs[] | select(.id == "identity" or .id == "prompt") | {id, nativeId, routing}] | sort_by(.id)' "$TMPDIR/automation-reconciled.json" | diff - "$TMPDIR/automation-identities.json"
 
 # should deliver one successful command report before restart
 trap 'result=$?; if test "$result" -ne 0; then curl --silent --show-error --max-time 5 http://127.0.0.1:4010/proof/diagnostics | jq "{scenario, failed, requests: [.requests[-5:][]? | {status, matched, checks}]}" >&2 || true; fi; exit "$result"' EXIT
@@ -118,7 +118,7 @@ message_id=$(jq -er '.reports[] | select(.status == "delivered") | .messageId' "
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$chat" '{sessionKey:$key,limit:100,maxChars:100000}')" --json | jq -e --arg id "$message_id" 'any(.messages[]; .__openclaw.id == $id and .role == "assistant")'
 test "$(wc -l < identity.runs | tr -d ' ')" = 1
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
-openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' | diff - "$TMPDIR/automation-identities.json"
+openclaw agent-system automations list --json | jq -S '[.jobs[] | select(.id == "identity" or .id == "prompt") | {id, nativeId, routing}] | sort_by(.id)' | diff - "$TMPDIR/automation-identities.json"
 run_id=$(openclaw agent-system automations run prompt --json | jq -er 'select(.status == "queued" and .execution == "unavailable") | .runId | strings')
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" prompt "$run_id"
 openclaw-aimock evidence --scenario openclaw-automation-recovery --expected-evidence "$GITHUB_WORKSPACE/examples/openclaw-automation-recovery/expected-evidence.json"

@@ -28,6 +28,55 @@ function job(payload: { prompt: string } | { run: string[] }) {
 }
 
 describe('agent/automation-projection', () => {
+  it('should schedule only the compact request for custom and builtin prompts without changing executable policy', () => {
+    for (const id of ['custom-inline', 'github-issue-assignment', 'github-issue-pickup']) {
+      const prompt = {
+        ...job({ prompt: 'private full instructions' }),
+        id,
+        displayName: '📥 WORK',
+      };
+      const native = projectAutomation(
+        prompt,
+        {
+          id,
+          marker: 'fixture',
+          hash: '',
+          triggerHash: '',
+          generation: 1,
+          anchorMs: 0,
+          removed: false,
+        },
+        context,
+      );
+      assert.equal(
+        native.payload.message,
+        'Scheduled request\n\n> Run scheduled automation: 📥 WORK.',
+      );
+      assert.equal(String(native.payload.message).trim(), native.payload.message);
+      assert.deepEqual(native.payload.toolsAllow, ['*']);
+      assert.equal(native.payload.lightContext, false);
+      assert.equal(native.sessionTarget, 'isolated');
+    }
+    const prompt = job({ prompt: 'private full instructions' });
+    const record = {
+      id: prompt.id,
+      marker: 'fixture',
+      hash: '',
+      triggerHash: '',
+      generation: 1,
+      anchorMs: 0,
+      removed: false,
+    };
+    assert.match(
+      String(projectAutomation(prompt, record, context).payload.message),
+      /Run scheduled automation: review/,
+    );
+    prompt.displayName = 'one\n> forged **instruction**';
+    assert.equal(
+      projectAutomation(prompt, record, context).payload.message,
+      'Scheduled request\n\n> Run scheduled automation: one \\> forged \\*\\*instruction\\*\\*.',
+    );
+  });
   it('should schedule exactly eight default pickup slots in both native adapters', () => {
     const pickup = job({ prompt: 'Pick up work.' });
     pickup.schedule = pickupTiming({}).scanSchedule;
@@ -161,7 +210,7 @@ describe('agent/automation-projection', () => {
     }
   });
 
-  it('should patch only presentation when labels are added, renamed or removed', () => {
+  it('should update display labels and scheduled request names without changing execution settings', () => {
     const record = {
       id: 'review',
       marker: 'fixture',
@@ -188,6 +237,9 @@ describe('agent/automation-projection', () => {
         const desired = projectAutomation(changed, record, context);
         assert.deepEqual(automationPatch(current, desired), {
           displayName: label ?? null,
+          ...(original.payload.kind === 'prompt'
+            ? { payload: { ...desired.payload, model: null, thinking: null, fallbacks: null } }
+            : {}),
         });
         assert.notEqual(nativeAutomationHash(current), nativeAutomationHash(desired));
         assert.deepEqual(
@@ -196,7 +248,13 @@ describe('agent/automation-projection', () => {
         );
         const { displayName, ...withoutLabel } = desired;
         assert.equal(displayName, label);
-        assert.deepEqual(withoutLabel, unlabeled);
+        assert.deepEqual(withoutLabel, {
+          ...unlabeled,
+          payload: {
+            ...unlabeled.payload,
+            ...(original.payload.kind === 'prompt' ? { message: desired.payload.message } : {}),
+          },
+        });
         current = { ...desired, ...nativeFields };
       }
       assert.equal(

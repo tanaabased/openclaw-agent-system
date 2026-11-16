@@ -682,7 +682,13 @@ describe('scripts/example-model-scenarios', () => {
       const diagnostic = mock.method(process.stderr, 'write', () => true);
       const valid = request('automation-tanaabot', scenario.userPromptSignals![0]!, []);
       valid.messages[0]!.content = scenario.systemPromptSignals[0]!;
-      valid.messages.push({ role: 'user', content: 'Additional runtime context.' });
+      valid.messages.push({
+        role: 'user',
+        content:
+          scenarioId === 'openclaw-automation-prompt'
+            ? 'Scheduled request\n\n> Run scheduled automation: 🔄 AUTOMATION STATUS.'
+            : 'Additional runtime context.',
+      });
       valid.messages.push({
         role: 'assistant',
         content:
@@ -695,6 +701,7 @@ describe('scripts/example-model-scenarios', () => {
         assert.equal(diagnostic.mock.callCount(), 0);
         const fields = ['model', 'identity', 'prompt', 'noToolResult'];
         if (scenarioId === 'openclaw-automation-recovery') fields.push('reportHistory');
+        else fields.push('userPriority', 'compactRequest');
         for (const field of fields) {
           const invalid = structuredClone(valid);
           if (field === 'model') invalid.model = 'private-model';
@@ -703,6 +710,9 @@ describe('scripts/example-model-scenarios', () => {
             invalid.messages[1]!.content = 'private-prompt';
             invalid.messages.push({ role: 'assistant', content: scenario.userPromptSignals![0]! });
           }
+          if (field === 'userPriority')
+            invalid.messages[0]!.content += scenario.userPromptSignals![0]!;
+          if (field === 'compactRequest') invalid.messages[2]!.content = 'unrelated';
           if (field === 'reportHistory')
             invalid.messages = invalid.messages.filter((message) => message.role !== 'assistant');
           if (field === 'noToolResult') {
@@ -721,7 +731,10 @@ describe('scripts/example-model-scenarios', () => {
             noToolResult: field !== 'noToolResult',
             ...(scenarioId === 'openclaw-automation-recovery'
               ? { reportHistory: field !== 'reportHistory' }
-              : {}),
+              : {
+                  userPriority: field !== 'userPriority',
+                  compactRequest: field !== 'compactRequest',
+                }),
           });
           assert.ok(!output.includes('private-'));
         }

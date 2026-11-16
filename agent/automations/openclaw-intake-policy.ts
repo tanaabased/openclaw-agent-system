@@ -40,8 +40,8 @@ export default function openclawIntakeJobs(manifest: AgentManifest): ResolvedAut
     'stage="dispatch";',
     'const d=unwrap(await agent_system_dispatch({action:"check"}));',
     'if (!d || d.status!=="ready" || typeof d.changed!=="boolean") throw new Error("dispatch-condition-invalid");',
-    `json({fire:d.changed===true,message:(d.diagnostic ? "Intake check: "+JSON.stringify(d.diagnostic)+". " : "")+${JSON.stringify(message)},state:{status:d.status,outcome:d.outcome,more:d.more,code:d.code,diagnostic:d.diagnostic}});`,
-    '} catch (error) { const code=[error?.code,error?.message].find(value=>typeof value==="string" && /^(?:intake|dispatch|feedback|continuation|github|automation|private-state)-[a-z0-9-]{1,100}$/.test(value))??stage+"-condition-failed"; json({fire:true,message:"The "+stage+" condition failed ("+code+") after "+Math.max(0,Date.now()-started)+" ms. This pass could not complete. Inspect agent_system_intake and agent_system_dispatch with discovery checks and report the bounded blocker; never treat a failed check as an empty successful scan.",state:{status:code.endsWith("-busy")?"busy":"failed",stage,code,diagnostic:{phase:stage,elapsedMs:Math.max(0,Date.now()-started),reason:["AbortError","TimeoutError","TypeError","SyntaxError"].includes(error?.name)?error.name:code}}}); }',
+    'json({fire:d.changed===true,state:{status:d.status,outcome:d.outcome,more:d.more,code:d.code,diagnostic:d.diagnostic}});',
+    '} catch (error) { const code=[error?.code,error?.message].find(value=>typeof value==="string" && /^(?:intake|dispatch|feedback|continuation|github|automation|private-state)-[a-z0-9-]{1,100}$/.test(value))??stage+"-condition-failed"; json({fire:true,state:{status:code.endsWith("-busy")?"busy":"failed",stage,code,diagnostic:{phase:stage,elapsedMs:Math.max(0,Date.now()-started),reason:["AbortError","TimeoutError","TypeError","SyntaxError"].includes(error?.name)?error.name:code}}}); }',
   ].join('\n');
   return [
     ...jobs,
