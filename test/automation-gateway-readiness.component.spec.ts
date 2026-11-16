@@ -7,7 +7,7 @@ import waitForSessionDispatchGateway from '../credentials/session-dispatch-readi
 
 describe('agent/automation-gateway-readiness', () => {
   it('should defer model and session reads during native reload without initiating another reload', async () => {
-    for (const method of ['models.list', 'sessions.resolve'] as const) {
+    for (const method of ['models.list', 'sessions.resolve', 'sessions.list'] as const) {
       let elapsed = 0;
       const calls: string[] = [];
       const request = createAutomationGateway(

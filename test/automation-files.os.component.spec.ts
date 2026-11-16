@@ -170,7 +170,7 @@ describe('manifest/automation-files', () => {
       Buffer.from([0xff]),
       Buffer.alloc(1024 * 1024 + 1, 'x'),
       Buffer.from('- id: duplicate\n  id: other\n'),
-      Buffer.from('&anchor []'),
+      Buffer.from('jobs: &cycle [*cycle]\nautomations: []'),
     ]) {
       await writeFile(join(root, '.agent-system/jobs.yaml'), contents);
       assert.equal((await load()).status, 'invalid');

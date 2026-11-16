@@ -31,13 +31,23 @@ export default async function loadAutomations(
     files.push({ path: loaded.path, fingerprint: loaded.fingerprint });
     containingPath = loaded.path;
     const yaml = parseManifestYaml(loaded.source);
-    const normalized = yaml.status === 'valid' ? normalizeAutomations(yaml.value) : yaml;
+    const payload =
+      yaml.status === 'valid' &&
+      yaml.value !== null &&
+      typeof yaml.value === 'object' &&
+      !Array.isArray(yaml.value)
+        ? (yaml.value as Record<string, unknown>).automations
+        : yaml.status === 'valid'
+          ? yaml.value
+          : undefined;
+    const normalized = yaml.status === 'valid' ? normalizeAutomations(payload) : yaml;
     if (normalized.status === 'invalid')
       return {
         status: 'invalid',
         paths: files.map((file) => file.path),
         diagnostics: normalized.diagnostics.map((diagnostic) => ({
           ...diagnostic,
+          sourcePath: loaded.path,
           fieldPath: diagnostic.fieldPath ?? '/automations',
           message: `Automation file ${JSON.stringify(parsed.automationsFile)}: ${diagnostic.message}`,
         })),

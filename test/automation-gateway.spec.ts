@@ -37,31 +37,32 @@ describe('agent/automation-gateway', () => {
       },
     );
 
-  it('should recover only the same stale session read with capped backoff and no reload', async () => {
-    let elapsed = 0;
-    const delays: number[] = [];
-    const params = { key: 'owned-session' };
-    const request = createAutomationGateway(
-      async (method, options, input, extra) => {
-        assert.equal(method, 'sessions.resolve');
-        assert.equal(input, params);
-        assert.equal(extra?.sharedStateMode, 'read-only');
-        if (elapsed) assert.equal(Number(options.timeout), 120_000 - elapsed);
-        if (elapsed < 20_000) throw staleInstance();
-        return { key: 'owned-session' };
-      },
-      async (ms) => {
-        delays.push(ms);
-        elapsed += ms;
-      },
-      undefined,
-      () => elapsed,
-    );
-    assert.deepEqual(await request('sessions.resolve', params), params);
-    assert.deepEqual(delays.slice(0, 5), [250, 500, 1_000, 2_000, 4_000]);
-    assert.ok(delays.every((delay) => delay <= 5_000));
-    assert.ok(elapsed < 30_000, 'success must return without waiting out the budget');
-  });
+  for (const method of ['sessions.resolve', 'sessions.list'] as const)
+    it(`should recover the same stale ${method} read with capped backoff and no reload`, async () => {
+      let elapsed = 0;
+      const delays: number[] = [];
+      const params = { key: 'owned-session' };
+      const request = createAutomationGateway(
+        async (selectedMethod, options, input, extra) => {
+          assert.equal(method, selectedMethod);
+          assert.equal(input, params);
+          assert.equal(extra?.sharedStateMode, 'read-only');
+          if (elapsed) assert.equal(Number(options.timeout), 120_000 - elapsed);
+          if (elapsed < 20_000) throw staleInstance();
+          return { key: 'owned-session' };
+        },
+        async (ms) => {
+          delays.push(ms);
+          elapsed += ms;
+        },
+        undefined,
+        () => elapsed,
+      );
+      assert.deepEqual(await request(method, params), params);
+      assert.deepEqual(delays.slice(0, 5), [250, 500, 1_000, 2_000, 4_000]);
+      assert.ok(delays.every((delay) => delay <= 5_000));
+      assert.ok(elapsed < 30_000, 'success must return without waiting out the budget');
+    });
 
   it('should exhaust one elapsed recovery budget including rpc time and keep the stale error fatal', async () => {
     let elapsed = 0;
