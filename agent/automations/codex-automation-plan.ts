@@ -180,6 +180,7 @@ export default async function planCodexAutomations(options: {
   defaults?: { model: string; effort: string };
   bindings?: Map<string, { id: string; settings?: AutomationThreadModelObservation }>;
   refreshIds?: ReadonlySet<string>;
+  now?: Date;
 }): Promise<CodexAutomationPlan> {
   const { scope, workspace, jobs, records, saved, inputs } = options;
   const findings: CodexAutomationPlan['findings'] = [];
@@ -207,7 +208,7 @@ export default async function planCodexAutomations(options: {
         job.overrides.codex.environment.type !== 'native'
       )
         throw new CodexAutomationError('automation-environment-unsupported');
-      const rrule = codexAutomationSchedule(job.schedule, record?.definition.rrule);
+      const rrule = codexAutomationSchedule(job.schedule, record?.definition.rrule, options.now);
       const override = job.overrides.codex;
       const selection = automationThreadSelection(job, 'codex');
       const binding = options.bindings?.get(job.id);
@@ -366,7 +367,25 @@ export default async function planCodexAutomations(options: {
     desired: applicable.map((job) => automationContent(job, 'codex', options.defaults).content),
     saved,
     records,
-    actions,
+    // first activation is chosen during preparation, not a stale-plan input.
+    // desired content, saved state and records still bind every authored choice.
+    actions: actions.map((action) => {
+      const job = applicable.find((item) => item.id === action.manifestId);
+      const previous = records.find((item) => item.id === action.manifestId)?.definition.rrule;
+      const activating =
+        (job?.schedule.count !== undefined || job?.schedule.until !== undefined) &&
+        !/(?:^|;)(?:COUNT|UNTIL)=/u.test(previous ?? '') &&
+        !action.retire;
+      return activating
+        ? {
+            ...action,
+            expected: {
+              ...action.expected,
+              rrule: action.expected.rrule.replace(/^DTSTART[^\r\n]+\r?\n/u, ''),
+            },
+          }
+        : action;
+    }),
     findings,
   });
   return {

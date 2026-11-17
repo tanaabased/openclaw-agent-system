@@ -8,6 +8,33 @@ export default function codexAutomationSchedule(
   now = new Date(),
 ): string {
   const rule = compile(schedule);
+  if (schedule.count !== undefined || schedule.until !== undefined) {
+    // an unbounded rule's backdated start must not consume a new finite allowance.
+    const previousStart = /(?:^|;)(?:COUNT|UNTIL)=/u.test(previous ?? '')
+      ? previous?.split(/\r?\n/u)[0]
+      : undefined;
+    const zone = schedule.kind === 'cron' ? schedule.timezone : 'UTC';
+    const prefix = zone && zone !== 'UTC' ? `DTSTART;TZID=${zone}:` : 'DTSTART:';
+    const retained = /^DTSTART(?:;TZID=[^:\r\n]+)?:([0-9]{8}T[0-9]{6})Z?$/u.exec(
+      previousStart ?? '',
+    )?.[1];
+    // exclude the current slot so count: 1 still has one future occurrence.
+    const anchor = retained
+      ? `${prefix}${retained}${zone === 'UTC' ? 'Z' : ''}`
+      : finiteStart(
+          new Date(
+            schedule.kind === 'every'
+              ? Math.ceil(now.getTime() / 1000) * 1000 + schedule.seconds * 1000
+              : Math.floor(now.getTime() / 1000) * 1000 + 1000,
+          ),
+          zone,
+        );
+    const bound =
+      schedule.count !== undefined
+        ? `COUNT=${schedule.count}`
+        : `UNTIL=${schedule.until!.slice(0, 19).replaceAll(/[-:]/gu, '')}Z`;
+    return `${anchor}\nRRULE:${rule}${schedule.kind === 'cron' ? ';BYSECOND=0' : ''};${bound}`;
+  }
   if (schedule.kind !== 'cron' || schedule.timezone === null) return rule;
   // retain the owned anchor; a new one starts in the past in every named zone.
   // old epoch anchors make the native hourly evaluator walk decades of occurrences.
@@ -61,4 +88,21 @@ function compile(schedule: AutomationSchedule): string {
   }
   if (f.weekdays.length === 7) return `FREQ=MONTHLY;${time};BYMONTHDAY=${f.days.join(',')}`;
   throw new CodexAutomationError('automation-schedule-unsupported');
+}
+
+function finiteStart(now: Date, timezone: string | null): string {
+  if (timezone === 'UTC')
+    return `DTSTART:${now.toISOString().slice(0, 19).replaceAll(/[-:]/gu, '')}Z`;
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    ...(timezone ? { timeZone: timezone } : {}),
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(now);
+  const value = (type: string) => parts.find((part) => part.type === type)!.value;
+  return `DTSTART${timezone ? `;TZID=${timezone}` : ''}:${value('year')}${value('month')}${value('day')}T${value('hour')}${value('minute')}${value('second')}`;
 }

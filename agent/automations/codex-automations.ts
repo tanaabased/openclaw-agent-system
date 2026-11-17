@@ -286,6 +286,7 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
     defaults,
     bindings,
     refreshIds,
+    now: new Date(selected.dependencies.now?.() ?? Date.now()),
   });
   result.unmanagedCount = selected.cleanupOnly
     ? saved.length - ledger.records.filter((record) => record.id === intakeAutomationId).length

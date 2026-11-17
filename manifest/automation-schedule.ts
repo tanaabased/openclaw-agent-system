@@ -17,7 +17,7 @@ export type AutomationSchedule = (
   | { kind: 'every' | 'in'; seconds: number }
   | { kind: 'at'; at: string }
   | { kind: 'cron'; fields: AutomationCronFields; timezone: string | null; times?: number[] }
-) & { missedRun: 'native' };
+) & { missedRun: 'native'; count?: number; until?: string };
 
 function invalid(): never {
   throw new Error('Invalid automation schedule.');
@@ -144,7 +144,12 @@ export default function normalizeAutomationSchedule(value: unknown): AutomationS
   if (!value || typeof value !== 'object' || Array.isArray(value)) return invalid();
   const object = value as Record<string, unknown>;
   const keys = Object.keys(object);
-  if (keys.some((key) => !['cron', 'every', 'in', 'at', 'timezone', 'missed-run'].includes(key)))
+  if (
+    keys.some(
+      (key) =>
+        !['cron', 'every', 'in', 'at', 'timezone', 'missed-run', 'count', 'until'].includes(key),
+    )
+  )
     return invalid();
   const kinds = ['cron', 'every', 'in', 'at'].filter((key) => Object.hasOwn(object, key));
   if (
@@ -156,12 +161,30 @@ export default function normalizeAutomationSchedule(value: unknown): AutomationS
     input = object[kind];
   if (typeof input !== 'string' || (kind !== 'cron' && Object.hasOwn(object, 'timezone')))
     return invalid();
+  const bounded = Object.hasOwn(object, 'count') || Object.hasOwn(object, 'until');
+  if (bounded && (kind === 'at' || kind === 'in')) return invalid();
+  if (Object.hasOwn(object, 'count') && Object.hasOwn(object, 'until')) return invalid();
+  if (
+    Object.hasOwn(object, 'count') &&
+    (typeof object.count !== 'number' || !Number.isSafeInteger(object.count) || object.count < 1)
+  )
+    return invalid();
+  if (Object.hasOwn(object, 'until') && typeof object.until !== 'string') return invalid();
+  const bounds = {
+    ...(object.count === undefined ? {} : { count: object.count as number }),
+    ...(object.until === undefined ? {} : { until: timestamp(object.until as string) }),
+  };
   const source = input.trim().replace(/\s+/gu, ' ');
   if (kind === 'cron') {
     const timezone = object['timezone'] ?? null;
     if (timezone !== null && (typeof timezone !== 'string' || !timezone.trim())) return invalid();
-    return cron(source, timezone);
+    return { ...cron(source, timezone), ...bounds };
   }
   if (kind === 'at') return { kind, at: timestamp(source), missedRun: 'native' };
-  return { kind: kind as 'every' | 'in', seconds: duration(source), missedRun: 'native' };
+  return {
+    kind: kind as 'every' | 'in',
+    seconds: duration(source),
+    missedRun: 'native',
+    ...bounds,
+  };
 }
