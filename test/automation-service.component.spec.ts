@@ -522,6 +522,45 @@ describe('agent/automation-service', () => {
   const mutations = () =>
     calls.filter(({ method }) => ['cron.add', 'cron.update'].includes(method));
 
+  it('should refuse finite bounds before scheduler writes and skip codex-only declarations', async () => {
+    await service.reconcile(manifest, root);
+    const before = structuredClone(native);
+    for (const bounds of [{ count: 3 }, { until: '2026-12-01T00:00:00Z' }]) {
+      manifest.automations = jobs([
+        { id: 'check', schedule: { every: '1 hour', ...bounds }, run: ['true'] },
+      ]);
+      calls = [];
+      await assert.rejects(
+        service.reconcile(manifest, root),
+        (error: unknown) =>
+          error instanceof AgentSystemLifecycleError &&
+          error.code === 'automation-schedule-bounds-unsupported',
+      );
+      assert.deepEqual(native, before);
+      assert.ok(
+        calls.every(({ method }) => !['cron.add', 'cron.update', 'cron.remove'].includes(method)),
+      );
+    }
+    manifest.automations = jobs([
+      {
+        id: 'codex-only',
+        runtimes: ['codex'],
+        schedule: { every: '1 hour', count: 1 },
+        prompt: 'Review.',
+      },
+    ]);
+    // retain the original declarations so runtime filtering does not retire them.
+    manifest.automations.unshift(
+      ...jobs([{ id: 'check', schedule: 'in 1 hour', run: ['gh', 'api', 'user'] }]),
+    );
+    calls = [];
+    await service.reconcile(manifest, root);
+    assert.equal(
+      native.some((item) => String(item.name).includes('codex-only')),
+      false,
+    );
+  });
+
   for (const payload of [{ run: ['node', 'task.js'] }, { prompt: 'Review.' }])
     it(`should migrate declared ${'run' in payload ? 'command' : 'prompt'} names without changing job state`, async () => {
       manifest.agent.name = 'Different display identity';

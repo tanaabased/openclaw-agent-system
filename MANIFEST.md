@@ -496,6 +496,7 @@ Codex supports this subset of the shared declarations:
 | `prompt`, `payload`                               | Recurring prompts, including prompts asking a model to run a script.                                                                                                                                                                                                                                        |
 | `run`                                             | Zero-model commands are unsupported, including `payload.kind: command`.                                                                                                                                                                                                                                     |
 | `schedule`                                        | Whole-minute intervals from 1 to 1440 or whole-hour intervals from 1 to 999. Cron supports one minute every hour, or one daily time with daily, weekday, or month-day selection across all months. Multiple-job expressions and unsupported day-field combinations are rejected; one-shots are unsupported. |
+| `schedule.count`, `schedule.until`                | Optional, mutually exclusive native recurrence bounds. Preserve the original start across syncs; see [schedule semantics](#schedules).                                                                                                                                                                      |
 | `schedule.timezone`                               | Omit or use `null` for native local time. Named IANA zones map directly to native `DTSTART;TZID=…` recurrence rules; UTC uses a UTC start. Available for every supported cron shape, including hourly. `native` is not accepted.                                                                            |
 | `thread`                                          | Creates a persistent conversation per automation. Resolved model and effort apply at creation and through later Install updates, preserving the chat and its permissions.                                                                                                                                   |
 | `timeout-seconds`                                 | Unsupported. Native timeout, concurrency, retry, and catch-up rules apply.                                                                                                                                                                                                                                  |
@@ -508,8 +509,8 @@ New automation chats use native `auto_review`, `workspace-write`, and `on-reques
 approvals. Install verifies saved permissions; existing ready chats keep theirs.
 Native review may still deny an action. Install does not add global approval rules.
 
-Install opens a native review card only when creating a new timezone-qualified
-schedule. Review and save the card to preserve the requested timezone; Install waits
+Install opens a native review card when creating a timezone-qualified or finite
+schedule. Review and save the card to preserve its start, bounds and timezone; Install waits
 for verified saved settings before proceeding. Other creates and all updates, including
 timezone changes, use direct writes. Codex controls timezones, daylight saving time,
 and missed runs.
@@ -586,6 +587,34 @@ Schedule objects accept exactly one trigger key, plus:
 | ------------ | ------------------- | -------- | -------- | ----------------------------------------------------------------------- |
 | `missed-run` | `native`            | no       | `native` | Native catch-up behavior.                                               |
 | `timezone`   | IANA zone or `null` | no       | local    | Cron only. Omitted or `null` uses local time; `native` is not accepted. |
+
+Use `count` or `until` only with recurring `cron` or `every` objects:
+
+| Field   | Type                  | Required | Default   | Description                                                                      |
+| ------- | --------------------- | -------- | --------- | -------------------------------------------------------------------------------- |
+| `count` | positive safe integer | no       | unbounded | Maximum scheduled occurrences, not successful completions.                       |
+| `until` | RFC 3339 timestamp    | no       | unbounded | Inclusive last nominal occurrence time; requires seconds and an explicit offset. |
+
+```yaml
+automations:
+  - id: check-builds
+    runtimes: [codex]
+    schedule: { every: 1 hour, count: 5 }
+    prompt: Review failed builds.
+```
+
+Bounds are supported only in standalone Codex. OpenClaw reports
+`automation-schedule-bounds-unsupported` and leaves saved jobs unchanged; jobs
+restricted to `runtimes: [codex]` are skipped normally. Bounds cannot be combined
+or used with one-shots. Omit both for existing unbounded behavior.
+
+Codex retains the original start across syncs, prompt edits and pause/resume.
+The lifetime starts at native-save preparation; occurrences missed during review
+or while paused still count. `until` is not a hard execution
+deadline: native jitter or catch-up can launch the last occurrence later.
+After exhaustion, unchanged jobs remain stopped; native Codex may reject active
+updates or resume with “no future runs.” Agent System does not renew the allowance
+or replace that native behavior. Use a new automation ID for a new lifetime.
 
 #### Effective content and trigger identity
 

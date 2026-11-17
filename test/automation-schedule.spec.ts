@@ -112,4 +112,24 @@ describe('manifest/automation-schedule', () => {
     ])
       assert.throws(() => normalize(value), JSON.stringify(value));
   });
+  it('should normalize finite recurring bounds without consulting the clock', () => {
+    assert.deepEqual(normalize({ every: '1 hour', count: 5 }), {
+      kind: 'every',
+      seconds: 3600,
+      missedRun: 'native',
+      count: 5,
+    });
+    assert.deepEqual(normalize({ cron: '0 9 * * *', until: '2026-12-01T09:00:00-05:00' }), {
+      ...normalize('0 9 * * *'),
+      until: '2026-12-01T14:00:00.000Z',
+    });
+    for (const value of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, '5', null, undefined])
+      assert.throws(() => normalize({ every: '1 hour', count: value }));
+    for (const value of [null, undefined, 123, '2026-12-01', '2026-02-30T00:00:00Z'])
+      assert.throws(() => normalize({ cron: '0 9 * * *', until: value }));
+    for (const trigger of [{ in: '1 hour' }, { at: '2026-12-01T00:00:00Z' }])
+      for (const bounds of [{ count: 2 }, { until: '2026-12-01T00:00:00Z' }])
+        assert.throws(() => normalize({ ...trigger, ...bounds }));
+    assert.throws(() => normalize({ every: '1 hour', count: 2, until: '2026-12-01T00:00:00Z' }));
+  });
 });

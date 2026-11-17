@@ -23,7 +23,7 @@ those same conversations.
 
 - Native desktop acceptance: with a verified automation chat held by the desktop, change its model and schedule. Sync must save the schedule while reporting the pending model and preserving the chat. For an idle chat, Install must prepare one native configuration-only turn carrying the requested model and effort. Verify that the turn invokes no tools, fresh saved-settings inspection converges, and repeated Install sends no additional turn. Active chats wait without interruption; denied or uncertain writes are not retried. Component tests cover denied, uncertain, conflicting and unreadable settings without permitting schedule writes.
 
-- The named-zone declaration maps to a native timezone-qualified recurrence. Codex direct creation does not accept `DTSTART`, so only a new timezone-qualified schedule prepares a native review card and waits for verified saved settings. Timezone edits to existing schedules use direct updates. Native timing limitations are documented in [Codex automations](../../MANIFEST.md#codex-execution-and-ownership).
+- The finite named-zone declaration maps to a native timezone-qualified recurrence with `COUNT=3`. The saved-state roundtrip proves anchor retention through the packaged adapter, not native execution or exhaustion. Codex direct creation does not accept `DTSTART`, so a new timezone-qualified or finite schedule prepares a native review card and waits for verified saved settings. Timezone edits to existing schedules use direct updates. Native timing limitations are documented in [Codex automations](../../MANIFEST.md#codex-execution-and-ownership).
 - Native invocation acceptance: call `list_projects`, `list_threads`, and any required `read_thread` in the operator chat, then use `{}` for plan, threads-sync, prepare and acknowledge. Verify that copied inventories, digests and receipts are rejected and that an uncertain native save is reconciled from the original preparation plus saved state. A newer failed lookup must not reuse an older successful inventory.
 - Sidebar inventories and responses below are explicit headless operator fixtures without a native caller; native sidebar behavior requires desktop verification. Lookup inventories are explicit fixtures. `list` and `sync` inspect or plan native app actions; they do not write scheduler files. `threads-sync` creates/resumes real conversations through `codex app-server` under installation authorization and a fresh digest.
 - Native readback checks `auto_review`, `on-request`, and `workspace-write`. No model generation or provider credentials are used; run only in GitHub Actions.
@@ -57,7 +57,7 @@ node "$GITHUB_WORKSPACE/examples/codex-automations/unrelated-ledger-fixture.mjs"
 jq -n --arg workspace "$workspace" '{projects:{schemaVersion:2,projects:[{projectId:"fixture-project",projectKind:"local",hostId:"local",path:$workspace}]}}' > "$root/automation-input.json"
 node "$runtime" automations plan --plugin-data "$root/automation-data" < "$root/automation-input.json" \
   | tee "$root/automation-plan.json" \
-  | jq -e '.status == "requires-native-app-sync" and .actions[0].mode == "create" and (.actions[0].expected.rrule | startswith("DTSTART;TZID=America/New_York:")) and .actions[0].expected.projectId == "fixture-project" and .actions[0].expected.status == "PAUSED"'
+  | jq -e '.status == "requires-native-app-sync" and .actions[0].mode == "create" and (.actions[0].expected.rrule | startswith("DTSTART;TZID=America/New_York:")) and (.actions[0].expected.rrule | endswith(";COUNT=3")) and .actions[0].expected.projectId == "fixture-project" and .actions[0].expected.status == "PAUSED"'
 node "$runtime" setup install --plugin-data "$root/automation-data" \
   | jq -e '.status == "requires-native-app-sync"'
 test ! -d "$CODEX_HOME/automations"
@@ -82,7 +82,7 @@ runtime="$plugin_root/dist/codex/codex-runtime.js"
 digest=$(jq -r .digest "$root/automation-plan.json")
 jq --arg digest "$digest" '. + {digest:$digest}' "$root/automation-input.json" > "$root/prepare-input.json"
 node "$runtime" automations prepare --plugin-data "$root/automation-data" < "$root/prepare-input.json" \
-  | jq -e '.status == "prepared" and .request.mode == "suggested_create" and (.request.rrule | startswith("DTSTART;TZID=America/New_York:")) and .request.status == "PAUSED"'
+  | tee "$root/finite-prepared.json" | jq -e '.status == "prepared" and .request.mode == "suggested_create" and (.request.rrule | startswith("DTSTART;TZID=America/New_York:")) and .request.status == "PAUSED"'
 if node "$runtime" automations acknowledge --plugin-data "$root/automation-data" < "$root/prepare-input.json" 2> "$root/review-pending.json"; then exit 1; fi
 jq -e '.code == "automation-review-pending"' "$root/review-pending.json"
 test ! -d "$CODEX_HOME/automations"
@@ -120,6 +120,14 @@ node "$GITHUB_WORKSPACE/scripts/codex-sidebar-fixture.mjs" "$runtime" "$root/thr
 jq -S '.threads' "$root/threads-updated.json" > "$root/threads-settings.json"
 jq -S '.threads' "$root/threads-cold.json" | diff - "$root/threads-settings.json"
 test ! -d "$CODEX_HOME/automations"
+
+# should retain the saved finite rule across fresh process synchronization
+root="$TMPDIR/agent-system-codex-automations"
+runtime="$(jq -r .cachePath "$root/cache.json")/dist/codex/codex-runtime.js"
+workspace=$(cd "$GITHUB_WORKSPACE/examples/codex-automations/automation" && pwd -P)
+node "$GITHUB_WORKSPACE/examples/codex-automations/save-automation-fixture.mjs" "$root/finite-prepared.json" "$workspace" "$CODEX_HOME" finite-review
+node "$runtime" automations acknowledge --plugin-data "$root/automation-data" < "$root/prepare-input.json" | jq -e '.status == "verified"'
+node "$runtime" automations plan --plugin-data "$root/automation-data" < "$root/automation-input.json" | jq -e '.status == "aligned" and .actions == []'
 
 # should establish an owned active cutover fixture through packaged prepare and readback
 root="$TMPDIR/agent-system-codex-automations"

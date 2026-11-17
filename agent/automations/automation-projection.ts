@@ -27,6 +27,8 @@ export type NativeAutomationSpec = Record<string, unknown> & {
 };
 
 export function effectiveAutomation(job: ResolvedAutomation, context: AutomationProjectionContext) {
+  if (job.schedule.count !== undefined || job.schedule.until !== undefined)
+    throw new AutomationError('automation-schedule-bounds-unsupported');
   const override = job.overrides.openclaw;
   if (override?.effort && !(explicitModelEfforts as readonly string[]).includes(override.effort)) {
     throw new AutomationError('automation-effort-unsupported');

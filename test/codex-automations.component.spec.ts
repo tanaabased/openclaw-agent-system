@@ -373,6 +373,115 @@ describe('agent/codex-automations', () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  for (const target of ['independent', 'thread'] as const)
+    it(`should prepare finite ${target} schedules across clock changes and retain exact saved bounds on later syncs`, async () => {
+      let time = Date.parse('2026-11-16T12:00:01Z');
+      const dependencies = { ...deps(), now: () => time };
+      nativeInventory.sections.push({
+        sectionId: 'finite-section',
+        name: 'AGENT SYSTEM',
+        itemKeys: ['codex:thread:local:finite-thread'],
+      });
+      const finiteInputs = () => ({
+        ...inputs(),
+        threads: [
+          {
+            schemaVersion: 1,
+            thread: {
+              id: 'finite-thread',
+              kind: 'codex',
+              hostId: 'local',
+              cwd: workspace,
+              status: { type: 'idle' },
+            },
+          },
+        ],
+      });
+      const declaration = (extra = '') =>
+        job(
+          extra +
+            (target === 'thread'
+              ? '    overrides: { codex: { target: { thread: finite-thread } } }\n'
+              : ''),
+        );
+      for (const bounds of ['count: 3', "until: '2026-11-16T15:00:00Z'"]) {
+        await manifest(declaration().replace('every 1 hour', `{ every: 1 hour, ${bounds} }`));
+        const plan = await inspectCodexAutomations(pluginData, finiteInputs(), dependencies);
+        assert.equal(plan.status, 'requires-native-app-sync', JSON.stringify(plan.findings));
+        assert.equal(plan.actions.length, 1, JSON.stringify(plan.findings));
+        time += 60_000;
+        const later = await inspectCodexAutomations(pluginData, finiteInputs(), dependencies);
+        assert.equal(later.digest, plan.digest, JSON.stringify({ plan, later }));
+        const prepared = await prepareCodexAutomation(
+          pluginData,
+          plan.digest,
+          finiteInputs(),
+          dependencies,
+        );
+        assert.equal(
+          prepared.request.mode,
+          plan.actions[0]!.mode === 'create' ? 'suggested_create' : 'update',
+        );
+        assert.match(prepared.request.rrule, /^DTSTART:20261116T130101Z\n/u);
+        assert.ok(
+          prepared.request.rrule.endsWith(
+            bounds.startsWith('count') ? 'COUNT=3' : 'UNTIL=20261116T150000Z',
+          ),
+        );
+        await nativeWrite(prepared.request);
+        await acknowledgeCodexAutomation(pluginData, plan.digest, undefined, dependencies);
+        const rule = prepared.request.rrule;
+        // simulates inspection long after exhaustion; native execution is not run here.
+        time = Date.parse('2027-11-16T12:00:00Z');
+        const unchanged = await inspectCodexAutomations(pluginData, finiteInputs(), dependencies);
+        assert.equal(unchanged.status, 'aligned');
+        assert.deepEqual(unchanged.actions, []);
+        await manifest(
+          declaration('    enabled: false\n')
+            .replace('every 1 hour', `{ every: 1 hour, ${bounds} }`)
+            .replace('Review this workspace.', 'Changed prompt.'),
+        );
+        const edit = await inspectCodexAutomations(pluginData, finiteInputs(), dependencies);
+        assert.equal(edit.actions[0]!.expected.rrule, rule);
+        const updated = await prepareCodexAutomation(
+          pluginData,
+          edit.digest,
+          finiteInputs(),
+          dependencies,
+        );
+        assert.equal(updated.request.id, 'fixture-native');
+        assert.equal(updated.request.status, 'PAUSED');
+        await nativeWrite(updated.request);
+        await acknowledgeCodexAutomation(pluginData, edit.digest, undefined, dependencies);
+        time = Date.parse('2026-11-16T12:00:01Z');
+      }
+    });
+
+  it('should activate bounds on an existing unbounded job without reusing its backdated start', async () => {
+    const declaration = (bounds = '') =>
+      job().replace('every 1 hour', `{ cron: '0 9 * * *', timezone: UTC${bounds} }`);
+    await manifest(declaration());
+    const original = await inspect();
+    await prepareCodexAutomation(pluginData, original.digest, inputs(), deps());
+    await nativeWrite(original.actions[0]!.expected);
+    await acknowledgeCodexAutomation(pluginData, original.digest, undefined, deps());
+    await manifest(declaration(', count: 1'));
+    const dependencies = { ...deps(), now: () => Date.parse('2026-11-16T08:00:01Z') };
+    const finite = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    const prepared = await prepareCodexAutomation(
+      pluginData,
+      finite.digest,
+      inputs(),
+      dependencies,
+    );
+    assert.equal(prepared.request.mode, 'update');
+    assert.equal(prepared.request.id, 'fixture-native');
+    assert.equal(
+      prepared.request.rrule,
+      'DTSTART:20261116T080002Z\nRRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0;COUNT=1',
+    );
+  });
+
   it('should leave codex jobs with unsupported environment declarations unchanged', async () => {
     await manifest(job());
     await syncOne();

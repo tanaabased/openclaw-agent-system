@@ -8,6 +8,7 @@ automations:
     schedule:
       cron: '0 9 * * *'
       timezone: America/New_York
+      count: 3
     prompt: Review this workspace and report findings.
     overrides:
       codex:
