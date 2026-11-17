@@ -142,6 +142,50 @@ agent:
     }
   });
 
+  it('should decode pet asset references and normalize the mini alias', () => {
+    const canonical = parseAgentManifest(
+      'schema-version: 1\nagent: { id: tanaabot, avatar: avatar.png, pet: pets/rocker.json }\n',
+    );
+    const alias = parseAgentManifest(
+      'schema-version: 1\nagent: { id: tanaabot, mini: pets/legacy.json }\n',
+    );
+    const precedence = parseAgentManifest(
+      'schema-version: 1\nagent: { id: tanaabot, pet: pets/current.json, mini: pets/legacy.json }\n',
+    );
+    const absent = parseAgentManifest('schema-version: 1\nagent: { id: tanaabot }\n');
+
+    assert.equal(canonical.status, 'valid');
+    if (canonical.status === 'valid')
+      assert.deepEqual(canonical.manifest.agent, {
+        id: 'tanaabot',
+        avatar: 'avatar.png',
+        pet: 'pets/rocker.json',
+      });
+    assert.equal(alias.status, 'valid');
+    if (alias.status === 'valid')
+      assert.deepEqual(alias.manifest.agent, { id: 'tanaabot', pet: 'pets/legacy.json' });
+    assert.equal(precedence.status, 'valid');
+    if (precedence.status === 'valid')
+      assert.deepEqual(precedence.manifest.agent, { id: 'tanaabot', pet: 'pets/current.json' });
+    assert.equal(absent.status, 'valid');
+    if (absent.status === 'valid') assert.deepEqual(absent.manifest.agent, { id: 'tanaabot' });
+  });
+
+  it('should reject empty pet asset references even when the alias is present', () => {
+    for (const agent of [
+      { id: 'tanaabot', pet: '' },
+      { id: 'tanaabot', pet: 42 },
+      { id: 'tanaabot', mini: '' },
+      { id: 'tanaabot', mini: false },
+      { id: 'tanaabot', pet: 'pets/current.json', mini: '' },
+    ]) {
+      assert.equal(
+        parseAgentManifest(JSON.stringify({ 'schema-version': 1, agent })).status,
+        'invalid',
+      );
+    }
+  });
+
   it('should parse direct op secret references only in environment.set object form', () => {
     const result = parseAgentManifest(`
 schema-version: 1
