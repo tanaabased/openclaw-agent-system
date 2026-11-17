@@ -1,4 +1,5 @@
 import { withDispatchTask } from '../dispatch/dispatch-task-scope.ts';
+import reviewContext from '../review/review-context.ts';
 import { omit } from 'lodash-es';
 import resolveGitProtocol from '../../../tools/git/protocol.ts';
 import {
@@ -18,7 +19,8 @@ import { feedbackConversationMode } from '../feedback/feedback-conversation-mode
 import { feedbackInputContext } from '../feedback/feedback-input.ts';
 import authorizeFeedback from '../feedback/feedback-source-context.ts';
 import { retainedIssueProgression } from '../issue-progression.ts';
-import { dispatchAdmission, managedTargetUrl } from '../managed-issue.ts';
+import { managedTargetUrl } from '../managed-issue.ts';
+import { taskAdmission } from '../task-admission.ts';
 import taskPullRequest from '../delivery/task-pull-request.ts';
 import taskTurnContext from './task-turn-context.ts';
 import workflowFailure from '../workflow-failure.ts';
@@ -101,7 +103,10 @@ export async function selectCodexTurnTask(
     )
       continue;
     try {
-      const receipt = await lookup.receipt(record.sourceThreadId, event.attempt);
+      const receipt = await lookup.receipt(
+        event.attempt.sourceThreadId ?? record.sourceThreadId,
+        event.attempt,
+      );
       if (receipt.status === 'verified' && receipt.turnId === turnId) {
         feedback.push(event);
       } else if (receipt.status !== 'verified') {
@@ -126,13 +131,19 @@ export async function selectCodexTurnTask(
   return {
     currentTurn: { threadId: turn.threadId, turnId },
     receipt: record.id,
-    stage:
-      feedback.length || unresolvedFeedback
+    stage: record.reviewAdmission
+      ? 'review'
+      : feedback.length || unresolvedFeedback
         ? 'feedback'
         : implementation
           ? 'implementation'
           : 'assessment',
-    contextRequest: !feedback.length && !unresolvedFeedback ? { action: 'context' } : undefined,
+    contextRequest:
+      !feedback.length && !unresolvedFeedback
+        ? record.reviewAdmission
+          ? { action: 'review', operation: 'context' }
+          : { action: 'context' }
+        : undefined,
     contextRuntime: implementation ? 'continuationRuntime' : 'dispatchRuntime',
     feedbackContextRequest: source && { action: 'context', id: record.id, eventId: source.id },
     ...(feedbackLimitation ? { feedbackLimitation } : {}),
@@ -175,7 +186,7 @@ async function readScopedTaskOwner(pluginData: string, turn: Turn) {
         manifest: current.manifest,
         workspace: current.workspace,
         codexHome: current.codexHome,
-        admission: dispatchAdmission(record, (await current.store.read())?.records ?? []),
+        admission: taskAdmission(record, (await current.store.read())?.records ?? []),
         git: { protocol: resolveGitProtocol(current.manifest) },
       }
     );
@@ -197,7 +208,81 @@ export default async function readCodexTurnTask(
   const readOwner = deps.owner ?? readCodexTaskOwner;
   const owner = await readOwner(pluginData, turn);
   if (!owner) return;
-  if (!owner.admission) throw new Error('turn-context-admission-unavailable');
+  if (owner.record.reviewAdmission) {
+    const connection = await (deps.connect ?? connectCodexThreads)(
+      owner.workspace,
+      owner.codexHome,
+    );
+    try {
+      const selected =
+        owner.feedbackContextRequest &&
+        owner.record.feedback?.events.find(
+          (event) => event.id === owner.feedbackContextRequest!.eventId,
+        );
+      let feedback;
+      let feedbackLimitation = owner.feedbackLimitation;
+      if (selected) {
+        try {
+          const provider = await (deps.feedbackConnect ?? connectCodexFeedback)(
+            owner.workspace,
+            new AbortController().signal,
+          );
+          await authorizeFeedback({
+            conversation: true,
+            record: owner.record,
+            event: selected,
+            intake: owner.record.reviewAdmission,
+            policy: owner.manifest.github!.notifications!,
+            provider: {
+              identity: provider.comments.identity,
+              reviews: provider.comments.reviews,
+              getItem: provider.client.getItem.bind(provider.client),
+              getIssueComment: provider.comments.getIssueComment.bind(provider.comments),
+            },
+            assertCurrent: async () => {
+              const live = await readOwner(pluginData, turn);
+              if (
+                live?.receipt !== owner.receipt ||
+                live.currentTurn.turnId !== owner.currentTurn.turnId
+              )
+                throw new Error('turn-context-native-caller-changed');
+            },
+          });
+          feedback = feedbackInputContext({
+            event: selected,
+            repository:
+              owner.record.reviewAdmission.repository.owner.login +
+              '/' +
+              owner.record.reviewAdmission.repository.name,
+            mode: 'work',
+            issueStage: 'review',
+            runtime: 'codex',
+            self: JSON.parse(selected.source).author?.nodeId === provider.comments.identity.nodeId,
+          });
+        } catch (error) {
+          feedbackLimitation = {
+            code: workflowFailure(error, 'review-feedback-context-unavailable').code,
+          };
+        }
+      }
+      return {
+        currentTurn: owner.currentTurn,
+        runtime: 'codex',
+        ...(await reviewContext({
+          record: { ...owner.record, worktree: owner.worktree },
+          manifest: owner.manifest,
+          workspace: owner.workspace,
+          resolveSkill: codexSkillResolver(connection.request, owner.worktree ?? owner.workspace),
+        })),
+        feedback,
+        feedbackLimitation,
+      };
+    } finally {
+      await connection.close();
+    }
+  }
+  if (!owner.admission || 'origin' in owner.admission)
+    throw new Error('turn-context-admission-unavailable');
   const { record, admission, manifest, workspace } = owner;
   const facts = omit(owner, [
     'record',

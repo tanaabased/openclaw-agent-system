@@ -10,7 +10,7 @@ import {
 import type { FeedbackSourceEvent } from './feedback-state.ts';
 import { admitFeedback, feedbackRevision } from './feedback-source.ts';
 import { WorkflowPolicyHeld } from '../live-workflow-policy.ts';
-import type { ManagedIssue as IntakeRecord } from '../managed-issue.ts';
+import type { TaskAdmission as IntakeRecord } from '../task-admission.ts';
 
 /** source authority is rechecked before context and every publication effect. */
 export default async function authorizeFeedback(input: {
@@ -66,8 +66,12 @@ export default async function authorizeFeedback(input: {
     throw new Error('feedback-source-author-changed');
   if (feedbackRevision(exact) !== event.revision) throw new Error('feedback-source-changed');
   if (
-    admitFeedback((await input.livePolicy?.()) ?? input.policy, provider.identity, exact)
-      .disposition !== 'approved'
+    admitFeedback(
+      (await input.livePolicy?.()) ?? input.policy,
+      provider.identity,
+      exact,
+      'origin' in intake ? 'review-request' : 'issue-assignment',
+    ).disposition !== 'approved'
   )
     throw new WorkflowPolicyHeld('feedback-not-approved');
   return source;

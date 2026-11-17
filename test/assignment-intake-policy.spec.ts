@@ -30,14 +30,17 @@ function fixture(): AgentManifest {
 }
 
 describe('assignment intake policy', () => {
-  it('should retain required schedules with an empty admission list and no review-only activation', () => {
+  it('should retain independent review scheduling without an assignment workflow', () => {
     const manifest = fixture();
     manifest.github!.notifications!.issueAssignment!.allowed = [];
     assert.equal(codexIntakeJobs(manifest).length, 1);
     assert.equal(openclawIntakeJobs(manifest).length, 1);
     manifest.github!.notifications!.reviewRequest = { allowed: [] };
     delete manifest.github!.notifications!.issueAssignment;
-    assert.equal(codexIntakeJobs(manifest).length, 0);
+    assert.deepEqual(
+      codexIntakeJobs(manifest).map((job) => job.id),
+      ['github-review-request'],
+    );
     assert.equal(openclawIntakeJobs(manifest).length, 0);
   });
 

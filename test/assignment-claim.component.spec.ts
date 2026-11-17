@@ -174,16 +174,17 @@ describe('agent/assignment-claim', () => {
     override: Partial<ClaimClient> = {},
     hasCapacity = true,
     eligibleInstanceIds?: string[],
+    selectedSource = source,
   ) =>
     claimAssignment({
       store: stores[index]!,
       client: { ...client, ...override },
-      source,
+      source: selectedSource,
       passId,
       hasCapacity,
       eligibleInstanceIds,
     });
-  const race = async (eligibleInstanceIds?: string[]) => {
+  const race = async (eligibleInstanceIds?: string[], selectedSource = source) => {
     let reads = 0;
     let release!: () => void;
     const barrier = new Promise<void>((resolve) => {
@@ -198,8 +199,15 @@ describe('agent/assignment-claim', () => {
       },
     };
     return Promise.all([
-      pass(0, 'first', override, true, eligibleInstanceIds),
-      pass(1, 'first', override, true, eligibleInstanceIds && [...eligibleInstanceIds].reverse()),
+      pass(0, 'first', override, true, eligibleInstanceIds, selectedSource),
+      pass(
+        1,
+        'first',
+        override,
+        true,
+        eligibleInstanceIds && [...eligibleInstanceIds].reverse(),
+        selectedSource,
+      ),
     ]);
   };
 
@@ -214,6 +222,20 @@ describe('agent/assignment-claim', () => {
     assert.deepEqual(results.map((result) => result.status).sort(), ['other-owner', 'owned']);
     assert.equal(comments.length, 1);
     assert.ok(results.every((result) => result.winnerId === comments[0]!.databaseId));
+  });
+
+  it('should elect one reviewer for the same real review request through the shared claim owner', async () => {
+    const request: ClaimSource = {
+      ...source,
+      kind: 'review-request',
+      assignmentEventId: 'RE_request',
+    };
+    assert.ok((await race(undefined, request)).every((claim) => claim.status === 'pending'));
+    const results = await Promise.all(
+      stores.map((_store, index) => pass(index, 'settled', {}, true, undefined, request)),
+    );
+    assert.deepEqual(results.map((result) => result.status).sort(), ['other-owner', 'owned']);
+    assert.equal(comments.length, 1);
   });
 
   it('should restrict new claims to the eligible pool without transferring visible ownership', async () => {

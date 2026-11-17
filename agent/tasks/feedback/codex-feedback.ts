@@ -6,7 +6,10 @@ import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
 import { type GitHubCanonicalFeedback } from '../../../channels/github/provider/review-feedback.ts';
 import { implementationMaterialSchema } from '../../../tools/dispatch/implementation-material-schema.ts';
 import { automationHash } from '../../automation-hash.ts';
-import { inspectCodexDispatchActivation } from '../../automations/codex-automation-activation.ts';
+import {
+  type inspectCodexDispatchActivation,
+  inspectCodexFeedbackActivation,
+} from '../../automations/codex-automation-activation.ts';
 import codexContinuationNative from '../implementation/codex-continuation-native.ts';
 import type { CodexDispatchDependencies } from '../dispatch/codex-dispatch-context.ts';
 import { codexDispatchNative } from '../dispatch/codex-dispatch-native.ts';
@@ -36,7 +39,8 @@ import feedbackPresentation from './feedback-presentation.ts';
 import { observeFeedbackPolicy } from './feedback-source.ts';
 import { retainedIssueProgression } from '../issue-progression.ts';
 import { WorkflowPolicyHeld } from '../live-workflow-policy.ts';
-import { dispatchAdmission } from '../managed-issue.ts';
+import { taskAdmission } from '../task-admission.ts';
+import reviewPolicy from '../review/review-policy.ts';
 import type { FeedbackProvider } from './feedback-provider.ts';
 import retainedIntakePolicy from '../retained-intake-policy.ts';
 import deliverTaskInput, { type TaskInputReceipt } from '../context/task-input-delivery.ts';
@@ -82,6 +86,7 @@ async function runCodexFeedbackScoped(
   const admittedState = await current.store.read();
   const selected =
     current.policy ??
+    reviewPolicy(current.manifest, 'codex') ??
     (admittedState ? retainedIntakePolicy(current.manifest, admittedState, 'codex') : undefined);
   const policy = selected?.policy;
   const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
@@ -89,6 +94,10 @@ async function runCodexFeedbackScoped(
   current.policy = selected;
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
   if (!caller) throw new Error('feedback-caller-required');
+  const activationFor =
+    deps.activation ??
+    ((data: string, dependencies: Parameters<typeof inspectCodexDispatchActivation>[1]) =>
+      inspectCodexFeedbackActivation(data, dependencies ?? {}, caller));
   const nativeContext =
     input.action !== 'next' &&
     (await store.read()).records.some(
@@ -99,7 +108,7 @@ async function runCodexFeedbackScoped(
     );
   const activation = nativeContext
     ? undefined
-    : await (deps.activation ?? inspectCodexDispatchActivation)(
+    : await activationFor(
         pluginData,
         { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
         false,
@@ -107,6 +116,13 @@ async function runCodexFeedbackScoped(
         'feedback',
       );
   const schedule = activation?.schedule;
+  const workflow =
+    schedule?.current.workflow ??
+    ((await store.read()).records.some(
+      (record) => record.threadId === caller && record.reviewAdmission,
+    )
+      ? 'review-request'
+      : 'issue-assignment');
   if (
     !nativeContext &&
     ['next', 'reconcile'].includes(input.action) &&
@@ -148,6 +164,7 @@ async function runCodexFeedbackScoped(
               checkpoint: (scan) => discoveryCheckpoint(store, scan),
               current,
               occurrence: occurrence.id,
+              workflow,
               now: scanTime,
               provider: await (deps.feedbackConnect ?? connectCodexFeedback)(
                 current.workspace,
@@ -159,7 +176,7 @@ async function runCodexFeedbackScoped(
           })
         : [];
     if (scans.length) {
-      const fresh = await (deps.activation ?? inspectCodexDispatchActivation)(
+      const fresh = await activationFor(
         pluginData,
         { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
         false,
@@ -177,7 +194,12 @@ async function runCodexFeedbackScoped(
           if (record.supersededBy || record.reset || !record.feedback) continue;
           const enabled = record.feedback.admission?.enabled;
           const observedAt = record.feedback.admission?.observedAt;
-          observeFeedbackPolicy(record.feedback, current.manifest.github?.notifications, scanTime);
+          observeFeedbackPolicy(
+            record.feedback,
+            current.manifest.github?.notifications,
+            scanTime,
+            record.reviewAdmission ? 'review-request' : 'issue-assignment',
+          );
           policyObserved ||=
             enabled !== record.feedback.admission?.enabled ||
             observedAt !== record.feedback.admission?.observedAt;
@@ -202,7 +224,7 @@ async function runCodexFeedbackScoped(
         await save();
       }
       const intake = await current.store.read();
-      if (!intake) throw new Error('feedback-intake-missing');
+      if (!intake && workflow !== 'review-request') throw new Error('feedback-intake-missing');
       const now = (deps.now ?? Date.now)();
       if (!state.records.some((record) => record.threadId)) return { status: 'idle' };
       let connection: Awaited<ReturnType<typeof connectCodexFeedback>> | undefined;
@@ -215,13 +237,17 @@ async function runCodexFeedbackScoped(
           await new GitHubIdentityCache(current.store.location).resolve(
             current.manifest.github?.notifications,
             connection.client,
-            'feedback',
+            workflow === 'review-request' ? 'review-feedback' : 'feedback',
           );
         }
         return connection;
       };
       const records = state.records.filter(
-        (record) => !record.supersededBy && !record.reset && record.threadId,
+        (record) =>
+          Boolean(record.reviewAdmission) === (workflow === 'review-request') &&
+          !record.supersededBy &&
+          !record.reset &&
+          record.threadId,
       );
       const reconcileInput = async (
         record: DispatchRecord,
@@ -339,7 +365,7 @@ async function runCodexFeedbackScoped(
             if (!record.request || !record.worktree)
               throw new Error('feedback-native-binding-mismatch');
             const provider = await providerFor();
-            const admitted = dispatchAdmission(record, intake.records ?? []);
+            const admitted = taskAdmission(record, intake?.records ?? []);
             if (!admitted) throw new Error('feedback-admission-missing');
             const owner = admitted.repository.owner.login,
               name = admitted.repository.name;
@@ -355,7 +381,7 @@ async function runCodexFeedbackScoped(
             const selfFeedback = source.author?.nodeId === provider.comments.identity.nodeId;
             const authorize = async () => {
               if (!nativeContext) {
-                const fresh = await (deps.activation ?? inspectCodexDispatchActivation)(
+                const fresh = await activationFor(
                   pluginData,
                   { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
                   false,
@@ -446,7 +472,9 @@ async function runCodexFeedbackScoped(
                     (await selectCodexTaskContext(pluginData, deps)).manifest.github!
                       .notifications!,
                   ),
-                  issueStage: retainedIssueProgression(record)?.stage ?? 'planning',
+                  issueStage: record.reviewAdmission
+                    ? 'review'
+                    : (retainedIssueProgression(record)?.stage ?? 'planning'),
                   self: selfFeedback,
                 }),
                 id: record.id,

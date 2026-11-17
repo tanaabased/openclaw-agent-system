@@ -29,6 +29,51 @@ const comment = (nodeId: string, body = '@receiver explain this') => ({
   updatedAt: '2026-10-13T01:00:00Z',
 });
 describe('agent/feedback-source', () => {
+  it('should keep reviewer feedback grants separate from author assignment grants', async () => {
+    const policy = intakeFixture().policy;
+    policy.issueAssignment!.feedback = { inherit: false, allowed: [] };
+    policy.reviewRequest = { allowed: [{ login: account.login, nodeId: account.nodeId }] };
+    const source = comment('review-explanation');
+    assert.equal(admitFeedback(policy, account, source).disposition, 'rejected');
+    assert.equal(admitFeedback(policy, account, source, 'review-request').disposition, 'approved');
+    const state: CodexFeedback = { startedAt: 0, baseline: {}, events: [] };
+    const client = {
+      identity: account,
+      listIssueComments: async () => ({ comments: [source], truncated: false }),
+      getIssueComment: async () => source,
+      reviews: {
+        ...reviewClientFixture(reviewFixture(), []),
+        listReviews: async () => ({ values: [], nextPage: 1 }),
+      },
+    };
+    await discoverFeedback({
+      state,
+      client,
+      policy,
+      workflow: 'review-request',
+      owner: 'owner',
+      name: 'repo',
+      number: 3,
+      nodeId: 'PR',
+      itemType: 'pull-request',
+      now: Date.parse('2026-10-14T00:00:00Z'),
+    });
+    assert.equal(state.events.length, 1);
+    policy.reviewRequest.feedback = { inherit: false, allowed: [] };
+    await discoverFeedback({
+      state,
+      client,
+      policy,
+      workflow: 'review-request',
+      owner: 'owner',
+      name: 'repo',
+      number: 3,
+      nodeId: 'PR',
+      itemType: 'pull-request',
+      now: Date.parse('2026-10-14T00:01:00Z'),
+    });
+    assert.equal(state.events[0]!.policyHeld, 'feedback-not-approved');
+  });
   it('should admit new feedback beyond completed history without losing source or replay evidence', async () => {
     const policy = intakeFixture().policy;
     policy.issueAssignment!.feedback = { inherit: true, allowed: [] };

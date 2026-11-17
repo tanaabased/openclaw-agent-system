@@ -1,5 +1,6 @@
 const actions: Record<string, readonly string[]> = {
   dispatch: [
+    'review',
     'launch',
     'response',
     'assessment',
@@ -119,6 +120,17 @@ export default function codexRuntimeRequest(route: string, args: string[], input
       throw new Error('workflow-command-action-mismatch');
     request.operation = 'delivery';
     request.deliveryOperation = effect;
+  } else if (route === 'dispatch' && action === 'review') {
+    if (
+      !operation ||
+      !['scan', 'next', 'prepare', 'reconcile', 'context', 'publish', 'launch', 'retire'].includes(
+        operation,
+      )
+    )
+      throw new Error('workflow-command-operation-invalid');
+    if (request.operation !== undefined && request.operation !== operation)
+      throw new Error('workflow-command-action-mismatch');
+    request.operation = operation;
   } else if (operation) {
     if (
       !(

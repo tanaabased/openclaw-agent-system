@@ -1,4 +1,5 @@
 import automationModels from './automation-models.ts';
+import reviewJobs, { reviewAutomationId } from './review-jobs.ts';
 import issuePickupJobs, { issuePickupAutomationId } from './issue-pickup-jobs.ts';
 import { issueChatTitleGuidance } from '../tasks/dispatch/issue-chat-title.ts';
 import { taskUpdateConsent } from '../tasks/feedback/task-update-instructions.ts';
@@ -22,11 +23,16 @@ export function codexIntakeJobs(
   runtime?: { entrypoint: string; pluginData: string },
 ): ResolvedAutomation[] {
   const declarations = manifest.automations ?? [];
-  if (declarations.some((job) => [intakeAutomationId, issuePickupAutomationId].includes(job.id)))
+  if (
+    declarations.some((job) =>
+      [intakeAutomationId, issuePickupAutomationId, reviewAutomationId].includes(job.id),
+    )
+  )
     throw new IntakeError('intake-automation-id-reserved');
   const jobs = automationModels(declarations, manifest.models, 'codex');
+  const reviews = reviewJobs(manifest, runtime);
   const selected = codexIntakePolicy(manifest);
-  if (!selected) return jobs;
+  if (!selected) return [...jobs, ...reviews];
   const settings = selected.policy.issueAssignment!;
   if (settings.model === undefined && !manifest.models?.low)
     throw new IntakeError('intake-low-profile-required');
@@ -84,5 +90,6 @@ export function codexIntakeJobs(
       'codex',
     ),
     ...issuePickupJobs(manifest, 'codex', runtime ? codexDispatchHandoff(runtime) : ''),
+    ...reviews,
   ];
 }

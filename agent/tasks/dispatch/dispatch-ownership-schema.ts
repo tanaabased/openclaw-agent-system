@@ -12,6 +12,7 @@ export default function dispatchOwnershipSchema(schema: TObject) {
   const properties = schema.properties;
   const delivery = (properties.delivery as TObject).properties;
   const manual = (properties.manualIssue as TObject).properties;
+  const review = (properties.reviewAdmission as TObject).properties;
   const adopted = select(properties.adoptedPullRequest!, [
     'pullRequestNodeId',
     'pullRequestNumber',
@@ -34,6 +35,14 @@ export default function dispatchOwnershipSchema(schema: TObject) {
       'receiptThreadId',
     ]).properties,
     adoptedPullRequest: Type.Optional(adopted),
+    reviewAdmission: Type.Optional(
+      Type.Object({
+        ...select(properties.reviewAdmission!, ['id', 'scope']).properties,
+        receiving: select(review.receiving!, ['nodeId']),
+        repository: select(review.repository!, ['nodeId']),
+        issue: select(review.issue!, ['nodeId']),
+      }),
+    ),
     delivery: Type.Optional(
       Type.Object({
         binding: select(delivery.binding!, [

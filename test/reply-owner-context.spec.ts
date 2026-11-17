@@ -56,6 +56,22 @@ describe('agent/reply-owner-context', () => {
       undefined,
     );
   });
+
+  it('should select the reviewer composer and pr destination independently of author delivery', () => {
+    const input = fixture();
+    input.record.reviewAdmission = { issue: input.intake.issue } as unknown as NonNullable<
+      SharedDispatchRecord['reviewAdmission']
+    >;
+    const owner = replyOwnerContext(input);
+    assert.equal(owner.workflow, 'review-request');
+    assert.equal(owner.pullRequestNumber, input.intake.issue.number);
+    const target = {
+      owner: 'owner',
+      name: 'repo',
+      number: input.intake.issue.number,
+    } as ReplyTarget;
+    assert.equal(replyOwner([owner], 'chat', 'chat', target)?.workflow, 'review-request');
+  });
   it('should retain both native custody failure and shared lifecycle inactivity', () => {
     const input = fixture();
     assert.equal(replyOwnerContext({ ...input, custodyInvalid: true }).inactive, true);

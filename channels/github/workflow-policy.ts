@@ -40,7 +40,7 @@ export interface GitHubNotificationPolicy {
     pullRequest?: { recipients?: GitHubPullRequestRecipient[]; defaultAssignmentActor?: boolean };
     feedback?: GitHubFeedbackPolicy;
   };
-  reviewRequest?: {
+  reviewRequest?: AutomationModelSettings & {
     paused?: boolean;
     allowed: GitHubApprovedActor[];
     review?: AssessmentConfiguration;

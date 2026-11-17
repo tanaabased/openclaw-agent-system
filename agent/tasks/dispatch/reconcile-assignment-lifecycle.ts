@@ -13,11 +13,8 @@ import type DiscoveryBudget from '../../discovery-budget.ts';
 import { inspectAdmittedIssue, inspectAssignmentRemoval } from './dispatch-assignment.ts';
 import { issueKey } from './dispatch-pending.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
-import {
-  dispatchAdmission,
-  managedPullRequest,
-  type ManagedIssue as IntakeRecord,
-} from '../managed-issue.ts';
+import { managedPullRequest, type ManagedIssue as IntakeRecord } from '../managed-issue.ts';
+import { taskAdmission, type TaskAdmission } from '../task-admission.ts';
 import workflowFailure from '../workflow-failure.ts';
 export interface RetirementNativeObservation {
   archived: boolean;
@@ -35,6 +32,7 @@ export interface RetirementCleanupResult {
 export default async function reconcileAssignmentLifecycle<R extends SharedDispatchRecord>(input: {
   records: R[];
   admitted: IntakeRecord[];
+  workflow?: 'issue-assignment' | 'review-request';
   policy: NonNullable<ReturnType<typeof assignmentIntakePolicy>>;
   client: GitHubNotificationIntakeClient;
   targetId?: string;
@@ -45,15 +43,15 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
   observe(record: R): Promise<RetirementNativeObservation | undefined>;
   cleanup(
     record: R,
-    intake: IntakeRecord,
+    intake: TaskAdmission,
     fresh: () => Promise<void>,
     shared: readonly R[],
     native: RetirementNativeObservation | undefined,
     issueClosed: boolean,
   ): Promise<RetirementCleanupResult>;
-  reactivate?(record: R, intake: IntakeRecord): Promise<boolean>;
-  prepare?(record: R, intake: IntakeRecord): Promise<void>;
-  dispose(record: R, intake: IntakeRecord): Promise<void>;
+  reactivate?(record: R, intake: TaskAdmission): Promise<boolean>;
+  prepare?(record: R, intake: TaskAdmission): Promise<void>;
+  dispose(record: R, intake: TaskAdmission): Promise<void>;
   fresh(): Promise<void>;
   save(): Promise<void>;
 }) {
@@ -64,6 +62,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
   const graceMinutes = configuration.status === 'ready' ? configuration.graceMinutes : undefined;
   const latest = new Map(input.admitted.map((item) => [issueKey(item), item]));
   const selected = input.records
+    .filter((record) => Boolean(record.reviewAdmission) === (input.workflow === 'review-request'))
     .filter((record) => !record.supersededBy && !record.reset)
     .filter((record) => !input.targetId || record.id === input.targetId)
     .filter(
@@ -83,7 +82,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
     if (input.budget?.exhausted) break;
     record.lifecycleCheckedAt = now;
     delete record.lifecyclePending;
-    const admitted = dispatchAdmission(record, input.admitted);
+    const admitted = taskAdmission(record, input.admitted);
     if (!admitted) continue;
     try {
       const wasMissing = Boolean(record.assignmentObservation);
@@ -115,13 +114,16 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
           item.nodeId !== admission.issue.nodeId ||
           item.databaseId !== admission.issue.databaseId ||
           item.number !== admission.issue.number ||
-          item.itemType !== (managedPullRequest(admission) ? 'pull-request' : 'issue')
+          item.itemType !==
+            ('origin' in admission || managedPullRequest(admission) ? 'pull-request' : 'issue')
         )
           throw new Error('dispatch-issue-identity-changed');
         if (item.state !== 'open') {
           delete target.assignmentObservation;
           return 'issue-closed' as const;
         }
+        // Review submission removes GitHub membership normally; only closure/archive retires it.
+        if ('origin' in admission) return undefined;
         const observation = await read('lifecycle-assignment', () =>
           inspectAssignmentRemoval(
             admission,
@@ -185,7 +187,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         record.retirement = assignmentRetirement({
           previous: record.retirement,
           reason,
-          intakeId: latest.get(record.issueKey)?.id ?? record.intakeId ?? record.manualIssue!.id,
+          intakeId: latest.get(record.issueKey)?.id ?? admitted.id,
           now,
           graceMinutes,
         });
@@ -293,7 +295,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
           record.retirement?.reason !== 'assignment-removed'
             ? 'chat-archived'
             : reason,
-        intakeId: successor?.id ?? record.intakeId ?? record.manualIssue!.id,
+        intakeId: successor?.id ?? admitted.id,
         now,
         graceMinutes,
         activityId: reason === 'issue-closed' ? undefined : native?.activityId,

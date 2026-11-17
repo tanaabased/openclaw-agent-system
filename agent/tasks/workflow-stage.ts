@@ -4,6 +4,7 @@ import {
   defaultAssessmentSkill,
   defaultFeedbackSkill,
   defaultImplementationSkill,
+  defaultReviewSkill,
   type AssessmentConfiguration,
 } from '../../manifest/assessment-schema.ts';
 import assessmentGuidance from './assessment/assessment-guidance.ts';
@@ -32,7 +33,7 @@ export async function selectWorkflowStage(input: {
         ? defaultImplementationSkill
         : input.stage === 'feedback'
           ? defaultFeedbackSkill
-          : undefined);
+          : defaultReviewSkill);
   if (!requestedSkill) throw new Error('workflow-stage-skill-required');
   const skill = await input.resolveSkill(requestedSkill);
   const guidance = await assessmentGuidance(input.workspace, input.configuration?.guidance);

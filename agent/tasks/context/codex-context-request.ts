@@ -6,7 +6,7 @@ import codexDispatchBinding, {
 import { isNativeDispatchSelection } from '../dispatch/native-dispatch-selection.ts';
 import nativeFeedbackSource from '../feedback/native-feedback-source.ts';
 import type { DispatchRecord } from '../dispatch/codex-dispatch-state.ts';
-import type { ManagedIssue } from '../managed-issue.ts';
+import type { TaskAdmission } from '../task-admission.ts';
 import {
   assertNativeContextInput,
   isNativeContextRequest,
@@ -28,7 +28,7 @@ export default async function codexContextRequest(
         receipt: string;
         feedbackContextRequest?: { eventId: string };
         record?: Pick<DispatchRecord, 'feedback'>;
-        admission?: ManagedIssue;
+        admission?: TaskAdmission;
       }
     | undefined
   > = readCodexTaskOwner,

@@ -27,6 +27,7 @@ export async function claimRouteEligibility(
 }
 
 export interface ClaimSource {
+  kind?: 'review-request';
   repositoryNodeId: string;
   owner: string;
   repository: string;
