@@ -28,6 +28,7 @@ export default function lifecycleDetails(
           ? 'github-channel-intake'
           : item.component;
   let message = item.message;
+  let status = item.status;
   if (item.stepId && item.component !== 'automations') message = `id: ${item.stepId}; ${message}`;
   else if (agentId && ['agent', 'tool-access'].includes(item.component))
     message = `id: ${agentId}; ${message}`;
@@ -40,6 +41,13 @@ export default function lifecycleDetails(
     );
   if (item.component === 'automations' && item.stepId) {
     const name = automationReportName(item.automationName, item.stepId);
+    if (
+      item.code === 'automation-retired' &&
+      ['healthy', 'updated', 'unchanged'].includes(item.status)
+    ) {
+      status = 'neutral';
+      message = `name: ${name}; condition: retired; confirmation disappears from routine output 24 hours after retirement; ownership history is retained.`;
+    }
     const routing = item.automationRouting;
     if (routing?.mode === 'persistent') {
       // remove only the known legacy fragments; routing facts come from fields, not prose.
@@ -115,7 +123,7 @@ export default function lifecycleDetails(
   const masked = identifiers.reduce((value, id) => value.replaceAll(id, maskedId(id)), text);
   return {
     component,
-    status: item.status,
+    status,
     message: masked.replace(/\bDevice (\*{3}[A-Za-z0-9_-]{4})/gu, 'device: $1'),
   };
 }

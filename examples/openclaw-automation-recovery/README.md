@@ -147,4 +147,15 @@ openclaw agent-system doctor --json | jq -e '.status == "healthy" and any(.findi
 openclaw agent-system automations list --json | tee "$TMPDIR/automation-retired.json" | jq -e '.status == "aligned" and any(.jobs[]; .id == "identity" and .retired == true and .nativeEnabled == null)'
 jq -S '[.jobs[] | select(.id == "prompt") | {id, nativeId, routing}]' "$TMPDIR/automation-before.json" > "$TMPDIR/automation-prompt-identity.json"
 jq -S '[.jobs[] | select(.id == "prompt") | {id, nativeId, routing}]' "$TMPDIR/automation-retired.json" | diff - "$TMPDIR/automation-prompt-identity.json"
+
+# should show retirement as a neutral confirmation in doctor and install
+cd "$GITHUB_WORKSPACE/examples/openclaw-automation-recovery"
+NO_COLOR=1 openclaw agent-system doctor | tee "$TMPDIR/retirement-doctor.txt"
+NO_COLOR=1 openclaw agent-system install --yes | tee "$TMPDIR/retirement-install.txt"
+for report in "$TMPDIR/retirement-doctor.txt" "$TMPDIR/retirement-install.txt"; do
+  grep -F 'neutral' "$report"
+  grep -F 'retired;' "$report"
+  grep -F 'hours after retirement' "$report"
+  grep -F 'ownership history is retained' "$report"
+done
 ```

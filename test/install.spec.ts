@@ -121,6 +121,43 @@ function createHarness(
 }
 
 describe('cli/install', () => {
+  it('should show new and repeated retirement confirmations as neutral without changing results', async () => {
+    for (const status of ['updated', 'unchanged'] as const) {
+      const result: AgentInstallResult = {
+        agentId: 'tanaabot',
+        workspaceDir: '/workspace',
+        warnings: [],
+        outcomes: [
+          {
+            component: 'automations',
+            stepId: 'backup',
+            automationName: 'BACKUP',
+            code: 'automation-retired',
+            status,
+            message: 'Automation backup remains retired.',
+          },
+        ],
+      };
+      const original = structuredClone(result);
+      for (const json of [false, true]) {
+        const harness = createHarness({ install: result, json, terminalColumns: 240 });
+        await harness.run();
+        assert.deepEqual(harness.exitCodes, []);
+        if (json) assert.deepEqual(JSON.parse(harness.output.join('')), original);
+        else {
+          assert.match(
+            harness.output.join(''),
+            /automation +neutral +name: BACKUP; condition: retired/u,
+          );
+          assert.match(
+            harness.output.join(''),
+            /24 hours after retirement; ownership history is retained/u,
+          );
+        }
+        assert.deepEqual(result, original);
+      }
+    }
+  });
   it('should preserve the automation and safe native reason in first-install failure output', async () => {
     const diagnostic = {
       method: 'sessions.create' as const,

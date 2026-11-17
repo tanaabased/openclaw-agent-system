@@ -5,6 +5,7 @@ import stringWidth from 'fast-string-width';
 
 import { createCliStyles, type CliStyles, renderCliLifecycleTable } from '../cli/output.ts';
 import { lifecycleTableLines } from '../core/lifecycle-presentation.ts';
+import lifecycleDetails from '../cli/lifecycle-details.ts';
 import { doctorFindings, installOutcomes } from './lifecycle-presentation-fixtures.ts';
 
 const renderTable = (...args: Parameters<typeof renderCliLifecycleTable>) =>
@@ -24,6 +25,39 @@ const markerStyles: CliStyles = {
 };
 
 describe('cli/lifecycle-output', () => {
+  it('should keep retired confirmations dim and real retirement problems actionable', () => {
+    const rows = lifecycleTableLines([
+      lifecycleDetails({
+        component: 'automations',
+        stepId: 'backup',
+        code: 'automation-retired',
+        status: 'healthy',
+        message: 'Automation backup: retired.',
+      }),
+      ...['automation-retired-id', 'automation-ownership-conflict'].map((code) =>
+        lifecycleDetails({
+          component: 'automations',
+          stepId: 'backup',
+          code,
+          status: 'blocked',
+          message: 'Automation backup: ' + code,
+        }),
+      ),
+    ]);
+    const rendered = renderTable(rows, '/workspace', markerStyles, 240);
+    assert.match(
+      rendered[0]!,
+      /^automation +<dim>neutral<\/dim> +<dim>name: BACKUP; condition: retired/u,
+    );
+    assert.ok(
+      rows
+        .slice(1)
+        .every(
+          ({ attention, style, label }) => attention && style === 'error' && label === 'blocked',
+        ),
+    );
+    assert.ok(rows.slice(1).every(({ value }) => !value.includes('confirmation disappears')));
+  });
   it('should keep tables flush left and separate logical rows without splitting wrapped lines', () => {
     const rows = renderCliLifecycleTable(
       lifecycleTableLines(doctorFindings),

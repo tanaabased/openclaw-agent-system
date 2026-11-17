@@ -7,6 +7,7 @@ export type AgentSystemLifecyclePresentationStatus =
   | 'drift'
   | 'healthy'
   | 'manual'
+  | 'neutral'
   | 'removed'
   | 'skipped'
   | 'unchanged'
@@ -52,7 +53,7 @@ export function lifecycleTableLines(
     attention: ['blocked', 'drift', 'warning', 'manual'].includes(status),
     component,
     label: status,
-    quiet: status === 'healthy' || status === 'unchanged' || status === 'skipped',
+    quiet: ['healthy', 'unchanged', 'skipped', 'neutral'].includes(status),
     style: presentationStyle(status),
     value: message,
   }));

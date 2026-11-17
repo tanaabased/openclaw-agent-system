@@ -18,6 +18,46 @@ const manifest: AgentManifestLoadResult = {
 };
 
 describe('cli/doctor', () => {
+  it('should show retirement as neutral without changing json or command success', async () => {
+    const result: AgentDoctorResult = {
+      agentId: 'data',
+      workspaceDir: '/workspace',
+      status: 'healthy',
+      findings: [
+        {
+          component: 'automations',
+          stepId: 'backup',
+          automationName: 'BACKUP',
+          code: 'automation-retired',
+          status: 'healthy',
+          message: 'Automation backup: retired.',
+        },
+      ],
+    };
+    const original = structuredClone(result);
+    for (const json of [false, true]) {
+      const output: string[] = [];
+      await doctorAgentSystem({
+        doctorService: { inspect: async () => result },
+        json,
+        manifestService: {
+          loadForAgentId: async () => manifest,
+          loadForCommandDirectory: async () => manifest,
+        },
+        output: { writeStderr() {}, writeStdout: (text) => output.push(text) },
+        setExitCode: () => assert.fail('retirement must not fail'),
+        styles: createCliStyles({ NO_COLOR: '1' }),
+        terminalColumns: 240,
+        workspaceDir: '/workspace',
+      });
+      if (json) assert.deepEqual(JSON.parse(output.join('')), original);
+      else {
+        assert.match(output.join(''), /automation +neutral +name: BACKUP; condition: retired/u);
+        assert.match(output.join(''), /24 hours after retirement; ownership history is retained/u);
+      }
+      assert.deepEqual(result, original);
+    }
+  });
   it('should show machine categories and masked thread details only in human output', async () => {
     const result: AgentDoctorResult = {
       agentId: 'data',
