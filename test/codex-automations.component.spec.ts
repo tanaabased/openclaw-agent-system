@@ -1215,12 +1215,14 @@ describe('agent/codex-automations', () => {
     );
   });
 
-  it('should create per-automation conversations and migrate only after retiring the old active schedule', async () => {
+  it('should retain deleted migration copies as history only after migration completes', async () => {
     await syncOne();
+    let now = 1234;
     const conversations = new Map<string, { id: string; name?: string }>();
     let creates = 0;
     const dependencies = {
       ...deps(),
+      now: () => now,
       threadAdapter: {
         async lookup(id: string) {
           return conversations.get(id) ?? null;
@@ -1251,6 +1253,13 @@ describe('agent/codex-automations', () => {
     );
     await nativeWrite(migration.actions[0]!.expected);
     await acknowledgeCodexAutomation(pluginData, prepared.digest, undefined, dependencies);
+    const old = join(codexHome, 'automations', 'fixture-native', 'automation.toml');
+    await rm(old);
+    await assert.rejects(
+      inspectCodexAutomations(pluginData, inputs(), dependencies),
+      rejectsCode('automation-retired-job-diverged'),
+    );
+    await nativeWrite(migration.actions[0]!.expected);
     const replacement = await inspectCodexAutomations(pluginData, inputs(), dependencies);
     assert.equal(replacement.actions[0]?.mode, 'create');
     assert.equal(replacement.actions[0]?.expected.kind, 'heartbeat');
@@ -1304,6 +1313,71 @@ describe('agent/codex-automations', () => {
       assert.deepEqual([...conversations.values()], [{ id: 'thread-1', name: 'Activity' }]);
       assert.equal((await readCodexAutomations(codexHome)).length, 2);
     }
+
+    await manifest();
+    await syncOne(dependencies);
+    await syncOne(dependencies, 'current');
+    await nativeWrite({ ...migration.actions[0]!.expected, status: 'ACTIVE' });
+    await assert.rejects(
+      inspectCodexAutomations(pluginData, inputs(), dependencies),
+      rejectsCode('automation-retired-job-diverged'),
+    );
+    await rm(old);
+    await rm(join(codexHome, 'automations', 'replacement', 'automation.toml'));
+    await manifest(job() + job().replace('id: review', 'id: peer'));
+    const beforeDeletionRecord = await ownership();
+    const doctor = await inspectCodexSetup(pluginData, undefined, {
+      ...dependencies,
+      automationInputs: inputs(),
+    });
+    assert.deepEqual(
+      doctor.automations.findings
+        .filter(({ code }) => code === 'automation-retirement-pending')
+        .map(({ nativeId }) => nativeId)
+        .sort(),
+      ['fixture-native', 'replacement'],
+    );
+    assert.equal((await ownership()).bytes, beforeDeletionRecord.bytes);
+
+    const unverified = join(codexHome, 'automations', 'unverified');
+    await symlink(workspace, unverified);
+    await assert.rejects(reconcileCodexAutomationRetirements(pluginData, dependencies));
+    assert.equal((await ownership()).bytes, beforeDeletionRecord.bytes);
+    await rm(unverified);
+
+    await reconcileCodexAutomationRetirements(pluginData, dependencies);
+    const next = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    assert.deepEqual(
+      next.actions.map(({ manifestId }) => manifestId),
+      ['peer'],
+    );
+    await syncOne(dependencies, 'peer-native');
+    const confirmed = await ownership();
+    assert.deepEqual(
+      confirmed.ledger.retired.map(({ retired }: { retired: unknown }) => retired),
+      Array(2).fill({ atMs: 1234, reason: 'native-job-absent' }),
+    );
+    now += 24 * 60 * 60 * 1000 - 1;
+    await reconcileCodexAutomationRetirements(pluginData, dependencies);
+    const recent = await listCodexAutomations(pluginData, inputs(), dependencies);
+    assert.equal(recent.status, 'aligned');
+    assert.equal(recent.unmanagedCount, 0);
+    assert.equal(recent.findings.filter(({ code }) => code === 'automation-retired').length, 2);
+    now++;
+    const expired = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    assert.equal(expired.status, 'aligned');
+    assert.ok(!expired.findings.some(({ code }) => code === 'automation-retired'));
+    assert.equal((await ownership()).bytes, confirmed.bytes);
+    assert.deepEqual(
+      (await readCodexAutomations(codexHome)).map(({ id }) => id),
+      ['current', 'peer-native'],
+    );
+
+    await nativeWrite(migration.actions[0]!.expected);
+    await assert.rejects(
+      inspectCodexAutomations(pluginData, inputs(), dependencies),
+      rejectsCode('automation-retired-job-diverged'),
+    );
   });
 
   for (const failure of ['busy', 'denied', 'uncertain', 'conflict', 'unreadable'] as const) {
