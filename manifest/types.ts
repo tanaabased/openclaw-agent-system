@@ -19,6 +19,7 @@ export interface AgentManifest {
     email?: ResolvableString;
     description?: string;
     avatar?: string;
+    pet?: string;
     emoji?: string;
     runtime?: 'codex';
   };
