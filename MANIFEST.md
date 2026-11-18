@@ -120,15 +120,17 @@ See the [README example](./README.md#usage) for a complete manifest.
 
 ### `agent`
 
-| Field         | Type                               | Required      | Default                  | Behavior                                                         |
-| ------------- | ---------------------------------- | ------------- | ------------------------ | ---------------------------------------------------------------- |
-| `avatar`      | string                             | no            | installed value retained | Applied by `install`; an undeclared OpenClaw avatar is retained. |
-| `description` | string                             | no            | none                     | Agent description retained for configured consumers.             |
-| `email`       | string or `from-environment` value | no            | none                     | Agent email available to configured consumers.                   |
-| `emoji`       | string                             | no            | installed value retained | Applied by `install`; an undeclared OpenClaw emoji is retained.  |
-| `id`          | string                             | yes           | none                     | Literal lowercase id matching `^[a-z0-9][a-z0-9-]*$`.            |
-| `name`        | string or `from-environment` value | for `install` | none                     | Agent display name applied to OpenClaw by `install`.             |
-| `runtime`     | `codex`                            | no            | none                     | Selects the Codex prerequisite and declared model runtime.       |
+| Field         | Type                               | Required      | Default                  | Behavior                                                             |
+| ------------- | ---------------------------------- | ------------- | ------------------------ | -------------------------------------------------------------------- |
+| `avatar`      | string                             | no            | installed value retained | Applied by `install`; an undeclared OpenClaw avatar is retained.     |
+| `description` | string                             | no            | none                     | Agent description retained for configured consumers.                 |
+| `email`       | string or `from-environment` value | no            | none                     | Agent email available to configured consumers.                       |
+| `emoji`       | string                             | no            | installed value retained | Applied by `install`; an undeclared OpenClaw emoji is retained.      |
+| `id`          | string                             | yes           | none                     | Literal lowercase id matching `^[a-z0-9][a-z0-9-]*$`.                |
+| `mini`        | string                             | no            | none                     | Alias for `pet`; `pet` takes precedence when both are supplied.      |
+| `name`        | string or `from-environment` value | for `install` | none                     | Agent display name applied to OpenClaw by `install`.                 |
+| `pet`         | string                             | no            | none                     | Workspace-root-relative path to a repository-owned pet sprite sheet. |
+| `runtime`     | `codex`                            | no            | none                     | Selects the Codex prerequisite and declared model runtime.           |
 
 `name` and `email` accept a literal or an explicit reference to the completed
 Agent System environment:

@@ -10,6 +10,8 @@ export const externalAgentSectionSchema = Type.Object(
     email: Type.Optional(externalResolvableStringSchema),
     description: Type.Optional(Type.String({ minLength: 1 })),
     avatar: Type.Optional(Type.String({ minLength: 1 })),
+    pet: Type.Optional(Type.String({ minLength: 1 })),
+    mini: Type.Optional(Type.String({ minLength: 1 })),
     emoji: Type.Optional(Type.String({ minLength: 1 })),
     runtime: Type.Optional(Type.Literal('codex')),
   },
@@ -20,12 +22,14 @@ export type ExternalAgentSection = Static<typeof externalAgentSectionSchema>;
 
 /** Decode schema-owned agent keys without deep-converting literal manifest data. */
 export function decodeAgentSection(value: ExternalAgentSection): AgentManifest['agent'] {
+  const pet = value.pet ?? value.mini;
   return {
     id: value.id,
     ...(value.name === undefined ? {} : { name: decodeResolvableString(value.name) }),
     ...(value.email === undefined ? {} : { email: decodeResolvableString(value.email) }),
     ...(value.description === undefined ? {} : { description: value.description }),
     ...(value.avatar === undefined ? {} : { avatar: value.avatar }),
+    ...(pet === undefined ? {} : { pet }),
     ...(value.emoji === undefined ? {} : { emoji: value.emoji }),
     ...(value.runtime === undefined ? {} : { runtime: value.runtime }),
   };
