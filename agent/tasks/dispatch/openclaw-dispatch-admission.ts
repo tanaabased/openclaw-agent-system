@@ -19,6 +19,7 @@ import resolveModelRoutingRequest from '../../models/model-routing-request.ts';
 import dispatchCapacity from './openclaw-capacity.ts';
 import {
   type default as OpenClawDispatchContext,
+  openClawDispatchFailureCode,
   type OpenClawDispatchTransaction,
   type OpenClawDispatchValidation,
 } from './openclaw-dispatch-context.ts';
@@ -282,15 +283,25 @@ export default class OpenClawDispatchAdmission {
       const result = await (assessment ? advanceIssueTurn : createIssueSession)({
         config: this.context.dependencies.config(),
         credential: this.context.guardedCredential(async (method) => {
-          const checked = await this.context.validate(
-            manifest,
-            workspace,
-            record,
-            false,
-            false,
-            client,
-            signal,
-          );
+          const checked = await this.context
+            .validate(manifest, workspace, record, false, false, client, signal)
+            .catch(async (error: unknown) => {
+              const code = openClawDispatchFailureCode(error);
+              if (
+                method === 'sessions.create' &&
+                !('initiation' in intake) &&
+                (code === 'dispatch-assignment-removed' ||
+                  code === 'dispatch-assignment-superseded')
+              ) {
+                // Only this preflight knows no native create request went out.
+                delete record.request;
+                delete record.sessionCreation;
+                delete record.claimId;
+                record.blocker = code;
+                await save();
+              }
+              throw error;
+            });
           if (
             method === 'sessions.create' &&
             managedPullRequest(intake) &&
