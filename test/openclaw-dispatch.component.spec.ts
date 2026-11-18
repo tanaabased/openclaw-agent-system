@@ -1473,18 +1473,47 @@ describe('agent/openclaw dispatch', () => {
     assert.equal(repositories, 1);
   });
 
-  it('should catch assignment revocation during preparation before creating a session', async () => {
+  it('should stop revoked startup and create exactly one session on fresh reassignment', async () => {
     const input = await fixtureState.next();
     const prepareWorktree = fixtureState.service.dependencies.worktrees.prepareGitHub;
+    const fixture = fixtureState.fixture;
+    const assignees = fixture.item.assignees;
     fixtureState.service.dependencies.worktrees.prepareGitHub = async (...args) => {
       const result = await prepareWorktree(...args);
-      fixtureState.fixture.item.assignees = [];
+      removeFixtureAssignment(fixture);
       return result;
     };
+    fixtureState.manifest.github!.notifications!.maxConcurrentItems = 1;
     const result = await fixtureState.prepare(input);
     assert.equal(result.status, 'blocked');
     assert.ok('code' in result && result.code === 'dispatch-assignment-removed');
     assert.equal(fixtureState.creates().length, 0);
+
+    fixtureState.service.dependencies.worktrees.prepareGitHub = prepareWorktree;
+    fixture.item.assignees = assignees;
+    const reassignment = {
+      ...fixture.events[0]!,
+      nodeId: 'E_reassignment',
+      databaseId: 32,
+      createdAt: new Date(baseline + 180000).toISOString(),
+    };
+    fixture.events.push(reassignment);
+    fixture.item.updatedAt = reassignment.createdAt;
+    fixtureState.fixtureIntake.dependencies.now = () => baseline + 240000;
+    const check = await fixtureState.service.check(fixtureState.manifest, fixtureState.root);
+    assert.equal(check.outcome, 'actionable');
+
+    fixtureState.coordinator.runId = 'reassignment-intake';
+    const recovered = await fixtureState.next();
+    assert.equal((await fixtureState.prepare(recovered)).status, 'session-created');
+    const later = await fixtureState.service.run(
+      fixtureState.manifest,
+      fixtureState.root,
+      { ...fixtureState.coordinator, runId: 'later-intake' },
+      { action: 'next' },
+    );
+    assert.deepEqual(later, { status: 'assessment-required', id: recovered.id });
+    assert.equal(fixtureState.creates().length, 1);
   });
 
   it('should reject unbound callers before any worktree or credential operation', async () => {

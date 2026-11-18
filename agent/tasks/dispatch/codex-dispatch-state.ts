@@ -82,6 +82,18 @@ export type IntakeDenial = Static<typeof intakeDenialSchema>;
 export const dispatchRecordSchema = Type.Object(
   {
     ...dispatchRecordProperties,
+    creationFailure: Type.Optional(
+      Type.Object(
+        {
+          count: Type.Integer({ minimum: 1, maximum: 3 }),
+          model: text,
+          thinking: text,
+          message: text,
+          terminal: Type.Boolean(),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     creationRecovery: Type.Optional(
       Type.Object(
         {
@@ -90,7 +102,11 @@ export const dispatchRecordSchema = Type.Object(
           latest: Type.Optional(
             Type.Object(
               {
-                kind: Type.Union([Type.Literal('denied'), Type.Literal('unsubmitted')]),
+                kind: Type.Union([
+                  Type.Literal('denied'),
+                  Type.Literal('unsubmitted'),
+                  Type.Literal('rejected'),
+                ]),
                 turnId: text,
                 callId: Type.Optional(text),
                 approvedBy: Type.Optional(text),
