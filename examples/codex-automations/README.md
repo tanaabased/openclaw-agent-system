@@ -7,7 +7,7 @@ those same conversations.
 ## What Belongs Here
 
 - Digest-bound plans for native automation actions without private scheduler-file writes, including isolation from another installation’s damaged ownership payload.
-- Packaged removal and verified-deletion retirement, with explicit saved-state fixtures rather than desktop scheduler execution.
+- Packaged removal, verified-deletion retirement, and replacement of missing current jobs, with explicit saved-state fixtures rather than desktop scheduler execution.
 - Real app-server conversation creation, selected model/permission readback, and attributed setup history without model generation.
 - Fresh-process resumption and shared profile changes preserving conversation identity, permissions, and durable model/effort settings.
 
@@ -192,12 +192,17 @@ for native_id in cutover-new cutover-heartbeat; do
   node "$runtime" automations acknowledge --plugin-data "$root/cutover-data" < "$root/migration-prepare.json" | jq -e '.status == "verified"'
 done
 
-# should report and reconcile deletion without recreating the migrated copy
+# should restore one paused job while retiring its deleted migration copy
 root="$TMPDIR/agent-system-codex-automations"
 runtime="$(jq -r .cachePath "$root/cache.json")/dist/codex/codex-runtime.js"
 export CODEX_HOME="$root/cutover-home"
-rm "$CODEX_HOME/automations/cutover-new/automation.toml"
-node "$runtime" automations inspect --plugin-data "$root/cutover-data" < "$root/migration-input.json" | jq -e 'any(.findings[]; .code == "automation-retirement-pending" and .nativeId == "cutover-new")'
-node "$runtime" automations sync --plugin-data "$root/cutover-data" < "$root/migration-input.json" | jq -e '.status == "aligned" and .actions == [] and any(.findings[]; .code == "automation-retired" and .nativeId == "cutover-new") and any(.jobs[]; .id == "update" and .nativeId == "cutover-heartbeat" and .nativeStatus == "ACTIVE")'
-test ! -f "$CODEX_HOME/automations/cutover-new/automation.toml"
+workspace="$root/cutover-workspace"
+node --input-type=module -e 'import fs from "node:fs"; import YAML from "yaml"; const path=process.argv[1]; const manifest=YAML.parse(fs.readFileSync(path,"utf8")); manifest.automations[0].enabled=false; fs.writeFileSync(path,YAML.stringify(manifest));' "$workspace/agent.yaml"
+rm "$CODEX_HOME/automations/cutover-new/automation.toml" "$CODEX_HOME/automations/cutover-heartbeat/automation.toml"
+node "$runtime" automations inspect --plugin-data "$root/cutover-data" < "$root/migration-input.json" | jq -e '.status == "blocked" and any(.findings[]; .code == "automation-retirement-pending" and .nativeId == "cutover-new")'
+node "$runtime" automations sync --plugin-data "$root/cutover-data" < "$root/migration-input.json" | jq --slurpfile inputs "$root/migration-input.json" -e 'select(.status == "requires-native-app-sync" and (.actions | length) == 1 and .actions[0].manifestId == "update" and .actions[0].mode == "create" and any(.findings[]; .code == "automation-retired" and .nativeId == "cutover-new")) | $inputs[0] + {digest:.digest}' > "$root/restore-prepare.json"
+node "$runtime" automations prepare --plugin-data "$root/cutover-data" < "$root/restore-prepare.json" | tee "$root/restore-prepared.json" | jq -e '.request.mode == "create" and .request.status == "PAUSED"'
+node "$GITHUB_WORKSPACE/examples/codex-automations/save-automation-fixture.mjs" "$root/restore-prepared.json" "$workspace" "$CODEX_HOME" cutover-restored
+node "$runtime" automations acknowledge --plugin-data "$root/cutover-data" < "$root/restore-prepare.json" | jq -e '.status == "verified" and .nativeId == "cutover-restored"'
+node "$runtime" automations sync --plugin-data "$root/cutover-data" < "$root/migration-input.json" | jq -e '.status == "aligned" and .actions == [] and any(.jobs[]; .id == "update" and .nativeId == "cutover-restored" and .nativeStatus == "PAUSED")'
 ```

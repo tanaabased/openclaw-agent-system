@@ -229,6 +229,9 @@ function inspectMigrationRetirements(
 async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: CodexAutomationInputs) {
   const { loaded, workspace, scope, codexHome, ledger } = selected;
   const jobs = selected.jobs;
+  const requireComplete = Boolean(
+    ledger.retired?.length || (!selected.cleanupOnly && ledger.records.length),
+  );
   const saved =
     jobs.some((job) => job.runtimes.includes('codex')) ||
     ledger.records.length ||
@@ -236,7 +239,7 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
     ledger.pending
       ? await (selected.dependencies.readAutomations ?? readCodexAutomations)(
           codexHome,
-          ledger.retired?.length ? { requireComplete: true } : undefined,
+          requireComplete ? { requireComplete } : undefined,
         )
       : [];
   const migration = inspectMigrationRetirements(selected, saved);
@@ -761,9 +764,7 @@ export async function reconcileCodexAutomationRetirements(
       if (actual?.id === record.nativeId) continue;
       if (actual || saved.some((item) => item.id === record.nativeId))
         throw new CodexAutomationError('automation-ownership-conflict');
-      if (declaredIds.has(record.id))
-        throw new CodexAutomationError('automation-native-recovery-required');
-      candidates.push(record);
+      if (!declaredIds.has(record.id)) candidates.push(record);
     }
     if (!candidates.length && !awaitingConfirmation.length) return;
     // re-read all saved state, then reauthorize the exact manifest and ownership at commit.
@@ -876,7 +877,15 @@ export async function acknowledgeCodexAutomation(
     if (selected.scope !== initial.scope || !pending || pending.digest !== digest)
       throw new CodexAutomationError('automation-pending-stale');
     const { action } = pending;
-    const saved = await readCodexAutomations(selected.codexHome);
+    const previous =
+      action.mode === 'create'
+        ? selected.ledger.records.find(({ id }) => id === action.manifestId)
+        : undefined;
+    const saved = await readCodexAutomations(
+      selected.codexHome,
+      previous ? { requireComplete: true } : undefined,
+    );
+    if (previous) inspectMigrationRetirements(selected, saved);
     const matches = pendingTargets(saved, selected.scope, action);
     const actual = matches.length === 1 ? matches[0] : undefined;
     const receiptId =
@@ -886,6 +895,7 @@ export async function acknowledgeCodexAutomation(
     if (
       !actual ||
       (action.id && actual.id !== action.id) ||
+      (previous && saved.some((item) => item.id === previous.nativeId && item.id !== actual.id)) ||
       (receiptId && receiptId !== actual.id) ||
       !savedMatches(actual, action.expected, selected.workspace)
     ) {
@@ -955,7 +965,13 @@ export async function cancelCodexAutomation(
     if (selected.scope !== initial.scope || !pending || pending.digest !== digest) {
       throw new CodexAutomationError('automation-cancel-recovery-required');
     }
-    const saved = await readCodexAutomations(selected.codexHome);
+    const recovering =
+      pending.action.mode === 'create' &&
+      selected.ledger.records.some(({ id }) => id === pending.action.manifestId);
+    const saved = await readCodexAutomations(
+      selected.codexHome,
+      recovering ? { requireComplete: true } : undefined,
+    );
     const before = pending.targetBefore;
     const unchanged = before
       ? automationHash(pendingTargets(saved, selected.scope, pending.action)) === before.hash &&
