@@ -44,7 +44,6 @@ openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE"
 export OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$GITHUB_WORKSPACE/examples/os-dispatch-enrollment/provider:$PATH"
 openclaw config set cron.enabled false --strict-json
 openclaw config set logging.file "$TMPDIR/online-native.log"
-openclaw-gateway start
 online_evidence() {
   online_status=$?
   trap - EXIT
@@ -59,6 +58,7 @@ online_evidence() {
 gateway_log=$(openclaw-gateway log-path)
 gateway_redactor="$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
 trap online_evidence EXIT
+openclaw-gateway start
 cd "$GITHUB_WORKSPACE/examples/os-install-online"
 first_status=0
 date -u +%Y-%m-%dT%H:%M:%SZ >"$TMPDIR/online-first.started"

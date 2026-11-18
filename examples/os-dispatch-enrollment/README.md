@@ -55,7 +55,12 @@ if ! jq -e 'if .blocked.sessionDispatchDiagnostic.reasonCode == "gateway-readine
 
 # should start the gateway for owner-consented device enrollment
 export OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$GITHUB_WORKSPACE/examples/os-dispatch-enrollment/provider:$PATH"
-openclaw-gateway start
+if ! openclaw-gateway start; then
+  gateway_log=$(openclaw-gateway log-path)
+  gateway_redactor="$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
+  tail -n 120 "$gateway_log" | node "$gateway_redactor" >&2 || true
+  exit 1
+fi
 
 # should enroll a paused issue workflow with no allowed actors
 set -o pipefail
