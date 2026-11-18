@@ -109,12 +109,15 @@ export default async function codexRetirementCleanup(input: {
   for (const job of jobs)
     if ('targetThreadId' in job.definition)
       protectedThreads.add(String(job.definition.targetThreadId));
-  if (
-    (await input.native.worktreeUsers(record.worktree, owners, protectedThreads)).some(
-      (id) => !owners.has(id),
-    )
-  )
-    return pending('retirement-worktree-shared');
+  const worktreeUsers = await input.native.worktreeUsers(
+    record.worktree,
+    owners,
+    protectedThreads,
+    {
+      allowEndedHelpers: discard,
+    },
+  );
+  if (worktreeUsers.some((id) => !owners.has(id))) return pending('retirement-worktree-shared');
   if (
     exists.isSymbolicLink() ||
     !exists.isDirectory() ||
