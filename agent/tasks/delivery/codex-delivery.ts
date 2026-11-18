@@ -939,7 +939,9 @@ async function runCodexDeliveryScoped(
             instruction: deliveryCompletionInstructions(
               'codex',
               { ...record, attached: delivery.attached },
-              Boolean(previous?.reconciled && previous.pullRequest),
+              Boolean(
+                adopted || adoptedPullRequest || (previous?.reconciled && previous.pullRequest),
+              ),
             ),
           };
         } catch (error) {

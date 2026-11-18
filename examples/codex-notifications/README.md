@@ -112,7 +112,10 @@ the same completion reply. Reuse its confirmed text and permalink in chat. A lat
 unanswered question or feedback on the PR must still receive its own source-bound
 reply. An uncertain announcement must be reconciled, never treated as a confirmed
 answer. These native instruction-following checks are not established by the
-headless tests below.
+headless tests below. In standalone Codex, also adopt and update an already-announced
+PR from another managed chat without its announcement record. Verify its PR card
+appears without false pending notice or instructions to compose or send another
+announcement, and confirm GitHub retains only its original announcement.
 
 ## Announcement recovery acceptance
 

@@ -120,6 +120,7 @@ export function announcementPresentation(
   authorLogin = state?.authorLogin,
   recovery?: AnnouncementRecovery,
 ) {
+  if (!state && !recovery) return '';
   const confirmed = state?.receipt && !state.code && !recovery;
   if (confirmed) return '';
   const quote = state?.publicText
@@ -341,8 +342,11 @@ export function deliveryCompletionInstructions(
       : '') +
     taskUpdateInstructions() +
     ' ' +
-    announcementRecoveryInstructions(delivery.announcement, delivery.announcementRecovery) +
-    ' When an admitted feedback request is on the announcement destination, include its completion answer in the announcement and reuse that confirmed comment as the reply. Do not publish a separate done/PR-ready reply with the same information. Different destinations or distinct unanswered questions still need their own source-bound replies. Show the announcement returned by its successful publication once; later presentation does not replay it. Call delivery present for the private PR card when delivering the PR. Ordinary status answers do not require a delivery card. Attempt these steps in this turn; retain any specific failure without reopening implementation or preparing a generic resume. Never recreate the verified PR. ' +
+    (updated && !delivery.announcement && !delivery.announcementRecovery
+      ? 'No initial announcement is needed for this PR update. '
+      : announcementRecoveryInstructions(delivery.announcement, delivery.announcementRecovery) +
+        ' When an admitted feedback request is on the announcement destination, include its completion answer in the announcement and reuse that confirmed comment as the reply. Do not publish a separate done/PR-ready reply with the same information. Different destinations or distinct unanswered questions still need their own source-bound replies. Show the announcement returned by its successful publication once; later presentation does not replay it. ') +
+    'Call delivery present for the private PR card when delivering the PR. Ordinary status answers do not require a delivery card. Attempt these steps in this turn; retain any specific failure without reopening implementation or preparing a generic resume. Never recreate the verified PR. ' +
     (runtime === 'codex'
       ? 'Use deliveryRuntime directly for these independent external effects; no conversation phase changes.'
       : 'Use agent_system_dispatch action delivery with the requested operation.')

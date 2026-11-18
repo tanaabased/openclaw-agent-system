@@ -285,6 +285,9 @@ export default async function openClawDelivery(input: {
   }
   const previous = record.delivery;
   const adopted = previous?.adopted;
+  const updating = Boolean(
+    adopted || adoptedPullRequest || (previous?.reconciled && previous.pullRequest),
+  );
   const { base, retainedBase } = selectDeliveryDestination({
     requestedBase: action.base,
     repositoryDefault: input.base,
@@ -525,7 +528,7 @@ export default async function openClawDelivery(input: {
     instructions: deliveryCompletionInstructions(
       'openclaw',
       record,
-      action.operation === 'publish' && Boolean(previous?.reconciled && previous.pullRequest),
+      action.operation === 'publish' && updating,
     ),
   };
 }

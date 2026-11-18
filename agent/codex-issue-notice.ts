@@ -401,7 +401,7 @@ export default function codexIssueNotice(input: {
             emoji:
               copy.emoji ??
               (copy.severity === 'info'
-                ? (input.emoji ?? '💡')
+                ? (input.emoji ?? 'ℹ️')
                 : { warning: '⚠️', error: '❌' }[copy.severity]),
             title: copy.title,
             facts,
