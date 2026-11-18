@@ -192,7 +192,7 @@ for native_id in cutover-new cutover-heartbeat; do
   node "$runtime" automations acknowledge --plugin-data "$root/cutover-data" < "$root/migration-prepare.json" | jq -e '.status == "verified"'
 done
 
-# should restore one paused job while retiring its deleted migration copy
+# should restore one paused job under its retired native id and reject conflicting readback
 root="$TMPDIR/agent-system-codex-automations"
 runtime="$(jq -r .cachePath "$root/cache.json")/dist/codex/codex-runtime.js"
 export CODEX_HOME="$root/cutover-home"
@@ -202,7 +202,12 @@ rm "$CODEX_HOME/automations/cutover-new/automation.toml" "$CODEX_HOME/automation
 node "$runtime" automations inspect --plugin-data "$root/cutover-data" < "$root/migration-input.json" | jq -e '.status == "blocked" and any(.findings[]; .code == "automation-retirement-pending" and .nativeId == "cutover-new")'
 node "$runtime" automations sync --plugin-data "$root/cutover-data" < "$root/migration-input.json" | jq --slurpfile inputs "$root/migration-input.json" -e 'select(.status == "requires-native-app-sync" and (.actions | length) == 1 and .actions[0].manifestId == "update" and .actions[0].mode == "create" and any(.findings[]; .code == "automation-retired" and .nativeId == "cutover-new")) | $inputs[0] + {digest:.digest}' > "$root/restore-prepare.json"
 node "$runtime" automations prepare --plugin-data "$root/cutover-data" < "$root/restore-prepare.json" | tee "$root/restore-prepared.json" | jq -e '.request.mode == "create" and .request.status == "PAUSED"'
-node "$GITHUB_WORKSPACE/examples/codex-automations/save-automation-fixture.mjs" "$root/restore-prepared.json" "$workspace" "$CODEX_HOME" cutover-restored
-node "$runtime" automations acknowledge --plugin-data "$root/cutover-data" < "$root/restore-prepare.json" | jq -e '.status == "verified" and .nativeId == "cutover-restored"'
-node "$runtime" automations sync --plugin-data "$root/cutover-data" < "$root/migration-input.json" | jq -e '.status == "aligned" and .actions == [] and any(.jobs[]; .id == "update" and .nativeId == "cutover-restored" and .nativeStatus == "PAUSED")'
+jq '.request.status = "ACTIVE"' "$root/restore-prepared.json" > "$root/restore-conflict-prepared.json"
+node "$GITHUB_WORKSPACE/examples/codex-automations/save-automation-fixture.mjs" "$root/restore-conflict-prepared.json" "$workspace" "$CODEX_HOME" cutover-new
+if node "$runtime" automations acknowledge --plugin-data "$root/cutover-data" < "$root/restore-prepare.json" 2> "$root/restore-conflict.json"; then exit 1; fi
+jq -e '.code == "automation-readback-diverged"' "$root/restore-conflict.json"
+node "$GITHUB_WORKSPACE/examples/codex-automations/save-automation-fixture.mjs" "$root/restore-prepared.json" "$workspace" "$CODEX_HOME" cutover-new
+node "$runtime" automations plan --plugin-data "$root/cutover-data" < "$root/migration-input.json" | jq --slurpfile plan "$root/restore-prepare.json" -e '.pendingDigest == $plan[0].digest and .actions == []'
+node "$runtime" automations acknowledge --plugin-data "$root/cutover-data" < "$root/restore-prepare.json" | jq -e '.status == "verified" and .nativeId == "cutover-new"'
+node "$runtime" automations sync --plugin-data "$root/cutover-data" < "$root/migration-input.json" | jq -e '.status == "aligned" and .actions == [] and any(.jobs[]; .id == "update" and .nativeId == "cutover-new" and .nativeStatus == "PAUSED")'
 ```

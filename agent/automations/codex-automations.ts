@@ -195,7 +195,24 @@ function inspectMigrationRetirements(
 ) {
   const { ledger, workspace } = selected;
   const savedById = new Map(saved.map((item) => [item.id, item]));
-  const usedNativeIds = new Set(ledger.records.map(({ nativeId }) => nativeId));
+  const owners = new Map(ledger.records.map(({ nativeId, id }) => [nativeId, id]));
+  const pending = ledger.pending;
+  // only an exact create readback absent at preparation can claim a retired native ID.
+  if (pending?.action.mode === 'create' && pending.targetBefore && ledger.retired?.length) {
+    const { action } = pending;
+    const [candidate, duplicate] = pendingTargets(saved, selected.scope, action);
+    if (
+      candidate &&
+      !duplicate &&
+      !pending.targetBefore.nativeIds.includes(candidate.id) &&
+      savedMatches(candidate, action.expected, workspace)
+    ) {
+      const owner = owners.get(candidate.id);
+      if (owner !== undefined && owner !== action.manifestId)
+        throw new CodexAutomationError('automation-retired-job-diverged');
+      owners.set(candidate.id, action.manifestId);
+    }
+  }
   const replacements = new Set(ledger.records.map(({ id }) => id));
   const awaitingConfirmation: Ledger['records'] = [];
   const findings: CodexAutomationPlan['findings'] = [];
@@ -204,15 +221,17 @@ function inspectMigrationRetirements(
   // migration acknowledgments append in order; a later paused copy also proves replacement.
   for (const retired of (ledger.retired ?? []).toReversed()) {
     const { id, nativeId, definition } = retired;
-    const actual = savedById.get(nativeId);
+    const owner = owners.get(nativeId);
+    // confirmed history may share its ID with a newer incarnation of the same declaration.
+    const actual = owner === undefined ? savedById.get(nativeId) : undefined;
     if (
-      usedNativeIds.has(nativeId) ||
+      (owner !== undefined && (owner !== id || !retired.retired)) ||
       definition.status !== 'PAUSED' ||
       (actual && (retired.retired || !savedMatches(actual, definition, workspace))) ||
       (!actual && !retired.retired && !replacements.has(id))
     )
       throw new CodexAutomationError('automation-retired-job-diverged');
-    usedNativeIds.add(nativeId);
+    owners.set(nativeId, id);
     replacements.add(id);
     if (actual) {
       presentCount++;
@@ -881,11 +900,11 @@ export async function acknowledgeCodexAutomation(
       action.mode === 'create'
         ? selected.ledger.records.find(({ id }) => id === action.manifestId)
         : undefined;
+    const checkRetirements = action.mode === 'create' && Boolean(selected.ledger.retired?.length);
     const saved = await readCodexAutomations(
       selected.codexHome,
-      previous ? { requireComplete: true } : undefined,
+      previous || checkRetirements ? { requireComplete: true } : undefined,
     );
-    if (previous) inspectMigrationRetirements(selected, saved);
     const matches = pendingTargets(saved, selected.scope, action);
     const actual = matches.length === 1 ? matches[0] : undefined;
     const receiptId =
@@ -901,6 +920,7 @@ export async function acknowledgeCodexAutomation(
     ) {
       throw new CodexAutomationError('automation-readback-diverged');
     }
+    if (checkRetirements) inspectMigrationRetirements(selected, saved);
     if (
       action.manifestId === intakeAutomationId &&
       action.expected.status === 'ACTIVE' &&
