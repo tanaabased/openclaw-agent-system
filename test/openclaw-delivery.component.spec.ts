@@ -327,7 +327,9 @@ describe('agent/openclaw-delivery', () => {
 
   it('should use the provider repository default when base is omitted', async () => {
     input.base = 'develop';
-    assert.equal((await publish()).status, 'published');
+    const published = await publish();
+    assert.equal(published.status, 'published');
+    assert.match(String(published.instructions), /delivery compose/);
     assert.equal(pr?.baseRef, 'develop');
   });
 
@@ -376,6 +378,7 @@ describe('agent/openclaw-delivery', () => {
     const result = await request('announce');
     assert.equal(result.status, 'announcement-blocked');
     assert.ok('code' in result && result.code === 'delivery-announcement-candidate-required');
+    assert.match(result.presentation!, /⚠️ PR announcement needs attention/);
     assert.match(result.presentation!, /compose.*candidate/i);
     assert.equal(announcement.posts, 0);
     assert.equal(record.delivery, undefined);
@@ -641,7 +644,13 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(record.announcement, undefined);
     assert.equal(pushes, 0);
     await request('prepare');
-    assert.equal((await request('publish', {})).status, 'published');
+    const published = await request('publish', {});
+    assert.equal(published.status, 'published');
+    assert.doesNotMatch(String(published.instructions), /delivery compose|delivery announce/);
+    const shown = await request('present');
+    assert.ok('presentation' in shown);
+    assert.match(String(shown.presentation), /Pull request/);
+    assert.doesNotMatch(String(shown.presentation), /PR announcement/);
     assert.equal(record.delivery!.binding.authorId, 'U_collaborator');
     assert.equal(record.delivery!.binding.base, 'release');
     assert.equal(record.delivery!.localBranch, 'task-branch');
