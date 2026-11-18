@@ -26,7 +26,7 @@ healthy state and setup drift.
 - Direct Ubuntu checks need no Gateway, model, or provider credential. The installed name proves environment resolution; direct configuration reads prove routing and the Codex prerequisite.
 - The first install registers an absent agent and configures its models in the same CLI invocation. This is the installed check that later steps consume newly saved registration rather than an older process snapshot.
 - Setup writes receipts beside the checked-in manifest on the disposable runner. Independent configuration snapshots prove validation, repeat install, and Doctor leave the relevant state unchanged.
-- The upgrade check deliberately installs Codex `2026.11.3` after the missing-plugin path, then explicitly restores the release-owned version. These two extra plugin installs prove the installed conflict/reconciliation boundary without another Gateway or model turn.
+- The upgrade check deliberately installs Codex `2026.11.4` after the missing-plugin path, then explicitly restores the release-owned version. These two extra plugin installs prove the installed conflict/reconciliation boundary without another Gateway or model turn.
 - Pending relocation: the final setup-failure fixture verifies safe child termination and diagnostic redaction through the installed CLI.
 
 ## Setup
@@ -78,12 +78,12 @@ printf 'host\nagent\n' | diff - setup-runs
 # should refuse an older shared codex plugin without replacing it
 cd "$GITHUB_WORKSPACE/examples/openclaw-workspace"
 export AGENT_SYSTEM_WORKSPACE_HOST_NAME=Workspace
-openclaw plugins install npm:@openclaw/codex@2026.11.3 --force --pin --accept-capabilities
+openclaw plugins install npm:@openclaw/codex@2026.11.4 --force --pin --accept-capabilities
 cp "$OPENCLAW_CONFIG_PATH" "$TMPDIR/workspace-before-conflict.json"
 if output=$(openclaw agent-system install --yes --json); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.blocked.code == "codex-plugin-conflict" and (.blocked.message | contains("2026.11.3") and contains("explicitly reconcile"))'
+printf '%s\n' "$output" | jq -e '.blocked.code == "codex-plugin-conflict" and (.blocked.message | contains("2026.11.4") and contains("explicitly reconcile"))'
 cmp "$OPENCLAW_CONFIG_PATH" "$TMPDIR/workspace-before-conflict.json"
-openclaw plugins inspect codex --json | jq -e '.plugin.version == "2026.11.3" and .install.version == "2026.11.3"'
+openclaw plugins inspect codex --json | jq -e '.plugin.version == "2026.11.4" and .install.version == "2026.11.4"'
 
 # should converge after explicit operator reconciliation of the shared codex plugin
 cd "$GITHUB_WORKSPACE/examples/openclaw-workspace"
