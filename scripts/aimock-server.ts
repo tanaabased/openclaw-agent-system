@@ -45,8 +45,43 @@ const mock = new LLMock({
   strict: true,
 });
 mock.addFixtures([...scenario.fixtures]);
-mock.mount('/responses', httpResponses);
-mock.mount('/v1/responses', httpResponses);
+const reasoningRequests: { model: string; effort: string | null }[] = [];
+const observeReasoning = [
+  'openclaw-automation-prompt',
+  'openclaw-automation-recovery',
+  'openclaw-automation-command-chat',
+].includes(scenario.id);
+const responses: Mountable = {
+  ...httpResponses,
+  async handleRequest(req) {
+    if (observeReasoning && req.method === 'POST') {
+      // AIMock's normalized journal drops Responses reasoning options.
+      const chunks: Buffer[] = [];
+      let remaining = 10 * 1024 * 1024;
+      req.on('data', (chunk: Buffer) => {
+        remaining -= chunk.length;
+        if (remaining >= 0) chunks.push(chunk);
+      });
+      req.once('end', () => {
+        if (remaining < 0) return;
+        try {
+          const { model, reasoning } = JSON.parse(Buffer.concat(chunks).toString());
+          if (typeof model !== 'string') return;
+          reasoningRequests.push({
+            model,
+            effort: typeof reasoning?.effort === 'string' ? reasoning.effort : null,
+          });
+          if (reasoningRequests.length > 100) reasoningRequests.shift();
+        } catch {
+          // AIMock still owns malformed request handling.
+        }
+      });
+    }
+    return false;
+  },
+};
+mock.mount('/responses', responses);
+mock.mount('/v1/responses', responses);
 
 let authenticatedEmbeddings = 0;
 let rejectedEmbeddings = 0;
@@ -67,9 +102,14 @@ if (scenario.embeddingAuthorization) {
 
 const evidenceService: Mountable = {
   async handleRequest(req, res, pathname) {
-    if (pathname !== '/evidence' && pathname !== '/diagnostics') return false;
+    if (pathname !== '/evidence' && pathname !== '/diagnostics' && pathname !== '/reasoning')
+      return false;
     if (req.method !== 'GET') {
       json(res, 405, { error: 'method not allowed' });
+      return true;
+    }
+    if (pathname === '/reasoning') {
+      json(res, 200, reasoningRequests);
       return true;
     }
     if (pathname === '/diagnostics' || fixtureErrors.length) {
