@@ -177,4 +177,27 @@ node "$GITHUB_WORKSPACE/examples/codex-automations/save-automation-fixture.mjs" 
 node "$runtime" automations acknowledge --plugin-data "$root/cutover-data" < "$root/cutover-prepare.json" | jq -e '.status == "verified"'
 node "$runtime" automations plan --plugin-data "$root/cutover-data" < "$root/cutover-input.json" | jq -e '.status == "aligned" and .actions == []'
 node "$runtime" automations sync --plugin-data "$root/cutover-data" < "$root/cutover-input.json" | jq -e '.status == "aligned" and (.jobs | length) == 2 and any(.jobs[]; .id == "nightly-refresh" and .retired == true and .nativeId == "cutover-old" and .nativeStatus == null) and any(.jobs[]; .id == "update" and .nativeId == "cutover-new" and .nativeStatus == "ACTIVE")'
+
+# should complete a target migration with a replacement before deleting the paused copy
+root="$TMPDIR/agent-system-codex-automations"
+runtime="$(jq -r .cachePath "$root/cache.json")/dist/codex/codex-runtime.js"
+export CODEX_HOME="$root/cutover-home"
+workspace="$root/cutover-workspace"
+node --input-type=module -e 'import fs from "node:fs"; import YAML from "yaml"; const path=process.argv[1]; const manifest=YAML.parse(fs.readFileSync(path,"utf8")); manifest.automations[0].overrides.codex={target:{thread:"cutover-thread"}}; fs.writeFileSync(path,YAML.stringify(manifest));' "$workspace/agent.yaml"
+jq --arg workspace "$workspace" '.threads=[{schemaVersion:1,thread:{id:"cutover-thread",kind:"codex",hostId:"local",cwd:$workspace,status:{type:"idle"}}}] | .nativeInventory={schemaVersion:4,unavailableHosts:[],unavailableSources:[],sections:[{sectionId:"cutover-section",name:"AGENT SYSTEM",itemKeys:["codex:thread:local:cutover-thread"]}]}' "$root/cutover-input.json" > "$root/migration-input.json"
+for native_id in cutover-new cutover-heartbeat; do
+  node "$runtime" automations plan --plugin-data "$root/cutover-data" < "$root/migration-input.json" | jq --slurpfile inputs "$root/migration-input.json" -e 'select(.status == "requires-native-app-sync") | $inputs[0] + {digest:.digest}' > "$root/migration-prepare.json"
+  node "$runtime" automations prepare --plugin-data "$root/cutover-data" < "$root/migration-prepare.json" > "$root/migration-prepared.json"
+  node "$GITHUB_WORKSPACE/examples/codex-automations/save-automation-fixture.mjs" "$root/migration-prepared.json" "$workspace" "$CODEX_HOME" "$native_id"
+  node "$runtime" automations acknowledge --plugin-data "$root/cutover-data" < "$root/migration-prepare.json" | jq -e '.status == "verified"'
+done
+
+# should report and reconcile deletion without recreating the migrated copy
+root="$TMPDIR/agent-system-codex-automations"
+runtime="$(jq -r .cachePath "$root/cache.json")/dist/codex/codex-runtime.js"
+export CODEX_HOME="$root/cutover-home"
+rm "$CODEX_HOME/automations/cutover-new/automation.toml"
+node "$runtime" automations inspect --plugin-data "$root/cutover-data" < "$root/migration-input.json" | jq -e 'any(.findings[]; .code == "automation-retirement-pending" and .nativeId == "cutover-new")'
+node "$runtime" automations sync --plugin-data "$root/cutover-data" < "$root/migration-input.json" | jq -e '.status == "aligned" and .actions == [] and any(.findings[]; .code == "automation-retired" and .nativeId == "cutover-new") and any(.jobs[]; .id == "update" and .nativeId == "cutover-heartbeat" and .nativeStatus == "ACTIVE")'
+test ! -f "$CODEX_HOME/automations/cutover-new/automation.toml"
 ```

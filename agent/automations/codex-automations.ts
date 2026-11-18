@@ -32,6 +32,7 @@ import planCodexAutomations, {
   verifyThread,
   type CodexAutomationAction,
   type CodexAutomationInputs,
+  type CodexAutomationPlan,
 } from './codex-automation-plan.ts';
 import {
   parseAutomationReceipt,
@@ -186,20 +187,43 @@ async function resolveThreads(
   }
 }
 
-function verifyMigrationRetirements(
+const retirementConfirmationWindowMs = 24 * 60 * 60 * 1000;
+
+function inspectMigrationRetirements(
   selected: Awaited<ReturnType<typeof snapshot>>,
   saved: SavedAutomation[],
 ) {
-  for (const retired of selected.ledger.retired ?? []) {
-    const actual = saved.find((item) => item.id === retired.nativeId);
+  const { ledger, workspace } = selected;
+  const savedById = new Map(saved.map((item) => [item.id, item]));
+  const usedNativeIds = new Set(ledger.records.map(({ nativeId }) => nativeId));
+  const replacements = new Set(ledger.records.map(({ id }) => id));
+  const awaitingConfirmation: Ledger['records'] = [];
+  const findings: CodexAutomationPlan['findings'] = [];
+  const now = (selected.dependencies.now ?? Date.now)();
+  let presentCount = 0;
+  // migration acknowledgments append in order; a later paused copy also proves replacement.
+  for (const retired of (ledger.retired ?? []).toReversed()) {
+    const { id, nativeId, definition } = retired;
+    const actual = savedById.get(nativeId);
     if (
-      retired.retired ||
-      !actual ||
-      retired.definition.status !== 'PAUSED' ||
-      !savedMatches(actual, retired.definition, selected.workspace)
+      usedNativeIds.has(nativeId) ||
+      definition.status !== 'PAUSED' ||
+      (actual && (retired.retired || !savedMatches(actual, definition, workspace))) ||
+      (!actual && !retired.retired && !replacements.has(id))
     )
       throw new CodexAutomationError('automation-retired-job-diverged');
+    usedNativeIds.add(nativeId);
+    replacements.add(id);
+    if (actual) {
+      presentCount++;
+    } else if (!retired.retired) {
+      awaitingConfirmation.push(retired);
+      findings.push({ id, nativeId, code: 'automation-retirement-pending' });
+    } else if (now - retired.retired.atMs < retirementConfirmationWindowMs) {
+      findings.push({ id, nativeId, code: 'automation-retired' });
+    }
   }
+  return { awaitingConfirmation, findings, presentCount };
 }
 
 async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: CodexAutomationInputs) {
@@ -210,9 +234,12 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
     ledger.records.length ||
     ledger.retired?.length ||
     ledger.pending
-      ? await (selected.dependencies.readAutomations ?? readCodexAutomations)(codexHome)
+      ? await (selected.dependencies.readAutomations ?? readCodexAutomations)(
+          codexHome,
+          ledger.retired?.length ? { requireComplete: true } : undefined,
+        )
       : [];
-  verifyMigrationRetirements(selected, saved);
+  const migration = inspectMigrationRetirements(selected, saved);
   const needsDefaults = jobs.some(
     (job) =>
       job.runtimes.includes('codex') &&
@@ -290,7 +317,7 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
   });
   result.unmanagedCount = selected.cleanupOnly
     ? saved.length - ledger.records.filter((record) => record.id === intakeAutomationId).length
-    : result.unmanagedCount - (ledger.retired?.length ?? 0);
+    : result.unmanagedCount - migration.presentCount;
   const pendingSettings = [...(bindings ?? [])].flatMap(([id, binding]) =>
     binding.settingsCode ? [{ id, code: binding.settingsCode, settings: binding.settings }] : [],
   );
@@ -341,6 +368,11 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
       nativeInventory: inputs.nativeInventory,
     });
   }
+  result.findings.push(...migration.findings);
+  if (migration.awaitingConfirmation.length) {
+    result.status = 'blocked';
+    result.actions = [];
+  }
   if (ledger.pending)
     return {
       saved,
@@ -371,7 +403,13 @@ export async function inspectCodexAutomations(
     ...result,
     findings: result.findings.map((finding) => ({
       ...finding,
-      automationName: automationReportName(owned.get(finding.id)?.definition.name, finding.id),
+      automationName: automationReportName(
+        finding.nativeId === undefined
+          ? owned.get(finding.id)?.definition.name
+          : selected.ledger.retired?.find(({ nativeId }) => nativeId === finding.nativeId)
+              ?.definition.name,
+        finding.id,
+      ),
     })),
   };
 }
@@ -680,7 +718,7 @@ async function withJournal<T>(
   }
 }
 
-/** explicit install/sync retires only undeclared, authoritatively absent native jobs. */
+/** explicit install/sync records verified deletion of undeclared jobs and completed migration copies. */
 export async function reconcileCodexAutomationRetirements(
   pluginData: string,
   dependencies: CodexAutomationDependencies = {},
@@ -691,7 +729,10 @@ export async function reconcileCodexAutomationRetirements(
   if (
     initial.cleanupOnly ||
     initial.ledger.pending ||
-    !initial.ledger.records.some((record) => !record.retired && !declared(initial).has(record.id))
+    (!initial.ledger.retired?.some((record) => !record.retired) &&
+      !initial.ledger.records.some(
+        (record) => !record.retired && !declared(initial).has(record.id),
+      ))
   )
     return;
   await withJournal(initial, async () => {
@@ -705,7 +746,7 @@ export async function reconcileCodexAutomationRetirements(
     const read = dependencies.readAutomations ?? readCodexAutomations;
     const saved = await read(selected.codexHome, { requireComplete: true });
     const owned = ownedCodexAutomations(selected.scope, saved, selected.ledger.records);
-    verifyMigrationRetirements(selected, saved);
+    const { awaitingConfirmation } = inspectMigrationRetirements(selected, saved);
     for (const id of owned.keys())
       if (!selected.ledger.records.some((record) => record.id === id))
         throw new CodexAutomationError('automation-ownership-recovery-required');
@@ -724,16 +765,17 @@ export async function reconcileCodexAutomationRetirements(
         throw new CodexAutomationError('automation-native-recovery-required');
       candidates.push(record);
     }
-    if (!candidates.length) return;
+    if (!candidates.length && !awaitingConfirmation.length) return;
     // re-read all saved state, then reauthorize the exact manifest and ownership at commit.
     const fresh = await read(selected.codexHome, { requireComplete: true });
     if (automationHash(fresh) !== automationHash(saved))
       throw new CodexAutomationError('automation-native-snapshot-diverged');
     if (!unchanged(await snapshot(pluginData, dependencies)))
       throw new CodexAutomationError('automation-plan-stale-or-blocked');
-    for (const record of candidates) {
+    const atMs = (dependencies.now ?? Date.now)();
+    for (const record of [...candidates, ...awaitingConfirmation]) {
       record.removed = true;
-      record.retired = { atMs: (dependencies.now ?? Date.now)(), reason: 'native-job-absent' };
+      record.retired = { atMs, reason: 'native-job-absent' };
     }
     if (!Value.Check(ledgerSchema, selected.ledger))
       throw new CodexAutomationError('automation-ownership-invalid');

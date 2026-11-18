@@ -56,7 +56,12 @@ export interface CodexAutomationPlan {
   status: 'aligned' | 'requires-native-app-sync' | 'blocked';
   digest: string;
   actions: CodexAutomationAction[];
-  findings: { id: string; code: string; settings?: AutomationThreadModelObservation }[];
+  findings: {
+    id: string;
+    code: string;
+    nativeId?: string;
+    settings?: AutomationThreadModelObservation;
+  }[];
   unmanagedCount: number;
   conversations?: {
     id: string;
