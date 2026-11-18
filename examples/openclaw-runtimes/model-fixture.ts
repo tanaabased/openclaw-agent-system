@@ -37,7 +37,7 @@ function openClawExecResult(request: ChatCompletionRequest) {
 
 function openClawExecSession(request: ChatCompletionRequest) {
   return openClawAIMockToolResultText(request.messages, execCall)?.match(
-    /Command still running \(session ([A-Za-z0-9_-]+), pid [0-9]+\)/u,
+    /Command still running \(session ([A-Za-z0-9_:-]+), pid [0-9]+\)/u,
   )?.[1];
 }
 
