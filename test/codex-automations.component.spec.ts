@@ -1355,8 +1355,37 @@ describe('agent/codex-automations', () => {
         ['peer', 'create', 'ACTIVE'],
       ],
     );
-    const restored = await syncOne(dependencies, 'restored');
-    assert.equal(restored.nativeId, 'restored');
+    const pending = await prepareCodexAutomation(pluginData, next.digest, inputs(), dependencies);
+    const expected = next.actions[0]!.expected;
+    await nativeWrite({ ...expected, status: 'ACTIVE' });
+    await assert.rejects(
+      acknowledgeCodexAutomation(pluginData, pending.digest, undefined, dependencies),
+      rejectsCode('automation-readback-diverged'),
+    );
+    await nativeWrite(expected);
+    await nativeWrite(expected, 'duplicate');
+    await assert.rejects(
+      acknowledgeCodexAutomation(pluginData, pending.digest, undefined, dependencies),
+      rejectsCode('automation-readback-diverged'),
+    );
+    await rm(join(codexHome, 'automations', 'duplicate'), { recursive: true });
+    await nativeWrite({ ...beforeRename.definition, prompt: 'Unexpected job' }, 'replacement');
+    await assert.rejects(
+      acknowledgeCodexAutomation(pluginData, pending.digest, undefined, dependencies),
+      rejectsCode('automation-retired-job-diverged'),
+    );
+    await rm(join(codexHome, 'automations', 'replacement', 'automation.toml'));
+    const pendingPlan = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    assert.ok('pendingDigest' in pendingPlan);
+    assert.equal(pendingPlan.pendingDigest, pending.digest);
+    assert.deepEqual(pendingPlan.actions, []);
+    const restored = await acknowledgeCodexAutomation(
+      pluginData,
+      pending.digest,
+      undefined,
+      dependencies,
+    );
+    assert.equal(restored.nativeId, 'fixture-native');
     await syncOne(dependencies, 'peer-native');
     const confirmed = await ownership();
     assert.deepEqual(
@@ -1367,6 +1396,7 @@ describe('agent/codex-automations', () => {
     await reconcileCodexAutomationRetirements(pluginData, dependencies);
     const recent = await listCodexAutomations(pluginData, inputs(), dependencies);
     assert.equal(recent.status, 'aligned');
+    assert.deepEqual(recent.actions, []);
     assert.equal(recent.unmanagedCount, 0);
     assert.equal(recent.findings.filter(({ code }) => code === 'automation-retired').length, 2);
     const restoredDoctor = await inspectCodexSetup(pluginData, undefined, {
@@ -1385,10 +1415,10 @@ describe('agent/codex-automations', () => {
     assert.equal((await ownership()).bytes, confirmed.bytes);
     assert.deepEqual(
       (await readCodexAutomations(codexHome)).map(({ id }) => id),
-      ['peer-native', 'restored'],
+      ['fixture-native', 'peer-native'],
     );
 
-    await nativeWrite(migration.actions[0]!.expected);
+    await nativeWrite(beforeRename.definition, 'replacement');
     await assert.rejects(
       inspectCodexAutomations(pluginData, inputs(), dependencies),
       rejectsCode('automation-retired-job-diverged'),
