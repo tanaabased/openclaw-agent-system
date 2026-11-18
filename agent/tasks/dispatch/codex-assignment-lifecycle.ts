@@ -159,6 +159,8 @@ export default async function reconcileCodexLifecycle(
           )
             throw new Error('retirement-workflow-changed');
         },
+        pendingStartup: (record) =>
+          !record.manualIssue && !record.threadId && !record.effective && !record.worktree,
         observe: async (record) => {
           if (!record.request) return undefined;
           const threadId = record.threadId ?? record.receiptThreadId;

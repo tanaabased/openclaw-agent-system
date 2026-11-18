@@ -149,7 +149,8 @@ export function codexDispatchNative(request: CodexThreadRequest) {
       threadId: string,
       prepared: { createdAt: number; turnId?: string; prompt?: string },
       currentTurnId: string,
-    ) => unsubmittedCreation(request, threadId, prepared, currentTurnId),
+      expected?: Parameters<typeof unsubmittedCreation>[5],
+    ) => unsubmittedCreation(request, threadId, prepared, currentTurnId, 'create_thread', expected),
     operatorInput: (threadId: string) => codexDirectInput(request, threadId),
     async occurrence(threadId: string) {
       const result = await request('thread/turns/list', {
