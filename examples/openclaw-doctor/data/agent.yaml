@@ -3,4 +3,7 @@ schema-version: 1
 agent:
   id: doctor-data
   name: Doctor Data
+  email: doctor-data@example.invalid
   description: Agent System lifecycle doctor scenario
+
+git: {}
