@@ -946,7 +946,12 @@ describe('agent/codex-delivery', () => {
     assert.equal((await request('bind', { pullRequest: url })).status, 'bound');
     head = 'b'.repeat(40);
     await request('prepare');
-    await request('publish', {});
+    const published = await request('publish', {});
+    assert.doesNotMatch(String(published.instruction), /delivery compose|delivery announce/);
+    const shown = await request('present');
+    assert.ok('presentation' in shown);
+    assert.match(String(shown.presentation), /Pull request/);
+    assert.doesNotMatch(String(shown.presentation), /PR announcement/);
     assert.equal(creates, 0);
     assert.equal(bodyWrites, 0);
     assert.equal(pr.body, 'Keep this body.');
@@ -1242,8 +1247,10 @@ describe('agent/codex-delivery', () => {
       dirty = true;
       await request('reconcile');
       announcement.draft = draft;
+      assert.doesNotMatch(String((await request('present')).presentation), /PR announcement/);
       const context = await request('compose');
       assert.equal(context.status, 'composition-ready');
+      assert.match(String((await request('present')).presentation), /ℹ️ PR announcement pending/);
       const preview = await request('candidate', {
         publicText: 'Delivers the requested change.',
       });

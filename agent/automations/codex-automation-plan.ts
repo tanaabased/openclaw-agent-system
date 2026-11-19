@@ -56,7 +56,12 @@ export interface CodexAutomationPlan {
   status: 'aligned' | 'requires-native-app-sync' | 'blocked';
   digest: string;
   actions: CodexAutomationAction[];
-  findings: { id: string; code: string; settings?: AutomationThreadModelObservation }[];
+  findings: {
+    id: string;
+    code: string;
+    nativeId?: string;
+    settings?: AutomationThreadModelObservation;
+  }[];
   unmanagedCount: number;
   conversations?: {
     id: string;
@@ -216,7 +221,10 @@ export default async function planCodexAutomations(options: {
         throw new CodexAutomationError('automation-thread-sync-required');
       const target = override?.target ?? (binding ? { thread: binding.id } : 'independent');
       const actual = owned.get(job.id);
-      if (record && (!actual || actual.id !== record.nativeId)) {
+      if (
+        record &&
+        (actual ? actual.id !== record.nativeId : saved.some((item) => item.id === record.nativeId))
+      ) {
         throw new CodexAutomationError('automation-native-recovery-required');
       }
       if (!record && actual) continue;

@@ -29,6 +29,7 @@ export default function codexRetirementNative(request: CodexThreadRequest) {
       cwd: string,
       retiringOwners: ReadonlySet<string> = new Set(),
       protectedThreads: ReadonlySet<string> = new Set(),
+      { allowEndedHelpers = false } = {},
     ): Promise<string[]> {
       const users = new Map<string, Record<string, unknown>>();
       let cursor: string | undefined;
@@ -112,9 +113,14 @@ export default function codexRetirementNative(request: CodexThreadRequest) {
         if (
           !emptyGuardian &&
           (!nativeObject(last) ||
-            last.status !== 'completed' ||
             typeof last.completedAt !== 'number' ||
-            !Number.isFinite(last.completedAt))
+            !Number.isFinite(last.completedAt) ||
+            (last.status !== 'completed' &&
+              !(
+                allowEndedHelpers &&
+                (last.status === 'interrupted' || last.status === 'failed') &&
+                last.completedAt > 0
+              )))
         )
           continue;
         parents.set(id, parent);

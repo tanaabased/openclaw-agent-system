@@ -46,7 +46,7 @@ export default function publicResponsePresentation(
           : 'Continue the unfinished response in this chat; completed work remains saved.';
   return githubNotificationQuote(
     [
-      `## ${state === 'pending' || state === 'withheld' ? '💡' : '⚠️'} ${input.kind} ${title}`,
+      `## ${state === 'pending' || state === 'withheld' ? 'ℹ️' : '⚠️'} ${input.kind} ${title}`,
       '',
       'The private result and any retained draft remain saved.',
       ...(input.destination ? ['', `**Destination:** [GitHub ↗](${input.destination})`] : []),

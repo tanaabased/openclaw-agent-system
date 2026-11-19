@@ -195,6 +195,8 @@ export function dispatchFailurePhase(record: RetryState, code: string, error?: u
       'feedback-source-identity-changed',
       'feedback-source-author-changed',
       'feedback-source-no-longer-eligible',
+      'dispatch-creation-exhausted',
+      'dispatch-creation-settings-unsupported',
       'dispatch-assignment-superseded',
       'dispatch-workspace-binding-changed',
       'dispatch-issue-inactive',
