@@ -132,6 +132,12 @@ const fixtures: Fixture[] = [
           const codex = request.model.includes('5.4-nano');
           return (
             Array.isArray(result.findings) &&
+            result.findings.some(({ component }: { component: string }) => component === 'agent') &&
+            result.findings.every(
+              ({ code }: { code: string }) =>
+                code !== 'agent-operator-boundary-exposed' &&
+                code !== 'agent-command-posture-contained',
+            ) &&
             result.agentId === (codex ? 'runtime-codex' : 'runtime-openclaw') &&
             result.workspaceDir ===
               fileURLToPath(new URL(codex ? './codex' : './openclaw', import.meta.url))
