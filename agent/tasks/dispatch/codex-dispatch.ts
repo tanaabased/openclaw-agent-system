@@ -569,6 +569,10 @@ async function executeCodexDispatch(
         )
           return { ...notice(record, intake), denial: record.denial };
       }
+      if ((action === 'reconcile' || action === 'prepare') && record.creationFailure?.terminal) {
+        if (input.receipt !== undefined) throw new Error('dispatch-creation-not-prepared');
+        return notice(record, intake);
+      }
       if (action === 'prepare') return prepareDispatch(input, record, intake, tx);
       if (action === 'reconcile' || childAction) {
         try {

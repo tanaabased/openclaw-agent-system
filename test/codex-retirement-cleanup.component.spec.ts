@@ -178,7 +178,7 @@ describe('codex retirement cleanup', () => {
     assert.ok('request' in (await h.run()));
     assert.equal(h.input.record.retirement!.archiveAttempt?.turnId, 'next-turn');
   });
-  it('should allow a pinned completed guardian but preserve automation-owned helpers', async () => {
+  it('should retire a pinned interrupted guardian only without automation ownership', async () => {
     const h = await fixture();
     const guardian = {
       id: 'guardian',
@@ -196,7 +196,7 @@ describe('codex retirement cleanup', () => {
             status: { type: 'notLoaded' },
           },
         };
-      return { data: [{ status: 'completed', completedAt: 10 }] };
+      return { data: [{ status: 'interrupted', completedAt: 10 }] };
     });
     h.input.inventory = { ...(h.input.inventory as object), pinnedThreads: [{ id: 'guardian' }] };
     h.input.issueClosed = false;
@@ -221,6 +221,37 @@ describe('codex retirement cleanup', () => {
     );
     assert.equal((await h.run()).code, 'retirement-worktree-shared');
     await rm(job, { recursive: true });
+    assert.deepEqual((await h.run()).request, {
+      threadId: 'child',
+      archived: true,
+      hostId: 'local',
+    });
+  });
+  it('should keep a failed spawned helper until open-task retirement is explicitly requested', async () => {
+    const h = await fixture();
+    h.input.issueClosed = false;
+    h.input.record.retirement!.reason = 'assignment-removed';
+    const helper = {
+      id: 'helper',
+      cwd: h.input.record.worktree,
+      parentThreadId: 'child',
+      source: { subAgent: { thread_spawn: { parent_thread_id: 'child' } } },
+      status: { type: 'idle' },
+    };
+    h.input.native = nativeRetirement(async (method) => {
+      if (method === 'thread/list') return { data: [helper] };
+      if (method === 'thread/read') return { thread: helper };
+      return { data: [{ status: 'failed', completedAt: 10 }] };
+    });
+    const automatic = await h.run();
+    assert.equal(automatic.code, 'retirement-worktree-shared');
+    assert.equal(automatic.request, undefined);
+    h.input.record.retirement!.operatorRequest = {
+      caller: 'operator',
+      turnId: 'turn',
+      targetId: h.input.record.id,
+      at: 30,
+    };
     assert.deepEqual((await h.run()).request, {
       threadId: 'child',
       archived: true,

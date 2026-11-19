@@ -62,7 +62,7 @@ describe('agent/codex-issue-notice', () => {
 
   it('should customize informational icons while preserving warning and error icons', () => {
     assert.ok(
-      codexIssueNotice({ event: 'intake-recovered', changed: true }).message.startsWith('> ## 💡 '),
+      codexIssueNotice({ event: 'intake-recovered', changed: true }).message.startsWith('> ## ℹ️ '),
     );
     assert.ok(
       codexIssueNotice({

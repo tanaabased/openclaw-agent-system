@@ -55,17 +55,22 @@ if ! jq -e 'if .blocked.sessionDispatchDiagnostic.reasonCode == "gateway-readine
 
 # should start the gateway for owner-consented device enrollment
 export OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$GITHUB_WORKSPACE/examples/os-dispatch-enrollment/provider:$PATH"
-openclaw-gateway start
+if ! openclaw-gateway start; then
+  gateway_log=$(openclaw-gateway log-path)
+  gateway_redactor="$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
+  tail -n 120 "$gateway_log" | node "$gateway_redactor" >&2 || true
+  exit 1
+fi
 
 # should enroll a paused issue workflow with no allowed actors
 set -o pipefail
 export OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$GITHUB_WORKSPACE/examples/os-dispatch-enrollment/provider:$PATH"
 cd "$GITHUB_WORKSPACE/examples/os-dispatch-enrollment/data"
 OPENCLAW_DEBUG=1 openclaw agent-system install --yes --json | tee "$TMPDIR/enrollment-install.json"
-jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .code == "intake-activated") and any(.outcomes[]; .stepId == "github-issue-assignment" and .status == "skipped" and .code == "automation-model-auth-missing")' "$TMPDIR/enrollment-install.json"
+jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .code == "intake-activated") and any(.outcomes[]; .stepId == "github-issue-assignment" and .status == "skipped" and (.code == "automation-model-auth-missing" or .code == "automation-model-unavailable" or .code == "automation-model-readiness-unresolved"))' "$TMPDIR/enrollment-install.json"
 retained_device=$(jq -er '.blocked.message | capture("device (?<id>[a-f0-9]{64})").id' "$TMPDIR/enrollment-failed.json")
 jq -e --arg device "$retained_device" 'any(.outcomes[]; .code == "session-dispatch-enrolled" and (.message | contains($device)))' "$TMPDIR/enrollment-install.json"
-openclaw agent-system automations list --json | jq -e '.status == "aligned" and any(.jobs[]; .id == "github-issue-assignment" and .nativeId == null and any(.findings[]; .status == "skipped" and .code == "automation-model-auth-missing"))'
+openclaw agent-system automations list --json | jq -e '.status == "aligned" and any(.jobs[]; .id == "github-issue-assignment" and .nativeId == null and any(.findings[]; .status == "skipped" and (.code == "automation-model-auth-missing" or .code == "automation-model-unavailable" or .code == "automation-model-readiness-unresolved")))'
 
 # should reuse enrollment without another explicit consent or bootstrap
 export OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$GITHUB_WORKSPACE/examples/os-dispatch-enrollment/provider:$PATH"

@@ -980,7 +980,7 @@ export default class AutomationService {
             });
             continue;
           }
-          if (unavailableModels.has(job.id))
+          if (unavailableModels.has(job.id) && unavailableModels.get(job.id) !== 'unresolved')
             throw new AutomationError(
               automationModelUnavailableCode(unavailableModels.get(job.id)!),
             );

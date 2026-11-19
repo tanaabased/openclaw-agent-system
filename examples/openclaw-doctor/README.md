@@ -69,9 +69,9 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-doctor/data"
 NO_COLOR=1 openclaw agent-system doctor | grep -E '^agent[[:space:]]+healthy[[:space:]]+id: doctor-data;'
 NO_COLOR=1 openclaw agent-system doctor | grep -E '^path[[:space:]]+healthy[[:space:]]'
 
-# should report the same healthy aggregate state as structured json
+# should report healthy readiness without shell posture findings for managed git
 cd "$GITHUB_WORKSPACE/examples/openclaw-doctor/data"
-openclaw agent-system doctor --json | jq -e '.status == "healthy" and (.findings | any(.component == "agent"))'
+openclaw agent-system doctor --json | jq -e '.status == "healthy" and any(.findings[]; .component == "agent") and all(.findings[]; .code != "agent-operator-boundary-exposed" and .code != "agent-command-posture-contained")'
 
 # should report the same healthy aggregate state through both status aliases
 cd "$GITHUB_WORKSPACE/examples/openclaw-doctor/data"

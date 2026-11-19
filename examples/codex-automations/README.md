@@ -7,7 +7,7 @@ those same conversations.
 ## What Belongs Here
 
 - Digest-bound plans for native automation actions without private scheduler-file writes, including isolation from another installation’s damaged ownership payload.
-- Packaged removal and verified-deletion retirement, with explicit saved-state fixtures rather than desktop scheduler execution.
+- Packaged removal, verified-deletion retirement, and replacement of missing current jobs, with explicit saved-state fixtures rather than desktop scheduler execution.
 - Real app-server conversation creation, selected model/permission readback, and attributed setup history without model generation.
 - Fresh-process resumption and shared profile changes preserving conversation identity, permissions, and durable model/effort settings.
 
@@ -177,4 +177,37 @@ node "$GITHUB_WORKSPACE/examples/codex-automations/save-automation-fixture.mjs" 
 node "$runtime" automations acknowledge --plugin-data "$root/cutover-data" < "$root/cutover-prepare.json" | jq -e '.status == "verified"'
 node "$runtime" automations plan --plugin-data "$root/cutover-data" < "$root/cutover-input.json" | jq -e '.status == "aligned" and .actions == []'
 node "$runtime" automations sync --plugin-data "$root/cutover-data" < "$root/cutover-input.json" | jq -e '.status == "aligned" and (.jobs | length) == 2 and any(.jobs[]; .id == "nightly-refresh" and .retired == true and .nativeId == "cutover-old" and .nativeStatus == null) and any(.jobs[]; .id == "update" and .nativeId == "cutover-new" and .nativeStatus == "ACTIVE")'
+
+# should complete a target migration with a replacement before deleting the paused copy
+root="$TMPDIR/agent-system-codex-automations"
+runtime="$(jq -r .cachePath "$root/cache.json")/dist/codex/codex-runtime.js"
+export CODEX_HOME="$root/cutover-home"
+workspace="$root/cutover-workspace"
+node --input-type=module -e 'import fs from "node:fs"; import YAML from "yaml"; const path=process.argv[1]; const manifest=YAML.parse(fs.readFileSync(path,"utf8")); manifest.automations[0].overrides.codex={target:{thread:"cutover-thread"}}; fs.writeFileSync(path,YAML.stringify(manifest));' "$workspace/agent.yaml"
+jq --arg workspace "$workspace" '.threads=[{schemaVersion:1,thread:{id:"cutover-thread",kind:"codex",hostId:"local",cwd:$workspace,status:{type:"idle"}}}] | .nativeInventory={schemaVersion:4,unavailableHosts:[],unavailableSources:[],sections:[{sectionId:"cutover-section",name:"AGENT SYSTEM",itemKeys:["codex:thread:local:cutover-thread"]}]}' "$root/cutover-input.json" > "$root/migration-input.json"
+for native_id in cutover-new cutover-heartbeat; do
+  node "$runtime" automations plan --plugin-data "$root/cutover-data" < "$root/migration-input.json" | jq --slurpfile inputs "$root/migration-input.json" -e 'select(.status == "requires-native-app-sync") | $inputs[0] + {digest:.digest}' > "$root/migration-prepare.json"
+  node "$runtime" automations prepare --plugin-data "$root/cutover-data" < "$root/migration-prepare.json" > "$root/migration-prepared.json"
+  node "$GITHUB_WORKSPACE/examples/codex-automations/save-automation-fixture.mjs" "$root/migration-prepared.json" "$workspace" "$CODEX_HOME" "$native_id"
+  node "$runtime" automations acknowledge --plugin-data "$root/cutover-data" < "$root/migration-prepare.json" | jq -e '.status == "verified"'
+done
+
+# should restore one paused job under its retired native id and reject conflicting readback
+root="$TMPDIR/agent-system-codex-automations"
+runtime="$(jq -r .cachePath "$root/cache.json")/dist/codex/codex-runtime.js"
+export CODEX_HOME="$root/cutover-home"
+workspace="$root/cutover-workspace"
+node --input-type=module -e 'import fs from "node:fs"; import YAML from "yaml"; const path=process.argv[1]; const manifest=YAML.parse(fs.readFileSync(path,"utf8")); manifest.automations[0].enabled=false; fs.writeFileSync(path,YAML.stringify(manifest));' "$workspace/agent.yaml"
+rm "$CODEX_HOME/automations/cutover-new/automation.toml" "$CODEX_HOME/automations/cutover-heartbeat/automation.toml"
+node "$runtime" automations inspect --plugin-data "$root/cutover-data" < "$root/migration-input.json" | jq -e '.status == "blocked" and any(.findings[]; .code == "automation-retirement-pending" and .nativeId == "cutover-new")'
+node "$runtime" automations sync --plugin-data "$root/cutover-data" < "$root/migration-input.json" | jq --slurpfile inputs "$root/migration-input.json" -e 'select(.status == "requires-native-app-sync" and (.actions | length) == 1 and .actions[0].manifestId == "update" and .actions[0].mode == "create" and any(.findings[]; .code == "automation-retired" and .nativeId == "cutover-new")) | $inputs[0] + {digest:.digest}' > "$root/restore-prepare.json"
+node "$runtime" automations prepare --plugin-data "$root/cutover-data" < "$root/restore-prepare.json" | tee "$root/restore-prepared.json" | jq -e '.request.mode == "create" and .request.status == "PAUSED"'
+jq '.request.status = "ACTIVE"' "$root/restore-prepared.json" > "$root/restore-conflict-prepared.json"
+node "$GITHUB_WORKSPACE/examples/codex-automations/save-automation-fixture.mjs" "$root/restore-conflict-prepared.json" "$workspace" "$CODEX_HOME" cutover-new
+if node "$runtime" automations acknowledge --plugin-data "$root/cutover-data" < "$root/restore-prepare.json" 2> "$root/restore-conflict.json"; then exit 1; fi
+jq -e '.code == "automation-readback-diverged"' "$root/restore-conflict.json"
+node "$GITHUB_WORKSPACE/examples/codex-automations/save-automation-fixture.mjs" "$root/restore-prepared.json" "$workspace" "$CODEX_HOME" cutover-new
+node "$runtime" automations plan --plugin-data "$root/cutover-data" < "$root/migration-input.json" | jq --slurpfile plan "$root/restore-prepare.json" -e '.pendingDigest == $plan[0].digest and .actions == []'
+node "$runtime" automations acknowledge --plugin-data "$root/cutover-data" < "$root/restore-prepare.json" | jq -e '.status == "verified" and .nativeId == "cutover-new"'
+node "$runtime" automations sync --plugin-data "$root/cutover-data" < "$root/migration-input.json" | jq -e '.status == "aligned" and .actions == [] and any(.jobs[]; .id == "update" and .nativeId == "cutover-new" and .nativeStatus == "PAUSED")'
 ```

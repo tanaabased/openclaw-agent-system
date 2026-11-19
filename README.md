@@ -29,7 +29,7 @@ See example agents:
 - [pirog/me](https://github.com/pirog/me) — Mike Pirog's bound Codex profile.
 
 > [!NOTE]
-> The OpenClaw integration targets 2026.10.9. Newer hosts are not yet verified. See
+> The OpenClaw integration targets 2026.11.5. Newer hosts are not yet verified. See
 > [version compatibility](#version-compatibility).
 
 > [!WARNING]
@@ -114,7 +114,7 @@ uses the [shared skills](#skills) through its native host interfaces.
 
 | Agent System release | Minimum OpenClaw | Development target |
 | -------------------- | ---------------- | ------------------ |
-| Next release         | 2026.10.9        | 2026.10.9          |
+| Next release         | 2026.11.5        | 2026.11.5          |
 | 0.9.0                | 2026.10.6        | 2026.10.6          |
 | 0.8.0                | 2026.9.5         | 2026.9.6           |
 | 0.7.0                | 2026.9.5         | 2026.9.6           |
@@ -125,9 +125,9 @@ Compatibility metadata declares the minimum supported OpenClaw version. Build
 metadata and development dependencies pin the newest version tested for the
 release.
 
-Use the matched OpenClaw and Codex 2026.10.9 pair for the next release.
+Use the matched OpenClaw and hosted Codex plugin 2026.11.5 pair for the next release.
 The minimum-version range does not establish compatibility with newer hosts;
-2026.10.10 support is tracked separately in [#631](https://github.com/tanaabased/openclaw-agent-system/issues/631).
+newer hosts require separate verification. The standalone Codex application version is unchanged.
 
 For the update order and existing-installation steps, see [upgrading](./UPGRADING.md).
 

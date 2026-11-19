@@ -101,7 +101,7 @@ function fixture(
 }
 
 describe('agent/codex-plugin-lifecycle', () => {
-  for (const olderVersion of ['2026.10.6', '2026.10.8']) {
+  for (const olderVersion of ['2026.10.6', '2026.10.8', '2026.11.4']) {
     it(`should require explicit reconciliation of a ${olderVersion} plugin for the release-owned matched pair`, async () => {
       const selected = codexPluginRequirement(metadata)!;
       const f = fixture('enabled', selected);
@@ -136,10 +136,13 @@ describe('agent/codex-plugin-lifecycle', () => {
         f.calls.push(args);
         return { code: 0, stdout: `OpenClaw ${olderVersion} (release)`, stderr: '' };
       };
+      const finding = (await f.contribution().inspect!(context))[0]!;
+      assert.equal(finding.code, 'codex-plugin-host-incompatible');
+      assert.ok(finding.remediation?.includes(`>=${metadata.openclaw.compat.minGatewayVersion}`));
       await assert.rejects(f.contribution().reconcile!(context), {
         code: 'codex-plugin-host-incompatible',
       });
-      assert.deepEqual(f.calls, [['--version']]);
+      assert.deepEqual(f.calls, [['--version'], ['--version']]);
       assert.equal(f.locks(), 0);
     });
   }

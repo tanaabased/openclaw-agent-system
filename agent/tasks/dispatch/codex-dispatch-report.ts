@@ -50,7 +50,9 @@ export default function prepareDispatchReport(input: {
   );
   const managing = active.filter((record) => record.effective && record.threadId);
   const occupied = codexCapacity(state, input.slots, state.projectPickup).occupied;
-  const pending = pendingDispatchAssignments(state, intake).length;
+  const pending = pendingDispatchAssignments(state, intake).filter(
+    ({ record, intake: item }) => !record?.creationFailure?.terminal || record.intakeId !== item.id,
+  ).length;
   const feedback = active.flatMap((record) =>
     (record.feedback?.events ?? []).map((event) => ({ record, event })),
   );
@@ -244,6 +246,12 @@ export default function prepareDispatchReport(input: {
       `  **Operation:** ${notice.operation}`,
       `  **${notice.severity === 'info' ? 'Next step' : 'Action'}:** ${record?.denial ? 'This action remains held; unrelated eligible intake can continue.' : notice.next}`,
       ...(record ? [`  **Status:** ${workflowStatus(record)}`] : []),
+      ...(record?.creationFailure?.terminal
+        ? [
+            `  **Creation attempts:** ${record.creationFailure.count}`,
+            `  **Desktop error:** ${text(record.creationFailure.message)}`,
+          ]
+        : []),
       ...(record?.denial
         ? [
             `  **Denied action:** ${inlineCode(record.denial.operation === 'prepare' ? 'dispatch:prepare' : 'create_thread')}`,

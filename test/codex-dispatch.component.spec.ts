@@ -1749,6 +1749,112 @@ describe('agent/codex dispatch', () => {
     assert.equal(creations, 1);
   });
 
+  function catalogLookupFailed() {
+    fixtureState.deps.native!.unsubmittedCreation = async (
+      _source,
+      prepared,
+      occurrence,
+      expected,
+    ) => {
+      if (!expected || prepared.turnId === occurrence) return;
+      return {
+        turnId: prepared.turnId!,
+        rejection: { kind: 'catalog-missing', message: 'Desktop model catalog lookup failed' },
+      };
+    };
+  }
+
+  it('should preserve the selected settings on a later retry and reconnect after a lost response', async () => {
+    const original = await fixtureState.prepare();
+    catalogLookupFailed();
+    await fixtureState.request('reconcile', { id: original.id });
+    assert.equal((await fixtureState.next()).status, 'idle');
+    fixtureState.now += 300001;
+    const updated = structuredClone(fixtureState.manifest);
+    updated.models.medium = updated.models.low;
+    await writeFile(join(fixtureState.workspace, 'agent.yaml'), JSON.stringify(updated));
+    const routing = await fixtureState.next();
+    const retry = await fixtureState.request('prepare', {
+      id: routing.id,
+      digest: routing.digest,
+      title: 'recover assignment',
+      assessment: { complexity: 'high', reason: 'An alternative assessment on retry.' },
+    });
+    const first = original.request as NonNullable<DispatchRecord['request']>;
+    const second = retry.request as typeof first;
+    assert.equal(second.model, first.model);
+    assert.equal(second.thinking, first.thinking);
+    assert.notEqual(second.prompt, first.prompt);
+    fixtureState.created();
+    fixtureState.now += 300001;
+    assert.equal((await fixtureState.next()).threadId, 'issue-thread');
+    assert.equal((await fixtureState.next()).status, 'idle');
+  });
+
+  it('should exhaust exactly three failed creations and allow a fresh assignment a new budget', async () => {
+    catalogLookupFailed();
+    for (let n = 0; n < 3; n++) {
+      const attempt = await fixtureState.prepare();
+      await fixtureState.request('reconcile', { id: attempt.id });
+      fixtureState.now += 300001;
+    }
+    assert.equal((await fixtureState.next()).status, 'idle');
+    const exhausted = ((await fixtureState.readDispatchState()).records as DispatchRecord[])[0]!;
+    assert.equal(codexItemOccupied(exhausted), false);
+    assert.equal(exhausted.blocker, 'dispatch-creation-exhausted');
+    await runCodexIntake(fixtureState.pluginData, false, fixtureState.deps);
+    await fixtureState.next();
+    const report = await fixtureState.report();
+    assert.match(String(report.response), /Creation attempts:\*\* 3/);
+    assert.match(String(report.response), /Desktop model catalog lookup failed/);
+    assert.match(String(report.response), /Pending:\*\* 0/);
+    fixtureState.now += 300001;
+    assert.equal((await fixtureState.next()).status, 'idle');
+    await fixtureState.addPendingSecondIssue();
+    assert.match(JSON.stringify((await fixtureState.next()).context), /issues\/4/);
+    await fixtureState.reassign();
+    const fresh = await fixtureState.prepare();
+    await fixtureState.request('reconcile', { id: fresh.id });
+    fixtureState.now += 300001;
+    const retry = await fixtureState.prepare();
+    fixtureState.created();
+    assert.equal((await fixtureState.request('reconcile', { id: retry.id })).status, 'created');
+  });
+
+  it('should end an explicitly unsupported selection after its first creation failure', async () => {
+    const initial = await fixtureState.prepare();
+    fixtureState.deps.native!.unsubmittedCreation = async () => ({
+      turnId: 'original',
+      rejection: { kind: 'unsupported', message: 'Desktop rejected this combination' },
+    });
+    await fixtureState.request('reconcile', { id: initial.id });
+    fixtureState.now += 300001;
+    assert.equal((await fixtureState.next()).status, 'idle');
+    const terminal = await fixtureState.request('reconcile', { id: initial.id });
+    assert.equal(terminal.code, 'dispatch-creation-settings-unsupported');
+    assert.equal((await fixtureState.next()).status, 'idle');
+  });
+
+  it('should recover the latest assignment after intake observed removal during a failed creation', async () => {
+    catalogLookupFailed();
+    const first = await fixtureState.prepare();
+    await fixtureState.request('reconcile', { id: first.id });
+    const assignees = fixtureState.fixture.item.assignees;
+    removeFixtureAssignment(fixtureState.fixture);
+    fixtureState.now += 300001;
+    assert.equal((await fixtureState.next()).status, 'idle');
+    const store = await fixtureState.workStore();
+    assert.equal(workflowStatus((await store.read()).records[0]!), 'awaiting-reassignment');
+    fixtureState.fixture.item.assignees = assignees;
+    await fixtureState.reassign();
+    fixtureState.now += 60001;
+    const successor = await fixtureState.prepare();
+    assert.notDeepEqual(successor.request, first.request);
+    fixtureState.created();
+    assert.equal((await fixtureState.request('reconcile', { id: successor.id })).status, 'created');
+    assert.equal((await fixtureState.next()).status, 'idle');
+  });
+
   it('should preserve an uncertain request when absence cannot be proved', async () => {
     const prepared = await fixtureState.prepare();
     await fixtureState.request('reconcile', { id: prepared.id });
@@ -1826,13 +1932,14 @@ describe('agent/codex dispatch', () => {
     const prepared = await fixtureState.prepare();
     fixtureState.created();
     await fixtureState.reassign();
-    assert.equal((await fixtureState.next()).status, 'blocked');
+    assert.equal((await fixtureState.next()).status, 'created');
+    assert.equal((await fixtureState.next()).status, 'idle');
     const retained = (
       (await fixtureState.readDispatchState()).records as Record<string, unknown>[]
     )[0]!;
     assert.deepEqual(retained.request, prepared.request);
     assert.equal(retained.threadId, 'issue-thread');
-    assert.equal(retained.blocker, 'dispatch-assignment-superseded');
+    assert.equal(retained.blocker, undefined);
     assert.equal(retained.creationRecovery, undefined);
   });
 

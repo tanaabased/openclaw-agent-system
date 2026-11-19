@@ -155,9 +155,17 @@ describe('codex retirement native evidence', () => {
       {},
       { data: [], nextCursor: 'more' },
       { data: [{ status: 'inProgress', completedAt: null }] },
+      ...[null, 0, -1, Infinity].map((completedAt) => ({
+        data: [{ status: 'interrupted', completedAt }],
+      })),
     ]) {
       history = invalid;
-      assert.deepEqual(await users(), ['guardian']);
+      assert.deepEqual(
+        await reader.worktreeUsers('/worktree', new Set(['owner']), new Set(), {
+          allowEndedHelpers: true,
+        }),
+        ['guardian'],
+      );
     }
     history = { data: [], nextCursor: null };
     guardian.status.type = 'active';
@@ -225,6 +233,7 @@ describe('codex retirement native evidence', () => {
           '/worktree',
           new Set(['owner']),
           new Set(kind === 'protected' ? ['helper'] : []),
+          { allowEndedHelpers: kind !== 'interrupted' },
         ),
         ['helper'],
       );

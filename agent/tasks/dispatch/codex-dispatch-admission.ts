@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { workflowFeedbackAccepting } from '../../../channels/github/feedback-policy.ts';
 import assignmentCard from '../../../channels/github/presentation/assignment-card.ts';
+import providerErrorMessage from '../../../utils/provider-error-message.ts';
 import resolveGitProtocol from '../../../tools/git/protocol.ts';
 import { RepositoryPreparationError } from '../../../tools/git/repository-service.ts';
 import resolveGitWorktreeLayout from '../../../tools/git/worktree-layout.ts';
@@ -108,6 +109,7 @@ export async function recover(
   // native titles may be edited independently of the retained issue identity.
   if (!record.effective) record.dispatchedAt = (deps.now ?? Date.now)();
   record.effective = settings;
+  delete record.creationFailure;
   if (record.adoptedPullRequest && !record.delivery && acceptClaim && records) {
     const localBranch = await codexIssueBranch({
       record,
@@ -293,6 +295,13 @@ function creationRecovery(record: DispatchRecord, next: 'prepare' | 'create') {
           instruction,
       },
     };
+  if (record.creationRecovery?.latest?.kind === 'rejected')
+    return {
+      recovery: {
+        status: 'verified-pre-creation-rejection' as const,
+        instruction: 'Desktop rejected the earlier request before creating a chat. ' + instruction,
+      },
+    };
   if (denied)
     return {
       recovery: {
@@ -390,6 +399,12 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
     }
   }
   if (observations.length) await save();
+  const assignments = pendingDispatchAssignments(state, admitted);
+  const successors = new Map(
+    assignments.flatMap(({ record, intake }) =>
+      record && record.intakeId !== intake.id ? [[record.id, intake] as const] : [],
+    ),
+  );
   for (const pending of state.records.filter(
     (record) =>
       !record.denial &&
@@ -398,11 +413,12 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
       !record.handoff &&
       record.request &&
       (!record.effective || (deps.claims && record.claimId && !record.claimAccepted)) &&
-      (dispatchCreationStatus(record) !== 'blocked' ||
-        record.blocker === 'dispatch-assignment-superseded') &&
       (record.blocker === undefined ||
-        Boolean(record.retry) ||
-        dispatchRecheckable(record.blocker)) &&
+        record.blocker === 'dispatch-assignment-superseded' ||
+        (dispatchCreationStatus(record) !== 'blocked' &&
+          (Boolean(record.retry) || dispatchRecheckable(record.blocker))) ||
+        (successors.has(record.id) &&
+          ['dispatch-assignment-removed', 'dispatch-issue-closed'].includes(record.blocker))) &&
       (record.retryAfter ?? 0) <= now,
   )) {
     const intake = dispatchAdmission(pending, admitted.records);
@@ -440,6 +456,14 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
             true,
             state.records,
           );
+          const successor = successors.get(pending.id);
+          if (!successor || liveWorkflowPolicy(current.manifest, 'codex', successor))
+            return fail(pending, error);
+          await revalidateDispatchAssignment(current, successor, deps, signal);
+          delete pending.retry;
+          await fresh();
+          await save();
+          return notice(pending, intake);
         } catch (recoveryError) {
           if (code(recoveryError) !== 'dispatch-creation-unresolved')
             return fail(pending, recoveryError);
@@ -450,7 +474,8 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
         !pending.threadId &&
         !pending.receiptThreadId &&
         !pending.clientThreadId &&
-        !pending.worktree
+        !pending.worktree &&
+        !pending.capacityObservation?.threadId
       ) {
         try {
           const proof = await withNative(current, deps, (native) =>
@@ -462,6 +487,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
                 prompt: pending.request!.prompt,
               },
               tx.operatorInput?.turnId ?? state.run!.id,
+              pending.manualIssue ? undefined : pending.request,
             ),
           );
           if (proof) {
@@ -470,17 +496,34 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
               attempts: (pending.creationRecovery?.attempts ?? 0) + 1,
               denialRecovered: pending.creationRecovery?.denialRecovered,
               latest: {
-                kind: 'unsubmitted',
+                kind: proof.rejection ? 'rejected' : 'unsubmitted',
                 turnId: proof.turnId,
                 createdAt: pending.createdAt,
                 recoveredAt: now,
               },
             };
+            if (proof.rejection) {
+              const count = (pending.creationFailure?.count ?? 0) + 1;
+              pending.creationFailure = {
+                count,
+                model: pending.request!.model,
+                thinking: pending.request!.thinking,
+                message: providerErrorMessage(proof.rejection.message)!,
+                terminal: proof.rejection.kind === 'unsupported' || count >= 3,
+              };
+            }
             delete pending.nativeWork;
             delete pending.request;
             delete pending.blocker;
             delete pending.retryAfter;
             delete pending.preparationTurnId;
+            delete pending.creationAfterItemId;
+            delete pending.retry;
+            if (pending.creationFailure?.terminal)
+              pending.blocker =
+                proof.rejection?.kind === 'unsupported'
+                  ? 'dispatch-creation-settings-unsupported'
+                  : 'dispatch-creation-exhausted';
 
             await save();
             continue;
@@ -494,7 +537,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
   }
   if (['paused', 'emergency'].includes(dispatchStoragePressure(state).level))
     return { ...(await checked('at-capacity')), code: 'dispatch-storage-admission-paused' };
-  const intake = pendingDispatchAssignments(state, admitted)
+  const intake = assignments
     .filter(({ intake }) => !liveWorkflowPolicy(current.manifest, 'codex', intake))
     .find(
       ({ record, intake }) =>
@@ -506,6 +549,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
         ).available > 0 &&
         !record?.denial &&
         !record?.request &&
+        (!record?.creationFailure?.terminal || record.intakeId !== intake.id) &&
         (!deps.claims || record?.claimPass !== (tx.operatorInput?.turnId ?? state.run!.id)) &&
         (dispatchCreationStatus(record) !== 'blocked' || record?.intakeId !== intake.id) &&
         (!record ||
@@ -570,6 +614,12 @@ export async function prepareIssueProject(
   assertDispatchProjectInventory(input.projects);
   try {
     if (!record.manualIssue && !('initiation' in intake)) {
+      if (record.intakeId !== intake.id && record.creationFailure) {
+        delete record.creationFailure;
+        // a fresh assignment participates in its own claim election.
+        delete record.claimId;
+        delete record.claimPass;
+      }
       record.intakeId = intake.id;
       await save();
     }
@@ -779,33 +829,39 @@ export async function prepareDispatch(
         withNative(current, deps, (native) => native.assessmentSkill(current.workspace, id)),
     });
     assertRoutingInstructions(instructions, record.routingInstructions);
-    const snapshot = JSON.parse(record.context);
-    const metadata = snapshot.metadata?.complexity;
-    const decision = resolveModelRoutingRequest(
-      current.manifest.models,
-      current.digest,
-      {
-        action: 'resolve',
-        context: JSON.stringify({ source: snapshot.source, metadata: snapshot.metadata }),
-        assessment: dispatchRoutingAssessment(input.assessment, metadata),
-        ...(record.manualIssue?.selections?.routing
-          ? { overrides: record.manualIssue.selections.routing }
-          : {}),
-        ...(metadata?.status === 'verified'
-          ? { evidence: { complexity: metadata.value, source: metadata.source } }
-          : {}),
-        ...(input.fallback ? { fallback: input.fallback } : {}),
-      },
-      'codex',
-    );
-    if (!('candidate' in decision)) throw new Error(decision.code);
+    let settings: Pick<NonNullable<DispatchRecord['request']>, 'model' | 'thinking'>;
+    if (record.creationFailure) {
+      settings = record.creationFailure;
+    } else {
+      const snapshot = JSON.parse(record.context);
+      const metadata = snapshot.metadata?.complexity;
+      const decision = resolveModelRoutingRequest(
+        current.manifest.models,
+        current.digest,
+        {
+          action: 'resolve',
+          context: JSON.stringify({ source: snapshot.source, metadata: snapshot.metadata }),
+          assessment: dispatchRoutingAssessment(input.assessment, metadata),
+          ...(record.manualIssue?.selections?.routing
+            ? { overrides: record.manualIssue.selections.routing }
+            : {}),
+          ...(metadata?.status === 'verified'
+            ? { evidence: { complexity: metadata.value, source: metadata.source } }
+            : {}),
+          ...(input.fallback ? { fallback: input.fallback } : {}),
+        },
+        'codex',
+      );
+      if (!('candidate' in decision)) throw new Error(decision.code);
+      settings = decision.candidate;
+      record.routing = JSON.stringify(decision);
+    }
     const live = await selectCodexTaskContext(pluginData, deps);
     const held = liveWorkflowPolicy(live.manifest, 'codex', intake);
     if (held) throw new WorkflowPolicyHeld(held);
     current.manifest = live.manifest;
     current.policy = live.policy;
     record.issueMode = issueWorkflowMode(current.manifest.github?.notifications, record);
-    record.routing = JSON.stringify(decision);
     record.routingInstructions = instructions;
     record.createdAt = now;
     record.preparationTurnId = tx.operatorInput?.turnId ?? state.run!.id;
@@ -825,8 +881,8 @@ export async function prepareDispatch(
         `${intake.repository.owner.login}/${intake.repository.name}`,
       ),
       prompt: launchPrompt(record, intake),
-      model: decision.candidate.model,
-      thinking: decision.candidate.thinking,
+      model: settings.model,
+      thinking: settings.thinking,
       target: {
         type: 'project',
         projectId: record.project.id,

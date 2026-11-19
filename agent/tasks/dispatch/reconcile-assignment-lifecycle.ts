@@ -40,6 +40,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
   now: number;
   configuration: CleanupConfiguration;
   readConfiguration(): Promise<CleanupConfiguration>;
+  pendingStartup?(record: R): boolean;
   observe(record: R): Promise<RetirementNativeObservation | undefined>;
   cleanup(
     record: R,
@@ -193,9 +194,27 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         });
       if (reason === 'assignment-removed')
         record.retirement!.removalEventId = record.assignmentObservation!.event!.nodeId;
+      const successor = latest.get(record.issueKey);
+      const canResumeAssignment = () =>
+        !reason &&
+        !record.retirement?.operatorRequest &&
+        !record.cleanupPending &&
+        (record.retirement || record.feedbackReactivation || wasMissing) &&
+        !record.assignmentObservation &&
+        !record.retirement?.archivedAt &&
+        !record.retirement?.archiveAttempt &&
+        !record.retirement?.archiveRequest &&
+        !record.retirement?.worktreeRemovalAttemptedAt &&
+        !record.retirement?.worktreeRemovedAt &&
+        record.retirement?.reason !== 'chat-archived' &&
+        successor &&
+        successor.id !== (record.retirement?.intakeId ?? record.intakeId);
+      // a reassignment lifts the removal hold. dispatch still owns any uncertain creation.
+      const resumeStartup =
+        awaitingReassignment(record) && input.pendingStartup?.(record) && canResumeAssignment();
       let native: RetirementNativeObservation | undefined;
       try {
-        native = await read('lifecycle-session', () => input.observe(record));
+        if (!resumeStartup) native = await read('lifecycle-session', () => input.observe(record));
       } catch (error) {
         input.budget?.check();
         if (record.retirement)
@@ -221,32 +240,15 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
       else if (native && (record.retirement || native.archived))
         record.nativeInactive = native.idle;
       if (reason === 'issue-closed' || native?.archived) delete record.feedbackReactivation;
-      const successor = latest.get(record.issueKey);
       if (
-        !reason &&
-        !record.retirement?.operatorRequest &&
-        !record.cleanupPending &&
-        (record.retirement || record.feedbackReactivation || wasMissing) &&
-        !record.assignmentObservation &&
-        native &&
-        !native.unavailableSession &&
-        !native.archived &&
-        !record.retirement?.archivedAt &&
-        !record.retirement?.archiveAttempt &&
-        !record.retirement?.archiveRequest &&
-        !record.retirement?.worktreeRemovalAttemptedAt &&
-        !record.retirement?.worktreeRemovedAt &&
-        record.retirement?.reason !== 'chat-archived' &&
         successor &&
-        (!record.retirement?.operatorRequest ||
-          (successor.assignment
-            ? Date.parse(successor.assignment.createdAt)
-            : successor.admittedAt) > record.retirement.operatorRequest.at) &&
-        successor.id !== (record.retirement?.intakeId ?? record.intakeId)
+        (resumeStartup ||
+          (native && !native.unavailableSession && !native.archived && canResumeAssignment()))
       ) {
         await inspectAdmittedIssue(successor, client);
         await input.fresh();
-        record.intakeId = successor.id;
+        // retain the old admission until dispatch reconciles the original request and its retry budget.
+        if (!resumeStartup) record.intakeId = successor.id;
         delete record.retirement;
         delete record.feedbackReactivation;
         await input.save();

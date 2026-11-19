@@ -163,6 +163,18 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
       'The claim publication has no confirmed provider receipt.',
       'Reconcile the original comment when GitHub is readable; do not post another claim for this attempt.',
     ],
+    'dispatch-creation-exhausted': [
+      'Desktop could not validate the selected model after three creation attempts. The slot is available.',
+      'Check model availability. A new eligible assignment starts with a fresh retry budget.',
+    ],
+    'dispatch-creation-settings-unsupported': [
+      'Desktop rejected the selected model and reasoning effort before chat creation.',
+      'Correct the model selection before starting a fresh assignment.',
+    ],
+    'dispatch-creation-unresolved': [
+      'Intake could not verify a chat or establish that the original creation request had no effect.',
+      'Inspect the original intake turn and its create_thread result. Restore access to native history and let intake reconcile the existing request.',
+    ],
     'dispatch-capacity-creation-unresolved': [
       'No native child or proof of non-submission was found.',
       'Inspect the original intake preparation turn and its `create_thread` receipt. The owning intake can retry `action:reconcile` with this id after native history is readable. Missing history cannot establish that creation never happened.',

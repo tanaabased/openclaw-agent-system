@@ -153,6 +153,66 @@ describe('agent/codex-dispatch-unsubmitted', () => {
     );
   });
 
+  it('should prove only a single exact desktop preflight rejection in its preparation turn', async () => {
+    const expected = {
+      prompt: 'retained request',
+      title: 'issue',
+      model: 'gpt-6.2-sol',
+      thinking: 'high',
+      target: {
+        type: 'project' as const,
+        projectId: 'project',
+        environment: {
+          type: 'worktree' as const,
+          startingState: { type: 'branch' as const, branchName: 'commit' },
+        },
+      },
+    };
+    const catalog =
+      'create_thread could not validate reasoning effort "high" for model "gpt-6.2-sol". Use a model and reasoning combination listed in the tool description, or omit thinking.';
+    const unsupported =
+      'create_thread rejected unsupported model/reasoning combination: "gpt-6.2-sol" does not support "high". Supported reasoning efforts: low, medium.';
+    const call = {
+      id: 'create',
+      type: 'mcpToolCall',
+      server: 'codex_app',
+      tool: 'create_thread',
+      status: 'failed',
+      arguments: expected,
+      error: null,
+      result: { content: [{ type: 'text', text: catalog }], structuredContent: null },
+    };
+    const observe = (items: Record<string, unknown>[]) =>
+      unsubmittedCreation(
+        fixture(items),
+        'intake',
+        { createdAt: 105500, turnId: 'prepared', prompt: expected.prompt },
+        'current',
+        'create_thread',
+        expected,
+      );
+    for (const [kind, text] of [
+      ['catalog-missing', catalog],
+      ['unsupported', unsupported],
+    ]) {
+      assert.deepEqual(
+        await observe([{ ...call, result: { content: [{ type: 'text', text }] } }]),
+        { turnId: 'prepared', rejection: { kind, message: text } },
+      );
+    }
+    for (const other of [
+      { ...call, error: { message: 'user rejected MCP tool call' } },
+      { ...call, server: 'other' },
+      { ...call, arguments: { ...expected, target: {} } },
+      { ...call, status: 'completed' },
+      { ...call, result: { ...call.result, structuredContent: { threadId: 'existing' } } },
+      { ...call, result: { content: [{ type: 'text', text: 'timeout after creation' }] } },
+    ])
+      assert.equal(await observe([other]), undefined);
+    assert.equal(await observe([call, { ...call, id: 'second' }]), undefined);
+    assert.equal(await prove(fixture([call])), undefined);
+  });
+
   it('should refuse matching calls, denials, and unrecognized history items', async () => {
     for (const item of [
       { type: 'mcpToolCall', server: 'codex_app', tool: 'create_thread', status: 'completed' },
