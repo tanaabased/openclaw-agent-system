@@ -445,7 +445,7 @@ describe('scripts/example-model-scenarios', () => {
           workspaceDir: fileURLToPath(
             new URL('../examples/openclaw-lifecycle-approvals/openclaw', import.meta.url),
           ),
-          findings: [],
+          findings: [{ component: 'agent' }],
         }),
         '{"status":"error"}',
         'runtime-doctor-ready',
@@ -489,25 +489,43 @@ describe('scripts/example-model-scenarios', () => {
     }
   });
 
-  it('should require the canonical doctor target in both lifecycle approval runtimes', () => {
+  it('should require the canonical doctor target without shell posture findings in both lifecycle approval runtimes', () => {
     const scenario = resolveExampleModelScenario('openclaw-lifecycle-approvals');
     for (const runtime of ['openclaw', 'codex']) {
       const agentId = `runtime-${runtime}`;
       const workspaceDir = fileURLToPath(
         new URL(`../examples/openclaw-lifecycle-approvals/${runtime}`, import.meta.url),
       );
-      for (const target of [workspaceDir, `${workspaceDir}/.agent-system/worktrees/repo/issue`]) {
+      const agentFinding = { component: 'agent' };
+      for (const { target, findings, matches } of [
+        { target: workspaceDir, findings: [agentFinding], matches: true },
+        {
+          target: `${workspaceDir}/.agent-system/worktrees/repo/issue`,
+          findings: [agentFinding],
+          matches: false,
+        },
+        {
+          target: workspaceDir,
+          findings: [agentFinding, { code: 'agent-operator-boundary-exposed' }],
+          matches: false,
+        },
+        {
+          target: workspaceDir,
+          findings: [agentFinding, { code: 'agent-command-posture-contained' }],
+          matches: false,
+        },
+      ]) {
         const input = request(
           agentId,
           'Call agent_system_doctor exactly once',
           ['agent_system_doctor'],
           {
             callId: runtime === 'codex' ? 'call_runtime_codex_doctor' : 'call_runtime_doctor',
-            content: JSON.stringify({ agentId, workspaceDir: target, findings: [] }),
+            content: JSON.stringify({ agentId, workspaceDir: target, findings }),
           },
         );
         if (runtime === 'codex') input.model = 'gpt-5.4-nano';
-        assert.equal(matchFixture([...scenario.fixtures], input) !== null, target === workspaceDir);
+        assert.equal(matchFixture([...scenario.fixtures], input) !== null, matches);
       }
     }
   });
