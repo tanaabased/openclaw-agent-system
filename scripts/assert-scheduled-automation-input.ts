@@ -27,8 +27,28 @@ export default async function assertScheduledAutomationInput(
   const candidates: Record<string, unknown>[] = [];
   const userInputs: { internal: boolean; cron: boolean; offsetMs: number | null }[] = [];
   const history = { user: 0, assistant: 0, other: 0, matchingRunId: 0 };
+  const projection: {
+    totalMessages: number | null;
+    omittedCount: number | null;
+    activityCount: number;
+    hasMore: boolean;
+  }[] = [];
+  const readHistory: DispatchRequest = async (method, params) => {
+    const response = await request(method, params);
+    if (method === 'chat.history' && projection.length < 12) {
+      const page = response as Record<string, unknown> | null;
+      const omission = page?.omission as Record<string, unknown> | undefined;
+      projection.push({
+        totalMessages: typeof page?.totalMessages === 'number' ? page.totalMessages : null,
+        omittedCount: typeof omission?.omittedCount === 'number' ? omission.omittedCount : null,
+        activityCount: Array.isArray(page?.activity) ? page.activity.length : 0,
+        hasMore: page?.hasMore === true,
+      });
+    }
+    return response;
+  };
   let pages = 0;
-  for await (const messages of openClawHistoryPages(request, scope)) {
+  for await (const messages of openClawHistoryPages(readHistory, scope)) {
     pages++;
     for (const message of messages) {
       if (message.role === 'user') history.user++;
@@ -75,7 +95,7 @@ export default async function assertScheduledAutomationInput(
     durationMs: occurrence.durationMs,
     pages,
     candidates: candidates.length,
-    ...(candidates.length !== 1 ? { history, userInputs } : {}),
+    ...(candidates.length !== 1 ? { history, projection, userInputs } : {}),
     requestPresent,
     noWorkflowLeak,
     textLengths: texts.map((text) => text.length),
