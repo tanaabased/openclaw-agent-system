@@ -49,6 +49,8 @@ jobs:
           brew install coreutils
       - name: Install OpenClaw
         uses: tanaabased/actions/setup-openclaw@v1
+        with:
+          profile: ci-os-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Install Node
         uses: tanaabased/actions/setup-node@v1
       - name: Install Bun
