@@ -26,10 +26,16 @@ export default async function assertScheduledAutomationInput(
   const scope = { sessionKey: occurrence.sessionKey, sessionId: occurrence.sessionId };
   const candidates: Record<string, unknown>[] = [];
   const userInputs: { internal: boolean; cron: boolean; offsetMs: number | null }[] = [];
+  const history = { user: 0, assistant: 0, other: 0, matchingRunId: 0 };
   let pages = 0;
   for await (const messages of openClawHistoryPages(request, scope)) {
     pages++;
     for (const message of messages) {
+      if (message.role === 'user') history.user++;
+      else if (message.role === 'assistant') history.assistant++;
+      else history.other++;
+      const native = message.__openclaw as Record<string, unknown> | undefined;
+      if (occurrence.runId && native?.runId === occurrence.runId) history.matchingRunId++;
       const provenance = message.provenance as Record<string, unknown> | undefined;
       if (message.role === 'user' && userInputs.length < 12) {
         userInputs.push({
@@ -69,7 +75,7 @@ export default async function assertScheduledAutomationInput(
     durationMs: occurrence.durationMs,
     pages,
     candidates: candidates.length,
-    ...(candidates.length !== 1 ? { userInputs } : {}),
+    ...(candidates.length !== 1 ? { history, userInputs } : {}),
     requestPresent,
     noWorkflowLeak,
     textLengths: texts.map((text) => text.length),

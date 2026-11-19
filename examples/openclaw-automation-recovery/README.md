@@ -108,7 +108,7 @@ else error({reportCount: (.reports | length),
   expectedModelCount: ([.reports[] | select(.effective.model == "aimock/gpt-5.5")] | length),
   reports: [.reports[:10][] | {status, code}]} | tojson)
 end' "$TMPDIR/recovered-report.json"
-(jq -er '.reports[] | select(.status == "delivered") | .executionId' "$TMPDIR/recovered-report.json" >/dev/null
+jq -er '.reports[] | select(.status == "delivered") | .executionId' "$TMPDIR/recovered-report.json" >/dev/null
 curl --fail --silent --show-error http://127.0.0.1:4010/proof/reasoning | jq -e 'length > 0 and all(.[]; (.model == "gpt-5.5" or .model == "aimock/gpt-5.5") and .effort == "medium")'
 test "$(wc -l < identity.runs | tr -d ' ')" = 1
 
