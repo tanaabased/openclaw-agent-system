@@ -58,10 +58,17 @@ const responses: Mountable = {
       // AIMock's normalized journal drops Responses reasoning options.
       const chunks: Buffer[] = [];
       let remaining = 10 * 1024 * 1024;
-      req.on('data', (chunk: Buffer) => {
-        remaining -= chunk.length;
-        if (remaining >= 0) chunks.push(chunk);
-      });
+      // Attach only when AIMock registers its own reader. An earlier data
+      // listener would put the request into flowing mode across the mount await.
+      const observeRead = (event: string | symbol) => {
+        if (event !== 'data') return;
+        req.off('newListener', observeRead);
+        req.on('data', (chunk: Buffer) => {
+          remaining -= chunk.length;
+          if (remaining >= 0) chunks.push(chunk);
+        });
+      };
+      req.on('newListener', observeRead);
       req.once('end', () => {
         if (remaining < 0) return;
         try {

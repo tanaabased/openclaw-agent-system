@@ -49,10 +49,10 @@ openclaw agent-system tool git -- remote get-url origin | grep -Fx git@github.co
 # should execute an ordinary worktree session with canonical agent context and identity
 openclaw-gateway start
 worktree_path=$(jq -er .path "$TMPDIR/worktree-remote.json")
-openclaw gateway call sessions.create --params "$(jq -nc --arg cwd "$worktree_path" '{key:"agent:worktree-tanaabot:dashboard:worktree-leia",agentId:"worktree-tanaabot",label:"Worktree execution fixture",cwd:$cwd}')" --json | tee "$TMPDIR/worktree-session.json" | jq -e '.runStarted == false and (.sessionId | type == "string")'
+openclaw gateway call sessions.create --params "$(jq -nc --arg cwd "$worktree_path" '{key:"agent:worktree-tanaabot:dashboard:worktree-leia",agentId:"worktree-tanaabot",label:"Worktree execution fixture",cwd:$cwd}')" --json | tee "$TMPDIR/worktree-session.json" | jq -e '{runStarted: (.runStarted == false), sessionIdPresent: (.sessionId | type == "string")} | if all(.[]; .) then true else error("sessions.create: " + tojson) end'
 session_id=$(jq -er .sessionId "$TMPDIR/worktree-session.json")
-openclaw gateway call chat.send --params "$(jq -nc --arg id "$session_id" '{sessionKey:"agent:worktree-tanaabot:dashboard:worktree-leia",agentId:"worktree-tanaabot",sessionId:$id,message:"Execute the worktree first probe.",queueMode:"followup",deliver:false,expectedLeafEntryId:null,idempotencyKey:"worktree-first"}')" --json | jq -e '.runId == "worktree-first"'
-openclaw gateway call agent.wait --params '{"runId":"worktree-first","timeoutMs":120000}' --timeout 130000 --json | jq -e '.status == "ok"'
+openclaw gateway call chat.send --params "$(jq -nc --arg id "$session_id" '{sessionKey:"agent:worktree-tanaabot:dashboard:worktree-leia",agentId:"worktree-tanaabot",sessionId:$id,message:"Execute the worktree first probe.",queueMode:"followup",deliver:false,expectedLeafEntryId:null,idempotencyKey:"worktree-first"}')" --json | jq -e 'if .runId == "worktree-first" then true else error("chat.send first: run ID did not match") end'
+openclaw gateway call agent.wait --params '{"runId":"worktree-first","timeoutMs":120000}' --timeout 130000 --json | jq -e 'if .status == "ok" then true else error("agent.wait: status=" + (.status | tojson)) end'
 grep -Fx verified "$TMPDIR/worktree-first.receipt"
 test "$(cat "$TMPDIR/worktree-first.pwd")" = "$worktree_path"
 
@@ -60,10 +60,10 @@ test "$(cat "$TMPDIR/worktree-first.pwd")" = "$worktree_path"
 openclaw-gateway stop --timeout 340
 openclaw-gateway start
 session_id=$(jq -er .sessionId "$TMPDIR/worktree-session.json")
-openclaw gateway call chat.history --params '{"sessionKey":"agent:worktree-tanaabot:dashboard:worktree-leia","limit":1}' --json | tee "$TMPDIR/worktree-history.json" | jq -e --arg id "$session_id" '.sessionId == $id and .sessionInfo.hasActiveRun == false and (.sessionInfo.activeLeafEntryId | type == "string")'
+openclaw gateway call chat.history --params '{"sessionKey":"agent:worktree-tanaabot:dashboard:worktree-leia","limit":1}' --json | tee "$TMPDIR/worktree-history.json" | jq -e --arg id "$session_id" '{sessionMatches: (.sessionId == $id), idle: (.sessionInfo.hasActiveRun == false), leafPresent: (.sessionInfo.activeLeafEntryId | type == "string")} | if all(.[]; .) then true else error("chat.history: " + tojson) end'
 leaf=$(jq -er .sessionInfo.activeLeafEntryId "$TMPDIR/worktree-history.json")
-openclaw gateway call chat.send --params "$(jq -nc --arg id "$session_id" --arg leaf "$leaf" '{sessionKey:"agent:worktree-tanaabot:dashboard:worktree-leia",agentId:"worktree-tanaabot",sessionId:$id,message:"Execute the worktree continued probe.",queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"worktree-continued"}')" --json | jq -e '.runId == "worktree-continued"'
-openclaw gateway call agent.wait --params '{"runId":"worktree-continued","timeoutMs":120000}' --timeout 130000 --json | jq -e '.status == "ok"'
+openclaw gateway call chat.send --params "$(jq -nc --arg id "$session_id" --arg leaf "$leaf" '{sessionKey:"agent:worktree-tanaabot:dashboard:worktree-leia",agentId:"worktree-tanaabot",sessionId:$id,message:"Execute the worktree continued probe.",queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"worktree-continued"}')" --json | jq -e 'if .runId == "worktree-continued" then true else error("chat.send continued: run ID did not match") end'
+openclaw gateway call agent.wait --params '{"runId":"worktree-continued","timeoutMs":120000}' --timeout 130000 --json | jq -e 'if .status == "ok" then true else error("agent.wait: status=" + (.status | tojson)) end'
 grep -Fx verified "$TMPDIR/worktree-continued.receipt"
 cmp "$TMPDIR/worktree-first.pwd" "$TMPDIR/worktree-continued.pwd"
 cat "$TMPDIR/worktree-probe-invocations"

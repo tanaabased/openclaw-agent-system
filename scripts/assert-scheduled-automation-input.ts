@@ -25,11 +25,20 @@ export default async function assertScheduledAutomationInput(
   assert.ok(Number.isSafeInteger(occurrence.durationMs) && occurrence.durationMs >= 0);
   const scope = { sessionKey: occurrence.sessionKey, sessionId: occurrence.sessionId };
   const candidates: Record<string, unknown>[] = [];
+  const userInputs: { internal: boolean; cron: boolean; offsetMs: number | null }[] = [];
   let pages = 0;
   for await (const messages of openClawHistoryPages(request, scope)) {
     pages++;
     for (const message of messages) {
       const provenance = message.provenance as Record<string, unknown> | undefined;
+      if (message.role === 'user' && userInputs.length < 12) {
+        userInputs.push({
+          internal: provenance?.kind === 'internal_system',
+          cron: provenance?.sourceTool === 'cron',
+          offsetMs:
+            typeof message.timestamp === 'number' ? message.timestamp - occurrence.runAtMs : null,
+        });
+      }
       if (
         message.role === 'user' &&
         provenance?.kind === 'internal_system' &&
@@ -60,6 +69,7 @@ export default async function assertScheduledAutomationInput(
     durationMs: occurrence.durationMs,
     pages,
     candidates: candidates.length,
+    ...(candidates.length !== 1 ? { userInputs } : {}),
     requestPresent,
     noWorkflowLeak,
     textLengths: texts.map((text) => text.length),
