@@ -28,7 +28,7 @@ reports through the real Gateway response path.
 - The success mode emits four structured source cards, including an application warning on exit zero; failure mode keeps arbitrary output. Both runtimes call one script with a mode flag. Each command runs once per runtime. The mock first merges the cards and appends an escaped copy, then returns the literal body only after the replacement instruction. This adds one synthetic correction response per runtime, without another command run or restart. Mixed authored Markdown, empty-output, and timeout permutations remain in source tests.
 - This proves report delivery, not model judgment or exhaustive native-tool interception. Source components exercise the blanket blocker and preserve the automation result after blocked attempts.
 - Observation deadlines include CLI startup and RPC time.
-- Native OpenClaw output hooks omit executed effort. Verify the model in the retained report and high effort in the formatter's exact native run trace; do not substitute requested settings for missing execution telemetry.
+- Native OpenClaw output hooks omit executed effort. Verify the model in the retained report and high effort in the mock provider's Responses requests; do not substitute requested settings for missing execution telemetry.
 
 ## Setup
 
@@ -97,7 +97,7 @@ for runtime in openclaw codex; do
       exit 1
     fi
     if test "$runtime" = openclaw; then
-      grep -aF 'embedded run start:' "$(openclaw-gateway log-path)" | grep -F "runId=$report_id " | grep -F 'provider=aimock model=gpt-5.5 thinking=high '
+      curl --fail --silent --show-error http://127.0.0.1:4010/proof/reasoning | jq -e 'length > 0 and all(.[]; (.model == "gpt-5.5" or .model == "aimock/gpt-5.5") and .effort == "high")'
     fi
     message_id=$(jq -er '.reports[0].messageId' "$TMPDIR/report-$runtime-$mode.json")
     jq -er --arg id "$message_id" '.messages[] | select(.__openclaw.id == $id and .role == "assistant") | [.content[]? | select(.type == "text") | .text] | join("\n")' "$TMPDIR/history-$runtime-$mode.json" > "$TMPDIR/card-$runtime-$mode.md"

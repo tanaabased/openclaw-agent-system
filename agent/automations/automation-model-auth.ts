@@ -1,4 +1,5 @@
 import automationCompatibilityDiagnostic from './automation-compatibility-diagnostic.ts';
+import { openclawIntakeAutomationId } from './openclaw-intake-policy.ts';
 import { AutomationError } from './automation-errors.ts';
 import { nativeObject } from '../../utils/native-object.ts';
 import { type AutomationGateway } from './automation-gateway.ts';
@@ -45,10 +46,11 @@ export default async function automationModelAuth(
   const unresolved = () =>
     prompts.some((job) => {
       const row = selected(job);
-      return row && typeof row.available !== 'boolean';
+      return (row || job.id === openclawIntakeAutomationId) && typeof row?.available !== 'boolean';
     });
   if (mode === 'reconcile' && unresolved()) rows = await readRows(true);
-  // Remaining unknown evidence is left to cron's authoritative scheduled-auth check.
+  // New assignment intake requires positive readiness before creating a schedule.
+  // Other prompt jobs can still defer to cron's scheduled-auth check.
   const unavailable = new Map<string, ModelUnavailableReason>();
   for (const job of prompts) {
     const row = selected(job);
@@ -67,7 +69,10 @@ export default async function automationModelAuth(
         ? row!.unavailableReason
         : 'unspecified',
     });
-    if (row && typeof row.available !== 'boolean' && mode === 'inspect') {
+    if (
+      typeof row?.available !== 'boolean' &&
+      (job.id === openclawIntakeAutomationId || (row && mode === 'inspect'))
+    ) {
       unavailable.set(job.id, 'unresolved');
       continue;
     }
@@ -98,7 +103,7 @@ export function automationModelSkipped(id: string, reason: ModelUnavailableReaso
     code: automationModelUnavailableCode(reason),
     message:
       reason === 'unresolved'
-        ? `Automation ${id} is not installed and its model availability is unresolved. Run Install to check scheduled authentication; inspection did not attempt enrollment.`
+        ? `Automation ${id} is not installed and its model availability is unresolved. Check the configured model and its authentication, then rerun Install.`
         : reason === 'missing-auth'
           ? `Automation ${id} was not installed because its model authentication is not configured. Configure authentication, then rerun Install.`
           : `Automation ${id} was not installed because OpenClaw reports its model unavailable (${reason}). Resolve model availability, then rerun Install.`,

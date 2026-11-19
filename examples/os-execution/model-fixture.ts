@@ -21,7 +21,7 @@ function latestResult(request: ChatCompletionRequest, mode: string) {
 
 function sessionId(request: ChatCompletionRequest, mode: string) {
   return openClawAIMockToolResultText(request.messages, `call_os_execution_${mode}`)?.match(
-    /Command still running \(session ([A-Za-z0-9_-]+), pid [0-9]+\)/u,
+    /Command still running \(session ([A-Za-z0-9_:-]+), pid [0-9]+\)/u,
   )?.[1];
 }
 

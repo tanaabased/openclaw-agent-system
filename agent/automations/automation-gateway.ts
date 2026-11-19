@@ -171,9 +171,28 @@ export function createAutomationGateway(
       );
     // Bound the complete read/recovery window, not a fixed delay before proceeding.
     const resolutionDeadline = now() + openclawSessionCreateTimeoutMs;
+    async function readCatalog(requestParams = params) {
+      const mode = requestParams.refresh === true ? 'refresh' : 'prepared';
+      try {
+        const result = await invoke(requestParams);
+        automationCompatibilityDiagnostic('automation-catalog-read', { mode, outcome: 'ok' });
+        return result;
+      } catch (error) {
+        const { ErrorCodes, isGatewayClientRequestError } =
+          await import('openclaw/plugin-sdk/gateway-runtime');
+        const gatewayError = isGatewayClientRequestError(error) ? error : undefined;
+        automationCompatibilityDiagnostic('automation-catalog-read', {
+          mode,
+          outcome: 'failed',
+          unavailable: gatewayError?.gatewayCode === ErrorCodes.UNAVAILABLE,
+          retryable: gatewayError?.retryable === true,
+        });
+        throw error;
+      }
+    }
     try {
       try {
-        return await invoke();
+        return await (method === 'models.list' ? readCatalog() : invoke());
       } catch (error) {
         const { ErrorCodes, isGatewayClientRequestError } =
           await import('openclaw/plugin-sdk/gateway-runtime');
@@ -212,9 +231,9 @@ export function createAutomationGateway(
           // the current evidence rather than initiating another catalog replacement.
           const readParams = { ...params };
           delete readParams.refresh;
-          return await invoke({ ...readParams, preparedOnly: true });
+          return await readCatalog({ ...readParams, preparedOnly: true });
         }
-        return await invoke();
+        return await (method === 'models.list' ? readCatalog() : invoke());
       }
     } catch (error) {
       assertPrivateStateLocksHeld();

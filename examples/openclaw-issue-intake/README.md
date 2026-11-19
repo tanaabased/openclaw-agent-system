@@ -144,7 +144,7 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-issue-intake/tanaabot"
 TARGET_INSTANCE=$(openclaw agent-system instance inspect --json | jq -er .instanceId) node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import {parse,stringify} from "yaml"; const path="agent.yaml"; const value=parse(readFileSync(path,"utf8")); value.github.routing.reverse(); value.github.routing[0]={"tanaabased/*":process.env.TARGET_INSTANCE}; value.github["interval-minutes"]=1; writeFileSync(path,stringify(value));'
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
 native=$(openclaw agent-system automations list --json | jq -er '.jobs[] | select(.id == "github-issue-assignment") | .nativeId')
-due=$(openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -er '.state.nextRunAtMs | numbers')
+due=$(openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -er 'if .payload.message == "Scheduled request\n\n> Run scheduled automation: 📥 ISSUE ASSIGNMENTS." then .state.nextRunAtMs | numbers else error("expected the compact scheduled intake request") end')
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" --scheduled-after github-issue-assignment "$native" "$due" > "$TMPDIR/intake-timer-run.json"
 node --import tsx "$GITHUB_WORKSPACE/scripts/assert-scheduled-automation-input.ts" "$TMPDIR/intake-timer-run.json"
 node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import {parse,stringify} from "yaml"; const path="agent.yaml"; const value=parse(readFileSync(path,"utf8")); value.github["interval-minutes"]=1440; writeFileSync(path,stringify(value));'
