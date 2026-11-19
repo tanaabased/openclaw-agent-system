@@ -1234,9 +1234,30 @@ describe('agent/automation-service', () => {
       high: { model: 'openai/gpt-6-luna', effort: 'high' },
     };
     manifest.github = { username: 'tanaabot', notifications: policy };
+    const skipped = await service.reconcile(manifest, root);
+    assert.ok(
+      skipped.outcomes.some(
+        ({ code, status }) =>
+          code === 'automation-model-readiness-unresolved' && status === 'skipped',
+      ),
+    );
+    assert.ok(
+      calls.some(({ method, params }) => method === 'models.list' && params.refresh === true),
+    );
+    assert.equal(native.length, 0);
+    assert.equal(sessions.size, 0);
+
+    modelRows = [{ provider: 'openai', id: 'gpt-6-luna', available: true }];
     await service.reconcile(manifest, root);
     assert.equal(native.length, 1);
     assert.equal(sessions.size, 1);
+    modelRows = [];
+    assert.ok(
+      (await service.reconcile(manifest, root)).outcomes.some(
+        ({ status }) => status === 'unchanged',
+      ),
+    );
+    assert.equal(native.length, 1);
     assert.equal(native[0]!.enabled, true);
     assert.equal(native[0]!.name, 'AGENT SYSTEM: github-issue-assignment');
     assert.equal(native[0]!.displayName, '📥 ISSUE ASSIGNMENTS');
