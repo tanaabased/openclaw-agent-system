@@ -102,7 +102,15 @@ describe('agent/automation-service', () => {
     await assert.rejects(resolveAutomationPrompt(service, scheduler, manifest, run), /drift/);
     native[0] = original;
     manifest.automations[0]!.payload = { kind: 'prompt', prompt: 'hidden version two' };
-    await assert.rejects(resolveAutomationPrompt(service, scheduler, manifest, run), /unverified/);
+    assert.deepEqual(await resolveAutomationPrompt(service, scheduler, manifest, run), {
+      prompt: 'hidden version one',
+    });
+    const declarations = manifest.automations;
+    manifest.automations = [];
+    assert.deepEqual(await resolveAutomationPrompt(service, scheduler, manifest, run), {
+      prompt: 'hidden version one',
+    });
+    manifest.automations = declarations;
     await service.reconcile(manifest, root);
     assert.deepEqual(
       await resolveAutomationPrompt(service, scheduler, manifest, { ...run, runId: 'next' }),
@@ -1761,6 +1769,57 @@ describe('agent/automation-service', () => {
       }),
       state: 'pending' as const,
     };
+    const changed = manifest.automations!.find(({ id }) => id === 'report')!;
+    assert.equal(
+      (await service.startupFailureTarget(manifest, root, 'report', report.hash))?.sessionKey,
+      report.target.sessionKey,
+    );
+    assert.equal(
+      await service.startupFailureTarget(manifest, root, 'report', '0'.repeat(64)),
+      undefined,
+    );
+    const startup = prepareAutomationReport({
+      id: 'report',
+      executionId,
+      startedAt: '2026-10-30T00:00:00Z',
+      cancelled: false,
+      startupFailure: 'automation-execution-drift',
+      result: { exitCode: null, timedOut: false, truncated: false },
+    });
+    assert.equal(startup.presentation?.kind, 'diagnostic');
+    assert.match(startup.presentation.body, /Automation did not start/u);
+    const installedPayload = changed.payload;
+    changed.payload = { kind: 'prompt', prompt: 'unapplied replacement' };
+    const driftFinding = (await service.inspect(manifest, root)).find(
+      ({ stepId, code }) => stepId === 'report' && code === 'automation-drift',
+    );
+    assert.equal(driftFinding?.status, 'drift');
+    assert.match(driftFinding.message, /still uses its installed command.*Run Install/u);
+    const drifted = await service.admit(manifest, root, 'report', report.hash);
+    assert.deepEqual(drifted.command, admitted.command);
+    assert.equal(drifted.configurationDrift, true);
+    const driftReport = prepareAutomationReport({
+      id: 'report',
+      executionId,
+      startedAt: '2026-10-30T00:00:00Z',
+      cancelled: false,
+      configurationDrift: drifted.configurationDrift,
+      result: { exitCode: 0, timedOut: false, truncated: false },
+    });
+    assert.equal(driftReport.outcome, 'success');
+    assert.equal(driftReport.presentation?.kind, 'fallback');
+    assert.match(driftReport.presentation.footer, /^> ## ✨ Automation update available$/mu);
+    assert.match(
+      driftReport.presentation.footer,
+      /^> - Run Agent System Install to apply pending changes\.$/mu,
+    );
+    assert.equal(drifted.reportTarget?.sessionKey, report.target.sessionKey);
+    await service.assertReportCurrent(report);
+    await assert.rejects(
+      service.assertReportCurrent({ ...report, target: { ...report.target, sessionKey: 'other' } }),
+      /automation-report-declaration-changed/u,
+    );
+    changed.payload = installedPayload;
     const enrolled = service.dependencies.request!;
     service.dependencies.request = async () => {
       throw new Error('operator transport must not be used');
@@ -2034,17 +2093,17 @@ describe('agent/automation-service', () => {
     await assert.rejects(service.run(manifest, root, 'missing'), /id-missing/u);
     const original = structuredClone(manifest);
     manifest.automations![0]!.enabled = false;
-    await assert.rejects(service.run(manifest, root, 'check'), /run-disabled/u);
+    assert.equal((await service.run(manifest, root, 'check')).status, 'queued');
     manifest = structuredClone(original);
     manifest.automations![0]!.payload = { kind: 'prompt', prompt: 'changed' };
-    await assert.rejects(service.run(manifest, root, 'check'), /execution-drift/u);
+    assert.equal((await service.run(manifest, root, 'check')).status, 'queued');
     manifest = structuredClone(original);
     native[0]!.state = { lastRunAtMs: now, lastRunStatus: 'ok' };
     await assert.rejects(service.run(manifest, root, 'check'), /run-disabled/u);
     native[0]!.state = {};
     native[0]!.agentId = 'another-agent';
-    await assert.rejects(service.run(manifest, root, 'check'), /ownership-conflict/u);
-    assert.equal(calls.filter(({ method }) => method === 'cron.run').length, 0);
+    await assert.rejects(service.run(manifest, root, 'check'), /execution-drift/u);
+    assert.equal(calls.filter(({ method }) => method === 'cron.run').length, 2);
   });
   it('should keep job-wide report state separate from native history without exposing captured output', async () => {
     await service.reconcile(manifest, root);
@@ -2610,7 +2669,7 @@ describe('agent/automation-service', () => {
     const runner = new AutomationService({ ...service.dependencies, timezone: 'UTC' });
     assert.equal((await runner.admit(manifest, root, 'check', hash)).command.kind, 'exec');
     manifest.automations[0]!.enabled = false;
-    await assert.rejects(runner.admit(manifest, root, 'check', hash), /execution-stale/u);
+    assert.equal((await runner.admit(manifest, root, 'check', hash)).command.kind, 'exec');
   });
   it('should deny stale disabled changed and native-drifted executions before command authority', async () => {
     await service.reconcile(manifest, root);
@@ -2619,7 +2678,7 @@ describe('agent/automation-service', () => {
     assert.equal((await service.admit(manifest, root, 'check', hash)).command.kind, 'exec');
     await assert.rejects(service.admit(manifest, root, 'check', '0'.repeat(64)), /stale/u);
     manifest.automations![0]!.enabled = false;
-    await assert.rejects(service.admit(manifest, root, 'check', hash), /stale/u);
+    assert.equal((await service.admit(manifest, root, 'check', hash)).command.kind, 'exec');
     manifest.automations![0]!.enabled = true;
     native[0]!.payload.env = { GH_TOKEN: 'operator-secret' };
     await assert.rejects(service.admit(manifest, root, 'check', hash), /drift/u);

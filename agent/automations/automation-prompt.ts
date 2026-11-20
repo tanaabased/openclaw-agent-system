@@ -16,7 +16,7 @@ export async function resolveAutomationPrompt(
   run: AutomationLifecycleRun,
   request?: AutomationGateway,
 ): Promise<{ prompt?: string }> {
-  const { job, native } = await verifyAutomationLifecycleRun(
+  const { job, native, installedPrompt } = await verifyAutomationLifecycleRun(
     service,
     scheduler,
     manifest,
@@ -24,9 +24,12 @@ export async function resolveAutomationPrompt(
     undefined,
     request,
     true,
+    true,
   );
   const payload = native.payload;
-  if (job.payload.kind !== 'prompt' || payload?.kind !== 'agentTurn' || !('message' in payload))
+  const prompt =
+    installedPrompt ?? (job?.payload.kind === 'prompt' ? job.payload.prompt : undefined);
+  if (prompt === undefined || payload?.kind !== 'agentTurn' || !('message' in payload))
     throw new AutomationError('automation-prompt-instructions-missing');
   if (
     typeof native.sessionTarget === 'string' &&
@@ -35,14 +38,14 @@ export async function resolveAutomationPrompt(
   )
     throw new AutomationError('automation-prompt-session-diverged');
   const installedRequest = automationPromptRequest({
-    ...job,
+    id: job?.id ?? native.declarationKey!.split(':').at(-1)!,
     displayName:
       'displayName' in native && typeof native.displayName === 'string'
         ? native.displayName
         : undefined,
   });
-  if (payload.message === installedRequest) return { prompt: job.payload.prompt };
+  if (payload.message === installedRequest) return { prompt };
   // already-installed full prompts remain valid until explicit synchronization.
-  if (payload.message === job.payload.prompt.trim()) return {};
+  if (payload.message === prompt.trim()) return {};
   throw new AutomationError('automation-prompt-projection-diverged');
 }

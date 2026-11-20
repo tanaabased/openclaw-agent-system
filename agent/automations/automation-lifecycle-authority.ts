@@ -37,27 +37,33 @@ export async function verifyAutomationLifecycleRun(
   expectedId?: string,
   request?: AutomationGateway,
   acceptedOccurrence = false,
+  useInstalledPrompt = false,
 ) {
   const { context, store } = await service.scope(manifest, run.workspaceDir);
   const records = (await store.read()).records.filter(({ nativeId }) => nativeId === run.jobId);
   const record = records[0];
   const declared = openclawIntakeJobs(manifest).find(({ id }) => id === record?.id);
+  const installedPrompt =
+    useInstalledPrompt && record?.installedPrompt?.hash === record?.hash
+      ? record?.installedPrompt?.text
+      : undefined;
   if (
     manifest.agent.id !== run.agentId ||
     context.agentId !== run.agentId ||
     records.length !== 1 ||
     !record ||
     (expectedId !== undefined && record.id !== expectedId) ||
-    !declared ||
-    (!acceptedOccurrence && !declared.enabled) ||
-    declared.payload.kind !== 'prompt' ||
-    !declared.runtimes.includes('openclaw') ||
     record.pending ||
     record.retired ||
     record.removed ||
-    !(acceptedOccurrence ? [true, false] : [declared.enabled]).some(
-      (enabled) => record.hash === effectiveAutomation({ ...declared, enabled }, context).hash,
-    ) ||
+    (installedPrompt === undefined &&
+      (!declared ||
+        declared.payload.kind !== 'prompt' ||
+        !declared.runtimes.includes('openclaw') ||
+        (!acceptedOccurrence && !declared.enabled) ||
+        !(acceptedOccurrence ? [true, false] : [declared.enabled]).some(
+          (enabled) => record.hash === effectiveAutomation({ ...declared, enabled }, context).hash,
+        ))) ||
     !record.nativeHash
   )
     throw new AutomationError('automation-lifecycle-unverified');
@@ -82,7 +88,7 @@ export async function verifyAutomationLifecycleRun(
     )
   )
     throw new AutomationError('automation-lifecycle-drift');
-  return { job: declared, native };
+  return { job: declared, native, installedPrompt };
 }
 
 /** retain native scheduler facts alongside this instance's native tool-call bindings. */
