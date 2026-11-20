@@ -829,19 +829,31 @@ describe('workspace backup', () => {
       (await lstat(join(workspace, '.agent-system', 'backup-staging'))).mode & 0o777,
       0o700,
     );
-    assert.deepEqual(await service.verify(result.archive), result.manifest);
-    const restored = join(root, 'restored');
-    await mkdir(restored);
-    await executeFile('/usr/bin/tar', ['-xzf', result.archive, '-C', restored]);
-    assert.equal(
-      await readFile(join(restored, 'workspace', 'MEMORY.md'), 'utf8'),
-      'private memory\n',
-    );
-    assert.equal(
-      await readFile(join(restored, 'workspace', 'memory-link'), 'utf8'),
-      'private memory\n',
-    );
-    assert.equal((await lstat(join(restored, 'workspace', 'run.sh'))).mode & 0o777, 0o755);
+    const verified = await service.verify(result.archive);
+    assert.deepEqual(verified, result.manifest);
+    // verification checks each tar header against its inventory entry.
+    assert.equal(verified.inventory.find(({ path }) => path === 'run.sh')?.mode, 0o755);
+    for (const mask of ['022', '077']) {
+      const restored = join(root, `restored-${mask}`);
+      await mkdir(restored);
+      await executeFile('/bin/sh', [
+        '-c',
+        'umask "$1" && exec /usr/bin/tar -xpzf "$2" -C "$3"',
+        'extract-fixture',
+        mask,
+        result.archive,
+        restored,
+      ]);
+      assert.equal(
+        await readFile(join(restored, 'workspace', 'MEMORY.md'), 'utf8'),
+        'private memory\n',
+      );
+      assert.equal(
+        await readFile(join(restored, 'workspace', 'memory-link'), 'utf8'),
+        'private memory\n',
+      );
+      assert.equal((await lstat(join(restored, 'workspace', 'run.sh'))).mode & 0o777, 0o755, mask);
+    }
     assert.equal(result.manifest.coverage.stage, 'workspace-only');
     const next = await service.create(await service.plan({ manifest, workspaceDir: workspace }));
     assert.notEqual(next.archive, result.archive);
