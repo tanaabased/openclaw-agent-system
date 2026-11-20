@@ -98,7 +98,9 @@ export function automationReconciliationState(
   const target = normalized.threads
     ? normalized.threads.get(job.id)?.id
     : selection
-      ? (selection.exact ?? savedTarget)
+      ? selection.managed
+        ? (savedTarget ?? selection.exact)
+        : selection.exact
       : undefined;
   const desiredContext = {
     ...normalized,

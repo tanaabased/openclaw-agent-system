@@ -37,7 +37,10 @@ openclaw agent-system automations list --json > "$TMPDIR/automation-before.json"
 # should execute the next timer-fired prompt with the saved model and effort
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-prompt"
 node --input-type=module -e 'import fs from "node:fs"; import {parse,stringify} from "yaml"; const jobs=parse(fs.readFileSync("automations.yaml","utf8")); jobs.find(({id})=>id==="prompt").schedule="in 1 minute"; fs.writeFileSync("automations.yaml",stringify(jobs));'
-openclaw agent-system doctor --json | jq -e 'any(.findings[]; .stepId == "prompt" and .code == "automation-drift" and .status == "drift")'
+status=0
+openclaw agent-system doctor --json > "$TMPDIR/prompt-doctor-drift.json" || status=$?
+test "$status" -eq 1
+jq -e 'any(.findings[]; .stepId == "prompt" and .code == "automation-drift" and .status == "drift")' "$TMPDIR/prompt-doctor-drift.json"
 if ! openclaw agent-system automations sync --json | jq -e 'if .status == "synchronized" then true else error("initial prompt sync: " + ({status, outcomes: [.outcomes[]? | {id, stepId, status}]} | tojson)) end'; then
   printf '%s\n' 'Initial prompt sync failed before timer verification.' >&2
   exit 1

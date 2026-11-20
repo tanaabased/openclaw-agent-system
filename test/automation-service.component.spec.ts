@@ -1757,6 +1757,8 @@ describe('agent/automation-service', () => {
       'report',
       effectiveAutomation(job, context).hash,
     );
+    assert.equal(admitted.reportTarget?.sessionKey, chat?.key);
+    assert.equal(admitted.configurationDrift, false);
     const executionId = randomUUID();
     const report = {
       version: 1 as const,
