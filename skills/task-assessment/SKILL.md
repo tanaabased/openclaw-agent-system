@@ -197,6 +197,14 @@ limitation if recovery fails; malformed arguments are not an authorization denia
    permission from the issue or from `plan-ready`. Preserve the full assessment and
    follow current native direction and the host’s separate permission contract.
 
+   Do not make optional toolchain or environment probes a prerequisite for
+   choosing Work. If the task is clear, bounded, and authorized, and an optional
+   probe is denied or unavailable, note what remains unverified and proceed with
+   authorized implementation. If a required operation is denied, honor the
+   denial, continue independent work, and escalate only the specific step that
+   cannot proceed through an authorized path. Distinguish a failed approval
+   request from an approval that is actually pending.
+
 6. Run the [User Journey Editor](./references/user-journey-editor.md) as one native helper
    with fresh context, not a continuation or full-history fork. This is a separate model
    invocation for the human review only, not another investigation or planning workflow.

@@ -29,7 +29,7 @@ See example agents:
 - [pirog/me](https://github.com/pirog/me) — Mike Pirog's bound Codex profile.
 
 > [!NOTE]
-> The OpenClaw integration targets 2026.11.5. Newer hosts are not yet verified. See
+> The OpenClaw integration targets 2026.11.6. Newer hosts are not yet verified. See
 > [version compatibility](#version-compatibility).
 
 > [!WARNING]
@@ -113,7 +113,7 @@ uses the [shared skills](#skills) through its native host interfaces.
 
 | Agent System release | Minimum OpenClaw | Development target |
 | -------------------- | ---------------- | ------------------ |
-| Next release         | 2026.11.5        | 2026.11.5          |
+| Next release         | 2026.11.5        | 2026.11.6          |
 | 0.9.0                | 2026.10.6        | 2026.10.6          |
 | 0.8.0                | 2026.9.5         | 2026.9.6           |
 | 0.7.0                | 2026.9.5         | 2026.9.6           |
@@ -124,7 +124,8 @@ Compatibility metadata declares the minimum supported OpenClaw version. Build
 metadata and development dependencies pin the newest version tested for the
 release.
 
-Use the matched OpenClaw and hosted Codex plugin 2026.11.5 pair for the next release.
+On a supported Gateway, workspaces using OpenClaw-hosted Codex require
+`@openclaw/codex@2026.11.6`. This prerequisite is separate from the Gateway minimum.
 The minimum-version range does not establish compatibility with newer hosts;
 newer hosts require separate verification. The standalone Codex application version is unchanged.
 
