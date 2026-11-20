@@ -748,7 +748,10 @@ describe('agent/automation-service', () => {
       afterWriteFailure = true;
       await assert.rejects(service.reconcile(manifest, root));
       const hash = effectiveAutomation(manifest.automations[0]!, context).hash;
-      await assert.rejects(service.admit(manifest, root, 'check', hash), /execution-stale/);
+      await assert.rejects(
+        service.admit(manifest, root, 'check', hash),
+        /automation-recovery-required/u,
+      );
     });
 
   it('should reject a substantive pending update recorded during native admission readback', async () => {
@@ -766,7 +769,7 @@ describe('agent/automation-service', () => {
     };
     await assert.rejects(
       service.admit(manifest, root, 'check', ledger.records[0]!.hash),
-      /execution-stale/,
+      /automation-recovery-required/u,
     );
   });
 
@@ -2410,7 +2413,7 @@ describe('agent/automation-service', () => {
     assert.equal((await service.inspect(manifest, root))[0]!.code, 'automation-retired-id');
     await assert.rejects(
       service.admit(manifest, root, 'check', ledger.records[0]!.hash),
-      /execution-stale/u,
+      /automation-run-disabled/u,
     );
     await assert.rejects(
       service.runs(manifest, root, 'check', { limit: 1, offset: 0 }),
@@ -2622,7 +2625,8 @@ describe('agent/automation-service', () => {
     await service.reconcile(manifest, root);
     native[0]!.state = { autoDisabled: { reason: 'schedule' } };
     calls = [];
-    await assert.rejects(service.reconcile(manifest, root), /automation-native-safety-disabled/u);
+    const result = await service.reconcile(manifest, root);
+    assert.ok(result.warnings.some(({ code }) => code === 'automation-native-safety-disabled'));
     assert.equal(mutations().length, 0);
     native[0]!.state = { lastRunAtMs: now, lastRunStatus: 'error' };
     await assert.rejects(service.reconcile(manifest, root), /automation-one-shot-state-ambiguous/u);
