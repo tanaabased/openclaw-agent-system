@@ -316,6 +316,11 @@ export function announcementRecoveryInstructions(
   return 'Call delivery compose, invoke the selected reply skill, submit candidate, then execute announce through native approval.';
 }
 
+export const codexAttachmentInstructions =
+  'Use native create_attachment with attachment_type "pull_request" and this URL, then list_attachments. ' +
+  'Use attach_artifact followed by list_artifacts only when the current pair is unavailable and the legacy pair is available. ' +
+  'Honor native denials and check the inventory before retrying an uncertain attachment.';
+
 /** native attachment is the only host-specific step after verified publication. */
 export function deliveryCompletionInstructions(
   runtime: 'codex' | 'openclaw',
@@ -327,7 +332,7 @@ export function deliveryCompletionInstructions(
       ? ''
       : delivery.attached
         ? 'Native PR attachment is confirmed. '
-        : 'Call native attach_artifact for this pull_request URL, then list_artifacts and delivery reconcile. ';
+        : codexAttachmentInstructions + ' Then run delivery reconcile. ';
   return (
     responseInstructions +
     ' ' +

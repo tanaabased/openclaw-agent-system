@@ -117,6 +117,11 @@ PR from another managed chat without its announcement record. Verify its PR card
 appears without false pending notice or instructions to compose or send another
 announcement, and confirm GitHub retains only its original announcement.
 
+In the existing native delivery check, confirm that Codex uses `create_attachment`
+and `list_attachments` when available. On a host that exposes only the legacy tools,
+confirm that `attach_artifact` and `list_artifacts` clear the same warning. A failed
+current tool call must not trigger a legacy attachment attempt.
+
 ## Announcement recovery acceptance
 
 In the native desktop acceptance environment, retain a published PR and its first

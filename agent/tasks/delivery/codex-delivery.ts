@@ -52,6 +52,7 @@ import { connectCodexThreads, type CodexThreadRequest } from '../../codex-thread
 import deliveryAnnouncement, {
   announcementPrecedesDelivery,
   announcementPresentation,
+  codexAttachmentInstructions,
   deliveryCompletionInstructions,
 } from './delivery-announcement.ts';
 import {
@@ -73,6 +74,9 @@ import taskPullRequest, {
 import workflowFailure from '../workflow-failure.ts';
 import { requireWorkflowSchedule, type WorkflowScheduleAuthority } from '../workflow-schedule.ts';
 import workflowStatus from '../workflow-status.ts';
+const linkAttachmentInstructions =
+  codexAttachmentInstructions +
+  ' Then run delivery link to reconcile attachment. Card and announcement operations are independent.';
 const requestSchema = Type.Object(
   {
     action: Type.Union(
@@ -140,14 +144,13 @@ export async function codexDeliveryAttachment(
   const turns = await dispatchHistory(request, threadId);
   const turn = turns.find((entry) => entry.id === turnId);
   if (!turn || !Array.isArray(turn.items)) return undefined;
-  const calls = turn.items.filter(
+  const call = turn.items.findLast(
     (item) =>
       nativeObject(item) &&
       item.type === 'mcpToolCall' &&
       item.server === 'codex_app' &&
-      item.tool === 'list_artifacts',
+      (item.tool === 'list_attachments' || item.tool === 'list_artifacts'),
   );
-  const call = calls.at(-1);
   if (!nativeObject(call) || call.status !== 'completed' || !nativeObject(call.result))
     return undefined;
   const result = call.result;
@@ -162,8 +165,11 @@ export async function codexDeliveryAttachment(
   } catch {
     return undefined;
   }
-  if (!nativeObject(inventory) || !Array.isArray(inventory.artifacts)) return undefined;
-  return inventory.artifacts.some(
+  if (!nativeObject(inventory)) return undefined;
+  const attachments =
+    call.tool === 'list_attachments' ? inventory.attachments : inventory.artifacts;
+  if (!Array.isArray(attachments)) return undefined;
+  return attachments.some(
     (entry) =>
       nativeObject(entry) &&
       entry.attachmentType === 'pull_request' &&
@@ -319,9 +325,7 @@ async function runCodexDeliveryScoped(
           pullRequest: linked,
           attached,
           url: pullRequestUrl,
-          instructions: attached
-            ? 'Native attachment is confirmed.'
-            : 'Call native attach_artifact with this pull_request URL, then list_artifacts and delivery link to reconcile attachment. Card and announcement operations are independent.',
+          instructions: attached ? 'Native attachment is confirmed.' : linkAttachmentInstructions,
         };
       }
       if (input.action === 'bind') {
@@ -470,7 +474,7 @@ async function runCodexDeliveryScoped(
               url: pullRequestUrl,
               instructions: attached
                 ? 'Native attachment is confirmed.'
-                : 'Call native attach_artifact with this pull_request URL, then list_artifacts and delivery link to reconcile attachment. Card and announcement operations are independent.',
+                : linkAttachmentInstructions,
             };
           }
           return {

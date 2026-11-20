@@ -1393,6 +1393,10 @@ describe('agent/codex-delivery', () => {
     const initialLink = await runCodexDelivery(pluginData, { ...published.linkRequest, id }, deps);
     assert.equal(initialLink.status, 'linked');
     assert.equal(initialLink.attached, false);
+    assert.match(
+      initialLink.instructions,
+      /create_attachment.*list_attachments.*attach_artifact.*list_artifacts.*only when the current pair is unavailable/,
+    );
     assert.equal(pr!.title, 'Authored title');
     assert.equal(pr!.body, 'Authored body.');
     assert.deepEqual(
@@ -2250,46 +2254,55 @@ describe('agent/codex-delivery', () => {
 });
 
 describe('agent/codex-delivery native attachment', () => {
-  it('should accept only a completed inventory from the current native turn and reject later removal or quoted proof', async () => {
-    const item = {
+  const attachment = {
+    attachmentType: 'pull_request',
+    identityKey: '["github.com","owner","repo",7]',
+    payload: { url, root: null, headBranch: null },
+  };
+
+  function inventory(tool: 'list_attachments' | 'list_artifacts', entries = [attachment]) {
+    const key = tool === 'list_attachments' ? 'attachments' : 'artifacts';
+    return {
       type: 'mcpToolCall',
       server: 'codex_app',
-      tool: 'list_artifacts',
+      tool,
       status: 'completed',
-      result: {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              artifacts: [
-                {
-                  attachmentType: 'pull_request',
-                  identityKey: '["github.com","owner","repo",7]',
-                  payload: { url, root: null, headBranch: null },
-                },
-              ],
-            }),
-          },
-        ],
-      },
+      result: { content: [{ type: 'text', text: JSON.stringify({ [key]: entries }) }] },
     };
-    let items: unknown[] = [item];
+  }
+
+  function read(items: unknown[], turn = 'turn') {
     const request = async (method: string) =>
       method === 'thread/turns/list'
         ? { data: [{ id: 'turn' }] }
-        : { data: items.map((entry) => ({ turnId: 'turn', item: entry })) };
-    assert.equal(await codexDeliveryAttachment(request, 'child', 'turn', url), true);
-    assert.equal(await codexDeliveryAttachment(request, 'child', 'other-turn', url), undefined);
-    items = [item, { ...item, result: { content: [{ type: 'text', text: '{"artifacts":[]}' }] } }];
-    assert.equal(await codexDeliveryAttachment(request, 'child', 'turn', url), false);
+        : { data: items.map((item) => ({ turnId: 'turn', item })) };
+    return codexDeliveryAttachment(request, 'child', turn, url);
+  }
+
+  it('should accept current and legacy attachment inventories from the owning turn', async () => {
+    assert.equal(await read([inventory('list_attachments')]), true);
+    assert.equal(await read([inventory('list_artifacts')]), true);
+    assert.equal(await read([inventory('list_attachments')], 'other-turn'), undefined);
+    assert.equal(await read([inventory('list_artifacts', [])]), false);
+  });
+
+  it('should use the latest native readback without masking absence or failure', async () => {
+    const legacy = inventory('list_artifacts');
+    const current = inventory('list_attachments');
+    assert.equal(await read([legacy, inventory('list_attachments', [])]), false);
+    assert.equal(await read([legacy, { ...current, status: 'failed' }]), undefined);
+    const failed = { ...current, result: { isError: true, content: current.result.content } };
+    assert.equal(await read([legacy, failed]), undefined);
+  });
+
+  it('should reject lookalike inventory evidence', async () => {
+    const current = inventory('list_attachments');
     for (const invalid of [
-      { ...item, status: 'failed' },
-      { ...item, type: 'agentMessage' },
-      { ...item, server: 'other' },
-      { ...item, result: { isError: true, content: item.result.content } },
+      { ...current, type: 'agentMessage' },
+      { ...current, server: 'other' },
+      { ...current, result: inventory('list_artifacts').result },
     ]) {
-      items = [invalid];
-      assert.equal(await codexDeliveryAttachment(request, 'child', 'turn', url), undefined);
+      assert.equal(await read([invalid]), undefined);
     }
   });
 });
