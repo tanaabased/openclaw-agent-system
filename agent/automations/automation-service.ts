@@ -757,6 +757,19 @@ export default class AutomationService {
           findings[findings.length - 1]!.message =
             'Unapplied configuration changes. This job still uses its installed command and schedule. Run Install to apply changes.';
         }
+        if (
+          job.origin !== 'builtin' &&
+          job.enabled &&
+          native.enabled &&
+          job.payload.kind === 'command' &&
+          record.installedCommand?.hash !== record.hash
+        ) {
+          findings.push({
+            ...finding(job.id, 'warning', 'automation-installed-command-missing'),
+            message:
+              'Installed command data is missing. Run Agent System Install to refresh this job.',
+          });
+        }
         if (native.state.lastRunAtMs && native.state.lastDeliveryStatus === undefined) {
           findings.push(finding(job.id, 'skipped', 'automation-delivery-unavailable'));
         }
@@ -934,7 +947,7 @@ export default class AutomationService {
               throw new AutomationError('automation-one-shot-state-ambiguous');
             }
           }
-          if (native?.state.autoDisabled)
+          if (native?.state.autoDisabled && record.pending)
             throw new AutomationError('automation-native-safety-disabled');
           if (
             record.pending &&
@@ -1083,6 +1096,18 @@ export default class AutomationService {
           }
           let native = this.owned(record, observed, context.agentId);
           let created = false;
+          if (native?.state.autoDisabled && !record.pending) {
+            const finding = {
+              component: 'automations',
+              stepId: job.id,
+              ...this.reporting(job.id, context, native.name, job),
+              code: 'automation-native-safety-disabled',
+              message: 'OpenClaw safety-disabled this job. Other jobs can still synchronize.',
+            };
+            outcomes.push({ ...finding, status: 'skipped' });
+            warnings.push(finding);
+            continue;
+          }
           if (record.pending) {
             if (!native && record.pending.kind !== 'create')
               throw new AutomationError('automation-recovery-required');
@@ -1367,6 +1392,19 @@ export default class AutomationService {
     if (installed?.hash === report.hash && installed.reportSessionKey === report.target.sessionKey)
       return;
     if (
+      !installed &&
+      report.input.presentation?.kind === 'diagnostic' &&
+      report.input.presentation.code === 'automation-installed-command-missing'
+    ) {
+      const target = await this.startupFailureTarget(
+        loaded.manifest,
+        loaded.scope.workspaceDir,
+        report.input.id,
+        report.hash,
+      );
+      if (target?.sessionKey === report.target.sessionKey) return;
+    }
+    if (
       !job?.enabled ||
       !job.runtimes.includes('openclaw') ||
       job.payload.kind !== 'command' ||
@@ -1424,14 +1462,15 @@ export default class AutomationService {
     const installed = record.installedCommand;
     if (
       record.hash !== hash ||
-      installed?.hash !== hash ||
-      !installed.reportSessionKey ||
+      (installed !== undefined && installed.hash !== hash) ||
       record.pending ||
       record.removed ||
       record.retired ||
       native.payload.kind !== 'command' ||
       nativeAutomationHash(native) !== record.nativeHash ||
-      native.sessionTarget !== `session:${installed.reportSessionKey}`
+      typeof native.sessionTarget !== 'string' ||
+      !native.sessionTarget.startsWith('session:') ||
+      (installed && native.sessionTarget !== `session:${installed.reportSessionKey}`)
     )
       return undefined;
     const { store } = await this.scope(manifest, workspaceDir);
@@ -1439,7 +1478,7 @@ export default class AutomationService {
       agentId: context.agentId,
       workspaceDir: context.workspaceDir,
       scope: store.scope,
-      sessionKey: installed.reportSessionKey,
+      sessionKey: native.sessionTarget.slice(8),
     };
   }
 
@@ -1452,17 +1491,14 @@ export default class AutomationService {
       const record = (await store.read()).records.find((entry) => entry.id === id);
       const outputLimitOnly =
         record?.pending?.kind === 'update' && record.pending.outputLimitOnly === true;
-      if (
-        !record ||
-        (record.pending && !outputLimitOnly) ||
-        record.retired ||
-        record.removed ||
-        !record.nativeId ||
-        record.hash !== hash ||
-        !this.dependencies.request
-      ) {
-        throw new AutomationError('automation-execution-stale');
-      }
+      if (!record?.nativeId)
+        throw new AutomationError('automation-execution-stale-registration-missing');
+      if (record.retired || record.removed) throw new AutomationError('automation-run-disabled');
+      if (record.pending && !outputLimitOnly)
+        throw new AutomationError('automation-recovery-required');
+      if (record.hash !== hash) throw new AutomationError('automation-execution-stale-launch-hash');
+      if (!this.dependencies.request)
+        throw new AutomationError('automation-observation-unavailable');
       const native = nativeAutomation(
         await this.dependencies.request('cron.get', { id: record.nativeId }),
       );
@@ -1479,8 +1515,7 @@ export default class AutomationService {
           (!outputLimitOnly || nativeHash !== record.pending!.nativeHash))
       )
         throw new AutomationError('automation-execution-drift');
-      if (!job && record.installedCommand)
-        throw new AutomationError('automation-declaration-removed');
+      if (!job) throw new AutomationError('automation-declaration-removed');
       const installed =
         record.installedCommand?.hash === hash ? record.installedCommand : undefined;
       if (retainedOneShot(native)) throw new AutomationError('automation-run-disabled');
@@ -1516,7 +1551,7 @@ export default class AutomationService {
         effectiveAutomation(job, context).hash !== hash &&
         effectiveAutomation(job, installedContext).hash !== hash
       )
-        throw new AutomationError('automation-execution-stale');
+        throw new AutomationError('automation-installed-command-missing');
       return {
         native,
         command: { ...job.payload.run, timeoutSeconds: job.timeoutSeconds ?? 1800 },
@@ -1526,7 +1561,7 @@ export default class AutomationService {
         reportTarget: this.commandReportTarget(job, native, context, store.scope),
       };
     }
-    throw new AutomationError('automation-execution-stale');
+    throw new AutomationError('automation-execution-stale-registration-changed');
   }
 
   private commandReportTarget(
