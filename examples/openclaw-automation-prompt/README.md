@@ -37,7 +37,9 @@ openclaw agent-system automations list --json > "$TMPDIR/automation-before.json"
 # should execute the next timer-fired prompt with the saved model and effort
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-prompt"
 node --input-type=module -e 'import fs from "node:fs"; import {parse,stringify} from "yaml"; const jobs=parse(fs.readFileSync("automations.yaml","utf8")); jobs.find(({id})=>id==="prompt").schedule="in 1 minute"; fs.writeFileSync("automations.yaml",stringify(jobs));'
+openclaw agent-system doctor --json | jq -e 'any(.findings[]; .stepId == "prompt" and .code == "automation-drift" and .status == "drift")'
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
+openclaw agent-system doctor --json | jq -e 'all(.findings[]; .stepId != "prompt" or .code != "automation-drift")'
 native=$(jq -er '.jobs[] | select(.id == "prompt") | .nativeId' "$TMPDIR/automation-before.json")
 openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e '(.payload.message | contains("\n\n> Run scheduled automation: 🔄 AUTOMATION STATUS.")) and (.payload.message | contains("Acknowledge the scheduled owning-agent context.") | not)'
 due=$(openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -er '.state.nextRunAtMs | numbers')

@@ -158,6 +158,8 @@ export function intakeRemediation(code: string): string {
     return 'Restore a readable, valid `agent.yaml` in the bound workspace, then retry. No rebind or Install is required for a policy-only repair.';
   if (code === 'intake-automation-update-required')
     return 'Run Agent System Install to apply the update and resume intake. Existing chats and work are retained.';
+  if (code === 'automation-recovery-required')
+    return 'Check Doctor for recovery steps before retrying intake.';
   if (code === 'intake-activation-required') return 'Run Agent System Install to activate intake.';
   if (/^intake-github-(?:unknown|transport|rate-limit|authentication|permission)$/.test(code)) {
     if (code.endsWith('authentication'))

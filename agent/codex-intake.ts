@@ -274,6 +274,7 @@ export async function runCodexIntake(
         'intake-policy-reconciliation-required',
         'intake-automation-paused',
         'intake-automation-update-required',
+        'automation-recovery-required',
         'intake-activation-required',
       ].includes(error.code)
     )

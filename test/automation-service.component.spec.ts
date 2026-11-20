@@ -81,9 +81,10 @@ describe('agent/automation-service', () => {
       prompt: 'hidden version one',
     });
     manifest.automations[0]!.displayName = 'Renamed without synchronization';
-    assert.deepEqual(await resolveAutomationPrompt(service, scheduler, manifest, run), {
-      prompt: 'hidden version one',
-    });
+    assert.match(
+      (await resolveAutomationPrompt(service, scheduler, manifest, run)).prompt!,
+      /^hidden version one\n[\s\S]*Update available/u,
+    );
     delete manifest.automations[0]!.displayName;
     const { store } = await service.scope(manifest, root);
     const originalLedger = await store.read();
@@ -122,11 +123,9 @@ describe('agent/automation-service', () => {
     native[0]!.payload.message = 'hidden version two';
     ledger.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
     await store.write(ledger);
-    assert.deepEqual(
-      await resolveAutomationPrompt(service, scheduler, manifest, run),
-      {},
-      'legacy full prompts must not be injected twice',
-    );
+    const legacyPrompt = await resolveAutomationPrompt(service, scheduler, manifest, run);
+    assert.match(legacyPrompt.prompt!, /Update available/u);
+    assert.doesNotMatch(legacyPrompt.prompt!, /hidden version two/u);
     await service.reconcile(manifest, root);
     assert.deepEqual(await resolveAutomationPrompt(service, scheduler, manifest, run), {
       prompt: 'hidden version two',
@@ -1814,6 +1813,7 @@ describe('agent/automation-service', () => {
     assert.equal(driftReport.outcome, 'success');
     assert.equal(driftReport.presentation?.kind, 'fallback');
     assert.match(driftReport.presentation.footer, /^> ## ✨ Update available$/mu);
+    assert.ok(driftReport.presentation.footer.includes('automation `report`'));
     assert.match(
       driftReport.presentation.footer,
       /^> - Run Agent System Install to apply pending changes\.$/mu,
@@ -2409,7 +2409,11 @@ describe('agent/automation-service', () => {
     now += 24 * 60 * 60 * 1000 + 1;
     calls = [];
     manifest.automations = declarations;
-    await assert.rejects(service.reconcile(manifest, root), /automation-retired-id/u);
+    assert.ok(
+      (await service.reconcile(manifest, root)).outcomes.some(
+        ({ status, code }) => status === 'skipped' && code === 'automation-retired-id',
+      ),
+    );
     assert.equal((await service.inspect(manifest, root))[0]!.code, 'automation-retired-id');
     await assert.rejects(
       service.admit(manifest, root, 'check', ledger.records[0]!.hash),
@@ -2595,7 +2599,12 @@ describe('agent/automation-service', () => {
     await service.reconcile(manifest, root);
     const saved = native[0]!;
     native = [];
-    await assert.rejects(service.reconcile(manifest, root), /automation-native-job-missing/u);
+    const missing = await service.reconcile(manifest, root);
+    assert.ok(
+      missing.outcomes.some(
+        ({ status, code }) => status === 'skipped' && code === 'automation-native-job-missing',
+      ),
+    );
     native = [saved];
     saved.agentId = 'other';
     await assert.rejects(service.reconcile(manifest, root), /automation-ownership-conflict/u);
@@ -2661,22 +2670,102 @@ describe('agent/automation-service', () => {
     await service.reconcile(manifest, root);
     assert.equal(native[0]!.configRevision, 'unmanaged');
   });
-  it('should admit owned commands when only the runner timezone differs', async () => {
+  it('should admit owned commands without update notices when only runner context differs', async () => {
     const installer = new AutomationService({
       ...service.dependencies,
       timezone: 'America/New_York',
     });
     manifest.automations = jobs([
-      { id: 'check', schedule: '0 1 * * *', run: ['gh', 'api', 'user'] },
+      { id: 'check', schedule: 'every 1 hour', run: ['gh', 'api', 'user'] },
     ]);
     await installer.reconcile(manifest, root);
     const { store } = await installer.scope(manifest, root);
     const { hash } = (await store.read()).records[0]!;
-    const runner = new AutomationService({ ...service.dependencies, timezone: 'UTC' });
-    assert.equal((await runner.admit(manifest, root, 'check', hash)).command.kind, 'exec');
-    manifest.automations[0]!.enabled = false;
-    assert.equal((await runner.admit(manifest, root, 'check', hash)).command.kind, 'exec');
+    const runner = new AutomationService({
+      ...service.dependencies,
+      command: ['different-launcher-path'],
+      environment: { OPENCLAW_PROFILE: 'different-process-context' },
+      timezone: 'UTC',
+    });
+    const admitted = await runner.admit(manifest, root, 'check', hash);
+    assert.equal(admitted.command.kind, 'exec');
+    assert.equal(admitted.configurationDrift, false);
+    const doctorDrift = async (inspection = installer) =>
+      (await inspection.inspect(manifest, root)).some(
+        ({ stepId, status }) => stepId === 'check' && status === 'drift',
+      );
+    assert.equal(await doctorDrift(runner), false);
+    manifest.automations[0]!.payload = {
+      kind: 'command',
+      run: { kind: 'exec', executable: 'true', args: [] },
+    };
+    assert.equal(await doctorDrift(), true);
+    const beforeInstall = await runner.admit(manifest, root, 'check', hash);
+    assert.equal(beforeInstall.command.kind, 'exec');
+    assert.equal(beforeInstall.configurationDrift, true);
+    await installer.reconcile(manifest, root);
+    const updated = (await store.read()).records[0]!;
+    assert.equal(await doctorDrift(), false);
+    assert.equal(
+      (await runner.admit(manifest, root, 'check', updated.hash)).configurationDrift,
+      false,
+    );
   });
+  it('should diagnose legacy launch readiness and show backfill beside a blocked job', async () => {
+    manifest.automations = jobs([
+      { id: 'missing', schedule: '0 1 * * *', run: ['true'] },
+      { id: 'backup', schedule: '0 2 * * *', run: ['true'] },
+    ]);
+    await service.reconcile(manifest, root);
+    const { store } = await service.scope(manifest, root);
+    const ledger = await store.read();
+    const backupRecord = ledger.records.find(({ id }) => id === 'backup')!;
+    const backup = structuredClone(native.find(({ id }) => id === backupRecord.nativeId)!);
+    delete backupRecord.installedCommand;
+    await store.write(ledger);
+    const finding = async () =>
+      (await service.inspect(manifest, root)).find(
+        ({ stepId, code }) =>
+          stepId === 'backup' && code === 'automation-installed-command-missing',
+      );
+    assert.equal((await finding())?.status, 'warning');
+    assert.equal(
+      (await service.admit(manifest, root, 'backup', backupRecord.hash)).command.kind,
+      'exec',
+    );
+
+    const declaration = manifest.automations[1]!;
+    const installedPayload = declaration.payload;
+    declaration.payload = { kind: 'command', run: { kind: 'exec', executable: 'false', args: [] } };
+    const blocked = (await finding())!;
+    assert.equal(blocked.status, 'blocked');
+    assert.match(lifecycleDetails(blocked).message, /run Agent System Install/u);
+    await assert.rejects(
+      service.admit(manifest, root, 'backup', backupRecord.hash),
+      /automation-installed-command-missing/u,
+    );
+    declaration.payload = installedPayload;
+
+    native = [backup];
+    calls = [];
+    const synchronized = await service.reconcile(manifest, root);
+    assert.deepEqual(
+      synchronized.outcomes.map(({ stepId, status }) => [stepId, status]),
+      [
+        ['missing', 'skipped'],
+        ['backup', 'updated'],
+      ],
+    );
+    assert.match(
+      lifecycleDetails(synchronized.outcomes[1]!).message,
+      /installed command data restored/u,
+    );
+    assert.deepEqual(native, [backup]);
+    assert.equal(mutations().length, 0);
+    assert.equal(await finding(), undefined);
+    assert.equal((await service.reconcile(manifest, root)).outcomes[1]!.status, 'unchanged');
+  });
+
   it('should deny stale disabled changed and native-drifted executions before command authority', async () => {
     await service.reconcile(manifest, root);
     const { store } = await service.scope(manifest, root);

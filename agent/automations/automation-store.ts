@@ -39,6 +39,7 @@ const recordSchema = Type.Object(
     installedCommand: Type.Optional(installedCommand),
     installedPrompt: Type.Optional(Type.Object({ hash: hashSchema, text: Type.String() })),
     nativeHash: Type.Optional(hashSchema),
+    projectionTimezone: Type.Optional(Type.String({ minLength: 1 })),
     triggerHash: hashSchema,
     generation: Type.Integer({ minimum: 1 }),
     anchorMs: Type.Number(),

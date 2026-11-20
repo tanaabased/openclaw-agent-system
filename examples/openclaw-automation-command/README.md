@@ -6,7 +6,7 @@ Run a deterministic script and inspect its actual process outcome without a mode
 
 - Managed identity and same-agent lifecycle descendants.
 - Long stdout/stderr and actual failing exit status.
-- Capture-limit migration preserving native history.
+- Capture-limit migration and installed command recovery preserving native history.
 
 ## What does not belong here
 
@@ -17,6 +17,7 @@ Run a deterministic script and inspect its actual process outcome without a mode
 - The success probe retains Install/Doctor descendant coverage without model calls.
 - The failure fixture exceeds the former output caps with 64 KiB per stream and late markers.
 - Empty output, timeout, cancellation, and declaration variants remain in source tests.
+- The recovery case removes only the new command data from this isolated fixture’s ledger to model a pre-upgrade installation. It does not edit the native job.
 
 ## Testing
 
@@ -65,6 +66,33 @@ test -f failed-output.started
 test -f failed-output.finished
 printf '%s\n' "$run_id" > "$TMPDIR/failed-output-run-id"
 trap - ERR
+```
+
+```bash
+# should report restored command data without changing the native job
+cd "$GITHUB_WORKSPACE/examples/openclaw-automation-command"
+native=$(jq -er '.jobs[] | select(.id == "failed-output") | .nativeId' "$TMPDIR/automation-output-job.json")
+openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json > "$TMPDIR/command-data-before.json"
+node --input-type=module - "$TMPDIR/command-data-before.json" <<'NODE'
+import { readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import assert from 'node:assert/strict';
+const job = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+const scope = /^agent-system:([a-f0-9]{64}):failed-output$/u.exec(job.declarationKey)?.[1];
+assert.ok(scope);
+const state = process.env.OPENCLAW_STATE_DIR || join(homedir(), '.openclaw');
+const file = join(state, 'agent-system-automations', 'automations-' + scope + '.json');
+const ledger = JSON.parse(readFileSync(file, 'utf8'));
+const record = ledger.records.find((entry) => entry.nativeId === job.id);
+assert.ok(record?.installedCommand);
+delete record.installedCommand;
+writeFileSync(file, JSON.stringify(ledger) + '\n');
+NODE
+openclaw agent-system doctor --json | jq -e 'any(.findings[]; .stepId == "failed-output" and .code == "automation-installed-command-missing" and .status == "warning")'
+openclaw agent-system install --skip-setup --yes --json | jq -e 'any(.outcomes[]; .stepId == "failed-output" and .status == "updated")'
+openclaw agent-system doctor --json | jq -e 'all(.findings[]; .code != "automation-installed-command-missing")'
+openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e --slurpfile before "$TMPDIR/command-data-before.json" '.id == $before[0].id and .configRevision == $before[0].configRevision'
 ```
 
 ```bash
