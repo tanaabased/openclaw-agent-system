@@ -1358,7 +1358,6 @@ export default class AutomationService {
         !job.runtimes.includes('openclaw') ||
         job.payload.kind !== 'command' ||
         record.hash !== hash ||
-        effectiveAutomation(job, context).hash !== hash ||
         !this.dependencies.request
       ) {
         throw new AutomationError('automation-execution-stale');
@@ -1379,6 +1378,16 @@ export default class AutomationService {
           (!outputLimitOnly || nativeHash !== record.pending!.nativeHash))
       )
         throw new AutomationError('automation-execution-drift');
+      const installedTimezone = native.schedule.tz;
+      const installedContext =
+        job.origin !== 'builtin' && typeof installedTimezone === 'string'
+          ? { ...context, timezone: installedTimezone }
+          : context;
+      if (
+        effectiveAutomation(job, context).hash !== hash &&
+        effectiveAutomation(job, installedContext).hash !== hash
+      )
+        throw new AutomationError('automation-execution-stale');
       const selection = automationThreadSelection(job, 'openclaw');
       const reportTarget: AutomationReportTarget | undefined =
         selection &&

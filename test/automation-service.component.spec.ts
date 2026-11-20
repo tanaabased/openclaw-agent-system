@@ -2596,6 +2596,22 @@ describe('agent/automation-service', () => {
     await service.reconcile(manifest, root);
     assert.equal(native[0]!.configRevision, 'unmanaged');
   });
+  it('should admit owned commands when only the runner timezone differs', async () => {
+    const installer = new AutomationService({
+      ...service.dependencies,
+      timezone: 'America/New_York',
+    });
+    manifest.automations = jobs([
+      { id: 'check', schedule: '0 1 * * *', run: ['gh', 'api', 'user'] },
+    ]);
+    await installer.reconcile(manifest, root);
+    const { store } = await installer.scope(manifest, root);
+    const { hash } = (await store.read()).records[0]!;
+    const runner = new AutomationService({ ...service.dependencies, timezone: 'UTC' });
+    assert.equal((await runner.admit(manifest, root, 'check', hash)).command.kind, 'exec');
+    manifest.automations[0]!.enabled = false;
+    await assert.rejects(runner.admit(manifest, root, 'check', hash), /execution-stale/u);
+  });
   it('should deny stale disabled changed and native-drifted executions before command authority', async () => {
     await service.reconcile(manifest, root);
     const { store } = await service.scope(manifest, root);
