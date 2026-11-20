@@ -110,7 +110,7 @@ const fixtures: Fixture[] = [
         const latest = codexExecResult(request);
         return (
           latest !== undefined &&
-          /^Process exited with code 0\r?$/mu.test(latest.text) &&
+          /^Process exited with code 0\.?\r?$/mu.test(latest.text) &&
           /^runtime-boundary-verified\r?$/mu.test(latest.text)
         );
       },

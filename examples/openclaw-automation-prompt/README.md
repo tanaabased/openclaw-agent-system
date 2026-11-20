@@ -38,7 +38,10 @@ openclaw agent-system automations list --json > "$TMPDIR/automation-before.json"
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-prompt"
 node --input-type=module -e 'import fs from "node:fs"; import {parse,stringify} from "yaml"; const jobs=parse(fs.readFileSync("automations.yaml","utf8")); jobs.find(({id})=>id==="prompt").schedule="in 1 minute"; fs.writeFileSync("automations.yaml",stringify(jobs));'
 openclaw agent-system doctor --json | jq -e 'any(.findings[]; .stepId == "prompt" and .code == "automation-drift" and .status == "drift")'
-openclaw agent-system automations sync --json | jq -e 'if .status == "synchronized" then true else error("initial prompt sync: " + ({status, outcomes: [.outcomes[]? | {id, stepId, status}]} | tojson)) end'
+if ! openclaw agent-system automations sync --json | jq -e 'if .status == "synchronized" then true else error("initial prompt sync: " + ({status, outcomes: [.outcomes[]? | {id, stepId, status}]} | tojson)) end'; then
+  printf '%s\n' 'Initial prompt sync failed before timer verification.' >&2
+  exit 1
+fi
 openclaw agent-system doctor --json | jq -e '[.findings[] | select(.stepId == "prompt" and .code == "automation-drift") | {code, status}] | if length == 0 then true else error("prompt drift after sync: " + tojson) end'
 native=$(jq -er '.jobs[] | select(.id == "prompt") | .nativeId' "$TMPDIR/automation-before.json")
 openclaw agent-system automations list --json | jq -e --arg native "$native" '([.jobs[] | select(.id == "prompt") | .nativeId]) as $ids | if $ids == [$native] then true else error("prompt native ID changed: " + ({expected: $native, observed: $ids} | tojson)) end'
@@ -64,7 +67,15 @@ openclaw-aimock evidence --scenario openclaw-automation-prompt --expected-eviden
 ```bash
 # should preserve the job and chat across repeat synchronization
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-prompt"
-openclaw agent-system automations sync --json | jq -e 'if .status == "synchronized" and all(.outcomes[]; .status == "unchanged") then true else error("repeat prompt sync: " + ({status, outcomes: [.outcomes[]? | {id, stepId, status}]} | tojson)) end'
+native=$(jq -er '.jobs[] | select(.id == "prompt") | .nativeId' "$TMPDIR/automation-before.json")
+params=$(jq -nc --arg id "$native" '{id:$id}')
+openclaw gateway call cron.get --params "$params" --json > "$TMPDIR/prompt-before-repeat.json"
+if ! openclaw agent-system automations sync --json | jq -e 'if .status == "synchronized" and all(.outcomes[]; .status == "unchanged") then true else error("repeat prompt sync: " + ({status, outcomes: [.outcomes[]? | {id, stepId, status}]} | tojson)) end'; then
+  if openclaw gateway call cron.get --params "$params" --json > "$TMPDIR/prompt-after-repeat.json"; then
+    jq -cs '.[0] as $before | .[1] as $after | ["enabled","schedule","deleteAfterRun","payload","delivery","sessionTarget","sessionKey","wakeMode","failureAlert","trigger","pacing","displayName"] | map(select(. as $key | $before[$key] != $after[$key])) | {changedNativeFields: .}' "$TMPDIR/prompt-before-repeat.json" "$TMPDIR/prompt-after-repeat.json" >&2
+  fi
+  exit 1
+fi
 jq -S '[.jobs[] | {id,nativeId,routing}]' "$TMPDIR/automation-before.json" > "$TMPDIR/prompt-identities.json"
 openclaw agent-system automations list --json | jq -S '[.jobs[] | {id,nativeId,routing}]' | diff - "$TMPDIR/prompt-identities.json"
 ```
