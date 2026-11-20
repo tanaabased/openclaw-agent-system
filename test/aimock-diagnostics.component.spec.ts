@@ -7,6 +7,59 @@ import { promisify } from 'node:util';
 const execFileAsync = promisify(execFile);
 
 describe('scripts/aimock-server diagnostics', () => {
+  it('should correlate rejected responses frames without exposing request data', async () => {
+    const child = spawn(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        'scripts/aimock-server.ts',
+        '--scenario',
+        'openclaw-runtimes',
+        '--port',
+        '0',
+      ],
+      { stdio: ['ignore', 'pipe', 'ignore'] },
+    );
+    const exited = once(child, 'exit');
+    const lines = createInterface({ input: child.stdout });
+    try {
+      const signal = AbortSignal.timeout(5000);
+      const [url] = await once(lines, 'line', { signal });
+      const response = await fetch(`${url}/v1/responses`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        signal,
+        body: JSON.stringify({
+          model: 'gpt-5.4-nano',
+          input: [
+            { type: 'function_call', call_id: 'private-id', name: 'private-tool', arguments: '{}' },
+            { type: 'custom_tool_call_output', call_id: 'private-id', output: 'private-output' },
+          ],
+        }),
+      });
+      assert.equal(response.status, 503);
+      await response.text();
+      const proof = await fetch(`${url}/proof/diagnostics`, { signal });
+      const report = (await proof.json()) as { rejectedResponses: unknown };
+      assert.deepEqual(report.rejectedResponses, [
+        {
+          inputCount: 2,
+          previousResponse: false,
+          frames: [
+            { type: 'function_call', callId: { ref: 1 }, hasName: true },
+            { type: 'custom_tool_call_output', callId: { ref: 1 }, hasName: false },
+          ],
+        },
+      ]);
+      assert.doesNotMatch(JSON.stringify(report.rejectedResponses), /private-/u);
+    } finally {
+      lines.close();
+      child.kill('SIGTERM');
+      await exited;
+    }
+  });
+
   it('should expose a strict miss through curl failure output and still stop cleanly', async () => {
     const child = spawn(
       process.execPath,

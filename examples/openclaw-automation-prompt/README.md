@@ -45,7 +45,13 @@ if ! openclaw agent-system automations sync --json | jq -e 'if .status == "synch
   printf '%s\n' 'Initial prompt sync failed before timer verification.' >&2
   exit 1
 fi
-openclaw agent-system doctor --json | jq -e '[.findings[] | select(.stepId == "prompt" and .code == "automation-drift") | {code, status}] | if length == 0 then true else error("prompt drift after sync: " + tojson) end'
+status=0
+openclaw agent-system doctor --json > "$TMPDIR/prompt-doctor-after-sync.json" || status=$?
+if test "$status" -ne 0; then
+  test "$status" -eq 1
+  jq -ce 'select(.status == "drift" or .status == "blocked") | {status, findings: [.findings[] | select(.status == "drift" or .status == "blocked") | {component, stepId, code, status}]}' "$TMPDIR/prompt-doctor-after-sync.json" >&2
+fi
+jq -e '[.findings[] | select(.stepId == "prompt" and .code == "automation-drift") | {code, status}] | if length == 0 then true else error("prompt drift after sync: " + tojson) end' "$TMPDIR/prompt-doctor-after-sync.json"
 native=$(jq -er '.jobs[] | select(.id == "prompt") | .nativeId' "$TMPDIR/automation-before.json")
 openclaw agent-system automations list --json | jq -e --arg native "$native" '([.jobs[] | select(.id == "prompt") | .nativeId]) as $ids | if $ids == [$native] then true else error("prompt native ID changed: " + ({expected: $native, observed: $ids} | tojson)) end'
 openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e '(.payload.message // "") as $message | {hasMarker: ($message | contains("\n\n> Run scheduled automation: 🔄 AUTOMATION STATUS.")), hasLegacyMarker: ($message | contains("Acknowledge the scheduled owning-agent context."))} | if .hasMarker and (.hasLegacyMarker | not) then true else error("native prompt payload: " + tojson) end'
