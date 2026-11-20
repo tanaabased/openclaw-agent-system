@@ -1,3 +1,5 @@
+import intakeAutomationNotice from '../../channels/github/presentation/intake-automation-notice.ts';
+import { renderStructuredReport } from './automation-report-presentation.ts';
 import { automationPromptRequest } from './automation-projection.ts';
 import type { AgentManifest } from '../../manifest/types.ts';
 import type AutomationService from './automation-service.ts';
@@ -16,7 +18,7 @@ export async function resolveAutomationPrompt(
   run: AutomationLifecycleRun,
   request?: AutomationGateway,
 ): Promise<{ prompt?: string }> {
-  const { job, native } = await verifyAutomationLifecycleRun(
+  const { job, native, installedPrompt, configurationDrift } = await verifyAutomationLifecycleRun(
     service,
     scheduler,
     manifest,
@@ -24,9 +26,12 @@ export async function resolveAutomationPrompt(
     undefined,
     request,
     true,
+    true,
   );
   const payload = native.payload;
-  if (job.payload.kind !== 'prompt' || payload?.kind !== 'agentTurn' || !('message' in payload))
+  const prompt =
+    installedPrompt ?? (job?.payload.kind === 'prompt' ? job.payload.prompt : undefined);
+  if (prompt === undefined || payload?.kind !== 'agentTurn' || !('message' in payload))
     throw new AutomationError('automation-prompt-instructions-missing');
   if (
     typeof native.sessionTarget === 'string' &&
@@ -35,14 +40,41 @@ export async function resolveAutomationPrompt(
   )
     throw new AutomationError('automation-prompt-session-diverged');
   const installedRequest = automationPromptRequest({
-    ...job,
+    id: job?.id ?? native.declarationKey!.split(':').at(-1)!,
     displayName:
       'displayName' in native && typeof native.displayName === 'string'
         ? native.displayName
         : undefined,
   });
-  if (payload.message === installedRequest) return { prompt: job.payload.prompt };
+  if (payload.message !== installedRequest && payload.message !== prompt.trim())
+    throw new AutomationError('automation-prompt-projection-diverged');
+  const notice =
+    configurationDrift &&
+    job &&
+    intakeAutomationNotice('intake-automation-update-required', job.id);
+  if (notice) {
+    const card = renderStructuredReport(
+      {
+        id: 'configuration-drift',
+        format: 'structured',
+        status: 'warning',
+        title: notice.title,
+        summary: notice.summary,
+        actions: [notice.next],
+      },
+      notice.emoji,
+    );
+    return {
+      prompt: [
+        payload.message === installedRequest ? prompt : '',
+        'Include this update notice verbatim alongside your final response:',
+        card,
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+    };
+  }
+  if (payload.message === installedRequest) return { prompt };
   // already-installed full prompts remain valid until explicit synchronization.
-  if (payload.message === job.payload.prompt.trim()) return {};
-  throw new AutomationError('automation-prompt-projection-diverged');
+  return {};
 }

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { automationHash } from '../agent/automation-hash.ts';
@@ -7,6 +7,10 @@ import type { SavedAutomation } from '../agent/automations/codex-automation-stat
 import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import runCodexNotificationReset from '../agent/codex-notification-reset.ts';
+import {
+  agentCommandAuthorityEnvironmentName,
+  agentCommandCapabilityEnvironmentName,
+} from '../agent/command-authority.ts';
 import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
 import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import OpenClawNotificationReset from '../agent/openclaw-notification-reset.ts';
@@ -17,11 +21,42 @@ import { account, intakeFixture } from './github-intake-fixture.ts';
 
 describe('agent/notification reset runtime adapters', () => {
   let root: string;
+  let originalEnv: NodeJS.ProcessEnv;
   beforeEach(async () => {
+    originalEnv = process.env;
     root = await realpath(await mkdtemp(join(tmpdir(), 'notification-reset-adapters-')));
+    process.env = { ...originalEnv };
+    delete process.env[agentCommandAuthorityEnvironmentName];
+    delete process.env[agentCommandCapabilityEnvironmentName];
+    delete process.env.CODEX_THREAD_ID;
+    delete process.env.OPENCLAW_STATE_DIR;
   });
   afterEach(async () => {
+    process.env = originalEnv;
     await rm(root, { recursive: true, force: true });
+  });
+
+  it('should deny a hosted agent reset without connecting or writing state', async () => {
+    process.env.CODEX_THREAD_ID = 'fixture-agent-thread';
+    process.env.OPENCLAW_STATE_DIR = join(root, 'openclaw');
+    const unexpectedConnection = async (): Promise<never> => {
+      throw new Error('denied reset attempted to connect');
+    };
+    await assert.rejects(
+      runCodexNotificationReset(
+        root,
+        { all: true, yes: true },
+        {
+          codexHome: join(root, 'codex'),
+          connect: unexpectedConnection,
+          threads: unexpectedConnection,
+          automation: unexpectedConnection,
+          pickupAutomation: unexpectedConnection,
+        },
+      ),
+      /notification-reset-operator-required/u,
+    );
+    assert.deepEqual(await readdir(root), []);
   });
   const seed = async (store: IntakeRecordStore, workspaceDir = root) =>
     store.exclusive(async (_state, save) =>

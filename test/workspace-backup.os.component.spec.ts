@@ -5,7 +5,7 @@ import { createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
 import { pack } from 'tar-stream';
-import {
+import fsPromises, {
   chmod,
   copyFile,
   lstat,
@@ -20,6 +20,7 @@ import {
   writeFile,
   type FileHandle,
 } from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -301,7 +302,26 @@ describe('workspace backup', () => {
       'manifest.json',
     ]);
     assert.deepEqual(await selected.verify(result.archive), result.manifest);
-    const recovery = await selected.restore(result.archive, join(root, 'agent-recovered'));
+    const destination = join(root, 'agent-recovered');
+    await mkdir(destination, { mode: 0o700 });
+    // observe the real directory after each publication step, before restore can move another entry.
+    const rename = fsPromises.rename;
+    const seen: string[][] = [];
+    const observer = mock.method(
+      fsPromises,
+      'rename',
+      async (...args: Parameters<typeof rename>) => {
+        await rename(...args);
+        const entries = await readdir(destination);
+        if (entries.length) seen.push(entries.sort());
+      },
+    );
+    syncBuiltinESMExports();
+    const recovery = await selected.restore(result.archive, destination).finally(() => {
+      observer.mock.restore();
+      syncBuiltinESMExports();
+    });
+    assert.deepEqual(seen[0], ['manifest.json', 'openclaw-state', 'workspace']);
     assert.equal(recovery.manifest.agentId, 'tanaabot');
     assert.equal(
       await readFile(join(recovery.target, 'openclaw-state', 'openclaw-agent.sqlite'), 'utf8'),
@@ -829,19 +849,31 @@ describe('workspace backup', () => {
       (await lstat(join(workspace, '.agent-system', 'backup-staging'))).mode & 0o777,
       0o700,
     );
-    assert.deepEqual(await service.verify(result.archive), result.manifest);
-    const restored = join(root, 'restored');
-    await mkdir(restored);
-    await executeFile('/usr/bin/tar', ['-xzf', result.archive, '-C', restored]);
-    assert.equal(
-      await readFile(join(restored, 'workspace', 'MEMORY.md'), 'utf8'),
-      'private memory\n',
-    );
-    assert.equal(
-      await readFile(join(restored, 'workspace', 'memory-link'), 'utf8'),
-      'private memory\n',
-    );
-    assert.equal((await lstat(join(restored, 'workspace', 'run.sh'))).mode & 0o777, 0o755);
+    const verified = await service.verify(result.archive);
+    assert.deepEqual(verified, result.manifest);
+    // verification checks each tar header against its inventory entry.
+    assert.equal(verified.inventory.find(({ path }) => path === 'run.sh')?.mode, 0o755);
+    for (const mask of ['022', '077']) {
+      const restored = join(root, `restored-${mask}`);
+      await mkdir(restored);
+      await executeFile('/bin/sh', [
+        '-c',
+        'umask "$1" && exec /usr/bin/tar -xpzf "$2" -C "$3"',
+        'extract-fixture',
+        mask,
+        result.archive,
+        restored,
+      ]);
+      assert.equal(
+        await readFile(join(restored, 'workspace', 'MEMORY.md'), 'utf8'),
+        'private memory\n',
+      );
+      assert.equal(
+        await readFile(join(restored, 'workspace', 'memory-link'), 'utf8'),
+        'private memory\n',
+      );
+      assert.equal((await lstat(join(restored, 'workspace', 'run.sh'))).mode & 0o777, 0o755, mask);
+    }
     assert.equal(result.manifest.coverage.stage, 'workspace-only');
     const next = await service.create(await service.plan({ manifest, workspaceDir: workspace }));
     assert.notEqual(next.archive, result.archive);

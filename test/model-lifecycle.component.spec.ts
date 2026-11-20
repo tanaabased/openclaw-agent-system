@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import { resolveAllowedModelRef as resolveOpenClawAllowedModelRef } from 'openclaw/plugin-sdk/agent-runtime';
+import type { resolveAllowedModelRef } from 'openclaw/plugin-sdk/agent-runtime';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import parseModelCatalogRows from '../agent/models/model-catalog.ts';
@@ -52,6 +55,8 @@ function parseRef(value: string) {
   const separator = value.indexOf('/');
   return { provider: value.slice(0, separator), model: value.slice(separator + 1) };
 }
+
+let resolveOpenClawAllowedModelRef: typeof resolveAllowedModelRef;
 
 function createHarness(config: OpenClawConfig, options: HarnessOptions = {}) {
   let mutations = 0;
@@ -149,6 +154,31 @@ function readyCodexConfig(): OpenClawConfig {
 }
 
 describe('agent/model-lifecycle', () => {
+  let root: string;
+  let originalEnv: NodeJS.ProcessEnv | undefined;
+
+  before(async () => {
+    root = await mkdtemp(join(tmpdir(), 'model-lifecycle-'));
+    const state = join(root, 'state');
+    const config = join(state, 'openclaw.json');
+    await mkdir(state);
+    await writeFile(config, '{}');
+    originalEnv = process.env;
+    process.env = {
+      PATH: originalEnv.PATH,
+      OPENCLAW_HOME: root,
+      OPENCLAW_STATE_DIR: state,
+      OPENCLAW_CONFIG_PATH: config,
+    };
+    ({ resolveAllowedModelRef: resolveOpenClawAllowedModelRef } =
+      await import('openclaw/plugin-sdk/agent-runtime'));
+  });
+
+  after(async () => {
+    if (originalEnv) process.env = originalEnv;
+    if (root) await rm(root, { recursive: true, force: true });
+  });
+
   it('should reconcile declared codex profiles without a prior native route or workspace patch', async () => {
     const config = codexConfig();
     delete config.agents!.entries!.emori!.models!['openai/gpt-5.6-sol']!.agentRuntime;

@@ -35,8 +35,11 @@ export const reportSections = {
   actions: 'Suggested next actions',
 };
 
-export function renderStructuredReport(card: StructuredReportCard): string {
-  const chunks = [`## ${reportStatusIcons[card.status]} ${plain(card.title)}`, plain(card.summary)];
+export function renderStructuredReport(
+  card: StructuredReportCard,
+  icon: string = reportStatusIcons[card.status],
+): string {
+  const chunks = [`## ${icon} ${plain(card.title)}`, plain(card.summary)];
   if (card.facts?.length)
     chunks.push(
       `**${reportSections.facts}**\n${card.facts.map(({ label, value }) => `- **${plain(label)}:** ${plain(value)}`).join('\n')}`,

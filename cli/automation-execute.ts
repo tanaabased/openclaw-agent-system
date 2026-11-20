@@ -46,12 +46,47 @@ export default async function executeAutomation(options: {
       (await realpath(installed.scope.workspaceDir)) !== (await realpath(options.workspaceDir))
     )
       throw new AutomationError('automation-agent-not-installed');
-    const { command, context, reportTarget, displayName } = await options.automations.admit(
-      installed.manifest,
-      installed.scope.workspaceDir,
-      options.id,
-      options.hash,
-    );
+    const { command, context, reportTarget, displayName, configurationDrift } =
+      await options.automations
+        .admit(installed.manifest, installed.scope.workspaceDir, options.id, options.hash)
+        .catch(async (error: unknown) => {
+          if (
+            error instanceof AutomationError &&
+            !controller.signal.aborted &&
+            !options.signal?.aborted
+          ) {
+            try {
+              const target = await options.automations.startupFailureTarget(
+                installed.manifest,
+                installed.scope.workspaceDir,
+                options.id,
+                options.hash,
+              );
+              if (target)
+                await deliverAutomationReport({
+                  target,
+                  store: options.automations.reports,
+                  hash: options.hash,
+                  manifestDigest: installed.digest,
+                  input: {
+                    id: options.id,
+                    executionId: randomUUID(),
+                    startedAt: new Date().toISOString(),
+                    startupFailure: error.code,
+                    result: { exitCode: null, timedOut: false, truncated: false },
+                    cancelled: false,
+                  },
+                  credential: options.reportCredential,
+                  assertCurrent: (record) => options.automations.assertReportCurrent(record),
+                  selectSettings: (record, request) =>
+                    options.automations.selectReportSettings(record, request),
+                });
+            } catch {
+              // preserve original failure in scheduler history.
+            }
+          }
+          throw error;
+        });
     const signal = AbortSignal.any([
       controller.signal,
       ...(options.signal ? [options.signal] : []),
@@ -138,6 +173,7 @@ export default async function executeAutomation(options: {
             executionId,
             startedAt,
             durationMs: Date.now() - Date.parse(startedAt),
+            configurationDrift,
             result,
             cancelled,
           },

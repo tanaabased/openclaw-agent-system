@@ -45,7 +45,7 @@ describe('agent/codex-issue-notice', () => {
       changed: true,
     });
     assert.equal(update.severity, 'warning');
-    assert.ok(update.message.startsWith('> ## ✨ Automation update available'));
+    assert.ok(update.message.startsWith('> ## ✨ Update available'));
     assert.match(update.summary, /New intake is paused/);
     assert.match(update.summary, /Existing chats and work are retained/);
     assert.match(update.next, /Install.*update.*resume intake/);

@@ -147,7 +147,12 @@ export default function assignmentRetirement(input: {
   );
   return {
     ...previous,
-    reason: operatorRequest ? 'operator-requested' : (input.reason ?? previous!.reason),
+    reason:
+      input.reason === 'issue-closed'
+        ? 'issue-closed'
+        : operatorRequest
+          ? 'operator-requested'
+          : (input.reason ?? previous!.reason),
     ...(operatorRequest ? { operatorRequest, reactivationAfter: operatorRequest.at } : {}),
     at: closureAfterRemoval ? input.now : (previous?.at ?? input.now),
     intakeId: previous?.intakeId ?? input.intakeId,

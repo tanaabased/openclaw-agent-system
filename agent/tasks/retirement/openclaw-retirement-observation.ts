@@ -24,6 +24,7 @@ export async function observeRetiringSession(
   request: DispatchRequest,
   record: OpenClawDispatchRecord,
   agentId: string,
+  issueClosed = false,
 ) {
   const intent = retirementSessionIdentity(record);
   if (!intent) return undefined;
@@ -34,12 +35,11 @@ export async function observeRetiringSession(
     record.worktree !== intent.cwd
   )
     throw new Error('retirement-session-identity-unresolved');
-  return observeRetiringResource(request, {
-    key: intent.key,
-    sessionId: intent.sessionId,
-    agentId,
-    cwd: intent.cwd,
-  });
+  return observeRetiringResource(
+    request,
+    { key: intent.key, sessionId: intent.sessionId, agentId, cwd: intent.cwd },
+    issueClosed,
+  );
 }
 
 /** shared native execution evidence for a task and its proven descendants. */
@@ -51,6 +51,7 @@ export async function observeRetiringResource(
     agentId: string;
     cwd: string;
   },
+  issueClosed = false,
 ) {
   const { key, agentId } = intent;
   const row = retirementObject(
@@ -64,6 +65,12 @@ export async function observeRetiringResource(
     (row.spawnedCwd ?? row.spawnedWorkspaceDir ?? row.workspaceDir) !== intent.cwd
   )
     throw new Error('retirement-session-identity-changed');
+  const archived = row.archived === true || Boolean(row.archivedAt);
+  if (issueClosed) {
+    // verified closure authorizes native retirement without requiring complete queue history.
+    const busy = row.hasActiveRun === true || row.status === 'running' || row.status === 'queued';
+    return { row, archived, idle: !busy };
+  }
   const history = retirementObject(
     await request('chat.history', { sessionKey: key, limit: 1 }),
     'chat-history',
@@ -130,7 +137,7 @@ export async function observeRetiringResource(
   const last = Array.isArray(history.messages) ? history.messages.at(-1) : undefined;
   return {
     row,
-    archived: row.archived === true || Boolean(row.archivedAt),
+    archived,
     idle,
     ...(typeof info.activeLeafEntryId === 'string'
       ? { activityId: info.activeLeafEntryId }
@@ -146,9 +153,10 @@ export default async function observeRetirementSession(
   record: OpenClawDispatchRecord,
   agentId: string,
   owner: string,
+  issueClosed = false,
 ) {
   try {
-    const observed = await observeRetiringSession(request, record, agentId);
+    const observed = await observeRetiringSession(request, record, agentId, issueClosed);
     return observed && { ...observed, unavailableSession: undefined };
   } catch (error) {
     const unavailableSession = await observeUnavailableRetirementSession({

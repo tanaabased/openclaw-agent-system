@@ -414,6 +414,52 @@ export default class AutomationService {
 
   async run(manifest: AgentManifest, workspaceDir: string, id: string) {
     const job = openclawIntakeJobs(manifest).find((entry) => entry.id === id);
+    const { store } = await this.scope(manifest, workspaceDir);
+    const installed = (await store.read()).records.find((entry) => entry.id === id);
+    if (!job && (installed?.installedCommand || installed?.installedPrompt))
+      throw new AutomationError('automation-declaration-removed');
+    if (installed?.installedCommand?.hash === installed?.hash && installed?.installedCommand) {
+      const { native } = await this.admit(manifest, workspaceDir, id, installed.hash);
+      const result = nativeAutomationRun(
+        await this.dependencies.request!('cron.run', { id: native.id, mode: 'if-enabled' }),
+      );
+      return {
+        runtime: 'openclaw',
+        id,
+        nativeId: native.id,
+        ...result,
+        execution: 'unavailable',
+        delivery: 'unavailable',
+      } as const;
+    }
+    if (installed?.installedPrompt?.hash === installed?.hash && installed?.installedPrompt) {
+      const { record, native } = await this.resolveOwned(manifest, workspaceDir, id);
+      if (
+        record.removed ||
+        record.retired ||
+        !native.enabled ||
+        native.state.autoDisabled ||
+        retainedOneShot(native)
+      )
+        throw new AutomationError('automation-run-disabled');
+      if (
+        record.pending ||
+        native.payload.kind !== 'agentTurn' ||
+        nativeAutomationHash(native) !== record.nativeHash
+      )
+        throw new AutomationError('automation-execution-drift');
+      const result = nativeAutomationRun(
+        await this.dependencies.request!('cron.run', { id: native.id, mode: 'if-enabled' }),
+      );
+      return {
+        runtime: 'openclaw',
+        id,
+        nativeId: native.id,
+        ...result,
+        execution: 'unavailable',
+        delivery: 'unavailable',
+      } as const;
+    }
     if (!job) throw new AutomationError('automation-id-missing');
     if (!job.runtimes.includes('openclaw'))
       throw new AutomationError('automation-runtime-unsupported');
@@ -700,6 +746,17 @@ export default class AutomationService {
                   : 'automation-healthy',
           ),
         );
+        if (
+          drift &&
+          job.origin !== 'builtin' &&
+          record.installedCommand?.hash === record.hash &&
+          native.enabled &&
+          native.payload.kind === 'command' &&
+          nativeAutomationHash(native) === record.nativeHash
+        ) {
+          findings[findings.length - 1]!.message =
+            'Unapplied configuration changes. This job still uses its installed command and schedule. Run Install to apply changes.';
+        }
         if (native.state.lastRunAtMs && native.state.lastDeliveryStatus === undefined) {
           findings.push(finding(job.id, 'skipped', 'automation-delivery-unavailable'));
         }
@@ -1135,6 +1192,20 @@ export default class AutomationService {
             );
           record.nativeHash = nativeAutomationHash(native);
           record.removed = false;
+          if (job.origin !== 'builtin' && job.payload.kind === 'command') {
+            const reportTarget = this.commandReportTarget(job, native, context, store.scope);
+            record.installedCommand = {
+              hash: record.hash,
+              ...(reportTarget && { reportSessionKey: reportTarget.sessionKey }),
+              run: job.payload.run,
+              timeoutSeconds: job.timeoutSeconds ?? 1800,
+            };
+          } else {
+            delete record.installedCommand;
+          }
+          if (job.origin !== 'builtin' && job.payload.kind === 'prompt')
+            record.installedPrompt = { hash: record.hash, text: job.payload.prompt };
+          else delete record.installedPrompt;
           if (retainedOneShot(native))
             record.completion = String(native.state.lastRunStatus ?? native.state.lastStatus);
           delete record.pending;
@@ -1285,16 +1356,21 @@ export default class AutomationService {
     const record = (await store.read()).records.find((entry) => entry.id === report.input.id);
     if (
       store.scope !== report.target.scope ||
-      !job ||
-      !job.enabled ||
-      !job.runtimes.includes('openclaw') ||
-      job.payload.kind !== 'command' ||
-      effectiveAutomation(job, context).hash !== report.hash ||
       !record ||
       record.hash !== report.hash ||
       record.retired ||
       record.removed ||
       record.pending
+    )
+      throw new AutomationError('automation-report-declaration-changed');
+    const installed = record.installedCommand;
+    if (installed?.hash === report.hash && installed.reportSessionKey === report.target.sessionKey)
+      return;
+    if (
+      !job?.enabled ||
+      !job.runtimes.includes('openclaw') ||
+      job.payload.kind !== 'command' ||
+      effectiveAutomation(job, context).hash !== report.hash
     )
       throw new AutomationError('automation-report-declaration-changed');
   }
@@ -1338,6 +1414,35 @@ export default class AutomationService {
     await threads.selectSettings([job]);
   }
 
+  async startupFailureTarget(
+    manifest: AgentManifest,
+    workspaceDir: string,
+    id: string,
+    hash: string,
+  ): Promise<AutomationReportTarget | undefined> {
+    const { context, record, native } = await this.resolveOwned(manifest, workspaceDir, id);
+    const installed = record.installedCommand;
+    if (
+      record.hash !== hash ||
+      installed?.hash !== hash ||
+      !installed.reportSessionKey ||
+      record.pending ||
+      record.removed ||
+      record.retired ||
+      native.payload.kind !== 'command' ||
+      nativeAutomationHash(native) !== record.nativeHash ||
+      native.sessionTarget !== `session:${installed.reportSessionKey}`
+    )
+      return undefined;
+    const { store } = await this.scope(manifest, workspaceDir);
+    return {
+      agentId: context.agentId,
+      workspaceDir: context.workspaceDir,
+      scope: store.scope,
+      sessionKey: installed.reportSessionKey,
+    };
+  }
+
   async admit(manifest: AgentManifest, workspaceDir: string, id: string, hash: string) {
     const { context, store } = await this.scope(manifest, workspaceDir);
     const job = openclawIntakeJobs(manifest).find((entry) => entry.id === id);
@@ -1349,16 +1454,11 @@ export default class AutomationService {
         record?.pending?.kind === 'update' && record.pending.outputLimitOnly === true;
       if (
         !record ||
-        !job ||
         (record.pending && !outputLimitOnly) ||
         record.retired ||
         record.removed ||
         !record.nativeId ||
-        !job.enabled ||
-        !job.runtimes.includes('openclaw') ||
-        job.payload.kind !== 'command' ||
         record.hash !== hash ||
-        effectiveAutomation(job, context).hash !== hash ||
         !this.dependencies.request
       ) {
         throw new AutomationError('automation-execution-stale');
@@ -1379,27 +1479,74 @@ export default class AutomationService {
           (!outputLimitOnly || nativeHash !== record.pending!.nativeHash))
       )
         throw new AutomationError('automation-execution-drift');
-      const selection = automationThreadSelection(job, 'openclaw');
-      const reportTarget: AutomationReportTarget | undefined =
-        selection &&
-        typeof native.sessionTarget === 'string' &&
-        native.sessionTarget.startsWith('session:')
-          ? {
-              sessionKey: native.sessionTarget.slice(8),
-              agentId: context.agentId,
-              workspaceDir: context.workspaceDir,
-              scope: store.scope,
-              ...(job.overrides.openclaw?.model ? { model: job.overrides.openclaw.model } : {}),
-              ...(job.overrides.openclaw?.effort ? { effort: job.overrides.openclaw.effort } : {}),
-            }
-          : undefined;
+      if (!job && record.installedCommand)
+        throw new AutomationError('automation-declaration-removed');
+      const installed =
+        record.installedCommand?.hash === hash ? record.installedCommand : undefined;
+      if (retainedOneShot(native)) throw new AutomationError('automation-run-disabled');
+      if (installed && native.payload.kind === 'command') {
+        const matching = job && effectiveAutomation(job, context).hash === hash ? job : undefined;
+        return {
+          native,
+          command: { ...installed.run, timeoutSeconds: installed.timeoutSeconds },
+          displayName: matching?.displayName,
+          configurationDrift: !matching,
+          context,
+          reportTarget: matching
+            ? this.commandReportTarget(matching, native, context, store.scope)
+            : installed.reportSessionKey &&
+                native.sessionTarget === `session:${installed.reportSessionKey}`
+              ? {
+                  sessionKey: installed.reportSessionKey,
+                  agentId: context.agentId,
+                  workspaceDir: context.workspaceDir,
+                  scope: store.scope,
+                }
+              : undefined,
+        };
+      }
+      if (!job?.enabled || !job.runtimes.includes('openclaw') || job.payload.kind !== 'command')
+        throw new AutomationError('automation-execution-stale');
+      const installedTimezone = native.schedule.tz;
+      const installedContext =
+        job.origin !== 'builtin' && typeof installedTimezone === 'string'
+          ? { ...context, timezone: installedTimezone }
+          : context;
+      if (
+        effectiveAutomation(job, context).hash !== hash &&
+        effectiveAutomation(job, installedContext).hash !== hash
+      )
+        throw new AutomationError('automation-execution-stale');
       return {
+        native,
         command: { ...job.payload.run, timeoutSeconds: job.timeoutSeconds ?? 1800 },
         displayName: job.displayName,
+        configurationDrift: false,
         context,
-        reportTarget,
+        reportTarget: this.commandReportTarget(job, native, context, store.scope),
       };
     }
     throw new AutomationError('automation-execution-stale');
+  }
+
+  private commandReportTarget(
+    job: ResolvedAutomation,
+    native: NativeAutomation,
+    context: AutomationProjectionContext,
+    scope: string,
+  ): AutomationReportTarget | undefined {
+    const selection = automationThreadSelection(job, 'openclaw');
+    return selection &&
+      typeof native.sessionTarget === 'string' &&
+      native.sessionTarget.startsWith('session:')
+      ? {
+          sessionKey: native.sessionTarget.slice(8),
+          agentId: context.agentId,
+          workspaceDir: context.workspaceDir,
+          scope,
+          ...(job.overrides.openclaw?.model ? { model: job.overrides.openclaw.model } : {}),
+          ...(job.overrides.openclaw?.effort ? { effort: job.overrides.openclaw.effort } : {}),
+        }
+      : undefined;
   }
 }
