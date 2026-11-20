@@ -3,7 +3,10 @@ import { fileURLToPath } from 'node:url';
 import { getTextContent, type ChatCompletionRequest, type Fixture } from '@copilotkit/aimock';
 
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
-import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
+import {
+  openClawAIMockToolResultText,
+  traceOpenClawAIMockToolResults,
+} from '../../scripts/aimock-tool-result.ts';
 
 const model = /^(?:aimock\/)?gpt-5\.(?:5|4-nano)$/u;
 const installCall = 'call_runtime_install';
@@ -159,6 +162,20 @@ const fixtures: Fixture[] = [
           .includes('denied by user') === true,
     },
     response: { content: 'runtime-install-denied', id: 'runtime-install-final' },
+  },
+  {
+    match: {
+      model: /^gpt-5\.4-nano$/u,
+      hasToolResult: true,
+      predicate: (request) =>
+        traceOpenClawAIMockToolResults('openclaw-lifecycle-approvals', request.messages, [
+          { id: codexInstallCall, name: 'agent_system_install' },
+          { id: codexDoctorCall, name: 'agent_system_doctor' },
+          { id: maintenanceInstallCall, name: 'agent_system_install' },
+          { id: maintenanceDoctorCall, name: 'agent_system_doctor' },
+        ]),
+    },
+    response: {},
   },
 ];
 

@@ -1,7 +1,10 @@
 import { getTextContent, type ChatCompletionRequest, type Fixture } from '@copilotkit/aimock';
 
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
-import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
+import {
+  openClawAIMockToolResultText,
+  traceOpenClawAIMockToolResults,
+} from '../../scripts/aimock-tool-result.ts';
 
 const model = /^(?:aimock\/)?gpt-5\.(?:5|4-nano)$/u;
 const execCall = 'call_runtime_exec';
@@ -191,6 +194,18 @@ const fixtures: Fixture[] = [
       },
     },
     response: { content: 'runtime-exec-ready', id: 'runtime-exec-final' },
+  },
+  {
+    match: {
+      model: /^gpt-5\.4-nano$/u,
+      hasToolResult: true,
+      predicate: (request) =>
+        traceOpenClawAIMockToolResults('openclaw-runtimes', request.messages, [
+          { id: codexExecCall, name: 'exec_command' },
+          ...codexPollCalls.map((id) => ({ id, name: 'write_stdin' })),
+        ]),
+    },
+    response: {},
   },
 ];
 
