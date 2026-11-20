@@ -90,7 +90,10 @@ export default function notificationResetPickup(
     },
     restore: async (record) => {
       const first = await intake.restore(record);
-      return first.status === 'done' && record.pickup ? pickup.restore(view(record)) : first;
+      if (first.status !== 'done') return { ...first, pendingJob: 'intake' };
+      if (!record.pickup) return first;
+      const second = await pickup.restore(view(record));
+      return second.status === 'done' ? second : { ...second, pendingJob: 'pickup' };
     },
   };
 }

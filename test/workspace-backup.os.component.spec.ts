@@ -301,7 +301,9 @@ describe('workspace backup', () => {
       'manifest.json',
     ]);
     assert.deepEqual(await selected.verify(result.archive), result.manifest);
-    const recovery = await selected.restore(result.archive, join(root, 'agent-recovered'));
+    const destination = join(root, 'agent-recovered');
+    await mkdir(destination, { mode: 0o700 });
+    const recovery = await selected.restore(result.archive, destination);
     assert.equal(recovery.manifest.agentId, 'tanaabot');
     assert.equal(
       await readFile(join(recovery.target, 'openclaw-state', 'openclaw-agent.sqlite'), 'utf8'),
