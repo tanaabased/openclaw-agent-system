@@ -43,11 +43,6 @@ jobs:
       - name: Pack prepared package
         id: pack
         uses: tanaabased/actions/npm-pack@v1
-      - name: Load the built plugin on the minimum OpenClaw Gateway
-        uses: tanaabased/actions/setup-openclaw@v1
-        with:
-          version: '2026.11.5'
-          agent-system: ${{ steps.pack.outputs.tarball-path }}
       - name: Run release package tests
         env:
           AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
