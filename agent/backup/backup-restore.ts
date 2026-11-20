@@ -99,9 +99,6 @@ export default async function restoreWorkspaceBackup(options: {
   await targetLocation(options.target, await options.runtimeProtection(initial.agentId));
   const parent = await realpath(dirname(resolve(options.target)));
   const scratch = await mkdtemp(join(parent, '.agent-system-restore-'));
-  let target: string | undefined;
-  let createdTarget = false;
-  const published: string[] = [];
   try {
     const privateArchive = join(scratch, 'archive.tar.gz');
     await copyArchive(archive, privateArchive);
@@ -111,10 +108,6 @@ export default async function restoreWorkspaceBackup(options: {
       undefined,
       (directory, expected) => verifyAgentSnapshot(directory, expected, snapshotCommand),
     );
-    target = await targetLocation(
-      options.target,
-      await options.runtimeProtection(manifest.agentId),
-    );
     const recovered = join(scratch, 'recovered');
     await mkdir(recovered, { mode: 0o700 });
     const snapshot = manifest.version === 2 ? manifest.snapshot : undefined;
@@ -123,7 +116,6 @@ export default async function restoreWorkspaceBackup(options: {
       : undefined;
     if (snapshotDirectory) await mkdir(snapshotDirectory, { recursive: true, mode: 0o700 });
     await extractWorkspaceArchive(privateArchive, recovered, manifest, snapshotDirectory);
-    let database: string | undefined;
     if (snapshotDirectory) {
       const state = join(recovered, 'openclaw-state');
       await mkdir(state, { mode: 0o700 });
@@ -133,26 +125,20 @@ export default async function restoreWorkspaceBackup(options: {
         snapshot!.manifest,
         snapshotCommand,
       );
-      database = join(target, 'openclaw-state', 'openclaw-agent.sqlite');
     }
-    try {
-      await mkdir(target, { mode: 0o700 });
-      createdTarget = true;
-    } catch (error) {
-      if (nodeErrorCode(error) !== 'EEXIST') throw error;
-      await targetLocation(target, await options.runtimeProtection(manifest.agentId));
-    }
-    for (const name of await readdir(recovered)) {
-      await rename(join(recovered, name), join(target, name));
-      published.push(name);
-    }
-    return { target, manifest, ...(database ? { database } : {}) };
-  } catch (error) {
-    if (target) {
-      for (const name of published) await rm(join(target, name), { recursive: true, force: true });
-      if (createdTarget) await rm(target, { recursive: true, force: true });
-    }
-    throw error;
+    const target = await targetLocation(
+      options.target,
+      await options.runtimeProtection(manifest.agentId),
+    );
+    // A directory rename publishes all recovered entries together and refuses a nonempty target.
+    await rename(recovered, target);
+    return {
+      target,
+      manifest,
+      ...(snapshotDirectory
+        ? { database: join(target, 'openclaw-state', 'openclaw-agent.sqlite') }
+        : {}),
+    };
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }

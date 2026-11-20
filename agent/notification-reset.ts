@@ -25,6 +25,7 @@ export interface NotificationResetEffect {
   automation?: string;
   request?: { tool: string; arguments: Record<string, unknown> };
   instruction?: string;
+  pendingJob?: 'intake' | 'pickup';
 }
 
 export interface NotificationResetAdapter {
@@ -142,6 +143,7 @@ export default async function resetNotifications(input: {
           effect = {
             status: 'incomplete',
             code: 'notification-reset-native-action-unverified',
+            ...(effect.pendingJob ? { pendingJob: effect.pendingJob } : {}),
             instruction:
               'the requested native action has not been verified; inspect its result before retrying it',
           };
@@ -156,7 +158,7 @@ export default async function resetNotifications(input: {
         agentId: record.agentId,
         workspace: record.workspace,
         phase: record.phase,
-        intakePaused: record.phase !== 'pause',
+        ...(record.phase === 'restore' ? {} : { intakePaused: record.phase !== 'pause' }),
         resources: record.resources,
         ...(record.warnings?.length ? { warnings: record.warnings } : {}),
       };

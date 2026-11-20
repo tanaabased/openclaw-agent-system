@@ -1,4 +1,5 @@
 import { Value } from 'typebox/value';
+import intakeAutomationNotice from '../../channels/github/presentation/intake-automation-notice.ts';
 
 import classifyAutomationReport, { automationReportSchema } from './automation-report-schema.ts';
 import {
@@ -30,6 +31,8 @@ export interface AutomationReportInput {
   executionId: string;
   startedAt: string;
   durationMs?: number;
+  configurationDrift?: boolean;
+  startupFailure?: string;
   result: SetupCommandResult;
   cancelled: boolean;
 }
@@ -132,13 +135,57 @@ function runnerFooter(input: ReturnType<typeof prepareLegacyAutomationReport>): 
 
 export function prepareAutomationReport(input: AutomationReportInput): PreparedAutomationReport {
   const prepared = prepareLegacyAutomationReport(input);
+  if (input.startupFailure) {
+    const code = input.startupFailure;
+    return {
+      ...prepared,
+      presentation: {
+        kind: 'diagnostic',
+        code,
+        body: renderStructuredReport({
+          id: 'command-startup',
+          format: 'structured',
+          title: 'Automation did not start',
+          status: 'error',
+          summary:
+            code === 'automation-declaration-removed'
+              ? `Automation ${input.id} is no longer declared in agent configuration. Its saved job did not run.`
+              : 'Agent System rejected this scheduled launch before running its command.',
+          facts: [{ label: 'Reason', value: code }],
+          actions: [
+            code === 'automation-declaration-removed'
+              ? 'Run Agent System Install to reconcile saved automations.'
+              : 'Check Doctor and scheduler history before retrying.',
+          ],
+        }),
+      },
+    };
+  }
   const output = input.result.output;
   const incomplete =
     !output ||
     Boolean(output.stdoutTruncatedBytes) ||
     (input.result.truncated && !output.stderrTruncatedBytes);
   const classification = classifyAutomationReport(output?.stdout ?? '', incomplete, excerptBytes);
-  const footer = runnerFooter(prepared);
+  const notice =
+    input.configurationDrift &&
+    intakeAutomationNotice('intake-automation-update-required', input.id);
+  const footer = notice
+    ? [
+        runnerFooter(prepared),
+        renderStructuredReport(
+          {
+            id: 'configuration-drift',
+            format: 'structured',
+            status: 'warning',
+            title: notice.title,
+            summary: notice.summary,
+            actions: [notice.next],
+          },
+          notice.emoji,
+        ),
+      ].join('\n\n')
+    : runnerFooter(prepared);
   if (classification.kind === 'fallback')
     return { ...prepared, presentation: { kind: 'fallback', footer } };
   function diagnostic(code: string): PreparedAutomationReport {

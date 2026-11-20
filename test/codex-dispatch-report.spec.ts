@@ -225,7 +225,7 @@ describe('agent/codex-dispatch-report', () => {
       },
     };
     const update = prepareDispatchReport({ ...input, intake: current });
-    assert.match(update.response, /> ## ✨ Automation update available/);
+    assert.match(update.response, /> ## ✨ Update available/);
     assert.match(update.response, /New intake is paused/);
     assert.match(update.response, /Install.*update.*resume intake/);
     assert.match(update.response, /`intake-automation-update-required`/);

@@ -28,6 +28,7 @@ const errorCodes = new Set([
   'automation-observation-unavailable',
   'automation-lifecycle-unverified',
   'automation-lifecycle-drift',
+  'automation-declaration-removed',
   'ENOENT',
   'EACCES',
   'EPERM',
@@ -112,7 +113,7 @@ export default function registerAutomationPromptHooks(
     else api.logger.debug?.(message);
   };
 
-  const stopped = (context: Context) => {
+  const stopped = (context: Context, code?: string) => {
     try {
       if (context.agentId && context.modelProviderId && context.modelId) {
         const runtime = configuredRuntime(readConfig(), context.agentId, {
@@ -131,7 +132,10 @@ export default function registerAutomationPromptHooks(
       reason: 'automation-prompt-load-blocked',
       reply: {
         isError: true,
-        text: 'Scheduled automation stopped (automation-prompt-load-blocked): its job binding or instructions could not be verified. Check automation configuration and synchronize it before retrying.',
+        text:
+          code === 'automation-declaration-removed'
+            ? '> ## ❌ Automation did not start\n>\n> This automation is no longer declared in agent configuration. Run Agent System Install to reconcile saved automations.'
+            : 'Scheduled automation stopped (automation-prompt-load-blocked): its job binding or instructions could not be verified. Check automation configuration and synchronize it before retrying.',
       },
     };
   };
@@ -178,7 +182,7 @@ export default function registerAutomationPromptHooks(
         trace('before_agent_reply', 'ready', context);
       } catch (error) {
         trace('before_agent_reply', 'failed', context, diagnosticCode(error), true, phase);
-        return stopped(context);
+        return stopped(context, diagnosticCode(error));
       }
     },
     { eligibleTriggers: ['cron'] },

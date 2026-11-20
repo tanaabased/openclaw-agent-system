@@ -13,12 +13,31 @@ import acquirePrivateStateFileLock from '../../core/private-state-file-lock.ts';
 export { automationHash } from '../automation-hash.ts';
 
 const hashSchema = Type.String({ pattern: '^[a-f0-9]{64}$' });
+const installedCommand = Type.Object({
+  hash: hashSchema,
+  reportSessionKey: Type.Optional(Type.String({ minLength: 1 })),
+  timeoutSeconds: Type.Integer({ minimum: 1 }),
+  run: Type.Union([
+    Type.Object({
+      kind: Type.Literal('exec'),
+      executable: Type.String(),
+      args: Type.Array(Type.String()),
+    }),
+    Type.Object({
+      kind: Type.Literal('shell'),
+      shell: Type.Union([Type.Literal('sh'), Type.Literal('bash'), Type.Literal('zsh')]),
+      script: Type.String(),
+    }),
+  ]),
+});
 const recordSchema = Type.Object(
   {
     id: Type.String({ pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }),
     marker: Type.String(),
     nativeId: Type.Optional(Type.String()),
     hash: hashSchema,
+    installedCommand: Type.Optional(installedCommand),
+    installedPrompt: Type.Optional(Type.Object({ hash: hashSchema, text: Type.String() })),
     nativeHash: Type.Optional(hashSchema),
     triggerHash: hashSchema,
     generation: Type.Integer({ minimum: 1 }),

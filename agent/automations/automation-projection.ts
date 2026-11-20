@@ -53,7 +53,9 @@ export function effectiveAutomation(job: ResolvedAutomation, context: Automation
 }
 
 /** keep the quote on its own line even after the host trims and prefixes the request. */
-export function automationPromptRequest(job: ResolvedAutomation): string {
+export function automationPromptRequest(
+  job: Pick<ResolvedAutomation, 'id' | 'displayName'>,
+): string {
   const name = (job.displayName ?? job.id)
     .replace(/\s+/gu, ' ')
     .trim()
