@@ -143,6 +143,7 @@ export default async function resetNotifications(input: {
           effect = {
             status: 'incomplete',
             code: 'notification-reset-native-action-unverified',
+            ...(effect.pendingJob ? { pendingJob: effect.pendingJob } : {}),
             instruction:
               'the requested native action has not been verified; inspect its result before retrying it',
           };

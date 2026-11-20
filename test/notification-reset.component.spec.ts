@@ -132,13 +132,20 @@ describe('agent/notification reset recovery', () => {
   it('should identify pickup when intake has been restored but pickup still needs action', async () => {
     const pickup: NotificationResetAdapter = {
       ...adapter,
-      restore: async () => ({ status: 'native-action' }),
+      restore: async () => ({
+        status: 'native-action',
+        request: { tool: 'automation_update', arguments: { id: 'pickup', status: 'ACTIVE' } },
+      }),
     };
     adapter = notificationResetPickup(adapter, pickup, pickup.snapshot);
     const result = await run();
     assert.equal(result.status, 'native-action');
     assert.ok('pendingJob' in result && result.pendingJob === 'pickup');
     assert.ok(!('intakePaused' in result));
+    const retry = await run();
+    assert.equal(retry.status, 'incomplete');
+    assert.ok('pendingJob' in retry && retry.pendingJob === 'pickup');
+    assert.ok(!('request' in retry));
   });
 
   it('should atomically keep the latest pickup evidence and retain it when clear is replayed', async () => {
