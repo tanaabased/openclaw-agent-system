@@ -4,6 +4,7 @@ import type AutomationService from './automation-service.ts';
 import type { NotificationScheduler } from './automation-readiness.ts';
 import { listNativeAutomations, type AutomationGateway } from './automation-gateway.ts';
 import { AutomationError } from './automation-errors.ts';
+import { automationReconciliationState } from './automation-drift.ts';
 import { effectiveAutomation, nativeAutomationHash } from './automation-projection.ts';
 import openclawIntakeJobs from './openclaw-intake-policy.ts';
 import type { AgentManifest } from '../../manifest/types.ts';
@@ -95,9 +96,9 @@ export async function verifyAutomationLifecycleRun(
     native,
     installedPrompt,
     configurationDrift:
-      installedPrompt !== undefined &&
+      useInstalledPrompt &&
       !!declared &&
-      record.hash !== effectiveAutomation(declared, context).hash,
+      automationReconciliationState(declared, context, record, native) === 'drift',
   };
 }
 

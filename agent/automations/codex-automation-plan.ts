@@ -77,6 +77,21 @@ export function codexAutomationMarker(scope: string, id: string): string {
   return `Managed by Agent System (codex:${scope}:${id}).`;
 }
 
+export function codexAutomationDefinition(
+  job: ResolvedAutomation & { payload: { kind: 'prompt'; prompt: string } },
+  scope: string,
+  agentId: string,
+  previousRrule?: string,
+  now?: Date,
+) {
+  return {
+    name: job.displayName ?? `${agentId}: ${job.id}`,
+    prompt: `${job.payload.prompt}\n\n${codexAutomationMarker(scope, job.id)}`,
+    rrule: codexAutomationSchedule(job.schedule, previousRrule, now),
+    status: job.enabled ? ('ACTIVE' as const) : ('PAUSED' as const),
+  };
+}
+
 export function savedMatches(
   actual: SavedAutomation,
   expected: NativeAutomation,
@@ -213,7 +228,13 @@ export default async function planCodexAutomations(options: {
         job.overrides.codex.environment.type !== 'native'
       )
         throw new CodexAutomationError('automation-environment-unsupported');
-      const rrule = codexAutomationSchedule(job.schedule, record?.definition.rrule, options.now);
+      const definition = codexAutomationDefinition(
+        { ...job, payload: job.payload },
+        scope,
+        options.agentId,
+        record?.definition.rrule,
+        options.now,
+      );
       const override = job.overrides.codex;
       const selection = automationThreadSelection(job, 'codex');
       const binding = options.bindings?.get(job.id);
@@ -229,10 +250,7 @@ export default async function planCodexAutomations(options: {
       }
       if (!record && actual) continue;
       const common = {
-        name: job.displayName ?? `${options.agentId}: ${job.id}`,
-        prompt: `${job.payload.prompt}\n\n${codexAutomationMarker(scope, job.id)}`,
-        rrule,
-        status: job.enabled ? ('ACTIVE' as const) : ('PAUSED' as const),
+        ...definition,
         notificationPolicy: actual?.definition.notificationPolicy ?? null,
       };
       let expected: NativeAutomation;
@@ -305,7 +323,7 @@ export default async function planCodexAutomations(options: {
           manifestId: job.id,
           mode: actual ? 'update' : 'create',
           ...(actual ? { id: actual.id } : {}),
-          ...(!actual && /^DTSTART[:;]/u.test(rrule) ? { review: true } : {}),
+          ...(!actual && /^DTSTART[:;]/u.test(definition.rrule) ? { review: true } : {}),
           expected,
           removed: false,
         });

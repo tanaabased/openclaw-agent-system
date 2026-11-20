@@ -2,7 +2,8 @@ import type { OpenClawPluginServiceContext } from 'openclaw/plugin-sdk/plugin-en
 
 import type AutomationService from './automation-service.ts';
 import { listNativeAutomations, type AutomationGateway } from './automation-gateway.ts';
-import { effectiveAutomation, nativeAutomationHash } from './automation-projection.ts';
+import { automationReconciliationState } from './automation-drift.ts';
+import { nativeObject } from '../../utils/native-object.ts';
 import openclawIntakeJobs, { openclawIntakeAutomationId } from './openclaw-intake-policy.ts';
 import type { AgentManifest } from '../../manifest/types.ts';
 
@@ -29,10 +30,8 @@ export default async function notificationAutomationReadiness(
   if (expectedNativeId && record.nativeId !== expectedNativeId)
     return 'issue-pickup-enrollment-changed';
   if (!declared.enabled) return 'intake-automation-paused';
-  if (record.removed || record.pending || !record.nativeId || !record.nativeHash)
-    return 'intake-automation-update-required';
-  if (record.hash !== effectiveAutomation(declared, context).hash)
-    return 'intake-automation-update-required';
+  if (record.pending || record.retired || !record.nativeId || !record.nativeHash)
+    return 'automation-recovery-required';
   if (!scheduler && !request) return 'automation-observation-unavailable';
   const enabled = scheduler
     ? await scheduler.isEnabled?.()
@@ -49,7 +48,7 @@ export default async function notificationAutomationReadiness(
   const matches = jobs.filter(
     (job) => job.id === record.nativeId || job.declarationKey === record.marker,
   );
-  if (!matches.length) return 'intake-automation-update-required';
+  if (!matches.length) return 'automation-recovery-required';
   const native = matches[0]!;
   if (
     matches.length !== 1 ||
@@ -58,7 +57,10 @@ export default async function notificationAutomationReadiness(
     native.agentId !== manifest.agent.id
   )
     return 'automation-ownership-conflict';
+  if (nativeObject(native.state) && 'autoDisabled' in native.state && native.state.autoDisabled)
+    return 'automation-native-safety-disabled';
   if (native.enabled !== true) return 'intake-automation-paused';
-  if (nativeAutomationHash(native) !== record.nativeHash)
-    return 'intake-automation-update-required';
+  const reconciliation = automationReconciliationState(declared, context, record, native);
+  if (reconciliation === 'drift') return 'intake-automation-update-required';
+  if (reconciliation === 'recovery') return 'automation-recovery-required';
 }

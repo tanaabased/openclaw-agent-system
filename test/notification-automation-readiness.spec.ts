@@ -147,7 +147,8 @@ describe('notification automation readiness', () => {
     assert.equal(await f.read(), 'intake-activation-required');
     f.records.push(f.record);
     f.record.pending = { kind: 'update', nativeHash: 'a'.repeat(64) };
-    assert.equal(await f.read(), 'intake-automation-update-required');
+    f.manifest.github!.notifications!.intervalMinutes += 1;
+    assert.equal(await f.read(), 'automation-recovery-required');
     delete f.record.pending;
     assert.equal(
       await f.read({
@@ -156,7 +157,7 @@ describe('notification automation readiness', () => {
           return [];
         },
       }),
-      'intake-automation-update-required',
+      'automation-recovery-required',
     );
     f.native.enabled = false;
     assert.equal(await f.read(), 'intake-automation-paused');
