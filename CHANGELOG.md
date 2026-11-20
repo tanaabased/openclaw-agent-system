@@ -7,10 +7,12 @@
 - Added explicit unmanaged native chat cleanup in Codex and OpenClaw. [#508](https://github.com/tanaabased/openclaw-agent-system/issues/508)
 - Added manual launch from an existing same-repository PR, retaining its branch and original PR. [#507](https://github.com/tanaabased/openclaw-agent-system/issues/507)
 - Added shared automation model/profile and effort selection, including updates to existing managed chats. [#556](https://github.com/tanaabased/openclaw-agent-system/issues/556)
-- Added shared project pickup selection and assignment recovery for Codex and OpenClaw; activation remains pending. [#526](https://github.com/tanaabased/openclaw-agent-system/issues/526)
+- Added shared issue pickup and assignment recovery for Codex and OpenClaw. To activate pickup, configure routing, run Install on each participant, and approve its native pickup schedule. [#526](https://github.com/tanaabased/openclaw-agent-system/issues/526)
 
 ### Bug Fixes
 
+- Backup restore now publishes the workspace and database together, so an interruption cannot leave a partially restored destination. [#776](https://github.com/tanaabased/openclaw-agent-system/pull/776)
+- Notification reset now identifies whether intake or pickup still needs to be restored, instead of reporting that intake is paused after it has resumed. [#776](https://github.com/tanaabased/openclaw-agent-system/pull/776)
 - Fixed Codex automation updates to run directly; only creating a timezone-qualified job requires a review card. [#552](https://github.com/tanaabased/openclaw-agent-system/issues/552)
 - Fixed Codex intake checks to isolate each automation's pending work. [#555](https://github.com/tanaabased/openclaw-agent-system/issues/555)
 - Fixed Codex sidebar placement recovery when a previously confirmed group is deleted or renamed.
