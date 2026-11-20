@@ -46,6 +46,7 @@ export default function openclawDispatchFixture(options: { discover?: boolean } 
     multiple: boolean;
     cronJobs: unknown[];
     terminalInputs: Array<{ id: string; state: string }>;
+    pendingInputHistoryTotal?: number;
     archiveError: boolean;
     foreignSessions: Array<Record<string, unknown>>;
     cronInventoryTotal: number | undefined;
@@ -150,6 +151,7 @@ export default function openclawDispatchFixture(options: { discover?: boolean } 
     fixtureState.calls = [];
     fixtureState.cronJobs = [];
     fixtureState.terminalInputs = [];
+    fixtureState.pendingInputHistoryTotal = undefined;
     fixtureState.archiveError = false;
     fixtureState.foreignSessions = [];
     fixtureState.cronInventoryTotal = undefined;
@@ -494,8 +496,9 @@ export default function openclawDispatchFixture(options: { discover?: boolean } 
                       .map((entry) => ({ id: entry.runId, state: 'queued' })),
                   ],
                   total:
+                    fixtureState.pendingInputHistoryTotal ??
                     fixtureState.terminalInputs.length +
-                    currentReceipts.filter((entry) => entry.state === 'pending').length,
+                      currentReceipts.filter((entry) => entry.state === 'pending').length,
                 },
                 sessionInfo: {
                   hasActiveRun: saved.active,

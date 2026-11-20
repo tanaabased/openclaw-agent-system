@@ -915,14 +915,12 @@ describe('agent/openclaw task-retirement', () => {
     assert.equal(fixtureState.session!.archived, undefined);
   });
 
-  it('should retire a pinned closed session with terminal input history through ordinary reconciliation', async () => {
+  it('should retire a pinned closed session with incomplete input history once native work ends', async () => {
     await fixtureState.prepare(await fixtureState.next());
     fixtureState.session!.pinned = true;
     fixtureState.fixture.item.state = 'closed';
-    fixtureState.terminalInputs = [
-      { id: 'cancelled', state: 'cancelled' },
-      { id: 'interrupted', state: 'interrupted' },
-    ];
+    fixtureState.pendingInputHistoryTotal = 8;
+    fixtureState.session!.hasActiveRun = true;
     await fixtureState.service.run(
       fixtureState.manifest,
       fixtureState.root,
@@ -943,11 +941,25 @@ describe('agent/openclaw task-retirement', () => {
     await fixtureState.service.run(
       fixtureState.manifest,
       fixtureState.root,
+      { ...fixtureState.coordinator, runId: 'busy' },
+      { action: 'next' },
+    );
+    assert.equal(
+      (await fixtureState.record()).retirement?.code,
+      'retirement-native-work-unresolved',
+    );
+    assert.equal(fixtureState.session!.archived, undefined);
+    fixtureState.session!.hasActiveRun = false;
+    fixtureState.service.dependencies.now = () => pending.retirement!.eligibleAt + 60_001;
+    await fixtureState.service.run(
+      fixtureState.manifest,
+      fixtureState.root,
       { ...fixtureState.coordinator, runId: 'cleanup' },
       { action: 'next' },
     );
     assert.equal(fixtureState.session!.archived, true);
     assert.equal(await fixtureState.record(), undefined);
+    await assert.rejects(stat(pending.worktree!), { code: 'ENOENT' });
   });
 
   for (const kind of [
@@ -1156,7 +1168,7 @@ describe('agent/openclaw task-retirement', () => {
         status: 'done',
         archived: false,
         listed: helperState === 'listed',
-        active: helperState === 'active',
+        hasActiveRun: helperState === 'active',
       };
       const nested = {
         ...helper,
@@ -1164,7 +1176,7 @@ describe('agent/openclaw task-retirement', () => {
         sessionId: 'nested-incarnation',
         parentSessionKey: helper.key,
         listed: true,
-        active: false,
+        hasActiveRun: false,
       };
       fixtureState.foreignSessions = [nested, helper];
       let removals = 0;

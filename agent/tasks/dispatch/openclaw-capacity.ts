@@ -4,6 +4,7 @@ import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import openClawNativeTurns from '../../openclaw-native-turns.ts';
 /** a busy native owner counts once, including a handed-off operator implementation. */
 export function openClawItemOccupied(record: OpenClawDispatchRecord) {
+  if (record.retirement?.reason === 'issue-closed') return false;
   if (record.supersededBy || record.reset || !record.request) return false;
   const turns = openClawNativeTurns(record).map(({ turn }) => turn);
   return Boolean(

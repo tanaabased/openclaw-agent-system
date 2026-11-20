@@ -3,6 +3,7 @@ import issuePickupCapacity from '../../issue-pickup-capacity.ts';
 import type { IssuePickupState } from '../../issue-pickup-state.ts';
 /** unresolved native custody reserves capacity until current native evidence releases it. */
 function reserved(record: DispatchRecord): boolean {
+  if (record.retirement?.reason === 'issue-closed') return false;
   if (record.retirement && record.nativeInactive !== undefined) return !record.nativeInactive;
   if (record.denial) return false;
   if (record.supersededBy || record.reset || !record.request) return false;

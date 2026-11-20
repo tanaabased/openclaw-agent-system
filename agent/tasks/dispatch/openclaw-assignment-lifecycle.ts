@@ -89,8 +89,18 @@ export default async function reconcileOpenClawLifecycle(input: {
     )
       throw new Error('retirement-workflow-changed');
   };
-  const observe = async (request: DispatchRequest, record: OpenClawDispatchRecord) => {
-    const observed = await observeRetirementSession(request, record, manifest.agent.id, owner);
+  const observe = async (
+    request: DispatchRequest,
+    record: OpenClawDispatchRecord,
+    issueClosed = false,
+  ) => {
+    const observed = await observeRetirementSession(
+      request,
+      record,
+      manifest.agent.id,
+      owner,
+      issueClosed,
+    );
     if (observed && !observed.unavailableSession && !record.retirement)
       record.nativeInactive = observed.idle;
     return (
@@ -159,8 +169,10 @@ export default async function reconcileOpenClawLifecycle(input: {
           });
         await current.journal.dispose(state, record);
       },
-      observe: (record) =>
-        service.dependencies.credential.use(authority, (request) => observe(request, record)),
+      observe: (record, issueClosed) =>
+        service.dependencies.credential.use(authority, (request) =>
+          observe(request, record, issueClosed),
+        ),
       reactivate: async (record, intake) => {
         const pr = taskPullRequest(record);
         return reactivateAssignmentFeedback({
@@ -218,7 +230,7 @@ export default async function reconcileOpenClawLifecycle(input: {
             code: 'retirement-worktree-cleanup-unavailable',
           };
         return service.dependencies.credential.use(authority, async (request) => {
-          const observed = await observe(request, record);
+          const observed = await observe(request, record, issueClosed);
           if (
             !observed ||
             (!observed.idle && observed.unavailableSession !== 'not-found') ||
@@ -358,12 +370,16 @@ export default async function reconcileOpenClawLifecycle(input: {
             for (const key of nativeOwners.keys())
               if (!owners.has(key)) throw new Error('retirement-worktree-shared');
             for (const [key, child] of children) {
-              const live = await observeRetiringResource(request, {
-                key,
-                sessionId: String(child.sessionId),
-                agentId: manifest.agent.id,
-                cwd: record.worktree!,
-              });
+              const live = await observeRetiringResource(
+                request,
+                {
+                  key,
+                  sessionId: String(child.sessionId),
+                  agentId: manifest.agent.id,
+                  cwd: record.worktree!,
+                },
+                issueClosed,
+              );
               if (!live.idle || live.row.parentSessionKey !== child.parentSessionKey)
                 throw new Error('retirement-native-resource-protected');
             }
@@ -515,7 +531,7 @@ export default async function reconcileOpenClawLifecycle(input: {
                 await save();
               }
             }
-            const archived = await observe(request, record);
+            const archived = await observe(request, record, issueClosed);
             if (!archived?.idle) throw new Error('retirement-native-resource-protected');
             archiveObserved = archived.archived;
             if (archived.archived) retirement.archivedAt ??= now;

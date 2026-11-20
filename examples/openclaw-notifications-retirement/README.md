@@ -142,7 +142,7 @@ done
 test -f "$TMPDIR/retirement-queue-ready"
 openclaw gateway call chat.send --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,message:"Cancelled retirement followup",queueMode:"followup",deliver:false,idempotencyKey:"retirement-cancelled-input"}')" --json | jq -e '.runId == "retirement-cancelled-input"'
 openclaw gateway call chat.abort --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,runId:"retirement-cancelled-input"}')" --json | jq -e '.aborted == true'
-openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:1}')" --json | jq -e '.sessionInfo.hasActiveRun == true and any(.pendingInputs.items[]; .runId == "retirement-cancelled-input" and .state == "cancelled")'
+openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session.hasActiveRun == true or .session.status == "running"'
 
 # should retire the closed dirty fixture automatically before the missing-session case
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/emori"
