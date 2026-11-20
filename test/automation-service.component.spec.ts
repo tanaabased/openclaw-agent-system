@@ -102,14 +102,16 @@ describe('agent/automation-service', () => {
     await assert.rejects(resolveAutomationPrompt(service, scheduler, manifest, run), /drift/);
     native[0] = original;
     manifest.automations[0]!.payload = { kind: 'prompt', prompt: 'hidden version two' };
-    assert.deepEqual(await resolveAutomationPrompt(service, scheduler, manifest, run), {
-      prompt: 'hidden version one',
-    });
+    const driftedPrompt = await resolveAutomationPrompt(service, scheduler, manifest, run);
+    assert.match(driftedPrompt.prompt!, /^hidden version one\n/u);
+    assert.match(driftedPrompt.prompt!, /✨ Update available/u);
+    assert.doesNotMatch(driftedPrompt.prompt!, /hidden version two/u);
     const declarations = manifest.automations;
     manifest.automations = [];
-    assert.deepEqual(await resolveAutomationPrompt(service, scheduler, manifest, run), {
-      prompt: 'hidden version one',
-    });
+    await assert.rejects(
+      resolveAutomationPrompt(service, scheduler, manifest, run),
+      /automation-declaration-removed/u,
+    );
     manifest.automations = declarations;
     await service.reconcile(manifest, root);
     assert.deepEqual(
@@ -1808,7 +1810,7 @@ describe('agent/automation-service', () => {
     });
     assert.equal(driftReport.outcome, 'success');
     assert.equal(driftReport.presentation?.kind, 'fallback');
-    assert.match(driftReport.presentation.footer, /^> ## ✨ Automation update available$/mu);
+    assert.match(driftReport.presentation.footer, /^> ## ✨ Update available$/mu);
     assert.match(
       driftReport.presentation.footer,
       /^> - Run Agent System Install to apply pending changes\.$/mu,

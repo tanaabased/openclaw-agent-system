@@ -47,6 +47,8 @@ export async function verifyAutomationLifecycleRun(
     useInstalledPrompt && record?.installedPrompt?.hash === record?.hash
       ? record?.installedPrompt?.text
       : undefined;
+  if (installedPrompt !== undefined && !declared)
+    throw new AutomationError('automation-declaration-removed');
   if (
     manifest.agent.id !== run.agentId ||
     context.agentId !== run.agentId ||
@@ -88,7 +90,15 @@ export async function verifyAutomationLifecycleRun(
     )
   )
     throw new AutomationError('automation-lifecycle-drift');
-  return { job: declared, native, installedPrompt };
+  return {
+    job: declared,
+    native,
+    installedPrompt,
+    configurationDrift:
+      installedPrompt !== undefined &&
+      !!declared &&
+      record.hash !== effectiveAutomation(declared, context).hash,
+  };
 }
 
 /** retain native scheduler facts alongside this instance's native tool-call bindings. */

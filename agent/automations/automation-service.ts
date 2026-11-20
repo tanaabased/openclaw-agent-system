@@ -416,6 +416,8 @@ export default class AutomationService {
     const job = openclawIntakeJobs(manifest).find((entry) => entry.id === id);
     const { store } = await this.scope(manifest, workspaceDir);
     const installed = (await store.read()).records.find((entry) => entry.id === id);
+    if (!job && (installed?.installedCommand || installed?.installedPrompt))
+      throw new AutomationError('automation-declaration-removed');
     if (installed?.installedCommand?.hash === installed?.hash && installed?.installedCommand) {
       const { native } = await this.admit(manifest, workspaceDir, id, installed.hash);
       const result = nativeAutomationRun(
@@ -1477,6 +1479,8 @@ export default class AutomationService {
           (!outputLimitOnly || nativeHash !== record.pending!.nativeHash))
       )
         throw new AutomationError('automation-execution-drift');
+      if (!job && record.installedCommand)
+        throw new AutomationError('automation-declaration-removed');
       const installed =
         record.installedCommand?.hash === hash ? record.installedCommand : undefined;
       if (retainedOneShot(native)) throw new AutomationError('automation-run-disabled');

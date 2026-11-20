@@ -1,14 +1,14 @@
 /** distinguish initial setup from updates without changing the intake gate. */
-export default function intakeAutomationNotice(code: string, continues = false) {
+export default function intakeAutomationNotice(code: string, automationId?: string) {
   if (code === 'intake-automation-update-required')
     return {
       severity: 'warning' as const,
       emoji: '✨',
-      title: 'Automation update available',
-      summary: continues
-        ? 'This run used installed settings.'
+      title: 'Update available',
+      summary: automationId
+        ? `Unapplied changes for automation ${automationId} were detected in agent configuration. This run used the previous version of its configuration.`
         : 'Your intake automation needs an update. New intake is paused until it’s applied. Existing chats and work are retained.',
-      next: continues
+      next: automationId
         ? 'Run Agent System Install to apply pending changes.'
         : 'Run Agent System Install to apply the update and resume intake.',
     };

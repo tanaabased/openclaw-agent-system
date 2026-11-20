@@ -147,9 +147,16 @@ export function prepareAutomationReport(input: AutomationReportInput): PreparedA
           format: 'structured',
           title: 'Automation did not start',
           status: 'error',
-          summary: 'Agent System rejected this scheduled launch before running its command.',
+          summary:
+            code === 'automation-declaration-removed'
+              ? `Automation ${input.id} is no longer declared in agent configuration. Its saved job did not run.`
+              : 'Agent System rejected this scheduled launch before running its command.',
           facts: [{ label: 'Reason', value: code }],
-          actions: ['Check Doctor and scheduler history before retrying.'],
+          actions: [
+            code === 'automation-declaration-removed'
+              ? 'Run Agent System Install to reconcile saved automations.'
+              : 'Check Doctor and scheduler history before retrying.',
+          ],
         }),
       },
     };
@@ -161,7 +168,8 @@ export function prepareAutomationReport(input: AutomationReportInput): PreparedA
     (input.result.truncated && !output.stderrTruncatedBytes);
   const classification = classifyAutomationReport(output?.stdout ?? '', incomplete, excerptBytes);
   const notice =
-    input.configurationDrift && intakeAutomationNotice('intake-automation-update-required', true);
+    input.configurationDrift &&
+    intakeAutomationNotice('intake-automation-update-required', input.id);
   const footer = notice
     ? [
         runnerFooter(prepared),
