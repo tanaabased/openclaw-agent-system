@@ -174,6 +174,7 @@ export default async function reconcileOpenClawLifecycle(input: {
           observe(request, record, issueClosed),
         ),
       reactivate: async (record, intake) => {
+        if ('origin' in intake) return false;
         const pr = taskPullRequest(record);
         return reactivateAssignmentFeedback({
           record,
@@ -420,7 +421,10 @@ export default async function reconcileOpenClawLifecycle(input: {
             repositoryDatabaseId: repo.databaseId,
             itemDatabaseId: intake.issue.databaseId,
             itemNumber: intake.issue.number,
-            itemType: managedPullRequest(intake) ? ('pull-request' as const) : ('issue' as const),
+            itemType:
+              'origin' in intake || managedPullRequest(intake)
+                ? ('pull-request' as const)
+                : ('issue' as const),
             ...(discard ? { closedIssueWorktree: record.worktree } : {}),
           };
           const worktree = await service.dependencies.worktrees.inspectGitHub(worktreeInput);

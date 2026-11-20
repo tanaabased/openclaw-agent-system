@@ -57,8 +57,8 @@ routing:
   - pirog/me
 ```
 
-The example shows a review placement rule. Independent review requests still
-require runtime support in Codex and OpenClaw. Validation warns when earlier
+The example shows a review placement rule. Independent review requests are supported
+in standalone Codex; the OpenClaw adapter is not yet available. Validation warns when earlier
 rules can be shown to cover every workflow and repository of a later rule.
 
 Patterns match the entire current `owner/repository` name, case-insensitively.
@@ -73,12 +73,11 @@ same rule. Scope changes apply to new admissions without Install and preserve
 already admitted work and its original owner. Routing does not grant GitHub access,
 approve assignment actors, or enable unsupported workflows.
 
-`swarm` coordinates assignment-driven work and issue pickup across participating
+`swarm` coordinates assignment-driven work, Codex review requests, and issue pickup across participating
 installations using claim comments and a second native pass before starting work. Use `swarm`
 for that repository on every participant sharing the receiving account. This is a
 comment-only proof of concept: incomplete concurrent reads can still produce
-overlapping work. It does not coordinate issue pickup allowances or independent
-review requests.
+overlapping work. It does not coordinate issue pickup allowances.
 
 A UUID restricts new claims to that installation; a list restricts them to that
 pool. Both use the same claim coordination as `swarm`, including singleton pools.
@@ -382,15 +381,45 @@ actor and therefore no assigner-derived default assignee.
 
 ## `github.review-request`
 
-This optional object is reserved. Declaring it warns and activates no independent
-review workflow; it does not block issue-assignment work.
+In standalone Codex, this object declares one review coordinator. Install reconciles
+its native chat and schedule using the shared interval and pause settings. OpenClaw
+currently reports this workflow as unavailable without blocking issue assignments.
 
-| Field      | Type                                              | Required | Default                                  | Description                                             |
-| ---------- | ------------------------------------------------- | -------- | ---------------------------------------- | ------------------------------------------------------- |
-| `allowed`  | [Identity list](#identity-lists), users only      | no       | `[]`                                     | Reserved request actors.                                |
-| `feedback` | [Workflow customization](#workflow-customization) | no       | `agent-system:agent-system-github-reply` | Reserved reply customization.                           |
-| `paused`   | boolean                                           | no       | `false`                                  | Reserved scheduler setting.                             |
-| `review`   | [Workflow customization](#workflow-customization) | no       | none                                     | Reserved review customization; no default review skill. |
+| Field      | Type                                              | Required | Default                                  | Description                                                  |
+| ---------- | ------------------------------------------------- | -------- | ---------------------------------------- | ------------------------------------------------------------ |
+| `allowed`  | [Identity list](#identity-lists), users only      | no       | `[]`                                     | Approved requesters and reviewer-feedback authors.           |
+| `effort`   | Supported reasoning effort                        | no       | selected profile                         | Coordinator effort override; not the reviewer chat's effort. |
+| `feedback` | [Workflow customization](#workflow-customization) | no       | `agent-system:agent-system-github-reply` | Reviewer reply composition and guidance.                     |
+| `model`    | Model profile or provider/model                   | no       | `low` profile                            | Coordinator model, using the shared automation model rules.  |
+| `paused`   | boolean                                           | no       | `false`                                  | Stop future scheduled review occurrences.                    |
+| `review`   | [Workflow customization](#workflow-customization) | no       | `agent-system:agent-system-task-review`  | Replace or guide the review skill.                           |
+
+Reviewer chats use the reviewer's [shared model profiles](../../MANIFEST.md#models),
+not the PR author's model. An explicit operator model/effort selection wins. Otherwise,
+verified Complexity from one unambiguous provider-linked issue selects the tier.
+Without usable metadata, the coordinator assesses the PR and a bounded diff with the
+shared rubric; insufficient evidence selects the configured default. A material conflict
+with verified Complexity is reported rather than silently choosing another tier.
+Follow-ups preserve the saved selection.
+
+Current individual requests require a verifiable originating requester, including
+historical requests. Team-only requests, unsupported requester identities, missing
+attribution, and self-review do not authorize a reviewer. Drafts and running CI remain
+pending. Settled CI permits the first review even when checks fail; unavailable CI is
+not treated as absent. Unchanged observations do not start reviewer turns.
+
+The first review may comment, request changes, or approve with grouped inline findings.
+The publisher checks the reviewed revision and current CI, then reads back the actual
+review. Failed CI prevents approval. Later automatic review passes are not yet supported;
+authorized feedback still reaches the same reviewer chat through source-bound replies.
+Approval does not retire the chat; closure/merge and explicit retirement use the shared
+resource-cleanup rules.
+
+Reviewers receive a separate checkout at the exact PR commit, without selecting the
+author's working branch, and instructions against edits, commits, pushes, merges,
+deployments, and executed CI reruns. These are practical restrictions backed by native
+and provider permissions, not complete isolation from every possible tool. Codex uses
+its native scheduled scan; it does not provide OpenClaw's pre-model condition guarantee.
 
 ## Common Types
 

@@ -61,7 +61,7 @@ describe('agent/workflow-stage', () => {
     }
   });
   it('should resolve bundled assessment and implementation defaults with guidance-only overrides', async () => {
-    for (const stage of ['assessment', 'implementation'] as const) {
+    for (const stage of ['assessment', 'implementation', 'review'] as const) {
       const selected = await selectWorkflowStage({
         stage,
         workspace: '/unused',
@@ -76,12 +76,8 @@ describe('agent/workflow-stage', () => {
       assert.match(selected.selection.guidance!.content, /Preserve existing work/);
     }
   });
-  it('should reject unavailable replacements without falling back and leave review execution undefined', async () => {
+  it('should reject unavailable replacements without falling back', async () => {
     const input = { workspace: '/unused', observedAt: 123, resolveSkill: async () => skill };
-    await assert.rejects(
-      selectWorkflowStage({ ...input, stage: 'review' }),
-      /workflow-stage-skill-required/,
-    );
     for (const stage of ['assessment', 'implementation', 'review'] as const)
       await assert.rejects(
         selectWorkflowStage({

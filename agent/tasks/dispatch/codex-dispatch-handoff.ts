@@ -10,15 +10,16 @@ export default function codexDispatchHandoff(runtime: CodexRuntimeIdentity) {
   return `const runtime = ${JSON.stringify({ entrypoint: runtime.entrypoint, pluginData: runtime.pluginData })};
 ${String.raw`const actions = {
   intake: ['scan', 'pickup', 'failure-response'],
-  dispatch: ['observe-denials', 'next', 'prepare', 'reconcile', 'report'],
+  dispatch: ['observe-denials', 'next', 'prepare', 'reconcile', 'report', 'review'],
   continuation: ['next', 'reconcile'],
-  feedback: ['reconcile']
+  feedback: ['next', 'reconcile']
 };
 async function executeRuntime(runtimeRoute, runtimeInput) {
 if (!actions[runtimeRoute]?.includes(runtimeInput.action)) throw new Error('scheduled-runtime-action-unsupported');
 let input = runtimeInput;
 const argv = ['node', runtime.entrypoint, runtimeRoute];
 argv.push(input.action);
+if (runtimeRoute === 'dispatch' && input.action === 'review') argv.push(input.operation);
 argv.push('--plugin-data', runtime.pluginData);
 const request = {...input};
 if (runtimeRoute === 'intake') delete request.action;
@@ -32,7 +33,7 @@ while (true) {
       sandbox_permissions: 'require_escalated',
       justification: runtimeRoute === 'intake' && input.action === 'pickup'
         ? 'Allow this occurrence of the activated issue pickup workflow to verify candidates, update its private journal, and self-assign at most one eligible GitHub issue under the designated installation policy? Native denials stop the operation.'
-        : 'Allow ' + runtimeRoute + ':' + input.action + ' for the operator-activated recurring assignment workflow? This exact command checks workflow evidence, prepares configured repositories when required, and updates private tracking state; it does not create chats, send turns, implement task code, or publish to GitHub. Eligible assignments are selected by the activated manifest policy. Current operator restrictions and native approval decisions still apply.',
+        : 'Allow ' + runtimeRoute + ':' + input.action + ' for the authorized GitHub workflow? This exact command checks workflow evidence, prepares configured repositories when required, and updates private tracking state. Shared ownership claims may be published to GitHub; review publication requires its owning reviewer call. Native chat creation and input delivery remain separate handoffs. Eligible work is selected by current policy or verified operator direction. Current operator restrictions and native approval decisions still apply.',
       prefix_rule: argv
     }
   });

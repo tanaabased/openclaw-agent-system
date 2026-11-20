@@ -1,7 +1,7 @@
 import { Type, type Static } from 'typebox';
 import { codexWorkStateSchema } from '../implementation/codex-work-state.ts';
 
-import { codexFeedbackSchema } from '../feedback/codex-feedback-state.ts';
+import { codexFeedbackSchema, feedbackEventSchema } from '../feedback/codex-feedback-state.ts';
 import DispatchStore, {
   dispatchRecordProperties,
   type DispatchState as SharedDispatchState,
@@ -82,6 +82,9 @@ export type IntakeDenial = Static<typeof intakeDenialSchema>;
 export const dispatchRecordSchema = Type.Object(
   {
     ...dispatchRecordProperties,
+    // Provider evidence and exact native send receipts, never reviewer progress or reasoning.
+    reviewObservation: Type.Optional(Type.String({ minLength: 1 })),
+    reviewInput: Type.Optional(feedbackEventSchema.properties.attempt),
     creationFailure: Type.Optional(
       Type.Object(
         {

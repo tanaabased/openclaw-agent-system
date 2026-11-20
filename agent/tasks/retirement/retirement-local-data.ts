@@ -1,6 +1,6 @@
 import { DirectEntryStore } from '../direct-entry-store.ts';
 import { implementationEntriesSchema } from '../implementation/implementation-entry-state.ts';
-import type { ManagedIssue } from '../managed-issue.ts';
+import type { TaskAdmission } from '../task-admission.ts';
 import ReplyStore, { type ReplyBinding } from '../feedback/reply-store.ts';
 import {
   retirementDeliveryEffects,
@@ -12,7 +12,7 @@ import {
 export default async function retirementLocalData(input: {
   root: string;
   binding: ReplyBinding;
-  intake: ManagedIssue;
+  intake: TaskAdmission;
   retain(effects: RetirementEffect[]): Promise<void>;
 }) {
   const owns = (entry: { repositoryId: string; subjectId: string }) =>
@@ -28,6 +28,7 @@ export default async function retirementLocalData(input: {
     drafts.splice(0);
     await save();
   });
+  if ('origin' in input.intake) return;
   await new DirectEntryStore(
     input.root,
     input.binding,

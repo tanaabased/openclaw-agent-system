@@ -37,15 +37,20 @@ export function matchesDeniedPreparation(
     ]
       .map(quote)
       .join(' ') + " <<'AGENT_SYSTEM_INPUT'\n";
-  if (!command.startsWith(prefix) || !command.endsWith('\nAGENT_SYSTEM_INPUT')) return false;
-  const body = command.slice(prefix.length, -'\nAGENT_SYSTEM_INPUT'.length);
+  const reviewPrefix = prefix.replace("'dispatch' 'prepare'", "'dispatch' 'review' 'prepare'");
+  const selectedPrefix = command.startsWith(reviewPrefix) ? reviewPrefix : prefix;
+  if (!command.startsWith(selectedPrefix) || !command.endsWith('\nAGENT_SYSTEM_INPUT'))
+    return false;
+  const body = command.slice(selectedPrefix.length, -'\nAGENT_SYSTEM_INPUT'.length);
   if (body.includes('\n')) return false;
   try {
     const input = JSON.parse(body);
     if (!nativeObject(input)) return false;
     const { action, ...request } = input;
     if (
-      action === 'prepare' &&
+      (selectedPrefix === reviewPrefix
+        ? action === 'review' && request.operation === 'prepare'
+        : action === 'prepare') &&
       target &&
       request.target === target &&
       Value.Check(dispatchModelParameters, input)

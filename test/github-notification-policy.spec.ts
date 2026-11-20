@@ -117,7 +117,7 @@ describe('channels/github/notification-policy', () => {
         workflow,
         status,
       })),
-      [{ workflow: 'review-request', status: 'warning' }],
+      [],
     );
   });
 

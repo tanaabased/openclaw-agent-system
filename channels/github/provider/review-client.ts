@@ -1,4 +1,6 @@
 import { githubCommentPageSize } from './issue-comment-client.ts';
+import { Value } from 'typebox/value';
+import { reviewDraftSchema, reviewEventState, type ReviewDraft } from './review-draft.ts';
 import {
   githubRepositoryEndpoint,
   GitHubWorkEventClientError,
@@ -49,6 +51,38 @@ export default class GitHubReviewClient implements GitHubPullRequestReviewClient
     readonly api: GitHubWorkEventApiClient,
     readonly maximumCommentCharacters: number,
   ) {}
+
+  /** submit once against an explicit revision; callers retain uncertain attempts before retrying. */
+  async submit(owner: string, name: string, number: number, head: string, draft: ReviewDraft) {
+    if (!Value.Check(reviewDraftSchema, draft)) throw new Error('review-draft-invalid');
+    githubResponseGitSha(head, 'review commit');
+    const endpoint = pullEndpoint(owner, name, number);
+    const response = await this.api.request(
+      ['--method', 'POST', `${endpoint}/reviews`, '--input', '-', '--jq', this.#projection(false)],
+      'review submission',
+      JSON.stringify({
+        commit_id: head,
+        event: draft.event,
+        body: draft.body,
+        comments: draft.comments.map(({ startLine, startSide, ...comment }) => ({
+          ...comment,
+          ...(startLine === undefined ? {} : { start_line: startLine }),
+          ...(startSide === undefined ? {} : { start_side: startSide }),
+        })),
+      }),
+    );
+    const created = this.#review(response.value, endpoint);
+    const observed = await this.getReview(owner, name, number, created.databaseId);
+    if (
+      observed.author?.nodeId !== this.api.identity.nodeId ||
+      observed.commitId !== head ||
+      observed.state !== reviewEventState[draft.event] ||
+      observed.bodyTruncated ||
+      observed.body !== draft.body
+    )
+      throw new Error('review-submission-unconfirmed');
+    return observed;
+  }
 
   #projection(comment: boolean): string {
     const shared = `id,node_id,user:(if .user == null then null else {login:.user.login,nodeId:.user.node_id,type:.user.type} end),body:((.body//"")[0:${this.maximumCommentCharacters + 1}]),bodyLength:(.body//""|length),html_url,pull_request_url,commit_id`;

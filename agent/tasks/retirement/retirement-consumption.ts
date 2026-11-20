@@ -1,15 +1,16 @@
 import { automationHash } from '../../automation-hash.ts';
-import type { ManagedIssue } from '../managed-issue.ts';
+import type { TaskAdmission } from '../task-admission.ts';
 import type IntakeStore from '../../../channels/github/intake/record-store.ts';
 
 /** consumed assignment identity outlives local task data; manual unassigned work needs none. */
 export default async function retirementConsumption(
   store: IntakeStore,
-  intake: ManagedIssue,
+  intake: TaskAdmission,
   taskId: string,
   now: number,
   consumedThrough: number,
 ) {
+  if ('origin' in intake) return;
   const assignment =
     intake.assignment ?? ('initiation' in intake ? intake.assignmentAttempt?.event : undefined);
   if (!assignment) return;

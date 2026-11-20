@@ -67,7 +67,7 @@ export const githubV3Properties = {
   ),
   'review-request': Type.Optional(
     Type.Object(
-      { ...trigger, review: customization, feedback: customization },
+      { ...trigger, ...automationModelProperties, review: customization, feedback: customization },
       { additionalProperties: false },
     ),
   ),
@@ -145,6 +145,8 @@ export default function decodeGitHubV3(value: ExternalGitHubV3): GitHubNotificat
       : {
           reviewRequest: {
             paused: review.paused ?? false,
+            ...(review.model ? { model: review.model } : {}),
+            ...(review.effort ? { effort: review.effort } : {}),
             allowed: (review.allowed ?? []).map(identity),
             ...(review.review ? { review: decodeAssessmentConfiguration(review.review) } : {}),
             feedback: {

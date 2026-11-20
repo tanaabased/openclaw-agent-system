@@ -1,7 +1,9 @@
-import { dispatchAdmission, type ManagedIssue } from '../managed-issue.ts';
+import type { ManagedIssue } from '../managed-issue.ts';
+import { taskAdmission } from '../task-admission.ts';
 import type { SharedDispatchRecord } from '../dispatch/dispatch-state.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
 import { feedbackTarget, replyLocator } from './reply-target.ts';
+import { nativeObject } from '../../../utils/native-object.ts';
 
 /** The coordinator may reconcile its own admitted source; it cannot impersonate an issue turn. */
 export default function nativeFeedbackReconciliation(
@@ -21,15 +23,17 @@ export default function nativeFeedbackReconciliation(
   if (source !== undefined && (typeof source !== 'string' || !replyLocator(source).commentId))
     throw new Error('feedback-source-url-required');
   const matches = records.flatMap((record) => {
-    if (record.sourceThreadId !== caller) return [];
-    const issue = dispatchAdmission(record, admitted);
+    const issue = taskAdmission(record, admitted);
     if (!issue) return [];
     const repository = `${issue.repository.owner.login}/${issue.repository.name}`;
     return (record.feedback?.events ?? [])
-      .filter((event) =>
-        source
-          ? feedbackTarget(repository, event) === source
-          : (event.attempt || event.turn) && event.phase !== 'delivered',
+      .filter(
+        (event) =>
+          (record.sourceThreadId === caller ||
+            (nativeObject(event.attempt) && event.attempt.sourceThreadId === caller)) &&
+          (source
+            ? feedbackTarget(repository, event) === source
+            : (event.attempt || event.turn) && event.phase !== 'delivered'),
       )
       .map((event) => ({ id: record.id, eventId: event.id }));
   });

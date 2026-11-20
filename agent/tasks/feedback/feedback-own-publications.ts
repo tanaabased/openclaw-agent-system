@@ -1,7 +1,7 @@
 import type { GitHubNotificationPublicationClient } from '../../../channels/github/provider/work-event-client.ts';
 import type { DeliveryAnnouncementState } from '../delivery/delivery-announcement-state.ts';
 import { reconcileAnnouncement } from '../delivery/delivery-announcement.ts';
-import type { ManagedIssue as IntakeRecord } from '../managed-issue.ts';
+import type { TaskAdmission as IntakeRecord } from '../task-admission.ts';
 
 /** identify retained public output without publishing or authorizing another reply. */
 export default async function feedbackOwnPublications(input: {

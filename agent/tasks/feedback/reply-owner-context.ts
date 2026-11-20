@@ -27,11 +27,12 @@ export default function replyOwnerContext(input: {
   const observationOnly = Boolean(delivery?.adopted && !delivery.pushedHead);
   const announcement = record.announcement;
   const destination = intake
-    ? `https://github.com/${intake.repository.owner.login}/${intake.repository.name}/${record.manualIssue?.pullRequest ? 'pull' : 'issues'}/${intake.issue.number}`
+    ? `https://github.com/${intake.repository.owner.login}/${intake.repository.name}/${record.reviewAdmission || record.manualIssue?.pullRequest ? 'pull' : 'issues'}/${intake.issue.number}`
     : undefined;
   if (!intake && record.threadId === input.caller) throw new Error('reply-managed-context-invalid');
   return {
     id: record.id,
+    workflow: record.reviewAdmission ? 'review-request' : 'issue-assignment',
     threadId: record.threadId,
     ...(input.incarnation ? { incarnation: input.incarnation } : {}),
     reset: Boolean(record.reset),
@@ -46,9 +47,10 @@ export default function replyOwnerContext(input: {
     repository: intake ? `${intake.repository.owner.login}/${intake.repository.name}` : undefined,
     number: intake?.issue.number,
     pullRequestNumber:
-      record.pullRequestLink !== undefined
+      record.reviewAdmission?.issue.number ??
+      (record.pullRequestLink !== undefined
         ? record.pullRequestLink?.pullRequestNumber
-        : delivery?.pullRequest?.pullRequestNumber,
+        : delivery?.pullRequest?.pullRequestNumber),
     events: record.feedback?.events,
     deliveredPullRequest: observationOnly ? undefined : delivery?.pullRequest,
     ...(destination &&
