@@ -127,6 +127,32 @@ describe('agent/openclaw retirement observation', () => {
       );
     }
   });
+  it('should retire verified closed issues without accessing incomplete history', async () => {
+    const f = fixture();
+    f.row.archived = false;
+    f.row.status = 'done';
+    const request: DispatchRequest = async (method, params) => {
+      assert.equal(method, 'sessions.describe');
+      return f.request(method, params);
+    };
+    assert.deepEqual(await observeRetiringSession(request, f.record, 'owner', true), {
+      row: f.row,
+      archived: false,
+      idle: true,
+    });
+    for (const status of ['running', 'queued']) {
+      f.row.status = status;
+      assert.equal((await observeRetiringSession(request, f.record, 'owner', true))?.idle, false);
+    }
+    f.row.status = 'done';
+    f.row.hasActiveRun = true;
+    assert.equal((await observeRetiringSession(request, f.record, 'owner', true))?.idle, false);
+    f.row.sessionId = 'replacement';
+    await assert.rejects(
+      observeRetiringSession(request, f.record, 'owner', true),
+      /retirement-session-identity-changed/,
+    );
+  });
   it('should verify current native receipts without replacing them', async () => {
     const f = fixture();
     const before = structuredClone(f.record);

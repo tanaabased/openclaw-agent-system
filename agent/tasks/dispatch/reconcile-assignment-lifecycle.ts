@@ -43,7 +43,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
   configuration: CleanupConfiguration;
   readConfiguration(): Promise<CleanupConfiguration>;
   pendingStartup?(record: R): boolean;
-  observe(record: R): Promise<RetirementNativeObservation | undefined>;
+  observe(record: R, issueClosed?: boolean): Promise<RetirementNativeObservation | undefined>;
   cleanup(
     record: R,
     intake: IntakeRecord,
@@ -212,7 +212,10 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         awaitingReassignment(record) && input.pendingStartup?.(record) && canResumeAssignment();
       let native: RetirementNativeObservation | undefined;
       try {
-        if (!resumeStartup) native = await read('lifecycle-session', () => input.observe(record));
+        if (!resumeStartup)
+          native = await read('lifecycle-session', () =>
+            input.observe(record, reason === 'issue-closed'),
+          );
       } catch (error) {
         input.budget?.check();
         if (record.retirement)
@@ -362,7 +365,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         if (await reactivate()) throw new Error('retirement-reactivated');
         const eventId = record.retirement?.removalEventId;
         const currentReason = await provider();
-        const currentNative = await input.observe(record);
+        const currentNative = await input.observe(record, currentReason === 'issue-closed');
         if (
           (reason === 'issue-closed' && currentReason !== 'issue-closed') ||
           (record.retirement?.reason === 'assignment-removed' &&

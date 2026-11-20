@@ -7,6 +7,7 @@ import openClawCapacity, {
   openClawItemOccupied,
 } from '../agent/tasks/dispatch/openclaw-capacity.ts';
 import type { OpenClawDispatchRecord } from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
+import assignmentRetirement from '../agent/tasks/retirement/assignment-retirement.ts';
 import fixture from './issue-pickup-selection-fixture.ts';
 
 describe('issue pickup capacity handoff', () => {
@@ -61,7 +62,7 @@ describe('issue pickup capacity handoff', () => {
       assert.equal(f.effects.writes, 1);
     });
 
-    it(`should use native capacity for idle and busy pickup owners in ${runtime}`, async () => {
+    it(`should use native capacity for pickup owners until verified closure in ${runtime}`, async () => {
       const f = fixture(runtime);
       await f.run({ selection: await f.select() });
       const pickup = f.state.projectPickup!;
@@ -70,6 +71,7 @@ describe('issue pickup capacity handoff', () => {
         projectWork: f.work(),
 
         request: {},
+        retirement: undefined as ReturnType<typeof assignmentRetirement>,
         nativeInactive: true,
         nativeWork: {
           result: { outcome: 'clarification-needed' },
@@ -94,7 +96,11 @@ describe('issue pickup capacity handoff', () => {
       f.tx.runId = `scan-${f.clock.now}`;
       assert.equal((await f.run()).status, 'at-capacity');
 
-      owner.nativeInactive = true;
+      owner.retirement = assignmentRetirement({
+        intakeId: 'ordinary',
+        now: f.clock.now,
+        reason: 'issue-closed',
+      });
       const next = { ...structuredClone(f.item), nodeId: 'I_next', number: 99, assignees: [] };
       f.items.set(next.number, next);
       f.candidates.set(next.number, {
@@ -110,7 +116,7 @@ describe('issue pickup capacity handoff', () => {
           await f.run({
             selection: {
               issueNodeId: next.nodeId,
-              rationale: 'new eligible work while the earlier task waits for clarification',
+              rationale: 'new eligible work while the closed task still awaits native cleanup',
             },
           })
         ).status,
