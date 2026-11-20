@@ -113,7 +113,7 @@ uses the [shared skills](#skills) through its native host interfaces.
 
 | Agent System release | Minimum OpenClaw | Development target |
 | -------------------- | ---------------- | ------------------ |
-| Next release         | 2026.11.5        | 2026.11.6          |
+| Next release         | 2026.11.6        | 2026.11.6          |
 | 0.9.0                | 2026.10.6        | 2026.10.6          |
 | 0.8.0                | 2026.9.5         | 2026.9.6           |
 | 0.7.0                | 2026.9.5         | 2026.9.6           |

@@ -72,7 +72,7 @@ terminal in the same OpenClaw profile:
 ```sh
 openclaw gateway stop
 openclaw plugins disable agent-system
-openclaw update --tag 2026.11.5 --no-restart
+openclaw update --tag 2026.11.6 --no-restart
 openclaw plugins update agent-system --accept-capabilities
 openclaw plugins enable agent-system --accept-capabilities
 openclaw plugins inspect agent-system --runtime --json
