@@ -91,7 +91,7 @@ openclaw gateway call cron.run --params "$(jq -nc --arg id "$native" '{id:$id,mo
 run_id=$(jq -er 'select(.ok == true and .enqueued == true) | .runId | strings | select(length > 0)' "$TMPDIR/lifecycle-refusal-ack.json")
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" maintenance "$run_id" error
 openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" --arg run "$run_id" '{id:$id,runId:$run,limit:1,offset:0}')" --json > "$TMPDIR/lifecycle-refusal-run.json"
-jq -e --arg id "$native" --arg run "$run_id" 'if any(.entries[]; .jobId == $id and .runId == $run and .status == "error" and ((.error // "") | contains("automation-prompt-load-blocked"))) then true else error("unexpected refusal outcome: " + (.entries | map({jobId,runId,status,error}) | tojson)) end' "$TMPDIR/lifecycle-refusal-run.json"
+jq -e --arg id "$native" --arg run "$run_id" 'if any(.entries[]; .jobId == $id and .runId == $run and .status == "error" and ((.error // "") | contains("This automation is no longer declared in agent configuration."))) then true else error("unexpected refusal outcome: " + (.entries | map({jobId,runId,status,error}) | tojson)) end' "$TMPDIR/lifecycle-refusal-run.json"
 test "$(wc -l < "$TMPDIR/agent-system-approval-apply" | tr -d ' ')" = 1
 
 # should complete all lifecycle approval turns through strict aimock
