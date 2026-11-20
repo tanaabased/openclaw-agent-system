@@ -752,7 +752,7 @@ category, phase, and reason code when known. `unknown` means the evidence is una
 means plugin replacement failed. Both include available startup or reload details in
 `readinessEvidence`, without raw responses, errors, or credentials. Use that evidence
 to investigate rather than assuming a timeout cause. See the
-[enrollment verification example](./examples/os-dispatch-enrollment/README.md).
+[enrollment verification example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/os-dispatch-enrollment/README.md).
 
 If installation fails, the command exits nonzero and reports what completed, what
 blocked it, and what has not been attempted. Earlier changes remain applied. Fix the
