@@ -38,8 +38,13 @@ export const reportSections = {
 export function renderStructuredReport(
   card: StructuredReportCard,
   icon: string = reportStatusIcons[card.status],
+  summaryCode?: { prefix: string; identifier: string; suffix: string },
 ): string {
-  const chunks = [`## ${icon} ${plain(card.title)}`, plain(card.summary)];
+  const summary =
+    summaryCode && /^[a-z0-9-]+$/iu.test(summaryCode.identifier)
+      ? `${plain(summaryCode.prefix)}\`${summaryCode.identifier}\`${plain(summaryCode.suffix)}`
+      : plain(card.summary);
+  const chunks = [`## ${icon} ${plain(card.title)}`, summary];
   if (card.facts?.length)
     chunks.push(
       `**${reportSections.facts}**\n${card.facts.map(({ label, value }) => `- **${plain(label)}:** ${plain(value)}`).join('\n')}`,

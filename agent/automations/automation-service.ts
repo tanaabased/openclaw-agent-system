@@ -117,6 +117,43 @@ function pendingNativeHash(record: AutomationRecord, native: NativeAutomation): 
   return nativeAutomationHash(native);
 }
 
+function commandConfigurationMatches(
+  job: ResolvedAutomation,
+  context: AutomationProjectionContext,
+  native: NativeAutomation,
+  hash: string,
+): boolean {
+  if (effectiveAutomation(job, context).hash === hash) return true;
+  if (job.origin === 'builtin' || native.payload.kind !== 'command') return false;
+
+  // compare using verified installed launcher inputs, not incidental runner settings.
+  const { argv, env } = native.payload;
+  if (
+    !Array.isArray(argv) ||
+    !argv.every((value): value is string => typeof value === 'string') ||
+    argv.length <= 6 ||
+    automationHash(argv.slice(-6)) !==
+      automationHash(['agent-system', 'automation-execute', '--id', job.id, '--hash', hash])
+  )
+    return false;
+  const environment = env ?? {};
+  if (
+    !nativeObject(environment) ||
+    Object.values(environment).some((value) => typeof value !== 'string')
+  )
+    return false;
+  const installedContext = {
+    ...context,
+    command: argv.slice(0, -6),
+    environment: environment as Record<string, string>,
+  };
+  return (
+    effectiveAutomation(job, installedContext).hash === hash ||
+    (typeof native.schedule.tz === 'string' &&
+      effectiveAutomation(job, { ...installedContext, timezone: native.schedule.tz }).hash === hash)
+  );
+}
+
 /** native failure reasons are bounded protocol values; never copy raw lastError or diagnostics. */
 function executionEvidence(state: NativeAutomation['state']): string {
   const at = state.lastRunAtMs;
@@ -759,15 +796,28 @@ export default class AutomationService {
         }
         if (
           job.origin !== 'builtin' &&
-          job.enabled &&
           native.enabled &&
-          job.payload.kind === 'command' &&
+          native.payload.kind === 'command' &&
           record.installedCommand?.hash !== record.hash
         ) {
+          const verified = nativeAutomationHash(native) === record.nativeHash;
+          const blocked =
+            verified &&
+            (!job.enabled ||
+              job.payload.kind !== 'command' ||
+              !commandConfigurationMatches(job, context, native, record.hash));
           findings.push({
-            ...finding(job.id, 'warning', 'automation-installed-command-missing'),
-            message:
-              'Installed command data is missing. Run Agent System Install to refresh this job.',
+            ...finding(
+              job.id,
+              blocked ? 'blocked' : 'warning',
+              'automation-installed-command-missing',
+            ),
+            message: blocked
+              ? 'installed command data is missing and current configuration cannot be used'
+              : verified
+                ? 'installed command data is missing'
+                : 'installed command data is missing; launch readiness could not be verified',
+            remediation: 'run Agent System Install to refresh this job.',
           });
         }
         if (native.state.lastRunAtMs && native.state.lastDeliveryStatus === undefined) {
@@ -921,9 +971,17 @@ export default class AutomationService {
             warnings: [deferred],
           };
         }
+        const blockedCommands = new Map<string, string>();
         for (const record of ledger.records) {
           const native = this.owned(record, observed, context.agentId);
           const declaration = declarations.find(({ id }) => id === record.id);
+          if (declaration?.origin !== 'builtin' && declaration?.payload.kind === 'command') {
+            const blocker = this.commandReconcileBlocker(declaration, context, record, native);
+            if (blocker) {
+              blockedCommands.set(record.id, blocker);
+              continue;
+            }
+          }
           if (declaration && record.retired) throw new AutomationError('automation-retired-id');
           if (!native && record.nativeId && (declaration || record.pending))
             throw new AutomationError('automation-native-job-missing');
@@ -1012,7 +1070,7 @@ export default class AutomationService {
             .map(({ id }) => id),
         );
         context.threads = await this.threads(context, store).resolve(
-          declarations.filter(({ id }) => !skipped.has(id)),
+          declarations.filter(({ id }) => !skipped.has(id) && !blockedCommands.has(id)),
           true,
         );
         await assertCurrent();
@@ -1043,6 +1101,25 @@ export default class AutomationService {
           });
         }
         for (const job of declarations) {
+          const blocker = blockedCommands.get(job.id);
+          if (blocker) {
+            const finding = {
+              component: 'automations',
+              stepId: job.id,
+              ...this.reporting(
+                job.id,
+                context,
+                observed.find(({ declarationKey }) => declarationKey === store.marker(job.id))
+                  ?.name,
+                job,
+              ),
+              code: blocker,
+              message: `This job was left unchanged (${blocker}); other jobs can still synchronize.`,
+            };
+            outcomes.push({ ...finding, status: 'skipped' });
+            warnings.push(finding);
+            continue;
+          }
           if (skipped.has(job.id)) {
             outcomes.push({
               ...automationModelSkipped(job.id, unavailableModels.get(job.id)!),
@@ -1126,6 +1203,7 @@ export default class AutomationService {
             record.generation += 1;
             record.triggerHash = effective.triggerHash;
           }
+          const previousCommand = record.installedCommand;
           record.hash = effective.hash;
           const desired = projectAutomation(job, record, context, native);
           if (
@@ -1231,6 +1309,8 @@ export default class AutomationService {
           if (job.origin !== 'builtin' && job.payload.kind === 'prompt')
             record.installedPrompt = { hash: record.hash, text: job.payload.prompt };
           else delete record.installedPrompt;
+          const commandRestored =
+            record.installedCommand !== undefined && previousCommand?.hash !== record.hash;
           if (retainedOneShot(native))
             record.completion = String(native.state.lastRunStatus ?? native.state.lastStatus);
           delete record.pending;
@@ -1246,8 +1326,11 @@ export default class AutomationService {
             stepId: job.id,
             ...this.reporting(job.id, context, native.name, job),
             code: 'automation-synchronized',
-            status: created ? 'created' : changed ? 'updated' : 'unchanged',
-            message: `Automation ${job.id} is synchronized (${context.threads?.get(job.id)?.outcome ?? 'independent'}${context.threads?.has(job.id) ? ': ' + context.threads.get(job.id)!.id : ''}).`,
+            status: created ? 'created' : changed || commandRestored ? 'updated' : 'unchanged',
+            message:
+              commandRestored && !created && !changed
+                ? 'installed command data restored; native job unchanged'
+                : `Automation ${job.id} is synchronized (${context.threads?.get(job.id)?.outcome ?? 'independent'}${context.threads?.has(job.id) ? ': ' + context.threads.get(job.id)!.id : ''}).`,
           });
         }
         for (const record of ledger.records.filter(
@@ -1321,6 +1404,26 @@ export default class AutomationService {
         { outcomes, warnings, unattempted: [{ component: 'automations' }] },
       );
     }
+  }
+
+  private commandReconcileBlocker(
+    job: ResolvedAutomation,
+    context: AutomationProjectionContext,
+    record: AutomationRecord,
+    native: NativeAutomation | undefined,
+  ): string | undefined {
+    if (record.retired) return 'automation-retired-id';
+    if (!native && record.nativeId) return 'automation-native-job-missing';
+    if (native?.state.autoDisabled) return 'automation-native-safety-disabled';
+    if (!record.pending) return undefined;
+    if (record.hash !== effectiveAutomation(job, context).hash)
+      return 'automation-pending-content-changed';
+    if (
+      native &&
+      ![record.pending.nativeHash, record.nativeHash].includes(pendingNativeHash(record, native))
+    )
+      return 'automation-recovery-diverged';
+    return undefined;
   }
 
   private retirementConfirmationExpired(atMs: number): boolean {
@@ -1520,12 +1623,12 @@ export default class AutomationService {
         record.installedCommand?.hash === hash ? record.installedCommand : undefined;
       if (retainedOneShot(native)) throw new AutomationError('automation-run-disabled');
       if (installed && native.payload.kind === 'command') {
-        const matching = job && effectiveAutomation(job, context).hash === hash ? job : undefined;
+        const matching = effectiveAutomation(job, context).hash === hash ? job : undefined;
         return {
           native,
           command: { ...installed.run, timeoutSeconds: installed.timeoutSeconds },
           displayName: matching?.displayName,
-          configurationDrift: !matching,
+          configurationDrift: !matching && !commandConfigurationMatches(job, context, native, hash),
           context,
           reportTarget: matching
             ? this.commandReportTarget(matching, native, context, store.scope)
@@ -1542,15 +1645,7 @@ export default class AutomationService {
       }
       if (!job?.enabled || !job.runtimes.includes('openclaw') || job.payload.kind !== 'command')
         throw new AutomationError('automation-execution-stale');
-      const installedTimezone = native.schedule.tz;
-      const installedContext =
-        job.origin !== 'builtin' && typeof installedTimezone === 'string'
-          ? { ...context, timezone: installedTimezone }
-          : context;
-      if (
-        effectiveAutomation(job, context).hash !== hash &&
-        effectiveAutomation(job, installedContext).hash !== hash
-      )
+      if (!commandConfigurationMatches(job, context, native, hash))
         throw new AutomationError('automation-installed-command-missing');
       return {
         native,

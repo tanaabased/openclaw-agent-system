@@ -183,6 +183,7 @@ export function prepareAutomationReport(input: AutomationReportInput): PreparedA
             actions: [notice.next],
           },
           notice.emoji,
+          notice.summaryCode,
         ),
       ].join('\n\n')
     : runnerFooter(prepared);
