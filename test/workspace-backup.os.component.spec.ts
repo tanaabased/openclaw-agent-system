@@ -5,7 +5,7 @@ import { createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
 import { pack } from 'tar-stream';
-import {
+import fsPromises, {
   chmod,
   copyFile,
   lstat,
@@ -20,6 +20,7 @@ import {
   writeFile,
   type FileHandle,
 } from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -303,7 +304,24 @@ describe('workspace backup', () => {
     assert.deepEqual(await selected.verify(result.archive), result.manifest);
     const destination = join(root, 'agent-recovered');
     await mkdir(destination, { mode: 0o700 });
-    const recovery = await selected.restore(result.archive, destination);
+    // observe the real directory after each publication step, before restore can move another entry.
+    const rename = fsPromises.rename;
+    const seen: string[][] = [];
+    const observer = mock.method(
+      fsPromises,
+      'rename',
+      async (...args: Parameters<typeof rename>) => {
+        await rename(...args);
+        const entries = await readdir(destination);
+        if (entries.length) seen.push(entries.sort());
+      },
+    );
+    syncBuiltinESMExports();
+    const recovery = await selected.restore(result.archive, destination).finally(() => {
+      observer.mock.restore();
+      syncBuiltinESMExports();
+    });
+    assert.deepEqual(seen[0], ['manifest.json', 'openclaw-state', 'workspace']);
     assert.equal(recovery.manifest.agentId, 'tanaabot');
     assert.equal(
       await readFile(join(recovery.target, 'openclaw-state', 'openclaw-agent.sqlite'), 'utf8'),

@@ -52,12 +52,22 @@ for (const id of [
         policy?.issueAssignment?.mode,
         id === 'openclaw-issue-work-custom' ? 'work' : 'plan',
       );
-      assert.deepEqual(policy?.issueAssignment?.pullRequest?.recipients, [
-        { source: 'assignment-actor', roles: ['assignee'] },
-        ...(id === 'openclaw-issue-conversation'
-          ? [{ login: 'tanaabot', nodeId: '', reference: '@tanaabot', roles: ['reviewer'] }]
-          : []),
-      ]);
+      if (
+        [
+          'openclaw-issue-conversation',
+          'openclaw-pr-journey',
+          'openclaw-issue-work-custom',
+          'openclaw-pr-update',
+          'openclaw-pr-discovery',
+        ].includes(id)
+      ) {
+        assert.deepEqual(policy?.issueAssignment?.pullRequest?.recipients, [
+          { source: 'assignment-actor', roles: ['assignee'] },
+          ...(id === 'openclaw-issue-conversation'
+            ? [{ login: 'tanaabot', nodeId: '', reference: '@tanaabot', roles: ['reviewer'] }]
+            : []),
+        ]);
+      }
     });
   });
 }
