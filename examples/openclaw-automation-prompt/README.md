@@ -8,7 +8,7 @@ Complete a scheduled prompt in its owning agent context, then preserve its job a
 - Compact requests with the file-backed instructions injected at user priority.
 - The job's medium effort overriding the agent's high default at execution.
 - Install and Doctor through an activated prompt without per-run approval.
-- Refuse a scheduled request before inference when its file-backed instructions drift.
+- Refuse a scheduled request before inference when its automation declaration is removed.
 
 ## What does not belong here
 
@@ -64,10 +64,10 @@ openclaw agent-system automations list --json | jq -S '[.jobs[] | {id,nativeId,r
 ```
 
 ```bash
-# should stop a native scheduled request when its instruction file no longer matches the installed job
+# should stop a native scheduled request when its automation declaration is removed
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-prompt"
 native=$(jq -er '.jobs[] | select(.id == "prompt") | .nativeId' "$TMPDIR/automation-before.json")
-printf '\nUnsynchronized instruction edit.\n' >> prompt.md
+printf '[]\n' > automations.yaml
 openclaw gateway call cron.run --params "$(jq -nc --arg id "$native" '{id:$id,mode:"force"}')" --json | tee "$TMPDIR/automation-refusal-ack.json"
 run_id=$(jq -er 'select(.ok == true and .enqueued == true) | .runId | strings | select(length > 0)' "$TMPDIR/automation-refusal-ack.json")
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" prompt "$run_id" error

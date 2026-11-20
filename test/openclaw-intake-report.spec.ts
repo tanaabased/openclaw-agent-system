@@ -233,7 +233,7 @@ describe('agent/openclaw-intake-report', () => {
     assert.equal(prepare().changed, false);
     const blocked = prepare('intake-automation-update-required');
     assert.equal(blocked.changed, true);
-    assert.match(blocked.response, /> ## ✨ Automation update available/);
+    assert.match(blocked.response, /> ## ✨ Update available/);
     assert.match(blocked.response, /New intake is paused/);
     assert.match(blocked.response, /Existing chats and work are retained/);
     assert.match(blocked.response, /Agent System Install/);
