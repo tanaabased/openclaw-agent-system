@@ -255,7 +255,8 @@ uses the [shared skills](#skills) through its native host interfaces.
 
 ### GitHub Workflows
 
-- [GitHub notifications](./channels/github/README.md) — Start approved assignments through native automations and keep each issue’s conversation and assessment.
+- [Issue assignment](./channels/github/README.md#usage) — Start work in a dedicated chat when an approved user assigns the agent a GitHub issue.
+- [Issue pickup](./channels/github/CONFIG.md#githubissue-pickup) — On a schedule, the agent selects and self-assigns eligible issues from the repositories or milestones you configure.
 
 ### CLI
 
