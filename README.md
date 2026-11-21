@@ -76,9 +76,9 @@ See [source installation](./DEVELOPMENT.md#install-from-source) for verification
 ## Usage
 
 Review the `agent.yaml` manifest in your workspace. The examples below show common
-settings for EMORI and belong in the same `.agent-system/agent.yaml` file (or
-`agent.yaml` at the repo root). See the [manifest reference](./MANIFEST.md) for
-the full configuration.
+settings for [our EMORI agent](https://github.com/tanaabased/emori) and belong in the same
+`.agent-system/agent.yaml` file (or `agent.yaml` at the repo root). See the
+[manifest reference](./MANIFEST.md) for the full configuration.
 
 ### Agent
 
@@ -92,30 +92,6 @@ agent:
   name: EMORI
   email:
     from-environment: AGENT_EMAIL
-```
-
-### Models
-
-Set the default model and choose a model and reasoning effort for each task tier.
-
-```yaml
-models:
-  default: { model: openai/gpt-6-astra, effort: high }
-  low: { model: openai/gpt-5.6-terra, effort: medium }
-  medium: { model: openai/gpt-5.6-sol, effort: high }
-  high: { model: openai/gpt-6-astra, effort: xhigh }
-```
-
-### Memory
-
-Choose the embedding model for memory search and the environment variable that supplies its API key.
-
-```yaml
-memory:
-  search:
-    provider: openai
-    model: text-embedding-3-small
-    api-key: EMBEDDINGS_API_KEY
 ```
 
 ### Environment
@@ -136,10 +112,35 @@ environment:
     - SSH_KEY
 ```
 
+### Models
+
+Set the default model and choose a model and reasoning effort for each task tier.
+
+```yaml
+models:
+  default: { model: openai/gpt-6.2-astra, effort: high }
+  low: { model: openai/gpt-6.2-sol, effort: medium }
+  medium: { model: openai/gpt-6.2-sol, effort: high }
+  high: { model: openai/gpt-6.2-astra, effort: xhigh }
+```
+
+### Memory
+
+Choose the embedding model for memory search and the environment variable that supplies its API key.
+
+```yaml
+memory:
+  search:
+    provider: openai
+    model: text-embedding-3-small
+    api-key: EMBEDDINGS_API_KEY
+```
+
 ### GitHub
 
 EMORI accepts assignments from pirog across `tanaabased` repos and requests PR reviews
-from smutlord. Her own account, `emoriwan`, can pick up issues from a Theme milestone.
+from smutlord. Each night at 3 a.m. local time, she starts looking for work in a
+Theme milestone. She can claim up to two issues per night and work on them independently.
 Use an open milestone number in place of the example below.
 
 ```yaml
@@ -152,8 +153,10 @@ github:
     allowed: ['@pirog', '@emoriwan']
     reviewers: ['@smutlord']
   issue-pickup:
+    start: '03:00'
     projects:
       - repository: tanaabased/theme
+        limit: 2
         milestone: { ids: 1, policy: only }
 ```
 
