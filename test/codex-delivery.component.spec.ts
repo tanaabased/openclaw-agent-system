@@ -888,7 +888,7 @@ describe('agent/codex-delivery', () => {
     assert.equal(retained.issueBranch?.name, 'pirog-work');
     assert.equal(retained.delivery?.binding.branch, 'existing-work');
     assert.equal(retained.delivery?.pullRequest?.pullRequestNumber, 7);
-    assert.match(String((await request('present')).presentation), /Pull request\n/);
+    assert.match(String((await request('present')).presentation), /PULL REQUEST\n/);
   });
 
   it('should stop before an adopted push when its provider identity or native authority changes', async () => {
@@ -951,7 +951,7 @@ describe('agent/codex-delivery', () => {
     const shown = await request('present');
     assert.ok('presentation' in shown);
     assert.match(String(shown.presentation), /Pull request/);
-    assert.doesNotMatch(String(shown.presentation), /PR announcement/);
+    assert.doesNotMatch(String(shown.presentation), /PR ANNOUNCEMENT/);
     assert.equal(creates, 0);
     assert.equal(bodyWrites, 0);
     assert.equal(pr.body, 'Keep this body.');
@@ -1247,10 +1247,10 @@ describe('agent/codex-delivery', () => {
       dirty = true;
       await request('reconcile');
       announcement.draft = draft;
-      assert.doesNotMatch(String((await request('present')).presentation), /PR announcement/);
+      assert.doesNotMatch(String((await request('present')).presentation), /PR ANNOUNCEMENT/);
       const context = await request('compose');
       assert.equal(context.status, 'composition-ready');
-      assert.match(String((await request('present')).presentation), /ℹ️ PR announcement pending/);
+      assert.match(String((await request('present')).presentation), /ℹ️ PR ANNOUNCEMENT PENDING/);
       const preview = await request('candidate', {
         publicText: 'Delivers the requested change.',
       });
@@ -1283,7 +1283,7 @@ describe('agent/codex-delivery', () => {
     assert.equal(saved.delivery!.reconciled, true);
     assert.equal(saved.announcement!.attempted, true);
     assert.equal(saved.announcement!.receipt, undefined);
-    assert.match(String((await request('present')).presentation), /announcement unconfirmed/);
+    assert.match(String((await request('present')).presentation), /ANNOUNCEMENT UNCONFIRMED/);
     announcement.lost = false;
     assert.equal((await request('announce')).status, 'announced');
     assert.equal(announcement.posts, 1);
@@ -1486,9 +1486,9 @@ describe('agent/codex-delivery', () => {
     assert.equal(linked.attached, true);
     const shown = await request('present');
     assert.ok('presentation' in shown);
-    assert.match(shown.presentation!, /Pull request\n/);
+    assert.match(shown.presentation!, /PULL REQUEST\n/);
     assert.match(shown.presentation!, /pull\/8/);
-    assert.doesNotMatch(shown.presentation!, /Pull request (opened|updated)/);
+    assert.doesNotMatch(shown.presentation!, /PULL REQUEST (OPENED|UPDATED)/);
     assert.deepEqual((await store.read()).records[0]!.delivery, receipt);
     assert.equal(creates, 1);
   });
@@ -2064,8 +2064,8 @@ describe('agent/codex-delivery', () => {
       await publish({ title: 'New title', body: 'Revised description.' });
       const shown = await request('present');
       assert.ok('presentation' in shown);
-      assert.match(shown.presentation!, /Pull request\n/);
-      assert.doesNotMatch(shown.presentation!, /Pull request (opened|updated)/);
+      assert.match(shown.presentation!, /PULL REQUEST\n/);
+      assert.doesNotMatch(shown.presentation!, /PULL REQUEST (OPENED|UPDATED)/);
       assert.match(shown.presentation!, /pull\/7/);
       assert.equal(pr!.title, 'New title');
       assert.equal(creates, 1);
@@ -2161,7 +2161,7 @@ describe('agent/codex-delivery', () => {
     assert.deepEqual((await store.read()).records[0]!.announcement, retainedAnnouncement);
     const shown = await request('present');
     assert.ok('presentation' in shown);
-    assert.match(shown.presentation!, /Pull request updated/);
+    assert.match(shown.presentation!, /PULL REQUEST UPDATED/);
     assert.doesNotMatch(shown.presentation!, /Original PR announcement/);
     assert.doesNotMatch(shown.presentation!, /before this update/);
     assert.doesNotMatch(shown.presentation!, /#issuecomment-91/);

@@ -83,7 +83,7 @@ describe('agent/automation-service', () => {
     manifest.automations[0]!.displayName = 'Renamed without synchronization';
     assert.match(
       (await resolveAutomationPrompt(service, scheduler, manifest, run)).prompt!,
-      /^hidden version one\n[\s\S]*Update available/u,
+      /^hidden version one\n[\s\S]*UPDATE AVAILABLE/u,
     );
     delete manifest.automations[0]!.displayName;
     const { store } = await service.scope(manifest, root);
@@ -105,7 +105,7 @@ describe('agent/automation-service', () => {
     manifest.automations[0]!.payload = { kind: 'prompt', prompt: 'hidden version two' };
     const driftedPrompt = await resolveAutomationPrompt(service, scheduler, manifest, run);
     assert.match(driftedPrompt.prompt!, /^hidden version one\n/u);
-    assert.match(driftedPrompt.prompt!, /✨ Update available/u);
+    assert.match(driftedPrompt.prompt!, /✨ UPDATE AVAILABLE/u);
     assert.doesNotMatch(driftedPrompt.prompt!, /hidden version two/u);
     const declarations = manifest.automations;
     manifest.automations = [];
@@ -124,7 +124,7 @@ describe('agent/automation-service', () => {
     ledger.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
     await store.write(ledger);
     const legacyPrompt = await resolveAutomationPrompt(service, scheduler, manifest, run);
-    assert.match(legacyPrompt.prompt!, /Update available/u);
+    assert.match(legacyPrompt.prompt!, /UPDATE AVAILABLE/u);
     assert.doesNotMatch(legacyPrompt.prompt!, /hidden version two/u);
     await service.reconcile(manifest, root);
     assert.deepEqual(await resolveAutomationPrompt(service, scheduler, manifest, run), {
@@ -1793,7 +1793,7 @@ describe('agent/automation-service', () => {
       result: { exitCode: null, timedOut: false, truncated: false },
     });
     assert.equal(startup.presentation?.kind, 'diagnostic');
-    assert.match(startup.presentation.body, /Automation did not start/u);
+    assert.match(startup.presentation.body, /AUTOMATION DID NOT START/u);
     const installedPayload = changed.payload;
     changed.payload = { kind: 'prompt', prompt: 'unapplied replacement' };
     const driftFinding = (await service.inspect(manifest, root)).find(
@@ -1814,7 +1814,7 @@ describe('agent/automation-service', () => {
     });
     assert.equal(driftReport.outcome, 'success');
     assert.equal(driftReport.presentation?.kind, 'fallback');
-    assert.match(driftReport.presentation.footer, /^> ## ✨ Update available$/mu);
+    assert.match(driftReport.presentation.footer, /^> ## ✨ UPDATE AVAILABLE$/mu);
     assert.ok(driftReport.presentation.footer.includes('automation `report`'));
     assert.match(
       driftReport.presentation.footer,

@@ -208,7 +208,7 @@ export default function prepareDispatchReport(input: {
                 : pending
                   ? `📥 Intake checked — ${pending} issue${pending === 1 ? '' : 's'} pending`
                   : '📥 Intake checked';
-  const lines = ['## ' + title, ''];
+  const lines = ['## ' + title.toUpperCase(), ''];
   if (storage.level !== 'normal' || recovered)
     lines.push(
       storage.message,

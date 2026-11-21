@@ -1084,12 +1084,12 @@ describe('agent/feedback-reply', () => {
       assert.ok(done.presentation.includes('[Reply ↗](' + url + '#issuecomment-9)'));
       assert.ok(!done.presentation.includes('Feedback reply instructions'));
       assert.ok(!posted!.body.includes(privateText));
-      assert.ok(!posted!.body.includes('Debug'));
+      assert.ok(!posted!.body.includes('DEBUG'));
       deps.manifest.debug = false;
       const recovered = await call('reconcile', { ...selection(composed) });
       assert.equal(recovered.status, 'published');
       assert.ok('presentation' in recovered && typeof recovered.presentation === 'string');
-      assert.ok(!recovered.presentation.includes('Debug'));
+      assert.ok(!recovered.presentation.includes('DEBUG'));
       assert.equal(writes, 1);
       assert.deepEqual(owners, before);
     });

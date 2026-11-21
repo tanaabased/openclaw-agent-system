@@ -43,7 +43,7 @@ const reportFixture: Fixture = {
   match: { model, predicate: (request) => Boolean(reportInput(request)) },
   response: (request) => ({
     id: 'recovered-report',
-    content: `> ## ✅ Identity completed\n>\n> The command completed successfully.\n\n${reportInput(request)!.presentation.footer}`,
+    content: `> ## ✅ IDENTITY COMPLETED\n>\n> The command completed successfully.\n\n${reportInput(request)!.presentation.footer}`,
   }),
 };
 
@@ -64,7 +64,7 @@ function matchesPrompt(request: ChatCompletionRequest): boolean {
     reportHistory: request.messages.some(
       (message) =>
         message.role === 'assistant' &&
-        (getTextContent(message.content) ?? '').includes('✅ Identity completed'),
+        (getTextContent(message.content) ?? '').includes('✅ IDENTITY COMPLETED'),
     ),
   };
   const matches = Object.values(checks).every(Boolean);

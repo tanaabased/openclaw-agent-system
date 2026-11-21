@@ -129,8 +129,8 @@ describe('task response assembly', () => {
         const text = result.presentation;
         const markers = [
           'Initial plan',
-          'Model routing',
-          ...(mode === 'auto' ? ['Auto mode decision'] : []),
+          'MODEL ROUTING',
+          ...(mode === 'auto' ? ['AUTO MODE DECISION'] : []),
           'Assessment explanation',
           'Published assessment reply',
           'Implementation results',

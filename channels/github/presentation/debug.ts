@@ -12,7 +12,7 @@ export default function debugCard(input: {
   const header = githubNotificationCard(
     {
       emoji: '🔬',
-      title: 'Debug',
+      title: 'DEBUG',
       facts: [{ label: 'Context', value: input.context }, ...facts],
     },
     { quoted: false },

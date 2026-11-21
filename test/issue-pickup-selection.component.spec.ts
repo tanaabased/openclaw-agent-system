@@ -278,7 +278,7 @@ describe('issue pickup selection through native journals', () => {
       delete f.connectionFailure.error;
       let result = await f.pickup();
       assert.equal(result.status, 'empty');
-      assert.match(result.response, /⚠️.*no eligible issues/);
+      assert.match(result.response, /⚠️.*NO ELIGIBLE ISSUES/);
       assert.doesNotMatch(result.response, /milestone-closed|could not finish/);
       f.tick.id = 'skipped-repository';
       f.repository.disabled = true;
@@ -740,7 +740,7 @@ describe('issue pickup selection through native journals', () => {
         assert.equal(error.code, 'github-client-unavailable');
         assert.equal(error.failure.status, 'error');
         assert.equal(error.failure.providerDiagnostic?.httpStatus, 401);
-        assert.match(error.failure.response, /❌.*Issue pickup/);
+        assert.match(error.failure.response, /❌.*ISSUE PICKUP/);
         assert.match(error.failure.response, /github-client-unavailable/);
         assert.match(error.failure.response, /Bad credentials/);
         assert.match(error.failure.response, /Next/);
@@ -1189,7 +1189,7 @@ describe('issue pickup selection through native journals', () => {
         f.tick.id = `empty-scan-${index}`;
         const result = await f.pickup();
         assert.equal(result.status, 'empty');
-        assert.match(result.response, /⚠️.*no eligible issues/);
+        assert.match(result.response, /⚠️.*NO ELIGIBLE ISSUES/);
         if (runtime === 'codex') assert.match(result.response, /<decision>NOTIFY<\/decision>/);
         assert.deepEqual((await f.journal.read()).projectPickup!.operations, []);
       }

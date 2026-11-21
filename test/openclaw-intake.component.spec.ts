@@ -912,7 +912,7 @@ describe('openclaw v2 intake slice', () => {
     const details = failure.details as { status: string; code: string; response: string };
     assert.equal(details.status, 'error');
     assert.equal(details.code, 'issue-pickup-enrollment-changed');
-    assert.match(details.response, /❌.*Issue pickup/);
+    assert.match(details.response, /❌.*ISSUE PICKUP/);
     f.service.pickup = successfulPickup;
     assert.equal(await invoke('before_tool_call', event, { ...context, runId: '' }), undefined);
     await tool.execute('call', event.params, controller.signal);

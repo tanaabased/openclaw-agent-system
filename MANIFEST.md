@@ -593,7 +593,7 @@ destination restrictions, and sensitive-archive handling.
 | ------- | -------- | ------- |
 | boolean | no       | `false` |
 
-Set `debug: true` at the top level to show private **🔬 Debug** cards: selected
+Set `debug: true` at the top level to show private **🔬 DEBUG** cards: selected
 skills (including defaults), guidance sources, retained inline guidance, historical
 missing cleanup evidence, and successful no-action delivery recovery details.
 Codex and OpenClaw read the current bound manifest for visibility; omitted or false

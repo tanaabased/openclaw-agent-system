@@ -87,7 +87,7 @@ separately posted native messages. Unknown fields are rejected on every owned ob
 
 | Structured field | Type                                     | Required | Description                                          |
 | ---------------- | ---------------------------------------- | -------- | ---------------------------------------------------- |
-| `title`          | nonblank single-line string              | yes      | Card title, rendered as plain text.                  |
+| `title`          | nonblank single-line string              | yes      | Card title, rendered in all caps as plain text.      |
 | `status`         | `success`, `warning`, `error`, `unknown` | yes      | Producer's application outcome; see below.           |
 | `summary`        | nonblank string                          | yes      | What happened and what it means, as plain text.      |
 | `facts`          | array of `{label, value}` objects        | no       | Nonblank plain-text strings; labels are single-line. |

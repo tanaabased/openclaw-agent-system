@@ -18,7 +18,7 @@ describe('tools/git/diagnostic', () => {
       providerDiagnostic: denied,
     });
     assert.equal(notice.severity, 'error');
-    assert.match(notice.message, /Git could not complete/);
+    assert.match(notice.message, /GIT COULD NOT COMPLETE/);
     assert.match(notice.message, /Permission to owner\/repo denied/);
     assert.doesNotMatch(notice.message, /hidden|ghp_abc123/);
     assert.equal(gitDiagnostic('Permission denied (publickey).').classification, 'authentication');

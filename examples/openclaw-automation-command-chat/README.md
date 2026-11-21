@@ -105,9 +105,9 @@ for runtime in openclaw codex; do
     grep -F '> ##' "$TMPDIR/card-$runtime-$mode.md"
     grep -F "$reason" "$TMPDIR/card-$runtime-$mode.md"
   done
-  grep -F '> ## ⚠️ Source alpha' "$TMPDIR/card-$runtime-success.md"
-  for source in beta gamma delta; do
-    grep -F "> ## ✅ Source $source" "$TMPDIR/card-$runtime-success.md"
+  grep -F '> ## ⚠️ SOURCE ALPHA' "$TMPDIR/card-$runtime-success.md"
+  for source in BETA GAMMA DELTA; do
+    grep -F "> ## ✅ SOURCE $source" "$TMPDIR/card-$runtime-success.md"
   done
   grep -F '**Runner result:** ✅ success' "$TMPDIR/card-$runtime-success.md"
   node "$GITHUB_WORKSPACE/examples/openclaw-automation-command-chat/assert-report.mjs" "$TMPDIR/card-$runtime-success.md"

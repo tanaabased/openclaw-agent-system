@@ -62,7 +62,7 @@ describe('channels/github/presentation', () => {
         },
       }),
       [
-        '> ## 📥 Issue requested',
+        '> ## 📥 ISSUE REQUESTED',
         '>',
         '> You requested [tanaabased/openclaw-agent-system#675](https://github.com/tanaabased/openclaw-agent-system/issues/675).',
       ].join('\n'),
@@ -80,7 +80,7 @@ describe('channels/github/presentation', () => {
         title: 'Comment received',
       }),
       [
-        '> ## 📣 Comment received',
+        '> ## 📣 COMMENT RECEIVED',
         '>',
         '> - **Source:** Approved comment',
         '> - **Delivery:** Private response path',
@@ -97,7 +97,7 @@ describe('channels/github/presentation', () => {
         title: 'Work complete',
       }),
       [
-        '> ## ✅ Work complete',
+        '> ## ✅ WORK COMPLETE',
         '>',
         '> The requested change is ready.',
         '>',

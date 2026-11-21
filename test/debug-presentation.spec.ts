@@ -39,7 +39,7 @@ describe('channels/github/presentation/debug', () => {
         '/workspace',
         { debug: true, manifestPath: '/workspace/agent.yaml' },
       )!;
-      assert.match(card, /^> ## 🔬 Debug/);
+      assert.match(card, /^> ## 🔬 DEBUG/);
       assert.ok(card.includes(stage + ' instructions'));
       assert.ok(card.includes('[`chosen`](</skill/SKILL.md>)'));
       assert.ok(card.includes('[Inline guidance](</workspace/agent.yaml>)'));

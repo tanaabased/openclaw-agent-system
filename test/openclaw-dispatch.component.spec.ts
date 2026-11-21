@@ -29,7 +29,7 @@ describe('agent/openclaw dispatch', () => {
     });
     assert.equal(first.status, 'reported');
     assert.ok('response' in first);
-    assert.match(String(first.response), /1 issue started/);
+    assert.match(String(first.response), /1 ISSUE STARTED/);
     assert.doesNotMatch(String(first.response), /🔬|retirement-outcome-unverified/);
     const saved = await current.journal.read();
     for (const debug of [true, false, true]) {
@@ -470,7 +470,7 @@ describe('agent/openclaw dispatch', () => {
       { action: 'report' },
     );
     assert.ok('response' in recovered && typeof recovered.response === 'string');
-    assert.match(recovered.response, /Intake resumed/);
+    assert.match(recovered.response, /INTAKE RESUMED/);
     assert.match(recovered.response, /condition has cleared/);
     assert.equal(fixtureState.calls.filter((call) => call.method === 'sessions.create').length, 0);
   });

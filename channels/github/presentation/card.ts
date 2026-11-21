@@ -62,7 +62,8 @@ export default function githubNotificationCard(
   input: GitHubNotificationCardInput,
   { quoted = true }: { quoted?: boolean } = {},
 ): string {
-  const card = [`## ${oneLine(input.emoji, 'emoji')} ${oneLine(input.title, 'title')}`, ''];
+  const title = oneLine(input.title, 'title');
+  const card = [`## ${oneLine(input.emoji, 'emoji')} ${quoted ? title.toUpperCase() : title}`, ''];
   if ('facts' in input) {
     if (input.facts.length === 0) {
       throw new Error('GitHub notification cards must contain at least one fact.');

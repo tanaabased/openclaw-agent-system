@@ -95,10 +95,10 @@ describe('agent/codex-dispatch-report', () => {
       const report = prepareDispatchReport(current);
       assert.equal(report.health, '');
       assert.match(report.response, /DONT_NOTIFY/);
-      assert.match(report.response, /retirement in progress/);
+      assert.match(report.response, /RETIREMENT IN PROGRESS/);
       assert.match(report.response, /No action is needed/);
       assert.match(report.response, /\*\*Retirement pending:\*\* 1/);
-      assert.doesNotMatch(report.response, /⚠️|needs attention|Intake resumed/);
+      assert.doesNotMatch(report.response, /⚠️|needs attention|INTAKE RESUMED/);
       current.state.intakeHealth = report.health;
     }
     const blocked = {
@@ -122,7 +122,7 @@ describe('agent/codex-dispatch-report', () => {
     assert.equal(completed.health, '');
     assert.match(completed.response, /DONT_NOTIFY/);
     assert.match(completed.response, /\*\*Retirement pending:\*\* 0/);
-    assert.doesNotMatch(completed.response, /Intake resumed|problem has cleared/);
+    assert.doesNotMatch(completed.response, /INTAKE RESUMED|problem has cleared/);
   });
 
   it('should report retirement blockers once without turning grace or inventory waits into warnings', () => {
@@ -225,7 +225,7 @@ describe('agent/codex-dispatch-report', () => {
       },
     };
     const update = prepareDispatchReport({ ...input, intake: current });
-    assert.match(update.response, /> ## ✨ Update available/);
+    assert.match(update.response, /> ## ✨ UPDATE AVAILABLE/);
     assert.match(update.response, /New intake is paused/);
     assert.match(update.response, /Install.*update.*resume intake/);
     assert.match(update.response, /`intake-automation-update-required`/);
@@ -240,19 +240,19 @@ describe('agent/codex-dispatch-report', () => {
       ...input,
       intake: { ...current, blocker: { ...current.blocker, code: 'intake-activation-required' } },
     });
-    assert.match(initial.response, /> ## ⚠️ Set up intake automation/);
+    assert.match(initial.response, /> ## ⚠️ SET UP INTAKE AUTOMATION/);
     assert.doesNotMatch(initial.response, /update available/);
   });
 
   it('should show progress transitions as information cards without repeating unchanged notices', () => {
     const progress = { pending: true, sources: 4, reported: undefined as boolean | undefined };
     const current = { ...input, state: { ...state, discoveryProgress: progress } };
-    assert.match(prepareDispatchReport(current).response, /> ## 📥 Intake discovery continues/u);
+    assert.match(prepareDispatchReport(current).response, /> ## 📥 INTAKE DISCOVERY CONTINUES/u);
     assert.doesNotMatch(prepareDispatchReport(current).response, /DONT_NOTIFY/);
     progress.reported = true;
     assert.match(prepareDispatchReport(current).response, /DONT_NOTIFY/);
     progress.pending = false;
-    assert.match(prepareDispatchReport(current).response, /> ## 📥 Intake discovery caught up/u);
+    assert.match(prepareDispatchReport(current).response, /> ## 📥 INTAKE DISCOVERY CAUGHT UP/u);
     progress.reported = false;
     assert.match(prepareDispatchReport(current).response, /DONT_NOTIFY/);
   });
@@ -283,7 +283,7 @@ describe('agent/codex-dispatch-report', () => {
       /DONT_NOTIFY/,
     );
     const recovered = prepareDispatchReport({ ...input, state: next });
-    assert.match(recovered.response, /Intake resumed/);
+    assert.match(recovered.response, /INTAKE RESUMED/);
     assert.equal(recovered.health, '');
   });
   it('should distinguish queued feedback from verified delivery', () => {
@@ -313,7 +313,7 @@ describe('agent/codex-dispatch-report', () => {
       slots: 3,
       state: { ...state, records: [record] },
     });
-    assert.doesNotMatch(first.response, /feedback item delivered to chats/);
+    assert.doesNotMatch(first.response, /FEEDBACK ITEM DELIVERED TO CHATS/);
     assert.match(first.response, /Queued feedback:\*\* 4 items across 1 issue/);
     assert.match(first.response, /feedback-send-unresolved/);
     assert.match(first.response, /NOTIFY/);

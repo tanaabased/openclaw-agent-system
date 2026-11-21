@@ -49,7 +49,7 @@ function reportInput(request: ChatCompletionRequest, diagnose = false) {
           ['alpha', 'beta', 'gamma', 'delta']
             .map(
               (source) =>
-                `> ## ${source === 'alpha' ? '⚠️' : '✅'} Source ${source}\n>\n> Archive ${source} saved${source === 'alpha' ? '; activation unverified' : ''}.`,
+                `> ## ${source === 'alpha' ? '⚠️' : '✅'} SOURCE ${source.toUpperCase()}\n>\n> Archive ${source} saved${source === 'alpha' ? '; activation unverified' : ''}.`,
             )
             .join('\n\n') +
             `\n\n**Runner result:** ✅ success · Exit 0\n\n${value.runLine}`,
@@ -93,7 +93,7 @@ const reportFixture: Fixture = {
           ? input.correction
             ? input.body!
             : input.body!.replaceAll('\n\n', '\n>\n') + '\n\n' + JSON.stringify(input.body)
-          : `> ## ❌ failure failed\n>\n> Archive delta failed: destination unavailable.\n\n${input.presentation.footer}`,
+          : `> ## ❌ FAILURE FAILED\n>\n> Archive delta failed: destination unavailable.\n\n${input.presentation.footer}`,
     };
     if (process.env.COMMAND_CHAT_EVIDENCE_PATH)
       appendFileSync(

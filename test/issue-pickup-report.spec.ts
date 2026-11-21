@@ -15,7 +15,7 @@ describe('agent/issue-pickup-report', () => {
         summary: { eligible: 0, shortlist: [], skipped: 0, remaining: 0 },
       },
     });
-    assert.match(result.response, /⚠️.*no eligible issues/);
+    assert.match(result.response, /⚠️.*NO ELIGIBLE ISSUES/);
     assert.doesNotMatch(result.response, /milestone-closed|Diagnostic/);
   });
 
@@ -83,12 +83,12 @@ describe('agent/issue-pickup-report', () => {
     assert.equal(error.cause, original);
     assert.equal(error.code, original.message);
     assert.equal(error.failure.status, 'error');
-    assert.match(error.failure.response, /❌.*Issue pickup/);
+    assert.match(error.failure.response, /❌.*ISSUE PICKUP/);
     assert.match(error.failure.response, /github-account-permission-denied/);
     assert.match(error.failure.response, /denied with/);
     assert.match(error.failure.response, /permissions/);
     assert.match(error.failure.response, /Reconcile/);
-    assert.doesNotMatch(error.failure.response, /ghp_|Debug|no eligible|Selected/);
+    assert.doesNotMatch(error.failure.response, /ghp_|DEBUG|no eligible|Selected/);
   });
 
   for (const source of ['built-in', 'inline', 'file'] as const) {
@@ -196,7 +196,7 @@ describe('agent/issue-pickup-report', () => {
         ],
       },
     });
-    assert.match(result.response, /⚠️.*could not fully check/);
+    assert.match(result.response, /⚠️.*COULD NOT FULLY CHECK/);
     assert.match(result.response, /owner\/empty.*0 eligible/);
     assert.match(
       result.response,
@@ -239,7 +239,7 @@ describe('agent/issue-pickup-report', () => {
     };
     const result = report({ outcome, debug: true });
     assert.match(result.response, /\\\[link\\\]/);
-    assert.match(result.response, /Debug/);
-    assert.doesNotMatch(report({ outcome }).response, /Debug/);
+    assert.match(result.response, /DEBUG/);
+    assert.doesNotMatch(report({ outcome }).response, /DEBUG/);
   });
 });

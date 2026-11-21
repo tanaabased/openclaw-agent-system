@@ -26,7 +26,7 @@ describe('channels/github/presentation/workflow-instructions', () => {
     };
     const before = structuredClone(input);
     const card = workflowConfigurationCard(input)!;
-    assert.equal(card.match(/## 🔬 Debug/g)?.length, 1);
+    assert.equal(card.match(/## 🔬 DEBUG/g)?.length, 1);
     for (const name of ['custom:routing', selection.skill.name, 'custom:work', 'custom:reply'])
       assert.ok(card.includes(name));
     assert.ok(card.includes('[`work.md`](</workspace/work.md>)'));
@@ -70,7 +70,7 @@ describe('channels/github/presentation/workflow-instructions', () => {
       '/workspace',
       { debug: true },
     )!;
-    assert.ok(card.startsWith('> ## 🔬 Debug\n>\n> -'));
+    assert.ok(card.startsWith('> ## 🔬 DEBUG\n>\n> -'));
     assert.ok(
       card.includes('[`piroplugin:piro-feedback-reply`](</skills/latin%20reply/SKILL.md>)'),
     );
@@ -109,7 +109,7 @@ describe('channels/github/presentation/workflow-instructions', () => {
       assert.ok(!output.includes('Hidden guidance.'));
       assert.ok(output.includes('Private answer.') && output.includes('Public answer.'));
       assert.ok(output.includes('approval-denied'));
-      assert.match(output, /> ## ⚠️ Public reply needs attention/);
+      assert.match(output, /> ## ⚠️ PUBLIC REPLY NEEDS ATTENTION/);
       assert.match(output, /Publication is stopped/);
     }
     assert.ok(
@@ -126,7 +126,7 @@ describe('channels/github/presentation/workflow-instructions', () => {
       debug: true,
       publication: { url: 'https://github.com/owner/repo/issues/1#issuecomment-2' },
     });
-    assert.ok(!output.includes('Debug'));
+    assert.ok(!output.includes('DEBUG'));
     assert.ok(
       output.includes(
         '[Reply ↗](https://github.com/owner/repo/issues/1#issuecomment-2) from [@posting-agent]',
@@ -141,7 +141,7 @@ describe('channels/github/presentation/workflow-instructions', () => {
       debug: true,
       publication: { withheld: 'blocked' },
     });
-    assert.ok(!withheld.includes('Debug'));
+    assert.ok(!withheld.includes('DEBUG'));
     assert.ok(withheld.includes('blocked'));
   });
 });

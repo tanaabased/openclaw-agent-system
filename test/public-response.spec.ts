@@ -178,14 +178,14 @@ describe('agent/public-response', () => {
     assert.equal(publicResponsePresentation({ kind: 'Reply', receipt: {} }), '');
     assert.match(
       publicResponsePresentation({ kind: 'Reply', withheld: true }),
-      /ℹ️ Reply withheld/,
+      /ℹ️ REPLY WITHHELD/,
     );
     const warning = publicResponsePresentation({
       kind: 'Assessment summary',
       attempted: true,
       destination: 'https://github.com/owner/repo/issues/7',
     });
-    assert.match(warning, /⚠️ Assessment summary unconfirmed/);
+    assert.match(warning, /⚠️ ASSESSMENT SUMMARY UNCONFIRMED/);
     assert.match(warning, /Do not repost/);
     assert.ok(warning.split('\n').every((line) => line.startsWith('>')));
   });

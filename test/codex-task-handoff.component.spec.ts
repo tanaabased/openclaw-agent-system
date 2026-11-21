@@ -206,7 +206,7 @@ describe('agent/codex task-handoff', () => {
       'reconcile-required',
     );
     await fixtureState.next();
-    assert.match(String((await fixtureState.report()).response), /1 issue started/);
+    assert.match(String((await fixtureState.report()).response), /1 ISSUE STARTED/);
     assert.equal(((await fixtureState.readDispatchState()).records as unknown[]).length, 1);
   });
 
@@ -262,7 +262,7 @@ describe('agent/codex task-handoff', () => {
     await fixtureState.next();
     const first = await fixtureState.report();
     assert.equal(first.status, 'report');
-    assert.match(String(first.response), /1 issue started/);
+    assert.match(String(first.response), /1 ISSUE STARTED/);
     const saved = await store.read();
     const record = structuredClone(saved.records[0]);
     const operational = saved.run!.response;
@@ -274,7 +274,7 @@ describe('agent/codex task-handoff', () => {
       const repeated = await fixtureState.report();
       assert.equal(repeated.status, 'report');
       assert.doesNotMatch(String(repeated.response), /🔬|retirement-outcome-unverified/);
-      assert.match(String(repeated.response), /1 issue started/);
+      assert.match(String(repeated.response), /1 ISSUE STARTED/);
       assert.equal((await store.read()).run!.response, operational);
       assert.deepEqual((await store.read()).records[0], record);
     }
@@ -531,7 +531,7 @@ describe('agent/codex task-handoff', () => {
       threadId: 'issue-thread',
     });
     assert.equal(recorded.status, 'formatted');
-    assert.ok(composeResponseBlocks(taskResponseOutput(recorded)).includes('Plan ready'));
+    assert.ok(composeResponseBlocks(taskResponseOutput(recorded)).includes('PLAN READY'));
     assert.match(composeResponseBlocks(taskResponseOutput(recorded)), /Skill.*company:assess/);
     assert.match(composeResponseBlocks(taskResponseOutput(recorded)), /Guidance.*guidance.md/);
     assert.ok(
@@ -547,7 +547,7 @@ describe('agent/codex task-handoff', () => {
     };
     const revised = await fixtureState.renderAssessment(question, { threadId: 'issue-thread' });
     assert.equal(revised.status, 'formatted');
-    assert.ok(composeResponseBlocks(taskResponseOutput(revised)).includes('Clarification needed'));
+    assert.ok(composeResponseBlocks(taskResponseOutput(revised)).includes('CLARIFICATION NEEDED'));
   });
 
   it('should deliver the assignment despite a missing assessment skill and recover in the same chat', async () => {
