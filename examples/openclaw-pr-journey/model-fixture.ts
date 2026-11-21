@@ -820,7 +820,8 @@ function respond(
             workdir: path,
             yieldMs: 10000,
           });
-        if (!shell.split(/\r?\n/u).includes('  id: notifications-emori')) return;
+        if (!shell.split(/\r?\n/u).some((line) => line.trim() === 'id: notifications-emori'))
+          return;
         const removed = result('checkout-shell-cleanup');
         if (!removed)
           return call('checkout-shell-cleanup', 'agent_system_git', {

@@ -35,6 +35,8 @@ openclaw-setup \
 openclaw-aimock prepare --scenario openclaw-lifecycle-approvals
 openclaw config set models.mode merge
 openclaw config set memory.search.enabled false --strict-json
+# keep unrelated nightly memory turns out of strict approval verification
+openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --strict-json
 openclaw config set plugins.entries.codex.config.codexDynamicToolsLoading direct
 openclaw config set plugins.entries.codex.config.appServer.args '["-c","openai_base_url=\"http://127.0.0.1:4010/v1\"","app-server","--listen","stdio://"]' --strict-json
 
