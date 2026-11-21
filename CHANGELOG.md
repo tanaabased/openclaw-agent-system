@@ -1,5 +1,7 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+## v0.10.0 - [November 21, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.10.0)
+
 ### New Features
 
 - Added `agent.pet` for a workspace pet sprite sheet separate from the agent avatar. [#758](https://github.com/tanaabased/openclaw-agent-system/pull/758)
