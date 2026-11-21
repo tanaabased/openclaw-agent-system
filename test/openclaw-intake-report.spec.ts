@@ -48,7 +48,7 @@ describe('agent/openclaw-intake-report', () => {
     const first = openclawIntakeReport(input);
     assert.equal(first.changed, true);
     assert.equal(first.delivered.length, 3);
-    assert.match(first.response, /3 feedback items delivered/);
+    assert.match(first.response, /3 FEEDBACK ITEMS DELIVERED/);
     assert.match(
       first.response,
       /Feedback delivered to chat:\*\* \[owner\/repo#3\]\(\/chat\/fixture\/dashboard\/chat-one\) · 2 items/,
@@ -170,7 +170,7 @@ describe('agent/openclaw-intake-report', () => {
     record.retirement!.code = 'retirement-shared-archive-pending';
     const cleared = openclawIntakeReport(input);
     assert.equal(cleared.changed, true);
-    assert.match(cleared.response, /Retirement blocker cleared/);
+    assert.match(cleared.response, /RETIREMENT BLOCKER CLEARED/);
     journal.intakeReport = { ...cleared, runId: 'cleared' };
     record.retirement!.archivedAt = 2;
     record.retirement!.worktreeRemovedAt = 2;
@@ -178,7 +178,7 @@ describe('agent/openclaw-intake-report', () => {
     const complete = openclawIntakeReport(input);
     assert.equal(complete.changed, false);
     assert.match(complete.response, /Retirement pending:\*\* 0/);
-    assert.doesNotMatch(complete.response, /Intake resumed/);
+    assert.doesNotMatch(complete.response, /INTAKE RESUMED/);
   });
 
   it('should report deferred assignments as item failures and recognize their recovery', () => {
@@ -233,13 +233,13 @@ describe('agent/openclaw-intake-report', () => {
     assert.equal(prepare().changed, false);
     const blocked = prepare('intake-automation-update-required');
     assert.equal(blocked.changed, true);
-    assert.match(blocked.response, /> ## ✨ Update available/);
+    assert.match(blocked.response, /> ## ✨ UPDATE AVAILABLE/);
     assert.match(blocked.response, /New intake is paused/);
     assert.match(blocked.response, /Existing chats and work are retained/);
     assert.match(blocked.response, /Agent System Install/);
     assert.match(blocked.response, /`intake-automation-update-required`/);
     const initial = prepare('intake-activation-required');
-    assert.match(initial.response, /> ## ⚠️ Set up intake automation/);
+    assert.match(initial.response, /> ## ⚠️ SET UP INTAKE AUTOMATION/);
     assert.doesNotMatch(initial.response, /update available/);
     assert.doesNotMatch(blocked.response, /Pending:\*\* 0/);
     journal.intakeReport = { ...blocked, runId: 'one' };
@@ -250,7 +250,7 @@ describe('agent/openclaw-intake-report', () => {
     journal.intakeReport = { ...changed, runId: 'two' };
     const recovered = prepare();
     assert.equal(recovered.changed, true);
-    assert.match(recovered.response, /Intake resumed/);
+    assert.match(recovered.response, /INTAKE RESUMED/);
     journal.intakeReport = { ...recovered, runId: 'three' };
     assert.equal(prepare().changed, false);
     assert.equal(

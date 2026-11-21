@@ -2,7 +2,6 @@
 
 Use [Manifest definitions](#manifest-definitions) to load workspace definitions without a runtime.
 Use [Command report output](#command-report-output) to produce automation reports.
-The separate [Tool API](#tool-api) below remains planned, not available.
 
 ## Manifest definitions
 
@@ -56,90 +55,9 @@ return `invalid`, not an empty automation list. Diagnostics include `code`, `sev
 `message`, and optional `fieldPath`/`sourcePath`; correct the definition or reference and retry.
 Full manifest declaration validation still applies, but installed runtime readiness and
 unresolved credential references do not gate loading. Unexpected programming errors can
-reject the promise. `AgentManifest`, `ManifestDiagnostic`, `ResolvedAutomation`,
+reject the promise. `AgentManifest`, `ManifestDiagnostic`, `CodexEnvironmentSelector`, `ResolvedAutomation`,
 `LoadManifestOptions` and `LoadManifestResult` types ship with this subpath.
 The package root remains the plugin entrypoint; private source imports are unsupported.
-
-## Tool API
-
-This guide describes the planned public Tool API for OpenClaw plugins that want to add
-tools compatible with [Agent System](./README.md).
-
-> [!IMPORTANT]
-> The public Tool API is not available in the current release. Agent System's
-> first-party tools use an internal contract while a supported typed
-> cross-plugin registration and runtime boundary is designed with OpenClaw.
-
-The repository's `api/` directory contains the internal contract and runtime used by
-Agent System's own tools. These modules ship for the plugin entrypoint; they are not
-declared package exports and do not support third-party imports.
-
-### Goal
-
-The public API will let another OpenClaw plugin register a compatible tool
-without reproducing Agent System's agent binding, environment and credential
-resolution, policy enforcement, execution safety, redaction, auditing, or
-diagnostics.
-
-Agent System will own:
-
-- trusted binding between a tool call and an installed agent workspace
-- operation-policy sequencing
-- scoped environment and credential resolution
-- safe execution, redaction, auditing, and common diagnostics
-
-Each compatible tool will own:
-
-- a stable tool id, model-input schema, and optional manifest schema
-- command or API behavior and operation classification
-- configuration projection and supplemental redaction
-- lifecycle checks and focused user guidance when the capability needs them
-
-### Policy Boundary
-
-A compatible request will follow one shared sequence:
-
-1. bind the request to a trusted agent workspace
-2. validate and classify the requested operation
-3. apply the configured `allow` or `deny` policy
-4. resolve only the credentials and resources needed for the authorized operation
-5. execute, redact, audit, and dispose of temporary material
-
-Compatible tools will not receive a general raw-secret interface. Tool schemas
-and implementations will be statically supplied by installed plugin code,
-never loaded from a workspace manifest.
-
-### Planned Tool Integration Contract
-
-The eventual versioned contract is expected to cover:
-
-| Surface                  | Purpose                                                     |
-| ------------------------ | ----------------------------------------------------------- |
-| API version              | Declare compatibility with the Agent System Tool API.       |
-| Configuration projection | Validate and resolve the tool's manifest section.           |
-| Lifecycle contributions  | Add optional validation, doctor, and install behavior.      |
-| Runtime handle           | Request authorized execution and narrowly scoped resources. |
-| Tool definitions         | Supply static model schemas and operation behavior.         |
-| Tool id                  | Give the tool a stable diagnostic and ownership key.        |
-
-No supported public import or registration call exists yet.
-
-### Security Requirements
-
-A public tool integration must preserve these boundaries:
-
-- policy enforcement happens before credential resolution
-- tool input cannot select executable code, schemas, or modules
-- secrets never enter model input, provenance, logs, diagnostics, or errors
-- temporary credentials have the smallest practical action scope and lifetime
-- remote-service permissions remain the final authorization boundary
-
-### First-Party References
-
-The current [`git`](./tools/git/README.md) and
-[`gh`](./tools/github/README.md) wrappers exercise the internal contract. Their
-guides document tool-specific configuration, policy, invocation, lifecycle, and
-security behavior without defining the future public registration API.
 
 ## Command report output
 
@@ -169,7 +87,7 @@ separately posted native messages. Unknown fields are rejected on every owned ob
 
 | Structured field | Type                                     | Required | Description                                          |
 | ---------------- | ---------------------------------------- | -------- | ---------------------------------------------------- |
-| `title`          | nonblank single-line string              | yes      | Card title, rendered as plain text.                  |
+| `title`          | nonblank single-line string              | yes      | Card title, rendered in all caps as plain text.      |
 | `status`         | `success`, `warning`, `error`, `unknown` | yes      | Producer's application outcome; see below.           |
 | `summary`        | nonblank string                          | yes      | What happened and what it means, as plain text.      |
 | `facts`          | array of `{label, value}` objects        | no       | Nonblank plain-text strings; labels are single-line. |
@@ -228,39 +146,9 @@ your own blockquote if you want one.
 }
 ```
 
-For multiple cards, use the same envelope. Entries can mix both formats:
-
-```json
-{
-  "schema": "agent-system.report",
-  "version": 1,
-  "cards": [
-    {
-      "id": "a",
-      "format": "structured",
-      "title": "Source A",
-      "status": "success",
-      "summary": "Already current."
-    },
-    {
-      "id": "b",
-      "format": "markdown",
-      "body": "## Source B\n\n- Saved archive\n- Activation unverified"
-    }
-  ]
-}
-```
-
-Cards are joined with two newline characters, preserving any newlines in authored
-bodies. They appear in one final assistant response, not separate native sends.
-There is no extra summary card. One labelled **Runner result** footer follows the
-whole sequence, outside the card bodies, with the automation, run time/duration,
-execution identity, process outcome, capture notices, and bounded stderr diagnostics.
-
-Runner outcome and application claims remain separate. Exit zero does not hide an
-application warning. A failed, timed-out, cancelled, signalled, or unknown runner
-result remains visible in that footer without rewriting completed individual claims.
-Stderr can be ordinary progress; its presence alone is not failure.
+Include additional cards in the same array to show them in order. The runner appends
+a footer with the process outcome and any capture warnings. A command can exit
+successfully and still report an application warning or error.
 
 ### Fallback, validation, and limits
 
@@ -283,38 +171,13 @@ does not silently enter fallback. Reporting diagnostics include:
 | `report-card-id-duplicate`   | Two cards have the same ID.                              |
 | `report-content-invalid`     | Privacy sanitation leaves invalid or empty content.      |
 
-Unknown fields, empty IDs, and contradictory formats are invalid. Correct the producer
-output when a reporting diagnostic appears; a diagnostic is not application success.
-Only actual top-level schema properties establish a claim, not words inside logs or
-nested data. An unrecognized malformed document remains fallback with capture notices.
-Captured prefixes are never treated as complete reports.
-
-The complete preferred stdout document must fit the existing 16 KiB per-stream chat
-disclosure boundary. Oversized/incomplete claimed stdout yields a diagnostic, not a
-partial card batch. Complete stdout can still produce cards when stderr is truncated;
-the footer discloses that loss. Terminal/bidi control characters are removed and
-credential-like content is redacted or withheld before reaching the posting model.
-Sanitation can change or withhold an entire Markdown body or structured field.
-
-The existing atomic private record limit is 256 KiB, checked before posting. Request
-validation and host transport limits still apply; Agent System does not increase them
-or silently split a report to fit. Full permitted capture remains in native run history.
+Correct the producer output when a reporting diagnostic appears. Keep the complete
+report within 16 KiB of stdout. Send diagnostics to stderr. Reports omit sensitive
+content and indicate truncated output.
 
 ### Posting and recovery
 
-Preferred card construction needs no model interpretation, but **posting still uses
-the existing model-assisted turn**, with the configured model/effort, cost, and latency.
-The model must copy the prepared response unchanged. Validation checks exact preferred
-text and permits one bounded correction; nonconforming final output is a reporting
-failure. This does not guarantee that the model never emits altered text or that an
-invalid response cannot already be present in native history.
-
-The existing execution identity and one native response receipt cover the entire
-report. A pending or uncertain attempt is reconciled without blindly resending cards,
-launching another formatter, or rerunning the command. There are no separate per-card
-acknowledgments or partial-prefix retries, and no exactly-once guarantee. Missing,
-archived, or replaced destinations retain the existing delivery failure behavior.
-
-This narrow command-reporting path works with either the native OpenClaw harness or
-the Codex harness hosted inside OpenClaw, using existing permissions. Standalone Codex command jobs remain unsupported; its native prompt
-automations are unchanged. See [runtime automation support](./MANIFEST.md#automations).
+Posting a report to a chat uses a model turn with the configured model and effort.
+If delivery is uncertain, check the chat and [run history](./CLI.md#openclaw-agent-system-automations-runs)
+before retrying the command. Command reporting is available in OpenClaw, including
+OpenClaw-hosted Codex. Standalone Codex supports prompt automations only.

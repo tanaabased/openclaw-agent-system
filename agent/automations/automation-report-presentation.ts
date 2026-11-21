@@ -44,7 +44,7 @@ export function renderStructuredReport(
     summaryCode && /^[a-z0-9-]+$/iu.test(summaryCode.identifier)
       ? `${plain(summaryCode.prefix)}\`${summaryCode.identifier}\`${plain(summaryCode.suffix)}`
       : plain(card.summary);
-  const chunks = [`## ${icon} ${plain(card.title)}`, summary];
+  const chunks = [`## ${icon} ${plain(card.title.toUpperCase())}`, summary];
   if (card.facts?.length)
     chunks.push(
       `**${reportSections.facts}**\n${card.facts.map(({ label, value }) => `- **${plain(label)}:** ${plain(value)}`).join('\n')}`,
@@ -66,7 +66,7 @@ export function reportDiagnosticBlock(text: string): string {
 
 export function standardReportInstructions(): string {
   return [
-    'Use this standard Markdown card template, replacing sample values with evidence-backed content. Omit optional sections without useful evidence; do not invent facts or actions.',
+    'Write the card title in all caps. Use this standard Markdown card template, replacing sample values with evidence-backed content. Omit optional sections without useful evidence; do not invent facts or actions.',
     renderStructuredReport({
       id: 'example',
       format: 'structured',

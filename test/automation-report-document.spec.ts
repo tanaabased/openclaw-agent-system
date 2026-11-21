@@ -86,7 +86,7 @@ describe('agent/automation-report-document', () => {
     const report = prepare(envelope([structured, { id: 'b', format: 'markdown', body: markdown }]));
     assert.equal(report.presentation?.kind, 'preferred');
     const body = expected(report);
-    assert.ok(body.startsWith('> ## ⚠️ Source A\n>\n> Activation unverified.\n\n' + markdown));
+    assert.ok(body.startsWith('> ## ⚠️ SOURCE A\n>\n> Activation unverified.\n\n' + markdown));
     assert.equal(body.split('**Runner result:**').length, 2);
     assert.ok(body.includes('**Runner result:** ✅ backup'));
     assert.ok(!body.includes('> ## Source B'));
@@ -115,7 +115,7 @@ describe('agent/automation-report-document', () => {
       findings: [],
       actions: ['Read result'],
     });
-    assert.ok(body.includes('\\[link\\]\\(bad\\) &lt;html&gt;'));
+    assert.ok(body.includes('\\[LINK\\]\\(BAD\\) &lt;HTML&gt;'));
     assert.ok(body.includes('> \\# heading'));
     assert.ok(body.includes('**Facts**'));
     assert.ok(body.includes('**Suggested next actions**'));
@@ -131,7 +131,7 @@ describe('agent/automation-report-document', () => {
       { exitCode: null },
     ]) {
       const report = prepare(envelope([{ ...structured, status: 'success' }]), override);
-      assert.ok(expected(report).startsWith('> ## ✅ Source A'));
+      assert.ok(expected(report).startsWith('> ## ✅ SOURCE A'));
       assert.ok(
         expected(report).includes(
           `**Runner result:** ${report.outcome === 'unknown' ? '⚠️' : '❌'}`,

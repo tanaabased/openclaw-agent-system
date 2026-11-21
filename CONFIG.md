@@ -23,27 +23,17 @@ standalone Codex.
 | -------------- | ------- | -------- | ------- | ---------------------------------------------------------- |
 | `graceMinutes` | integer | no       | `60`    | Minutes before eligible cleanup, from `0` through `43200`. |
 
-Omitted cleanup or grace uses 60 minutes. Invalid or unavailable settings hold
-cleanup instead of substituting a default. There is no enable/disable switch or
-per-agent override or separate Codex setting.
-
-Codex reads the JSON/JSON5 file selected by `OPENCLAW_CONFIG_PATH`, or
-`openclaw.json` in the selected OpenClaw state directory. No running Gateway is
-needed. It reads only cleanup policy, without loading dotenv, resolving secrets,
-or changing configuration or agents. Keep the cleanup policy inline: `$include`
-on its path holds Codex cleanup rather than silently using a default. Unrelated
-includes are not followed. An absent default file uses 60 minutes; an explicitly
-selected missing file holds cleanup.
+Codex reads this policy from `OPENCLAW_CONFIG_PATH` or the default OpenClaw
+configuration file without a running Gateway. Keep the cleanup setting inline.
+An invalid policy or an explicitly selected file that cannot be read holds cleanup.
 
 ```sh
 # set the shared grace period for automatic cleanup.
 openclaw config set plugins.entries.agent-system.config.cleanup.graceMinutes 30 --strict-json
 ```
 
-Both runtimes verify the current cleanup setting before resource effects. A change
-during the final check defers cleanup to the next pass. Existing deadlines survive
-edits, polls, and restarts; new deadlines and activity resets use the current grace.
-Even zero grace keeps the [ownership and preservation checks](./channels/github/README.md#task-retirement).
+New deadlines and activity resets use the current grace period. Even zero grace
+keeps the [ownership and preservation checks](./channels/github/README.md#task-retirement).
 
 ### `collaboration`
 
@@ -132,15 +122,9 @@ openclaw agent-system credentials cache flush --agent data --json
 See [`status`](./CLI.md#openclaw-agent-system-credentials-cache-status) and
 [`flush`](./CLI.md#openclaw-agent-system-credentials-cache-flush) for Gateway permissions and output.
 
-Agent System checks authorization and local credential or configuration changes on
-each operation. Reload, agent removal, credential changes, flush, and shutdown clear
-the cache; operations already using a value keep their snapshot. If a
-credential command reports **invalidation pending**, restore Gateway access and
-flush. External 1Password edits appear after timed expiry or flush; lifetime
-mode requires flush or restart.
+After changing a secret in 1Password, wait for timed expiry or flush the cache.
+In `process-lifetime` mode, flush or restart the Gateway. If a credential command
+reports **invalidation pending**, restore Gateway access and flush.
 
-Failed or partial loads are not cached, and failed refreshes return errors rather
-than stale credentials. OTP and unknown reference transforms bypass value
-retention. Use off mode for other time-varying credentials whose validity is
-shorter than the cache duration. Provider failures back off from 30 seconds to
-one hour; SDK quota errors wait one hour. Flush does not reset backoff or quota.
+Use `off` for time-varying credentials with a lifetime shorter than the cache
+duration. Flushing the cache does not reset provider backoff or quota limits.

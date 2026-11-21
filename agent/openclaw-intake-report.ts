@@ -149,7 +149,7 @@ export default function openclawIntakeReport(input: {
               : retirementNotices.length
                 ? '📥 Intake checked — retirement in progress'
                 : '📥 Intake checked';
-  const lines = ['## ' + title, ''];
+  const lines = ['## ' + title.toUpperCase(), ''];
   if (storage.level !== 'normal' || recovered.some((entry) => entry.startsWith('storage:')))
     lines.push(
       storage.message,

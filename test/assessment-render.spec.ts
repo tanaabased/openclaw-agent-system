@@ -241,9 +241,9 @@ describe('agent/assessment-render', () => {
           /assessment-render-request-invalid/,
         );
         assert.ok(shown.status === 'formatted');
-        assert.match(composeResponseBlocks(shown.responseBlocks), /Model routing/);
+        assert.match(composeResponseBlocks(shown.responseBlocks), /MODEL ROUTING/);
         assert.match(composeResponseBlocks(shown.responseBlocks), /provider\/model/);
-        assert.match(composeResponseBlocks(shown.responseBlocks), /Auto mode decision/);
+        assert.match(composeResponseBlocks(shown.responseBlocks), /AUTO MODE DECISION/);
         assert.match(
           composeResponseBlocks(shown.responseBlocks),
           outcome === 'plan-ready'
@@ -251,17 +251,17 @@ describe('agent/assessment-render', () => {
             : /What subject should the haiku cover/,
         );
         if (outcome === 'clarification-needed')
-          assert.doesNotMatch(composeResponseBlocks(shown.responseBlocks), /Debug/);
+          assert.doesNotMatch(composeResponseBlocks(shown.responseBlocks), /DEBUG/);
         else {
           assert.match(composeResponseBlocks(shown.responseBlocks), /configured:work/);
           assert.match(composeResponseBlocks(shown.responseBlocks), /configured:reply/);
           assert.equal(
-            composeResponseBlocks(shown.responseBlocks).match(/## 🔬 Debug/g)?.length,
+            composeResponseBlocks(shown.responseBlocks).match(/## 🔬 DEBUG/g)?.length,
             1,
           );
           assert.ok(
-            composeResponseBlocks(shown.responseBlocks).indexOf('## 🔬 Debug') >
-              composeResponseBlocks(shown.responseBlocks).indexOf('Auto mode decision'),
+            composeResponseBlocks(shown.responseBlocks).indexOf('## 🔬 DEBUG') >
+              composeResponseBlocks(shown.responseBlocks).indexOf('AUTO MODE DECISION'),
           );
         }
         assert.equal(shown.retained, false);
@@ -305,7 +305,7 @@ describe('agent/assessment-render', () => {
         /company:assessment/,
       );
       assert.ok(
-        composeResponseBlocks(restored.responseBlocks as unknown[]).indexOf('## 🔬 Debug') >
+        composeResponseBlocks(restored.responseBlocks as unknown[]).indexOf('## 🔬 DEBUG') >
           composeResponseBlocks(restored.responseBlocks as unknown[]).lastIndexOf('Review detail.'),
       );
       const quiet = renderNativeAssessment(
@@ -317,8 +317,8 @@ describe('agent/assessment-render', () => {
         { ...metadata, debug: false },
       );
       assert.equal(quiet.status, 'formatted');
-      assert.match(composeResponseBlocks(quiet.responseBlocks), /Model routing/);
-      assert.doesNotMatch(composeResponseBlocks(quiet.responseBlocks), /company:assessment|Debug/);
+      assert.match(composeResponseBlocks(quiet.responseBlocks), /MODEL ROUTING/);
+      assert.doesNotMatch(composeResponseBlocks(quiet.responseBlocks), /company:assessment|DEBUG/);
     });
 
   it('should validate complete native input and return only the concise visible review', () => {
@@ -375,7 +375,7 @@ describe('agent/assessment-render', () => {
       );
       assert.equal(response.status, 'formatted');
       assert.equal(response.retained, false);
-      assert.ok(composeResponseBlocks(response.responseBlocks).includes('Clarification needed'));
+      assert.ok(composeResponseBlocks(response.responseBlocks).includes('CLARIFICATION NEEDED'));
       assert.ok(composeResponseBlocks(response.responseBlocks).includes(question));
     });
 

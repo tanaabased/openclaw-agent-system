@@ -70,9 +70,7 @@ Resolve unset complexity using the configured default:
 }
 ```
 
-Inspection returns the profiles, routing instructions, and digests identifying their
-current versions. Do not pass digests to `resolve`; the runtime reads the bound configuration.
-Missing profiles or a missing workspace binding report
+Inspection returns the configured profiles and routing guidance. Missing profiles or a missing workspace binding report
 unavailable; invalid inputs and unsupported selections return errors without a substitute.
 
 Resolution returns `resolved` or `unresolved`, the selected profile, reasoning, and

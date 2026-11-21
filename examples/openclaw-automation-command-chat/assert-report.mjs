@@ -14,7 +14,7 @@ assert.deepEqual(
 for (const [index, source] of ['alpha', 'beta', 'gamma', 'delta'].entries()) {
   const card = blocks[index];
   assert.equal(card.tokens[0].type, 'heading');
-  assert.equal(card.tokens[0].text, `${index === 0 ? '⚠️' : '✅'} Source ${source}`);
+  assert.equal(card.tokens[0].text, `${index === 0 ? '⚠️' : '✅'} SOURCE ${source.toUpperCase()}`);
   assert.equal(card.tokens.filter((token) => token.type === 'heading').length, 1);
 }
 assert.ok(blocks[4].text.startsWith('**Runner result:** ✅ success · Exit 0'));

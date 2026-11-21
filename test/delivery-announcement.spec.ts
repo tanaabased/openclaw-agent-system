@@ -550,7 +550,7 @@ describe('agent/delivery-announcement', () => {
     assert.match(preview.presentation!, /PR announcement draft/);
     assert.match(
       announcementPresentation(delivery.announcement, 'https://github.com/owner/repo/issues/3'),
-      /announcement pending/,
+      /ANNOUNCEMENT PENDING/,
     );
     const result = await run('announce');
     assert.ok('presentation' in result);

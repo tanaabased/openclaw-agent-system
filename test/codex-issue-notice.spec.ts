@@ -45,7 +45,7 @@ describe('agent/codex-issue-notice', () => {
       changed: true,
     });
     assert.equal(update.severity, 'warning');
-    assert.ok(update.message.startsWith('> ## ✨ Update available'));
+    assert.ok(update.message.startsWith('> ## ✨ UPDATE AVAILABLE'));
     assert.match(update.summary, /New intake is paused/);
     assert.match(update.summary, /Existing chats and work are retained/);
     assert.match(update.next, /Install.*update.*resume intake/);
@@ -55,7 +55,7 @@ describe('agent/codex-issue-notice', () => {
       code: 'intake-activation-required',
       changed: true,
     });
-    assert.ok(initial.message.startsWith('> ## ⚠️ Set up intake automation'));
+    assert.ok(initial.message.startsWith('> ## ⚠️ SET UP INTAKE AUTOMATION'));
     assert.match(initial.summary, /not been activated/);
     assert.doesNotMatch(initial.message, /update available|needs an update/);
   });
@@ -164,7 +164,7 @@ describe('agent/codex-issue-notice', () => {
       changed: true,
     });
     assert.equal(recovered.severity, 'info');
-    assert.match(recovered.message, /## 🔬 Debug/);
+    assert.match(recovered.message, /## 🔬 DEBUG/);
     assert.match(recovered.message, /\*\*Outcome:\*\* No action is needed/);
     assert.doesNotMatch(recovered.message, /## ⚠️|## ❌/);
     const unresolved = codexIssueNotice({

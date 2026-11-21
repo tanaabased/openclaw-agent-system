@@ -50,7 +50,7 @@ export function assessmentResponseBlocks(
   const text = githubNotificationMarkdownText;
   const outcomeCard = githubNotificationQuote(
     [
-      '## ' + titles[result.outcome],
+      '## ' + titles[result.outcome].toUpperCase(),
       result.summary,
       ...(context.assessmentOnly
         ? ['Assessment only. No implementation or publication is authorized.']

@@ -34,7 +34,7 @@ export function implementationPresentation(result: Static<typeof implementationR
   return result.outcome === 'clarification-needed'
     ? githubNotificationQuote(
         [
-          '## ❓ Clarification needed',
+          '## ❓ CLARIFICATION NEEDED',
           '',
           ...result.questions.map((question) => `- ${question}`),
           '',

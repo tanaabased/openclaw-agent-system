@@ -712,7 +712,7 @@ describe('scripts/example-model-scenarios', () => {
         content:
           scenarioId === 'openclaw-automation-prompt'
             ? '> ## ✅ identity completed'
-            : '> ## ✅ Identity completed',
+            : '> ## ✅ IDENTITY COMPLETED',
       });
       try {
         assert.ok(matchFixture([...scenario.fixtures], valid));
