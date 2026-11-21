@@ -30,6 +30,7 @@ See example agents:
 
 - [EMORI](https://github.com/tanaabased/emori) — Co-founder and operating partner running on OpenClaw.
 - [smutlord](https://github.com/tanaabased/smutlord) — Bug-fixing agent running on OpenClaw.
+- [tanaabot](https://github.com/tanaabased/tanaabot) — Codex Dot for managed and scheduled tasks in Codex Cloud.
 - [pirog/me](https://github.com/pirog/me) — Mike Pirog's bound Codex profile.
 
 ## Overview
