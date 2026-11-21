@@ -1,14 +1,18 @@
-# Agent System
+<h1 align="center">Agent System</h1>
 
 <p align="center">
   <img src="./assets/icon.png" alt="Agent System mark" width="180" />
 </p>
 
 <p align="center">
-  <a href="https://github.com/tanaabased/openclaw-agent-system/releases"><img src="https://img.shields.io/github/v/release/tanaabased/openclaw-agent-system" alt="Latest release" /></a>
-  <a href="https://github.com/tanaabased/openclaw-agent-system/actions/workflows/pr-os.yml"><img src="https://img.shields.io/github/actions/workflow/status/tanaabased/openclaw-agent-system/pr-os.yml?label=OS" alt="OS tests" /></a>
-  <img src="https://img.shields.io/badge/macOS-26-111827" alt="macOS 26" />
-  <img src="https://img.shields.io/badge/Ubuntu-24.04-00c88a" alt="Ubuntu 24.04" />
+  <a href="https://github.com/tanaabased/openclaw-agent-system/releases/latest"><img src="https://img.shields.io/github/v/release/tanaabased/openclaw-agent-system?label=STABLE&amp;color=blue" alt="Latest stable release" /></a>
+  <a href="https://github.com/tanaabased/openclaw-agent-system/releases"><img src="https://img.shields.io/github/v/release/tanaabased/openclaw-agent-system?include_prereleases&amp;sort=date&amp;label=EDGE&amp;color=blue" alt="Latest release including prereleases" /></a>
+  <a href="https://github.com/tanaabased/openclaw-agent-system/actions/workflows/pr-issue-assignments.yml?query=event%3Apull_request"><img src="https://img.shields.io/github/actions/workflow/status/tanaabased/openclaw-agent-system/pr-issue-assignments.yml?event=pull_request&amp;label=ASSIGNMENTS" alt="Issue assignment tests" /></a>
+</p>
+
+<p align="center">
+  <a href="#openclaw"><img src="https://img.shields.io/badge/OPENCLAW-plugin-6f42c1" alt="Install the OpenClaw plugin" /></a>
+  <a href="#codex"><img src="https://img.shields.io/badge/CODEX-plugin-6f42c1" alt="Install the Codex plugin" /></a>
 </p>
 
 Agent System puts your agent's identity, environment, automations, credential bindings,
@@ -27,15 +31,6 @@ See example agents:
 - [EMORI](https://github.com/tanaabased/emori) — Co-founder and operating partner running on OpenClaw.
 - [smutlord](https://github.com/tanaabased/smutlord) — Bug-fixing agent running on OpenClaw.
 - [pirog/me](https://github.com/pirog/me) — Mike Pirog's bound Codex profile.
-
-> [!NOTE]
-> The OpenClaw integration targets 2026.11.6. Newer hosts are not yet verified. See
-> [version compatibility](#version-compatibility).
-
-> [!WARNING]
-> Agent System remains a work in progress. Development and Leia coverage focus
-> on OpenClaw's native and Codex harnesses. Other agent harnesses may work, but
-> they are not yet part of the compatibility test matrix.
 
 ## Overview
 
@@ -109,52 +104,35 @@ uses the [shared skills](#skills) through its native host interfaces.
 
 ## Installation
 
-### Version Compatibility
-
-| Agent System release | Minimum OpenClaw | Development target |
-| -------------------- | ---------------- | ------------------ |
-| Next release         | 2026.11.6        | 2026.11.6          |
-| 0.9.0                | 2026.10.6        | 2026.10.6          |
-| 0.8.0                | 2026.9.5         | 2026.9.6           |
-| 0.7.0                | 2026.9.5         | 2026.9.6           |
-| 0.6.0                | 2026.9.2         | 2026.9.3           |
-| 0.5.3                | 2026.7.1         | 2026.7.2           |
-
-Compatibility metadata declares the minimum supported OpenClaw version. Build
-metadata and development dependencies pin the newest version tested for the
-release.
-
-On a supported Gateway, workspaces using OpenClaw-hosted Codex require
-`@openclaw/codex@2026.11.6`. This prerequisite is separate from the Gateway minimum.
-The minimum-version range does not establish compatibility with newer hosts;
-newer hosts require separate verification. The standalone Codex application version is unchanged.
-
-For the update order and existing-installation steps, see [upgrading](./UPGRADING.md).
+Check [version compatibility](#version-compatibility) before you begin.
 
 ### OpenClaw
-
-Install the current release from npm:
-
-> [!NOTE]
-> ClawHub publication is currently blocked by an [upstream backend error](https://github.com/openclaw/clawhub/issues/3788).
-> Its listing has an older release. Use npm for the current version.
 
 ```sh
 openclaw plugins install npm:@tanaab/openclaw-agent-system --accept-capabilities
 ```
 
-This command accepts the declared capabilities, registers the plugin, and enables
-it. GitHub workflows require explicit [configuration and installation](./channels/github/README.md#configuration).
+Then [configure your workspace](#usage).
 
 ### Codex
 
-Follow the [Codex installation and workspace setup guide](./CODEX.md#plugin-installation)
-to install the standalone plugin, approve its hooks, and bind your profile to a workspace.
+```sh
+npx --yes @tanaab/codex-tools install npm:@tanaab/openclaw-agent-system
+```
+
+Follow [Codex workspace setup](./CODEX.md#workspace-setup) to approve the hooks and bind your profile.
 
 ### From Source
 
-For an OpenClaw development checkout, follow [Install from source](./DEVELOPMENT.md#install-from-source).
-For standalone Codex source installation and cache updates, see [Codex development](./DEVELOPMENT.md#codex).
+With the [development prerequisites](./DEVELOPMENT.md#requirements) installed, link a local checkout to OpenClaw:
+
+```sh
+git clone https://github.com/tanaabased/openclaw-agent-system.git
+cd openclaw-agent-system
+bun run sync && openclaw plugins install --link . --accept-capabilities && openclaw plugins enable agent-system
+```
+
+See [source installation](./DEVELOPMENT.md#install-from-source) for verification and standalone Codex development.
 
 ## Usage
 
@@ -262,6 +240,22 @@ agent environment bindings rather than `openclaw.json` values. See
 [Manifest Reference](./MANIFEST.md) for all workspace settings,
 [CLI Reference](./CLI.md) for commands, and [Global Configuration](./CONFIG.md)
 for operator-owned plugin settings.
+
+## Version Compatibility
+
+| Agent System release | Minimum OpenClaw | Development target |
+| -------------------- | ---------------- | ------------------ |
+| 0.10.0 (upcoming)    | 2026.11.6        | 2026.11.6          |
+| 0.9.0–0.9.2          | 2026.10.6        | 2026.10.6          |
+| 0.8.0                | 2026.9.5         | 2026.9.6           |
+| 0.7.0                | 2026.9.5         | 2026.9.6           |
+| 0.6.0                | 2026.9.2         | 2026.9.3           |
+| 0.5.3                | 2026.7.1         | 2026.7.2           |
+
+The development target is the OpenClaw version tested for that release. For the
+upcoming release, OpenClaw-hosted Codex also requires `@openclaw/codex@2026.11.6`.
+The tested harnesses are OpenClaw native and OpenClaw-hosted Codex. See
+[Upgrading](./UPGRADING.md) for the order of host and plugin updates.
 
 ## Development
 
