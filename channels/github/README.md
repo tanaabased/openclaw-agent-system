@@ -27,8 +27,7 @@ For standalone Codex, complete [workspace binding and hook approval](../../CODEX
 and use the host's native Git and GitHub authorization.
 
 Merge these fields into your existing `agent.yaml` configuration, retaining other
-`github` settings. Replace the username and approved repository owners and assignment
-actors with yours:
+`github` settings. Set your username, repository routing patterns, and permitted assigners:
 
 ```yaml
 github:
@@ -88,7 +87,7 @@ Doctor checks setup; a completed scheduled run verifies unattended execution.
 ## Usage
 
 Each example provides a complete notification configuration for an already-set-up
-agent workspace. Choose one, replace the example accounts and repository owners,
+agent workspace. Choose one, replace the example accounts and repository patterns,
 and retain any existing GitHub credential and tool settings. These examples use
 OpenClaw; a bound Codex workspace can use `runtimes: [codex]` instead.
 
@@ -162,6 +161,21 @@ Assign an issue to `@tanaabot` as `@pirog`. Auto records its Plan or Work decisi
 Plan waits for direction, while Work proceeds to implementation and PR delivery.
 Additional assignments wait for capacity. Guidance shapes the decision without
 granting extra permissions.
+
+To let the agent find unassigned issues in routed repositories, add
+[`github.issue-pickup`](./CONFIG.md#githubissue-pickup) alongside `issue-assignment`.
+For example, this allows one pickup per window from issues labeled `bug` in Canon:
+
+```yaml
+issue-pickup:
+  projects:
+    - repository: tanaabased/canon
+      filters:
+        labels: [bug]
+```
+
+Run Install to create the **📥 ISSUE PICKUP** schedule. A picked issue enters Work
+mode. Direct assignments continue to use your configured mode.
 
 ## Chatting
 

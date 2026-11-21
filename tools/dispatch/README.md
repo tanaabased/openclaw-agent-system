@@ -14,8 +14,9 @@ skill below.
 - [Configuration](#configuration)
 - [`agent_system_context`](#agent_system_context)
 - [`agent_system_dispatch`](#agent_system_dispatch)
-  - [Parameters](#parameters)
-  - [Usage](#usage)
+  - [Inspect saved progress](#saved-discovery-inspection)
+  - [Launch an issue or PR](#manual-issue-launch)
+  - [Native cleanup](#native-cleanup)
 
 ## Requirements
 
@@ -57,7 +58,6 @@ supplies the current request, required inputs, and recovery instructions.
 
 | Capability                                           | Action                                | Owning instructions                                                                           |
 | ---------------------------------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Assemble current-turn Markdown output                | `response`                            | [Response assembly](#response-assembly)                                                       |
 | Assess an issue in the current checkout              | `assessment`                          | [Task Assessment](../../skills/task-assessment/SKILL.md)                                      |
 | Implement an authorized plan in the current checkout | `implementation`                      | [Task Implementation](../../skills/task-implementation/SKILL.md)                              |
 | Inspect saved discovery progress                     | `inspect`                             | [Saved discovery inspection](#saved-discovery-inspection)                                     |
@@ -72,36 +72,6 @@ The installed workflow also uses this tool internally. Follow the owning skill a
 returned task context rather than assembling an action sequence. Exact variants are
 in the [tool schema](./tool-schema.ts); shared behavior and recovery are in the
 [GitHub workflow guide](../../channels/github/README.md).
-
-### Response assembly
-
-Assemble this turn's task output without changing workflow state or contacting GitHub.
-Standalone Codex uses the supplied `dispatchRuntime` with `dispatch response` and its
-existing `--plugin-data` argument; OpenClaw uses the request below.
-
-#### Parameters
-
-| Parameter           | Type   | Required | Default | Description                                                                                                                 |
-| ------------------- | ------ | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `action`            | string | yes      | none    | `response`.                                                                                                                 |
-| `blocks`            | array  | no       | empty   | Additional authored Markdown blocks; existing presentation output comes from native current-turn history.                   |
-| `blocks[].markdown` | string | yes      | none    | Ordinary prose or card Markdown, preserved without interpretation.                                                          |
-| `blocks[].section`  | string | no       | `work`  | `assessment`, `assessment-reply`, `work`, `delivery`, `delivery-reply`, or `debug`. Order is preserved within each section. |
-
-#### Usage
-
-```json
-{
-  "action": "response",
-  "blocks": [{ "markdown": "Focused checks passed; live rendering remains unverified." }]
-}
-```
-
-Reproduce the returned Markdown and keep later prose as an addendum. History or
-formatting failure leaves available output readable; if native output limits prevent
-assembly, present the original findings and exact replies directly. Never rerun work
-or publication to recover presentation. The result does not prove final native text
-or desktop rendering.
 
 ### Saved discovery inspection
 
@@ -132,15 +102,6 @@ When returned, pass `nextOffset` as `offset` with the same filters to continue.
 inspection still returns the full retained list. Prefer a compact selected read when
 large journals would truncate tool output.
 
-OpenClaw also returns `discoveryCheckedAt` and `discoveryTimings` for its last completed
-discovery check. The assignment duration includes scope preparation; the feedback
-duration includes feedback setup. These are occurrence-wide timings, not per-item
-provider timings. Lifecycle reconciliation shares the remaining occurrence time with
-feedback. Lifecycle checks not reached keep their priority; attempted checks rotate
-behind older ones on later passes. An interrupted check keeps `lifecyclePending: true`
-and takes priority over completed checks from the same pass. `lifecycleCheckedAt`
-records an attempt, not proof that every lifecycle operation completed.
-
 <a id="manual-issue-launch"></a>
 
 Use `$agent-system-task-launch` with an issue or open same-repository PR URL, `owner/repo#number`, repository
@@ -169,10 +130,6 @@ unsafe refs and competing owners stop explicitly. A moved head needs fresh verif
 divergent collaborator work must be incorporated before a normal push. There is no
 replacement PR, force push, automatic merge or issue closure.
 
-In either runtime, a new issue-launch request leaves existing tasks active; no `fresh` flag is needed. Select an existing same-repository PR with `pullRequest`
-to start from its verified fetched head and later update that PR. A new issue launch alone
-does not select another task's PR.
-
 Use `recover` only for an explicit replacement of a stranded task. It preserves the
 predecessor's chat, checkout, and assessment, and refuses active or uncertain effects.
 For an existing task that only needs a different PR destination, use `delivery` with
@@ -184,20 +141,19 @@ or replacing the task. Follow the owning skills for preview, authorization, and 
 These parameters cover `launch`. Use the owning skill and
 [tool schema](./tool-schema.ts) for other actions.
 
-| Parameter     | Type    | Required                 | Default                  | Description                                                                                                                                                |
-| ------------- | ------- | ------------------------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `action`      | string  | yes                      | none                     | `launch`.                                                                                                                                                  |
-| `assessment`  | object  | for final preparation    | none                     | Existing model-routing complexity assessment and reason.                                                                                                   |
-| `fallback`    | string  | no                       | none                     | Existing explicit `default` profile selection when a requested work tier is not configured; never a model-failure fallback.                                |
-| `fresh`       | boolean | no                       | `false`                  | Legacy accepted field; new issue-launch requests already create independent tasks.                                                                         |
-| `mode`        | string  | no                       | current configuration    | `plan`, `work`, or `auto`; omitted mode defaults to Auto when unconfigured.                                                                                |
-| `operation`   | string  | yes                      | none                     | `context`, `prepare`, or `reconcile`.                                                                                                                      |
-| `pullRequest` | string  | no                       | none                     | Exact existing same-repository PR URL whose verified fetched head supplies the starting point.                                                             |
-| `repository`  | string  | when otherwise ambiguous | none                     | Explicit `owner/repository` for an issue number.                                                                                                           |
-| `routing`     | object  | no                       | configured model profile | Supported explicit `model` and/or `effort`, resolved through shared model routing.                                                                         |
-| `stages`      | object  | no                       | current configuration    | Assessment/implementation `skill` and/or inline or contained-file `guidance`.                                                                              |
-| `target`      | string  | yes                      | none                     | Issue or same-repository PR URL, or a supported repository-qualified number.                                                                               |
-| `title`       | string  | for final preparation    | none                     | Short description without repository or issue prefixes; punctuation and Unicode are allowed. The runtime adds the issue prefix and uppercase presentation. |
+| Parameter     | Type   | Required                 | Default                  | Description                                                                                                                                                |
+| ------------- | ------ | ------------------------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `action`      | string | yes                      | none                     | `launch`.                                                                                                                                                  |
+| `assessment`  | object | for final preparation    | none                     | Existing model-routing complexity assessment and reason.                                                                                                   |
+| `fallback`    | string | no                       | none                     | Existing explicit `default` profile selection when a requested work tier is not configured; never a model-failure fallback.                                |
+| `mode`        | string | no                       | current configuration    | `plan`, `work`, or `auto`; omitted mode defaults to Auto when unconfigured.                                                                                |
+| `operation`   | string | yes                      | none                     | `context`, `prepare`, or `reconcile`.                                                                                                                      |
+| `pullRequest` | string | no                       | none                     | Exact existing same-repository PR URL whose verified fetched head supplies the starting point.                                                             |
+| `repository`  | string | when otherwise ambiguous | none                     | Explicit `owner/repository` for an issue number.                                                                                                           |
+| `routing`     | object | no                       | configured model profile | Supported explicit `model` and/or `effort`, resolved through shared model routing.                                                                         |
+| `stages`      | object | no                       | current configuration    | Assessment/implementation `skill` and/or inline or contained-file `guidance`.                                                                              |
+| `target`      | string | yes                      | none                     | Issue or same-repository PR URL, or a supported repository-qualified number.                                                                               |
+| `title`       | string | for final preparation    | none                     | Short description without repository or issue prefixes; punctuation and Unicode are allowed. The runtime adds the issue prefix and uppercase presentation. |
 
 ### Usage
 

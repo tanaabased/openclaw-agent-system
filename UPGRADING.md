@@ -21,8 +21,8 @@ Its default chat name is `ISSUE PICKUP`, without the scheduler's emoji. Configur
 under `github.issue-pickup` and use `issue-pickup` in routing workflow lists.
 The former `github.project-pickup` key and routing value `project-pickup` are no
 longer accepted. Rename them to `issue-pickup` before upgrading, keeping the settings
-and the nested `projects` list. Configured thread names and IDs,
-retained journals, enrollment and assignment receipts remain unchanged.
+and the nested `projects` list. If you configured pickup timing with `schedule`
+or `window-minutes`, convert it to [start, window, and scans](./channels/github/CONFIG.md#githubissue-pickup).
 
 Run normal Install in each runtime to create the replacement. Verify its name,
 chat and native schedule, then manually delete the old scheduled automation.
@@ -52,11 +52,7 @@ Task workflow skills now use task terminology. Update explicit skill selections 
 | `agent-system-issue-launch`         | `agent-system-task-launch`         |
 
 Preserve the `agent-system:` qualifier where the host requires it. Omitted skill
-selections use the new defaults; old explicit IDs have no alias. Do not edit task
-journals or retained source snapshots to replace historical names. Renaming a skill does
-not change provider configuration keys such as `issue-assignment` or grant a new
-workflow stage. Refresh the installed plugin and open a new Codex chat to load its
-current skills.
+selections use the new defaults. After updating explicit IDs, refresh the plugin and open a new Codex chat.
 
 ## Minimum-Version Changes
 
@@ -109,40 +105,36 @@ and service-runtime details.
 
 ## GitHub workflow configuration
 
-Replace retired `github.notifications` V1/V2 declarations with the
-[current Version 3 configuration](./channels/github/CONFIG.md).
-Set `github.schema-version: 3` and place workflow fields directly under `github`;
-keep the outer workspace `schema-version: 1`. There is no compatibility alias or
-automatic configuration migration.
+Declare `github.routing` for every workspace that uses scheduled GitHub workflows.
+For example, to accept assignments in Tanaab repositories except those whose names start with `archive-`:
 
-Review the new identity-list and feedback rules rather than only moving keys.
-`issue-assignment.mode` defaults to `auto`; set `plan` explicitly if you want
-assessment without automatic implementation. Configured assignment actors and reviewers supply the feedback author set. Independent `review-request` execution
-is unavailable, even when its reserved configuration validates.
+```yaml
+github:
+  schema-version: 3
+  username: tanaabot
+  routing:
+    - '!tanaabased/archive-*'
+    - 'tanaabased/*'
+  issue-assignment:
+    allowed: ['@pirog']
+    mode: plan
+```
 
-Validate the updated manifest, then follow the
-[native automation activation and verification steps](./channels/github/README.md).
-Install creates the derived assignment automation; do not add a second copy under
-`automations`. A successful Install or queued refresh is not proof of completed
-issue work. Configuration conversion does not migrate saved workflow state.
+Replace `github.allowed-repository-owners` with patterns matching the repositories
+you intend. A renamed or transferred repository follows its current name. Put exceptions
+before broader rules because the first match wins. Keep the workspace-level
+`schema-version: 1` and put workflow fields directly under `github`. Preserve the
+workspace’s credentials and approved actors. Set `mode: plan` to require direction
+before implementation; the default is `auto`.
+
+Validate the manifest, run Install, and [verify intake](./channels/github/README.md#install-and-verify).
 
 ## Notification workflow state
 
-Saved history from before the reset in
-[#426](https://github.com/tanaabased/openclaw-agent-system/issues/426) is inactive.
-Agent System no longer reads, repairs, or resumes it as active work. Current tasks
-keep their stage and records of execution and publication.
-
-> [!WARNING]
-> Restore backups into staging, not the active state directory. Pre-reset notification
-> tracking stops with `notification-state-reset-required`; retired schema fields are
-> also rejected. Agent System preserves the original files.
-
-If you need to restore old tracking, use the supported notification reset with a
-compatible reset-capable release before upgrading. Do not delete journals or invent
-assignment events to force intake. Ordinary reset preserves issue chats, checkouts,
-branches, commits, pull requests, and assignments. Recovery for current interrupted
-work still checks that it belongs to the current reset generation.
+If an older installation reports `notification-state-reset-required`, back up the
+workspace and use [notification reset](./channels/github/CLI.md#openclaw-agent-system-notifications-reset)
+on a compatible release before upgrading. Restore backups to staging. Ordinary reset
+preserves issue chats, checkouts, branches, commits, pull requests, and assignments.
 
 ## Managed task cleanup
 

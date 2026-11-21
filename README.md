@@ -96,7 +96,7 @@ uses the [shared skills](#skills) through its native host interfaces.
 - [Install](./skills/install/SKILL.md) — Install the active workspace through its owning runtime.
 - [Model routing](./skills/model-routing/SKILL.md) — Select model and effort candidates for new tasks.
 - [Notifications reset](./skills/notifications-reset/SKILL.md) — Reset notification tracking, with optional purge of managed chats and checkouts.
-- [Task assessment](./skills/task-assessment/SKILL.md) — Investigate an issue and retain a plan, questions, or a setup blocker.
+- [Task assessment](./skills/task-assessment/SKILL.md) — Investigate an issue and present a plan or questions.
 - [Task implementation](./skills/task-implementation/SKILL.md) — Implement an authorized issue plan in the existing checkout.
 - [Task launch](./skills/task-launch/SKILL.md) — Start or reuse issue or existing same-repository PR work without scheduled intake.
 - [Task retirement](./skills/task-retirement/SKILL.md) — Retire a managed task or explicitly selected unmanaged native chat without changing GitHub state.
@@ -252,6 +252,7 @@ for operator-owned plugin settings.
 | 0.6.0                | 2026.9.2         | 2026.9.3           |
 | 0.5.3                | 2026.7.1         | 2026.7.2           |
 
+The upcoming release supports macOS and Linux with Node.js `>=24.22.1 <25 || >=26.12.1`.
 The development target is the OpenClaw version tested for that release. For the
 upcoming release, OpenClaw-hosted Codex also requires `@openclaw/codex@2026.11.6`.
 The tested harnesses are OpenClaw native and OpenClaw-hosted Codex. See

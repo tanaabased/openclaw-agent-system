@@ -79,6 +79,8 @@ github:
 | `spinner`           | `enabled`, `disabled` | no       | `enabled`  |
 | `telemetry`         | `enabled`, `disabled` | no       | `disabled` |
 
+Set `git-protocol: https` to use HTTPS for [managed GitHub checkouts](../git/worktree/README.md#gitworktrees) in OpenClaw and standalone Codex.
+
 Agent System keeps token-free configuration in private per-agent state and leaves
 the operator's `~/.config/gh` untouched. Managed commands disable prompts, editors,
 and interactive paging.

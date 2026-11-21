@@ -20,19 +20,19 @@ Request the installed intake automation, or scan one selected issue.
 
 ### Options
 
-| Option or argument             | Required             | Default             | Description                                                                  |
-| ------------------------------ | -------------------- | ------------------- | ---------------------------------------------------------------------------- |
-| `--agent <id>`                 | no                   | workspace discovery | Use the exact configured workspace for an installed agent.                   |
-| `--json`                       | no                   | off                 | Write one undecorated structured result to stdout.                           |
-| `--kind <issue\|pull-request>` | with other selectors | none                | Select the item kind; provide `--repository` and `--number` together.        |
-| `--number <number>`            | with other selectors | none                | Select a positive item number; provide `--repository` and `--kind` together. |
-| `--repository <owner/name>`    | with other selectors | none                | Select a repository; provide `--kind` and `--number` together.               |
-| `--timeout <seconds>`          | no                   | `300`               | Integer from `1` through `2147483` bounding the complete refresh cycle.      |
+| Option or argument          | Required             | Default             | Description                                                                  |
+| --------------------------- | -------------------- | ------------------- | ---------------------------------------------------------------------------- |
+| `--agent <id>`              | no                   | workspace discovery | Use the exact configured workspace for an installed agent.                   |
+| `--json`                    | no                   | off                 | Write one undecorated structured result to stdout.                           |
+| `--kind issue`              | with other selectors | none                | Select an issue by repository and number.                                    |
+| `--number <number>`         | with other selectors | none                | Select a positive item number; provide `--repository` and `--kind` together. |
+| `--repository <owner/name>` | with other selectors | none                | Select a repository; provide `--kind` and `--number` together.               |
+| `--timeout <seconds>`       | no                   | `300`               | Integer from `1` through `2147483` bounding the complete refresh cycle.      |
 
 ### Usage
 
 ```text
-openclaw agent-system notifications refresh [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--timeout <seconds>] [--json]
+openclaw agent-system notifications refresh [--agent <id>] [--repository <owner/name> --kind issue --number <number>] [--timeout <seconds>] [--json]
 ```
 
 ```sh
@@ -44,11 +44,10 @@ Without selectors, refresh returns `queued` and a native run ID. This confirms t
 request, not scan or assessment completion. Disabled or stale workflows fail without
 being enabled; an uncertain enqueue is reported rather than retried.
 
-With all three selectors and `--kind issue`, refresh scans only that issue and
-returns `completed` after checking whether the assignment qualifies. It does not start
-work or change
-the recurring schedule or account-wide checkpoint. Pull-request selectors are
-unsupported. Use [`status`](#openclaw-agent-system-notifications-status) to inspect results.
+With all three selectors, refresh checks whether that issue qualifies for assignment.
+It leaves the recurring schedule and account-wide checkpoint in place. The native
+coordinator starts eligible work. Use [status](#openclaw-agent-system-notifications-status)
+to inspect the result.
 
 ## `openclaw agent-system notifications reset`
 
@@ -123,18 +122,18 @@ Inspect saved notification state without starting work.
 
 ### Options
 
-| Option or argument             | Required             | Default             | Description                                                                  |
-| ------------------------------ | -------------------- | ------------------- | ---------------------------------------------------------------------------- |
-| `--agent <id>`                 | no                   | workspace discovery | Use the exact configured workspace for an installed agent.                   |
-| `--json`                       | no                   | off                 | Write one undecorated structured result to stdout.                           |
-| `--kind <issue\|pull-request>` | with other selectors | none                | Select the item kind; provide `--repository` and `--number` together.        |
-| `--number <number>`            | with other selectors | none                | Select a positive item number; provide `--repository` and `--kind` together. |
-| `--repository <owner/name>`    | with other selectors | none                | Select a repository; provide `--kind` and `--number` together.               |
+| Option or argument          | Required             | Default             | Description                                                                  |
+| --------------------------- | -------------------- | ------------------- | ---------------------------------------------------------------------------- |
+| `--agent <id>`              | no                   | workspace discovery | Use the exact configured workspace for an installed agent.                   |
+| `--json`                    | no                   | off                 | Write one undecorated structured result to stdout.                           |
+| `--kind issue`              | with other selectors | none                | Select an issue by repository and number.                                    |
+| `--number <number>`         | with other selectors | none                | Select a positive item number; provide `--repository` and `--kind` together. |
+| `--repository <owner/name>` | with other selectors | none                | Select a repository; provide `--kind` and `--number` together.               |
 
 ### Usage
 
 ```text
-openclaw agent-system notifications status [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--json]
+openclaw agent-system notifications status [--agent <id>] [--repository <owner/name> --kind issue --number <number>] [--json]
 ```
 
 ```sh
@@ -149,7 +148,6 @@ The optional `workflow` identifies the phase and chat; `workflowStatus` distingu
 `delivery` still needs verified PR publication; `delivered-response-pending` means
 publication is verified but an announcement or presentation remains.
 `delivered` settles that delivery round; the issue chat remains available for follow-up.
-Only issue selectors are supported.
 
 `clarification-needed` waits for an answer, `policy-held` waits for eligible policy,
 and `retrying` has a scheduled backoff. `needs-attention` identifies a failure without
@@ -160,16 +158,8 @@ Use Doctor for missing or disabled schedules and Install to reconcile drift. Res
 interrupted work in its [existing chat](./README.md#chatting), rather than resetting
 tracking to force a retry.
 
-Doctor, notification status, and intake reports show journal pressure and protected
-records. Both runtimes warn at 16 MiB and pause new scheduled or manual tasks at
-32 MiB. Existing tasks can continue within the 64 MiB content ceiling. These fixed
-limits are not configurable recovery settings.
-
-Verified retirement removes the task’s local records and copied history. Retry the reported
-operation in the same chat after reconciliation; admission resumes below 32 MiB
-when there is room for the task. Active work can still exhaust capacity. Do not
-delete state or mark work successful to free space. Offloaded detail expires after
-30 days or eviction from its 64 MiB budget.
+If intake reports storage pressure, finish or retire eligible tasks through their
+original chats. Retry after cleanup. Deleting local tracking files can lose active work.
 
 For an OpenClaw readiness probe, use:
 
@@ -188,21 +178,21 @@ Wait for a retained workflow checkpoint.
 
 ### Options
 
-| Option or argument             | Required             | Default             | Description                                                                  |
-| ------------------------------ | -------------------- | ------------------- | ---------------------------------------------------------------------------- |
-| `--agent <id>`                 | no                   | workspace discovery | Use the exact configured workspace for an installed agent.                   |
-| `--for <target>`               | yes                  | none                | Select a supported lifecycle checkpoint below.                               |
-| `--json`                       | no                   | off                 | Write one undecorated structured result to stdout.                           |
-| `--kind <issue\|pull-request>` | with other selectors | none                | Select the item kind; provide `--repository` and `--number` together.        |
-| `--number <number>`            | with other selectors | none                | Select a positive item number; provide `--repository` and `--kind` together. |
-| `--refresh`                    | no                   | off                 | Request native workflow runs while waiting.                                  |
-| `--repository <owner/name>`    | with other selectors | none                | Select a repository; provide `--kind` and `--number` together.               |
-| `--timeout <seconds>`          | no                   | `300`               | Integer from `1` through `2147483` bounding the complete wait.               |
+| Option or argument          | Required             | Default             | Description                                                                  |
+| --------------------------- | -------------------- | ------------------- | ---------------------------------------------------------------------------- |
+| `--agent <id>`              | no                   | workspace discovery | Use the exact configured workspace for an installed agent.                   |
+| `--for <target>`            | yes                  | none                | Select a supported lifecycle checkpoint below.                               |
+| `--json`                    | no                   | off                 | Write one undecorated structured result to stdout.                           |
+| `--kind issue`              | with other selectors | none                | Select an issue by repository and number.                                    |
+| `--number <number>`         | with other selectors | none                | Select a positive item number; provide `--repository` and `--kind` together. |
+| `--refresh`                 | no                   | off                 | Request native workflow runs while waiting.                                  |
+| `--repository <owner/name>` | with other selectors | none                | Select a repository; provide `--kind` and `--number` together.               |
+| `--timeout <seconds>`       | no                   | `300`               | Integer from `1` through `2147483` bounding the complete wait.               |
 
 ### Usage
 
 ```text
-openclaw agent-system notifications wait [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] --for <target> [--refresh] [--timeout <seconds>] [--json]
+openclaw agent-system notifications wait [--agent <id>] [--repository <owner/name> --kind issue --number <number>] --for <target> [--refresh] [--timeout <seconds>] [--json]
 ```
 
 ```sh

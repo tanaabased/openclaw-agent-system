@@ -36,9 +36,6 @@ The strict loader rejects unknown or incorrectly cased keys, unsafe symlinks, fi
 larger than 1 MiB, invalid UTF-8, duplicate keys, unresolved aliases, cycles, and
 unsupported tags. All manifest and included setup/automation YAML uses YAML 1.2
 core scalar rules, core tags such as `!!str`, and YAML's shallow merge extension.
-Alias expansion is bounded by the YAML library's safety limit; expanded traversal
-(including merge aliases) may not exceed one node per permitted input byte.
-
 Use the optional `definitions` mapping in `agent.yaml` or `agent.local.yaml` to
 hold arbitrary helper data. Helpers become configuration only where you explicitly
 reference them; `definitions` is omitted from the normalized manifest. Other
@@ -345,16 +342,6 @@ runtime; `group` still controls placement. `independent` stays independent; `{ t
 an exact existing target and never creates a replacement. Multiple active Codex jobs
 explicitly targeting the same native conversation fail with a conflict.
 
-Agent System records the creation attempt before asking the runtime to create a
-conversation. OpenClaw can recover an interrupted attempt using its saved session key.
-Codex saves the returned ID before completing setup. If that response is lost, creation
-remains uncertain and another attempt is blocked. Keep the journal and resolve the
-native identity before retrying.
-
-OpenClaw changes routing on its existing native job. Codex changes between independent
-and persistent routing by first pausing and retaining the old native schedule, then
-creating its replacement. Old schedule history and conversation bindings remain.
-
 Set `thread` on an OpenClaw command to report each run in a saved chat.
 
 ```yaml
@@ -390,9 +377,7 @@ without `thread` remain model-free.
 
 Report turns retain the agent's normal tool availability, with instructions to format
 only the captured result. Agent System blocks tool calls that reach its execution
-hook; this is not guaranteed isolation from every runtime-native tool. Agent System
-doesn't turn blocked attempts into separate policy-violation reports or change the
-captured command outcome.
+hook; this is not guaranteed isolation from every runtime-native tool.
 
 Reports sanitize each stream, cap excerpts at 16 KiB, and disclose truncation; full
 permitted output stays in native run history. Command status, not model explanations
@@ -435,41 +420,13 @@ Prompt jobs normally start a separate session for the configured agent. They use
 resolved shared model and effort, then runtime overrides; absent settings inherit
 native defaults. Persistent jobs reuse their verified session and conversation history.
 Results stay in native run history; commands with a reporting chat also append there.
-Command runs retain
-bounded stdout and stderr, even without delivery. Authorized Gateway operators can
-inspect output and truncation in run details; setup output stays private. Agent System
-inherits OpenClaw capture defaults and forwards captured output without another cap.
-Install and automation sync update existing managed command jobs with an explicit
-`outputMaxBytes` to 16 MiB per stream; new jobs inherit OpenClaw defaults.
+Authorized Gateway operators can inspect captured stdout and stderr in run details.
+Command timeouts range from 1 to 3600 seconds (default 1800). Reporting can finish
+after the command exits. If the report fails, check [automation run history](./CLI.md#openclaw-agent-system-automations-runs)
+before deciding whether to run the command again.
 
-Command timeouts range from 1 to 3600 seconds (default 1800). Reporting adds 35
-seconds for termination and submission; formatting may finish later. Without
-reporting, the timeout includes wrapper startup.
-
-Reporting failure never changes the command result or reruns it. Recovery checks
-saved reports on completion and restart; uncertain submissions are not blindly retried.
-Inspect report status with [`automations runs`](./CLI.md#openclaw-agent-system-automations-runs).
-Unrelated manifest edits do not invalidate captured reports; the current job, owner,
-and destination must still match. Recovery scans unresolved reports only. Completed
-report records are retained for 30 days and pruned during daily recovery maintenance;
-pending and uncertain records are never age-pruned. Expired captures cannot be
-submitted again after their history is removed. Native chat history is unchanged.
-A kill before results are saved leaves only native execution history.
-
-OpenClaw controls overlapping runs of the same job, retries, recovery, and daylight saving time;
-Agent System does not add another retry loop. Completion, cancellation, and timeout
-revoke temporary authority and release managed resources. A forced process termination
-can prevent immediate filesystem cleanup.
-
-Agent System saves job ownership outside the repository, scoped to the OpenClaw
-profile, workspace, agent ID, and manifest ID. Install leaves unchanged jobs alone.
-Removing a declaration disables the job but keeps its mapping and history; restoring
-the same ID reuses the job while it exists.
-
-Once both the declaration and native job are gone, synchronization retires ownership
-after complete operator inspection with no unresolved writes. Doctor treats the saved
-retirement record as history. Reusing a retired ID requires explicit recovery; use a
-new ID for a new automation.
+Removing a declaration disables its job and preserves its history. Restoring the same
+ID reuses the job while it exists. Use a new ID for a new automation.
 
 Relative one-shot anchors survive payload edits, pause/resume, and removal. A completed
 one-shot runs again only if you change its manifest trigger. A job disabled by native
@@ -527,15 +484,9 @@ Verify a real scheduled run to check execution. The adapter can inspect saved se
 but does not expose run-now controls, run history, or execution and delivery results.
 A separately requested manual task does not verify the schedule.
 
-Agent System tracks owned jobs privately. Native edits to managed fields are drift;
-notification preferences remain native-owned. Install leaves unchanged jobs alone.
-Removed declarations pause jobs and retain history; reintroduced IDs reuse retained
-native jobs. If both a declaration and its native job are gone, Install or automation
-sync retires the ownership record after complete inspection and fresh absence checks.
-Doctor stays read-only and reports retired history without blocking other jobs.
-Pending writes or incomplete inspection prevent retirement. A retired ID cannot be
-silently recreated; use a new ID for a new automation.
-Unrelated jobs are not adopted by name. Unknown saved schemas stop inspection.
+Install reconciles managed settings. Set notification preferences in Codex.
+Removing a declaration pauses its job and preserves its history. Restoring the same
+ID reuses the retained job. Use a new ID for a new automation.
 
 For Codex `automation-thread-model-drift`, rerun Install to reconcile the existing managed
 chat. Doctor reports requested and observed values without applying changes. Codex
@@ -543,28 +494,10 @@ settings updates require CLI `0.160.1` or newer and its experimental settings AP
 unsupported native operations remain explicit errors. Settings-only updates never
 create a replacement chat or generate a model turn.
 
-`automation-thread-settings-busy` means Codex still owns the chat's writer, which can
-include an idle desktop-loaded chat. Release that chat in the native app and rerun
-Install. Agent System does not interrupt it or schedule an automatic idle retry.
-`automation-thread-settings-denied` or `automation-thread-settings-uncertain`
-retains the attempt without replay. Inspect
-native settings and, if needed, apply the retained request shown by Doctor through
-supported native controls. Matching saved values clear the receipt on a later Install. Correcting
-authorization alone does not replay a denied attempt; do not delete ownership records.
-If you withdraw a denied change and the declaration matches the same chat's current
-settings, rerun Install to clear the obsolete request without changing the chat.
-Reverting a declaration does not clear an uncertain update whose outcome is still unknown.
-A conflict or missing chat stops the update; earlier verified changes remain applied.
-
-For OpenClaw command reports, settings selection and its recovery belong to execution,
-not Install or Doctor. A denied or uncertain selection fails that report without
-replaying the update. Inspect the declared model and effort and the same native chat's
-settings through supported native controls. Matching saved settings clear the retained
-attempt on a later execution; authorization changes alone do not replay a denial.
-
-For `automation-journal-busy`, confirm no installation or synchronization is running
-before removing only the stale Agent System `.lock` directory. Never edit native
-scheduler files or delete Agent System's ownership records.
+For `automation-thread-settings-busy`, close the chat in the desktop app and rerun
+Install. For a denied or uncertain update, inspect the chat’s saved settings and
+the change Doctor reports. Apply the intended change through native controls,
+then rerun Install to verify it.
 
 #### Schedules
 
@@ -617,13 +550,6 @@ deadline: native jitter or catch-up can launch the last occurrence later.
 After exhaustion, unchanged jobs remain stopped; native Codex may reject active
 updates or resume with “no future runs.” Agent System does not renew the allowance
 or replace that native behavior. Use a new automation ID for a new lifetime.
-
-#### Effective content and trigger identity
-
-Formatting-only edits do not cause drift; prompt/script content and argv order do.
-Only the selected runtime's overrides apply. Executable dependencies are not
-recursively hashed. Payload, timeout, and enabled-state edits preserve one-shot
-trigger identity; activation and completion state belong to reconciliation.
 
 ### `backup`
 
@@ -855,17 +781,14 @@ Identifies the manifest schema. Version `1` is the only accepted value.
 Use `setup-host` to install dependencies before Agent System configures the agent
 and tools. Use `setup-agent` for commands that need that configured identity and tools.
 Install runs both phases. Optional checks support repeat installation and Doctor.
-The deprecated `setup` key supplies `setup-agent` only when it is absent;
-an unused `setup` declaration is still validated.
 
 Omit setup already handled by first-party configuration. Keep checks read-only and
 apply commands safe to repeat: scripts can change files and external services.
 
-| Top-level key | Type              | Required | Default | Behavior                                                                  |
-| ------------- | ----------------- | -------- | ------- | ------------------------------------------------------------------------- |
-| `setup`       | setup declaration | no       | none    | Deprecated fallback for `setup-agent`; ignored when `setup-agent` exists. |
-| `setup-agent` | setup declaration | no       | none    | Runs after managed-tool prerequisites.                                    |
-| `setup-host`  | setup declaration | no       | none    | Runs before agent and managed-tool reconciliation.                        |
+| Top-level key | Type              | Required | Default | Behavior                                           |
+| ------------- | ----------------- | -------- | ------- | -------------------------------------------------- |
+| `setup-agent` | setup declaration | no       | none    | Runs after managed-tool prerequisites.             |
+| `setup-host`  | setup declaration | no       | none    | Runs before agent and managed-tool reconciliation. |
 
 #### Syntax
 
