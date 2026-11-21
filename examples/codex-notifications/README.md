@@ -180,7 +180,7 @@ plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 printf '%s\n' '{"automationId":"fixture-native-intake","code":"codex-host-access-required"}' \
   | node "$runtime" intake failure-response --plugin-data "$root/uncreated-failure-data" \
-  | jq -e '.status == "failure" and (.response | startswith("<heartbeat>")) and (.response | endswith("</heartbeat>")) and (.response | contains("<decision>NOTIFY</decision>")) and (.response | contains("> ## ⚠️ Codex needs access to its tracking files\n>\n>")) and (.response | contains("> - **Technical detail:**")) and (.response | contains("native host approval")) and (.response | contains("codex-host-access-required"))'
+  | jq -e '.status == "failure" and (.response | startswith("<heartbeat>")) and (.response | endswith("</heartbeat>")) and (.response | contains("<decision>NOTIFY</decision>")) and (.response | contains("> ## ⚠️ CODEX NEEDS ACCESS TO ITS TRACKING FILES\n>\n>")) and (.response | contains("> - **Technical detail:**")) and (.response | contains("native host approval")) and (.response | contains("codex-host-access-required"))'
 test ! -e "$root/uncreated-failure-data"
 
 # should distinguish a required automation update from first-time setup in the packaged failure response
