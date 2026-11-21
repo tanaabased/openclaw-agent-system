@@ -9,6 +9,7 @@ import httpResponses from './aimock-http-responses.ts';
 import resolveExampleModelScenario from './example-model-scenarios.ts';
 import withToolSearch from './aimock-tool-search.ts';
 import captureFixtureErrors from './aimock-fixture-errors.ts';
+import { matchesOpenClawAIMockToolCallId } from './aimock-tool-result.ts';
 
 const { values: options } = parseArgs({
   options: {
@@ -51,10 +52,27 @@ const observeReasoning = [
   'openclaw-automation-recovery',
   'openclaw-automation-command-chat',
 ].includes(scenario.id);
+const observeResponses = ['openclaw-runtimes', 'openclaw-lifecycle-approvals'].includes(
+  scenario.id,
+);
+const rejectedResponses: object[] = [];
+const frameTypes = new Set([
+  'message',
+  'reasoning',
+  'function_call',
+  'function_call_output',
+  'custom_tool_call',
+  'custom_tool_call_output',
+  'tool_search_call',
+  'tool_search_output',
+  'local_shell_call',
+  'local_shell_call_output',
+]);
 const responses: Mountable = {
   ...httpResponses,
-  async handleRequest(req) {
-    if (observeReasoning && req.method === 'POST') {
+  async handleRequest(req, res) {
+    const observeFrames = observeResponses;
+    if ((observeReasoning || observeFrames) && req.method === 'POST') {
       // AIMock's normalized journal drops Responses reasoning options.
       const chunks: Buffer[] = [];
       let remaining = 10 * 1024 * 1024;
@@ -72,13 +90,43 @@ const responses: Mountable = {
       req.once('end', () => {
         if (remaining < 0) return;
         try {
-          const { model, reasoning } = JSON.parse(Buffer.concat(chunks).toString());
-          if (typeof model !== 'string') return;
-          reasoningRequests.push({
-            model,
-            effort: typeof reasoning?.effort === 'string' ? reasoning.effort : null,
-          });
-          if (reasoningRequests.length > 100) reasoningRequests.shift();
+          const { model, reasoning, input, previous_response_id } = JSON.parse(
+            Buffer.concat(chunks).toString(),
+          );
+          if (observeReasoning && typeof model === 'string') {
+            reasoningRequests.push({
+              model,
+              effort: typeof reasoning?.effort === 'string' ? reasoning.effort : null,
+            });
+            if (reasoningRequests.length > 100) reasoningRequests.shift();
+          }
+          if (observeFrames) {
+            const ids = new Map<string, number>();
+            const reference = (id: unknown) => {
+              if (typeof id !== 'string' || !id) return undefined;
+              if (!ids.has(id)) ids.set(id, ids.size + 1);
+              const authored = scenario.toolCalls.findIndex((call) =>
+                matchesOpenClawAIMockToolCallId(id, call.id),
+              );
+              return { ref: ids.get(id), authored: authored < 0 ? undefined : authored + 1 };
+            };
+            const items = Array.isArray(input) ? input : [];
+            const trace = {
+              inputCount: items.length,
+              previousResponse: typeof previous_response_id === 'string',
+              frames: items.slice(-20).map((item) => ({
+                type: frameTypes.has(item?.type) ? item.type : 'other',
+                itemId: reference(item?.id),
+                callId: reference(item?.call_id),
+                hasName: typeof item?.name === 'string' && item.name.length > 0,
+              })),
+            };
+            res.once('finish', () => {
+              if (res.statusCode !== 503) return;
+              rejectedResponses.push(trace);
+              if (rejectedResponses.length > 8) rejectedResponses.splice(1, 1);
+            });
+          }
         } catch {
           // AIMock still owns malformed request handling.
         }
@@ -123,6 +171,7 @@ const evidenceService: Mountable = {
       const diagnostics = {
         ...openClawAIMockDiagnostics(scenario, mock.getRequests()),
         ...(fixtureErrors.length ? { failed: true, fixtureErrors } : {}),
+        ...(rejectedResponses.length ? { rejectedResponses } : {}),
       };
       json(res, diagnostics.failed ? 500 : 200, diagnostics);
       return true;

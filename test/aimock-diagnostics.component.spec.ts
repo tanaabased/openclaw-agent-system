@@ -7,6 +7,92 @@ import { promisify } from 'node:util';
 const execFileAsync = promisify(execFile);
 
 describe('scripts/aimock-server diagnostics', () => {
+  it('should correlate rejected responses frames without exposing request data', async () => {
+    const child = spawn(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        'scripts/aimock-server.ts',
+        '--scenario',
+        'openclaw-runtimes',
+        '--port',
+        '0',
+      ],
+      { stdio: ['ignore', 'pipe', 'ignore'] },
+    );
+    const exited = once(child, 'exit');
+    const lines = createInterface({ input: child.stdout });
+    try {
+      const signal = AbortSignal.timeout(5000);
+      const [url] = await once(lines, 'line', { signal });
+      const sender = {
+        type: 'function_call_output',
+        namespace: 'agent',
+        name: 'openclaw_current_sender',
+        output: 'private-sender',
+      };
+      const user = { role: 'user', content: 'agent-system-runtime-probe codex' };
+      const send = (input: object[]) =>
+        fetch(`${url}/v1/responses`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          signal,
+          body: JSON.stringify({
+            model: 'gpt-5.4-nano',
+            tools: [{ type: 'function', name: 'exec_command', parameters: { type: 'object' } }],
+            input,
+          }),
+        });
+      const opening = await send([sender, user]);
+      assert.equal(opening.status, 200);
+      assert.match(await opening.text(), /call_runtime_codex_exec/u);
+      const output = {
+        type: 'function_call_output',
+        call_id: 'call_runtime_codex_exec',
+        output: 'runtime-boundary-verified\nProcess exited with code 0.',
+      };
+      const completion = await send([sender, user, output]);
+      assert.equal(completion.status, 200);
+      assert.match(await completion.text(), /runtime-codex-exec-ready/u);
+
+      const response = await fetch(`${url}/v1/responses`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        signal,
+        body: JSON.stringify({
+          model: 'gpt-5.4-nano',
+          input: [
+            { type: 'function_call', call_id: 'private-id', name: 'private-tool', arguments: '{}' },
+            { type: 'custom_tool_call_output', call_id: 'private-id', output: 'private-output' },
+          ],
+        }),
+      });
+      assert.equal(response.status, 503);
+      await response.text();
+      const proof = await fetch(`${url}/proof/diagnostics`, { signal });
+      const report = (await proof.json()) as { rejectedResponses: unknown };
+      assert.deepEqual(report.rejectedResponses, [
+        {
+          inputCount: 2,
+          previousResponse: false,
+          frames: [
+            { type: 'function_call', callId: { ref: 1 }, hasName: true },
+            { type: 'custom_tool_call_output', callId: { ref: 1 }, hasName: false },
+          ],
+        },
+      ]);
+      assert.doesNotMatch(JSON.stringify(report.rejectedResponses), /private-/u);
+      const wrongCall = await send([sender, user, { ...output, call_id: 'wrong_call' }]);
+      assert.equal(wrongCall.status, 503);
+      await wrongCall.text();
+    } finally {
+      lines.close();
+      child.kill('SIGTERM');
+      await exited;
+    }
+  });
+
   it('should expose a strict miss through curl failure output and still stop cleanly', async () => {
     const child = spawn(
       process.execPath,

@@ -17,6 +17,15 @@ export default function intakeAutomationNotice(code: string, automationId?: stri
         : 'Run Agent System Install to apply the update and resume intake.',
     };
   }
+  if (code === 'automation-recovery-required')
+    return {
+      severity: 'warning' as const,
+      emoji: '⚠️',
+      title: 'Intake automation needs verification',
+      summary:
+        'The saved intake automation could not be verified. New intake is blocked; existing chats and work are retained.',
+      next: 'Check Doctor for recovery steps before retrying intake.',
+    };
   if (code === 'intake-activation-required')
     return {
       severity: 'warning' as const,

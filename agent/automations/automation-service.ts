@@ -29,6 +29,7 @@ import {
   type NativeAutomation,
 } from './automation-gateway.ts';
 import { AutomationError } from './automation-errors.ts';
+import { automationReconciliationState, commandConfigurationMatches } from './automation-drift.ts';
 import {
   automationPatch,
   effectiveAutomation,
@@ -115,43 +116,6 @@ function pendingNativeHash(record: AutomationRecord, native: NativeAutomation): 
       return beforeCompletion;
   }
   return nativeAutomationHash(native);
-}
-
-function commandConfigurationMatches(
-  job: ResolvedAutomation,
-  context: AutomationProjectionContext,
-  native: NativeAutomation,
-  hash: string,
-): boolean {
-  if (effectiveAutomation(job, context).hash === hash) return true;
-  if (job.origin === 'builtin' || native.payload.kind !== 'command') return false;
-
-  // compare using verified installed launcher inputs, not incidental runner settings.
-  const { argv, env } = native.payload;
-  if (
-    !Array.isArray(argv) ||
-    !argv.every((value): value is string => typeof value === 'string') ||
-    argv.length <= 6 ||
-    automationHash(argv.slice(-6)) !==
-      automationHash(['agent-system', 'automation-execute', '--id', job.id, '--hash', hash])
-  )
-    return false;
-  const environment = env ?? {};
-  if (
-    !nativeObject(environment) ||
-    Object.values(environment).some((value) => typeof value !== 'string')
-  )
-    return false;
-  const installedContext = {
-    ...context,
-    command: argv.slice(0, -6),
-    environment: environment as Record<string, string>,
-  };
-  return (
-    effectiveAutomation(job, installedContext).hash === hash ||
-    (typeof native.schedule.tz === 'string' &&
-      effectiveAutomation(job, { ...installedContext, timezone: native.schedule.tz }).hash === hash)
-  );
 }
 
 /** native failure reasons are bounded protocol values; never copy raw lastError or diagnostics. */
@@ -444,6 +408,7 @@ export default class AutomationService {
       record.triggerHash = effective.triggerHash;
       // retain the restored setting; the temporary pause is not installed drift.
       record.nativeHash = nativeAutomationHash({ ...after, enabled: expected.enabled });
+      record.projectionTimezone = context.timezone;
       await store.write(ledger);
       return { ...expected, sessionKey: target, hash: nativeAutomationHash(after) };
     });
@@ -760,16 +725,12 @@ export default class AutomationService {
           );
           continue;
         }
-        const desired = projectAutomation(job, record, context, native);
-        if (
-          retainedOneShot(native) &&
-          record.triggerHash === effectiveAutomation(job, context).triggerHash
-        )
-          desired.enabled = false;
-        const drift =
-          record.hash !== effectiveAutomation(job, context).hash ||
-          record.removed ||
-          nativeAutomationHash(native) !== nativeAutomationHash(desired);
+        const reconciliation = automationReconciliationState(job, context, record, native);
+        if (reconciliation === 'recovery') {
+          findings.push(finding(job.id, 'blocked', 'automation-recovery-required'));
+          continue;
+        }
+        const drift = reconciliation === 'drift';
         findings.push(
           finding(
             job.id,
@@ -1294,6 +1255,7 @@ export default class AutomationService {
               nativeAutomationHash(desired),
             );
           record.nativeHash = nativeAutomationHash(native);
+          record.projectionTimezone = context.timezone;
           record.removed = false;
           if (job.origin !== 'builtin' && job.payload.kind === 'command') {
             const reportTarget = this.commandReportTarget(job, native, context, store.scope);
@@ -1628,7 +1590,8 @@ export default class AutomationService {
           native,
           command: { ...installed.run, timeoutSeconds: installed.timeoutSeconds },
           displayName: matching?.displayName,
-          configurationDrift: !matching && !commandConfigurationMatches(job, context, native, hash),
+          configurationDrift:
+            automationReconciliationState(job, context, record, native) === 'drift',
           context,
           reportTarget: matching
             ? this.commandReportTarget(matching, native, context, store.scope)

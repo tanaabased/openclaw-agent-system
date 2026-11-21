@@ -95,6 +95,7 @@ jq -e --arg id "$native" --arg run "$run_id" 'if any(.entries[]; .jobId == $id a
 test "$(wc -l < "$TMPDIR/agent-system-approval-apply" | tr -d ' ')" = 1
 
 # should complete all lifecycle approval turns through strict aimock
+grep -aE '^(openclaw-runtimes|openclaw-lifecycle-approvals): unmatched tool exchange |^automation command report fixture rejected: ' "$TMPDIR/openclaw-aimock.log" | tail -n 12 >&2 || true
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/diagnostics
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | tee "$TMPDIR/lifecycle-approvals-evidence.json"
 jq -e '.scenario == "openclaw-lifecycle-approvals" and .strictMissCount == 0 and .finalResponseCount >= 4 and .finalResponseCount <= 5 and any(.tools[]; .name == "agent_system_doctor" and .callResponseCount == 3 and .resultRequestCount == 3) and any(.tools[]; .name == "agent_system_install" and .callResponseCount >= 2 and .callResponseCount <= 3 and .resultRequestCount >= 3 and .resultRequestCount <= 4)' "$TMPDIR/lifecycle-approvals-evidence.json"

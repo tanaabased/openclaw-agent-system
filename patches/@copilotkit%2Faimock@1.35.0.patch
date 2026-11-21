@@ -1,3 +1,21 @@
+diff --git a/dist/responses.js b/dist/responses.js
+--- a/dist/responses.js
++++ b/dist/responses.js
+@@ -52 +52,4 @@
+-	else if (item.type === "function_call_output") {
++	else if (item.type === "function_call_output") {
++		// Gateway sender context is not an executed tool result.
++		if (item.namespace === "agent" && item.name === "openclaw_current_sender" && item.call_id == null) continue;
++
+diff --git a/dist/responses.cjs b/dist/responses.cjs
+--- a/dist/responses.cjs
++++ b/dist/responses.cjs
+@@ -52 +52,4 @@
+-	else if (item.type === "function_call_output") {
++	else if (item.type === "function_call_output") {
++		// Gateway sender context is not an executed tool result.
++		if (item.namespace === "agent" && item.name === "openclaw_current_sender" && item.call_id == null) continue;
++
 diff --git a/dist/ws-framing.cjs b/dist/ws-framing.cjs
 index 73fba462696888260d7f2fbdc97c3f8b3163fc97..8f5af03426c6b805a84f27dec3747f58f98a4ca2 100644
 --- a/dist/ws-framing.cjs

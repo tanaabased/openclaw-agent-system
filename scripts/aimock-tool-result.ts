@@ -54,4 +54,42 @@ export function openClawAIMockToolResultText(
   return message === undefined ? undefined : contentText(message.content);
 }
 
+/** Explain a fixture miss without logging prompts, tool arguments, or tool output. */
+export function traceOpenClawAIMockToolResults(
+  scenario: string,
+  messages: readonly (AIMockToolResultMessage & {
+    tool_calls?: readonly { id: string; function?: { name?: string } }[];
+  })[],
+  calls: readonly { id: string; name: string }[],
+): false {
+  const correlate = (id: string | undefined) =>
+    id === undefined
+      ? undefined
+      : calls.find((call) => matchesOpenClawAIMockToolCallId(id, call.id))?.id;
+  const frames = messages.flatMap<object>((message) => {
+    if (message.role === 'tool') {
+      const content = contentText(message.content);
+      return [
+        {
+          kind: 'result',
+          idPresent: Boolean(message.tool_call_id),
+          call: correlate(message.tool_call_id) ?? 'unmatched',
+          approvalDenied: /denied by user/iu.test(content),
+          approvalUnavailable: /approval[-_ ]unavailable/iu.test(content),
+        },
+      ];
+    }
+    return (message.tool_calls ?? []).map((call) => ({
+      kind: 'call',
+      idPresent: Boolean(call.id),
+      namePresent: Boolean(call.function?.name),
+      call: correlate(call.id) ?? 'unmatched',
+    }));
+  });
+  process.stderr.write(
+    `${scenario}: unmatched tool exchange ${JSON.stringify(frames.slice(-20))}\n`,
+  );
+  return false;
+}
+
 export default hasOpenClawAIMockToolResult;

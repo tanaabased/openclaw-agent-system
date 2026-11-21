@@ -592,7 +592,7 @@ describe('agent/codex-intake', () => {
       await writeFile(path, JSON.stringify(pendingIntakeLedger));
       await assert.rejects(
         inspectCodexDispatchActivation(pluginData, deps, false, false, 'intake'),
-        /intake-automation-update-required/,
+        /automation-recovery-required/,
       );
       await writeFile(path, original);
       const ledger = JSON.parse(original);

@@ -81,9 +81,10 @@ describe('agent/automation-service', () => {
       prompt: 'hidden version one',
     });
     manifest.automations[0]!.displayName = 'Renamed without synchronization';
-    assert.deepEqual(await resolveAutomationPrompt(service, scheduler, manifest, run), {
-      prompt: 'hidden version one',
-    });
+    assert.match(
+      (await resolveAutomationPrompt(service, scheduler, manifest, run)).prompt!,
+      /^hidden version one\n[\s\S]*Update available/u,
+    );
     delete manifest.automations[0]!.displayName;
     const { store } = await service.scope(manifest, root);
     const originalLedger = await store.read();
@@ -122,11 +123,9 @@ describe('agent/automation-service', () => {
     native[0]!.payload.message = 'hidden version two';
     ledger.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
     await store.write(ledger);
-    assert.deepEqual(
-      await resolveAutomationPrompt(service, scheduler, manifest, run),
-      {},
-      'legacy full prompts must not be injected twice',
-    );
+    const legacyPrompt = await resolveAutomationPrompt(service, scheduler, manifest, run);
+    assert.match(legacyPrompt.prompt!, /Update available/u);
+    assert.doesNotMatch(legacyPrompt.prompt!, /hidden version two/u);
     await service.reconcile(manifest, root);
     assert.deepEqual(await resolveAutomationPrompt(service, scheduler, manifest, run), {
       prompt: 'hidden version two',
@@ -1758,6 +1757,8 @@ describe('agent/automation-service', () => {
       'report',
       effectiveAutomation(job, context).hash,
     );
+    assert.equal(admitted.reportTarget?.sessionKey, chat?.key);
+    assert.equal(admitted.configurationDrift, false);
     const executionId = randomUUID();
     const report = {
       version: 1 as const,
@@ -2677,7 +2678,7 @@ describe('agent/automation-service', () => {
       timezone: 'America/New_York',
     });
     manifest.automations = jobs([
-      { id: 'check', schedule: '0 1 * * *', run: ['gh', 'api', 'user'] },
+      { id: 'check', schedule: 'every 1 hour', run: ['gh', 'api', 'user'] },
     ]);
     await installer.reconcile(manifest, root);
     const { store } = await installer.scope(manifest, root);
@@ -2691,8 +2692,26 @@ describe('agent/automation-service', () => {
     const admitted = await runner.admit(manifest, root, 'check', hash);
     assert.equal(admitted.command.kind, 'exec');
     assert.equal(admitted.configurationDrift, false);
-    manifest.automations[0]!.enabled = false;
-    assert.equal((await runner.admit(manifest, root, 'check', hash)).command.kind, 'exec');
+    const doctorDrift = async (inspection = installer) =>
+      (await inspection.inspect(manifest, root)).some(
+        ({ stepId, status }) => stepId === 'check' && status === 'drift',
+      );
+    assert.equal(await doctorDrift(runner), false);
+    manifest.automations[0]!.payload = {
+      kind: 'command',
+      run: { kind: 'exec', executable: 'true', args: [] },
+    };
+    assert.equal(await doctorDrift(), true);
+    const beforeInstall = await runner.admit(manifest, root, 'check', hash);
+    assert.equal(beforeInstall.command.kind, 'exec');
+    assert.equal(beforeInstall.configurationDrift, true);
+    await installer.reconcile(manifest, root);
+    const updated = (await store.read()).records[0]!;
+    assert.equal(await doctorDrift(), false);
+    assert.equal(
+      (await runner.admit(manifest, root, 'check', updated.hash)).configurationDrift,
+      false,
+    );
   });
   it('should diagnose legacy launch readiness and show backfill beside a blocked job', async () => {
     manifest.automations = jobs([
