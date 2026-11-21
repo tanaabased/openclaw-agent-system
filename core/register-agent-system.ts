@@ -15,6 +15,8 @@ import { readFile, realpath } from 'node:fs/promises';
 
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
+import resolveOpenClawCommandWorktree from '../agent/tasks/context/openclaw-command-worktree.ts';
+import isPathContained from '../utils/is-path-contained.ts';
 import createIntakeTool from '../tools/intake/tool.ts';
 import IssuePickupEnrollmentStore from '../agent/issue-pickup-enrollment.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -396,6 +398,10 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   const instanceStore = new AssignmentClaimStore(
     join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-instance'),
   );
+  const dispatchRoot = join(
+    privateStateRoot ?? api.runtime.state.resolveStateDir(),
+    'agent-system-dispatch-v2',
+  );
   const dispatchV2 = createDispatchTool({
     api,
     claimStore: instanceStore,
@@ -405,7 +411,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       return new GitHubAssignmentClaimClient(connection);
     }),
     config: readRuntimeConfig,
-    root: join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-dispatch-v2'),
+    root: dispatchRoot,
     intake: intakeV2,
     taskContext,
     credential: sessionDispatch,
@@ -924,6 +930,33 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     logger,
     managedExecutableDirectories: excludedToolExecutableDirectories,
     manifestService,
+    resolveAssignedWorktree: (agent, session) =>
+      resolveOpenClawCommandWorktree(
+        {
+          taskContext,
+          dispatchRoot,
+          readSession: (sessionKey) =>
+            api.runtime.agent.session.getSessionEntryAsync({
+              sessionKey,
+              readConsistency: 'latest',
+            }),
+        },
+        agent,
+        session,
+      ),
+    async isPeerWorkspace(agentId, directory) {
+      const config = await readConfig();
+      const peers = listAgentIds(config).filter((id) => id !== agentId);
+      for (const peer of peers) {
+        const workspace = api.runtime.agent.resolveAgentWorkspaceDir(config, peer);
+        const canonical = await realpath(workspace).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== 'ENOENT') throw error;
+          return workspace;
+        });
+        if (isPathContained(canonical, directory)) return true;
+      }
+      return false;
+    },
   });
   registerAgentSystemHooks(
     api,

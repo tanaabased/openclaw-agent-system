@@ -1,3 +1,4 @@
+import { realpath } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
@@ -5,6 +6,7 @@ import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import inspectAgentCommand, { type AgentOperatorInvocation } from './inspect-command.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type { Logger } from '../core/logger.ts';
+import isPathContained from '../utils/is-path-contained.ts';
 
 type HookApi = Pick<OpenClawPluginApi, 'on'>;
 type SecurityManifestService = Pick<
@@ -16,6 +18,11 @@ export interface AgentCommandSecurityDependencies {
   logger: Logger;
   managedExecutableDirectories: readonly string[];
   manifestService: SecurityManifestService;
+  resolveAssignedWorktree(
+    agent: { agentId: string; workspaceDir: string },
+    session: { sessionKey?: string; sessionId?: string },
+  ): Promise<string | undefined>;
+  isPeerWorkspace(agentId: string, directory: string): Promise<boolean>;
 }
 
 export const agentCommandSecurityGuidance =
@@ -134,6 +141,27 @@ function reportBlockedCommand(
   logger[decision.severity](`security: agent_command_blocked ${attributes.join(' ')}`);
 }
 
+async function isAssignedCheckoutManifest(
+  dependencies: AgentCommandSecurityDependencies,
+  agent: { agentId: string; workspaceDir: string },
+  session: { sessionKey?: string; sessionId?: string },
+  directory: string,
+  manifestDirectory: string,
+): Promise<boolean> {
+  try {
+    const worktree = await dependencies.resolveAssignedWorktree(agent, session);
+    if (!worktree || worktree !== manifestDirectory || !isPathContained(worktree, directory))
+      return false;
+    const canonicalDirectory = await realpath(directory);
+    return (
+      isPathContained(worktree, canonicalDirectory) &&
+      !(await dependencies.isPeerWorkspace(agent.agentId, canonicalDirectory))
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** Deny operator surfaces while allowing active-agent-bound registered command launchers. */
 export default function registerAgentCommandSecurity(
   api: HookApi,
@@ -174,7 +202,21 @@ export default function registerAgentCommandSecurity(
         );
         if (
           commandScope.status === 'loaded' &&
-          commandScope.manifest.agent.id !== active.manifest.agent.id
+          commandScope.manifest.agent.id !== active.manifest.agent.id &&
+          !(
+            isAbsolute(inspection.cwd) &&
+            event.params.host !== 'node' &&
+            (event.params.cwd === undefined ||
+              event.params.workdir === undefined ||
+              event.params.cwd === event.params.workdir) &&
+            (await isAssignedCheckoutManifest(
+              dependencies,
+              { agentId: active.manifest.agent.id, workspaceDir: active.scope.workspaceDir },
+              context,
+              commandDirectory,
+              commandScope.scope.workspaceDir,
+            ))
+          )
         ) {
           const decision: BlockDecision = {
             blockReason:

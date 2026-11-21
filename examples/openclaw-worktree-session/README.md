@@ -49,7 +49,8 @@ openclaw agent-system tool git -- remote get-url origin | grep -Fx git@github.co
 # should execute an ordinary worktree session with canonical agent context and identity
 openclaw-gateway start
 worktree_path=$(jq -er .path "$TMPDIR/worktree-remote.json")
-openclaw gateway call sessions.create --params "$(jq -nc --arg cwd "$worktree_path" '{key:"agent:worktree-tanaabot:dashboard:worktree-leia",agentId:"worktree-tanaabot",label:"Worktree execution fixture",cwd:$cwd}')" --json | tee "$TMPDIR/worktree-session.json" | jq -e '{runStarted: (.runStarted == false), sessionIdPresent: (.sessionId | type == "string")} | if all(.[]; .) then true else error("sessions.create: " + tojson) end'
+openclaw gateway call sessions.create --params "$(jq -nc --arg cwd "$worktree_path" '{key:"agent:worktree-tanaabot:dashboard:worktree-leia",agentId:"worktree-tanaabot",label:"Worktree execution fixture",cwd:$cwd}')" --json > "$TMPDIR/worktree-session.json"
+jq -e '{ok, runStarted, sessionIdPresent: (.sessionId | type == "string"), responseFields: keys} | if .runStarted == false and .sessionIdPresent then true else error("sessions.create: " + tojson) end' "$TMPDIR/worktree-session.json"
 session_id=$(jq -er .sessionId "$TMPDIR/worktree-session.json")
 openclaw gateway call chat.send --params "$(jq -nc --arg id "$session_id" '{sessionKey:"agent:worktree-tanaabot:dashboard:worktree-leia",agentId:"worktree-tanaabot",sessionId:$id,message:"Execute the worktree first probe.",queueMode:"followup",deliver:false,expectedLeafEntryId:null,idempotencyKey:"worktree-first"}')" --json | jq -e 'if .runId == "worktree-first" then true else error("chat.send first: run ID did not match") end'
 openclaw gateway call agent.wait --params '{"runId":"worktree-first","timeoutMs":120000}' --timeout 130000 --json | jq -e 'if .status == "ok" then true else error("agent.wait: status=" + (.status | tojson)) end'
