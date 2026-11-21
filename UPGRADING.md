@@ -1,8 +1,11 @@
 # Upgrading
 
 See the [version compatibility matrix](./README.md#version-compatibility) for supported
-OpenClaw and Node.js versions. This guide covers the changes since `v0.8.0`,
-including earlier `v0.9.0` pre-release configurations.
+OpenClaw and Node.js versions. When upgrading from `v0.9.2` to `v0.10.0`,
+plan a [clean start for existing managed GitHub work](#notification-workflow-state),
+check the [host versions](#minimum-version-changes), migrate any
+[GitHub repository rules](#github-workflow-configuration), and review your
+[automation model defaults](#automation-model-defaults).
 
 ## Automation model defaults
 
@@ -14,6 +17,9 @@ See [automation configuration and recovery](./MANIFEST.md#automations) for prece
 and handling busy chats or denied updates.
 
 ## Issue pickup automation
+
+If you ran a development build with `github.project-pickup`, migrate that
+configuration before upgrading. Issue pickup first ships in `v0.10.0`.
 
 The generated pickup automation is now `📥 ISSUE PICKUP`, with declaration/YAML ID
 `github-issue-pickup` instead of `github-project-pickup`, in OpenClaw and standalone Codex.
@@ -40,7 +46,7 @@ not identity migration or historical chat renaming.
 
 ## Skill names
 
-Task workflow skills now use task terminology. Update explicit skill selections in
+When upgrading from before `v0.9.0`, update explicit skill selections in
 `agent.yaml`, saved prompts, and operator instructions using this mapping:
 
 | Previous skill                      | Replacement                        |
@@ -131,6 +137,22 @@ Validate the manifest, run Install, and [verify intake](./channels/github/README
 
 ## Notification workflow state
 
+If you used managed GitHub tasks or replies on `v0.9.2`, arrange a clean start
+before upgrading. `v0.10.0` cannot resume the old task or reply records.
+New installations and workspaces without those records can skip this step.
+
+1. Finish active work or save the branches and uncommitted changes you plan to
+   resume. Check GitHub for any reply, push, or PR whose outcome is uncertain.
+2. Stop the affected schedules and let active turns finish. Keep all writers to
+   that installation's workflow state stopped during the change.
+3. Back up the affected state and review which local task and reply records to
+   set aside. Preserve native chats, checkouts, and GitHub history. Follow the
+   [clean-start rollout in #689](https://github.com/tanaabased/openclaw-agent-system/issues/689)
+   for the cleanup scope.
+4. Verify intake on the new version before restoring schedules. Explicitly
+   relaunch any work you saved. If you see `dispatch-clean-start-required` or
+   `reply-clean-start-required`, stop and check for remaining old records.
+
 If an older installation reports `notification-state-reset-required`, back up the
 workspace and use [notification reset](./channels/github/CLI.md#openclaw-agent-system-notifications-reset)
 on a compatible release before upgrading. Restore backups to staging. Ordinary reset
@@ -148,10 +170,8 @@ issue checkouts.
 ## Standalone Codex
 
 After updating the plugin, review its hooks through `/hooks` in Codex CLI using the
-same profile, then open a new chat. SessionStart loads the trusted binding;
-PermissionRequest is optional and delegates approval for recognized runtime calls.
-See [workspace setup and the approval boundary](./CODEX.md#workspace-setup) before
-enabling it. Installation alone does not approve hooks.
+same profile, then open a new chat. See [Hook Trust](./CODEX.md#hook-trust) for
+the hooks that load your workspace and task context and the optional approval hook.
 
 Use Install and Doctor to reconcile and inspect the existing binding. Reinstallation
 preserves the installation identity; do not rotate it to retry setup or transfer

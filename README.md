@@ -99,7 +99,7 @@ uses the [shared skills](#skills) through its native host interfaces.
 - [Notifications reset](./skills/notifications-reset/SKILL.md) — Reset notification tracking, with optional purge of managed chats and checkouts.
 - [Task assessment](./skills/task-assessment/SKILL.md) — Investigate an issue and present a plan or questions.
 - [Task implementation](./skills/task-implementation/SKILL.md) — Implement an authorized issue plan in the existing checkout.
-- [Task launch](./skills/task-launch/SKILL.md) — Start or reuse issue or existing same-repository PR work without scheduled intake.
+- [Task launch](./skills/task-launch/SKILL.md) — Start an independent issue task or continue an existing same-repository PR without waiting for scheduled intake.
 - [Task retirement](./skills/task-retirement/SKILL.md) — Retire a managed task or explicitly selected unmanaged native chat without changing GitHub state.
 - [Task update](./skills/task-update/SKILL.md) — Publish material progress missing from the issue when requested.
 

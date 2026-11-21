@@ -486,7 +486,9 @@ A separately requested manual task does not verify the schedule.
 
 Install reconciles managed settings. Set notification preferences in Codex.
 Removing a declaration pauses its job and preserves its history. Restoring the same
-ID reuses the retained job. Use a new ID for a new automation.
+ID reuses the retained job. If you deleted a managed job in Codex but kept its
+declaration, rerun Install. Once it verifies the old job is gone, Install recreates
+it with the current settings, including its active or paused state.
 
 For Codex `automation-thread-model-drift`, rerun Install to reconcile the existing managed
 chat. Doctor reports requested and observed values without applying changes. Codex
