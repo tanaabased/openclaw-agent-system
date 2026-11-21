@@ -19,13 +19,9 @@ Agent System puts your agent's identity, environment, automations, credential bi
 and skills in its own repo. Interact with your agents on GitHub like you do with human
 developers. It's agent dotfiles and a workflow runtime in one place.
 
-[Configure your `agent.yaml`](#usage), then clone your agent's repo. Run
-`openclaw agent-system install` to get your OpenClaw agent ready to work, or
-[bind your Codex profile](./CODEX.md#workspace-setup) to the cloned workspace.
-
-OpenClaw provides [tools](#tools) and a [CLI](#cli) for working with your agent.
-Both runtimes use the repo's [configuration](#configuration) and [skills](#skills)
-to run [GitHub workflows](#github-workflows) from issue assessment through PR delivery.
+[Configure your `agent.yaml`](#usage), clone your agent's repo, and run
+[`openclaw agent-system install`](#cli) to set up its [environment](#environment),
+[tools](#tools), [skills](#skills), and [GitHub workflows](#github-workflows) from one [configuration](#configuration).
 
 See example agents:
 
@@ -79,31 +75,55 @@ See [source installation](./DEVELOPMENT.md#install-from-source) for verification
 
 ## Usage
 
-Add `.agent-system/agent.yaml` to the workspace you want Agent System to manage. A root-level `agent.yaml` is also supported as a shorthand. The optional setup script below assumes Homebrew is already installed.
+Review the `agent.yaml` manifest in your workspace. The examples below show common
+settings for EMORI and belong in the same `.agent-system/agent.yaml` file (or
+`agent.yaml` at the repo root). See the [manifest reference](./MANIFEST.md) for
+the full configuration.
+
+### Agent
+
+Give EMORI a workspace identity and read her email from the environment.
 
 ```yaml
 schema-version: 1
 
 agent:
-  id: tanaabot
-  name: Tanaabot
+  id: emori
+  name: EMORI
   email:
     from-environment: AGENT_EMAIL
+```
 
+### Models
+
+Set the default model and choose a model and reasoning effort for each task tier.
+
+```yaml
 models:
   default: { model: openai/gpt-6-astra, effort: high }
   low: { model: openai/gpt-5.6-terra, effort: medium }
   medium: { model: openai/gpt-5.6-sol, effort: high }
   high: { model: openai/gpt-6-astra, effort: xhigh }
+```
 
+### Memory
+
+Choose the embedding model for memory search and the environment variable that supplies its API key.
+
+```yaml
 memory:
   search:
     provider: openai
     model: text-embedding-3-small
     api-key: EMBEDDINGS_API_KEY
+```
 
+### Environment
+
+Load values from 1Password and declare which variables EMORI needs.
+
+```yaml
 environment:
-  # import this agent's identity and tool credentials from 1password.
   op: z7q4m2n9v6k3p8r5t1w0x4c2ba
   set:
     EMBEDDINGS_API_KEY: $OPENAI_API_KEY
@@ -112,13 +132,37 @@ environment:
   required:
     - AGENT_EMAIL
     - EMBEDDINGS_API_KEY
-    - GH_TOKEN_TANAABOT
+    - GH_TOKEN_EMORI
     - SSH_KEY
+```
 
+### GitHub
+
+EMORI accepts assignments from pirog across `tanaabased` repos and requests PR reviews
+from smutlord. Her own account, `emoriwan`, can pick up issues from a Theme milestone.
+Use an open milestone number in place of the example below.
+
+```yaml
 github:
-  username: tanaabot
-  token: GH_TOKEN_TANAABOT
+  schema-version: 3
+  username: emoriwan
+  token: GH_TOKEN_EMORI
+  routing: ['tanaabased/*']
+  issue-assignment:
+    allowed: ['@pirog', '@emoriwan']
+    reviewers: ['@smutlord']
+  issue-pickup:
+    projects:
+      - repository: tanaabased/theme
+        milestone: { ids: 1, policy: only }
+```
 
+### Git and setup
+
+Git uses EMORI's SSH key. Host setup uses an existing Homebrew installation to add
+`jq` and `ripgrep`. Agent setup enables the diffs plugin and creates workspace directories.
+
+```yaml
 git:
   ssh:
     private-keys:
@@ -138,6 +182,27 @@ setup-agent:
     # prepare local working directories.
     mkdir -p repos artifacts
 ```
+
+### Automations
+
+Schedule a daily repository review and an OpenClaw backup.
+
+```yaml
+automations:
+  - id: daily-review
+    schedule: every 24 hours
+    prompt: Review the repository for actionable maintenance work and report the highest-priority finding.
+  - id: daily-backup
+    runtimes: [openclaw]
+    schedule: every 24 hours
+    run: [openclaw, agent-system, backup, create, --json]
+```
+
+OpenClaw runs command jobs without a model; standalone Codex supports recurring
+prompt jobs through the desktop app. See [automation configuration](./MANIFEST.md#automations)
+and [Codex support](./MANIFEST.md#codex-execution-and-ownership) for runtime requirements.
+
+### Apply the manifest
 
 From that workspace, store the 1Password bootstrap credential when needed, then validate and install the agent:
 
@@ -160,23 +225,6 @@ openclaw agent-system tool gh -- api user --jq .login
 for consent interactively; CI or `--yes` runs unattended. Doctor runs setup
 checks without repairs. Write setup commands that are safe to repeat: a failure does not undo earlier
 changes. See [Setup](./MANIFEST.md#setup) for syntax and runtime filters.
-
-Add recurring work to the same manifest, then rerun Install:
-
-```yaml
-automations:
-  - id: daily-review
-    schedule: every 24 hours
-    prompt: Review the repository for actionable maintenance work and report the highest-priority finding.
-  - id: daily-backup
-    runtimes: [openclaw]
-    schedule: every 24 hours
-    run: [openclaw, agent-system, backup, create, --json]
-```
-
-OpenClaw runs command jobs without a model; standalone Codex supports recurring
-prompt jobs through the desktop app. See [automation configuration](./MANIFEST.md#automations)
-and [Codex support](./MANIFEST.md#codex-execution-and-ownership) for runtime requirements.
 
 Agent System does not provision model credentials, and memory credentials remain
 agent environment bindings rather than `openclaw.json` values. See
