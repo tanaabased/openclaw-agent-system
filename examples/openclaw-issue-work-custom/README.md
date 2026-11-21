@@ -7,6 +7,7 @@ Deliver a Work assignment, then an Auto Work assignment, using one installation 
 - Initial assignment-to-delivery in the same native chat, worktree, and assessment run.
 - Combined final native text keeps the assessment before delivery, debug last within the composed output, and additional prose visible afterwards.
 - Native plan context, exact linked PR and public receipts, and duplicate prevention.
+- Ordinary shell checks in verified issue checkouts containing another agent's manifest.
 
 ## What Does Not Belong Here
 

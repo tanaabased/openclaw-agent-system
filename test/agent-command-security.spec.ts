@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import registerAgentCommandSecurity from '../agent/command-security.ts';
+import registerAgentCommandSecurity, {
+  type AgentCommandSecurityDependencies,
+} from '../agent/command-security.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 
 function loaded(agentId: string, workspaceDir: string): AgentManifestLoadResult {
@@ -19,6 +24,8 @@ function setup(
   options: {
     active?: AgentManifestLoadResult;
     commandScope?: AgentManifestLoadResult;
+    resolveAssignedWorktree?: AgentCommandSecurityDependencies['resolveAssignedWorktree'];
+    isPeerWorkspace?: AgentCommandSecurityDependencies['isPeerWorkspace'];
   } = {},
 ) {
   const handlers = new Map<string, (...args: never[]) => unknown>();
@@ -42,6 +49,8 @@ function setup(
         warn: (message) => logs.warn.push(message),
       },
       managedExecutableDirectories: ['/package/bin'],
+      resolveAssignedWorktree: options.resolveAssignedWorktree ?? (async () => undefined),
+      isPeerWorkspace: options.isPeerWorkspace ?? (async () => false),
       manifestService: {
         async loadForCommandDirectory() {
           return options.commandScope ?? loaded('tanaabot', '/workspace/tanaabot');
@@ -262,6 +271,67 @@ describe('agent/command-security', () => {
     assert.equal(logs.error[0]?.includes('code="agent-workspace-boundary-blocked"'), true);
     assert.equal(logs.error[0]?.includes('targetAgentId="emori"'), true);
   });
+
+  for (const toolName of ['exec', 'exec_command']) {
+    it(`should distinguish an assigned checkout from other workspace paths for ${toolName}`, async () => {
+      const root = await realpath(await mkdtemp(join(tmpdir(), 'shell-checkout-')));
+      try {
+        const checkout = join(root, 'assigned');
+        const nested = join(checkout, 'src');
+        const lookalike = join(root, 'assigned-other');
+        const escaped = join(checkout, 'escaped');
+        await mkdir(nested, { recursive: true });
+        await mkdir(lookalike);
+        await symlink(lookalike, escaped);
+        const session = { ...context(), sessionKey: 'agent:tanaabot:issue:one', toolName };
+        const run = (
+          cwd: string,
+          options: Parameters<typeof setup>[0] = {},
+          command = 'bun --version',
+        ) => {
+          const { handler } = setup({
+            commandScope: loaded('emori', checkout),
+            resolveAssignedWorktree: async () => checkout,
+            ...options,
+          });
+          const params =
+            toolName === 'exec' ? { command, workdir: cwd } : { cmd: command, workdir: cwd };
+          return handler({ toolName, params } as never, session as never);
+        };
+        const blocked = async (result: ReturnType<typeof run>, reason: RegExp) => {
+          const decision = (await result) as { block?: boolean; blockReason?: string };
+          assert.equal(decision?.block, true);
+          assert.match(decision.blockReason ?? '', reason);
+        };
+        assert.equal(await run(checkout), undefined);
+        assert.equal(await run(nested), undefined);
+        await blocked(run(lookalike), /another agent workspace/u);
+        await blocked(run(escaped), /another agent workspace/u);
+        await blocked(
+          run(nested, { commandScope: loaded('emori', nested) }),
+          /another agent workspace/u,
+        );
+        await blocked(
+          run(checkout, { isPeerWorkspace: async () => true }),
+          /another agent workspace/u,
+        );
+        await blocked(
+          run(checkout, { resolveAssignedWorktree: async () => undefined }),
+          /another agent workspace/u,
+        );
+        await blocked(
+          run(checkout, {}, 'openclaw as credentials validate op'),
+          /credentials are operator-only/u,
+        );
+        await blocked(
+          run(checkout, {}, 'openclaw as tool git --agent emori -- status'),
+          /another agent identity/u,
+        );
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+  }
 
   it('should allow unrelated commands in the active agent workspace', async () => {
     const { handler, logs } = setup();
