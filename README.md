@@ -47,6 +47,12 @@ Check [version compatibility](#version-compatibility) before you begin.
 
 ### OpenClaw
 
+Install from ClawHub or npm. Run one of these commands.
+
+```sh
+openclaw plugins install clawhub:@tanaab/openclaw-agent-system --accept-capabilities
+```
+
 ```sh
 openclaw plugins install npm:@tanaab/openclaw-agent-system --accept-capabilities
 ```

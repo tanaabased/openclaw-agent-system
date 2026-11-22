@@ -16,8 +16,6 @@ const exampleWorkflows = [
 ];
 
 interface Step {
-  id?: string;
-  if?: string;
   'continue-on-error'?: boolean;
   run?: string;
   uses?: string;
@@ -26,27 +24,21 @@ interface Step {
 }
 
 describe('workflow safety and coverage', () => {
-  it('should make only clawhub optional and warn when its job fails', async () => {
+  it('should require clawhub publication and keep release jobs independent', async () => {
     const workflow = parse(await readFile('.github/workflows/release.yml', 'utf8'));
-    const clawHub = workflow.jobs['publish-clawhub'];
-    assert.equal(clawHub['continue-on-error'], true);
-    for (const id of ['publish-npm', 'publish-repo']) {
-      assert.notEqual(workflow.jobs[id]['continue-on-error'], true);
-      assert.ok(!workflow.jobs[id].needs, `${id} must remain independent of ClawHub`);
+    for (const id of ['publish-npm', 'publish-clawhub', 'publish-repo']) {
+      const job = workflow.jobs[id];
+      assert.ok(!job['continue-on-error'], `${id} must fail the release run on error`);
+      assert.ok(!job.needs, `${id} must publish independently`);
     }
-    const steps = clawHub.steps as Step[];
+    const steps = workflow.jobs['publish-clawhub'].steps as Step[];
     const publishers = steps.filter(({ uses }) =>
       uses?.startsWith('tanaabased/actions/publish-clawhub@'),
     );
     assert.equal(publishers.length, 1, 'do not re-upload after an ambiguous failure');
     const [publisher] = publishers;
     assert.equal(publisher?.with?.tarball, '${{ steps.pack.outputs.tarball-path }}');
-    assert.notEqual(publisher?.['continue-on-error'], true);
-    const warning = steps.find(({ run }) => run?.includes('::warning'));
-    assert.ok(warning);
-    assert.equal(warning.if, '${{ failure() }}');
-    assert.ok(steps.indexOf(warning) > steps.indexOf(publisher!));
-    assert.ok(warning.run?.includes('GITHUB_STEP_SUMMARY'));
+    assert.ok(!publisher?.['continue-on-error'], 'the publisher must fail the job on error');
   });
 
   it('should keep source checks read-only and native coverage on both supported platforms', async () => {
