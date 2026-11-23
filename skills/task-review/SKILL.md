@@ -71,7 +71,7 @@ resume it with the same PR target after checks settle; do not activate a schedul
    run, stay quiet: no review comments, code changes or reruns. Failed observations
    are unavailable evidence, not absent CI. Once checks finish, review failures as
    evidence even when they do not pass. Distinguish a demonstrated code defect from
-   infrastructure failure or a suspected flaky test; do not invent a repair.
+   infrastructure failure or a suspected flaky test. Request a targeted repair for a demonstrated defect. For a plausible transient failure, check the discussion and this chat before asking the author or operator for one rerun. Do not repeat that request or execute it yourself. Leave unexplained failures explicit.
 3. Look for defects, regressions, missing useful coverage and unnecessary complexity.
    Trace consequential findings far enough to show an affected scenario and explain
    the consequence. Prefer a specific minimal repair over speculative redesign.
@@ -93,8 +93,7 @@ resume it with the same PR target after checks settle; do not activate a schedul
    write or bypass a denial through raw GitHub commands.
 7. Report the actual published review and its permalink. Approval ends this pass,
    not the reviewer chat. Authorized feedback uses the same model and conversation.
-   Automatic later formal-review passes are not yet available; do not install per-PR
-   schedules or send idle-chat nudges. An explicit operator request to retire this
+   Revisit prior findings when new evidence arrives. An authorized explanation can resolve a finding without a commit. Inspect the exact updated diff on GitHub if the checkout is older; never move an inline finding to another diff automatically. Do not install per-PR schedules or send idle-chat nudges. An explicit operator request to retire this
    review uses `dispatch review retire` with its PR URL and the returned native handoff.
 
 ## Checkpoints

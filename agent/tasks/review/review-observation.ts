@@ -1,3 +1,4 @@
+import { automationHash } from '../../automation-hash.ts';
 import { githubIdentityMatches } from '../../../channels/github/provider/work-item.ts';
 import type GitHubWorkEventClient from '../../../channels/github/provider/work-event-client.ts';
 import type { GitHubNotificationPolicy } from '../../../channels/github/workflow-policy.ts';
@@ -8,7 +9,7 @@ import type { ReviewAdmission } from './review-admission.ts';
 export default async function observeReview(
   admission: ReviewAdmission,
   client: Pick<GitHubWorkEventClient, 'identity' | 'getItem' | 'getRepository' | 'getReviewCI'> & {
-    reviewRequests: Pick<GitHubWorkEventClient['reviewRequests'], 'current'>;
+    reviewRequests: Pick<GitHubWorkEventClient['reviewRequests'], 'current' | 'latest'>;
   },
   policy: GitHubNotificationPolicy,
   retained = false,
@@ -43,13 +44,29 @@ export default async function observeReview(
     repositoryScope(policy, repository, 'review-request').decision === 'deny'
   )
     throw new Error('review-request-repository-excluded');
+  let requestId: string | undefined;
   if (admission.origin.kind === 'request') {
     const origin = admission.origin;
-    if (
-      !policy.reviewRequest!.allowed.some((actor) => githubIdentityMatches(actor, origin.requester))
-    )
-      throw new Error('review-request-requester-unapproved');
-    if (!retained) {
+    if (retained) {
+      const latest = await client.reviewRequests.latest(owner.login, name, item.number);
+      if (!latest || latest.event === 'review_request_removed')
+        return { status: 'removed' as const, item, repository };
+      if (
+        !policy.reviewRequest!.allowed.some((actor) =>
+          githubIdentityMatches(actor, latest.requester),
+        ) ||
+        latest.requester.type !== 'User'
+      )
+        throw new Error('review-request-requester-unapproved');
+      requestId = latest.nodeId;
+    } else {
+      if (
+        !policy.reviewRequest!.allowed.some((actor) =>
+          githubIdentityMatches(actor, origin.requester),
+        )
+      )
+        throw new Error('review-request-requester-unapproved');
+      requestId = origin.eventId;
       const request = await client.reviewRequests.current(owner.login, name, item.number);
       if (
         !request ||
@@ -61,10 +78,20 @@ export default async function observeReview(
   }
   if (item.pullRequest.draft) return { status: 'draft' as const, item, repository };
   const ci = await client.getReviewCI(owner.login, name, item.number, item.pullRequest.headSha);
+  const { changeFingerprint, ...legacyCI } = ci;
   return {
     status: ci.state === 'running' ? ('waiting-ci' as const) : ('ready' as const),
     item,
     repository,
     ci,
+    fingerprint:
+      'review:' + automationHash([changeFingerprint ?? ci, requestId, item.pullRequest.baseRef]),
+    // Recognize a pre-follow-up baseline without waking every installed reviewer on upgrade.
+    legacyFingerprint:
+      item.pullRequest.headSha === admission.head &&
+      item.pullRequest.baseRef === admission.baseRef &&
+      (admission.origin.kind === 'operator' || requestId === admission.origin.eventId)
+        ? automationHash(legacyCI)
+        : undefined,
   };
 }

@@ -89,6 +89,14 @@ describe('agent/tasks/review native first review', () => {
           nextPage: 1,
         }),
         reviewRequests: {
+          latest: async () => ({
+            nodeId: 'E_review',
+            databaseId: 33,
+            event: authorized ? 'review_requested' : 'review_request_removed',
+            createdAt: '2020-01-01T00:00:00Z',
+            requester: account,
+            reviewer: account,
+          }),
           current: async () =>
             authorized
               ? {
@@ -202,6 +210,39 @@ describe('agent/tasks/review native first review', () => {
     assert.equal(writes, 0);
   });
 
+  it('should revisit settled evidence in the same chat without replaying a confirmed review', async () => {
+    await start();
+    const publish = (event: string, body: string) =>
+      call('publish', { draft: { event, body, comments: [] } }, 'issue-thread');
+    assert.equal((await publish('REQUEST_CHANGES', 'The assertion fails.')).status, 'published');
+    ci.passing = true;
+    assert.equal((await call('next', { projects: f.projects })).status, 'unchanged');
+    Object.assign(f.native!, { status: 'idle', turnEnded: true });
+    const next = await call('next', { projects: f.projects });
+    assert.equal(next.status, 'evidence-prepared');
+    assert.ok(
+      'nativeHandoff' in next && JSON.stringify(next.nativeHandoff).includes('issue-thread'),
+    );
+    Object.assign(f.native!, { turnId: 'updated-turn', status: 'active', turnEnded: false });
+    assert.equal(
+      (await publish('APPROVE', 'The new result resolves the finding.')).status,
+      'published',
+    );
+    assert.equal(
+      (await publish('APPROVE', 'The new result resolves the finding.')).status,
+      'reconciled',
+    );
+    assert.equal(writes, 2);
+    Object.assign(f.native!, { status: 'idle', turnEnded: true });
+    deps.continuationNative = async () => ({
+      status: 'verified',
+      turnId: 'updated-turn',
+      ended: true,
+    });
+    assert.equal((await call('reconcile', { target })).status, 'reconciled');
+    assert.equal((await call('next', { projects: f.projects })).status, 'unchanged');
+  });
+
   it('should honor operator model selections without requiring a request or activating a schedule', async () => {
     authorized = false;
     deps.native = {
@@ -265,11 +306,23 @@ describe('agent/tasks/review native first review', () => {
       state.records[0]!.feedback = { startedAt: 0, baseline: {}, events: [] };
       await save();
     });
+    assert.equal(
+      (
+        await call(
+          'publish',
+          {
+            draft: { event: 'COMMENT', body: 'Why is the fallback safe?', comments: [] },
+          },
+          'issue-thread',
+        )
+      ).status,
+      'published',
+    );
     const source = {
       nodeId: 'C_explanation',
       databaseId: 77,
       author: { login: 'operator', nodeId: 'U_operator', type: 'User' },
-      body: '@receiver Could you explain the failing case?',
+      body: '@receiver The caller validates the input before using this fallback.',
       bodyTruncated: false,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -325,6 +378,23 @@ describe('agent/tasks/review native first review', () => {
     assert.equal(context.status, 'verified');
     assert.ok('issueStage' in context && context.issueStage === 'review');
     assert.ok('replyTarget' in context && context.replyTarget === target + '#issuecomment-77');
+    assert.equal(
+      (
+        await call(
+          'publish',
+          {
+            draft: {
+              event: 'COMMENT',
+              body: 'That resolves the fallback question; CI still fails.',
+              comments: [],
+            },
+          },
+          'issue-thread',
+        )
+      ).status,
+      'published',
+    );
+    assert.equal(writes, 2);
   });
 
   it('should retain active review custody on closure and use the shared retirement protection', async () => {

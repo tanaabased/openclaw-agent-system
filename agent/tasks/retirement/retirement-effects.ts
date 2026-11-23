@@ -114,7 +114,7 @@ export default function retirementEffects(
           },
           head: review.head,
           draft: review.draft,
-          publicationId: record.id,
+          publicationId: review.turnId ? automationHash([record.id, review.turnId]) : record.id,
         }),
       }),
     );

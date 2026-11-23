@@ -81,6 +81,8 @@ describe('channels/github/provider/review ci', () => {
             repository: {
               pullRequest: {
                 headRefOid: head,
+                baseRefOid: 'c'.repeat(40),
+                body: '',
                 potentialMergeCommit: withMerge
                   ? {
                       oid: merge,
@@ -117,13 +119,14 @@ describe('channels/github/provider/review ci', () => {
   });
 
   it('should allow settled failures without calling them passing', async () => {
-    const { fingerprint, ...result } = await readReviewCI(
+    const { fingerprint, changeFingerprint, ...result } = await readReviewCI(
       fixture('failed'),
       'owner',
       'repo',
       2,
       head,
     );
+    assert.ok(changeFingerprint);
     assert.match(fingerprint!, /^[a-f0-9]{64}$/u);
     assert.deepEqual(result, {
       head,
@@ -171,6 +174,38 @@ describe('channels/github/provider/review ci', () => {
       (await readReviewCI(provider, 'owner', 'repo', 2, head)).fingerprint,
       first.fingerprint,
     );
+  });
+
+  it('should detect a description or base change without treating a repeated observation as news', async () => {
+    const provider = fixture('passed');
+    const read = (body: string, baseRefOid: string) =>
+      readReviewCI(
+        {
+          request: async (argv) =>
+            argv[0] === 'graphql'
+              ? page({
+                  data: {
+                    repository: {
+                      pullRequest: {
+                        headRefOid: head,
+                        baseRefOid,
+                        body,
+                        potentialMergeCommit: null,
+                      },
+                    },
+                  },
+                })
+              : provider.request(argv),
+        },
+        'owner',
+        'repo',
+        2,
+        head,
+      );
+    const first = (await read('original', merge)).changeFingerprint;
+    assert.equal((await read('original', merge)).changeFingerprint, first);
+    assert.notEqual((await read('updated', merge)).changeFingerprint, first);
+    assert.notEqual((await read('original', head)).changeFingerprint, first);
   });
 
   it('should wait for verified merge checks as well as head checks', async () => {

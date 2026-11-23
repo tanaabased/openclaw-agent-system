@@ -65,6 +65,7 @@ export const dispatchRecordProperties = {
     Type.Object(
       {
         head: Type.String({ pattern: '^[a-f0-9]{40,64}$' }),
+        turnId: Type.Optional(text),
         draft: reviewDraftSchema,
         attempted: Type.Boolean(),
         rejected: Type.Optional(Type.Boolean()),

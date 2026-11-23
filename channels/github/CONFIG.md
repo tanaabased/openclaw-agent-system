@@ -375,8 +375,7 @@ not treated as absent. Unchanged observations do not start reviewer turns.
 
 The first review may comment, request changes, or approve with grouped inline findings.
 The publisher checks the reviewed revision and current CI, then reads back the actual
-review. Failed CI prevents approval. Later automatic review passes are not yet supported;
-authorized feedback still reaches the same reviewer chat through source-bound replies.
+review. Failed CI prevents approval. A repair, base or description change, renewed request, or new CI result can bring the same reviewer back after checks finish. An authorized author can also explain a finding in its original thread without pushing a commit. Passing checks do not themselves approve the PR.
 Approval does not retire the chat; closure/merge and explicit retirement use the shared
 resource-cleanup rules.
 
