@@ -62,7 +62,7 @@ describe('notification github fixtures', () => {
     assert.equal(calls, 1);
   });
 
-  it('should reconcile uncertain issue creation by exact title body and author without a second post', async () => {
+  it('should recover a timed-out create after a timed-out read by its original marker without another post', async () => {
     const calls: string[][] = [];
     let created: Record<string, unknown>;
     const request = {
@@ -83,8 +83,9 @@ describe('notification github fixtures', () => {
             state: 'open',
             assignees: [],
           };
-          return lost;
+          return { ...lost, exitCode: null, timedOut: true };
         }
+        if (calls.length === 2) return { ...lost, exitCode: null, timedOut: true };
         return reply([created, { ...created, body: 'Unrelated issue.' }]);
       },
       noWait,
