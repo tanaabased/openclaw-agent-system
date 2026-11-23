@@ -47,7 +47,7 @@ NO_COLOR=1 openclaw agent-system install | grep -F 'agent' | grep -F 'created' |
 # should report every foundational component as unchanged in json on repeated install
 cd "$GITHUB_WORKSPACE/examples/os-install/data"
 output=$(openclaw agent-system install --json)
-printf '%s\n' "$output" | jq -e '.outcomes | (any(.component == "agent" and .status == "unchanged") and any(.component == "path" and .status == "unchanged"))'
+printf '%s\n' "$output" | jq -e '.outcomes | (any(.component == "agent" and .status == "unchanged") and any(.component == "path" and .status == "unchanged") and any(.component == "agent-storage" and .status == "unchanged"))'
 openclaw agent-system doctor --json | jq -e '.status == "healthy"'
 
 # should inspect the installed identity with human-only id masking

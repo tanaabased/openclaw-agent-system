@@ -765,6 +765,20 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...githubCapability.lifecycleContributions,
     ...googleCapability.lifecycleContributions,
     createSessionDispatchLifecycle(sessionDispatch),
+    {
+      id: 'agent-storage',
+      isConfigured: () => true,
+      async reconcile({ manifest }: { manifest: AgentManifest }) {
+        const { AgentDatabase } = await import('../agent/storage/agent-database.ts');
+        const database = new AgentDatabase(
+          join(api.runtime.state.resolveStateDir(), 'agent-system-storage'),
+          manifest.agent.id,
+        );
+        return {
+          outcomes: [await database.install(join(packageDir, 'agent', 'storage', 'migrations'))],
+        };
+      },
+    },
     instanceIdentity(instanceStore),
     intakeV2.contribution(),
     automationService.contribution(),

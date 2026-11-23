@@ -11,6 +11,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { DatabaseSync } from 'node:sqlite';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -627,9 +628,22 @@ try {
       [
         { code: 'setup-applied', stepId: 'shared' },
         { code: 'setup-not-applicable', stepId: 'openclaw-only' },
+        { code: 'agent-storage-ready', stepId: undefined },
         { code: 'instance-identity-ready', stepId: undefined },
       ],
     );
+    const store = join(pluginData, 'agent-system-storage');
+    const [databaseFile] = await readdir(store);
+    assert.ok(databaseFile);
+    const database = new DatabaseSync(join(store, databaseFile), { readOnly: true });
+    try {
+      assert.equal(
+        database.prepare('SELECT count(*) AS count FROM dispatch_records').get()?.count,
+        0,
+      );
+    } finally {
+      database.close();
+    }
     await access(join(workspace, '.codex-installed'));
     await assert.rejects(access(join(workspace, '.openclaw-installed')));
   });

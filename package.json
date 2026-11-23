@@ -131,6 +131,7 @@
   "codexTools": {
     "managedPaths": [
       ".codex-plugin",
+      "agent/storage/migrations",
       "agent/tasks/assessment/assessment-result.ts",
       "assets",
       "channels/github/PRESENTATION.md",
@@ -155,6 +156,7 @@
     "ansis": "^4.3.1",
     "camelcase-keys": "6.2.2",
     "debug": "^4.4.3",
+    "drizzle-orm": "1.0.0-rc.6",
     "fast-string-width": "3.0.2",
     "fast-wrap-ansi": "0.2.2",
     "graphql": "16",
@@ -185,6 +187,7 @@
     "@types/semver": "7.7.1",
     "clawhub": "0.27.0",
     "commander": "15.0.0",
+    "drizzle-kit": "1.0.0-rc.6",
     "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.7.0",

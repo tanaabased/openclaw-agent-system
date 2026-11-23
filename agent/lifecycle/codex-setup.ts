@@ -1,4 +1,6 @@
-import { delimiter } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { automationHash } from '../automation-hash.ts';
+import { delimiter, join } from 'node:path';
 import { codexInstanceStore } from '../tasks/dispatch/codex-assignment-claims.ts';
 import instanceIdentity from '../identity/instance-identity.ts';
 
@@ -214,6 +216,16 @@ export async function installCodexSetup(
   );
   const result = await lifecycle.reconcile(context);
   await context.assertCurrent();
+  const { AgentDatabase } = await import('../storage/agent-database.ts');
+  const database = new AgentDatabase(
+    join(pluginData, 'agent-system-storage'),
+    automationHash([selected.agentId, selected.workspaceDir]),
+  );
+  result.outcomes.push(
+    await database.install(
+      fileURLToPath(new URL('../../agent/storage/migrations/', import.meta.url)),
+    ),
+  );
   const instance = await instanceIdentity(codexInstanceStore(pluginData)).reconcile!(context);
   result.outcomes.push(
     ...instance.outcomes.map((outcome) => ({ ...outcome, component: 'instance-identity' })),

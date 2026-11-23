@@ -9,7 +9,7 @@ export interface EnsurePrivateStateDirectoriesOptions {
   label: string;
 }
 
-function assertPrivateDirectory(
+export function assertPrivateDirectory(
   stats: Stats,
   options: Pick<EnsurePrivateStateDirectoriesOptions, 'currentUid' | 'label'>,
 ): void {
