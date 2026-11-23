@@ -617,6 +617,8 @@ try {
       [
         { code: 'setup-drift', stepId: 'shared' },
         { code: 'setup-not-applicable', stepId: 'openclaw-only' },
+        { code: 'agent-storage-missing', stepId: undefined },
+        { code: 'installation-storage-missing', stepId: undefined },
         { code: 'instance-identity-missing', stepId: undefined },
       ],
     );
@@ -629,6 +631,7 @@ try {
         { code: 'setup-applied', stepId: 'shared' },
         { code: 'setup-not-applicable', stepId: 'openclaw-only' },
         { code: 'agent-storage-ready', stepId: undefined },
+        { code: 'installation-storage-ready', stepId: undefined },
         { code: 'instance-identity-ready', stepId: undefined },
       ],
     );
@@ -643,6 +646,17 @@ try {
       );
     } finally {
       database.close();
+    }
+    const shared = new DatabaseSync(join(pluginData, 'instance', 'installation.sqlite'), {
+      readOnly: true,
+    });
+    try {
+      assert.equal(
+        shared.prepare('SELECT count(*) AS count FROM assignment_claims').get()?.count,
+        0,
+      );
+    } finally {
+      shared.close();
     }
     await access(join(workspace, '.codex-installed'));
     await assert.rejects(access(join(workspace, '.openclaw-installed')));

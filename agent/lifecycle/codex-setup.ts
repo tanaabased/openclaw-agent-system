@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import storageLifecycle from '../storage/storage-lifecycle.ts';
 import { automationHash } from '../automation-hash.ts';
 import { delimiter, join } from 'node:path';
 import { codexInstanceStore } from '../tasks/dispatch/codex-assignment-claims.ts';
@@ -153,7 +154,13 @@ async function runtime(
       }
     },
   };
-  return { context, lifecycle, selected };
+  const storage = storageLifecycle({
+    agentRoot: () => join(pluginData, 'agent-system-storage'),
+    agentName: () => automationHash([selected.agentId, selected.workspaceDir]),
+    installationRoot: codexInstanceStore(pluginData).root,
+    schemaRoot: fileURLToPath(new URL('../../agent/storage/', import.meta.url)),
+  });
+  return { context, lifecycle, selected, storage };
 }
 
 /** inspect standalone setup and desired/saved automation state without applying repairs. */
@@ -162,7 +169,7 @@ export async function inspectCodexSetup(
   signal?: AbortSignal,
   dependencies: CodexSetupDependencies = {},
 ) {
-  const { context, lifecycle, selected } = await runtime(pluginData, signal, dependencies);
+  const { context, lifecycle, selected, storage } = await runtime(pluginData, signal, dependencies);
   const notificationDiagnostics = githubNotificationRuntimeDiagnostics(
     context.manifest.github?.notifications,
     'codex',
@@ -187,6 +194,7 @@ export async function inspectCodexSetup(
           ]
         : []),
       ...(await lifecycle.inspect(context)),
+      ...(await Promise.all(storage.map((database) => database.inspect(context)))).flat(),
       ...(await instanceIdentity(codexInstanceStore(pluginData)).inspect!(context)).map(
         (finding) => ({ ...finding, component: 'instance-identity' }),
       ),
@@ -209,23 +217,16 @@ export async function installCodexSetup(
   signal?: AbortSignal,
   dependencies: CodexSetupDependencies = {},
 ) {
-  const { context, lifecycle, selected } = await runtime(pluginData, signal, dependencies);
+  const { context, lifecycle, selected, storage } = await runtime(pluginData, signal, dependencies);
   const notificationDiagnostics = githubNotificationRuntimeDiagnostics(
     context.manifest.github?.notifications,
     'codex',
   );
   const result = await lifecycle.reconcile(context);
-  await context.assertCurrent();
-  const { AgentDatabase } = await import('../storage/agent-database.ts');
-  const database = new AgentDatabase(
-    join(pluginData, 'agent-system-storage'),
-    automationHash([selected.agentId, selected.workspaceDir]),
-  );
-  result.outcomes.push(
-    await database.install(
-      fileURLToPath(new URL('../../agent/storage/migrations/', import.meta.url)),
-    ),
-  );
+  for (const database of storage) {
+    await context.assertCurrent();
+    result.outcomes.push(...(await database.reconcile(context)).outcomes);
+  }
   const instance = await instanceIdentity(codexInstanceStore(pluginData)).reconcile!(context);
   result.outcomes.push(
     ...instance.outcomes.map((outcome) => ({ ...outcome, component: 'instance-identity' })),

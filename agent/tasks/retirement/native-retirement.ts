@@ -1,4 +1,4 @@
-import { Type } from 'typebox';
+import { Type, type Static } from 'typebox';
 
 import { automationHash } from '../../automation-hash.ts';
 import { DirectEntryStore, type DirectEntryBinding } from '../direct-entry-store.ts';
@@ -20,6 +20,8 @@ const entriesSchema = Type.Array(
   ),
   { maxItems: 1 },
 );
+
+export type NativeRetirementEntry = Static<typeof entriesSchema>[number];
 
 export interface NativeRetirementTarget {
   id: string;

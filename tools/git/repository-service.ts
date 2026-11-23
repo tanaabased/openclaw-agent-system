@@ -94,7 +94,7 @@ async function ensureRepositoryParent(path: string): Promise<void> {
   await ensureRepositoryDirectory(path);
 }
 
-interface RepositoryRecord {
+export interface RepositoryRecord {
   version: 1;
   repositoryId: string;
   source: string;

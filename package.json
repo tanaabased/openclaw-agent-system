@@ -132,6 +132,7 @@
     "managedPaths": [
       ".codex-plugin",
       "agent/storage/migrations",
+      "agent/storage/installation-migrations",
       "agent/tasks/assessment/assessment-result.ts",
       "assets",
       "channels/github/PRESENTATION.md",

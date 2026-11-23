@@ -55,7 +55,7 @@ const recordSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-type ThreadRecord = Static<typeof recordSchema>;
+export type ThreadRecord = Static<typeof recordSchema>;
 const ledgerSchema = Type.Object(
   {
     version: Type.Literal(1),

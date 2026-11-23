@@ -34,7 +34,7 @@ const stateSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-type State = Static<typeof stateSchema>;
+export type SidebarState = Static<typeof stateSchema>;
 export const sidebarReceiptSchema = Type.Object(
   { digest: text, sectionId: text },
   { additionalProperties: false },
@@ -68,7 +68,7 @@ export default class CodexSidebarJournal {
       maximumBytes: 1024 * 1024,
     });
   }
-  async read(): Promise<State> {
+  async read(): Promise<SidebarState> {
     const saved = await this.file.read();
     const state: unknown = saved ? JSON.parse(saved) : { version: 1, name: this.name };
     if (!Value.Check(stateSchema, state) || state.name !== this.name)

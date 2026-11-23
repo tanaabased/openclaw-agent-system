@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, stat, symlink } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, rm, stat, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -63,6 +63,51 @@ describe('agent database', () => {
       } finally {
         db.$client.close();
       }
+    }
+  });
+
+  it('should report the packaged upgrade without changing the database and apply it on install', async () => {
+    const initial = '20261123213730_agent_records';
+    const oldMigrations = join(root, 'old-migrations');
+    await cp(join(migrations, initial), join(oldMigrations, initial), { recursive: true });
+    const database = new AgentDatabase(root, 'first');
+    assert.equal((await database.inspect(migrations)).code, 'agent-storage-missing');
+    await assert.rejects(stat(database.path), { code: 'ENOENT' });
+    await database.install(oldMigrations);
+    const db = await database.open();
+    try {
+      db.$client
+        .prepare('INSERT INTO reply_drafts VALUES (?, ?, ?)')
+        .run('chat', 'draft', '{"body":"keep me"}');
+    } finally {
+      db.$client.close();
+    }
+    const before = await readFile(database.path);
+    const finding = await database.inspect(migrations);
+    assert.equal(finding.code, 'agent-storage-migrations-pending');
+    assert.match(finding.message, /workflow_state/);
+    assert.ok(!finding.message.includes(initial));
+    assert.deepEqual(await readFile(database.path), before);
+    assert.equal((await database.install(migrations)).status, 'updated');
+    assert.equal((await database.inspect(migrations)).status, 'healthy');
+    const upgraded = await database.open();
+    try {
+      assert.equal(
+        upgraded.$client.prepare('SELECT value FROM reply_drafts').get()?.value,
+        '{"body":"keep me"}',
+      );
+      assert.equal(
+        upgraded.$client.prepare('SELECT count(*) AS n FROM automation_registrations').get()?.n,
+        0,
+      );
+      assert.equal(
+        upgraded.$client
+          .prepare("SELECT count(*) AS n FROM sqlite_schema WHERE name = 'assignment_claims'")
+          .get()?.n,
+        0,
+      );
+    } finally {
+      upgraded.$client.close();
     }
   });
 

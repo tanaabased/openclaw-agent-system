@@ -63,7 +63,15 @@ describe('agent/instance-identity', () => {
       'schema-version: 1\nagent: {id: replacement}\n',
     );
     await bindCodexWorkspace(pluginData, replacement);
-    await installCodexSetup(pluginData, undefined, deps);
+    const rebound = await installCodexSetup(pluginData, undefined, deps);
+    assert.equal(
+      rebound.outcomes.find((row) => row.component === 'agent-storage')?.status,
+      'created',
+    );
+    assert.equal(
+      rebound.outcomes.find((row) => row.component === 'installation-storage')?.status,
+      'unchanged',
+    );
     assert.deepEqual(await store.inspect(), saved);
   });
 
