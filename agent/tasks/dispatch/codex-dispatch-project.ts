@@ -78,6 +78,7 @@ export async function resolveDispatchProject(
     repository: string;
     defaultBranch: string;
     startingHead?: { headRef: string; headSha: string; baseRef?: string };
+    reviewHead?: { number: number; sha: string };
     workspace: string;
     explicitPath?: string;
   },
@@ -138,6 +139,19 @@ export async function resolveDispatchProject(
     (await git(project.path, ['rev-parse', '--show-toplevel'])) !== project.path
   )
     throw new RepositoryPreparationError('dispatch-project-workspace-required', project.path);
+  if (input.reviewHead) {
+    const { number, sha } = input.reviewHead;
+    if (!Number.isSafeInteger(number) || number < 1 || !/^[a-f0-9]{40,64}$/u.test(sha))
+      throw new Error('review-head-invalid');
+    const ref = `refs/agent-system/reviews/${number}`;
+    await git(project.path, ['fetch', '--no-tags', 'origin', `+refs/pull/${number}/head:${ref}`]);
+    const commit = await git(project.path, ['rev-parse', '--verify', ref + '^{commit}']);
+    if (commit !== sha) throw new Error('review-head-changed');
+    const commonDir = await realpath(
+      await git(project.path, ['rev-parse', '--path-format=absolute', '--git-common-dir']),
+    );
+    return { ...project, commonDir, ref, commit };
+  }
   const base = input.startingHead?.baseRef;
   if (base && base !== input.startingHead?.headRef) {
     await git(project.path, ['check-ref-format', `refs/heads/${base}`]);

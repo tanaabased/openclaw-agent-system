@@ -32,6 +32,27 @@ export default class GitHubAssignmentClaimClient implements ClaimClient {
     if (repository.nodeId !== source.repositoryNodeId || repository.archived || repository.disabled)
       throw new Error('claim-repository-changed');
     const item = await this.client.getItem(source.owner, source.repository, source.number);
+    if (source.kind === 'review-request') {
+      if (
+        item.nodeId !== source.issueNodeId ||
+        item.itemType !== 'pull-request' ||
+        item.state !== 'open' ||
+        item.pullRequest.merged ||
+        item.pullRequest.author?.nodeId === source.receivingNodeId
+      )
+        throw new Error('claim-review-request-changed');
+      const request = await this.client.reviewRequests.current(
+        source.owner,
+        source.repository,
+        source.number,
+      );
+      if (
+        request?.nodeId !== source.assignmentEventId ||
+        request.requester.nodeId !== source.assignerNodeId
+      )
+        throw new Error('claim-review-request-changed');
+      return;
+    }
     if (
       item.nodeId !== source.issueNodeId ||
       item.itemType !== 'issue' ||

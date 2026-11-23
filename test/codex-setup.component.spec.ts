@@ -40,7 +40,7 @@ describe('agent/codex-setup', () => {
     baseEnvironment: { HOME: '/tmp', PATH: '/bin:/usr/bin' },
   };
 
-  it('should plan paused workflows without github access and report unsupported reviews', async () => {
+  it('should plan paused assignment and review workflows without github access', async () => {
     await manifest(`models:
   default: {model: openai/gpt-6-luna, effort: medium}
   low: {model: openai/gpt-6-luna, effort: medium}
@@ -72,12 +72,16 @@ github:
     assert.equal(installed.status, 'requires-native-app-sync');
     assert.equal(installed.automations.status, 'requires-fresh-inspection');
     const inspected = await inspectCodexSetup(pluginData, undefined, deps);
+    assert.deepEqual(inspected.automations.conversations?.map(({ id }) => id).sort(), [
+      'github-issue-assignment',
+      'github-review-request',
+    ]);
     assert.ok(
-      inspected.findings.some(({ code }) => code === 'github-notification-runtime-unsupported'),
+      !inspected.findings.some(({ code }) => code === 'github-notification-runtime-unsupported'),
     );
   });
 
-  it('should warn about reviews without blocking independent setup and assignment scheduling', async () => {
+  it('should plan supported reviews alongside independent setup and assignment scheduling', async () => {
     await manifest(`models:
   default: { model: openai/gpt-6-luna, effort: medium }
   low: { model: openai/gpt-6-luna, effort: medium }
@@ -103,19 +107,17 @@ setup-agent:
     const deps = { ...dependencies, codexHome: join(root, 'codex') };
     const inspected = await inspectCodexSetup(pluginData, undefined, deps);
     assert.ok(
-      inspected.findings.some(
-        ({ code, status }) =>
-          code === 'github-notification-runtime-unsupported' && status === 'warning',
-      ),
+      !inspected.findings.some(({ code }) => code === 'github-notification-runtime-unsupported'),
     );
     await assert.rejects(access(join(workspace, '.setup-applied')));
     const installed = await installCodexSetup(pluginData, undefined, deps);
     assert.ok(
-      installed.warnings.some(({ code }) => code === 'github-notification-runtime-unsupported'),
+      !installed.warnings.some(({ code }) => code === 'github-notification-runtime-unsupported'),
     );
-    assert.ok(
-      inspected.automations.conversations?.some(({ id }) => id === 'github-issue-assignment'),
-    );
+    assert.deepEqual(inspected.automations.conversations?.map(({ id }) => id).sort(), [
+      'github-issue-assignment',
+      'github-review-request',
+    ]);
     await access(join(workspace, '.setup-applied'));
   });
 

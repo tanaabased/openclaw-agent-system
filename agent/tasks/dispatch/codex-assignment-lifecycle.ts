@@ -221,6 +221,7 @@ export default async function reconcileCodexLifecycle(
           };
         },
         reactivate: async (record, intake) => {
+          if ('origin' in intake) return false;
           const pr = taskPullRequest(record);
           return reactivateAssignmentFeedback({
             record,

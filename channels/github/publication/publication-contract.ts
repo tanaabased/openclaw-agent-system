@@ -16,7 +16,8 @@ export type GitHubNotificationPublicationIntent =
   | 'initial-acknowledgment'
   | 'manual-response'
   | 'status-update'
-  | 'pull-request-handoff';
+  | 'pull-request-handoff'
+  | 'formal-review';
 
 export type GitHubNotificationPublicationSafetyCategory =
   'credential-prefix' | 'environment-assignment' | 'redaction';
@@ -28,6 +29,7 @@ const publicationIntents = new Set<GitHubNotificationPublicationIntent>([
   'manual-response',
   'status-update',
   'pull-request-handoff',
+  'formal-review',
 ]);
 
 export class GitHubNotificationPublicationError extends Error {
@@ -187,7 +189,8 @@ type GitHubNotificationPublicationTargetInput = GitHubNotificationPublicationCon
           | 'initial-acknowledgment'
           | 'manual-response'
           | 'status-update'
-          | 'pull-request-handoff';
+          | 'pull-request-handoff'
+          | 'formal-review';
         publicationId: string;
       }
   );

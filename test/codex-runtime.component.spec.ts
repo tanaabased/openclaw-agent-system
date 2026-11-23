@@ -36,6 +36,11 @@ describe('agent/codex-runtime', () => {
         input: { projects: [], threads: {} },
         code: 'native-inventory-binding-override',
       },
+      {
+        args: ['dispatch', 'review', 'next'],
+        input: { projects: [], threads: {} },
+        code: 'native-inventory-binding-override',
+      },
     ];
     for (const test of cases) {
       const result = spawnSync(

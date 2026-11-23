@@ -1,4 +1,6 @@
 import dispatchOwnershipSchema from './dispatch-ownership-schema.ts';
+import { reviewAdmissionSchema, reviewKey } from '../review/review-admission.ts';
+import { reviewDraftSchema } from '../../../channels/github/provider/review-draft.ts';
 import { dispatchTaskSession } from './dispatch-task-scope.ts';
 import { issueDeliveryStateSchema } from '../delivery/issue-delivery-state.ts';
 import { deliveryAnnouncementStateSchema } from '../delivery/delivery-announcement-state.ts';
@@ -58,6 +60,24 @@ export const dispatchRecordProperties = {
   id: hash,
   intakeId: Type.Optional(hash),
   manualIssue: Type.Optional(operatorIssueSchema),
+  reviewAdmission: Type.Optional(reviewAdmissionSchema),
+  reviewPublication: Type.Optional(
+    Type.Object(
+      {
+        head: Type.String({ pattern: '^[a-f0-9]{40,64}$' }),
+        draft: reviewDraftSchema,
+        attempted: Type.Boolean(),
+        rejected: Type.Optional(Type.Boolean()),
+        receipt: Type.Optional(
+          Type.Object(
+            { databaseId: Type.Integer({ minimum: 1 }), nodeId: text },
+            { additionalProperties: false },
+          ),
+        ),
+      },
+      { additionalProperties: false },
+    ),
+  ),
   adoptedPullRequest: Type.Optional(adoptedPullRequestSchema),
   pullRequestLink: Type.Optional(Type.Union([deliveryPullRequestSchema, Type.Null()])),
   implementationDecision: Type.Optional(implementationDecisionSchema),
@@ -314,7 +334,11 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     return (
       Value.Check(this.recordSchema, r) &&
       !(
-        Boolean(r.intakeId) === Boolean(r.manualIssue) ||
+        [r.intakeId, r.manualIssue, r.reviewAdmission].filter(Boolean).length !== 1 ||
+        (r.reviewAdmission &&
+          (r.reviewAdmission.id !== r.id ||
+            r.reviewAdmission.scope !== this.scope ||
+            reviewKey(r.reviewAdmission) !== r.issueKey)) ||
         (r.manualIssue &&
           (r.manualIssue.id !== r.id ||
             r.manualIssue.scope !== this.scope ||
@@ -520,6 +544,9 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
         'issueKey',
         'intakeId',
         'manualIssue',
+        'reviewAdmission',
+        'reviewInput',
+        'reviewObservation',
         'sourceThreadId',
         'reset',
         'retirement',
@@ -649,6 +676,9 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
                   'feedbackReactivation',
                   'intakeId',
                   'manualIssue',
+                  'reviewAdmission',
+                  'reviewInput',
+                  'reviewObservation',
                   'handoff',
                   'manifestDigest',
                   'request',

@@ -68,6 +68,27 @@ export default class GitHubWorkItemClient implements GitHubNotificationIntakeCli
   ): Promise<GitHubAssignedItemDiscovery> {
     if (assignmentTypes.length === 0)
       return { candidates: [], incomplete: false, totalCount: 0, truncated: false };
+    return this.discoverWork(
+      `assignee:${this.identity.login} state:open updated:>=${updatedSince}${
+        assignmentTypes.length === 1
+          ? assignmentTypes[0] === 'issue'
+            ? ' is:issue'
+            : ' is:pr'
+          : ''
+      }`,
+      requestedPage,
+    );
+  }
+
+  /** current review membership includes requests made before automation activation. */
+  discoverReviewRequests(page: number) {
+    return this.discoverWork(`review-requested:${this.identity.login} state:open is:pr`, page);
+  }
+
+  private async discoverWork(
+    query: string,
+    requestedPage?: number,
+  ): Promise<GitHubAssignedItemDiscovery> {
     const candidates: GitHubAssignedItemCandidate[] = [];
     let incomplete = false;
     let totalCount = 0;
@@ -79,13 +100,7 @@ export default class GitHubWorkItemClient implements GitHubNotificationIntakeCli
           'GET',
           '/search/issues',
           '-f',
-          `q=assignee:${this.identity.login} state:open updated:>=${updatedSince}${
-            assignmentTypes.length === 1
-              ? assignmentTypes[0] === 'issue'
-                ? ' is:issue'
-                : ' is:pr'
-              : ''
-          }`,
+          `q=${query}`,
           '-F',
           `per_page=${pageSize}`,
           '-F',

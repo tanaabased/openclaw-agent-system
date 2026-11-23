@@ -33,11 +33,10 @@ export function admitFeedback(
   policy: GitHubNotificationPolicy,
   account: GitHubIdentity,
   source: GitHubCanonicalFeedback,
+  workflow: 'issue-assignment' | 'review-request' = 'issue-assignment',
 ) {
-  const authors = feedbackIdentities(
-    policy.issueAssignment?.allowed ?? [],
-    policy.issueAssignment?.feedback,
-  );
+  const settings = workflow === 'review-request' ? policy.reviewRequest : policy.issueAssignment;
+  const authors = feedbackIdentities(settings?.allowed ?? [], settings?.feedback);
   const input = {
     account,
     allowSelf: true,
@@ -46,7 +45,7 @@ export function admitFeedback(
     },
   };
   if (
-    !workflowFeedbackAccepting(policy, 'issue-assignment') ||
+    !workflowFeedbackAccepting(policy, workflow) ||
     !source.author ||
     !authors.some(
       (author) =>
@@ -65,8 +64,9 @@ export function observeFeedbackPolicy(
   state: FeedbackSourceState,
   policy: GitHubNotificationPolicy | undefined,
   now: number,
+  workflow: 'issue-assignment' | 'review-request' = 'issue-assignment',
 ) {
-  const accepting = workflowFeedbackAccepting(policy, 'issue-assignment');
+  const accepting = workflowFeedbackAccepting(policy, workflow);
   if (accepting && state.admission?.enabled === false) {
     state.admission = {
       enabled: true,
@@ -84,6 +84,7 @@ export async function discoverFeedback(input: {
   state: FeedbackSourceState;
   client: GitHubNotificationCommentClient;
   policy: GitHubNotificationPolicy;
+  workflow?: 'issue-assignment' | 'review-request';
   owner: string;
   name: string;
   number: number;
@@ -94,7 +95,7 @@ export async function discoverFeedback(input: {
   discovery?: { budget: DiscoveryBudget; save(): Promise<void> };
 }) {
   const { state, owner, name, number } = input;
-  const accepting = observeFeedbackPolicy(state, input.policy, input.now);
+  const accepting = observeFeedbackPolicy(state, input.policy, input.now, input.workflow);
   const discovery = input.discovery
     ? await feedbackDiscovery({ ...input, ...input.discovery })
     : undefined;
@@ -123,12 +124,13 @@ export async function discoverFeedback(input: {
     if (comments.truncated) throw new Error('feedback-source-incomplete');
     sources.push(...comments.comments);
   });
-  const policyDigest = feedbackAuthorityDigest(input.policy);
+  const policyDigest = feedbackAuthorityDigest(input.policy, input.workflow);
   for (const event of state.events) {
     const source = JSON.parse(event.source) as GitHubCanonicalFeedback;
     if (
       accepting &&
-      admitFeedback(input.policy, client.identity, source).disposition === 'approved'
+      admitFeedback(input.policy, client.identity, source, input.workflow).disposition ===
+        'approved'
     )
       delete event.policyHeld;
     else event.policyHeld = 'feedback-not-approved';
@@ -265,7 +267,11 @@ export async function discoverFeedback(input: {
         changedReviewBodies.has(source.nodeId) && (state.watermarks?.[input.nodeId] ?? -1) >= after;
       if (!observedReviewEdit && (!Number.isFinite(updatedAt) || updatedAt <= after)) continue;
     }
-    if (admitFeedback(input.policy, client.identity, source).disposition !== 'approved') continue;
+    if (
+      admitFeedback(input.policy, client.identity, source, input.workflow).disposition !==
+      'approved'
+    )
+      continue;
     if (state.events.some((event) => event.id === id) || pending.some((event) => event.id === id))
       continue;
     pending.push({

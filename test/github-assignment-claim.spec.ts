@@ -6,6 +6,7 @@ import { claimBody, parseAssignmentClaim } from '../channels/github/provider/ass
 import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
 import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
 import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
+import { intakeFixture, fixturePullRequest } from './github-intake-fixture.ts';
 
 describe('channels/github/provider/assignment-claim', () => {
   const metadata = {
@@ -98,6 +99,42 @@ describe('channels/github/provider/assignment-claim', () => {
       port(() => ({ value: [], next: true })).list(source),
       /claim-comments-incomplete/u,
     );
+  });
+
+  it('should verify review claims against the actual request instead of issue assignment history', async () => {
+    const fixture = intakeFixture();
+    fixturePullRequest(fixture);
+    const claims = port(() => {
+      throw new Error('unexpected provider read');
+    });
+    claims.client.getRepository = async () => ({
+      ...fixture.repository,
+      nodeId: source.repositoryNodeId,
+    });
+    claims.client.getItem = async () => ({ ...fixture.item, nodeId: source.issueNodeId });
+    const request = {
+      nodeId: 'RE_request',
+      databaseId: 1,
+      event: 'review_requested' as const,
+      createdAt: '2026-01-01T00:00:00Z',
+      requester: { nodeId: source.assignerNodeId, login: 'operator', type: 'User' as const },
+      reviewer: { nodeId: source.receivingNodeId, login: 'fixture', type: 'User' as const },
+    };
+    claims.client.reviewRequests.current = async () => request;
+    const review: ClaimSource = {
+      ...source,
+      kind: 'review-request',
+      assignmentEventId: request.nodeId,
+    };
+    await claims.verify(review);
+    for (const changed of [
+      undefined,
+      { ...request, nodeId: 'RE_new' },
+      { ...request, requester: { ...request.requester, nodeId: 'U_other' } },
+    ]) {
+      claims.client.reviewRequests.current = async () => changed;
+      await assert.rejects(claims.verify(review), /claim-review-request-changed/);
+    }
   });
   it('should refuse changed or foreign comments before cleanup and confirm updates by reading back', async () => {
     for (const current of [projected(1, 'U_foreign'), projected(1, 'U_fixture', 'edited')]) {

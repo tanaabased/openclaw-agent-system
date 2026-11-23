@@ -811,17 +811,28 @@ describe('agent/codex-intake', () => {
     const originalDigest = codexIntakePolicy(value)!.digest;
     policy.reviewRequest = { paused: true, allowed: [{ login: 'other', nodeId: 'U_other' }] };
     assert.equal(codexIntakePolicy(value)!.digest, originalDigest);
-    assert.deepEqual(codexIntakeJobs(value), [job]);
+    const jobs = codexIntakeJobs(value);
+    assert.deepEqual(
+      jobs.find(({ id }) => id === intakeAutomationId),
+      job,
+    );
+    const review = jobs.find(({ id }) => id === 'github-review-request');
+    assert.ok(review);
+    assert.equal(review.enabled, false);
     policy.issueAssignment!.paused = true;
     assert.equal(codexIntakeJobs(value)[0]!.enabled, false);
     assert.equal(codexIntakePolicy(value)!.digest, originalDigest);
     policy.issueAssignment!.paused = false;
-    assert.equal(codexIntakeJobs(value).length, 1);
+    assert.equal(codexIntakeJobs(value).length, 2);
+    assert.equal(codexIntakeJobs(value)[0]!.enabled, true);
     assert.throws(() => codexIntakeJobs({ ...value, automations: [job] }), {
       code: 'intake-automation-id-reserved',
     });
+    assert.throws(() => codexIntakeJobs({ ...value, automations: [review] }), {
+      code: 'intake-automation-id-reserved',
+    });
     policy.issueAssignment!.allowed = [];
-    assert.equal(codexIntakeJobs(value).length, 1);
+    assert.equal(codexIntakeJobs(value).length, 2);
     assert.equal(
       codexAutomationSchedule({ kind: 'every', seconds: 1001 * 60, missedRun: 'native' }),
       'FREQ=MINUTELY;INTERVAL=1001',

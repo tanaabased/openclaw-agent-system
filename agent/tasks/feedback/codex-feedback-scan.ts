@@ -12,7 +12,7 @@ import DiscoveryBudget, { DiscoveryPaused } from '../../discovery-budget.ts';
 import feedbackDiscoveryOwner from './feedback-discovery-owner.ts';
 import feedbackOwnPublications from './feedback-own-publications.ts';
 import feedbackSources from './feedback-sources.ts';
-import { dispatchAdmission } from '../managed-issue.ts';
+import { taskAdmission } from '../task-admission.ts';
 import replyOwnPublications from './reply-own-publications.ts';
 import workflowFailure from '../workflow-failure.ts';
 export interface FeedbackScan {
@@ -26,6 +26,7 @@ export async function scanCodexFeedback(input: {
   current: CodexTaskSelection;
   provider: Awaited<ReturnType<typeof connectCodexFeedback>>;
   occurrence: string;
+  workflow?: 'issue-assignment' | 'review-request';
   now: number;
   budget?: DiscoveryBudget;
   checkpoint?(scan: FeedbackScan): Promise<void>;
@@ -37,14 +38,15 @@ export async function scanCodexFeedback(input: {
   await new GitHubIdentityCache(current.store.location).resolve(
     policy,
     provider.client,
-    'feedback',
+    input.workflow === 'review-request' ? 'review-feedback' : 'feedback',
     true,
   );
   const intake = await current.store.read();
-  if (!intake) throw new Error('feedback-intake-missing');
+  if (!intake && input.workflow !== 'review-request') throw new Error('feedback-intake-missing');
   const records = input.state.records
     .filter(
       (record) =>
+        Boolean(record.reviewAdmission) === (input.workflow === 'review-request') &&
         !record.retirement &&
         !record.reset &&
         record.threadId &&
@@ -70,10 +72,24 @@ export async function scanCodexFeedback(input: {
     feedback.scannedTime = now;
     feedback.discoveryPending = true;
     try {
-      const admitted = dispatchAdmission(record, intake.records ?? []);
+      const admitted = taskAdmission(record, intake?.records ?? []);
       if (!admitted) throw new Error('feedback-admission-missing');
       await save();
-      await revalidateFeedbackAssignment(current.policy, admitted, provider.client, record);
+      if (!('origin' in admitted))
+        await revalidateFeedbackAssignment(current.policy, admitted, provider.client, record);
+      else {
+        const item = await provider.client.getItem(
+          admitted.repository.owner.login,
+          admitted.repository.name,
+          admitted.issue.number,
+        );
+        if (
+          item.nodeId !== admitted.issue.nodeId ||
+          item.itemType !== 'pull-request' ||
+          provider.client.identity.nodeId !== admitted.receiving.nodeId
+        )
+          throw new Error('review-feedback-owner-changed');
+      }
       let publications: Promise<string[]> | undefined;
       const source = {
         state: feedback,
@@ -99,6 +115,7 @@ export async function scanCodexFeedback(input: {
           })),
         client: provider.comments,
         policy,
+        workflow: input.workflow,
         now,
         ...(input.checkpoint ? { discovery: { budget, save } } : {}),
         owner: admitted.repository.owner.login,

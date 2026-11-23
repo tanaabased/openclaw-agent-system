@@ -7,6 +7,7 @@ import GitHubNotificationCommentPublisher, {
 } from '../../../channels/github/publication/comment-publisher.ts';
 import redactFeedback from '../feedback/feedback-redaction.ts';
 import workflowFailure from '../workflow-failure.ts';
+import reviewPublisher from '../../../channels/github/publication/review-publisher.ts';
 
 /** recovery has no write route: absent or changed evidence retains only the original receipt. */
 export default async function reconcileRetirementEffects(input: {
@@ -15,12 +16,26 @@ export default async function reconcileRetirementEffects(input: {
     Pick<FeedbackProvider, 'identity' | 'getRepository' | 'findOwnIssueComment' | 'replies'>
   >;
   delivery(): Promise<Pick<IssueDeliveryProvider, 'client' | 'retirementOutcome'>>;
+  review?: Parameters<typeof reviewPublisher>[1]['connect'];
   save(): Promise<void>;
 }) {
   for (const effect of [...input.effects]) {
     try {
       let settled = false;
-      if (effect.kind === 'delivery') {
+      if (effect.kind === 'review') {
+        if (!input.review) throw new Error('retirement-review-provider-required');
+        const provider = await input.review();
+        if (provider.identity.nodeId !== effect.accountId)
+          throw new Error('retirement-effect-account-changed');
+        settled = Boolean(
+          await reviewPublisher(JSON.parse(effect.publication), {
+            connect: async () => provider,
+            redactText: redactFeedback,
+            authorize: () => ({ authorized: true }),
+            exclusive: async (_key, run) => run(),
+          }).reconcile(),
+        );
+      } else if (effect.kind === 'delivery') {
         const provider = await input.delivery();
         if (provider.client.identity.nodeId !== effect.accountId)
           throw new Error('retirement-effect-account-changed');

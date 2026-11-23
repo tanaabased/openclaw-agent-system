@@ -4,9 +4,10 @@ import { automationHash } from '../../automation-hash.ts';
 import type { DispatchRecord } from '../dispatch/codex-dispatch-state.ts';
 import { announcementPublication } from '../delivery/delivery-announcement.ts';
 import type { SharedDispatchRecord } from '../dispatch/dispatch-state.ts';
-import { managedPullRequest, type ManagedIssue } from '../managed-issue.ts';
+import { managedPullRequest } from '../managed-issue.ts';
 import type { OpenClawDispatchRecord } from '../dispatch/openclaw-dispatch-state.ts';
 import type { ReplyDraft } from '../feedback/reply-store.ts';
+import type { TaskAdmission } from '../task-admission.ts';
 import type { ReplyTarget } from '../feedback/reply-target.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 65536 });
@@ -14,7 +15,7 @@ export const retirementEffectSchema = Type.Object(
   {
     id: Type.String({ pattern: '^[a-f0-9]{64}$' }),
     accountId: text,
-    kind: Type.Union([Type.Literal('comment'), Type.Literal('delivery')]),
+    kind: Type.Union([Type.Literal('comment'), Type.Literal('delivery'), Type.Literal('review')]),
     // Exact provider input, not a task snapshot or authority to repeat the write.
     publication: Type.String({ minLength: 1, maxLength: 256000 }),
     commenterLogin: Type.Optional(text),
@@ -50,9 +51,10 @@ export function retirementReplyEffect(draft: ReplyDraft): RetirementEffect | und
 
 export function retirementDeliveryEffects(
   delivery: Delivery | undefined,
-  intake: ManagedIssue,
+  intake: TaskAdmission,
 ): RetirementEffect[] {
   if (!delivery) return [];
+  if ('origin' in intake) throw new Error('review-author-delivery-forbidden');
   const effects: RetirementEffect[] = [];
   const creationAttempted = delivery.creationAttempted && !delivery.pullRequest;
   const contentUncertain = delivery.contentUpdate && delivery.contentUpdateAttempted !== false;
@@ -92,10 +94,30 @@ export function retirementDeliveryEffects(
 /** retain only attempted effects whose outcome is unknown, independently of task disposal. */
 export default function retirementEffects(
   source: SharedDispatchRecord,
-  intake: ManagedIssue,
+  intake: TaskAdmission,
 ): RetirementEffect[] {
   const record = source as Record;
   const effects = retirementDeliveryEffects(record.delivery, intake);
+  const review = record.reviewPublication;
+  if (review?.attempted && !review.receipt && !review.rejected)
+    effects.push(
+      effect({
+        kind: 'review',
+        accountId: intake.receiving.nodeId,
+        publication: JSON.stringify({
+          item: {
+            lifecycleId: 'pull-request-review',
+            repositoryOwner: intake.repository.owner.login,
+            repositoryName: intake.repository.name,
+            repositoryNodeId: intake.repository.nodeId,
+            number: intake.issue.number,
+          },
+          head: review.head,
+          draft: review.draft,
+          publicationId: record.id,
+        }),
+      }),
+    );
   const announcement = record.announcement;
   if (announcement?.attempted && !announcement.receipt) {
     effects.push(
@@ -106,7 +128,8 @@ export default function retirementEffects(
           announcement.publication ??
           JSON.stringify(
             announcementPublication(announcement, {
-              lifecycleId: managedPullRequest(intake) ? 'pull-request' : 'issue',
+              lifecycleId:
+                'origin' in intake || managedPullRequest(intake) ? 'pull-request' : 'issue',
               number: intake.issue.number,
               repositoryOwner: intake.repository.owner.login,
               repositoryName: intake.repository.name,

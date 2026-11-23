@@ -10,9 +10,12 @@ import {
 type Issue = Parameters<typeof issueProgression>[0] & {
   projectWork?: SharedDispatchRecord['projectWork'];
   manualIssue?: Pick<OperatorIssue, 'selections'>;
+  reviewAdmission?: SharedDispatchRecord['reviewAdmission'];
 };
 
 /** Conversation reports the task stage without granting permission to resume stopped work. */
 export function feedbackConversationMode(record: Issue, policy: GitHubNotificationPolicy) {
-  return retainedIssueProgression(record) ? 'work' : issueWorkflowMode(policy, record);
+  return record.reviewAdmission || retainedIssueProgression(record)
+    ? 'work'
+    : issueWorkflowMode(policy, record);
 }

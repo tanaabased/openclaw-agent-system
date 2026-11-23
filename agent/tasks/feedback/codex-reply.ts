@@ -12,7 +12,7 @@ import type { CodexFeedbackDependencies } from './codex-feedback.ts';
 import { selectCodexTaskContext } from '../context/codex-task-context.ts';
 import { connectCodexThreads } from '../../codex-thread-client.ts';
 import feedbackReply from './feedback-reply.ts';
-import { dispatchAdmission, managedTargetUrl } from '../managed-issue.ts';
+import { taskAdmission, taskTarget } from '../task-admission.ts';
 import type { FeedbackProvider } from './feedback-provider.ts';
 import replyOwnerContext from './reply-owner-context.ts';
 import replyOwner from './reply-owner.ts';
@@ -68,7 +68,7 @@ async function codexReplyScoped(
         if (!match && input.target) {
           const admitted = (await current.store.read())?.records ?? [];
           const selected = records.flatMap((record) => {
-            const issue = record.threadId === caller && dispatchAdmission(record, admitted);
+            const issue = record.threadId === caller && taskAdmission(record, admitted);
             return issue
               ? (record.feedback?.events ?? []).filter(
                   (event) =>
@@ -96,8 +96,8 @@ async function codexReplyScoped(
           if (owners.length > 1) throw new Error('reply-managed-owner-ambiguous');
           const record = owners[0];
           if (!record?.request || !record.worktree) return;
-          const admission = dispatchAdmission(record, (await current.store.read())?.records ?? []);
-          defaultTarget = admission && managedTargetUrl(admission);
+          const admission = taskAdmission(record, (await current.store.read())?.records ?? []);
+          defaultTarget = admission && taskTarget(admission);
           if (record.reset || record.supersededBy || record.retirement)
             throw new Error('reply-managed-context-invalid');
           const inputItem = items.findLast(
@@ -124,10 +124,7 @@ async function codexReplyScoped(
           if (!native || native.id !== caller) throw new Error('reply-managed-context-invalid');
           return { inputId: inputItem.id };
         }
-        const admission = dispatchAdmission(
-          match.record,
-          (await current.store.read())?.records ?? [],
-        );
+        const admission = taskAdmission(match.record, (await current.store.read())?.records ?? []);
         defaultTarget =
           admission &&
           feedbackTarget(
@@ -201,8 +198,7 @@ async function codexReplyScoped(
         const retained = record?.feedback?.events.find((entry) => entry.id === source.eventId);
         const event = source;
         const fresh = await selectCodexTaskContext(pluginData, deps);
-        const admitted =
-          record && dispatchAdmission(record, (await fresh.store.read())?.records ?? []);
+        const admitted = record && taskAdmission(record, (await fresh.store.read())?.records ?? []);
         if (
           !record ||
           !retained ||
@@ -262,7 +258,7 @@ async function codexReplyScoped(
               replyOwnerContext({
                 record,
                 conversation: Boolean(feedback),
-                intake: dispatchAdmission(record, admitted?.records ?? []),
+                intake: taskAdmission(record, admitted?.records ?? []),
                 caller,
                 custodyInvalid: !record.request,
                 delivery: record.delivery,

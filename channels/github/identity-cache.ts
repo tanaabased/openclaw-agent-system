@@ -27,11 +27,21 @@ const cacheSchema = Type.Object(
   { additionalProperties: false },
 );
 
-type Purpose = 'assignment' | 'feedback' | 'delivery' | 'all';
+type Purpose = 'assignment' | 'review' | 'review-feedback' | 'feedback' | 'delivery' | 'all';
 
 function pins(policy: GitHubNotificationPolicy, purpose: Purpose = 'all') {
   const result: GitHubIdentityPin[] = [];
-  // A reserved workflow cannot cause credential access or provider lookups.
+  if (purpose === 'review') return policy.reviewRequest?.allowed ?? [];
+  if (purpose === 'review-feedback')
+    return configuredFeedbackIdentities(
+      policy.reviewRequest?.allowed ?? [],
+      policy.reviewRequest?.feedback,
+    );
+  if (purpose === 'all')
+    result.push(
+      ...(policy.reviewRequest?.allowed ?? []),
+      ...(policy.reviewRequest?.feedback?.allowed ?? []),
+    );
   const workflow = policy.issueAssignment;
   if (workflow) {
     if (purpose === 'feedback')

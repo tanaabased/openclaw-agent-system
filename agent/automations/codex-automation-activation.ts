@@ -1,4 +1,5 @@
 import { workflowFeedbackAvailable } from '../../channels/github/feedback-policy.ts';
+import { reviewAutomationId } from './review-jobs.ts';
 import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
 import { intakeAutomationId } from './codex-intake-policy.ts';
 import { notificationAuthorityDigest } from '../notification-authority.ts';
@@ -30,21 +31,23 @@ export async function inspectCodexPickupActivation(
 export async function inspectSelectedCodexPickupActivation(
   selected: CodexAutomationSnapshot,
   acceptedOccurrence = false,
+  jobId = issuePickupAutomationId,
 ) {
-  const job = selected.jobs.find((entry) => entry.id === issuePickupAutomationId);
-  const record = selected.ledger.records.find((entry) => entry.id === issuePickupAutomationId);
+  const prefix = jobId === reviewAutomationId ? 'review-request' : 'issue-pickup';
+  const job = selected.jobs.find((entry) => entry.id === jobId);
+  const record = selected.ledger.records.find((entry) => entry.id === jobId);
   if (
     !job ||
     !record ||
     record.removed ||
-    selected.ledger.pending?.action.manifestId === issuePickupAutomationId ||
+    selected.ledger.pending?.action.manifestId === jobId ||
     record.definition.kind !== 'heartbeat' ||
     job.payload.kind !== 'prompt'
   )
-    throw new CodexAutomationError('issue-pickup-activation-required');
+    throw new CodexAutomationError(prefix + '-activation-required');
   const matches = await readCodexAutomationSelection(selected.codexHome, {
     nativeId: record.nativeId,
-    marker: codexAutomationMarker(selected.scope, issuePickupAutomationId),
+    marker: codexAutomationMarker(selected.scope, jobId),
   });
   if (
     matches.length !== 1 ||
@@ -57,7 +60,7 @@ export async function inspectSelectedCodexPickupActivation(
       selected.workspace,
     )
   )
-    throw new CodexAutomationError('issue-pickup-automation-drift');
+    throw new CodexAutomationError(prefix + '-automation-drift');
   const desired = codexAutomationDefinition(
     { ...job, payload: job.payload },
     selected.scope,
@@ -65,10 +68,42 @@ export async function inspectSelectedCodexPickupActivation(
     record.definition.rrule,
   );
   if (record.definition.prompt !== desired.prompt || record.definition.rrule !== desired.rrule)
-    throw new CodexAutomationError('issue-pickup-automation-drift');
+    throw new CodexAutomationError(prefix + '-automation-drift');
   if (!acceptedOccurrence && (!job.enabled || record.definition.status !== 'ACTIVE'))
-    throw new CodexAutomationError('issue-pickup-paused');
+    throw new CodexAutomationError(prefix + '-paused');
   return { threadId: record.definition.targetThreadId, nativeId: record.nativeId };
+}
+
+export async function inspectCodexReviewActivation(
+  pluginData: string,
+  dependencies: CodexAutomationDependencies = {},
+  acceptedOccurrence = false,
+) {
+  return inspectSelectedCodexPickupActivation(
+    await readCodexAutomationSnapshot(pluginData, dependencies),
+    acceptedOccurrence,
+    reviewAutomationId,
+  );
+}
+
+/** caller is supplied by the native runtime, never by a feedback tool argument. */
+export async function inspectCodexFeedbackActivation(
+  pluginData: string,
+  dependencies: CodexAutomationDependencies,
+  caller: string,
+) {
+  const selected = await readCodexAutomationSnapshot(pluginData, dependencies);
+  const review = selected.ledger.records.find((entry) => entry.id === reviewAutomationId);
+  return inspectCodexDispatchActivation(
+    pluginData,
+    dependencies,
+    false,
+    true,
+    'feedback',
+    review?.definition.kind === 'heartbeat' && review.definition.targetThreadId === caller
+      ? 'review-request'
+      : 'issue-assignment',
+  );
 }
 
 /** new dispatch requires active consent; retained work may verify its owner after a pause. */
@@ -84,10 +119,12 @@ export async function inspectCodexDispatchActivation(
     | 'review'
     | 'publication'
     | 'feedback' = 'assessment',
+  workflow: 'issue-assignment' | 'review-request' = 'issue-assignment',
 ) {
   const selected = await readCodexAutomationSnapshot(pluginData, dependencies);
-  const job = selected.jobs.find((entry) => entry.id === intakeAutomationId);
-  const record = selected.ledger.records.find((entry) => entry.id === intakeAutomationId);
+  const jobId = workflow === 'review-request' ? reviewAutomationId : intakeAutomationId;
+  const job = selected.jobs.find((entry) => entry.id === jobId);
+  const record = selected.ledger.records.find((entry) => entry.id === jobId);
   const activationCode =
     capability === 'intake'
       ? record
@@ -99,19 +136,19 @@ export async function inspectCodexDispatchActivation(
   const saved = record
     ? await readCodexAutomationSelection(selected.codexHome, {
         nativeId: record.nativeId,
-        marker: codexAutomationMarker(selected.scope, intakeAutomationId),
+        marker: codexAutomationMarker(selected.scope, jobId),
       })
     : [];
   const actual = saved.find((entry) => entry.id === record?.nativeId);
   if (!retainedWork && !pausedRecovery && actual?.definition.status === 'PAUSED')
     throw new CodexAutomationError('intake-automation-paused');
   const matchesPrompt = (prompt: string) => {
-    const marker = '\n\n' + codexAutomationMarker(selected.scope, intakeAutomationId);
+    const marker = '\n\n' + codexAutomationMarker(selected.scope, jobId);
     return job?.payload.kind === 'prompt' && prompt === job.payload.prompt + marker;
   };
   if (
     (selected.cleanupOnly && (!retainedWork || !selected.policyBlocker)) ||
-    (!retainedWork && selected.ledger.pending?.action.manifestId === intakeAutomationId) ||
+    (!retainedWork && selected.ledger.pending?.action.manifestId === jobId) ||
     !record ||
     record.definition.kind !== 'heartbeat' ||
     (!retainedWork &&
@@ -152,15 +189,12 @@ export async function inspectCodexDispatchActivation(
     return { sourceThreadId: record.definition.targetThreadId };
   // New workflows require current activation; retained tasks keep their recorded scope.
   if (
-    capability === 'review' ||
+    (capability === 'review' && workflow !== 'review-request') ||
     (!retainedWork &&
       (pausedRecovery ||
         !selected.loaded.manifest.github?.notifications ||
         (capability === 'feedback'
-          ? !workflowFeedbackAvailable(
-              selected.loaded.manifest.github.notifications,
-              'issue-assignment',
-            )
+          ? !workflowFeedbackAvailable(selected.loaded.manifest.github.notifications, workflow)
           : !['work', 'auto'].includes(
               selected.loaded.manifest.github.notifications.issueAssignment?.mode ?? '',
             )) ||
@@ -172,7 +206,7 @@ export async function inspectCodexDispatchActivation(
   )
     throw new Error('workflow-schedule-reconciliation-required');
   const authority = {
-    workflow: 'issue-assignment' as const,
+    workflow,
     automationId: record.nativeId,
     sourceThreadId: record.definition.targetThreadId,
     policyDigest: notificationAuthorityDigest(selected.loaded.manifest.github?.notifications),

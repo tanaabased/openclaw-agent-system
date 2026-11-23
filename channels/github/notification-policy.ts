@@ -133,7 +133,7 @@ export function githubNotificationRuntimeDiagnostics(
       workflow: 'issue-pickup',
     });
   const review = declaration.reviewRequest;
-  if (review && (review.paused !== undefined || review.allowed.length))
+  if (runtime === 'openclaw' && review && (review.paused !== undefined || review.allowed.length))
     diagnostics.push({
       code: 'github-notification-runtime-unsupported',
       fieldPath: '/github/review-request',

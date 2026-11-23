@@ -1,6 +1,7 @@
 import type { SharedDispatchRecord } from '../dispatch/dispatch-state.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
-import { dispatchAdmission, type ManagedIssue } from '../managed-issue.ts';
+import type { ManagedIssue } from '../managed-issue.ts';
+import { taskAdmission } from '../task-admission.ts';
 import { assertNativeContextInput } from '../context/native-context-request.ts';
 import { feedbackTarget, replyLocator } from './reply-target.ts';
 /** Explicit operator recovery selects an exact source and retained text, never a latest draft. */
@@ -32,7 +33,7 @@ export default function nativeFeedbackPublication(
     throw new Error('feedback-publication-request-invalid');
   const matches = records.flatMap((record) => {
     if (record.reset || record.supersededBy) return [];
-    const issue = dispatchAdmission(record, admitted);
+    const issue = taskAdmission(record, admitted);
     if (!issue) return [];
     const repository = `${issue.repository.owner.login}/${issue.repository.name}`;
     return (record.feedback?.events ?? [])

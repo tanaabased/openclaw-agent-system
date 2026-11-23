@@ -45,22 +45,26 @@ export function notificationAuthorityDigest(policy: GitHubNotificationPolicy | u
 }
 
 /** cache key for reevaluating observed sources when live feedback eligibility changes. */
-function feedbackAuthority(policy: GitHubNotificationPolicy) {
+function feedbackAuthority(
+  policy: GitHubNotificationPolicy,
+  workflow: 'issue-assignment' | 'review-request',
+) {
+  const settings = workflow === 'review-request' ? policy.reviewRequest : policy.issueAssignment;
   return {
     effect: 'feedback-reply',
     schemaVersion: policy.schemaVersion,
     runtimes: policy.runtimes,
     routing: normalizeRepositoryRouting(policy.routing),
-    enabled: Boolean(policy.issueAssignment),
-    authors: feedbackIdentities(
-      policy.issueAssignment?.allowed ?? [],
-      policy.issueAssignment?.feedback,
-    ),
+    enabled: Boolean(settings),
+    authors: feedbackIdentities(settings?.allowed ?? [], settings?.feedback),
   };
 }
 
-export function feedbackAuthorityDigest(policy: GitHubNotificationPolicy) {
-  const value = feedbackAuthority(policy);
+export function feedbackAuthorityDigest(
+  policy: GitHubNotificationPolicy,
+  workflow: 'issue-assignment' | 'review-request' = 'issue-assignment',
+) {
+  const value = feedbackAuthority(policy, workflow);
   return automationHash({
     ...value,
     runtimes: ordered(value.runtimes),

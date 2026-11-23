@@ -5,6 +5,7 @@ const keys = new Set([
   'id',
   'intakeId',
   'manualIssue',
+  'reviewAdmission',
   'issueKey',
   'sourceThreadId',
   'createdAt',

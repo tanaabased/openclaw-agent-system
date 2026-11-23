@@ -54,6 +54,20 @@ function fixture(items: Record<string, unknown>[], partial = false) {
 }
 
 describe('agent/codex-intake-denial', () => {
+  it('should recognize the exact native review preparation refusal without accepting another target', () => {
+    const target = 'https://github.com/owner/repo/pull/3';
+    const authored = {
+      action: 'review',
+      operation: 'prepare',
+      target,
+      assessment: input.assessment,
+    };
+    const reviewCommand = command
+      .replace("'dispatch' 'prepare'", "'dispatch' 'review' 'prepare'")
+      .replace(JSON.stringify(input), JSON.stringify(authored));
+    assert.equal(matchesDeniedPreparation(reviewCommand, receiptId, anchor, target), true);
+    assert.equal(matchesDeniedPreparation(reviewCommand, receiptId, anchor, target + '0'), false);
+  });
   it('should match semantic preparation refusals without model-carried bindings', () => {
     const target = 'https://github.com/owner/repo/issues/3';
     const authored = { action: input.action, title: input.title, assessment: input.assessment };

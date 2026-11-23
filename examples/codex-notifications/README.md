@@ -35,6 +35,8 @@ conversation remains usable independently of the schedule.
 
 ### Native Acceptance Inventory
 
+- **Independent first review (Codex):** request one individual reviewer through an approved immutable requester in a disposable PR in `tanaabased/big-test-bucket`. Keep CI running across two scheduled checks: retain the request with no reviewer turn or comment. Let one test fail and verify the ordinary coordinator creates one separate reviewer chat and exact-head checkout, using the reviewer's profiles and verified linked-issue Complexity. Verify a grouped formal review mentions the author and suggests a repair, without edits, commits, pushes or executed reruns. Repeat with first-pass approval, missing/ambiguous issue links and explicit operator model selection. Force uncertain creation and review publication; reconcile provider/native receipts without duplicates. Restart same-head CI before publication and verify quiet waiting followed by one evidence-driven resumption. Verify source-bound approved explanations use that same chat, closure retires only idle unpinned resources, and missing optional cards/coordinator readback never blocks review. Capture actual native and GitHub receipts; local components and the headless blocks below do not establish this native journey. OpenClaw native review activation remains outside this scenario.
+
 - **Incoming publication metadata (native desktop acceptance):** forward an approved comment and a review containing valid Agent System publication markers in both Codex and OpenClaw. Inspect native input and context readback: metadata must be absent from displayed prose, while inline/fenced marker examples, mentions, links, quotes and attribution remain visible. Retained provider bodies and revisions must remain unchanged. Exercise fallback presentation under controlled formatter failure. Capture actual display evidence separately; focused string/component checks do not establish browser rendering. This extension is not executed by the headless blocks below.
 
 - **Feedback delivery notices:** in a native scheduled occurrence, deliver one approved issue comment and one comment on its linked PR. Require the final intake report to acknowledge the verified deliveries with accurate counts and the owning issue chat link, even when the remaining queue is empty. Re-read the same occurrence, then run a quiet scan; preserve the cached response without a second notification and announce no delivery again. Prepared, uncertain, and denied sends must not appear as successful. Withhold or fail final report publication and verify the issue still consumes the feedback once and continues work without another send. Controlled components cover both runtimes; these headless checks do not establish native Codex scheduling or final report delivery.
@@ -212,7 +214,7 @@ printf '%s\n' '{"automationId":"fixture-native-intake","currentTimeIso":"2026-10
   | node "$runtime" intake quiet-response --plugin-data "$root/quiet-data" \
   | jq -e '.status == "not-quiet" and (has("response") | not)'
 
-# should expose packaged intake and plan one owned schedule without activating it
+# should plan independent assignment and review schedules without activating either
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
@@ -224,11 +226,20 @@ node "$runtime" intake inspect --plugin-data "$plugin_data" \
 if output=$(node "$runtime" intake scan --plugin-data "$plugin_data" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "intake-activation-required"'
 printf '%s\n' '{"nativeInventory":{"schemaVersion":4,"sections":[],"unavailableHosts":[],"unavailableSources":[]}}' | node "$runtime" automations plan --plugin-data "$plugin_data" \
-  | jq -e 'any(.findings[]; .code == "automation-thread-sync-required") and (.conversations | length) == 1'
-node "$GITHUB_WORKSPACE/scripts/codex-sidebar-fixture.mjs" "$runtime" "$plugin_data" "$root/notification-sidebar-input.json" | jq -e '.status == "verified" and .threads["github-issue-assignment"].settings.requested == {model: "gpt-6.1-sol", effort: "low"} and .threads["github-issue-assignment"].settings.observed == .threads["github-issue-assignment"].settings.requested'
+  | jq -e 'any(.findings[]; .code == "automation-thread-sync-required") and (.conversations | length) == 2'
+node "$GITHUB_WORKSPACE/scripts/codex-sidebar-fixture.mjs" "$runtime" "$plugin_data" "$root/notification-sidebar-input.json" | jq -e '.status == "verified" and .threads["github-issue-assignment"].settings.requested == {model: "gpt-6.1-sol", effort: "low"} and .threads["github-issue-assignment"].settings.observed == .threads["github-issue-assignment"].settings.requested and .threads["github-review-request"].settings.requested == {model: "gpt-6-luna", effort: "medium"} and .threads["github-review-request"].settings.observed == .threads["github-review-request"].settings.requested'
 node "$runtime" setup inspect --plugin-data "$plugin_data" \
-  | jq -e 'any(.findings[]; .code == "github-notification-runtime-unsupported" and .status == "warning") and all(.findings[]; .code != "github-notification-runtime-unsupported" or .status != "blocked")'
+  | jq -e 'all(.findings[]; .code != "github-notification-runtime-unsupported")'
 test ! -e "$GITHUB_WORKSPACE/examples/codex-notifications/active/.setup-applied"
+test ! -d "$CODEX_HOME/automations"
+
+# should expose the packaged reviewer skill and reject an unowned review caller
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+test -f "$plugin_root/skills/task-review/SKILL.md"
+if output=$(printf '%s\n' '{"action":"review","operation":"context"}' | env -u CODEX_THREAD_ID node "$runtime" dispatch review context --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "review-native-caller-required"'
 test ! -d "$CODEX_HOME/automations"
 
 # should expose direct reply without intake activation while requiring an actual native caller

@@ -10,7 +10,8 @@ import type {
 } from '../../../channels/github/provider/work-event-types.ts';
 import type { CodexTaskSelection } from '../context/codex-task-context.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
-import type { ManagedIssue as IntakeRecord } from '../managed-issue.ts';
+import type { TaskAdmission as IntakeRecord } from '../task-admission.ts';
+import { githubIdentityMatches } from '../../../channels/github/provider/work-item.ts';
 
 /** verify the exact admitted source before work and every dependent provider write. */
 export default async function authorizeCodexFeedback(input: {
@@ -42,6 +43,22 @@ export default async function authorizeCodexFeedback(input: {
     },
     assertCurrent: async () => {},
     reauthorize: async () => {
+      if ('origin' in intake) {
+        const item = await provider.client.getItem(
+          intake.repository.owner.login,
+          intake.repository.name,
+          intake.issue.number,
+        );
+        if (
+          !githubIdentityMatches(provider.client.identity, intake.receiving) ||
+          item.nodeId !== intake.issue.nodeId ||
+          item.itemType !== 'pull-request' ||
+          !item.pullRequest.author ||
+          !githubIdentityMatches(item.pullRequest.author, intake.author)
+        )
+          throw new Error('review-feedback-owner-changed');
+        return item;
+      }
       if (input.conversation) return (await inspectIssueIdentity(intake, provider.client)).item;
       const admission = assignmentIntakePolicy(current.manifest, 'codex');
       if (!admission) throw new WorkflowPolicyHeld('feedback-disabled');

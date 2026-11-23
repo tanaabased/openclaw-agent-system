@@ -1,4 +1,5 @@
 import { taskResponse } from '../response/task-response.ts';
+import codexReview from '../review/codex-review.ts';
 import { realpath } from 'node:fs/promises';
 import { Value } from 'typebox/value';
 import { responseRequestSchema } from '../../../tools/dispatch/response-schema.ts';
@@ -81,6 +82,8 @@ async function runCodexDispatchScoped(
   input: unknown,
   deps: CodexDispatchDependencies = {},
 ) {
+  if (action === 'review')
+    return codexReview(pluginData, { ...(input as Record<string, unknown>), action });
   if (action === 'response') {
     const authored = { ...(input as Record<string, unknown>), action };
     if (!Value.Check(responseRequestSchema, authored)) throw new Error('response-request-invalid');

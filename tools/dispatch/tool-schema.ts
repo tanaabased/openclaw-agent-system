@@ -1,4 +1,5 @@
 import { responseRequestSchema } from './response-schema.ts';
+import { reviewRequestSchema } from './review-schema.ts';
 import { deliveryBaseSchema } from '../../agent/tasks/delivery/delivery-base.ts';
 import { Type, type Static, type TProperties } from 'typebox';
 import { Value } from 'typebox/value';
@@ -29,6 +30,7 @@ const id = Type.String({ pattern: '^[a-f0-9]{64}$' });
 const object = <P extends TProperties>(properties: P) =>
   Type.Object(properties, { additionalProperties: false });
 const dispatchRequestVariants = Type.Union([
+  reviewRequestSchema,
   responseRequestSchema,
   launchRequestSchema,
   replyExecutionSchema,

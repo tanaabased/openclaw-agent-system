@@ -10,6 +10,7 @@ GitHub authorization without consuming the manifest token or managing OpenClaw c
 - [`github`](#github)
 - [`github.issue-assignment`](#githubissue-assignment)
 - [`github.issue-pickup`](#githubissue-pickup)
+- [`github.review-request`](#githubreview-request)
 - [Common Types](#common-types)
   - [Identity Lists](#identity-lists)
   - [Workflow Customization](#workflow-customization)
@@ -40,7 +41,7 @@ before broader rules and put an explicit `*/*` last if you want a fallback.
 | ----------- | ---------------------------------------------------------------------------- | -------- |
 | `id`        | Unique name without whitespace. Matched-rule diagnostics include this name.  | no       |
 | `match`     | Repository pattern without a leading `!`.                                    | yes      |
-| `workflows` | Use `issue-assignment` or `issue-pickup` for scheduled work.                 | no       |
+| `workflows` | Use `issue-assignment`, `issue-pickup`, or `review-request`.                 | no       |
 | `target`    | `local`, `deny`, `swarm`, `{instance: UUID}`, or `{instances: [UUID, ...]}`. | yes      |
 
 ```yaml
@@ -58,6 +59,8 @@ routing:
 
 The named rule sends assignments for one repository to a specific installation.
 The broader rule sends other matching work to either member of the pool.
+Independent review requests are supported in standalone Codex, not OpenClaw.
+Validation warns when earlier rules cover every workflow and repository of a later rule.
 
 Patterns match the entire current `owner/repository` name, case-insensitively.
 `*` matches zero or more characters within either segment; it never crosses `/`.
@@ -71,7 +74,7 @@ same rule. Scope changes apply to new admissions without Install and preserve
 already admitted work and its original owner. Routing does not grant GitHub access,
 approve assignment actors, or enable unsupported workflows.
 
-`swarm` coordinates assignment-driven work and issue pickup across participating
+`swarm` coordinates assignment-driven work, Codex review requests, and issue pickup across participating
 installations using claim comments and a second native pass before starting work. Use `swarm`
 for that repository on every participant sharing the receiving account. This is a
 comment-only proof of concept: incomplete concurrent reads can still produce
@@ -340,6 +343,48 @@ Delivery assigns the original assignment actor to the PR and adds these reviewer
 without removing existing assignees or review requests. Completed reviews are not
 requested again. [Manual launch](../../tools/dispatch/README.md#manual-issue-launch) has no assignment
 actor and therefore no assigner-derived default assignee.
+
+## `github.review-request`
+
+In standalone Codex, this object declares one review coordinator. Install reconciles
+its native chat and schedule using the shared interval and pause settings. OpenClaw
+currently reports this workflow as unavailable without blocking issue assignments.
+
+| Field      | Type                                              | Required | Default                                  | Description                                                  |
+| ---------- | ------------------------------------------------- | -------- | ---------------------------------------- | ------------------------------------------------------------ |
+| `allowed`  | [Identity list](#identity-lists), users only      | no       | `[]`                                     | Approved requesters and reviewer-feedback authors.           |
+| `effort`   | Supported reasoning effort                        | no       | selected profile                         | Coordinator effort override; not the reviewer chat's effort. |
+| `feedback` | [Workflow customization](#workflow-customization) | no       | `agent-system:agent-system-github-reply` | Reviewer reply composition and guidance.                     |
+| `model`    | Model profile or provider/model                   | no       | `low` profile                            | Coordinator model, using the shared automation model rules.  |
+| `paused`   | boolean                                           | no       | `false`                                  | Stop future scheduled review occurrences.                    |
+| `review`   | [Workflow customization](#workflow-customization) | no       | `agent-system:agent-system-task-review`  | Replace or guide the review skill.                           |
+
+Reviewer chats use the reviewer's [shared model profiles](../../MANIFEST.md#models),
+not the PR author's model. An explicit operator model/effort selection wins. Otherwise,
+verified Complexity from one unambiguous provider-linked issue selects the tier.
+Without usable metadata, the coordinator assesses the PR and a bounded diff with the
+shared rubric; insufficient evidence selects the configured default. A material conflict
+with verified Complexity is reported rather than silently choosing another tier.
+Follow-ups preserve the saved selection.
+
+Current individual requests require a verifiable originating requester, including
+historical requests. Team-only requests, unsupported requester identities, missing
+attribution, and self-review do not authorize a reviewer. Drafts and running CI remain
+pending. Settled CI permits the first review even when checks fail; unavailable CI is
+not treated as absent. Unchanged observations do not start reviewer turns.
+
+The first review may comment, request changes, or approve with grouped inline findings.
+The publisher checks the reviewed revision and current CI, then reads back the actual
+review. Failed CI prevents approval. Later automatic review passes are not yet supported;
+authorized feedback still reaches the same reviewer chat through source-bound replies.
+Approval does not retire the chat; closure/merge and explicit retirement use the shared
+resource-cleanup rules.
+
+Reviewers receive a separate checkout at the exact PR commit, without selecting the
+author's working branch, and instructions against edits, commits, pushes, merges,
+deployments, and executed CI reruns. These are practical restrictions backed by native
+and provider permissions, not complete isolation from every possible tool. Codex uses
+its native scheduled scan; it does not provide OpenClaw's pre-model condition guarantee.
 
 ## Common Types
 

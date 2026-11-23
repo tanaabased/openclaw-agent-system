@@ -1,6 +1,9 @@
 import GitHubIssuePickupClient from './issue-pickup-client.ts';
 import GitHubReviewReplyClient from './review-reply-client.ts';
 import GitHubReviewClient from './review-client.ts';
+import GitHubReviewRequestClient from './review-request-client.ts';
+import readReviewCI from './review-ci.ts';
+import reviewRoutingContext from './review-routing-context.ts';
 import type { ConnectedGitHubAccountClient } from '../../../core/github-account-client.ts';
 import type { GitHubCanonicalIssueComment } from './comment-admission.ts';
 import type { GitHubRateLimit } from './api-response.ts';
@@ -47,6 +50,7 @@ export type {
 /** Fixed-endpoint, bounded GitHub access for notification control facts and publication. */
 export default class GitHubWorkEventClient implements GitHubNotificationProviderClient {
   readonly reviews: GitHubReviewClient;
+  readonly reviewRequests: GitHubReviewRequestClient;
   readonly replies: GitHubReviewReplyClient;
   readonly #api: GitHubWorkEventApiClient;
   readonly #comments: GitHubIssueCommentClient;
@@ -62,6 +66,7 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
     this.maximumCommentCharacters = validateMaximumCommentCharacters(maximumCommentCharacters);
     this.#api = new GitHubWorkEventApiClient(account, retryRead);
     this.reviews = new GitHubReviewClient(this.#api, this.maximumCommentCharacters);
+    this.reviewRequests = new GitHubReviewRequestClient(this.#api);
     this.replies = new GitHubReviewReplyClient(this.#api, this.reviews);
     this.#comments = new GitHubIssueCommentClient(this.#api, this.maximumCommentCharacters);
     this.#items = new GitHubWorkItemClient(this.#api);
@@ -86,6 +91,18 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
 
   get rateLimit(): GitHubRateLimit {
     return this.#api.rateLimit;
+  }
+
+  getReviewCI(owner: string, name: string, number: number, head: string) {
+    return readReviewCI(this.#api, owner, name, number, head);
+  }
+
+  getReviewRoutingContext(owner: string, name: string, number: number) {
+    return reviewRoutingContext(this.#api, owner, name, number);
+  }
+
+  discoverReviewRequests(page: number) {
+    return this.#items.discoverReviewRequests(page);
   }
 
   discoverAssigned(

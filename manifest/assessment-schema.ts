@@ -3,6 +3,7 @@ import { Type, type Static } from 'typebox';
 export const defaultAssessmentSkill = 'agent-system:agent-system-task-assessment';
 export const defaultImplementationSkill = 'agent-system:agent-system-task-implementation';
 export const defaultFeedbackSkill = 'agent-system:agent-system-github-reply';
+export const defaultReviewSkill = 'agent-system:agent-system-task-review';
 export const maximumAssessmentGuidanceBytes = 32 * 1024;
 const assessmentSkillIdPattern =
   '^[ \\t]*\\$?[A-Za-z0-9][A-Za-z0-9._-]*(?::[A-Za-z0-9][A-Za-z0-9._-]*)?[ \\t]*$';

@@ -2,6 +2,7 @@ import type { FeedbackSourceEvent } from './feedback-state.ts';
 import managedOwner from '../managed-owner.ts';
 import type { ReplyTarget } from './reply-target.ts';
 export interface ReplyOwner {
+  workflow?: 'issue-assignment' | 'review-request';
   id: string;
   threadId?: string;
   incarnation?: string;
@@ -85,7 +86,7 @@ export default function replyOwner(
   if (purpose)
     return {
       status: 'status-update-context' as const,
-      workflow: 'issue-assignment' as const,
+      workflow: owner.workflow ?? 'issue-assignment',
       ownerId: owner.id,
       pullRequestNumber: owner.pullRequestNumber,
       verifiedOutcome: {
@@ -99,7 +100,7 @@ export default function replyOwner(
 function manualContext(owner: ReplyOwner, target: ReplyTarget) {
   return {
     status: 'manual-reply-context' as const,
-    workflow: 'issue-assignment' as const,
+    workflow: owner.workflow ?? 'issue-assignment',
     ownerId: owner.id,
     verifiedOutcome: {
       delivery: owner.deliveredPullRequest,
