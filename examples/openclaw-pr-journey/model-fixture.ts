@@ -150,6 +150,7 @@ function call(stage: string, name: string, args: unknown): FixtureResponse {
 
 interface PRFixtureOptions {
   composeResponse?: boolean;
+  verifyCheckoutShell?: boolean;
   assessmentSkill?: string;
   explicitInitialLink?: boolean;
   initialQuestion?: boolean;
@@ -800,6 +801,36 @@ function respond(
           );
         }
       }
+      if (options.verifyCheckoutShell && !update) {
+        const manifestPatch =
+          'diff --git a/agent.yaml b/agent.yaml\nnew file mode 100644\n--- /dev/null\n+++ b/agent.yaml\n@@ -0,0 +1,3 @@\n+schema-version: 1\n+agent:\n+  id: notifications-emori\n';
+        const seeded = result('checkout-shell-seed');
+        if (!seeded)
+          return call('checkout-shell-seed', 'agent_system_git', {
+            argv: ['apply', '-'],
+            cwd: path,
+            stdin: manifestPatch,
+          });
+        if (seeded.exitCode !== 0 || seeded.truncated !== false) return;
+        const shell = openClawAIMockToolResultText(messages, prefix + 'checkout-shell');
+        if (shell === undefined)
+          return call('checkout-shell', 'exec', {
+            command: "grep -Fx '  id: notifications-emori' agent.yaml",
+            host: 'gateway',
+            workdir: path,
+            yieldMs: 10000,
+          });
+        if (!shell.split(/\r?\n/u).some((line) => line.trim() === 'id: notifications-emori'))
+          return;
+        const removed = result('checkout-shell-cleanup');
+        if (!removed)
+          return call('checkout-shell-cleanup', 'agent_system_git', {
+            argv: ['apply', '--reverse', '-'],
+            cwd: path,
+            stdin: manifestPatch,
+          });
+        if (removed.exitCode !== 0 || removed.truncated !== false) return;
+      }
       const file = `notification-fixture-${operatorId}.md`;
       const patch = secondUpdate
         ? `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1,2 +1,3 @@\n Close disposable test issues after capturing their evidence.\n Verify the same PR and announcement after follow-up commits.\n+Keep completed results as history when accepting another revision.\n`
@@ -1006,6 +1037,13 @@ export function createPRExampleScenario(
       { id: prefix + 'assessment-skill', name: 'read' },
       { id: prefix + 'implementation-skill', name: 'read' },
       { id: prefix + 'implementation-guidance', name: 'read' },
+      ...(options.verifyCheckoutShell
+        ? [
+            { id: prefix + 'checkout-shell-seed', name: 'agent_system_git' },
+            { id: prefix + 'checkout-shell', name: 'exec' },
+            { id: prefix + 'checkout-shell-cleanup', name: 'agent_system_git' },
+          ]
+        : []),
       ...dispatchStages.flatMap((stage) =>
         [0, 1, 2, 3].map((attempt) => ({
           id: prefix + retryStage(stage, attempt),

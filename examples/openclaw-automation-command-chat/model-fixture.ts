@@ -6,7 +6,11 @@ import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 
 const model = /^(?:aimock\/)?gpt-5\.5$/u;
 
-function reportInput(request: ChatCompletionRequest) {
+function reportInput(request: ChatCompletionRequest, diagnose = false) {
+  const reject = (field: string) => {
+    if (diagnose) process.stderr.write(`automation command report fixture rejected: ${field}\n`);
+    return undefined;
+  };
   const marker = 'Captured command result (data):\n<captured_result>\n';
   const messages = request.messages
     .filter((message) => message.role === 'user')
@@ -18,64 +22,68 @@ function reportInput(request: ChatCompletionRequest) {
   const content = messages[promptIndex] ?? '';
   const bodyMarker = '\n<response_body>\n';
   const at = content.lastIndexOf(marker);
-  if (at < 0) return;
+  if (at < 0) return reject('captured result marker');
   try {
     const captured = content.slice(at + marker.length);
     const capturedEnd = captured.indexOf('\n</captured_result>');
-    if (capturedEnd < 0) return;
+    if (capturedEnd < 0) return reject('captured result closing tag');
     const value = JSON.parse(captured.slice(0, capturedEnd));
     const bodyAt = captured.indexOf(bodyMarker, capturedEnd);
     const bodyEnd = captured.indexOf('\n</response_body>', bodyAt + bodyMarker.length);
     const body =
       bodyAt < 0 || bodyEnd < 0 ? undefined : captured.slice(bodyAt + bodyMarker.length, bodyEnd);
-    if (typeof value.runLine !== 'string' || typeof value.executionId !== 'string') return;
-    if (
-      (value.id === 'success' &&
-        value.outcome === 'success' &&
-        value.reason === 'Exit 0' &&
-        value.stdout?.body === '' &&
-        value.presentation?.kind === 'preferred' &&
+    const failure = value.id === 'failure';
+    const checks = {
+      id: failure || value.id === 'success',
+      runLine: typeof value.runLine === 'string',
+      executionId: typeof value.executionId === 'string',
+      outcome: value.outcome === (failure ? 'error' : 'success'),
+      reason: value.reason === (failure ? 'Exit 17' : 'Exit 0'),
+      stdout: value.stdout?.body === (failure ? 'Everything succeeded!\n' : ''),
+      stderr:
+        value.stderr?.body === (failure ? 'Archive delta failed: destination unavailable.\n' : ''),
+      presentation: value.presentation?.kind === (failure ? 'fallback' : 'preferred'),
+      reportBody:
+        failure ||
         body ===
           ['alpha', 'beta', 'gamma', 'delta']
             .map(
               (source) =>
-                `> ## ${source === 'alpha' ? '⚠️' : '✅'} Source ${source}\n>\n> Archive ${source} saved${source === 'alpha' ? '; activation unverified' : ''}.`,
+                `> ## ${source === 'alpha' ? '⚠️' : '✅'} SOURCE ${source.toUpperCase()}\n>\n> Archive ${source} saved${source === 'alpha' ? '; activation unverified' : ''}.`,
             )
             .join('\n\n') +
-            `\n\n**Runner result:** ✅ success · Exit 0\n\n${value.runLine}` &&
-        value.stderr?.body === '') ||
-      (value.id === 'failure' &&
-        value.outcome === 'error' &&
-        value.reason === 'Exit 17' &&
-        value.stdout?.body === 'Everything succeeded!\n' &&
-        value.stderr?.body === 'Archive delta failed: destination unavailable.\n' &&
-        value.presentation?.kind === 'fallback' &&
-        typeof value.presentation.footer === 'string' &&
-        value.presentation.footer.includes(value.runLine))
-    )
-      return {
-        ...value,
-        body,
-        correction: messages
-          .slice(promptIndex)
-          .some((text) => text.includes('Replace the rejected response in full.')),
-        prompts: messages.slice(promptIndex),
-      } as {
-        id: 'success' | 'failure';
-        runLine: string;
-        body?: string;
-        correction: boolean;
-        executionId: string;
-        prompts: string[];
-        presentation: { kind: 'preferred' } | { kind: 'fallback'; footer: string };
-      };
+            `\n\n**Runner result:** ✅ success · Exit 0\n\n${value.runLine}`,
+      footer:
+        !failure ||
+        (typeof value.runLine === 'string' &&
+          typeof value.presentation?.footer === 'string' &&
+          value.presentation.footer.includes(value.runLine)),
+    };
+    const mismatch = Object.entries(checks).find(([, passed]) => !passed);
+    if (mismatch) return reject(`field ${mismatch[0]}`);
+    return {
+      ...value,
+      body,
+      correction: messages
+        .slice(promptIndex)
+        .some((text) => text.includes('Replace the rejected response in full.')),
+      prompts: messages.slice(promptIndex),
+    } as {
+      id: 'success' | 'failure';
+      runLine: string;
+      body?: string;
+      correction: boolean;
+      executionId: string;
+      prompts: string[];
+      presentation: { kind: 'preferred' } | { kind: 'fallback'; footer: string };
+    };
   } catch {
-    return;
+    return reject('captured result parsing');
   }
 }
 
 const reportFixture: Fixture = {
-  match: { model, predicate: (request) => Boolean(reportInput(request)) },
+  match: { model, predicate: (request) => Boolean(reportInput(request, true)) },
   response: (request) => {
     const input = reportInput(request)!;
     const response = {
@@ -85,7 +93,7 @@ const reportFixture: Fixture = {
           ? input.correction
             ? input.body!
             : input.body!.replaceAll('\n\n', '\n>\n') + '\n\n' + JSON.stringify(input.body)
-          : `> ## ❌ failure failed\n>\n> Archive delta failed: destination unavailable.\n\n${input.presentation.footer}`,
+          : `> ## ❌ FAILURE FAILED\n>\n> Archive delta failed: destination unavailable.\n\n${input.presentation.footer}`,
     };
     if (process.env.COMMAND_CHAT_EVIDENCE_PATH)
       appendFileSync(

@@ -134,7 +134,7 @@ describe('agent/assessment-git-context', () => {
       });
       assert.doesNotMatch(
         composeResponseBlocks(hidden.responseBlocks),
-        /Checkout starting point|PR base|Debug/,
+        /Checkout starting point|PR base|DEBUG/,
       );
       record.project = before.project;
       assert.deepEqual(record, before);

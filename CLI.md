@@ -52,7 +52,6 @@ Separate decisions, such as confirmation, may still require a prompt.
 
 - [Credential storage](#credential-storage)
 - [Trust boundary](#trust-boundary)
-- [Scheduler callback](#scheduler-callback)
 
 ## `openclaw agent-system automations list`
 
@@ -219,18 +218,8 @@ openclaw agent-system backup cleanup --agent emori --apply --json
 
 Results identify `wouldDelete`, `deleted`, and `preserved` paths with refusal reasons.
 If cleanup partially fails, results identify what was removed and what remains.
-Cleanup and capture cannot run concurrently; cleanup rechecks ownership and file
-identity before deleting anything.
-
-Completed or plausibly complete archives, unknown contents, active or uncertain writers,
-and legacy artifacts without ownership records are preserved. Snapshot-command failures
-may leave writer activity uncertain even after the parent exits; age alone never permits
-cleanup. Bound agent commands may preview only their own workspace, without `--agent`.
-
-Cleanup does not resume backups, reset wrapper locks or journals, inspect providers, or
-prune published archives. It is separate from running a backup and does not establish
-backup success. For failed automation execution, inspect its owned history with
-`openclaw agent-system automations runs <id> --agent <id> --json`.
+Completed archives, unrecognized files and artifacts that may still have an active writer are preserved.
+Use [backup prune](#openclaw-agent-system-backup-prune) for finished archives.
 
 ## `openclaw agent-system backup create`
 
@@ -706,7 +695,7 @@ declared release through OpenClaw:
 
 ```sh
 openclaw plugins inspect codex --json
-openclaw plugins install npm:@openclaw/codex@2026.11.5 --force --pin --accept-capabilities
+openclaw plugins install npm:@openclaw/codex@2026.11.6 --force --pin --accept-capabilities
 ```
 
 `--skip-setup` skips both phases regardless of consent; combining the two phase
@@ -721,38 +710,19 @@ Unattended setup consent comes from `--yes`, `--non-interactive`, noninteractive
 or a truthy `CI` or `NONINTERACTIVE` value. `--json` alone grants no consent; prompts
 and warning diagnostics stay on stderr. Consent is not saved for later runs.
 
-When enabled OpenClaw issue-assignment or review-request policies require session
-dispatch, Install lists those consumers and discloses `operator.read` and
-`operator.write` before enrollment. These grants are broader than sessions-only
-access. Explicit `--yes` accepts enrollment; `--non-interactive`, CI, or missing
-stdin alone do not. The UI uses the existing Install Allow once approval and
-requires a verified owner. A missing or unusable credential blocks enrollment-
-dependent installation; unsupported review execution remains a separate finding.
+OpenClaw requires session access for issue assignments, command automation reports
+sent to a chat, and manual launches enabled with `--manual-session-dispatch`.
+Install lists the features that need it and asks permission to store a Gateway
+device credential with `operator.read` and `operator.write`. These scopes grant
+access beyond sessions. Approve interactively or pass `--yes` in the terminal.
+Noninteractive mode alone does not authorize enrollment.
 
-Install saves one device identity for the Gateway in macOS Keychain or Linux Secret
-Service, with no file-store fallback. Enrollment supports a local, non-TLS Gateway.
-If manual pairing is required, approve the exact request in Devices or with
-`openclaw devices approve <requestId>`, then rerun Install. Later installs reuse the
-credential, and disabling one workflow keeps it available to other agents.
-Doctor checks enrollment without issuing credentials.
-For revoked credentials, remove the retained device and any pending request in
-Devices, then rerun Install with enrollment consent to replace the retained
-identity. There is no separate session-dispatch reset command. Credential
-readiness alone does not establish end-to-end issue or review dispatch.
-
-For enrollment connection failures, check Gateway availability and rerun Install to
-resume with the same device identity. A connection failure does not require replacing
-it. Gateway rejection or pending pairing needs the reported recovery action, including
-approval of the exact device request. Install waits for Gateway startup or reload, not
-unrelated channel health. It does not retry authentication rejection or uncertain writes.
-
-Human diagnostics and `blocked.sessionDispatchDiagnostic` in JSON include the failure
-category, phase, and reason code when known. `unknown` means the evidence is unavailable.
-`gateway-readiness-deadline` means the readiness wait expired; `gateway-reload-failed`
-means plugin replacement failed. Both include available startup or reload details in
-`readinessEvidence`, without raw responses, errors, or credentials. Use that evidence
-to investigate rather than assuming a timeout cause. See the
-[enrollment verification example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/os-dispatch-enrollment/README.md).
+Enrollment requires a local, non-TLS Gateway and macOS Keychain or Linux Secret
+Service. If pairing is required, approve the specific request in Devices or with
+`openclaw devices approve <requestId>`, then rerun Install. For a connection
+failure, check Gateway availability and rerun Install. For a revoked credential,
+remove the retained device and any pending request in Devices before enrolling
+again. Doctor checks the existing enrollment.
 
 If installation fails, the command exits nonzero and reports what completed, what
 blocked it, and what has not been attempted. Earlier changes remain applied. Fix the
@@ -970,33 +940,4 @@ different manifest under the approved operation.
 The native OpenClaw harness and OpenClaw-hosted Codex use this route; standalone
 Codex uses its [standalone adapter](./CODEX.md#skills).
 Control UI chat is the tested approval surface; other chat channels depend on
-their OpenClaw plugin approval support. See [approval validation](./DEVELOPMENT.md#lifecycle-approval).
-
-## Scheduler Callback
-
-### `openclaw agent-system automation-execute`
-
-Execute one synchronized command automation. This is the scheduler's operator-only
-entrypoint, hidden from ordinary help. Use [automations run](#openclaw-agent-system-automations-run)
-to request a tracked occurrence; Install reconciles declarations.
-
-#### Options
-
-| Option or argument | Required | Default | Description                                                           |
-| ------------------ | -------- | ------- | --------------------------------------------------------------------- |
-| `--hash <hash>`    | yes      | none    | Require the synchronized effective SHA-256 hash.                      |
-| `--id <id>`        | yes      | none    | Select the manifest automation ID in the current installed workspace. |
-
-#### Usage
-
-```text
-openclaw agent-system automation-execute --id <id> --hash <hash>
-```
-
-The native scheduler supplies the exact arguments, fixed executable, profile, and
-workspace. This entrypoint accepts no agent selector. Agent descendants and invalid
-inherited authority are rejected before execution. Stale, disabled, removed, or
-native-drifted jobs fail before temporary authority or tool credentials are issued.
-It returns one bounded JSON status and a nonzero exit status on failure. Direct
-operator invocation is a manual command execution and does not create a native
-scheduled occurrence or update its history.
+their OpenClaw plugin approval support.

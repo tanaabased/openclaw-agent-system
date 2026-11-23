@@ -34,22 +34,22 @@ No match, including `routing: []`, admits no new work.
 
 Use a full rule to name a match or limit it to specific workflows. The rule
 matches when the repository matches `match` and the current workflow appears in
-`workflows`. Omit `workflows` to include all three workflows. Put exceptions
+`workflows`. Omit `workflows` to apply the rule across workflows. Put exceptions
 before broader rules and put an explicit `*/*` last if you want a fallback.
 
-| Field       | Values                                                                                     | Required |
-| ----------- | ------------------------------------------------------------------------------------------ | -------- |
-| `id`        | Unique name without whitespace. Matched-rule diagnostics include this name.                | no       |
-| `match`     | Repository pattern without a leading `!`.                                                  | yes      |
-| `workflows` | Nonempty list of distinct `issue-assignment`, `issue-pickup`, and `review-request` values. | no       |
-| `target`    | `local`, `deny`, `swarm`, `{instance: UUID}`, or `{instances: [UUID, ...]}`.               | yes      |
+| Field       | Values                                                                       | Required |
+| ----------- | ---------------------------------------------------------------------------- | -------- |
+| `id`        | Unique name without whitespace. Matched-rule diagnostics include this name.  | no       |
+| `match`     | Repository pattern without a leading `!`.                                    | yes      |
+| `workflows` | Use `issue-assignment`, `issue-pickup`, or `review-request`.                 | no       |
+| `target`    | `local`, `deny`, `swarm`, `{instance: UUID}`, or `{instances: [UUID, ...]}`. | yes      |
 
 ```yaml
 routing:
   - '!tanaabased/archive-*'
-  - id: review-exception
+  - id: assignment-exception
     match: 'tanaabased/openclaw-agent-system'
-    workflows: [review-request]
+    workflows: [issue-assignment]
     target: { instance: '11111111-1111-4111-8111-111111111111' }
   - 'tanaabased/*':
       - '11111111-1111-4111-8111-111111111111'
@@ -57,9 +57,10 @@ routing:
   - pirog/me
 ```
 
-The example shows a review placement rule. Independent review requests are supported
-in standalone Codex; the OpenClaw adapter is not yet available. Validation warns when earlier
-rules can be shown to cover every workflow and repository of a later rule.
+The named rule sends assignments for one repository to a specific installation.
+The broader rule sends other matching work to either member of the pool.
+Independent review requests are supported in standalone Codex, not OpenClaw.
+Validation warns when earlier rules cover every workflow and repository of a later rule.
 
 Patterns match the entire current `owner/repository` name, case-insensitively.
 `*` matches zero or more characters within either segment; it never crosses `/`.
@@ -77,7 +78,7 @@ approve assignment actors, or enable unsupported workflows.
 installations using claim comments and a second native pass before starting work. Use `swarm`
 for that repository on every participant sharing the receiving account. This is a
 comment-only proof of concept: incomplete concurrent reads can still produce
-overlapping work. It does not coordinate issue pickup allowances.
+overlapping work. Pickup allowances are per installation.
 
 A UUID restricts new claims to that installation; a list restricts them to that
 pool. Both use the same claim coordination as `swarm`, including singleton pools.
@@ -85,24 +86,9 @@ List order gives no priority and never broadcasts work. An excluded installation
 does not try later rules. Use instance inspection to obtain the UUID; renaming an
 instance preserves it, while rotating it requires updating routes explicitly.
 
-Claim results report the selected UUID set, local eligibility, and any observed
-owner. If no eligible installation claims the assignment, it stays pending: an
-unknown, offline, paused, or full target does not trigger fallback. Silence alone
-does not identify which condition applies. Pool edits preserve existing ownership
-and uncertain native creation; an excluded claimant that has not started native
-creation is held for recovery. Issue pickup checks shared routing eligibility before self-assignment. Ordinary
-assignment intake then selects the work owner under its own routing rule.
-
-`local` creates no claim. A retained or visible Swarm claim still blocks new local
-work; switching routes does not transfer ownership. If a claim is missing, changed,
-or unresolved, preserve the comments and local state, inspect the original owner,
-and use [managed task recovery](../../tools/dispatch/README.md) for stranded work.
-Do not delete claim comments or rotate an installation ID to retry admission.
-
-`routing` is required when declaring GitHub workflows; there is no implicit
-repository scope. The retired `allowed-repository-owners` property is rejected,
-even alongside `routing`. Replace owner-wide lists such as `['@tanaabased', '@pirog']`
-with `routing: ['tanaabased/*', 'pirog/*']`, accepting the name-based behavior above.
+If the selected installation is offline, paused or full, work waits. Changing a route
+does not transfer a task already in progress. Use the original installation to
+[recover a stranded task](../../tools/dispatch/README.md#manual-issue-launch).
 
 ### `interval-minutes`
 
@@ -156,10 +142,6 @@ versions are rejected. GitHub CLI-only configuration does not require this field
 <a id="githubproject-pickup"></a>
 
 ## `github.issue-pickup`
-
-Use `github.issue-pickup` and routing workflow `issue-pickup` in OpenClaw and
-standalone Codex. The retired `project-pickup` spellings are rejected; rename them
-without changing the settings or the `projects` list.
 
 Declares pickup policy for exact repositories or `owner/*` namespaces, with optional milestone restrictions. It requires `issue-assignment`
 and each repository must be included by `routing`.
@@ -244,30 +226,13 @@ Explicit `effort` wins over inherited effort. These settings select the pickup
 coordinator, not the models that assess or implement individual issues. Existing
 [standalone Codex limitations](../../MANIFEST.md#automations) still apply.
 
-Label filters apply in both runtimes, within the configured repository and milestone,
-alongside open/unassigned eligibility. Names are compared case-insensitively; label
-values are not otherwise rewritten. The model still chooses whether matching work
-is worth taking. Type filters use native GitHub metadata: an issue with no native type
-cannot match an explicit type filter, and unavailable type evidence remains a read error.
-Before assignment, pickup reads the selected issue's current labels and type again;
-unrelated title, body or label changes do not invalidate a still-matching issue.
-This read and assignment are not atomic against later GitHub edits.
+Label and issue-type filters apply together in both runtimes. An issue needs a native
+GitHub type to match a type filter. If no issue qualifies, pickup skips the scan.
+The scan card shows read errors separately from empty results.
 
-An unmatched required pattern leaves no matches; an unmatched excluded pattern excludes
-nothing. Contradictory criteria or no eligible matches are explained in the scan
-card without widening the search. GitHub read errors remain separate. Edit criteria
-for a later scan; filters do not cancel accepted work or repeat uncertain assignments.
-
-Repository, milestone, limit, filters, guidance and route changes apply on the next run
-without Install. Edits preserve assignments already counted in the window and
-the receipts for accepted assignments. Run Install after changing timing, chat or model settings.
-Replace the former `schedule` and `window-minutes` fields with `start`, `window` and `scans`.
-Ordinary assignment intake handles routing and execution ownership, including races
-between pickup scans. Existing issue work stays with its original runtime; do not
-copy or delete journals to transfer it.
-Conflicting workspaces on one installation are rejected. There is no automatic
-failover, account-wide concurrency cap, or protection against independently divergent
-configuration or copied private installation identities.
+Repository, milestone, limit, filter, guidance, and route edits apply on the next run.
+Assignments already counted in the window still count. Run Install after changing
+the schedule, chat, or model. Existing issue work stays with its original runtime.
 
 ## `github.issue-assignment`
 

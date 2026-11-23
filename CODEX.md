@@ -56,6 +56,8 @@ the installed Agent System hooks:
 
 - **SessionStart** loads the trusted workspace binding and runtime context when a
   chat starts or resumes.
+- **UserPromptSubmit** refreshes the current task context when you send a prompt
+  in a managed issue chat.
 - **PermissionRequest** is optional. Trusting it delegates execution approval for
   recognized direct Agent System runtime calls, including their request data and
   commands introduced by later plugin updates. The runtime still checks task

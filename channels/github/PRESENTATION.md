@@ -11,6 +11,7 @@ their appearance and composition. The
 - Follow the title with compact facts or one plain-language sentence, whichever
   makes the component easier to scan.
 - Link canonical GitHub actors and items where they are named.
+- Use all caps for the title of each blockquoted chat card. Preserve the casing of body text, fact labels, quoted source material, and Markdown supplied by the user.
 - Keep headings and labels stable while allowing natural response prose to vary.
 - Keep literal plaintext understandable without relying on emoji or Markdown.
 - Present private results as ordinary chat prose. Add descriptive sections only
@@ -42,7 +43,7 @@ and outgoing comment bodies and literal guidance/diff blocks without rewriting.
 Examples of formatted values:
 
 ```markdown
-> ## 🧠 Model routing
+> ## 🧠 MODEL ROUTING
 >
 > - **Selected:** `openai/gpt-6.1-sol` / `high`
 > - **Basis:** `medium` complexity. The change affects shared cards.
@@ -50,13 +51,13 @@ Examples of formatted values:
 > - **Effective settings:** Verified: `openai/gpt-6.1-sol` / `high`
 > - **Execution:** Model and effort not independently verified.
 
-> ## ▶️ Auto mode decision
+> ## ▶️ AUTO MODE DECISION
 >
 > - **Decision:** `work`
 > - **Next:** Continue automatically once runtime checks pass.
 > - **Reason:** Requirements are clear and the repair is bounded.
 
-> ## ⚠️ Add the project to continue
+> ## ⚠️ ADD THE PROJECT TO CONTINUE
 >
 > - **Folder path:** `/work/example`
 > - **Diagnostic:** `dispatch-project-registration-unavailable`
@@ -65,7 +66,7 @@ Examples of formatted values:
 ## Card
 
 ```markdown
-> ## <emoji> <short descriptive title>
+> ## <EMOJI> <SHORT DESCRIPTIVE TITLE>
 >
 > - **<fact>:** <value>
 > - **<fact>:** <value>
@@ -102,7 +103,7 @@ Reserve `intake-activation-required` for initial setup. An existing intake autom
 that needs reconciliation uses `intake-automation-update-required`:
 
 ```markdown
-> ## ✨ Automation update available
+> ## ✨ UPDATE AVAILABLE
 >
 > - **What happened:** Your intake automation needs an update. New intake is paused until it’s applied. Existing chats and work are retained.
 > - **Next step:** Run Agent System Install to apply the update and resume intake.
@@ -124,7 +125,7 @@ and supplied HTTP status, and distinguish access failures from temporary delays.
 Preserve successful starts in a report that also contains an obstacle.
 
 ```markdown
-> ## 📥 Intake complete — 2 issues started
+> ## 📥 INTAKE COMPLETE — 2 ISSUES STARTED
 >
 > - **Issue:** [example/project #7](codex://threads/example-7)
 > - **Issue:** [example/project #8](codex://threads/example-8)
@@ -158,9 +159,9 @@ for intake scan/status cards and other notification cards.
 ```
 
 ```markdown
-> ## 🔀 Pull request assigned
->
-> [@pirog](https://github.com/pirog) assigned you to [tanaabased/example#18 — Refine notification routing](https://github.com/tanaabased/example/pull/18). Please begin working on it in `plan` mode.
+## 🔀 Pull request assigned
+
+[@pirog](https://github.com/pirog) assigned you to [tanaabased/example#18 — Refine notification routing](https://github.com/tanaabased/example/pull/18). Please begin working on it in `plan` mode.
 ```
 
 For issue assessment, show the shared assignment card with its verified
@@ -222,7 +223,7 @@ not fresh working-tree diffs. Parent text and full retained hunks remain structu
 ## Pull Request Opened Card
 
 ```markdown
-> ## 🔀 Pull request opened
+> ## 🔀 PULL REQUEST
 >
 > - **Issue:** [tanaabased/example#7](https://github.com/tanaabased/example/issues/7)
 > - **Pull request:** [tanaabased/example#18](https://github.com/tanaabased/example/pull/18)
@@ -243,7 +244,7 @@ conversation ownership, and publication.
 ## Implementation Card
 
 ```markdown
-> ## 🛠️ Implementation started
+> ## 🛠️ IMPLEMENTATION STARTED
 >
 > The public plan is published. Carry it out now in `work` mode.
 ```
@@ -255,7 +256,7 @@ because implementation began.
 ## Response
 
 ```markdown
-> ## <emoji> <outcome title>
+> ## <EMOJI> <OUTCOME TITLE>
 >
 > <one-sentence outcome summary>
 
@@ -273,11 +274,11 @@ lists, or tables only when they make substantive content easier to review.
 ## Plan
 
 ```markdown
-> ## 🧭 Plan ready
+> ## 🧭 PLAN READY
 >
 > <one recommendation: what should change and why>
 
-> ## 🧠 Model routing
+> ## 🧠 MODEL ROUTING
 >
 > - **Selected:** `<saved model>` / `<saved effort>`
 > - **Basis:** <complexity and concise selection rationale>
@@ -302,7 +303,7 @@ unresolved questions. Keep it in native conversation. The formatter accepts only
 human-facing review content; it saves no assessment or plan. Questions and required
 actions remain prominent in the review.
 
-When an assessment includes a continuation decision, show an **Auto mode decision**
+When an assessment includes a continuation decision, show an **AUTO MODE DECISION**
 card after the routing card. Keep it visible
 regardless of debug presentation. Use ▶️ for `work` and ⏸️ for `plan`, with the exact
 code-formatted value in **Decision**. Use **Next** to distinguish automatic continuation
@@ -334,7 +335,7 @@ Keep consequential uncertainty, blocking questions, and required actions in the 
 assessment, questions, or action; the reference section must not be their only home.
 The framing follows the structured result; prose headings never select state.
 
-When debug presentation is enabled, include one shared quoted **🔬 Debug** card
+When debug presentation is enabled, include one shared quoted **🔬 DEBUG** card
 with **Context: Configured workflow** at the end of the combined same-turn response,
 after assessment, public replies, work, delivery and any reference material.
 Group routing, assessment, implementation and reply skills and custom guidance in
@@ -351,7 +352,7 @@ when they occur, using the shared severity components.
 ## Question
 
 ```markdown
-> ## ❓ Clarification needed
+> ## ❓ CLARIFICATION NEEDED
 >
 > <one-sentence explanation>
 
@@ -366,10 +367,10 @@ when they occur, using the shared severity components.
 <complete private question and relevant choices>
 ```
 
-Preserve each question and its context. Setup obstacles use **Issue assessment blocked**
+Preserve each question and its context. Setup obstacles use **ISSUE ASSESSMENT BLOCKED**
 with **Action** and **Diagnostic** inside the same quoted callout, plus retained evidence and investigation; keep them
 distinct from missing requirements. Show the routing card when saved routing is available.
-For manual Codex project registration in issue intake, use **⚠️ Add the project to continue**,
+For manual Codex project registration in issue intake, use **⚠️ ADD THE PROJECT TO CONTINUE**,
 including separate **Project name**, **Folder path**, and **Next step** facts. Distinguish
 the suggested name from the exact required primary folder; retain issue and diagnostic context.
 
@@ -392,12 +393,12 @@ from the recipient or active chat, or resolve credentials just for presentation.
 
 Assessment summaries retain the complete private assessment and plan separately.
 PR announcements use this same renderer with the exact public announcement, including
-its PR link, below the complete private **Pull request opened** card. Preserve native
+its PR link, below the complete private **PULL REQUEST** card. Preserve native
 PR attachment. Keep failed or uncertain publication visible with debug off too. Use warning for
 an actionable obstacle or uncertain outcome and error for a failed operation.
 Ordinary waiting, deliberately withheld publication and clarification questions
 are not warnings or errors. Successful no-action recovery details,
-such as verified issue linkage after retry, use **🔬 Debug** with delivery recovery
+such as verified issue linkage after retry, use **🔬 DEBUG** with delivery recovery
 context only when debug is enabled. Historical missing archive/removal evidence
 uses the same card with intake context, separate from actionable warnings. Omit
 empty debug cards. Diagnostics are events, not turn-ending footers. Consolidate

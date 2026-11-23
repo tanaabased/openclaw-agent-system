@@ -10,7 +10,7 @@ references for product behavior.
 - Bun from [.bun-version](./.bun-version) for installs, scripts, and builds
 - Node.js from [.node-version](./.node-version) for tests and OpenClaw
 - Homebrew dependencies from [Brewfile](./Brewfile)
-- OpenClaw 2026.10.9 for development and minimum package compatibility
+- OpenClaw 2026.11.6 for development and as the minimum Gateway version
 - A configured `tanaabot` agent with usable model authentication only for the recommended live DevGuard workflow
 
 OpenClaw does not support running the Gateway under Bun. Agent System builds ESM for Node.js and keeps package dependencies external.
@@ -79,13 +79,7 @@ When deliberately adopting changes to installed Codex runtime or skill paths, ru
 `bun run codex:sync` and `bun run codex:check` to update and verify the cache. Changed plugin contents
 may require renewed hook review.
 
-If a development build writes a changed persistent format, verify that any runtime
-restored during cleanup can read the retained state. Cache equality alone does not
-verify dispatch recovery.
-
-Open a new chat to verify skill discovery. `package.json#codexTools.managedPaths`
-selects the paths owned by cache synchronization and checks; it does not control
-what native Codex copies during installation.
+Open a new chat to verify skill discovery.
 
 For packaged installation and discovery checks, run `bun run test:codex-plugin`
 with `AGENT_SYSTEM_PACKAGE` set to a prepared npm tarball. The release-test
@@ -139,7 +133,7 @@ shows DevGuard policy audit records rather than the plugin logger stream.
 
 For implementation changes, run all inexpensive unit and static tests, then the applicable lint, type checks, and component tests covering the changed behavior and affected callers. Include both runtime adapters for shared behavior. Build artifacts when the selected tests consume them, and retain passing results until relevant inputs change. Documentation-only changes need relevant checks rather than automatic behavioral suites.
 
-Full `bun run validate` is optional comprehensive validation, not a routine pre-push or handoff requirement. Use it for a concrete unresolved risk that focused checks cannot cover, or when explicitly requested. PR CI retains full component and OS coverage; report local selection and CI results separately.
+Use `bun run validate` for comprehensive local validation when focused checks leave an unresolved risk.
 
 ### Verification Categories
 
@@ -149,15 +143,8 @@ Classify each assertion by what it proves, not its filename or test runner:
 - **Component tests** exercise real cooperation among owned units with external boundaries injected. Use real process, filesystem, or platform boundaries only when those boundaries are part of the contract. Installed runtime journeys belong in the GitHub Actions-only Leia examples.
 - **Static checks** inspect source, configuration, documentation, or artifacts without exercising the behavior they describe. They establish an invariant, not successful runtime execution.
 
-Keep a static check only when breaking its rule would affect correctness, compatibility,
-safety, or maintenance, and existing validation does not already cover it. Examples
-include credential isolation in workflows, forbidden private SDK imports, package
-metadata consistency, and stale configured paths. Prefer existing parsers and the owning
-lint, plugin, package, or fixture validator.
-
-Do not preserve prose, file layout, current runner matrices, command spelling, or occurrence counts merely because they are present today. Exact details belong in checks only when independently required by a supported contract. Finding a command in Markdown does not prove that it works. Remove checks that protect no distinct requirement instead of moving them to another suite.
-
-For mixed specs, classify assertions separately and preserve useful behavioral coverage. Run retained `*.static.spec.ts` checks with `bun run test:static`. They run in the existing unit workflow as a separate step and are included in `test:all`, but excluded from `test:unit`. Any migration must keep retained checks running in CI and update the documented selection in the same change.
+Keep a static check when it protects a specific requirement the existing checks miss.
+Run static checks with `bun run test:static`.
 
 ### Linting And Type Checking
 
@@ -185,17 +172,16 @@ bun run test:focused test/task-turn-skills.component.spec.ts
 bun run test:focused --build test/codex-dispatch.component.spec.ts test/openclaw-dispatch.component.spec.ts
 ```
 
-Portable components use `*.component.spec.ts`; native process, permission, symlink, and socket checks use `*.os.component.spec.ts`. CI runs units and portable components on Ubuntu and native components on both Ubuntu and macOS. Mixed files remain components until their deterministic cases are extracted. Installed-runtime acceptance stays in Leia examples.
-
-`bun run test:stress` explicitly runs `*.stress.spec.ts`, including the 100,000-entry backup fixture. Stress checks are excluded from default tests and PR workflows; ordinary coverage checks pruning with a small filesystem fixture and the inventory limit in memory.
+Portable components use `*.component.spec.ts`. Native process, permission,
+symlink, and socket checks use `*.os.component.spec.ts`. Run optional stress
+tests with `bun run test:stress`.
 
 ### Recorded CLI Fixtures
 
-The mock delivery tests consume approved CLI captures directly from [`fixtures/`](./fixtures/). Run the fixture commands explicitly when you need new captures. They need no live model and are not part of CI or release prerequisites.
-
-Use a disposable pull request in `tanaabased/big-test-bucket`. The PR-author case requires a declared author. The review case requires a pending review followed by a completed review from the declared reviewer on a later page. The capture requests one review per page to exercise pagination without creating a large review history; the production command retains GitHub's ordinary page size. Arrange the actor roles before recording, and close the PR and remove its setup branch when finished. The recorder creates no GitHub resources itself.
-
-`gh` uses the current native login or `GH_TOKEN`. An operator may supply `GH_TOKEN` through an `op run` wrapper; the recorder does not read 1Password references or retain tokens. It checks the effective identity, repository access, and declared PR author before running a case.
+To refresh an approved CLI capture in [fixtures](./fixtures/), use a disposable PR in
+`tanaabased/big-test-bucket`. Use the actual PR author for `pr-author`. For
+`pr-reviews`, use a PR with a pending review followed by a completed review from
+the declared reviewer. Authenticate `gh` with access to the PR.
 
 ```sh
 # write a sanitized candidate without changing an approved fixture.
@@ -210,9 +196,7 @@ bun run fixtures:accept --case pr-author
 bun run fixtures:check --case pr-author --pr 123 --author example-author
 ```
 
-Repeat record, review, accept, and check for `pr-reviews`. Approved captures use `fixtures/<case>.approved.txt`; CLI version, source PR, actor roles, and capture time live in `fixtures/<case>.meta.json`. Candidates are ignored by Git. The capture keeps JSON output as JSON text, preserves the review page nesting, and removes fields the production parser does not use. Failed commands, timeouts, incomplete output, and missing actor evidence cannot produce a candidate.
-
-To add a case, define its exact executable and argv in [`scripts/cli-fixtures.ts`](./scripts/cli-fixtures.ts), add only the sanitization its consumer needs, and make the owning fake CLI handler assert the command shape before loading the approved capture. Before a release, an operator may run `fixtures:check` against a controlled resource; refresh an intentional drift with `fixtures:record`, inspect the candidate and provenance, and invoke `fixtures:accept` only after review. Do not run the GitHub Actions-only Leia scenarios locally.
+Review and accept each changed capture, then close the disposable PR and remove its setup branch.
 
 ### Build And Package Validation
 
@@ -223,9 +207,7 @@ bun run plugin:check
 
 Run `bun run test:release` when package contents, compatibility metadata, or release wiring change.
 
-The ClawHub package check rejects breakages, unavailable SDK targets, and unexpected
-warnings. Its explicit 10.9 exceptions retain cold configuration loading and final
-synchronous session authority checks; a passing result is not deprecation-free.
+The ClawHub package check requires the target SDK and fails on compatibility warnings or breakages.
 
 ### Leia Scenarios
 
@@ -233,26 +215,13 @@ synchronous session authority checks; a passing result is not deprecation-free.
 > Run [Leia](https://github.com/lando/leia) scenarios only in GitHub Actions. They
 > install plugins and change OpenClaw or provider state on disposable runners.
 
-- [`examples/`](./examples/) covers installed and runtime contracts. [OS tests](./.github/workflows/pr-os.yml) cover native installation, dispatch enrollment, execution, and credentials on macOS and Ubuntu. Ubuntu workflows separate [Codex install](./.github/workflows/pr-codex.yml), [OpenClaw](./.github/workflows/pr-openclaw.yml), [notification core](./.github/workflows/pr-notifications.yml), [automations](./.github/workflows/pr-automations.yml), [issue assignment](./.github/workflows/pr-issue-assignments.yml), [PRs](./.github/workflows/pr-pull-requests.yml), and [Project Picker](./.github/workflows/pr-project-picker.yml). Standalone Codex notification and automation checks share their functional workflows; their headless evidence does not prove desktop scheduling or assignment-to-PR execution.
-- Only explicitly selected examples run in CI. Unselected folders remain migration inputs; their presence is not evidence of active coverage.
-- Follow the [example guidance](./examples/AGENTS.md) for drivers, fixtures, credentials, and assertions.
-
-#### Lifecycle Approval
-
-See the [lifecycle approval example](./examples/openclaw-lifecycle-approvals/README.md)
-for installed Control UI approval coverage across native OpenClaw and
-OpenClaw-hosted Codex. Other chat channels are outside this matrix.
-
-The integration uses the public
-[`before_tool_call.requireApproval` hook](https://docs.openclaw.ai/plugins/plugin-permission-requests).
+See the [example guidance](./examples/AGENTS.md) for scenario selection, fixtures and credentials.
 
 ## Coding Standards
 
 Agent System follows the shared JavaScript, OpenClaw plugin, documentation, and Leia conventions in the [Tanaab Canon repository](https://github.com/tanaabased/canon). The repository's [AGENTS.md](./AGENTS.md) adds Agent System-specific identity, configuration, structure, and validation boundaries.
 
-Capability-specific guides live beside their tool or channel. The planned
-third-party integration boundary is documented in [Tool API](./API.md); the
-current `api/` implementation remains internal to Agent System.
+See the [API reference](./API.md) for the public manifest loader and command report format.
 
 ## Documentation
 

@@ -67,7 +67,7 @@ jq -e 'any(.models[]; .provider == "openai" and .id == "gpt-5.5" and .available 
 
 ```bash
 # should retain both mock-formatted reports without rerunning their commands
-trap 'result=$?; if test "$result" -ne 0; then grep -aF "automation report hook:" "$(openclaw-gateway log-path)" | tail -n 60 >&2 || true; cat "$TMPDIR/command-chat-model.jsonl" >&2 || true; cat "$TMPDIR/command-chat-hooks.jsonl" >&2 || true; curl --silent --show-error --max-time 5 http://127.0.0.1:4010/proof/diagnostics >&2 || true; curl --silent --show-error --max-time 5 http://127.0.0.1:4010/proof/evidence >&2 || true; fi; exit "$result"' EXIT
+trap 'result=$?; if test "$result" -ne 0; then grep -aF "automation command report fixture rejected:" "$TMPDIR/openclaw-aimock.log" | tail -n 12 >&2 || true; grep -aF "automation report hook:" "$(openclaw-gateway log-path)" | tail -n 60 >&2 || true; cat "$TMPDIR/command-chat-model.jsonl" >&2 || true; cat "$TMPDIR/command-chat-hooks.jsonl" >&2 || true; curl --silent --show-error --max-time 5 http://127.0.0.1:4010/proof/diagnostics >&2 || true; curl --silent --show-error --max-time 5 http://127.0.0.1:4010/proof/evidence >&2 || true; fi; exit "$result"' EXIT
 for runtime in openclaw codex; do
   workspace="$GITHUB_WORKSPACE/examples/openclaw-automation-command-chat"
   model=aimock/gpt-5.5
@@ -105,9 +105,9 @@ for runtime in openclaw codex; do
     grep -F '> ##' "$TMPDIR/card-$runtime-$mode.md"
     grep -F "$reason" "$TMPDIR/card-$runtime-$mode.md"
   done
-  grep -F '> ## ⚠️ Source alpha' "$TMPDIR/card-$runtime-success.md"
-  for source in beta gamma delta; do
-    grep -F "> ## ✅ Source $source" "$TMPDIR/card-$runtime-success.md"
+  grep -F '> ## ⚠️ SOURCE ALPHA' "$TMPDIR/card-$runtime-success.md"
+  for source in BETA GAMMA DELTA; do
+    grep -F "> ## ✅ SOURCE $source" "$TMPDIR/card-$runtime-success.md"
   done
   grep -F '**Runner result:** ✅ success' "$TMPDIR/card-$runtime-success.md"
   node "$GITHUB_WORKSPACE/examples/openclaw-automation-command-chat/assert-report.mjs" "$TMPDIR/card-$runtime-success.md"

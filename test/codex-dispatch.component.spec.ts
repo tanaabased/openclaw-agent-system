@@ -1120,7 +1120,7 @@ describe('agent/codex dispatch', () => {
     assert.deepEqual(await fixtureState.next(), { status: 'at-capacity', changed: false });
     assert.equal(((await fixtureState.readDispatchState()).records as unknown[]).length, 2);
     const started = await fixtureState.report();
-    assert.match(String(started.response), /2 issues started/);
+    assert.match(String(started.response), /2 ISSUES STARTED/);
     assert.ok(String(started.response).includes('[owner/repo#3](codex://threads/issue-thread-3)'));
     assert.ok(String(started.response).includes('[owner/repo#4](codex://threads/issue-thread-4)'));
 
@@ -1143,8 +1143,8 @@ describe('agent/codex dispatch', () => {
     assert.notEqual(third.id, second.id);
     assert.deepEqual(await fixtureState.next(), { status: 'at-capacity', changed: false });
     const completed = await fixtureState.report();
-    assert.match(String(completed.response), /1 issue started/);
-    assert.doesNotMatch(String(completed.response), /#3|Plan ready/);
+    assert.match(String(completed.response), /1 ISSUE STARTED/);
+    assert.doesNotMatch(String(completed.response), /#3|PLAN READY/);
     assert.match(String(completed.response), /repo#5/);
     assert.equal((await fixtureState.report()).status, 'report');
     assert.equal(((await fixtureState.readDispatchState()).records as unknown[]).length, 3);
@@ -1421,7 +1421,7 @@ describe('agent/codex dispatch', () => {
     const blocked = await fixtureState.next();
     assert.equal(blocked.code, 'dispatch-project-registration-unavailable');
     assert.equal(blocked.changed, true);
-    assert.match(String(blocked.message), /^> ## ⚠️ Add the project to continue\n/u);
+    assert.match(String(blocked.message), /^> ## ⚠️ ADD THE PROJECT TO CONTINUE\n/u);
     assert.ok(String(blocked.message).includes('- **Project name:** `repo`\n'));
     assert.ok(
       String(blocked.message).includes(
@@ -2358,7 +2358,7 @@ describe('agent/codex dispatch', () => {
       assert.equal(recheck.status, 'report');
       const completed = await fixtureState.report();
       assert.equal(completed.status, 'report');
-      assert.doesNotMatch(String(completed.response), /1 issue started/);
+      assert.doesNotMatch(String(completed.response), /1 ISSUE STARTED/);
       assert.equal((await store.read()).records[0]!.intakeReportedAt, fixtureState.now);
     } finally {
       release.resolve();
@@ -2391,7 +2391,7 @@ describe('agent/codex dispatch', () => {
     }
     const recovered = await fixtureState.report();
     assert.equal(recovered.status, 'report');
-    assert.match(String(recovered.response), /1 issue started/);
+    assert.match(String(recovered.response), /1 ISSUE STARTED/);
     assert.deepEqual(await fixtureState.report(), recovered);
   });
 

@@ -378,7 +378,7 @@ describe('agent/openclaw-delivery', () => {
     const result = await request('announce');
     assert.equal(result.status, 'announcement-blocked');
     assert.ok('code' in result && result.code === 'delivery-announcement-candidate-required');
-    assert.match(result.presentation!, /⚠️ PR announcement needs attention/);
+    assert.match(result.presentation!, /⚠️ PR ANNOUNCEMENT NEEDS ATTENTION/);
     assert.match(result.presentation!, /compose.*candidate/i);
     assert.equal(announcement.posts, 0);
     assert.equal(record.delivery, undefined);
@@ -600,7 +600,7 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(record.delivery?.pullRequest?.pullRequestNumber, 7);
     const shown = await request('present');
     assert.ok('presentation' in shown);
-    assert.match(String(shown.presentation), /Pull request\n/);
+    assert.match(String(shown.presentation), /PULL REQUEST\n/);
     assert.equal((await publish()).status, 'published');
     assert.equal(pushes, 1);
   });
@@ -938,7 +938,7 @@ describe('agent/openclaw-delivery', () => {
     assert.equal((await publish()).status, 'published');
     const shown = await request('present');
     assert.ok('presentation' in shown);
-    assert.match(shown.presentation!, /^> ## 🔀 Pull request/m);
+    assert.match(shown.presentation!, /^> ## 🔀 PULL REQUEST/m);
     assert.match(shown.presentation!, /issues\/3/);
     assert.match(shown.presentation!, /pull\/7/);
     assert.match(shown.presentation!, /Automatic GitHub feedback delivery is not available/);
@@ -1152,8 +1152,8 @@ describe('agent/openclaw-delivery', () => {
       await publish({ title: 'New title', body: 'Revised description.' });
       const shown = await request('present');
       assert.ok('presentation' in shown);
-      assert.match(shown.presentation!, /Pull request\n/);
-      assert.doesNotMatch(shown.presentation!, /Pull request (opened|updated)/);
+      assert.match(shown.presentation!, /PULL REQUEST\n/);
+      assert.doesNotMatch(shown.presentation!, /PULL REQUEST (OPENED|UPDATED)/);
       assert.match(shown.presentation!, /pull\/7/);
       assert.equal(pr!.title, 'New title');
       assert.equal(creates, 1);
@@ -1238,7 +1238,7 @@ describe('agent/openclaw-delivery', () => {
       assert.doesNotMatch(shown.presentation!, /#issuecomment-91/);
       assert.equal(creates, 1);
       assert.equal(pushes, 2);
-      assert.match(shown.presentation!, /Pull request updated/);
+      assert.match(shown.presentation!, /PULL REQUEST UPDATED/);
       assert.doesNotMatch(shown.presentation!, /Original PR announcement/);
       assert.doesNotMatch(shown.presentation!, /before this update/);
       assert.doesNotMatch(shown.presentation!, /Delivers the requested change/);
@@ -1253,7 +1253,7 @@ describe('agent/openclaw-delivery', () => {
     };
     const result = await request('present');
     assert.ok('presentation' in result && typeof result.presentation === 'string');
-    assert.match(result.presentation, /^> ## 🔀 Pull request/m);
+    assert.match(result.presentation, /^> ## 🔀 PULL REQUEST/m);
     assert.match(result.presentation, /issues\/3/);
     assert.match(result.presentation, /pull\/7/);
     assert.deepEqual(record.delivery!.pullRequest, persisted.delivery!.pullRequest);

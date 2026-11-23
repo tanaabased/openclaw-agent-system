@@ -67,7 +67,7 @@ export function projectAutomation(
   job: ResolvedAutomation,
   record: AutomationRecord,
   context: AutomationProjectionContext,
-  current?: NativeAutomation,
+  current?: Pick<NativeAutomation, 'payload'>,
 ): NativeAutomationSpec {
   const effective = effectiveAutomation(job, context);
   const schedule = job.schedule;
@@ -191,7 +191,7 @@ export function nativeAutomationHash(job: Record<string, unknown>): string {
   );
 }
 
-export function retainedOneShot(job: NativeAutomation): boolean {
+export function retainedOneShot(job: Pick<NativeAutomation, 'schedule' | 'state'>): boolean {
   return (
     job.schedule.kind === 'at' &&
     typeof job.state.lastRunAtMs === 'number' &&

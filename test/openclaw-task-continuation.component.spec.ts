@@ -886,7 +886,7 @@ describe('agent/openclaw task-continuation', () => {
       await fixtureState.assess(input.id);
       const message = String(fixtureState.sends()[0]!.params.message);
       assert.match(message, /Issue assigned/);
-      assert.ok(!message.includes('Model routing'));
+      assert.ok(!message.includes('MODEL ROUTING'));
       assert.match(message, /https:\/\/github.com\/receiver/);
       assert.match(message, /owner\/repo#3/);
       assert.ok(!message.includes('Assessment instructions'));
@@ -1060,7 +1060,7 @@ describe('agent/openclaw task-continuation', () => {
     );
     assert.equal(rendered.status, 'formatted');
     assert.ok('responseBlocks' in rendered);
-    assert.match(composeResponseBlocks(taskResponseOutput(rendered)), /Model routing/);
+    assert.match(composeResponseBlocks(taskResponseOutput(rendered)), /MODEL ROUTING/);
     let renderDiscoveryCalls = 0;
     const withoutDiscovery = await new OpenClawDispatch({
       ...fixtureState.service.dependencies,
@@ -1744,7 +1744,7 @@ describe('agent/openclaw task-continuation', () => {
     }
     const shown = await pending;
     assert.ok('presentation' in shown && typeof shown.presentation === 'string');
-    assert.match(shown.presentation, /^> ## 🔀 Pull request$/m);
+    assert.match(shown.presentation, /^> ## 🔀 PULL REQUEST$/m);
     assert.match(shown.presentation, /issues\/3/);
     assert.match(shown.presentation, /pull\/7/);
     fixtureState.service = new OpenClawDispatch(fixtureState.service.dependencies);

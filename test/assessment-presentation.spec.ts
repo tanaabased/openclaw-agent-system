@@ -136,7 +136,7 @@ describe('channels/github/presentation/assessment-result', () => {
       assert.equal(output.includes('[Inline guidance](</workspace/agent.yaml>)'), debug);
       assert.ok(!output.includes('agent-system-model-routing`](<'));
       if (debug) {
-        assert.equal(output.match(/## 🔬 Debug/g)?.length, 1);
+        assert.equal(output.match(/## 🔬 DEBUG/g)?.length, 1);
         assert.ok(output.includes('**Skill:** `agent-system-model-routing` (default)'));
         assert.ok(
           output.indexOf('Model routing instructions') < output.indexOf('Assessment instructions'),
@@ -246,7 +246,7 @@ describe('channels/github/presentation/assessment-result', () => {
         },
         { ...context, debug },
       );
-      assert.ok(output.includes('## ' + (mode === 'plan' ? '⏸️' : '▶️') + ' Auto mode decision'));
+      assert.ok(output.includes('## ' + (mode === 'plan' ? '⏸️' : '▶️') + ' AUTO MODE DECISION'));
       assert.ok(output.includes('**Decision:** `' + (mode === 'work' ? 'work' : 'plan') + '`'));
       assert.match(output, /Scope is bounded/);
       assert.match(
@@ -292,11 +292,11 @@ describe('channels/github/presentation/assessment-result', () => {
             assessment: { defaultSkill: !custom, skill: { name: 'cats:assess' }, guidance },
           });
           assert.equal(output.includes('Assessment instructions'), true);
-          assert.ok(!output.includes('> > ## 🔬 Debug'));
+          assert.ok(!output.includes('> > ## 🔬 DEBUG'));
           assert.equal(output.includes('cats:assess'), true);
           assert.equal(output.includes('**Guidance:**'), !!guidance);
           if (custom || guidance) {
-            const position = output.indexOf('> ## 🔬 Debug');
+            const position = output.indexOf('> ## 🔬 DEBUG');
             assert.ok(position > output.indexOf('Effective settings'));
           }
           if (guidance?.source === 'inline') {
@@ -345,8 +345,8 @@ describe('channels/github/presentation/assessment-result', () => {
           debug,
           assessment: { defaultSkill: true, skill: { name: 'agent-system-task-assessment' } },
         });
-        const routing = output.indexOf('> ## 🧠 Model routing');
-        const instructions = output.indexOf('> ## 🔬 Debug');
+        const routing = output.indexOf('> ## 🧠 MODEL ROUTING');
+        const instructions = output.indexOf('> ## 🔬 DEBUG');
         assert.ok(routing >= 0);
         assert.equal(instructions >= 0, debug);
         if (debug) assert.ok(routing < instructions);
@@ -359,8 +359,8 @@ describe('channels/github/presentation/assessment-result', () => {
           assert.ok(output.indexOf('## Action') < routing);
         }
         if (result.outcome === 'plan-ready') {
-          assert.ok(output.indexOf('Auto mode decision') > routing);
-          if (debug) assert.ok(output.indexOf('Auto mode decision') < instructions);
+          assert.ok(output.indexOf('AUTO MODE DECISION') > routing);
+          if (debug) assert.ok(output.indexOf('AUTO MODE DECISION') < instructions);
         }
       }
     }
@@ -409,7 +409,7 @@ describe('channels/github/presentation/assessment-result', () => {
       },
       context,
     );
-    assert.ok(output.startsWith('> ## ❓ Clarification needed\n>\n'));
+    assert.ok(output.startsWith('> ## ❓ CLARIFICATION NEEDED\n>\n'));
     assert.ok(output.includes('## Question\n\n- How long should results remain?'));
     assert.ok(output.includes('  - Until resolved\n  - For a fixed period'));
     assert.ok(output.includes('[this policy](https://example.com/policy)'));
@@ -422,7 +422,7 @@ describe('channels/github/presentation/assessment-result', () => {
       { ...common, outcome: 'operator-setup-blocker', code: 'repository-unavailable', remediation },
       context,
     );
-    assert.ok(output.startsWith('> ## ⏸️ Issue assessment blocked\n>\n'));
+    assert.ok(output.startsWith('> ## ⏸️ ISSUE ASSESSMENT BLOCKED\n>\n'));
     assert.ok(
       output.includes(
         '> ## Action\n>\n> Restore repository access.\n>\n> ```text\n> retry the same chat\n> ```',
@@ -459,7 +459,7 @@ describe('channels/github/presentation/assessment-result', () => {
       },
       { ...context, routing: { ...context.routing, reason: 'Review [literal] *metadata*.' } },
     );
-    assert.ok(output.startsWith('> ## 🧭 Plan ready\n>\n'));
+    assert.ok(output.startsWith('> ## 🧭 PLAN READY\n>\n'));
     assert.ok(output.includes(plan));
     assert.match(output, /Selected.*`gpt-6-astra` \/ `high`/);
     assert.ok(output.includes('Review \\[literal\\] \\*metadata\\*.'));

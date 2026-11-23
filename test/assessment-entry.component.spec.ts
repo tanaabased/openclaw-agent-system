@@ -275,7 +275,7 @@ describe('agent/assessment-entry', () => {
             }
             assert.equal(completed, true);
             assert.equal(rejected, 1);
-            assert.ok(rendered.includes('Plan ready'));
+            assert.ok(rendered.includes('PLAN READY'));
           }
         } else assert.deepEqual(response, before);
         assert.equal('resultSubmission' in response, false);

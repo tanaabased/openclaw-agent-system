@@ -78,7 +78,6 @@ jobs:
 
   publish-clawhub:
     name: Publish ClawHub
-    continue-on-error: true
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -121,7 +120,6 @@ jobs:
           AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
         run: bun run test:release
       - name: Publish ClawHub
-        id: publish-clawhub
         uses: tanaabased/actions/publish-clawhub@v1
         with:
           tarball: ${{ steps.pack.outputs.tarball-path }}
@@ -130,19 +128,6 @@ jobs:
           source-commit: ${{ github.sha }}
           clawhub-token: ${{ secrets.TANAAB_LOBSTER_BOAT }}
           wait-timeout: 1800
-      - name: Warn about incomplete ClawHub publication
-        if: ${{ failure() }}
-        run: |
-          echo "::warning title=ClawHub publication not confirmed::The optional ClawHub job failed. Check its logs and publication status before retrying; an upload may still be pending. npm and repository publication have independent results."
-          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
-          ### ClawHub publication not confirmed
-
-          This optional job failed. Check the logs and the version's publication status before retrying; an accepted upload may still be pending.
-
-          Use the npm installation path for published releases. npm and repository publication have independent results.
-
-          Upstream tracking: [publish errors #3888](https://github.com/openclaw/clawhub/issues/3888), [backend memory failure #3788](https://github.com/openclaw/clawhub/issues/3788), and [stalled checks #4119](https://github.com/openclaw/clawhub/issues/4119). These are related reports, not a diagnosis of every failure. Restore blocking publication only after a representative release publishes successfully with the deployed fix.
-          EOF
 
   publish-repo:
     name: Publish repo

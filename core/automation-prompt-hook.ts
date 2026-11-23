@@ -134,7 +134,7 @@ export default function registerAutomationPromptHooks(
         isError: true,
         text:
           code === 'automation-declaration-removed'
-            ? '> ## ❌ Automation did not start\n>\n> This automation is no longer declared in agent configuration. Run Agent System Install to reconcile saved automations.'
+            ? '> ## ❌ AUTOMATION DID NOT START\n>\n> This automation is no longer declared in agent configuration. Run Agent System Install to reconcile saved automations.'
             : 'Scheduled automation stopped (automation-prompt-load-blocked): its job binding or instructions could not be verified. Check automation configuration and synchronize it before retrying.',
       },
     };

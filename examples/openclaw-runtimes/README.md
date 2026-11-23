@@ -73,6 +73,7 @@ grep -F 'Runtime OpenClaw <runtime-openclaw@example.invalid>' "$GITHUB_WORKSPACE
 grep -Fx verified "$GITHUB_WORKSPACE/examples/openclaw-runtimes/openclaw/receipt.txt"
 
 # should complete all authored turns through strict aimock
+grep -aE '^(openclaw-runtimes|openclaw-lifecycle-approvals): unmatched tool exchange |^automation command report fixture rejected: ' "$TMPDIR/openclaw-aimock.log" | tail -n 12 >&2 || true
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/diagnostics
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | tee "$TMPDIR/runtime-boundaries-evidence.json"
 jq -e '.scenario == "openclaw-runtimes" and .strictMissCount == 0 and .finalResponseCount == 2 and any(.tools[]; .name == "exec_command" and .callResponseCount == 1 and .resultRequestCount >= 1 and .resultRequestCount <= 4) and any(.tools[]; .name == "exec" and .callResponseCount == 1 and .resultRequestCount >= 1 and .resultRequestCount <= 17)' "$TMPDIR/runtime-boundaries-evidence.json"

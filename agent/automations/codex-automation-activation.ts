@@ -4,8 +4,11 @@ import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
 import { intakeAutomationId } from './codex-intake-policy.ts';
 import { notificationAuthorityDigest } from '../notification-authority.ts';
 import { automationHash } from '../automation-hash.ts';
-import codexAutomationSchedule from './codex-automation-schedule.ts';
-import { codexAutomationMarker, savedMatches } from './codex-automation-plan.ts';
+import {
+  codexAutomationDefinition,
+  codexAutomationMarker,
+  savedMatches,
+} from './codex-automation-plan.ts';
 import { readCodexAutomationSelection } from './codex-automation-state.ts';
 import { CodexAutomationError } from './automation-errors.ts';
 import {
@@ -55,11 +58,16 @@ export async function inspectSelectedCodexPickupActivation(
         ? { ...record.definition, status: matches[0]!.definition.status }
         : record.definition,
       selected.workspace,
-    ) ||
-    record.definition.prompt !==
-      job.payload.prompt + '\n\n' + codexAutomationMarker(selected.scope, jobId) ||
-    record.definition.rrule !== codexAutomationSchedule(job.schedule, record.definition.rrule)
+    )
   )
+    throw new CodexAutomationError(prefix + '-automation-drift');
+  const desired = codexAutomationDefinition(
+    { ...job, payload: job.payload },
+    selected.scope,
+    selected.loaded.manifest.agent.id,
+    record.definition.rrule,
+  );
+  if (record.definition.prompt !== desired.prompt || record.definition.rrule !== desired.rrule)
     throw new CodexAutomationError(prefix + '-automation-drift');
   if (!acceptedOccurrence && (!job.enabled || record.definition.status !== 'ACTIVE'))
     throw new CodexAutomationError(prefix + '-paused');
@@ -120,7 +128,7 @@ export async function inspectCodexDispatchActivation(
   const activationCode =
     capability === 'intake'
       ? record
-        ? 'intake-automation-update-required'
+        ? 'automation-recovery-required'
         : 'intake-activation-required'
       : 'dispatch-activation-required';
   if (!retainedWork && !pausedRecovery && job?.enabled === false)
@@ -147,8 +155,7 @@ export async function inspectCodexDispatchActivation(
       (!job ||
         job.payload.kind !== 'prompt' ||
         record.removed ||
-        record.definition.status !== 'ACTIVE' ||
-        !matchesPrompt(record.definition.prompt)))
+        record.definition.status !== 'ACTIVE'))
   )
     throw new CodexAutomationError(activationCode);
   if (
@@ -162,6 +169,22 @@ export async function inspectCodexDispatchActivation(
       ))
   )
     throw new CodexAutomationError(activationCode);
+  if (!retainedWork && job?.payload.kind === 'prompt') {
+    const desired = codexAutomationDefinition(
+      { ...job, payload: job.payload },
+      selected.scope,
+      selected.loaded.manifest.agent.id,
+      record.definition.rrule,
+    );
+    if (
+      record.definition.prompt !== desired.prompt ||
+      (capability === 'intake' &&
+        (record.definition.rrule !== desired.rrule || record.definition.name !== desired.name))
+    )
+      throw new CodexAutomationError(
+        capability === 'intake' ? 'intake-automation-update-required' : activationCode,
+      );
+  }
   if (capability === 'intake' || capability === 'assessment')
     return { sourceThreadId: record.definition.targetThreadId };
   // New workflows require current activation; retained tasks keep their recorded scope.
