@@ -80,8 +80,8 @@ describe('issue pickup namespace selections', () => {
     it(`should retain legacy exact charges and preserve the original entry after uncertain assignment in ${runtime}`, async () => {
       const legacy = fixture(runtime);
       assert.equal((await legacy.run({ selection: await legacy.select() })).status, 'assigned');
-      delete legacy.state.projectPickup!.charges![0]!.selection;
-      legacy.state.projectPickup!.operations = [];
+      delete legacy.state.issuePickup!.charges![0]!.selection;
+      legacy.state.issuePickup!.operations = [];
       legacy.tx.runId = 'legacy-restart';
       assert.equal((await legacy.run()).status, 'allowance-reached');
 
@@ -94,11 +94,11 @@ describe('issue pickup namespace selections', () => {
         throw new Error('response lost');
       };
       assert.equal((await f.run({ selection })).status, 'attempted');
-      f.state.projectPickup = JSON.parse(JSON.stringify(f.state.projectPickup));
+      f.state.issuePickup = JSON.parse(JSON.stringify(f.state.issuePickup));
       f.policy.issuePickup!.projects = [{ repository: 'owner/repo', limit: 1 }];
       f.tx.runId = 'recover-original-allowance';
       assert.equal((await f.run()).status, 'assigned');
-      assert.equal(f.state.projectPickup!.charges![0]!.selection, 'owner/*');
+      assert.equal(f.state.issuePickup!.charges![0]!.selection, 'owner/*');
       assert.equal(f.effects.writes, 1);
     });
 
@@ -141,15 +141,15 @@ describe('issue pickup namespace selections', () => {
       const selection = await f.select();
       assert.equal((await f.run({ selection })).status, 'assigned');
       assert.equal(f.effects.writes, 1);
-      assert.ok(Value.Check(issuePickupStateSchema, f.state.projectPickup));
-      f.state.projectPickup = JSON.parse(JSON.stringify(f.state.projectPickup));
-      f.state.projectPickup!.operations = [];
+      assert.ok(Value.Check(issuePickupStateSchema, f.state.issuePickup));
+      f.state.issuePickup = JSON.parse(JSON.stringify(f.state.issuePickup));
+      f.state.issuePickup!.operations = [];
       f.state.records = [];
       f.tx.runId = 'after-completion-and-restart';
       const exhausted = await f.run();
       assert.equal(exhausted.status, 'allowance-reached');
       assert.equal(f.effects.writes, 1);
-      assert.equal(f.state.projectPickup!.charges![0]!.selection, 'owner/*');
+      assert.equal(f.state.issuePickup!.charges![0]!.selection, 'owner/*');
     });
 
     it(`should allow separate per-repository assignments with a wildcard in ${runtime}`, async () => {
@@ -222,7 +222,7 @@ describe('issue pickup namespace selections', () => {
         assert.equal(remaining.status, 'empty');
         assert.equal(f.effects.writes, 2);
         assert.deepEqual(
-          f.state.projectPickup!.charges!.map((charge) => charge.selection),
+          f.state.issuePickup!.charges!.map((charge) => charge.selection),
           ['owner/repo', 'owner/*'],
         );
       });
@@ -245,7 +245,7 @@ describe('issue pickup namespace selections', () => {
           : { repositories: ['OWNER/SECOND', 'owner/denied'] };
       };
       assert.equal((await f.run()).status, 'discovering');
-      f.state.projectPickup = JSON.parse(JSON.stringify(f.state.projectPickup));
+      f.state.issuePickup = JSON.parse(JSON.stringify(f.state.issuePickup));
       const result = await f.run();
       assert.deepEqual(pages, [1, 2]);
       assert.equal(result.status, 'selection-required');

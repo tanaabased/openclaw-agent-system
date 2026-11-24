@@ -874,7 +874,7 @@ export default class OpenClawDispatch {
         );
         if (
           newlyReserved &&
-          dispatchCapacity(after, current.policy.policy.maxConcurrentItems, after.projectPickup)
+          dispatchCapacity(after, current.policy.policy.maxConcurrentItems, after.issuePickup)
             .occupied > current.policy.policy.maxConcurrentItems
         )
           throw new Error('dispatch-at-capacity');

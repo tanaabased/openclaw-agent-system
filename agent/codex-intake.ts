@@ -199,7 +199,7 @@ export async function runCodexIntake(
     const result = await scanAssignments({
       runtime: 'codex',
       readIssuePickup: async () =>
-        pickupAuthority((await current.journal.inspectIntake()).projectPickup) ?? deps.issuePickup,
+        pickupAuthority((await current.journal.inspectIntake()).issuePickup) ?? deps.issuePickup,
       store: current.store,
       workspaceDir: current.workspace,
       agentId: current.agentId,
@@ -365,7 +365,7 @@ export async function runCodexIssuePickup(
           deps.intakeNative ?? codexDispatchNative(connection!.request)
         ).occurrence(deps.threadId);
         const acceptedOccurrence = Boolean(
-          (await journal.inspectIntake()).projectPickup?.operations.some(
+          (await journal.inspectIntake()).issuePickup?.operations.some(
             (entry) => entry.runId === occurrence.id,
           ),
         );
@@ -453,7 +453,7 @@ export async function runCodexIssuePickup(
           outcome: result,
           debug: current.manifest.debug,
           capacity: {
-            occupied: codexCapacity(state, reportPolicy.maxConcurrentItems, state.projectPickup)
+            occupied: codexCapacity(state, reportPolicy.maxConcurrentItems, state.issuePickup)
               .occupied,
             limit: reportPolicy.maxConcurrentItems,
           },

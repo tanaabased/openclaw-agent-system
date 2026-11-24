@@ -108,7 +108,7 @@ export default function selectionFixture(runtime: 'codex' | 'openclaw' = 'codex'
     },
   };
   const state: {
-    projectPickup?: IssuePickupState;
+    issuePickup?: IssuePickupState;
     records: Array<{
       projectWork?: ProjectWork;
       reset?: object;
@@ -148,7 +148,7 @@ export default function selectionFixture(runtime: 'codex' | 'openclaw' = 'codex'
     };
   };
   const work = (): ProjectWork => {
-    const receipt = state.projectPickup!.operations[0]!.receipt!;
+    const receipt = state.issuePickup!.operations[0]!.receipt!;
     return {
       enrollment: f.authority.enrollment,
       issueNodeId: receipt.issueNodeId,

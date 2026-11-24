@@ -58,7 +58,7 @@ export default function codexCommit(
       if (
         limit !== undefined &&
         reserved &&
-        codexCapacity(after, limit, after.projectPickup).occupied > limit
+        codexCapacity(after, limit, after.issuePickup).occupied > limit
       )
         throw new Error('dispatch-at-capacity');
       for (const record of after.records) {

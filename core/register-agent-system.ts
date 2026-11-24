@@ -523,7 +523,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
               resolvePolicy: false,
             },
           );
-          const pickup = (await dispatch(store.location.root).inspectIntake()).projectPickup;
+          const pickup = (await dispatch(store.location.root).inspectIntake()).issuePickup;
           const acceptedOccurrence = Boolean(
             pickup?.operations.some((entry) => entry.runId === admitted.run.runId),
           );

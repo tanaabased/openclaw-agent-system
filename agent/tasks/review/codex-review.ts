@@ -666,7 +666,7 @@ export default async function codexReview(
           }
           if (
             !operator &&
-            codexCapacity(state, policy.maxConcurrentItems, state.projectPickup).available === 0
+            codexCapacity(state, policy.maxConcurrentItems, state.issuePickup).available === 0
           )
             return { status: 'at-capacity' };
           const item = observation.item;

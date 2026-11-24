@@ -5,6 +5,12 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
 import { automationHash } from '../agent/automation-hash.ts';
+import {
+  pickupDispatchScope,
+  sqliteDispatchPersistence,
+} from '../agent/storage/dispatch-backend.ts';
+import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
+import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import { DirectEntryStore } from '../agent/tasks/direct-entry-store.ts';
 import { entriesSchema } from '../agent/tasks/retirement/native-retirement.ts';
 import { selectOpenClawTaskContext } from '../agent/tasks/context/openclaw-task-context.ts';
@@ -102,32 +108,6 @@ describe('legacy agent storage import', () => {
         reviewPublication: { turnId: 'turn' },
         ...(!codex && { sessionCreation: { sessionId } }),
       };
-      await save(join(dispatch, runtime + '-dispatch-' + scope + '.json'), {
-        version: 4,
-        scope,
-        resetGeneration: 'saved',
-        records: [record],
-      });
-      if (!codex)
-        await save(join(intake, runtime + '-dispatch-' + scope + '.json'), {
-          version: 4,
-          scope,
-          resetGeneration: 'pickup',
-          records: [],
-        });
-      const receipt = {
-        digest: 'retire',
-        source: 'operator',
-        turnId: 'turn',
-        inputId: 'input',
-        at: 1,
-      };
-      const orphan = 'a'.repeat(64);
-      for (const key of [chat, orphan])
-        await save(join(dispatch, 'github-native-retirement-' + key + '.json'), {
-          scope: key,
-          entries: [receipt],
-        });
       const enrollment = {
         enrollment: {
           id: 'enroll',
@@ -143,6 +123,35 @@ describe('legacy agent storage import', () => {
         instanceId: id,
         timezone: 'UTC',
       };
+      const pickupState = { enrollment: enrollment.enrollment, timezone: 'UTC', operations: [] };
+      await save(join(dispatch, runtime + '-dispatch-' + scope + '.json'), {
+        version: 4,
+        scope,
+        resetGeneration: 'saved',
+        ...(codex && { projectPickup: pickupState }),
+        records: [record],
+      });
+      if (!codex)
+        await save(join(intake, runtime + '-dispatch-' + scope + '.json'), {
+          version: 4,
+          scope,
+          resetGeneration: 'pickup',
+          projectPickup: pickupState,
+          records: [],
+        });
+      const receipt = {
+        digest: 'retire',
+        source: 'operator',
+        turnId: 'turn',
+        inputId: 'input',
+        at: 1,
+      };
+      const orphan = 'a'.repeat(64);
+      for (const key of [chat, orphan])
+        await save(join(dispatch, 'github-native-retirement-' + key + '.json'), {
+          scope: key,
+          entries: [receipt],
+        });
       await save(join(instance, 'project-pickup-enrollments.json'), {
         version: 1,
         records: [
@@ -201,6 +210,29 @@ describe('legacy agent storage import', () => {
         automationThreads: {},
       });
       assert.deepEqual(records.dispatchRecords[0]?.value, record);
+      const pickupScope = codex ? scope : pickupDispatchScope(scope);
+      const readPickupRow = async () =>
+        (await db.agent.read({ dispatchState: { scope: pickupScope } })).dispatchState[0]!;
+      const imported = await readPickupRow();
+      assert.deepEqual(imported.value.issuePickup, pickupState);
+      assert.ok(!Object.hasOwn(imported.value, 'projectPickup'));
+
+      // Reopening a row created by an earlier pilot must preserve evidence and permit import retries.
+      const { issuePickup, ...header } = imported.value;
+      const legacyValue = { ...header, projectPickup: issuePickup };
+      await db.agent.write([
+        { table: 'dispatchState', action: 'save', row: { scope: pickupScope, value: legacyValue } },
+      ]);
+      const retry = await importAgentStorage(options);
+      assert.equal(retry.agentRows.dispatchState?.present, codex ? 1 : 2);
+      const persistence = sqliteDispatchPersistence(db.agent, pickupScope);
+      const journal = codex
+        ? new CodexDispatchStore(dispatch, scope, persistence)
+        : new OpenClawDispatchStore(intake, scope, persistence);
+      assert.deepEqual((await journal.readEnvelope()).issuePickup, pickupState);
+      assert.deepEqual((await readPickupRow()).value, legacyValue);
+      await journal.observeIntake(async (_state, commit) => commit());
+      assert.deepEqual(await readPickupRow(), imported);
       if (!codex) {
         await mkdir(workspace);
         const selected = await selectOpenClawTaskContext(

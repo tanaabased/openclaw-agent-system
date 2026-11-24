@@ -156,7 +156,7 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
       resetGeneration: Type.Optional(text),
       records: Type.Array(Type.Unsafe<R>(recordSchema)),
       retirementEffects: Type.Optional(Type.Array(retirementEffectSchema)),
-      projectPickup: Type.Optional(issuePickupStateSchema),
+      issuePickup: Type.Optional(issuePickupStateSchema),
       openclawOccurrence: Type.Optional(
         Type.Object(
           { sessionKey: text, sessionId: text, runId: text },
@@ -239,6 +239,21 @@ export type DispatchState<R extends SharedDispatchRecord> = Static<
   // Read-time reservations only; saves retain the original records, never this projection.
   isolatedRecords?: Array<{ id: string; issueKey: string; intakeId?: string; code: string }>;
 };
+/** Both legacy files and early SQLite rows used the original pickup field name. */
+export function normalizeDispatchPickup(state: unknown): unknown {
+  if (!state || typeof state !== 'object' || !('projectPickup' in state)) return state;
+  const { projectPickup, ...rest } = state;
+  if ('issuePickup' in rest && !isDeepStrictEqual(rest.issuePickup, projectPickup))
+    throw new Error('dispatch-state-invalid');
+  return { ...rest, issuePickup: projectPickup };
+}
+
+function fileDispatchEnvelope<R extends SharedDispatchRecord>(state: DispatchState<R>) {
+  if (!state.issuePickup) return state;
+  const { issuePickup, ...rest } = state;
+  return { ...rest, projectPickup: issuePickup };
+}
+
 export interface DispatchPersistence<R extends SharedDispatchRecord> {
   read(): Promise<unknown>;
   save(state: DispatchState<R>): Promise<void>;
@@ -588,7 +603,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     const state =
       saved === undefined
         ? { version: 4, scope: this.scope, resetGeneration: 'initial', records: [] }
-        : saved;
+        : normalizeDispatchPickup(saved);
     if (state && typeof state === 'object' && 'version' in state && state.version !== 4)
       throw new Error(
         'dispatch-clean-start-required: stop writers and perform the reviewed clean start before using this runtime',
@@ -603,7 +618,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
   async inspectIntake() {
     const state = await this.readEnvelope();
     return {
-      projectPickup: state.projectPickup,
+      issuePickup: state.issuePickup,
       storage: dispatchStorageNotice(state),
     };
   }
@@ -849,8 +864,12 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
           const reclaimed =
             originalBytes - dispatchStorageBytes(restore(retained, snapshot)).contentBytes;
           if (!intake && reclaimed > 0) retained.storageReclaimedBytes = reclaimed;
-          const contents = assertDispatchStorage(restore(retained, snapshot), admission);
-          const raw = JSON.parse(contents) as DispatchState<R>;
+          const restored = restore(retained, snapshot);
+          const contents = assertDispatchStorage(
+            this.contract.persistence ? restored : fileDispatchEnvelope(restored),
+            admission,
+          );
+          const raw = normalizeDispatchPickup(JSON.parse(contents)) as DispatchState<R>;
           if (this.contract.persistence) await this.contract.persistence.save(raw);
           else await this.file.write(contents);
           refreshStateSnapshot(state, retained);
@@ -866,7 +885,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
   async reset(generation: string): Promise<void> {
     await this.exclusive(async (state, save) => {
       if (state.resetGeneration === generation) return;
-      const pickup = resetIssuePickup(state.projectPickup, state.records);
+      const pickup = resetIssuePickup(state.issuePickup, state.records);
       const version = state.version;
       for (const key of Object.keys(state)) delete (state as Record<string, unknown>)[key];
       Object.assign(state, {
@@ -874,7 +893,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
         scope: this.scope,
         resetGeneration: generation,
         records: [],
-        ...(pickup ? { projectPickup: pickup } : {}),
+        ...(pickup ? { issuePickup: pickup } : {}),
       });
       await save();
     }, true);

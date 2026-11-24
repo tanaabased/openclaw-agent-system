@@ -66,7 +66,7 @@ export default function openclawIntakeReport(input: {
           .map((event) => ({ record, event }))
       : [],
   );
-  const capacity = dispatchCapacity(state, input.slots, state.projectPickup);
+  const capacity = dispatchCapacity(state, input.slots, state.issuePickup);
   const started = managing.filter((record) => record.intakeReportedAt === undefined).slice(0, 12);
   const pending =
     intake && observation.status === 'ready' ? pendingAssignments(state, intake).length : undefined;

@@ -183,7 +183,7 @@ export default class OpenClawIntake {
           outcome: result,
           debug: manifest.debug,
           capacity: {
-            occupied: openClawCapacity(state, reportPolicy.maxConcurrentItems, state.projectPickup)
+            occupied: openClawCapacity(state, reportPolicy.maxConcurrentItems, state.issuePickup)
               .occupied,
             limit: reportPolicy.maxConcurrentItems,
           },
@@ -372,7 +372,7 @@ export default class OpenClawIntake {
     return scanAssignments({
       runtime: 'openclaw',
       readIssuePickup: async () =>
-        pickupAuthority((await dispatch(store.location.root).inspectIntake()).projectPickup) ??
+        pickupAuthority((await dispatch(store.location.root).inspectIntake()).issuePickup) ??
         this.dependencies.issuePickup,
       store: target,
       budget,

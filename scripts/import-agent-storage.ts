@@ -1,4 +1,5 @@
 // Temporary, operator-run importer for #792. Run from the source checkout with Node.
+import { normalizeDispatchPickup } from '../agent/tasks/dispatch/dispatch-state.ts';
 import { pickupDispatchScope } from '../agent/storage/dispatch-backend.ts';
 import { readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -98,8 +99,13 @@ class ImportPlan<Rows extends Record<string, object>> {
       const found = new Map(existing[table].map((row) => [rowKey(row), row]));
       const count = (counts[String(table)] = { insert: 0, present: 0 });
       for (const [key, row] of rows) {
-        if (found.has(key)) {
-          if (!isDeepStrictEqual(found.get(key), row))
+        const previous = found.get(key);
+        if (previous) {
+          const comparable =
+            table === 'dispatchState' && 'value' in previous
+              ? { ...previous, value: normalizeDispatchPickup(previous.value) }
+              : previous;
+          if (!isDeepStrictEqual(comparable, row))
             throw new Error('destination differs in ' + String(table) + ' ' + key);
           count.present++;
         } else {

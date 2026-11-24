@@ -64,7 +64,7 @@ describe('agent/issue-pickup-filters', () => {
       [other.nodeId],
     );
     assert.equal(
-      f.state.projectPickup!.operations[0]!.deferred?.[0]?.code,
+      f.state.issuePickup!.operations[0]!.deferred?.[0]?.code,
       'issue-pickup-type-unavailable',
     );
     assert.equal(f.effects.writes, 0);

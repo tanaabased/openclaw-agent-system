@@ -31,7 +31,7 @@ interface Dependencies {
       workspace: string,
     ): Promise<{
       dispatch(root: string): {
-        read(): Promise<{ records: OpenClawDispatchRecord[]; projectPickup?: IssuePickupState }>;
+        read(): Promise<{ records: OpenClawDispatchRecord[]; issuePickup?: IssuePickupState }>;
       };
       selected: ReturnType<typeof assignmentIntakePolicy>;
       store: {
@@ -141,7 +141,7 @@ export default class OpenClawNotifications {
       const capacity = dispatchCapacity(
         journal,
         selected.policy.maxConcurrentItems,
-        journal.projectPickup,
+        journal.issuePickup,
       );
       const pending = pendingDispatchAssignments(journal, state);
       const latest = new Map<string, IntakeState['records'][number]>();
