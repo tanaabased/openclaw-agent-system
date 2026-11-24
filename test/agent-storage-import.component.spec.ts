@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
 import { automationHash } from '../agent/automation-hash.ts';
+import { DirectEntryStore } from '../agent/tasks/direct-entry-store.ts';
+import { entriesSchema } from '../agent/tasks/retirement/native-retirement.ts';
 import { selectOpenClawTaskContext } from '../agent/tasks/context/openclaw-task-context.ts';
 import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import { importAgentStorage, type ImportOptions } from '../scripts/import-agent-storage.ts';
@@ -224,6 +226,21 @@ describe('legacy agent storage import', () => {
         records.pickupEnrollments.map((row) => row.value),
         [enrollment],
       );
+      const retirements = new DirectEntryStore(
+        dispatch,
+        {
+          runtime,
+          agentId,
+          workspace,
+          namespace: profile,
+          session,
+          incarnation: sessionId,
+        },
+        entriesSchema,
+        'native-retirement',
+        db.agent,
+      );
+      assert.deepEqual(await retirements.exclusive(async (entries) => entries), [receipt]);
       assert.deepEqual(records.directEntries, [
         { scope: chat, id: receipt.digest, value: receipt, kind: 'native-retirement' },
       ]);

@@ -49,7 +49,7 @@ async function codexReplyScoped(
       session: caller,
       incarnation: caller,
     };
-    const replyStore = new ReplyStore(pluginData, binding);
+    const replyStore = new ReplyStore(pluginData, binding, current.sessionStorage);
     let feedback: ReplyDraft['feedback'];
     let defaultTarget: string | undefined;
     const nativeInput = () =>
@@ -182,6 +182,7 @@ async function codexReplyScoped(
     };
     return await feedbackReply(input, {
       defaultTarget,
+      sessionStorage: current.sessionStorage,
       root: pluginData,
       binding,
       ...turn,

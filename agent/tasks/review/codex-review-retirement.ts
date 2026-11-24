@@ -104,6 +104,7 @@ export default async function retireCodexReviews(input: {
     dispose: async (record, admission) => {
       if (record.threadId)
         await retirementLocalData({
+          sessionStorage: input.current.sessionStorage,
           root: input.current.store.location.root,
           binding: {
             runtime: 'codex',

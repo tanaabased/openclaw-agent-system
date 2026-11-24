@@ -124,6 +124,7 @@ export default async function codexEntryContext<T>(
       entry.manifest = fresh.manifest;
     };
     const entry: AssessmentEntryDependencies = {
+      sessionStorage: current.sessionStorage,
       operator: true,
       root: pluginData,
       currentTarget,

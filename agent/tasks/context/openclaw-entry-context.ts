@@ -151,6 +151,7 @@ export default async function openClawEntryContext<T>(
       entry.manifest = fresh.manifest;
     };
     const entry: AssessmentEntryDependencies = {
+      sessionStorage: current.sessionStorage,
       operator: input.operator,
       root: deps.root,
       currentTarget,

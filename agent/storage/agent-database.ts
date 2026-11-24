@@ -17,7 +17,7 @@ import * as agentTables from './schema.ts';
 import * as installationTables from './installation-schema.ts';
 import sqliteRecords from './sqlite-records.ts';
 import type { AgentRows, InstallationRows } from './workflow-records.ts';
-import { intakeRecords, intakeState } from './schema.ts';
+import { directEntries, intakeRecords, intakeState } from './schema.ts';
 import { managedRepositories } from './installation-schema.ts';
 import type { BoundStorage, SqliteInstallation, StorageSchema } from './storage-lifecycle.ts';
 import type { IntakeState } from '../../channels/github/intake/record-store.ts';
@@ -191,6 +191,59 @@ class SqliteAgentStore extends SqliteDatabase {
   private readonly records = sqliteRecords<AgentRows>(agentTables, this.use.bind(this));
   readonly read = this.records.read;
   readonly write = this.records.write;
+
+  async readReplies(scope: string) {
+    const { replyDrafts } = await this.read({ replyDrafts: { scope } });
+    return replyDrafts
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .map(({ id, value }) => {
+        if (value?.id !== id) throw new Error('reply-state-invalid');
+        return value;
+      });
+  }
+
+  saveReplies(scope: string, changed: AgentRows['replyDrafts']['value'][], removed: string[]) {
+    return this.write([
+      ...changed.map((value) => ({
+        table: 'replyDrafts' as const,
+        action: 'save' as const,
+        row: { scope, id: value.id, value },
+      })),
+      ...removed.map((id) => ({
+        table: 'replyDrafts' as const,
+        action: 'remove' as const,
+        key: { scope, id },
+      })),
+    ]);
+  }
+
+  async readDirectEntries(scope: string, kind: AgentRows['directEntries']['kind']) {
+    const rows = await this.read({ directEntries: { scope, kind } });
+    return rows.directEntries.map(({ id, value }) => {
+      if (id !== ('id' in value ? value.id : value.digest))
+        throw new Error(kind + '-state-invalid');
+      return value;
+    });
+  }
+
+  saveDirectEntries(
+    scope: string,
+    kind: AgentRows['directEntries']['kind'],
+    entries: AgentRows['directEntries']['value'][],
+  ) {
+    return this.use(false, (db) =>
+      db.transaction((tx) => {
+        assertPrivateStateLocksHeld();
+        tx.delete(directEntries)
+          .where(and(eq(directEntries.scope, scope), eq(directEntries.kind, kind)))
+          .run();
+        for (const value of entries)
+          tx.insert(directEntries)
+            .values({ scope, kind, id: 'id' in value ? value.id : value.digest, value })
+            .run();
+      }),
+    );
+  }
 
   listIntakeScopes() {
     return this.use(true, (db) =>

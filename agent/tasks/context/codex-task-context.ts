@@ -52,6 +52,7 @@ export async function selectCodexTaskContext(
   await new GitHubIdentityCache(store.location).hydrate(loaded.manifest.github?.notifications);
   if (!options.inspectionOnly) await assertNotificationManagement(pluginData, store.location.scope);
   return {
+    ...(agent && { sessionStorage: agent }),
     journal: new CodexDispatchStore(
       pluginData,
       store.location.scope,

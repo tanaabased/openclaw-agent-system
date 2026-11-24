@@ -1,3 +1,4 @@
+import type { SessionStorage } from '../../storage/storage-lifecycle.ts';
 import ReplyStore, { type ReplyBinding } from './reply-store.ts';
 import type { ReplyTarget } from './reply-target.ts';
 import redactFeedback from './feedback-redaction.ts';
@@ -7,13 +8,18 @@ import type GitHubReviewReplyClient from '../../../channels/github/provider/revi
 
 /** Observe existing reply effects only; intake never sends or resumes conversational work. */
 export default async function replyOwnPublications(input: {
+  sessionStorage?: SessionStorage;
   root: string;
   binding: ReplyBinding;
   client: GitHubNotificationPublicationClient;
   replies?: Pick<GitHubReviewReplyClient, 'find' | 'create'>;
 }) {
   const ids: string[] = [];
-  for (const draft of await new ReplyStore(input.root, input.binding).read()) {
+  for (const draft of await new ReplyStore(
+    input.root,
+    input.binding,
+    input.sessionStorage,
+  ).read()) {
     if (draft.authorNodeId !== input.client.identity.nodeId) continue;
     if (draft.receipt) {
       ids.push(draft.receipt.nodeId);

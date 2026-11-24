@@ -29,6 +29,7 @@ export default async function retireCodexNative(
     const journal = current.journal;
     const native = deps.retirementNative ?? codexRetirementNative(connection.request);
     return await nativeRetirement({
+      sessionStorage: current.sessionStorage,
       root: pluginData,
       binding: {
         runtime: 'codex',

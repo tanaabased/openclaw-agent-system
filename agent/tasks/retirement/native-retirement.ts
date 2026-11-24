@@ -1,3 +1,4 @@
+import type { SessionStorage } from '../../storage/storage-lifecycle.ts';
 import { Type, type Static } from 'typebox';
 
 import { automationHash } from '../../automation-hash.ts';
@@ -46,6 +47,7 @@ export interface NativeRetirementResult {
 
 /** explicit disposal receipts are separate from assignment custody and preservation policy. */
 export default async function nativeRetirement(input: {
+  sessionStorage?: SessionStorage;
   root: string;
   binding: DirectEntryBinding;
   target: string;
@@ -74,7 +76,13 @@ export default async function nativeRetirement(input: {
     session: target.id,
     incarnation: target.incarnation,
   };
-  const store = new DirectEntryStore(input.root, binding, entriesSchema, 'native-retirement');
+  const store = new DirectEntryStore(
+    input.root,
+    binding,
+    entriesSchema,
+    'native-retirement',
+    input.sessionStorage,
+  );
   const digest = automationHash({ binding, target, turnId: input.turnId, inputId: input.inputId });
   const result = (
     status: NativeRetirementResult['status'],

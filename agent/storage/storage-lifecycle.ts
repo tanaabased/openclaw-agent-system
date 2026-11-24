@@ -18,14 +18,28 @@ export interface StorageSchema {
   install(): Promise<AgentSystemLifecycleOutcome>;
 }
 
+type DirectRow = AgentRows['directEntries'];
+type Draft = AgentRows['replyDrafts']['value'];
+export interface SessionStorage {
+  readReplies(scope: string): Promise<Draft[]>;
+  saveReplies(scope: string, changed: Draft[], removed: string[]): Promise<void>;
+  readDirectEntries(scope: string, kind: DirectRow['kind']): Promise<DirectRow['value'][]>;
+  saveDirectEntries(
+    scope: string,
+    kind: DirectRow['kind'],
+    entries: DirectRow['value'][],
+  ): Promise<void>;
+}
+
 /** The runtime binds both handles before a workflow can read or change any records. */
 export interface BoundStorage {
-  agent: WorkflowRecords<AgentRows> & {
-    listIntakeScopes(): Promise<string[]>;
-    readIntake(scope: string): Promise<IntakeState | undefined>;
-    saveIntake(state: IntakeState): Promise<void>;
-    clearIntake(scope: string): Promise<void>;
-  };
+  agent: WorkflowRecords<AgentRows> &
+    SessionStorage & {
+      listIntakeScopes(): Promise<string[]>;
+      readIntake(scope: string): Promise<IntakeState | undefined>;
+      saveIntake(state: IntakeState): Promise<void>;
+      clearIntake(scope: string): Promise<void>;
+    };
   installation: WorkflowRecords<InstallationRows> & {
     readRepository(root: string, id: string): Promise<RepositoryRecord | undefined>;
     saveRepository(root: string, record: RepositoryRecord): Promise<void>;

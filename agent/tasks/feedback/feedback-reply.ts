@@ -1,3 +1,4 @@
+import type { SessionStorage } from '../../storage/storage-lifecycle.ts';
 import { responseInstructions } from '../response/task-response.ts';
 import { responseBlocks } from '../../../channels/github/presentation/response-blocks.ts';
 import selectReplyDraft from './reply-selection.ts';
@@ -42,6 +43,7 @@ import {
 } from '../../../channels/github/publication/publication-contract.ts';
 
 export interface FeedbackReplyDependencies {
+  sessionStorage?: SessionStorage;
   defaultTarget?: string;
   root: string;
   binding: ReplyBinding;
@@ -90,7 +92,7 @@ async function runFeedbackReply(
     update: undefined,
   };
   await deps.assertCurrent();
-  const store = new ReplyStore(deps.root, deps.binding);
+  const store = new ReplyStore(deps.root, deps.binding, deps.sessionStorage);
   const result = await store.exclusive(async (drafts, save) => {
     const independent = !input.purpose && !deps.feedback;
     let draft =

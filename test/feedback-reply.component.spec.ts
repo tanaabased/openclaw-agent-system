@@ -1,3 +1,4 @@
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -13,9 +14,9 @@ import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import assessmentSkillSource from '../agent/tasks/assessment/assessment-skill-source.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
-import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
+import type CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import { issueKey } from '../agent/tasks/dispatch/dispatch-pending.ts';
-import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
+import type OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import OpenClawDispatch from '../agent/tasks/dispatch/openclaw-dispatch.ts';
 import runCodexFeedback from '../agent/tasks/feedback/codex-feedback.ts';
 import type { FeedbackProvider } from '../agent/tasks/feedback/feedback-provider.ts';
@@ -1158,12 +1159,15 @@ describe('agent/feedback-reply', () => {
     assert.equal(writes, 1);
   });
   it('should identify an uncertain native reply during discovery without posting or repeating work', async () => {
+    const { agent } = await sqliteAgentFixture(root, deps.binding.agentId);
+    deps.sessionStorage = agent;
     const reply = await candidate(await nativeFeedback());
     lost = hidden = true;
     await assert.rejects(call('publish', { ...reply }));
     hidden = false;
     assert.deepEqual(
       await replyOwnPublications({
+        sessionStorage: deps.sessionStorage,
         root: deps.root,
         binding: deps.binding,
         client: provider,
@@ -1778,7 +1782,9 @@ describe('agent/feedback-reply', () => {
     const calls: string[] = [];
     let operatorTurn = 'turn';
     let operatorInput = 'input';
+    const sqlite = await sqliteAgentFixture(pluginData, deps.binding.agentId);
     const nativeDeps = {
+      storageBackend: sqlite.storageBackend,
       codexHome,
       threadId: 'native-chat',
       replyConnection: async () => ({
@@ -1830,7 +1836,8 @@ describe('agent/feedback-reply', () => {
     assert.equal(calls.filter((x) => x === 'skills/list').length, 1);
     assert.equal(writes, 0);
     assert.ok(!(await readdir(pluginData)).some((name) => name.startsWith('github-intake-')));
-    assert.ok((await readdir(pluginData)).some((name) => name.startsWith('github-reply-')));
+    assert.equal((await sqlite.agent.read({ replyDrafts: {} })).replyDrafts.length, 1);
+    assert.ok(!(await readdir(pluginData)).some((name) => name.startsWith('github-reply-')));
     assert.ok((await readFile(join(root, 'SKILL.md'), 'utf8')).includes('ordinary reply'));
     await assert.rejects(
       direct('candidate', { id: 'a'.repeat(64), publicText: 'Wrong override.' }),
@@ -1869,15 +1876,15 @@ describe('agent/feedback-reply', () => {
     assert.equal(postedNumber, 4);
     assert.ok(posted?.body.includes(':status-update:'));
     const selected = await selectCodexTaskContext(pluginData, nativeDeps, { resolvePolicy: false });
-    await independentAdapterComments(
-      direct,
-      new CodexDispatchStore(pluginData, selected.store.location.scope),
-    );
+    await independentAdapterComments(direct, selected.journal);
   });
   it('should use bound openclaw user input and skills without activating a coordinator or preparing a worktree', async () => {
     const workspace = await realpath(root);
     const manifest = deps.manifest;
+    const sqlite = await sqliteAgentFixture(root, manifest.agent.id);
     const intake = new OpenClawIntake({
+      sqliteInstallation: sqlite.sqliteInstallation,
+      storageBackend: sqlite.storageBackend,
       root: join(root, 'intake'),
       namespace: root,
       manifestService: {
@@ -1971,6 +1978,7 @@ describe('agent/feedback-reply', () => {
     );
     const composed = await direct('compose', { target: url, privateText: 'Answer.' });
     assert.equal(composed.status, 'composition-ready');
+    assert.equal((await sqlite.agent.read({ replyDrafts: {} })).replyDrafts.length, 1);
     await assert.rejects(
       direct('candidate', { digest: 'a'.repeat(64), publicText: 'Wrong override.' }),
       /reply-request-invalid/,
@@ -2003,9 +2011,6 @@ describe('agent/feedback-reply', () => {
     assert.equal(postedNumber, 4);
     assert.ok(posted?.body.includes(':status-update:'));
     const selected = await intake.select(manifest, workspace, { resolvePolicy: false });
-    await independentAdapterComments(
-      direct,
-      new OpenClawDispatchStore(deps.root, selected.store.location.scope),
-    );
+    await independentAdapterComments(direct, selected.dispatch(deps.root));
   });
 });

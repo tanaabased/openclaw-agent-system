@@ -33,6 +33,7 @@ export default async function implementationEntry(
     deps.binding,
     implementationEntriesSchema,
     'implementation',
+    deps.sessionStorage,
   );
   const selectedTarget = input.target ?? deps.currentTarget;
   const retained = await store.exclusive(async (entries) => {

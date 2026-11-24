@@ -42,6 +42,7 @@ export default async function retireOpenClawNative(input: {
       });
     const turn = await nativeInput();
     return nativeRetirement({
+      sessionStorage: selected.sessionStorage,
       root: deps.root,
       binding: {
         runtime: 'openclaw',

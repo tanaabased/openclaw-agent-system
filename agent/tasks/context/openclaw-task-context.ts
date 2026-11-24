@@ -53,7 +53,7 @@ export async function selectOpenClawTaskContext(
       sqliteDispatchPersistence(agent, pickup ? pickupDispatchScope(scope) : scope),
     );
   };
-  return { selected, store, workspace, dispatch };
+  return { selected, store, workspace, dispatch, ...(agent && { sessionStorage: agent }) };
 }
 
 export type OpenClawTaskContext = Awaited<ReturnType<typeof selectOpenClawTaskContext>>;
