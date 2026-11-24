@@ -1,5 +1,12 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+import readGlobalConfigurationSource, { pluginSetting } from '../global-configuration.ts';
 import { readdir } from 'node:fs/promises';
-import { defaultStorageBackend, bindIntakeStore, type StorageBackend } from './backend.ts';
+import {
+  configuredStorageBackend,
+  defaultStorageBackend,
+  bindIntakeStore,
+  type StorageBackend,
+} from './backend.ts';
 import IntakeRecordStore, {
   IntakeError,
   intakeScopeLocation,
@@ -9,6 +16,17 @@ import { fileURLToPath } from 'node:url';
 import CodexSidebarJournal from '../codex-sidebar-journal.ts';
 import { bindPickupStore } from './pickup-backend.ts';
 import type { SqliteInstallation } from './storage-lifecycle.ts';
+
+// A native command and its nested workflow calls must use the same backend.
+const selection = new AsyncLocalStorage<StorageBackend>();
+export function codexStorageBackend(): StorageBackend {
+  return selection.getStore() ?? defaultStorageBackend;
+}
+
+export async function withCodexStorageBackend<T>(run: () => Promise<T>): Promise<T> {
+  const source = await readGlobalConfigurationSource();
+  return selection.run(configuredStorageBackend(pluginSetting(source, 'storage')), run);
+}
 
 export default function codexStorageLocation(pluginData: string): SqliteInstallation {
   return {
@@ -22,7 +40,7 @@ export async function codexSidebarJournal(
   pluginData: string,
   profile: string,
   name: string,
-  backend = defaultStorageBackend,
+  backend = codexStorageBackend(),
 ) {
   const storage =
     backend === 'sqlite'
@@ -36,7 +54,7 @@ export async function codexSidebarJournal(
 export function codexPickupStore(
   pluginData: string,
   agentId: string,
-  backend = defaultStorageBackend,
+  backend = codexStorageBackend(),
 ) {
   return bindPickupStore(codexStorageLocation(pluginData), agentId, backend);
 }
@@ -55,7 +73,7 @@ export async function* codexAgentDatabases(pluginData: string) {
 
 export async function* retainedIntakeCandidates(
   pluginData: string,
-  backend: StorageBackend = defaultStorageBackend,
+  backend: StorageBackend = codexStorageBackend(),
 ) {
   if (backend === 'file') {
     const names = await storageNames(pluginData);

@@ -26,6 +26,7 @@ Deliver a Work assignment, then an Auto Work assignment, using one installation 
 ```bash
 # should prepare the packed plugin and strict notification fixture
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --needs-ssh-key --yolo
+openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 openclaw-aimock prepare --scenario openclaw-issue-work-custom
 openclaw config set skills.workshop.autonomous.mode off
 # keep unrelated nightly memory turns out of the strict notification fixture
@@ -96,9 +97,9 @@ run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" 
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for worktree-ready --timeout 600 --json > "$TMPDIR/notification-plan.json"
 conversation=$(jq -er .observation.items[0].workflow.conversation "$TMPDIR/notification-plan.json")
-run_id=$(jq -ers --arg key "$conversation" '[.[].records[] | select(.threadId == $key)] | if length == 1 then (.[0] | .nativeTurns | map(select(.role == "assessment")) | last | .turn).runId else error("one conversation required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
+run_id=$(node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -ers --arg key "$conversation" '[.[].records[] | select(.threadId == $key)] | if length == 1 then (.[0] | .nativeTurns | map(select(.role == "assessment")) | last | .turn).runId else error("one conversation required") end')
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
-jq -es --arg key "$conversation" '[.[].records[] | select(.threadId == $key)] | if length == 1 then .[0] else error("one issue owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-delivery.json"
+node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -es --arg key "$conversation" '[.[].records[] | select(.threadId == $key)] | if length == 1 then .[0] else error("one issue owner required") end' > "$TMPDIR/notification-delivery.json"
 jq -e --arg run "$run_id" '.progression.stage == "implementation" and .progression.via == "work" and .work.implementation.runId == $run and .delivery.reconciled and .delivery.pullRequest.pullRequestNodeId != null and .announcement.receipt.nodeId != null and .pullRequestLink == .delivery.pullRequest and (.feedback.events | length) == 0' "$TMPDIR/notification-delivery.json"
 jq -e '.announcement.publicText == null and .announcement.publication == null and .announcement.composition == null and .announcement.snapshot.body == null' "$TMPDIR/notification-delivery.json"
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$run_id" '{sessionKey:$key,inputRunIds:[$run],limit:200,maxChars:100000}')" --json > "$TMPDIR/notification-history.json"
@@ -119,7 +120,7 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 60
 branch=$(jq -er .delivery.binding.branch "$TMPDIR/notification-delivery.json")
 openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$branch" --state all --json number | jq -e --argjson pr "$pr" 'length == 1 and .[0].number == $pr'
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-comments.json"
-jq -s --arg target "$(jq -er .html_url "$TMPDIR/notification-issue.json")" '[.[] | select(.update != null and .receipt != null and (.target | fromjson | .url) == $target)]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-summary-drafts.json"
+node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" replies | jq -s --arg target "$(jq -er .html_url "$TMPDIR/notification-issue.json")" '[.[] | select(.update != null and .receipt != null and (.target | fromjson | .url) == $target)]' > "$TMPDIR/notification-summary-drafts.json"
 jq -e --slurpfile saved "$TMPDIR/notification-delivery.json" --slurpfile summaries "$TMPDIR/notification-summary-drafts.json" '[.[] | select(.user.login == "tanaabot")] | length == 2 and any(.[]; .node_id == $summaries[0][0].receipt.nodeId) and any(.[]; .node_id == $saved[0].announcement.receipt.nodeId)' "$TMPDIR/notification-comments.json"
 
 # should preserve independently selected custom skills without saved plans
@@ -149,9 +150,9 @@ run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" 
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for worktree-ready --timeout 600 --json > "$TMPDIR/notification-plan.json"
 conversation=$(jq -er .observation.items[0].workflow.conversation "$TMPDIR/notification-plan.json")
-run_id=$(jq -ers --arg key "$conversation" '[.[].records[] | select(.threadId == $key)] | if length == 1 then (.[0] | .nativeTurns | map(select(.role == "assessment")) | last | .turn).runId else error("one conversation required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
+run_id=$(node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -ers --arg key "$conversation" '[.[].records[] | select(.threadId == $key)] | if length == 1 then (.[0] | .nativeTurns | map(select(.role == "assessment")) | last | .turn).runId else error("one conversation required") end')
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
-jq -es --arg key "$conversation" '[.[].records[] | select(.threadId == $key)] | if length == 1 then .[0] else error("one issue owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-delivery.json"
+node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -es --arg key "$conversation" '[.[].records[] | select(.threadId == $key)] | if length == 1 then .[0] else error("one issue owner required") end' > "$TMPDIR/notification-delivery.json"
 jq -e --arg run "$run_id" '.progression.stage == "implementation" and .progression.via == "auto" and .work.implementation.runId == $run and .delivery.reconciled and .delivery.pullRequest.pullRequestNodeId != null and .announcement.receipt.nodeId != null and .pullRequestLink == .delivery.pullRequest and (.feedback.events | length) == 0' "$TMPDIR/notification-delivery.json"
 jq -e '.announcement.publicText == null and .announcement.publication == null and .announcement.composition == null and .announcement.snapshot.body == null' "$TMPDIR/notification-delivery.json"
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$run_id" '{sessionKey:$key,inputRunIds:[$run],limit:200,maxChars:100000}')" --json > "$TMPDIR/notification-history.json"
@@ -169,7 +170,7 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 60
 branch=$(jq -er .delivery.binding.branch "$TMPDIR/notification-delivery.json")
 openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$branch" --state all --json number | jq -e --argjson pr "$pr" 'length == 1 and .[0].number == $pr'
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-comments.json"
-jq -s --arg target "$(jq -er .html_url "$TMPDIR/notification-issue.json")" '[.[] | select(.update != null and .receipt != null and (.target | fromjson | .url) == $target)]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-summary-drafts.json"
+node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" replies | jq -s --arg target "$(jq -er .html_url "$TMPDIR/notification-issue.json")" '[.[] | select(.update != null and .receipt != null and (.target | fromjson | .url) == $target)]' > "$TMPDIR/notification-summary-drafts.json"
 jq -e --slurpfile saved "$TMPDIR/notification-delivery.json" --slurpfile summaries "$TMPDIR/notification-summary-drafts.json" '[.[] | select(.user.login == "tanaabot")] | length == 2 and any(.[]; .node_id == $summaries[0][0].receipt.nodeId) and any(.[]; .node_id == $saved[0].announcement.receipt.nodeId)' "$TMPDIR/notification-comments.json"
 
 # should preserve independently selected custom skills without saved plans under auto mode

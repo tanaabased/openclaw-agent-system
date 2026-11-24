@@ -1,3 +1,4 @@
+import { configuredStorageBackend } from '../agent/storage/backend.ts';
 import { retainOpenClawTurnInput } from '../agent/openclaw-turn-binding.ts';
 import OpenClawAssignmentClaims from '../agent/tasks/dispatch/openclaw-assignment-claims.ts';
 import GitHubAssignmentClaimClient from '../channels/github/provider/assignment-claim-client.ts';
@@ -142,6 +143,8 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ),
     schemaRoot: join(packageDir, 'agent', 'storage'),
   };
+  const storageBackend = configuredStorageBackend(api.pluginConfig?.storage);
+  const storage = { sqliteInstallation, storageBackend };
   const readConfig = readLifecycleConfig;
   const readRuntimeConfig = () => api.runtime.config.current() as OpenClawConfig;
   const sessionDispatch = createSessionDispatchCredential({
@@ -238,7 +241,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     },
     packageDir,
     projectionStore: new PathProjectionStore({
-      sqliteInstallation,
+      ...storage,
       ...(currentUid === undefined ? {} : { currentUid }),
       ...(privateStateRoot === undefined ? {} : { rootDir: privateStateRoot }),
     }),
@@ -285,7 +288,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...(process.env.HOME ? { homeDirectory: process.env.HOME } : {}),
   };
   const gitCapability = createGitCapability({
-    sqliteInstallation,
+    ...storage,
     ...capabilityDependencies,
     environmentService: lifecycleEnvironmentService,
     gitignoreService,
@@ -308,9 +311,9 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     privateStateRoot,
   });
   let readScheduler: (() => NotificationScheduler | undefined) | undefined;
-  const instanceStore = bindInstanceStore(sqliteInstallation);
+  const instanceStore = bindInstanceStore(sqliteInstallation, storageBackend);
   const taskContext = {
-    sqliteInstallation,
+    ...storage,
     root: join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-intake-v2'),
     resetRoot: join(
       privateStateRoot ?? api.runtime.state.resolveStateDir(),
@@ -361,7 +364,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     },
   });
   const automationDependencies = {
-    sqliteInstallation,
+    ...storage,
     pickup: {
       prepare: (manifest: AgentManifest, workspace: string) =>
         intakeV2.preparePickup(manifest, workspace),
@@ -371,7 +374,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         nativeId: string,
         previousNativeId?: string,
       ) => {
-        const store = await bindPickupStore(sqliteInstallation, manifest.agent.id);
+        const store = await bindPickupStore(sqliteInstallation, manifest.agent.id, storageBackend);
         await store.activate(id, nativeId, previousNativeId);
       },
     },
@@ -1095,7 +1098,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
             timeoutMs: 600_000,
           }),
         undefined,
-        { sqliteInstallation },
+        storage,
       ),
       commandAuthority,
       credentialInput: opCredentialInput,

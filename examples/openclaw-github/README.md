@@ -27,6 +27,7 @@ their separate credentials and Git authors.
 ```bash
 # should install the two declared identities with a strict model
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --yolo
+openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 openclaw-aimock prepare --scenario openclaw-github
 cd "$GITHUB_WORKSPACE/examples/openclaw-github/tanaabot"
 openclaw agent-system install --yes --json | jq -e '.outcomes | any(.code == "create-openclaw-github-profile") and any(.code == "set-openclaw-github-profile")'

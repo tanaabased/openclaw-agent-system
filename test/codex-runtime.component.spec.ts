@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
@@ -9,6 +10,62 @@ import codexDispatchHandoff from '../agent/tasks/dispatch/codex-dispatch-handoff
 import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
 
 describe('agent/codex-runtime', () => {
+  it('uses the configured backend for standalone install and subsequent instance commands', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codex-backend-'));
+    try {
+      const workspace = join(root, 'workspace');
+      const pluginData = join(root, 'data');
+      const config = join(root, 'openclaw.json');
+      await mkdir(workspace);
+      await writeFile(join(workspace, 'agent.yaml'), 'schema-version: 1\nagent: {id: emori}\n');
+      await bindCodexWorkspace(pluginData, workspace);
+      const run = (args: string[], input = {}) =>
+        spawnSync(
+          process.execPath,
+          ['dist/codex/codex-runtime.js', ...args, '--plugin-data', pluginData],
+          {
+            encoding: 'utf8',
+            input: JSON.stringify(input),
+            env: { ...process.env, OPENCLAW_CONFIG_PATH: config, CODEX_HOME: root },
+          },
+        );
+      await writeFile(
+        config,
+        JSON.stringify({
+          plugins: { entries: { 'agent-system': { config: { storage: { backend: 'sqlite' } } } } },
+        }),
+      );
+      const installed = run(['setup', 'install']);
+      assert.equal(installed.status, 0, installed.stderr);
+      const renamed = run(['instance', 'rename'], { name: 'pilot' });
+      assert.equal(renamed.status, 0, renamed.stderr);
+      const db = new DatabaseSync(join(pluginData, 'instance', 'agent-system.sqlite'), {
+        readOnly: true,
+      });
+      try {
+        const row = db.prepare('SELECT value FROM instances').get();
+        assert.equal(JSON.parse(String(row?.value)).displayName, 'pilot');
+      } finally {
+        db.close();
+      }
+      await writeFile(config, '{}');
+      const file = run(['instance', 'inspect']);
+      assert.equal(file.status, 0, file.stderr);
+      assert.deepEqual(JSON.parse(file.stdout), { status: 'missing' });
+      await writeFile(
+        config,
+        JSON.stringify({
+          plugins: { entries: { 'agent-system': { config: { storage: { backend: 'sqltie' } } } } },
+        }),
+      );
+      const invalid = run(['instance', 'rename'], { name: 'other' });
+      assert.equal(invalid.status, 1);
+      assert.match(invalid.stderr, /storage.backend/u);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('rejects copied native inventories and effect receipts before reading state or performing effects', () => {
     const cases = [
       {

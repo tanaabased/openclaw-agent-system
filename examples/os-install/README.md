@@ -29,6 +29,7 @@ do not prevent checks of unrelated components.
 openclaw-setup \
   --workspace "$TMPDIR/main" \
   --agent-system "$AGENT_SYSTEM_PACKAGE"
+openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 
 ```
 

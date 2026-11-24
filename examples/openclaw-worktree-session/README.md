@@ -22,6 +22,7 @@ Enroll disposable SSH keys, prepare a remote managed checkout, execute a native 
 ```bash
 # should enroll disposable ssh keys for the managed remote workspace
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-ssh-key --yolo
+openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 openclaw-aimock prepare --scenario openclaw-worktree-session
 sed -e "s|__GITHUB_REPOSITORY_ID__|$GITHUB_REPOSITORY_ID|g" -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" "$GITHUB_WORKSPACE/examples/openclaw-worktree-session/agent.yaml" > "$TMPDIR/worktree-agent.yaml"
 mv "$TMPDIR/worktree-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-worktree-session/agent.yaml"

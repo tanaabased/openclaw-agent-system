@@ -1,5 +1,5 @@
 import recoverAssignmentClaim from './assignment-claim-recovery.ts';
-import codexStorageLocation from '../../storage/codex-storage.ts';
+import codexStorageLocation, { codexStorageBackend } from '../../storage/codex-storage.ts';
 import { bindInstanceStore } from '../../storage/pickup-backend.ts';
 import type { StorageBackend } from '../../storage/backend.ts';
 
@@ -93,5 +93,5 @@ export default class CodexAssignmentClaims {
 }
 
 export function codexInstanceStore(pluginData: string, backend?: StorageBackend) {
-  return bindInstanceStore(codexStorageLocation(pluginData), backend);
+  return bindInstanceStore(codexStorageLocation(pluginData), backend ?? codexStorageBackend());
 }

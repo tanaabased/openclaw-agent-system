@@ -32,6 +32,7 @@ openclaw-setup \
   --needs-secret-service \
   --model openai/gpt-5.4-nano \
   --yolo
+openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 openclaw-aimock prepare --scenario openclaw-lifecycle-approvals
 openclaw config set models.mode merge
 openclaw config set memory.search.enabled false --strict-json

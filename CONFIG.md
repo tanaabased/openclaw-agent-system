@@ -7,11 +7,12 @@ belong in the [manifest](./MANIFEST.md).
   - [`cleanup`](#cleanup)
   - [`collaboration`](#collaboration)
   - [`opCache`](#opcache)
+  - [`storage`](#storage)
 
 ## OpenClaw plugin configuration
 
 Set these options under `plugins.entries.agent-system.config` in OpenClaw.
-Standalone Codex reads only the shared `cleanup` policy; it does not manage
+Standalone Codex reads the shared `cleanup` and `storage` settings; it does not manage
 OpenClaw configuration.
 
 ### `cleanup`
@@ -128,3 +129,15 @@ reports **invalidation pending**, restore Gateway access and flush.
 
 Use `off` for time-varying credentials with a lifetime shorter than the cache
 duration. Flushing the cache does not reset provider backoff or quota limits.
+
+### `storage`
+
+Set `plugins.entries.agent-system.config.storage.backend` to `file` (default) or
+`sqlite`. OpenClaw uses this setting for every managed agent in its installation.
+Standalone Codex reads it inline from `OPENCLAW_CONFIG_PATH` or the default
+OpenClaw config file. Each machine can switch independently.
+
+For an existing installation, keep `file` selected while you install the schema
+and import existing records with writers paused. Then select `sqlite`, restart
+the Gateway if running, and resume work. Changing the setting selects the store
+for subsequent reads and writes. It does not copy records between backends.

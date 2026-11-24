@@ -24,6 +24,7 @@ resources owned by others remain intact.
 ```bash
 # should create a valid archive beside the disposable cleanup workspace
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE"
+openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 cd "$GITHUB_WORKSPACE/examples/openclaw-backup-cleanup/data"
 openclaw agent-system install --yes --json | jq -e '.agentId == "backup-cleanup-tanaabot"'
 openclaw agent-system backup create --json | tee "$TMPDIR/backup-created.json" | jq -e '.status == "created"'

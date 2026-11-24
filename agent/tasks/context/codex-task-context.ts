@@ -1,6 +1,6 @@
 import CodexDispatchStore from '../dispatch/codex-dispatch-state.ts';
 import { sqliteDispatchPersistence } from '../../storage/dispatch-backend.ts';
-import codexStorageLocation from '../../storage/codex-storage.ts';
+import codexStorageLocation, { codexStorageBackend } from '../../storage/codex-storage.ts';
 import { bindAgentStore, bindIntakeStore, type StorageBackend } from '../../storage/backend.ts';
 import { realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -36,7 +36,7 @@ export async function selectCodexTaskContext(
   const agent = await bindAgentStore(
     loaded.manifest.agent.id,
     codexStorageLocation(pluginData),
-    deps.storageBackend,
+    deps.storageBackend ?? codexStorageBackend(),
   );
   const store = bindIntakeStore(
     intakeLocation({
@@ -70,7 +70,7 @@ export async function selectCodexTaskContext(
     automationBinding: {
       codexHome: namespace,
       inspectBinding: deps.inspectBinding,
-      storageBackend: deps.storageBackend,
+      storageBackend: deps.storageBackend ?? codexStorageBackend(),
     },
   };
 }

@@ -1,6 +1,7 @@
 import { bindAgentStore } from './storage/backend.ts';
 import { sqliteDispatchPersistence } from './storage/dispatch-backend.ts';
 import codexStorageLocation, {
+  codexStorageBackend,
   codexPickupStore,
   retainedIntakeCandidates,
 } from './storage/codex-storage.ts';
@@ -318,7 +319,7 @@ export async function inspectCodexIntake(pluginData: string, deps: CodexIntakeDe
       const agent = await bindAgentStore(
         state.agentId,
         codexStorageLocation(pluginData),
-        deps.storageBackend,
+        deps.storageBackend ?? codexStorageBackend(),
       );
       journal = new CodexDispatchStore(
         pluginData,

@@ -24,6 +24,7 @@ Run a deterministic script and inspect its actual process outcome without a mode
 ```bash
 # should install the command workspace without applying maintenance
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE"
+openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 openclaw-gateway start
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-command"
 openclaw agent-system install --skip-setup --yes --json
@@ -82,12 +83,11 @@ const job = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const scope = /^agent-system:([a-f0-9]{64}):failed-output$/u.exec(job.declarationKey)?.[1];
 assert.ok(scope);
 const state = process.env.OPENCLAW_STATE_DIR || join(homedir(), '.openclaw');
-const file = join(state, 'agent-system-automations', 'automations-' + scope + '.json');
-const ledger = JSON.parse(readFileSync(file, 'utf8'));
-const record = ledger.records.find((entry) => entry.nativeId === job.id);
-assert.ok(record?.installedCommand);
-delete record.installedCommand;
-writeFileSync(file, JSON.stringify(ledger) + '\n');
+const { DatabaseSync } = await import('node:sqlite');
+const db = new DatabaseSync(join(state, 'agent-system-storage', 'command-tanaabot.sqlite'), { timeout: 5000 });
+const update = db.prepare("UPDATE automation_registrations SET value = json_remove(value, '$.installedCommand') WHERE scope = ? AND json_extract(value, '$.nativeId') = ? AND json_type(value, '$.installedCommand') IS NOT NULL");
+assert.equal(update.run(scope, job.id).changes, 1);
+db.close();
 NODE
 openclaw agent-system doctor --json | jq -e 'any(.findings[]; .stepId == "failed-output" and .code == "automation-installed-command-missing" and .status == "warning")'
 openclaw agent-system install --skip-setup --yes --json | jq -e 'any(.outcomes[]; .stepId == "failed-output" and .status == "updated")'

@@ -160,6 +160,14 @@ node "$runtime" instance inspect --plugin-data "$plugin_data" <<<'{}' > "$root/i
 node "$runtime" setup install --plugin-data "$plugin_data" | jq -e 'any(.outcomes[]; .component == "instance-identity" and .status == "unchanged")'
 original=$(jq -er .instanceId "$root/identity.json")
 node "$runtime" instance rename --plugin-data "$plugin_data" <<<'{"name":"CI Laptop"}' | jq -e --arg id "$original" '.status == "renamed" and .instanceId == $id and .displayName == "ci-laptop"'
+node --input-type=module - "$plugin_data/instance/agent-system.sqlite" "$original" <<'NODE'
+import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
+const db = new DatabaseSync(process.argv[2], { readOnly: true });
+const row = db.prepare('SELECT value FROM instances WHERE id = ?').get(process.argv[3]);
+assert.equal(JSON.parse(row.value).displayName, 'ci-laptop');
+db.close();
+NODE
 jq -nc --arg id "$original" '{expectedInstanceId:$id}' | node "$runtime" instance rotate --plugin-data "$plugin_data" | jq -e --arg id "$original" '.status == "rotated" and .instanceId != $id and .displayName == "ci-laptop"'
 node "$runtime" setup inspect --plugin-data "$plugin_data" | jq -e 'any(.findings[]; .code == "instance-identity-ready") and any(.findings[]; .code == "agent-storage-ready") and any(.findings[]; .code == "agent-system-storage-ready")'
 
