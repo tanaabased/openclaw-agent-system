@@ -5,7 +5,6 @@ import {
 } from './tasks/context/openclaw-task-context.ts';
 import { omit } from 'lodash-es';
 import { realpath } from 'node:fs/promises';
-import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type { IssuePickupClient } from '../channels/github/provider/issue-pickup-client.ts';
 import { bindPickupStore } from './storage/pickup-backend.ts';
 import DiscoveryBudget from './discovery-budget.ts';
@@ -211,7 +210,7 @@ export default class OpenClawIntake {
     )) as IssuePickupClient;
     if (client.identity.login.toLowerCase() !== selected.username.toLowerCase())
       throw new IntakeError('intake-github-identity-mismatch');
-    await new GitHubIdentityCache(store.location).resolve(selected.policy, client, 'assignment');
+    await store.identities.resolve(selected.policy, client, 'assignment');
     return dispatch(store.location.root).exclusive(async (state, save) =>
       pickupStore.prepare({
         policy: selected.policy,
@@ -393,7 +392,7 @@ export default class OpenClawIntake {
           ),
         );
         await budget.read('assignment-identities', () =>
-          new GitHubIdentityCache(store.location).resolve(selected.policy, client, 'assignment'),
+          store.identities.resolve(selected.policy, client, 'assignment'),
         );
         const pin = selected.policy.issueAssignment?.allowed.find(
           (a) => a.login.toLowerCase() === selected.username.toLowerCase(),

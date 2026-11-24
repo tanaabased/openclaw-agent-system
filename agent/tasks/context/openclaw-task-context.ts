@@ -3,7 +3,6 @@ import { sqliteDispatchPersistence, pickupDispatchScope } from '../../storage/di
 import type { SqliteInstallation } from '../../storage/storage-lifecycle.ts';
 import { bindAgentStore, bindIntakeStore, type StorageBackend } from '../../storage/backend.ts';
 import { realpath } from 'node:fs/promises';
-import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
 import { intakeLocation } from '../../../channels/github/intake/record-store.ts';
 import type AgentManifestService from '../../../manifest/service.ts';
 import type { AgentManifest } from '../../../manifest/types.ts';
@@ -43,7 +42,7 @@ export async function selectOpenClawTaskContext(
     }),
     agent,
   );
-  await new GitHubIdentityCache(store.location).hydrate(manifest.github?.notifications);
+  await store.identities.hydrate(manifest.github?.notifications);
   const dispatch = (root: string) => {
     const scope = store.location.scope;
     const pickup = root === deps.root && deps.resetRoot && deps.resetRoot !== root;

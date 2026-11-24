@@ -3,7 +3,6 @@ import { type Static } from 'typebox';
 
 import { reviewRequestSchema } from '../../../tools/dispatch/review-schema.ts';
 import GitHubWorkEventClient from '../../../channels/github/provider/work-event-client.ts';
-import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
 import { githubRepositoryPath } from '../../../channels/github/provider/work-item.ts';
 import repositoryScope from '../../../channels/github/repository-scope.ts';
 import GitHubAssignmentClaimClient from '../../../channels/github/provider/assignment-claim-client.ts';
@@ -182,7 +181,7 @@ export default async function codexReview(
         client.identity.login.toLowerCase() !== current.manifest.github.username.toLowerCase()
       )
         throw new Error('review-account-mismatch');
-      await new GitHubIdentityCache(current.store.location).resolve(policy, client, 'review');
+      await current.store.identities.resolve(policy, client, 'review');
       const fresh = async () => {
         signal.throwIfAborted();
         const next = await selectCodexTaskContext(pluginData, deps, {

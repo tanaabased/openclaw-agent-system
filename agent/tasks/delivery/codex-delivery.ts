@@ -12,7 +12,6 @@ import { realpath } from 'node:fs/promises';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 import { workflowFeedbackAvailable } from '../../../channels/github/feedback-policy.ts';
-import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
 import { cardCopyInstructions } from '../../../channels/github/presentation/card.ts';
 import { githubNotificationPullRequestOpenedCard } from '../../../channels/github/presentation/pull-request-opened.ts';
 import GitHubIssueCommentClient from '../../../channels/github/provider/issue-comment-client.ts';
@@ -739,7 +738,7 @@ async function runCodexDeliveryScoped(
           : undefined,
       );
       if (!adoptedPullRequest && !adopted)
-        await new GitHubIdentityCache(current.store.location).resolve(
+        await current.store.identities.resolve(
           current.manifest.github?.notifications,
           connected.client,
           'delivery',

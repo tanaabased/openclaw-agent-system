@@ -5,7 +5,6 @@ import { bindAgentStore, bindIntakeStore, type StorageBackend } from '../../stor
 import { realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
 import { IntakeError, intakeLocation } from '../../../channels/github/intake/record-store.ts';
 import { inspectCodexWorkspaceBinding } from '../../identity/codex-workspace-binding.ts';
 import assignmentIntakePolicy from '../../automations/assignment-intake-policy.ts';
@@ -49,7 +48,7 @@ export async function selectCodexTaskContext(
     }),
     agent,
   );
-  await new GitHubIdentityCache(store.location).hydrate(loaded.manifest.github?.notifications);
+  await store.identities.hydrate(loaded.manifest.github?.notifications);
   if (!options.inspectionOnly) await assertNotificationManagement(pluginData, store.location.scope);
   return {
     ...(agent && { sessionStorage: agent }),

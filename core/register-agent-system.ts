@@ -2,7 +2,6 @@ import { retainOpenClawTurnInput } from '../agent/openclaw-turn-binding.ts';
 import OpenClawAssignmentClaims from '../agent/tasks/dispatch/openclaw-assignment-claims.ts';
 import GitHubAssignmentClaimClient from '../channels/github/provider/assignment-claim-client.ts';
 import { commandTerminationGraceMs } from '../api/cli-budget.ts';
-import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import createGitHubStatusChannel from '../channels/github/channel.ts';
 import createGitHubChannelLifecycle from '../agent/lifecycle/github-channel-lifecycle.ts';
 import notificationAutomationReadiness, {
@@ -460,7 +459,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
               signal,
             );
       const selection = await intakeV2.select(manifest, workspaceDir);
-      await new GitHubIdentityCache(selection.store.location).resolve(
+      await selection.store.identities.resolve(
         manifest.github?.notifications,
         new GitHubWorkEventClient(account),
         'delivery',

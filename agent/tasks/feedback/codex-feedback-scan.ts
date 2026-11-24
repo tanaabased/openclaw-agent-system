@@ -1,4 +1,3 @@
-import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
 import { GitHubWorkEventClientError } from '../../../channels/github/provider/work-event-api-client.ts';
 import { GitHubAccountClientError } from '../../../core/github-account-client.ts';
 import { revalidateFeedbackAssignment } from './assignment-feedback-reactivation.ts';
@@ -35,7 +34,7 @@ export async function scanCodexFeedback(input: {
   const budget = input.budget ?? new DiscoveryBudget();
   const policy = current.manifest.github?.notifications;
   if (!policy || !current.policy) throw new Error('feedback-intake-missing');
-  await new GitHubIdentityCache(current.store.location).resolve(
+  await current.store.identities.resolve(
     policy,
     provider.client,
     input.workflow === 'review-request' ? 'review-feedback' : 'feedback',

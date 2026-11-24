@@ -1,6 +1,5 @@
 import type { SessionStorage } from '../../storage/storage-lifecycle.ts';
 import { workflowFeedbackAvailable } from '../../../channels/github/feedback-policy.ts';
-import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
 import { GitHubWorkEventClientError } from '../../../channels/github/provider/work-event-api-client.ts';
 import { GitHubAccountClientError } from '../../../core/github-account-client.ts';
 import type { DispatchAuthority } from '../../../credentials/session-dispatch.ts';
@@ -129,7 +128,7 @@ export async function scanOpenClawFeedback(input: {
           );
           const selected = await service.scope(manifest, input.workspace);
           await budget.read('feedback-identities', () =>
-            new GitHubIdentityCache(selected.store.location).resolve(
+            selected.store.identities.resolve(
               manifest.github?.notifications,
               connected,
               'feedback',

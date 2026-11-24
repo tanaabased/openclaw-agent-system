@@ -20,7 +20,6 @@ import {
 import issuePickup, { pickupAuthority, type PickupInput } from './issue-pickup.ts';
 import type { IssuePickupClient } from '../channels/github/provider/issue-pickup-client.ts';
 import { assertDispatchStorage } from './tasks/dispatch/dispatch-storage.ts';
-import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type { IssuePickupAuthority } from './issue-pickup-authority.ts';
 import { connectCodexGitHub } from './codex-github-client.ts';
 import {
@@ -105,7 +104,7 @@ async function connectSelected(
   if (!current.policy) throw new IntakeError('intake-policy-disabled');
   const { policy, username } = current.policy;
   const client = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
-  await new GitHubIdentityCache(current.store.location).resolve(policy, client, 'assignment');
+  await current.store.identities.resolve(policy, client, 'assignment');
   const pin = policy.issueAssignment?.allowed.find(
     (actor) => actor.login.toLowerCase() === username.toLowerCase(),
   );

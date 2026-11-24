@@ -7,7 +7,6 @@ import { withDispatchTask } from './dispatch-task-scope.ts';
 import { realpath } from 'node:fs/promises';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import AgentSystemToolError from '../../../api/error.ts';
-import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
 import { IntakeError } from '../../../channels/github/intake/record-store.ts';
 import { GitHubWorkEventClientError } from '../../../channels/github/provider/work-event-api-client.ts';
 import type {
@@ -253,9 +252,7 @@ export default class OpenClawDispatchContext {
         intake.scope !== current.store.location.scope)
     )
       throw new Error('dispatch-workspace-binding-changed');
-    await new GitHubIdentityCache(current.store.location).hydrate(
-      fresh.manifest.github?.notifications,
-    );
+    await current.store.identities.hydrate(fresh.manifest.github?.notifications);
     const held = liveWorkflowPolicy(
       fresh.manifest,
       'openclaw',
@@ -304,7 +301,7 @@ export default class OpenClawDispatchContext {
         { manifest, workspaceDir: current.workspace },
         signal ?? AbortSignal.timeout(25000),
       ));
-    const identities = new GitHubIdentityCache(current.store.location);
+    const identities = current.store.identities;
     await identities.resolve(
       liveManifest.github?.notifications,
       client,

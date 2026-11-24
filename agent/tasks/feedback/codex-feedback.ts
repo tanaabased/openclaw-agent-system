@@ -2,7 +2,6 @@ import { withDispatchTask } from '../dispatch/dispatch-task-scope.ts';
 import { resolve } from 'node:path';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
-import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
 import {
   isReviewFeedback,
   type GitHubCanonicalFeedback,
@@ -232,7 +231,7 @@ async function runCodexFeedbackScoped(
             current.workspace,
             signal,
           );
-          await new GitHubIdentityCache(current.store.location).resolve(
+          await current.store.identities.resolve(
             current.manifest.github?.notifications,
             connection.client,
             workflow === 'review-request' ? 'review-feedback' : 'feedback',

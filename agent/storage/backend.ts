@@ -8,13 +8,17 @@ export const defaultStorageBackend: StorageBackend = 'file';
 
 export function bindIntakeStore(
   location: ReturnType<typeof intakeLocation>,
-  agent?: Pick<BoundStorage['agent'], 'readIntake' | 'saveIntake'>,
+  agent?: BoundStorage['agent'],
 ) {
   if (!agent) return new IntakeRecordStore(location);
-  return new IntakeRecordStore(location, {
-    read: () => agent.readIntake(location.scope),
-    save: (state) => agent.saveIntake(state),
-  });
+  return new IntakeRecordStore(
+    location,
+    {
+      read: () => agent.readIntake(location.scope),
+      save: (state) => agent.saveIntake(state),
+    },
+    agent,
+  );
 }
 
 export async function bindAgentStore(

@@ -1,3 +1,5 @@
+import GitHubIdentityCache from '../identity-cache.ts';
+import type { BoundStorage } from '../../../agent/storage/storage-lifecycle.ts';
 import { join, resolve } from 'node:path';
 import { projectWorkMatches, projectWorkSchema } from '../../../agent/issue-pickup-authority.ts';
 import { assertNotificationManagement } from '../../../agent/notification-reset-state.ts';
@@ -250,10 +252,14 @@ export function fileIntakePersistence(location: ReturnType<typeof intakeLocation
 }
 
 export default class IntakeRecordStore {
+  readonly identities: GitHubIdentityCache;
   constructor(
     readonly location: ReturnType<typeof intakeLocation>,
     private readonly persistence: IntakePersistence = fileIntakePersistence(location),
-  ) {}
+    readonly agentStorage?: BoundStorage['agent'],
+  ) {
+    this.identities = new GitHubIdentityCache(location, agentStorage);
+  }
   async read(): Promise<IntakeState | undefined> {
     const value = await this.persistence.read();
     if (value === undefined) return;
