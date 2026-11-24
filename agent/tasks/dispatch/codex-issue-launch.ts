@@ -9,7 +9,7 @@ import type {
   CodexDispatchDependencies,
   CodexDispatchTransaction,
 } from './codex-dispatch-context.ts';
-import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
+import { type DispatchRecord } from './codex-dispatch-state.ts';
 import codexEntryContext from '../context/codex-entry-context.ts';
 import { connectCodexGitHub } from '../../codex-github-client.ts';
 import { selectCodexTaskContext } from '../context/codex-task-context.ts';
@@ -26,10 +26,7 @@ export default async function codexIssueLaunch(
   if (!Value.Check(launchRequestSchema, input)) throw new Error('launch-request-invalid');
   return codexEntryContext(pluginData, input, deps, async (context) => {
     const current = await selectCodexTaskContext(pluginData, deps, { resolvePolicy: false });
-    const journal = new CodexDispatchStore(
-      current.store.location.root,
-      current.store.location.scope,
-    );
+    const journal = current.journal;
     const signal = AbortSignal.timeout(60000);
     const client = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
     const admitted = await issueLaunch<DispatchRecord>({

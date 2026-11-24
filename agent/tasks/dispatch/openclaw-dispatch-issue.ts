@@ -17,7 +17,6 @@ import taskPullRequest, { isCurrentTaskPullRequest } from '../delivery/task-pull
 import workflowStatus from '../workflow-status.ts';
 
 import type { Static } from 'typebox';
-import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
 
 import { privateStateFileLockBusyErrorCode } from '../../../core/private-state-file-lock.ts';
 import type { DispatchAuthority } from '../../../credentials/session-dispatch.ts';
@@ -609,11 +608,7 @@ export default class OpenClawDispatchIssue {
                 !managedPullRequest(intake) &&
                 ['prepare', 'publish', 'reconcile'].includes(input.operation)
               )
-                await new GitHubIdentityCache(current.store.location).resolve(
-                  current.policy.policy,
-                  client,
-                  'delivery',
-                );
+                await current.store.identities.resolve(current.policy.policy, client, 'delivery');
               return this.context.dependencies.delivery({
                 manifest,
                 workspaceDir: current.workspace,

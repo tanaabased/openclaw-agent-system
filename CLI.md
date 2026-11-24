@@ -290,6 +290,8 @@ and, when captured, `openclaw-state/manifest.json` and
 data, memory indexes, and embeddings. Capture or verification failures abort
 publication; `auto` records an absent database, while `off` records an omission.
 Inspect the root manifest for coverage, versions, and snapshot details.
+With the SQLite workflow backend, the archive also contains the selected agent’s
+workflow database and the installation-wide database shared by all agents.
 
 Workspace and database capture are not atomic together. Other OpenClaw state,
 out-of-workspace sources, and external memory backends are excluded. Setup
@@ -380,7 +382,11 @@ relative links are retained. OpenClaw verifies and restores its database
 snapshot through its supported SQLite restore command. Version 1 and other
 workspace-only archives produce no database; output reports coverage and
 omissions. Failed recovery removes only content created by the current attempt,
-preserving the source archive and any pre-existing empty target. Only operators
+preserving the source archive and any pre-existing empty target.
+
+SQLite workflow backups stage the two databases under
+`agent-system-storage/<agent-id>.sqlite` and `instance/agent-system.sqlite`
+in the recovery target. The live shared database stays in service. Only operators
 may restore; agent and setup descendants cannot invoke this command.
 
 Activation is a separate offline operator action. Stop the relevant runtime

@@ -1,11 +1,25 @@
 #!/bin/sh
 set -eu
 phase=$1
+record_failure() {
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '%s\n' "$step" > "$TMPDIR/worktree-$phase.failed-step"
+  fi
+  exit "$rc"
+}
+step=record-invocation
+trap record_failure EXIT
 printf '%s\n' "$phase" >> "$TMPDIR/worktree-probe-invocations"
+step=read-expected-path
 expected=$(jq -er .path "$TMPDIR/worktree-remote.json")
+step=working-directory
 test "$(pwd -P)" = "$expected"
+step=git-root
 test "$(agent-system-git rev-parse --show-toplevel)" = "$expected"
+step=author-identity
 agent-system-git var GIT_AUTHOR_IDENT | grep -F 'Worktree Tanaabot <tanaabot@tanaab.dev>'
+step=write-receipt
 printf '%s\n' "$expected" > "$TMPDIR/worktree-$phase.pwd"
 printf '%s\n' verified > "$TMPDIR/worktree-$phase.receipt"
 printf '%s\n' "worktree-$phase-verified"

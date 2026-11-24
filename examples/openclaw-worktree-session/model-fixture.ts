@@ -29,9 +29,13 @@ function currentPrompt(request: ChatCompletionRequest, phase: string): boolean {
   );
 }
 
-const phases = ['first', 'continued'];
-const fixtures: Fixture[] = phases.flatMap((phase) => {
-  const callId = `call_worktree_${phase}`;
+const probes = ['first', 'continued'].map((phase) => ({
+  phase,
+  id: `call_worktree_${phase}`,
+  name: 'exec',
+  resultMarker: `worktree-${phase}-verified`,
+}));
+const fixtures: Fixture[] = probes.flatMap(({ phase, id, resultMarker }) => {
   return [
     {
       match: {
@@ -44,7 +48,7 @@ const fixtures: Fixture[] = phases.flatMap((phase) => {
       response: {
         toolCalls: [
           {
-            id: callId,
+            id,
             name: 'exec',
             arguments: JSON.stringify({
               command: `worktree-probe ${phase}`,
@@ -61,9 +65,7 @@ const fixtures: Fixture[] = phases.flatMap((phase) => {
         systemMessage: ['canonical-worktree-tanaabot'],
         predicate: (request) =>
           currentPrompt(request, phase) &&
-          openClawAIMockToolResultText(request.messages, callId)?.includes(
-            `worktree-${phase}-verified`,
-          ) === true,
+          openClawAIMockToolResultText(request.messages, id)?.includes(resultMarker) === true,
       },
       response: { content: `worktree-${phase}-ready` },
     },
@@ -74,7 +76,7 @@ export const worktreeExampleScenario: OpenClawAIMockScenario = {
   id: 'openclaw-worktree-session',
   model: { match: /^(?:aimock\/)?gpt-5\.5$/u, reference: 'aimock/gpt-5.5' },
   fixtures,
-  finalResponses: phases.map((phase) => `worktree-${phase}-ready`),
+  finalResponses: probes.map(({ phase }) => `worktree-${phase}-ready`),
   systemPromptSignals: ['canonical-worktree-tanaabot'],
-  toolCalls: phases.map((phase) => ({ id: `call_worktree_${phase}`, name: 'exec' })),
+  toolCalls: probes,
 };

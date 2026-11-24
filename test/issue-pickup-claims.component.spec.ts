@@ -53,7 +53,7 @@ describe('issue pickup handoff to ordinary assignment claims', () => {
       await scanAssignments({
         ...options,
         now: f.clock.now,
-        issuePickup: pickupAuthority(f.state.projectPickup),
+        issuePickup: pickupAuthority(f.state.issuePickup),
       });
       return (await store.read())!.records[0]!;
     };
@@ -215,7 +215,7 @@ describe('issue pickup handoff to ordinary assignment claims', () => {
       [b, ib, undefined],
     ] as const) {
       f.state.records.push({
-        issueKey: pickupIssueKey(f.state.projectPickup!, record.issue.nodeId),
+        issueKey: pickupIssueKey(f.state.issuePickup!, record.issue.nodeId),
         projectWork: record.evidence.projectWork,
 
         ...(request ? { request } : {}),
@@ -267,7 +267,7 @@ describe('issue pickup handoff to ordinary assignment claims', () => {
     assert.equal(selection.status, 'selection-required');
     assert.ok('digest' in selection);
     assert.deepEqual(
-      b.state.projectPickup!.operations[0]!.candidates.map((c) => c.nodeId),
+      b.state.issuePickup!.operations[0]!.candidates.map((c) => c.nodeId),
       [second.nodeId],
     );
     assert.equal(

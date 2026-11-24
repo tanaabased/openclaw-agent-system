@@ -6,6 +6,24 @@ import resolveScenario from '../scripts/example-model-scenarios.ts';
 type Entry = Parameters<typeof diagnostics>[1][number];
 
 describe('scripts/aimock-diagnostics', () => {
+  it('should distinguish a missing worktree result from a missing verification marker', () => {
+    for (const [id, content, expected] of [
+      ['call_worktree_continued', 'worktree-first-verified', 'no-result-for-call'],
+      ['call_worktree_first', 'worktree-continued-verified', 'marker-missing'],
+      ['call_worktree_first_fc-123', 'worktree-first-verified', 'marker-present'],
+    ] as const) {
+      const result = diagnostics(resolveScenario('openclaw-worktree-session'), [
+        {
+          method: 'POST',
+          path: '/responses',
+          response: { fixture: null, status: 503 },
+          body: { messages: [{ role: 'tool', tool_call_id: id, content }] },
+        },
+      ]);
+      assert.equal(result.requests?.[0]?.checks.resultMarkers?.call_worktree_first, expected);
+    }
+  });
+
   it('should retain leading dispatch decisions without including provider prose in their summary', () => {
     const value = {
       status: 'waiting',

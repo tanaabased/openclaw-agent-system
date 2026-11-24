@@ -1,3 +1,6 @@
+import type { StorageBackend } from '../storage/backend.ts';
+import codexStorageLocation from '../storage/codex-storage.ts';
+import { sqliteStorageLifecycle } from '../storage/storage-lifecycle.ts';
 import { delimiter } from 'node:path';
 import { codexInstanceStore } from '../tasks/dispatch/codex-assignment-claims.ts';
 import instanceIdentity from '../identity/instance-identity.ts';
@@ -30,6 +33,7 @@ interface CodexSetupSnapshot {
 }
 
 export interface CodexSetupDependencies {
+  storageBackend?: StorageBackend;
   automationInputs?: CodexAutomationInputs;
   codexHome?: string;
   baseEnvironment?: Readonly<NodeJS.ProcessEnv>;
@@ -151,7 +155,8 @@ async function runtime(
       }
     },
   };
-  return { context, lifecycle, selected };
+  const storage = sqliteStorageLifecycle(() => codexStorageLocation(pluginData));
+  return { context, lifecycle, selected, storage };
 }
 
 /** inspect standalone setup and desired/saved automation state without applying repairs. */
@@ -160,7 +165,7 @@ export async function inspectCodexSetup(
   signal?: AbortSignal,
   dependencies: CodexSetupDependencies = {},
 ) {
-  const { context, lifecycle, selected } = await runtime(pluginData, signal, dependencies);
+  const { context, lifecycle, selected, storage } = await runtime(pluginData, signal, dependencies);
   const notificationDiagnostics = githubNotificationRuntimeDiagnostics(
     context.manifest.github?.notifications,
     'codex',
@@ -185,9 +190,11 @@ export async function inspectCodexSetup(
           ]
         : []),
       ...(await lifecycle.inspect(context)),
-      ...(await instanceIdentity(codexInstanceStore(pluginData)).inspect!(context)).map(
-        (finding) => ({ ...finding, component: 'instance-identity' }),
-      ),
+      ...(await Promise.all(storage.map((database) => database.inspect(context)))).flat(),
+      ...(
+        await instanceIdentity(codexInstanceStore(pluginData, dependencies.storageBackend))
+          .inspect!(context)
+      ).map((finding) => ({ ...finding, component: 'instance-identity' })),
       ...notificationDiagnostics.map<AgentSystemLifecycleFinding>((diagnostic) => ({
         component: 'github-notifications',
         ...diagnostic,
@@ -207,14 +214,19 @@ export async function installCodexSetup(
   signal?: AbortSignal,
   dependencies: CodexSetupDependencies = {},
 ) {
-  const { context, lifecycle, selected } = await runtime(pluginData, signal, dependencies);
+  const { context, lifecycle, selected, storage } = await runtime(pluginData, signal, dependencies);
   const notificationDiagnostics = githubNotificationRuntimeDiagnostics(
     context.manifest.github?.notifications,
     'codex',
   );
   const result = await lifecycle.reconcile(context);
-  await context.assertCurrent();
-  const instance = await instanceIdentity(codexInstanceStore(pluginData)).reconcile!(context);
+  for (const database of storage) {
+    await context.assertCurrent();
+    result.outcomes.push(...(await database.reconcile(context)).outcomes);
+  }
+  const instance = await instanceIdentity(
+    codexInstanceStore(pluginData, dependencies.storageBackend),
+  ).reconcile!(context);
   result.outcomes.push(
     ...instance.outcomes.map((outcome) => ({ ...outcome, component: 'instance-identity' })),
   );

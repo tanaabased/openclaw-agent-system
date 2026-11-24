@@ -4,6 +4,8 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import { automationHash } from '../agent/automation-hash.ts';
+import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
+import type { StorageBackend } from '../agent/storage/backend.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import { nativeTurnFor } from '../agent/openclaw-native-turns.ts';
 import type { DispatchCaller } from '../agent/openclaw-session-create.ts';
@@ -17,7 +19,9 @@ import { sessionDispatchRequest } from '../credentials/session-dispatch-client.t
 import type { AgentManifest } from '../manifest/types.ts';
 import { baseline, intakeFixture, originalIntakeDigest } from './github-intake-fixture.ts';
 
-export default function openclawDispatchFixture(options: { discover?: boolean } = {}) {
+export default function openclawDispatchFixture(
+  options: { discover?: boolean; storageBackend?: StorageBackend } = {},
+) {
   const fixtureState = {} as {
     fixtureIntake: OpenClawIntake;
     root: string;
@@ -113,8 +117,18 @@ export default function openclawDispatchFixture(options: { discover?: boolean } 
       },
     };
     let now = baseline;
+    const installation = {
+      agentRoot: join(fixtureState.root, 'storage'),
+      installationRoot: join(fixtureState.root, 'instance'),
+      schemaRoot: join(import.meta.dirname, '../agent/storage'),
+    };
+    if (options.storageBackend === 'sqlite')
+      await bindSqliteStorage(installation, fixtureState.manifest.agent.id).agent.install();
     const intake = (fixtureState.fixtureIntake = new OpenClawIntake({
       root: join(fixtureState.root, 'intake'),
+      resetRoot: join(fixtureState.root, 'dispatch'),
+      sqliteInstallation: installation,
+      storageBackend: options.storageBackend,
       namespace: fixtureState.root,
       manifestService,
       now: () => now,

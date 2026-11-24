@@ -3,6 +3,7 @@ import { codexWorkStateSchema } from '../implementation/codex-work-state.ts';
 
 import { codexFeedbackSchema, feedbackEventSchema } from '../feedback/codex-feedback-state.ts';
 import DispatchStore, {
+  type DispatchPersistence,
   dispatchRecordProperties,
   type DispatchState as SharedDispatchState,
 } from './dispatch-state.ts';
@@ -184,8 +185,9 @@ export type DispatchRecord = Static<typeof dispatchRecordSchema>;
 export type DispatchState = SharedDispatchState<DispatchRecord>;
 
 export default class CodexDispatchStore extends DispatchStore<DispatchRecord> {
-  constructor(root: string, scope: string) {
+  constructor(root: string, scope: string, persistence?: DispatchPersistence<DispatchRecord>) {
     super(root, scope, {
+      persistence,
       runtime: 'codex',
       recordSchema: dispatchRecordSchema,
       validRecord: (record) =>

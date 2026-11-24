@@ -1,3 +1,4 @@
+import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import { automationThreadSelection } from '../agent/automations/automation-thread-selection.ts';
 import assert from 'node:assert/strict';
 import IssuePickupFailure from '../agent/issue-pickup-failure.ts';
@@ -101,6 +102,42 @@ describe('openclaw v2 intake slice', () => {
       },
     };
   }
+  it('should commit sqlite intake and serialize competing assignment consumers', async () => {
+    const f = fixture();
+    const installation = {
+      agentRoot: join(root, 'agent-system-storage'),
+      installationRoot: join(root, 'agent-system-instance'),
+      schemaRoot: join(import.meta.dirname, '../agent/storage'),
+    };
+    const database = bindSqliteStorage(installation, f.value.agent.id).agent;
+    await database.install();
+    const sqlite = () =>
+      new OpenClawIntake({
+        ...f.service.dependencies,
+        storageBackend: 'sqlite',
+        sqliteInstallation: installation,
+      });
+    await sqlite().run(f.value, root, 'activate');
+    f.provider.events.push(...intakeFixture().events);
+    f.setNow(baseline + 120000);
+    await sqlite().run(f.value, root, 'scan');
+    const first = (await sqlite().select(f.value, root)).store;
+    const second = (await sqlite().select(f.value, root)).store;
+    const before = await database.readIntake(first.location.scope);
+    assert.equal(before?.records.length, 1);
+    const [one, two] = await Promise.all([
+      first.consume(before!.records[0]!, 'a'.repeat(64)),
+      second.consume(before!.records[0]!, 'b'.repeat(64)),
+    ]);
+    assert.equal(one, two);
+    assert.equal(
+      (await database.readIntake(first.location.scope))?.observedAssignments?.[0]?.consumedBy,
+      one,
+    );
+    assert.deepEqual((await sqlite().inspect(f.value, root)).records, before!.records);
+    await assert.rejects(readFile(first.location.path), { code: 'ENOENT' });
+    assert.equal(await (await f.service.select(f.value, root)).store.read(), undefined);
+  });
   it('should inspect and admit assignments while an unrelated task payload needs repair', async () => {
     const f = fixture();
     f.service.dependencies.resetRoot = join(root, 'v2');

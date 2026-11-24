@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
+import { AutomationVerificationError } from '../agent/automations/automation-errors.ts';
 import { configuredRuntime } from '../agent/models/model-configuration-plan.ts';
 import type { AutomationLifecycleRun } from '../agent/automations/automation-lifecycle-authority.ts';
 
@@ -78,15 +79,14 @@ export default function registerAutomationPromptHooks(
     outcome: string,
     context: Context,
     reason?: string,
-    warning = false,
-    phase?: string,
+    failure?: { phase: string; check?: AutomationVerificationError['check'] },
   ) => {
     const entry = context.runId ? prepared.get(context.runId) : undefined;
     const details = {
       hook,
       outcome,
       reason,
-      phase,
+      ...failure,
       trigger: context.trigger === 'cron' ? 'cron' : context.trigger ? 'other' : 'missing',
       identity: Object.fromEntries(
         bindingKeys.map((key) => [
@@ -108,8 +108,8 @@ export default function registerAutomationPromptHooks(
               : 'legacy',
       changed: entry ? bindingKeys.filter((key) => entry.run[key] !== context[key]) : [],
     };
-    const message = `automation: code=automation-prompt-${warning ? 'load-blocked' : 'trace'} ${JSON.stringify(details)}`;
-    if (warning) api.logger.warn(message);
+    const message = `automation: code=automation-prompt-${failure ? 'load-blocked' : 'trace'} ${JSON.stringify(details)}`;
+    if (failure) api.logger.warn(message);
     else api.logger.debug?.(message);
   };
 
@@ -181,8 +181,12 @@ export default function registerAutomationPromptHooks(
         entry.ready = true;
         trace('before_agent_reply', 'ready', context);
       } catch (error) {
-        trace('before_agent_reply', 'failed', context, diagnosticCode(error), true, phase);
-        return stopped(context, diagnosticCode(error));
+        const reason = diagnosticCode(error);
+        trace('before_agent_reply', 'failed', context, reason, {
+          phase,
+          check: error instanceof AutomationVerificationError ? error.check : undefined,
+        });
+        return stopped(context, reason);
       }
     },
     { eligibleTriggers: ['cron'] },

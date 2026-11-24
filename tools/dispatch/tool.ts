@@ -179,6 +179,7 @@ export default function createDispatchTool(input: {
       const threads = new AutomationThreads(
         { root: input.automations.dependencies.root, scope: store.scope, runtime: 'openclaw' },
         { lookup: unsupported, create: unsupported, rename: unsupported },
+        store.agentStorage,
       );
       const selection = automationThreadSelection(job, 'openclaw');
       const thread = (await threads.read()).records.find((entry) => entry.key === selection?.key);

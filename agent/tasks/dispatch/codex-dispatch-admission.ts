@@ -1,3 +1,4 @@
+import codexStorageLocation, { codexStorageBackend } from '../../storage/codex-storage.ts';
 import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
@@ -213,7 +214,7 @@ async function selectClaim(
       codexCapacity(
         state,
         current.policy?.policy.maxConcurrentItems ?? 3,
-        state.projectPickup,
+        state.issuePickup,
         intake.evidence?.projectWork?.pickup?.issueNodeId,
       ).available > 0,
   });
@@ -544,7 +545,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
         codexCapacity(
           state,
           current.policy?.policy.maxConcurrentItems ?? 3,
-          state.projectPickup,
+          state.issuePickup,
           intake.evidence?.projectWork?.pickup?.issueNodeId,
         ).available > 0 &&
         !record?.denial &&
@@ -562,7 +563,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
     )?.intake;
   if (!intake)
     return checked(
-      codexCapacity(state, current.policy?.policy.maxConcurrentItems ?? 3, state.projectPickup)
+      codexCapacity(state, current.policy?.policy.maxConcurrentItems ?? 3, state.issuePickup)
         .available
         ? 'idle'
         : 'at-capacity',
@@ -663,6 +664,8 @@ export async function prepareIssueProject(
           previous: record.repositoryPreparation,
         },
         {
+          sqliteInstallation: codexStorageLocation(tx.pluginData),
+          storageBackend: deps.storageBackend ?? codexStorageBackend(),
           git: deps.git,
           signal,
           authorize: fresh,

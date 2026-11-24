@@ -152,7 +152,8 @@ export default async function notificationFixtureGitHub(
   if (['authentication', 'permission', 'rate-limit'].includes(diagnostic.classification)) {
     throw new Error(`fixture ${request.action} denied: ${evidence}`);
   }
-  for (const delay of [0, 250, 1000]) {
+  const delays = [0, 250, 1000];
+  for (const [attempt, delay] of delays.entries()) {
     if (delay) await sleep(delay);
     const observed = await read(
       request.action === 'create'
@@ -163,6 +164,8 @@ export default async function notificationFixtureGitHub(
     );
     const fresh = json(observed);
     if (fresh === undefined) {
+      // The inner GET budget can expire before we observe a successful POST.
+      if (observed.timedOut && attempt < delays.length - 1) continue;
       throw new Error(
         `fixture ${request.action} reconciliation read failed: ${formatProviderDiagnostic(githubCliDiagnostic(observed))}; original write: ${evidence}`,
       );
@@ -233,7 +236,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const value = await notificationFixtureGitHub(request, async (argv, timeoutMs) => {
     const result = spawnSync('openclaw', ['agent-system', 'tool', 'gh', '--', ...argv], {
       encoding: 'utf8',
-      timeout: timeoutMs,
+      // The managed gh command also starts OpenClaw and loads the installed plugin.
+      timeout: timeoutMs + 30_000,
       maxBuffer: 1024 * 1024,
     });
     const code = (result.error as NodeJS.ErrnoException | undefined)?.code;

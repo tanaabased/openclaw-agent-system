@@ -97,7 +97,7 @@ export default class OpenClawDispatchAdmission {
           dispatchCapacity(
             state,
             current.policy.policy.maxConcurrentItems,
-            state.projectPickup,
+            state.issuePickup,
             'initiation' in intake ? undefined : intake.evidence?.projectWork?.pickup?.issueNodeId,
           ).available > 0,
       });
@@ -123,7 +123,7 @@ export default class OpenClawDispatchAdmission {
         !dispatchCapacity(
           state,
           current.policy.policy.maxConcurrentItems,
-          state.projectPickup,
+          state.issuePickup,
           'initiation' in intake ? undefined : intake.evidence?.projectWork?.pickup?.issueNodeId,
         ).available
       )

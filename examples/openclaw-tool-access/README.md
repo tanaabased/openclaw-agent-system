@@ -27,6 +27,7 @@ Agent System owns.
 openclaw-setup \
   --workspace "$TMPDIR/main" \
   --agent-system "$AGENT_SYSTEM_PACKAGE"
+openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 
 # should install the disposable tool access workspace through agent system
 cp "$GITHUB_WORKSPACE/examples/openclaw-tool-access/data/agent.yaml" "$TMPDIR/tool-access-base.yaml"

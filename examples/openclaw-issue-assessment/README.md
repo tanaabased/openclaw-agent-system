@@ -28,6 +28,7 @@ implementing changes, or publishing to GitHub.
 ```bash
 # should prepare the packed plugin and strict direct-operation fixture
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --needs-ssh-key --yolo
+openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 openclaw-aimock prepare --scenario openclaw-issue-assessment
 openclaw config set skills.workshop.autonomous.mode off
 # keep unrelated nightly memory turns out of the strict direct-operation fixture
@@ -101,9 +102,10 @@ node --input-type=module <<'NODE'
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 const root = process.env.XDG_CONFIG_HOME + '/tanaab/agent-system/agent-system-dispatch-v2';
+const { readExampleState } = await import(process.env.GITHUB_WORKSPACE + '/scripts/sqlite-example-state.mjs');
 const names = existsSync(root) ? readdirSync(root) : [];
 assert.equal(names.some(name => name.startsWith('github-assessment-')), false);
-const records = names.filter(name => name.startsWith('openclaw-dispatch-') && name.endsWith('.json')).flatMap(name => JSON.parse(readFileSync(root + '/' + name, 'utf8')).records);
+const records = readExampleState('dispatch').flatMap((journal) => journal.records);
 assert.equal(records.length, 0);
 NODE
 ```

@@ -3,7 +3,11 @@ import { Type, type Static } from 'typebox';
 import { stateSnapshotConflictCode } from '../../../core/merge-state-snapshot.ts';
 import { nativeTurnSchema } from '../../openclaw-native-turns.ts';
 
-import DispatchStore, { dispatchRecordProperties, type DispatchState } from './dispatch-state.ts';
+import DispatchStore, {
+  type DispatchPersistence,
+  dispatchRecordProperties,
+  type DispatchState,
+} from './dispatch-state.ts';
 import { openclawFeedbackSchema } from '../feedback/openclaw-feedback-state.ts';
 import { type OpenClawTurn } from '../../openclaw-turn-state.ts';
 import { openclawWorkStateSchema } from '../implementation/openclaw-work-state.ts';
@@ -70,8 +74,13 @@ export type OpenClawDispatchRecord = Static<typeof openclawDispatchRecordSchema>
 export type OpenClawDispatchState = DispatchState<OpenClawDispatchRecord>;
 
 export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatchRecord> {
-  constructor(root: string, scope: string) {
+  constructor(
+    root: string,
+    scope: string,
+    persistence?: DispatchPersistence<OpenClawDispatchRecord>,
+  ) {
     super(root, scope, {
+      persistence,
       runtime: 'openclaw',
       recordSchema: openclawDispatchRecordSchema,
       validRecord: (record) => {

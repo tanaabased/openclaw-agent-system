@@ -182,6 +182,7 @@ export default async function reconcileOpenClawLifecycle(input: {
       dispose: async (record, intake) => {
         if (record.threadId && record.sessionCreation?.sessionId)
           await retirementLocalData({
+            sessionStorage: current.sessionStorage,
             root: service.dependencies.root,
             binding: {
               runtime: 'openclaw',
@@ -232,6 +233,7 @@ export default async function reconcileOpenClawLifecycle(input: {
             );
             if (!provider) throw new Error('feedback-provider-unavailable');
             return replyOwnPublications({
+              sessionStorage: current.sessionStorage,
               root: service.dependencies.root,
               binding: {
                 runtime: 'openclaw',

@@ -5,7 +5,6 @@ import type { CodexDispatchDependencies } from './codex-dispatch-context.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
 import { codexNativeHandoff } from './codex-dispatch-handoff.ts';
 import { verifyDispatchWorktree } from './codex-dispatch-project.ts';
-import CodexDispatchStore from './codex-dispatch-state.ts';
 import connectCodexFeedback from '../feedback/codex-feedback-client.ts';
 import { connectCodexGitHub } from '../../codex-github-client.ts';
 import { selectCodexTaskContext } from '../context/codex-task-context.ts';
@@ -37,7 +36,7 @@ export default async function reconcileCodexLifecycle(
   const current = await selectCodexTaskContext(pluginData, deps);
   const readConfiguration = deps.readCleanupConfiguration ?? cleanupConfiguration;
   const configuration = await readConfiguration();
-  const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+  const store = current.journal;
   const retained = managedIssueState(await current.store.read(), (await store.read()).records);
   if (!retained?.records.length) return;
   current.policy = retainedIntakePolicy(current.manifest, retained, 'codex');
@@ -65,7 +64,7 @@ export default async function reconcileCodexLifecycle(
     ? { sourceThreadId: manualTarget.sourceThreadId }
     : await (deps.activation ?? inspectCodexDispatchActivation)(
         pluginData,
-        { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+        current.automationBinding,
         false,
         true,
       );
@@ -120,6 +119,7 @@ export default async function reconcileCodexLifecycle(
         dispose: async (record, intake) => {
           if (record.threadId)
             await retirementLocalData({
+              sessionStorage: current.sessionStorage,
               root: current.store.location.root,
               binding: {
                 runtime: 'codex',
@@ -149,7 +149,7 @@ export default async function reconcileCodexLifecycle(
             ? { sourceThreadId: manualTarget.sourceThreadId }
             : await (deps.activation ?? inspectCodexDispatchActivation)(
                 pluginData,
-                { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+                current.automationBinding,
                 false,
                 true,
               );
@@ -241,6 +241,7 @@ export default async function reconcileCodexLifecycle(
                 signal,
               );
               return replyOwnPublications({
+                sessionStorage: current.sessionStorage,
                 root: current.store.location.root,
                 binding: {
                   runtime: 'codex',

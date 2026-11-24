@@ -29,6 +29,7 @@ openclaw-setup \
   --workspace "$TMPDIR/main" \
   --agent-system "$AGENT_SYSTEM_PACKAGE" \
   --needs-secret-service
+openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 ```
 
 ## Testing

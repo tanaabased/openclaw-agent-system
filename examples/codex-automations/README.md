@@ -53,13 +53,13 @@ plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 workspace=$(cd "$GITHUB_WORKSPACE/examples/codex-automations/automation" && pwd -P)
 node "$runtime" binding bind --plugin-data "$root/automation-data" --workspace "$workspace" --confirm
+node "$runtime" setup install --plugin-data "$root/automation-data" \
+  | jq -e '.status == "requires-native-app-sync"'
 node "$GITHUB_WORKSPACE/examples/codex-automations/unrelated-ledger-fixture.mjs" "$root/automation-data" "$workspace" "$root/other-codex-home"
 jq -n --arg workspace "$workspace" '{projects:{schemaVersion:2,projects:[{projectId:"fixture-project",projectKind:"local",hostId:"local",path:$workspace}]}}' > "$root/automation-input.json"
 node "$runtime" automations plan --plugin-data "$root/automation-data" < "$root/automation-input.json" \
   | tee "$root/automation-plan.json" \
   | jq -e '.status == "requires-native-app-sync" and .actions[0].mode == "create" and (.actions[0].expected.rrule | startswith("DTSTART;TZID=America/New_York:")) and (.actions[0].expected.rrule | endswith(";COUNT=3")) and .actions[0].expected.projectId == "fixture-project" and .actions[0].expected.status == "PAUSED"'
-node "$runtime" setup install --plugin-data "$root/automation-data" \
-  | jq -e '.status == "requires-native-app-sync"'
 test ! -d "$CODEX_HOME/automations"
 
 # should expose list sync and explicit occurrence gaps through the installed runtime
@@ -92,6 +92,7 @@ root="$TMPDIR/agent-system-codex-automations"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 node "$runtime" binding bind --plugin-data "$root/threads-data" --workspace "$GITHUB_WORKSPACE/examples/codex-automations/threads" --confirm
+node "$runtime" setup install --plugin-data "$root/threads-data" | jq -e '.status == "requires-native-app-sync"'
 node "$GITHUB_WORKSPACE/scripts/codex-sidebar-fixture.mjs" "$runtime" "$root/threads-data" "$root/sidebar-input.json" | tee "$root/threads-created.json" | jq -e '.status == "verified" and ([.threads[].id] | unique | length) == 2'
 node "$runtime" automations plan --plugin-data "$root/threads-data" < "$root/sidebar-input.json" | tee "$root/threads-plan.json" | jq -e '.status == "requires-native-app-sync" and ([.actions[].expected.targetThreadId] | unique | length) == 2 and all(.actions[]; .expected.kind == "heartbeat")'
 
@@ -137,6 +138,7 @@ mkdir -p "$CODEX_HOME"
 cp -R "$GITHUB_WORKSPACE/examples/codex-automations/cutover" "$root/cutover-workspace"
 workspace="$root/cutover-workspace"
 node "$runtime" binding bind --plugin-data "$root/cutover-data" --workspace "$workspace" --confirm
+node "$runtime" setup install --plugin-data "$root/cutover-data" | jq -e '.status == "requires-native-app-sync"'
 jq -n --arg workspace "$workspace" '{projects:{schemaVersion:2,projects:[{projectId:"fixture-project",projectKind:"local",hostId:"local",path:$workspace}]}}' > "$root/cutover-input.json"
 node "$runtime" automations plan --plugin-data "$root/cutover-data" < "$root/cutover-input.json" | jq --slurpfile inputs "$root/cutover-input.json" '$inputs[0] + {digest:.digest}' > "$root/cutover-prepare.json"
 node "$runtime" automations prepare --plugin-data "$root/cutover-data" < "$root/cutover-prepare.json" | tee "$root/cutover-prepared.json" | jq -e '.request.status == "ACTIVE" and .request.mode == "create"'

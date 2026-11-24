@@ -29,6 +29,7 @@ openclaw-setup \
   --workspace "$TMPDIR/main" \
   --agent-system "$AGENT_SYSTEM_PACKAGE" \
   --yolo
+openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 openclaw-aimock prepare --scenario os-execution
 openclaw config set cron.enabled false --strict-json
 

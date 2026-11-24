@@ -1,3 +1,6 @@
+import { bindSqliteInstallation } from '../agent/storage/agent-database.ts';
+import { bindPickupStore } from '../agent/storage/pickup-backend.ts';
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import { resolveAutomationPrompt } from '../agent/automations/automation-prompt.ts';
 import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
@@ -1206,6 +1209,15 @@ describe('agent/automation-service', () => {
   });
 
   it('should install the derived v2 job and group, detect drift and converge without duplicates', async () => {
+    const { sqliteInstallation, storageBackend } = await sqliteAgentFixture(
+      root,
+      manifest.agent.id,
+    );
+    service = new AutomationService({
+      ...service.dependencies,
+      sqliteInstallation,
+      storageBackend,
+    });
     const sessions = new Map<string, Record<string, unknown>>();
     let saveCategory = true;
     const original = service.dependencies.request!;
@@ -1316,6 +1328,10 @@ describe('agent/automation-service', () => {
     delete native[0]!.state.runningAtMs;
     const identity = native[0]!.id;
     const coordinator = native[0]!.sessionTarget;
+    assert.equal(
+      await dispatch.service.dependencies.coordinator(manifest, root),
+      String(coordinator).slice('session:'.length),
+    );
     const schedule = structuredClone(native[0]!.schedule);
     assert.equal(native[0]!.payload.model, 'openai/gpt-6-luna');
     policy.issueAssignment!.model = 'high';
@@ -1505,9 +1521,13 @@ describe('agent/automation-service', () => {
     fixture.client.discoverProject = async () => {
       throw Error('install and inspection must not scan');
     };
-    const instanceRoot = join(root, 'instance');
-    await new AssignmentClaimStore(instanceRoot).identity();
-    const enrollments = new IssuePickupEnrollmentStore(instanceRoot);
+    await bindSqliteInstallation(sqliteInstallation).install();
+    const enrollments = await bindPickupStore(
+      sqliteInstallation,
+      manifest.agent.id,
+      storageBackend,
+    );
+    await enrollments.instance.identity();
     policy.issuePickup = {
       ...fixture.policy.issuePickup!,
       model: 'high',
@@ -1525,7 +1545,10 @@ describe('agent/automation-service', () => {
           timezone: 'UTC',
           now,
         }),
-      activate: (id, nativeId, previous) => enrollments.activate(id, nativeId, previous),
+      activate: async (selected, id, nativeId, previous) => {
+        const store = await bindPickupStore(sqliteInstallation, selected.agent.id, storageBackend);
+        await store.activate(id, nativeId, previous);
+      },
     };
     // seed the previous declaration through the existing installation owner.
     const pickupPolicy = policy.issuePickup;
@@ -1910,6 +1933,15 @@ describe('agent/automation-service', () => {
   });
 
   it('should share a native session, preserve history across routing changes, and recover a lost create response', async () => {
+    const { agent, sqliteInstallation, storageBackend } = await sqliteAgentFixture(
+      root,
+      manifest.agent.id,
+    );
+    service = new AutomationService({
+      ...service.dependencies,
+      sqliteInstallation,
+      storageBackend,
+    });
     const sessions = new Map<string, Record<string, unknown>>();
     const original = service.dependencies.request!;
     let loseResponse = true;
@@ -1954,7 +1986,21 @@ describe('agent/automation-service', () => {
     );
     await assert.rejects(service.reconcile(manifest, root));
     assert.equal(native.length, 0);
+    const { store } = await service.scope(manifest, root);
+    const readThreads = async () =>
+      (await agent.read({ automationThreads: { scope: store.scope } })).automationThreads;
+    const [pending] = await readThreads();
+    assert.equal(pending?.value.phase, 'materializing');
+    assert.ok(sessions.has(pending.value.nativeId!));
+    service = new AutomationService(service.dependencies);
     await service.reconcile(manifest, root);
+    const [ready] = await readThreads();
+    assert.equal(ready?.value.nativeId, pending.value.nativeId);
+    assert.equal(ready?.value.phase, 'ready');
+    await assert.rejects(
+      stat(join(store.options.root, 'automation-threads-' + store.scope + '.json')),
+      { code: 'ENOENT' },
+    );
     assert.equal(sessions.size, 1);
     assert.equal(calls.filter((call) => call.method === 'sessions.create').length, 1);
     assert.equal(native.length, 2);
@@ -2113,6 +2159,15 @@ describe('agent/automation-service', () => {
     assert.equal(calls.filter(({ method }) => method === 'cron.run').length, 2);
   });
   it('should keep job-wide report state separate from native history without exposing captured output', async () => {
+    const { sqliteInstallation, storageBackend } = await sqliteAgentFixture(
+      root,
+      manifest.agent.id,
+    );
+    service = new AutomationService({
+      ...service.dependencies,
+      sqliteInstallation,
+      storageBackend,
+    });
     await service.reconcile(manifest, root);
     const { store } = await service.scope(manifest, root);
     const ledger = await store.read();
@@ -2142,7 +2197,8 @@ describe('agent/automation-service', () => {
       }),
       state: 'pending' as const,
     };
-    await service.reports.withLock(executionId, () => service.reports.write(report));
+    const reports = await service.reportStore(manifest.agent.id);
+    await reports.withLock(executionId, () => reports.write(report));
     await service.assertReportCurrent(report);
     manifestDigest = 'unrelated-edit';
     await service.assertReportCurrent(report);
@@ -2273,10 +2329,23 @@ describe('agent/automation-service', () => {
   });
 
   it('should recover a successful create with a lost acknowledgement without duplication', async () => {
+    const { sqliteInstallation, storageBackend } = await sqliteAgentFixture(
+      root,
+      manifest.agent.id,
+    );
+    service = new AutomationService({
+      ...service.dependencies,
+      sqliteInstallation,
+      storageBackend,
+    });
     afterWriteFailure = true;
     await assert.rejects(service.reconcile(manifest, root));
     assert.equal(native.length, 1);
     assert.equal(native[0]!.enabled, false);
+    const { store } = await service.scope(manifest, root);
+    assert.equal((await store.read()).records[0]?.pending?.kind, 'create');
+    await assert.rejects(stat(store.path), { code: 'ENOENT' });
+    service = new AutomationService(service.dependencies);
     calls = [];
     now += 5_000;
     await service.reconcile(manifest, root);

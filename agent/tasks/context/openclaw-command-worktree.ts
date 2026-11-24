@@ -1,3 +1,5 @@
+import { bindAgentStore } from '../../storage/backend.ts';
+import { sqliteDispatchPersistence } from '../../storage/dispatch-backend.ts';
 import { realpath } from 'node:fs/promises';
 
 import { intakeLocation } from '../../../channels/github/intake/record-store.ts';
@@ -11,7 +13,10 @@ interface CommandSessionBinding {
 }
 
 interface CommandWorktreeDependencies {
-  taskContext: Pick<OpenClawTaskContextDependencies, 'root' | 'namespace'>;
+  taskContext: Pick<
+    OpenClawTaskContextDependencies,
+    'root' | 'namespace' | 'storageBackend' | 'sqliteInstallation'
+  >;
   dispatchRoot: string;
   readSession(
     sessionKey: string,
@@ -34,7 +39,16 @@ export default async function resolveOpenClawCommandWorktree(
     agentId: agent.agentId,
     workspaceDir,
   });
-  const journal = new OpenClawDispatchStore(dispatchRoot, location.scope);
+  const storage = await bindAgentStore(
+    agent.agentId,
+    taskContext.sqliteInstallation,
+    taskContext.storageBackend,
+  );
+  const journal = new OpenClawDispatchStore(
+    dispatchRoot,
+    location.scope,
+    sqliteDispatchPersistence(storage, location.scope),
+  );
   const owners = (await journal.read()).records.filter(
     (record) => record.threadId === sessionKey || record.request?.key === sessionKey,
   );

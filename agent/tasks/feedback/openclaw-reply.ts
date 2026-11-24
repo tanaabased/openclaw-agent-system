@@ -9,7 +9,6 @@ import feedbackReply from './feedback-reply.ts';
 import { taskAdmission, taskTarget } from '../task-admission.ts';
 import reviewPolicy from '../review/review-policy.ts';
 import type { OpenClawTaskDependencies } from '../dispatch/openclaw-dispatch-context.ts';
-import OpenClawDispatchStore from '../dispatch/openclaw-dispatch-state.ts';
 import openClawFeedbackInput, { resolveOpenClawTurnFeedback } from './openclaw-feedback-input.ts';
 import { authorizeFeedback } from './openclaw-feedback.ts';
 import openClawNativeTurns from '../../openclaw-native-turns.ts';
@@ -37,7 +36,7 @@ export default async function openClawReply(input: {
   const current = await selectOpenClawTaskContext(deps.taskContext, manifest, input.workspace, {
     resolvePolicy: false,
   });
-  const journal = new OpenClawDispatchStore(deps.root, current.store.location.scope);
+  const journal = current.dispatch(deps.root);
   const binding = {
     runtime: 'openclaw' as const,
     agentId: manifest.agent.id,
@@ -46,7 +45,7 @@ export default async function openClawReply(input: {
     session: caller.sessionKey,
     incarnation: caller.sessionId,
   };
-  const replyStore = new ReplyStore(deps.root, binding);
+  const replyStore = new ReplyStore(deps.root, binding, current.sessionStorage);
   return deps.credential.use(authority, async (request) => {
     let feedback: ReplyDraft['feedback'];
     let defaultTarget: string | undefined;
@@ -171,6 +170,7 @@ export default async function openClawReply(input: {
     };
     return feedbackReply(input.action, {
       defaultTarget,
+      sessionStorage: current.sessionStorage,
       root: deps.root,
       binding,
       turnId: caller.runId,

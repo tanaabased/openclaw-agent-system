@@ -26,6 +26,7 @@ repeat installation preserves the working configuration.
 ```bash
 # should prepare the packed plugin and strict collaboration model
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --yolo
+openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 openclaw-aimock prepare --scenario openclaw-collaboration
 
 # should retain an operator grant when installation enables the managed team

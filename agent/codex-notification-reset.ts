@@ -12,14 +12,15 @@ import {
   codexNotificationResetPickupAutomation,
   replaceCodexNotificationCoordinator,
 } from './automations/codex-automations.ts';
-import CodexDispatchStore, { type DispatchRecord } from './tasks/dispatch/codex-dispatch-state.ts';
+import { type DispatchRecord } from './tasks/dispatch/codex-dispatch-state.ts';
 import { type CodexIntakeDependencies } from './codex-intake.ts';
 import { connectCodexGitHub } from './codex-github-client.ts';
 import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import notificationResetBaseline from './notification-reset-baseline.ts';
 import observeResetThread from './codex-reset-observation.ts';
 import codexRetirementNative from './tasks/retirement/codex-retirement-native.ts';
-import CodexSidebarJournal, { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
+import { codexSidebarJournal } from './storage/codex-storage.ts';
+import { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
 import {
   codexThreadAdapter,
   CodexThreadRpcError,
@@ -83,8 +84,12 @@ export default async function runCodexNotificationReset(
   const current = await selectCodexTaskContext(pluginData, deps, { inspectionOnly: true });
   if (!input.all && (input.agent?.length !== 1 || input.agent[0] !== current.agentId))
     throw new Error('notification-reset-explicit-bound-agent-required');
-  const journal = new CodexDispatchStore(pluginData, current.store.location.scope);
-  const store = new NotificationResetStore(pluginData, current.store.location.scope);
+  const journal = current.journal;
+  const store = new NotificationResetStore(
+    pluginData,
+    current.store.location.scope,
+    current.store.agentStorage,
+  );
   const retained = await store.read();
   const parse = (record: NotificationResetRecord) =>
     JSON.parse(record.inventory) as Omit<ResetInventory, 'records'> & { records: DispatchRecord[] };
@@ -338,7 +343,12 @@ export default async function runCodexNotificationReset(
       const saved = JSON.parse(replacement.automation) as SavedAutomation;
       if (saved.definition.kind !== 'heartbeat')
         throw new Error('notification-reset-coordinator-missing');
-      const journal = new CodexSidebarJournal(pluginData, current.codexHome, defaultManagedGroup);
+      const journal = await codexSidebarJournal(
+        pluginData,
+        current.codexHome,
+        defaultManagedGroup,
+        deps.storageBackend,
+      );
       const pending = (await journal.read()).pending;
       const receipt =
         pending?.digest === input.placementReceipt?.digest ? input.placementReceipt : undefined;

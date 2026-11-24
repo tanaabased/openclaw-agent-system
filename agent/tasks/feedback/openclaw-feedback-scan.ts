@@ -1,5 +1,5 @@
+import type { SessionStorage } from '../../storage/storage-lifecycle.ts';
 import { workflowFeedbackAvailable } from '../../../channels/github/feedback-policy.ts';
-import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
 import { GitHubWorkEventClientError } from '../../../channels/github/provider/work-event-api-client.ts';
 import { GitHubAccountClientError } from '../../../core/github-account-client.ts';
 import type { DispatchAuthority } from '../../../credentials/session-dispatch.ts';
@@ -56,6 +56,7 @@ export async function scanOpenClawFeedback(input: {
   const budget = input.budget ?? new DiscoveryBudget(20000, input.authority.signal);
   const scans: OpenClawFeedbackScan[] = [];
   const records = openClawFeedbackRecords(input.state);
+  let sessionStorage: SessionStorage | undefined;
   let connection: Awaited<ReturnType<typeof service.dependencies.connect>> | undefined;
   let provider:
     Awaited<ReturnType<NonNullable<typeof service.dependencies.feedbackConnect>>> | undefined;
@@ -120,21 +121,23 @@ export async function scanOpenClawFeedback(input: {
         };
         await budget.read('workspace-binding', validateLocal);
         if (!connection) {
-          connection = await budget.read('github-connection', () =>
+          const connected = await budget.read('github-connection', () =>
             service.dependencies.connect(
               { manifest, workspaceDir: input.workspace },
               budget.signal,
             ),
           );
-          const { store } = await service.scope(manifest, input.workspace);
+          const selected = await service.scope(manifest, input.workspace);
           await budget.read('feedback-identities', () =>
-            new GitHubIdentityCache(store.location).resolve(
+            selected.store.identities.resolve(
               manifest.github?.notifications,
-              connection!,
+              connected,
               'feedback',
               true,
             ),
           );
+          connection = connected;
+          sessionStorage = selected.sessionStorage;
         }
         const { intake } = await budget.read('assignment-validation', () =>
           service.validate(
@@ -166,6 +169,7 @@ export async function scanOpenClawFeedback(input: {
                 announcement: record.announcement,
                 replies: () =>
                   replyOwnPublications({
+                    sessionStorage,
                     root: service.dependencies.root,
                     binding: {
                       runtime: 'openclaw',

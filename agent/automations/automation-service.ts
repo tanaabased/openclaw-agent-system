@@ -1,3 +1,5 @@
+import { bindAgentStore, defaultStorageBackend, type StorageBackend } from '../storage/backend.ts';
+import type { SqliteInstallation } from '../storage/storage-lifecycle.ts';
 import { realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -65,12 +67,19 @@ import type { DispatchRequest } from '../../credentials/session-dispatch.ts';
 import { assertPrivateStateLocksHeld } from '../../core/private-state-lock-context.ts';
 
 export interface AutomationServiceDependencies {
+  storageBackend?: StorageBackend;
+  sqliteInstallation?: SqliteInstallation;
   pickup?: {
     prepare(
       manifest: AgentManifest,
       workspace: string,
     ): Promise<{ enrollment: { id: string }; nativeId?: string }>;
-    activate(id: string, nativeId: string, previousNativeId?: string): Promise<void>;
+    activate(
+      manifest: AgentManifest,
+      id: string,
+      nativeId: string,
+      previousNativeId?: string,
+    ): Promise<void>;
   };
   root: string;
   profile: string;
@@ -134,9 +143,30 @@ function executionEvidence(state: NativeAutomation['state']): string {
 
 /** own explicit reconciliation; no timers, model calls, credentials or private scheduler access. */
 export default class AutomationService {
-  readonly reports: AutomationReportStore;
-  constructor(readonly dependencies: AutomationServiceDependencies) {
-    this.reports = new AutomationReportStore(join(dependencies.root, 'reports'), dependencies.now);
+  constructor(readonly dependencies: AutomationServiceDependencies) {}
+
+  async reportStore(agentId: string) {
+    const { root, now, sqliteInstallation, storageBackend } = this.dependencies;
+    const agent = await bindAgentStore(agentId, sqliteInstallation, storageBackend);
+    return new AutomationReportStore(join(root, 'reports'), now, agent && { agentId, agent });
+  }
+
+  async *reportStores() {
+    const {
+      root,
+      now,
+      sqliteInstallation,
+      storageBackend = defaultStorageBackend,
+    } = this.dependencies;
+    const directory = join(root, 'reports');
+    if (storageBackend === 'file') {
+      yield new AutomationReportStore(directory, now);
+      return;
+    }
+    if (!sqliteInstallation) throw new Error('SQLite requires runtime storage locations');
+    const { sqliteAgentDatabases } = await import('../storage/agent-database.ts');
+    for await (const storage of sqliteAgentDatabases(sqliteInstallation))
+      yield new AutomationReportStore(directory, now, storage);
   }
 
   async scope(manifest: AgentManifest, workspaceDir: string) {
@@ -148,12 +178,20 @@ export default class AutomationService {
       environment: this.dependencies.environment,
       timezone: this.dependencies.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
     };
-    const store = new AutomationStore({
-      root: this.dependencies.root,
-      profile: await realpath(this.dependencies.profile),
-      agentId: manifest.agent.id,
-      workspaceDir: workspace,
-    });
+    const agent = await bindAgentStore(
+      manifest.agent.id,
+      this.dependencies.sqliteInstallation,
+      this.dependencies.storageBackend,
+    );
+    const store = new AutomationStore(
+      {
+        root: this.dependencies.root,
+        profile: await realpath(this.dependencies.profile),
+        agentId: manifest.agent.id,
+        workspaceDir: workspace,
+      },
+      agent,
+    );
     return { context, store };
   }
 
@@ -165,6 +203,7 @@ export default class AutomationService {
     return new AutomationThreads(
       { root: this.dependencies.root, scope: store.scope, runtime: 'openclaw' },
       automationThreadGateway(request, { ...context, scope: store.scope }),
+      store.agentStorage,
     );
   }
 
@@ -543,8 +582,9 @@ export default class AutomationService {
     );
     const { store } = await this.scope(manifest, workspaceDir);
     const reports = [];
-    for (const executionId of await this.reports.ids()) {
-      const report = await this.reports.read(executionId);
+    const reportStore = await this.reportStore(manifest.agent.id);
+    for (const executionId of await reportStore.ids()) {
+      const report = await reportStore.read(executionId);
       if (report?.target.scope !== store.scope || report.input.id !== id) continue;
       reports.push({
         ...automationReportDelivery(report),
@@ -1279,6 +1319,7 @@ export default class AutomationService {
           if (changed || initialHash !== automationHash(ledger)) await store.write(ledger);
           if (pickup)
             await this.dependencies.pickup!.activate(
+              manifest,
               pickup.enrollment.id,
               native.id,
               pickup.nativeId,

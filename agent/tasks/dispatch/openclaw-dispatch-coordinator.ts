@@ -285,7 +285,7 @@ export default class OpenClawDispatchCoordinator {
           dispatchCapacity(
             state,
             current.policy.policy.maxConcurrentItems,
-            state.projectPickup,
+            state.issuePickup,
             intake.evidence?.projectWork?.pickup?.issueNodeId,
           ).available > 0,
       );
@@ -571,7 +571,7 @@ export default class OpenClawDispatchCoordinator {
     const capacity = dispatchCapacity(
       state,
       current.policy.policy.maxConcurrentItems,
-      state.projectPickup,
+      state.issuePickup,
     );
     const assignments = pendingAssignments(state, current.admitted)
       .filter(({ intake }) => !liveWorkflowPolicy(manifest, 'openclaw', intake))
@@ -589,7 +589,7 @@ export default class OpenClawDispatchCoordinator {
         sessionId: caller.sessionId,
         runId: caller.runId,
         limit: current.policy.policy.maxConcurrentItems,
-        allowance: capacity.available + issuePickupCapacity(state.projectPickup),
+        allowance: capacity.available + issuePickupCapacity(state.issuePickup),
         candidates: [
           ...assignments.map(({ intake }) => ({
             id: intake.id,
@@ -633,7 +633,7 @@ export default class OpenClawDispatchCoordinator {
           dispatchCapacity(
             state,
             current.policy.policy.maxConcurrentItems,
-            state.projectPickup,
+            state.issuePickup,
             intake.evidence?.projectWork?.pickup?.issueNodeId,
           ).available > 0,
       )

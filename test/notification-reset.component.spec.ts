@@ -153,14 +153,17 @@ describe('agent/notification reset recovery', () => {
     await f.run({ selection: await f.select() });
     const journal = new CodexDispatchStore(root, scope);
     await journal.exclusive(async (state, save) => {
-      state.projectPickup = structuredClone(f.state.projectPickup);
+      state.issuePickup = structuredClone(f.state.issuePickup);
       await save();
     });
+    const legacy = JSON.parse((await journal.file.read())!);
+    assert.deepEqual(legacy.projectPickup, f.state.issuePickup);
+    assert.ok(!Object.hasOwn(legacy, 'issuePickup'));
     await journal.reset('reset-generation');
-    assert.deepEqual((await journal.read()).projectPickup?.charges, f.state.projectPickup!.charges);
-    assert.equal((await journal.read()).projectPickup?.operations.length, 1);
+    assert.deepEqual((await journal.read()).issuePickup?.charges, f.state.issuePickup!.charges);
+    assert.equal((await journal.read()).issuePickup?.operations.length, 1);
     await journal.reset('reset-generation');
-    assert.equal((await journal.read()).projectPickup?.operations.length, 1);
+    assert.equal((await journal.read()).issuePickup?.operations.length, 1);
     assert.deepEqual((await journal.read()).records, []);
   });
 

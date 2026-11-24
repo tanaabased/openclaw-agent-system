@@ -1,7 +1,11 @@
 import { resolve } from 'node:path';
 
 import type WorkspaceBackupService from '../agent/backup/backup-service.ts';
-import { BackupError, type WorkspaceBackupManifest } from '../agent/backup/backup-types.ts';
+import {
+  storageArchivePaths,
+  BackupError,
+  type WorkspaceBackupManifest,
+} from '../agent/backup/backup-types.ts';
 import { resolveBackupCaller, type BackupCommandContext } from './backup-context.ts';
 import {
   type BackupCliOutput,
@@ -90,6 +94,14 @@ async function backupRestore(
       options.agentId,
     );
     const { manifest } = result;
+    const storage =
+      manifest.version === 2 && manifest.storage
+        ? storageArchivePaths(manifest.agentId)
+        : undefined;
+    const databases = storage && {
+      agent: resolve(result.target, storage.agent),
+      installation: resolve(result.target, storage.installation),
+    };
     const omitted = [
       ...manifest.coverage.omittedPaths,
       ...manifest.coverage.limitations,
@@ -105,6 +117,7 @@ async function backupRestore(
         agentId: manifest.agentId,
         workspace: `${result.target}/workspace`,
         ...(result.database ? { database: result.database } : {}),
+        ...(databases && { storage: databases }),
         coverage: manifest.coverage,
         omitted,
       });
@@ -118,6 +131,16 @@ async function backupRestore(
             { label: 'agent', style: 'target', value: manifest.agentId },
             { label: 'target', style: 'target', value: result.target },
             { label: 'workspace', style: 'target', value: `${result.target}/workspace` },
+            ...(databases
+              ? [
+                  { label: 'agent storage', style: 'target' as const, value: databases.agent },
+                  {
+                    label: 'shared storage',
+                    style: 'target' as const,
+                    value: databases.installation,
+                  },
+                ]
+              : []),
             ...(result.database
               ? [{ label: 'database', style: 'target' as const, value: result.database }]
               : []),

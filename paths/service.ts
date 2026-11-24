@@ -94,7 +94,7 @@ export default class AgentPathService {
     }
     const { projection } = resolution;
     const agentId = input.manifest.agent.id;
-    const previous = await this.#dependencies.projectionStore.read(agentId);
+    const previous = await this.#dependencies.projectionStore.read(agentId, workspaceDir);
     const previousOwned =
       previous && resolve(previous.workspaceDir) === workspaceDir ? previous.openClawPaths : [];
     const desiredPaths = projection.entries.map(({ path }) => path);
@@ -193,7 +193,10 @@ export default class AgentPathService {
       throw new Error(resolution.diagnostics.map(({ message }) => message).join(' '));
     }
     const { projection } = resolution;
-    const previous = await this.#dependencies.projectionStore.read(input.manifest.agent.id);
+    const previous = await this.#dependencies.projectionStore.read(
+      input.manifest.agent.id,
+      input.workspaceDir,
+    );
     const previousManagedPaths =
       previous && resolve(previous.workspaceDir) === resolve(input.workspaceDir)
         ? previous.openClawPaths

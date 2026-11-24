@@ -16,11 +16,11 @@ describe('issue pickup capacity handoff', () => {
       const f = fixture(runtime);
       const capacity = () =>
         runtime === 'codex'
-          ? codexCapacity([], 1, f.state.projectPickup)
-          : openClawCapacity([], 1, f.state.projectPickup);
+          ? codexCapacity([], 1, f.state.issuePickup)
+          : openClawCapacity([], 1, f.state.issuePickup);
       const selection = await f.select();
       assert.deepEqual(capacity(), { occupied: 0, available: 1 });
-      f.clock.now = f.state.projectPickup!.operations[0]!.window.closesAt + 1;
+      f.clock.now = f.state.issuePickup!.operations[0]!.window.closesAt + 1;
       assert.deepEqual(capacity(), { occupied: 0, available: 1 });
       f.clock.now -= 2;
       f.client.assignProjectIssue = async () => {
@@ -55,7 +55,7 @@ describe('issue pickup capacity handoff', () => {
       f.state.records.push({ issueKey: 'ordinary', request: {} });
       assert.equal((await f.run({ selection })).status, 'at-capacity');
       assert.equal(f.effects.writes, 0);
-      assert.deepEqual(f.state.projectPickup!.operations, []);
+      assert.deepEqual(f.state.issuePickup!.operations, []);
       f.state.records = [];
       f.tx.runId = 'later-scan';
       assert.equal((await f.run({ selection: await f.select() })).status, 'assigned');
@@ -65,7 +65,7 @@ describe('issue pickup capacity handoff', () => {
     it(`should use native capacity for pickup owners until verified closure in ${runtime}`, async () => {
       const f = fixture(runtime);
       await f.run({ selection: await f.select() });
-      const pickup = f.state.projectPickup!;
+      const pickup = f.state.issuePickup!;
       const owner = {
         issueKey: pickupIssueKey(pickup, f.item.nodeId),
         projectWork: f.work(),

@@ -28,6 +28,7 @@ changes take effect before the next use.
 ```bash
 # should prepare the packed plugin and strict credential consumer fixture
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --yolo
+openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 openclaw config set cron.enabled false --strict-json
 openclaw-aimock prepare --scenario openclaw-credentials
 

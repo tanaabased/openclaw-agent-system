@@ -331,7 +331,7 @@ export default class AgentSystemLifecycleRegistry {
     const prerequisiteIds =
       agentSteps &&
       context.manifest.setup?.steps.some((step) => setupStepApplies(step, context.runtime))
-        ? ['agent', 'path', 'git', 'github', 'google']
+        ? ['agent', 'agent-storage', 'agent-system-storage', 'path', 'git', 'github', 'google']
         : [];
     const prerequisites = prerequisiteIds.flatMap((id) =>
       agentContributions.filter((entry) => entry.id === id),

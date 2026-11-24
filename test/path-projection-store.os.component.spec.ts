@@ -1,5 +1,6 @@
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import assert from 'node:assert/strict';
-import { chmod, lstat, mkdir, mkdtemp, symlink, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -30,6 +31,28 @@ describe('paths/projection-store', () => {
     assert.deepEqual(await store.read('data'), state);
     assert.equal((await lstat(agentDir)).mode & 0o777, 0o700);
     assert.equal((await lstat(receiptPath)).mode & 0o777, 0o600);
+  });
+
+  it('should replace the sqlite receipt when an agent moves workspaces', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agent-system-path-store-'));
+    try {
+      const db = await sqliteAgentFixture(root, 'data');
+      const store = new PathProjectionStore(db);
+      const state: StoredPathProjection = {
+        schemaVersion: 1,
+        agentId: 'data',
+        workspaceDir: '/old',
+        openClawPaths: ['/old/bin'],
+      };
+      await store.write(state);
+      assert.deepEqual(await store.read('data', '/old'), state);
+      const moved = { ...state, workspaceDir: '/new', openClawPaths: ['/new/bin'] };
+      await store.write(moved);
+      assert.equal(await store.read('data', '/old'), undefined);
+      assert.deepEqual(await new PathProjectionStore(db).read('data', '/new'), moved);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it('should reject invalid agent ids and unusable stores', async () => {

@@ -14,6 +14,7 @@ import PrivateStateFile from '../../../core/private-state-file.ts';
 import acquirePrivateStateFileLock from '../../../core/private-state-file-lock.ts';
 import { withPrivateStateLock } from '../../../core/private-state-lock-context.ts';
 
+const maximumBytes = 4 * 1024 * 1024;
 const words = [
   [
     'amber',
@@ -125,13 +126,19 @@ export default class AssignmentClaimStore {
   readonly root: string;
   readonly file: PrivateStateFile;
 
-  constructor(root: string) {
+  constructor(
+    root: string,
+    private readonly persistence?: {
+      read(): Promise<AssignmentClaimState | undefined>;
+      save(state: AssignmentClaimState, previous?: AssignmentClaimState): Promise<void>;
+    },
+  ) {
     this.root = resolve(root);
     this.file = new PrivateStateFile({
       directories: [this.root],
       path: join(this.root, 'assignment-claims.json'),
       label: 'assignment claims',
-      maximumBytes: 4 * 1024 * 1024,
+      maximumBytes,
       currentUid: process.getuid?.(),
     });
   }
@@ -155,28 +162,28 @@ export default class AssignmentClaimStore {
     });
     try {
       return await withPrivateStateLock(lock, async () => {
-        const contents = await this.file.read();
-        if (contents === undefined && !initialize) throw new Error('instance-install-required');
-        const value: unknown =
-          contents === undefined
-            ? {
-                version: 1,
-                instanceId: randomUUID(),
-                displayName: words.map((list) => list[randomInt(list.length)]).join('-'),
-                retiredInstanceIds: [],
-                claims: {},
-              }
-            : JSON.parse(contents);
-        if (!Value.Check(schema, value) || value.retiredInstanceIds.includes(value.instanceId))
-          throw new Error('assignment-claim-state-invalid');
-        const state = value;
+        const previous = await this.read();
+        if (!previous && !initialize) throw new Error('instance-install-required');
+        const state: AssignmentClaimState = previous ?? {
+          version: 1,
+          instanceId: randomUUID(),
+          displayName: words.map((list) => list[randomInt(list.length)]).join('-'),
+          retiredInstanceIds: [],
+          claims: {},
+        };
+        let saved = this.persistence && previous ? structuredClone(previous) : undefined;
         const save = async () => {
           lock.assertHeld();
           if (!Value.Check(schema, state) || state.retiredInstanceIds.includes(state.instanceId))
             throw new Error('assignment-claim-state-invalid');
-          await this.file.write(JSON.stringify(state));
+          if (this.persistence) {
+            if (Buffer.byteLength(JSON.stringify(state)) > maximumBytes)
+              throw new Error('assignment claims exceed their size limit');
+            await this.persistence.save(state, saved);
+            saved = structuredClone(state);
+          } else await this.file.write(JSON.stringify(state));
         };
-        if (contents === undefined) await save();
+        if (!previous) await save();
         return operation(state, save, lock.signal);
       });
     } finally {
@@ -192,10 +199,16 @@ export default class AssignmentClaimStore {
   }
 
   /** inspection must never create an identity or repair private state. */
-  private async read() {
-    const contents = await this.file.read();
-    if (contents === undefined) return undefined;
-    const state: unknown = JSON.parse(contents);
+  async read() {
+    let state: unknown;
+    if (this.persistence) {
+      state = await this.persistence.read();
+      if (state === undefined) return undefined;
+    } else {
+      const contents = await this.file.read();
+      if (contents === undefined) return undefined;
+      state = JSON.parse(contents);
+    }
     if (!Value.Check(schema, state) || state.retiredInstanceIds.includes(state.instanceId))
       throw new Error('assignment-claim-state-invalid');
     return state;

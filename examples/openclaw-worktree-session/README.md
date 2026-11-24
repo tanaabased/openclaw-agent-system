@@ -22,6 +22,7 @@ Enroll disposable SSH keys, prepare a remote managed checkout, execute a native 
 ```bash
 # should enroll disposable ssh keys for the managed remote workspace
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-ssh-key --yolo
+openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 openclaw-aimock prepare --scenario openclaw-worktree-session
 sed -e "s|__GITHUB_REPOSITORY_ID__|$GITHUB_REPOSITORY_ID|g" -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" "$GITHUB_WORKSPACE/examples/openclaw-worktree-session/agent.yaml" > "$TMPDIR/worktree-agent.yaml"
 mv "$TMPDIR/worktree-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-worktree-session/agent.yaml"
@@ -47,13 +48,18 @@ cd "$(jq -er .path "$TMPDIR/worktree-remote.json")"
 openclaw agent-system tool git -- remote get-url origin | grep -Fx git@github.com:tanaabased/big-test-bucket.git
 
 # should execute an ordinary worktree session with canonical agent context and identity
-trap 'rc=$?; set +e; if [ "$rc" -ne 0 ]; then echo "worktree first: $step failed (exit $rc)" >&2; curl -fsS --max-time 3 http://127.0.0.1:4010/proof/evidence | jq "{strictMissCount, finalResponseCount, execResponses: [.tools[]? | select(.name == \"exec\") | .callResponseCount]}" >&2; fi; exit "$rc"' EXIT
+trap 'rc=$?; if [ "$rc" -ne 0 ]; then sh "$GITHUB_WORKSPACE/examples/openclaw-worktree-session/diagnose.sh" first "$step" "$rc" >&2 || true; fi; exit "$rc"' EXIT
 step=openclaw-gateway-start
 openclaw-gateway start
 step=read-worktree-path
 worktree_path=$(jq -er .path "$TMPDIR/worktree-remote.json")
 step=sessions.create
-openclaw gateway call sessions.create --params "$(jq -nc --arg cwd "$worktree_path" '{key:"agent:worktree-tanaabot:dashboard:worktree-leia",agentId:"worktree-tanaabot",label:"Worktree execution fixture",cwd:$cwd}')" --json > "$TMPDIR/worktree-session.json"
+openclaw gateway call sessions.create --timeout 120000 --params "$(jq -nc --arg cwd "$worktree_path" '{key:"agent:worktree-tanaabot:dashboard:worktree-leia",agentId:"worktree-tanaabot",label:"Worktree execution fixture",cwd:$cwd}')" --json > "$TMPDIR/worktree-session.json" || {
+  rc=$?
+  jq -c '.error | {type, code, message}' "$TMPDIR/worktree-session.json" >&2 || true
+  openclaw-diagnostics --debug >&2 || true
+  exit "$rc"
+}
 jq -e '{ok, runStarted, sessionIdPresent: (.sessionId | type == "string"), responseFields: keys} | if .runStarted == false and .sessionIdPresent then true else error("sessions.create: " + tojson) end' "$TMPDIR/worktree-session.json"
 step=read-session-id
 session_id=$(jq -er .sessionId "$TMPDIR/worktree-session.json")
@@ -67,7 +73,7 @@ step=probe-directory
 test "$(cat "$TMPDIR/worktree-first.pwd")" = "$worktree_path"
 
 # should continue the same worktree session after restart without replaying its first turn
-trap 'rc=$?; set +e; if [ "$rc" -ne 0 ]; then echo "worktree continued: $step failed (exit $rc)" >&2; curl -fsS --max-time 3 http://127.0.0.1:4010/proof/evidence | jq "{strictMissCount, finalResponseCount, execResponses: [.tools[]? | select(.name == \"exec\") | .callResponseCount]}" >&2; fi; exit "$rc"' EXIT
+trap 'rc=$?; if [ "$rc" -ne 0 ]; then sh "$GITHUB_WORKSPACE/examples/openclaw-worktree-session/diagnose.sh" continued "$step" "$rc" >&2 || true; fi; exit "$rc"' EXIT
 step=openclaw-gateway-stop
 openclaw-gateway stop --timeout 340
 step=openclaw-gateway-start

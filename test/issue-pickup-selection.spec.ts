@@ -19,11 +19,11 @@ describe('agent/issue-pickup', () => {
       const f = fixture(runtime);
       const selection = await f.select();
       const originalRun = f.tx.runId;
-      const operation = structuredClone(f.state.projectPickup!.operations);
+      const operation = structuredClone(f.state.issuePickup!.operations);
       f.policy.issuePickup!.paused = true;
       f.tx.runId = 'new-paused-run';
       assert.equal((await f.run()).status, 'paused');
-      assert.deepEqual(f.state.projectPickup!.operations, operation);
+      assert.deepEqual(f.state.issuePickup!.operations, operation);
       assert.equal(f.effects.writes, 0);
       f.tx.runId = originalRun;
       assert.equal((await f.run({ selection })).status, 'assigned');
@@ -99,7 +99,7 @@ describe('agent/issue-pickup', () => {
       );
       assert.ok(effective.indexOf('choose useful') < effective.indexOf('prefer repo fixes'));
       assert.match(effective, /owner\/other only.*\nprefer other bugs/);
-      assert.deepEqual(f.state.projectPickup!.operations, []);
+      assert.deepEqual(f.state.issuePickup!.operations, []);
       assert.equal(f.effects.writes, 0);
     });
 
@@ -153,10 +153,10 @@ describe('agent/issue-pickup', () => {
           result.allowances?.map((entry) => entry.used),
           [0, 1],
         );
-        assert.equal(f.state.projectPickup!.charges![0]!.repositoryNodeId, other.repository.nodeId);
+        assert.equal(f.state.issuePickup!.charges![0]!.repositoryNodeId, other.repository.nodeId);
         assert.equal(f.effects.writes, 1);
-        assert.equal(f.state.projectPickup!.operations[0]!.repositoryGuidance, undefined);
-        assert.ok(Value.Check(pickupOperationSchema, f.state.projectPickup!.operations[0]));
+        assert.equal(f.state.issuePickup!.operations[0]!.repositoryGuidance, undefined);
+        assert.ok(Value.Check(pickupOperationSchema, f.state.issuePickup!.operations[0]));
       });
     }
     for (const guidance of [undefined, 'prefer urgent work']) {
@@ -170,7 +170,7 @@ describe('agent/issue-pickup', () => {
           source: guidance === undefined ? 'built-in' : 'inline',
           content: [pickupSelectionInstructions, guidance].filter(Boolean).join('\n\n'),
         });
-        assert.deepEqual(f.state.projectPickup!.operations, []);
+        assert.deepEqual(f.state.issuePickup!.operations, []);
         const next = await f.run();
         assert.equal('selectionGuidance' in next, false);
       });
@@ -212,7 +212,7 @@ describe('agent/issue-pickup', () => {
       });
       assert.equal(result.status, 'empty');
       assert.equal(f.effects.writes, 0);
-      assert.deepEqual(f.state.projectPickup!.operations, []);
+      assert.deepEqual(f.state.issuePickup!.operations, []);
     });
 
     for (const mode of ['all', 'multiple', 'prefer'] as const) {
@@ -481,14 +481,14 @@ describe('agent/issue-pickup', () => {
     it(`should reject matching scan bindings and ambiguous native operations in ${runtime}`, async () => {
       const f = fixture(runtime);
       const selection = await f.select();
-      const operation = f.state.projectPickup!.operations[0]!;
+      const operation = f.state.issuePickup!.operations[0]!;
       for (const override of [{ id: operation.id }, { digest: operation.selectionDigest }])
         await assert.rejects(
           f.run({ selection: { ...selection, ...override } }),
           /issue-pickup-input-invalid/,
         );
       assert.equal(f.effects.writes, 0);
-      f.state.projectPickup!.operations.push({
+      f.state.issuePickup!.operations.push({
         ...structuredClone(operation),
         id: 'other-operation',
       });
@@ -503,7 +503,7 @@ describe('agent/issue-pickup', () => {
       f.item.milestone = null;
       assert.equal((await f.run({ selection: stale })).status, 'assigned');
       f.policy.issuePickup!.projects[0]!.milestone = { number: [10], policy: 'prefer' };
-      assert.ok(pickupAuthority(f.state.projectPickup)!.retained?.length);
+      assert.ok(pickupAuthority(f.state.issuePickup)!.retained?.length);
       assert.equal(f.effects.writes, 1);
     });
 
@@ -607,13 +607,13 @@ describe('agent/issue-pickup', () => {
     it(`should discard prior scan material and load current guidance in ${runtime}`, async () => {
       const f = fixture(runtime);
       const old = await f.select();
-      const oldOperation = f.state.projectPickup!.operations[0]!.id;
+      const oldOperation = f.state.issuePickup!.operations[0]!.id;
       f.policy.issuePickup!.selection = { guidance: 'new priorities' };
       f.tx.runId = 'next-scan';
       const fresh = await f.run();
       assert.ok('guidance' in fresh && fresh.guidance === 'new priorities');
       assert.ok('id' in fresh && fresh.id !== oldOperation);
-      assert.equal(f.state.projectPickup!.operations.length, 1);
+      assert.equal(f.state.issuePickup!.operations.length, 1);
       assert.equal((await f.run({ selection: old })).status, 'assigned');
       assert.equal(f.effects.writes, 1);
     });
@@ -638,7 +638,7 @@ describe('agent/issue-pickup', () => {
       assert.equal((await f.run({ selection })).status, 'assigned');
       assert.equal(before, 1);
       assert.equal(after, 1);
-      const retained = f.state.projectPickup!.operations[0]!;
+      const retained = f.state.issuePickup!.operations[0]!;
       assert.deepEqual(retained.selected, { nodeId: f.item.nodeId, number: f.item.number });
       assert.deepEqual(retained.candidates, []);
       assert.equal(retained.guidance, undefined);
@@ -657,7 +657,7 @@ describe('agent/issue-pickup', () => {
         if (reason === 'milestone') f.item.milestone = null;
         assert.equal((await f.run({ selection })).status, 'failed');
         assert.equal(f.effects.writes, 0);
-        assert.equal(f.state.projectPickup!.operations.length, 0);
+        assert.equal(f.state.issuePickup!.operations.length, 0);
       });
     }
 
@@ -673,7 +673,7 @@ describe('agent/issue-pickup', () => {
         (await f.run({ selection: { ...(await f.select()), issueNodeId: null } })).status,
         'empty',
       );
-      assert.deepEqual(f.state.projectPickup!.operations, []);
+      assert.deepEqual(f.state.issuePickup!.operations, []);
     });
 
     for (const reason of ['missing', 'permission', 'malformed']) {
@@ -735,7 +735,7 @@ describe('agent/issue-pickup', () => {
       const candidates = [...f.candidates.entries()];
       f.candidates.clear();
       assert.equal((await f.run()).status, 'empty');
-      assert.deepEqual(f.state.projectPickup!.operations, []);
+      assert.deepEqual(f.state.issuePickup!.operations, []);
       for (const [number, candidate] of candidates) f.candidates.set(number, candidate);
       f.tx.runId = 'next-scan';
       assert.equal((await f.run({ selection: await f.select() })).status, 'assigned');
@@ -745,7 +745,7 @@ describe('agent/issue-pickup', () => {
       const f = fixture(runtime);
       await f.run({ selection: await f.select() });
       f.state.records.push({
-        issueKey: pickupIssueKey(f.state.projectPickup!, f.item.nodeId),
+        issueKey: pickupIssueKey(f.state.issuePickup!, f.item.nodeId),
         projectWork: f.work(),
       });
       await f.run();
@@ -759,15 +759,15 @@ describe('agent/issue-pickup', () => {
         assert.equal((await f.run()).status, 'allowance-reached');
       }
       assert.equal(f.effects.writes, 1);
-      assert.deepEqual(f.state.projectPickup!.operations, []);
-      assert.equal(f.state.projectPickup!.charges?.length, 1);
+      assert.deepEqual(f.state.issuePickup!.operations, []);
+      assert.equal(f.state.issuePickup!.charges?.length, 1);
     });
 
     it(`should allow a fresh assignment in the next daily window in ${runtime}`, async () => {
       const f = fixture(runtime);
       await f.run({ selection: await f.select() });
       f.state.records.push({
-        issueKey: pickupIssueKey(f.state.projectPickup!, f.item.nodeId),
+        issueKey: pickupIssueKey(f.state.issuePickup!, f.item.nodeId),
         projectWork: f.work(),
       });
       await f.run();
@@ -777,7 +777,7 @@ describe('agent/issue-pickup', () => {
       f.tx.runId = 'tomorrow';
       assert.equal((await f.run({ selection: await f.select() })).status, 'assigned');
       assert.equal(f.effects.writes, 2);
-      assert.equal(f.state.projectPickup!.charges?.length, 1);
+      assert.equal(f.state.issuePickup!.charges?.length, 1);
     });
 
     it(`should preserve the used allowance across live target changes in ${runtime}`, async () => {
@@ -795,13 +795,13 @@ describe('agent/issue-pickup', () => {
     it(`should change an unused milestone without install in ${runtime}`, async () => {
       const f = fixture(runtime);
       await f.select();
-      const oldOperation = f.state.projectPickup!.operations[0]!.id;
+      const oldOperation = f.state.issuePickup!.operations[0]!.id;
       f.policy.issuePickup!.projects[0]!.milestone!.number = 11;
       f.milestone.number = 11;
       f.milestone.nodeId = 'M_next';
       f.item.milestone = { ...f.item.milestone!, number: 11, nodeId: 'M_next' };
       const fresh = await f.select();
-      assert.notEqual(f.state.projectPickup!.operations[0]!.id, oldOperation);
+      assert.notEqual(f.state.issuePickup!.operations[0]!.id, oldOperation);
       assert.equal((await f.run({ selection: fresh })).status, 'assigned');
     });
 
@@ -827,9 +827,9 @@ describe('agent/issue-pickup', () => {
         const result = await f.run({ selection: await f.select() });
         assert.equal(result.status, 'failed');
         assert.ok('providerDiagnostic' in result && result.providerDiagnostic === diagnostic);
-        assert.equal(pickupCapacity(f.state.projectPickup), 0);
-        assert.deepEqual(pickupAuthority(f.state.projectPickup)!.withheldAssignments, []);
-        assert.equal(f.state.projectPickup!.charges?.length, 0);
+        assert.equal(pickupCapacity(f.state.issuePickup), 0);
+        assert.deepEqual(pickupAuthority(f.state.issuePickup)!.withheldAssignments, []);
+        assert.equal(f.state.issuePickup!.charges?.length, 0);
         f.client.assignProjectIssue = assign;
         f.tx.runId = 'later-scan';
         assert.equal((await f.run({ selection: await f.select() })).status, 'assigned');
@@ -859,11 +859,11 @@ describe('agent/issue-pickup', () => {
           );
         };
         assert.equal((await f.run({ selection: await f.select() })).status, 'attempted');
-        const pending = f.state.projectPickup!.operations[0]!;
+        const pending = f.state.issuePickup!.operations[0]!;
         assert.deepEqual(pending.candidates, []);
         assert.equal(pending.guidance, undefined);
         assert.equal(pending.rationale, undefined);
-        assert.equal(pickupCapacity(f.state.projectPickup), 1);
+        assert.equal(pickupCapacity(f.state.issuePickup), 1);
         f.tx.runId = 'recover';
         assert.equal((await f.run()).status, 'assigned');
         assert.equal((await f.run()).status, 'allowance-reached');
@@ -882,7 +882,7 @@ describe('agent/issue-pickup', () => {
       f.tx.runId = 'tomorrow';
       assert.equal((await f.run()).status, 'attempted');
       assert.equal(f.effects.writes, 1);
-      assert.equal(f.state.projectPickup!.operations.length, 1);
+      assert.equal(f.state.issuePickup!.operations.length, 1);
     });
 
     it(`should keep old assignment custody while the live target changes in ${runtime}`, async () => {
@@ -904,7 +904,7 @@ describe('agent/issue-pickup', () => {
         f.tx.enrollment = enrollment;
       });
       assert.equal((await f.run()).status, 'assigned');
-      assert.deepEqual(pickupAuthority(f.state.projectPickup)!.retained![0]!.enrollment, old);
+      assert.deepEqual(pickupAuthority(f.state.issuePickup)!.retained![0]!.enrollment, old);
       assert.equal(f.effects.writes, 1);
     });
 
@@ -1098,7 +1098,7 @@ describe('agent/issue-pickup', () => {
       assert.equal(result.status, 'attempted');
       assert.ok('code' in result && result.code === 'issue-pickup-assignment-unverified');
       assert.equal(f.effects.writes, 1);
-      assert.equal(f.state.projectPickup!.operations[0]!.receipt, undefined);
+      assert.equal(f.state.issuePickup!.operations[0]!.receipt, undefined);
     }
   });
 
@@ -1113,13 +1113,13 @@ describe('agent/issue-pickup', () => {
     const result = await f.run({ selection: await f.select() });
     assert.equal(result.status, 'attempted');
     assert.ok(f.item.assignees.some((entry) => entry.nodeId === other.nodeId));
-    assert.equal(pickupAuthority(f.state.projectPickup)!.receipts.length, 0);
+    assert.equal(pickupAuthority(f.state.issuePickup)!.receipts.length, 0);
   });
 
   it('should leave confirmed assignment capacity to ordinary intake', async () => {
     const f = fixture();
     await f.run({ selection: await f.select() });
-    const pickup = f.state.projectPickup!;
+    const pickup = f.state.issuePickup!;
     assert.equal(pickupCapacity(pickup), 0);
     assert.equal(pickupCapacity(pickup, f.item.nodeId), 0);
     f.state.records.push({
@@ -1171,11 +1171,11 @@ describe('agent/issue-pickup', () => {
       });
     // One read crosses the incidental budget; progress is still available in this scan.
     await run();
-    assert.equal(f.state.projectPickup!.operations.length, 1);
+    assert.equal(f.state.issuePickup!.operations.length, 1);
     f.tx.runId = 'next-scan';
     await run();
-    assert.equal(f.state.projectPickup!.operations.length, 1);
-    assert.equal(f.state.projectPickup!.operations[0]!.runId, 'next-scan');
+    assert.equal(f.state.issuePickup!.operations.length, 1);
+    assert.equal(f.state.issuePickup!.operations[0]!.runId, 'next-scan');
   });
 
   it('should retain paginated discovery and never rank an incomplete snapshot', async () => {
@@ -1186,7 +1186,7 @@ describe('agent/issue-pickup', () => {
     });
     assert.equal((await f.run()).status, 'discovering');
     assert.equal((await f.run()).status, 'selection-required');
-    assert.equal(f.state.projectPickup!.operations[0]!.candidates.length, 1);
+    assert.equal(f.state.issuePickup!.operations[0]!.candidates.length, 1);
   });
 
   it('should recover each durable boundary without replaying an attempted write', async () => {
@@ -1208,10 +1208,10 @@ describe('agent/issue-pickup', () => {
           if (saves === boundary && after) throw new Error('response lost');
         };
         await assert.rejects(async () => f.run({ selection: await f.select() }));
-        delete f.state.projectPickup;
+        delete f.state.issuePickup;
         Object.assign(f.state, structuredClone(disk));
         const uncertain =
-          disk.projectPickup?.operations.some((op) => op.attemptedAt !== undefined) &&
+          disk.issuePickup?.operations.some((op) => op.attemptedAt !== undefined) &&
           f.effects.writes === 0;
         f.tx.save = async () => {
           disk = structuredClone(f.state);
@@ -1244,7 +1244,7 @@ describe('agent/issue-pickup', () => {
       f.tx.runId = `scan-${f.clock.now}`;
       await f.run();
       assert.equal(f.effects.writes, 1);
-      assert.equal(pickupAuthority(f.state.projectPickup)!.receipts.length, 0);
+      assert.equal(pickupAuthority(f.state.issuePickup)!.receipts.length, 0);
     }
   });
 
@@ -1256,12 +1256,12 @@ describe('agent/issue-pickup', () => {
     f.state.records.push({
       reset: {},
       projectWork: work,
-      issueKey: pickupIssueKey(f.state.projectPickup!, f.item.nodeId),
+      issueKey: pickupIssueKey(f.state.issuePickup!, f.item.nodeId),
     });
     assert.equal((await f.run()).status, 'allowance-reached');
-    assert.equal(pickupCapacity(f.state.projectPickup), 0);
+    assert.equal(pickupCapacity(f.state.issuePickup), 0);
     assert.equal(
-      pickupAuthority(f.state.projectPickup)!.retained![0]!.assignmentNodeId,
+      pickupAuthority(f.state.issuePickup)!.retained![0]!.assignmentNodeId,
       f.events[0]!.nodeId,
     );
   });

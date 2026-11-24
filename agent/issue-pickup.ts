@@ -146,7 +146,7 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
   enrollment: IssuePickupAuthority['enrollment'];
   timezone: string;
   state: {
-    projectPickup?: IssuePickupState;
+    issuePickup?: IssuePickupState;
     records: R[];
     isolatedRecords?: Array<{ issueKey: string }>;
   };
@@ -185,8 +185,8 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
     await tx.save();
     changed = true;
   };
-  if (state.projectPickup) {
-    const retained = state.projectPickup.enrollment;
+  if (state.issuePickup) {
+    const retained = state.issuePickup.enrollment;
     if (
       retained.id !== enrollment.id ||
       retained.scope !== enrollment.scope ||
@@ -198,12 +198,12 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
       throw new Error('issue-pickup-enrollment-changed');
     enrollment = retained;
   }
-  state.projectPickup ??= {
+  state.issuePickup ??= {
     enrollment: structuredClone(enrollment),
     timezone: tx.timezone,
     operations: [],
   };
-  const journal = state.projectPickup;
+  const journal = state.issuePickup;
   const scanDigest = (live: GitHubNotificationPolicy) =>
     automationHash({
       policyDigest: issuePickupPolicyDigest(live),

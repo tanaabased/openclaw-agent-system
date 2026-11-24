@@ -41,6 +41,7 @@ export interface BackupEntry {
 export interface BackupCoverage {
   stage: 'workspace-only' | 'workspace-and-agent-state';
   openclawState: 'pending' | 'captured' | 'absent' | 'off';
+  agentSystemStorage?: 'pending' | 'captured';
   atomic: false;
   omittedPaths: string[];
   limitations: string[];
@@ -99,12 +100,21 @@ export interface LegacyWorkspaceBackupManifest extends BackupManifestBase {
   };
 }
 
+export type BackupStorage = Record<'agent' | 'installation', { size: number; sha256: string }>;
+export function storageArchivePaths(agentId: string) {
+  return {
+    agent: 'agent-system-storage/' + agentId + '.sqlite',
+    installation: 'instance/agent-system.sqlite',
+  };
+}
+
 export interface CurrentWorkspaceBackupManifest extends BackupManifestBase {
   version: 2;
   settings: BackupSettings;
   coverage: Omit<BackupCoverage, 'openclawState'> & {
     openclawState: 'captured' | 'absent' | 'off';
   };
+  storage?: BackupStorage;
   snapshot?: {
     manifest: OpenClawSnapshotManifest;
     openclawVersion: string;

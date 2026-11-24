@@ -4,7 +4,10 @@ import { createHash } from 'node:crypto';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import registerAutomationPromptHooks from '../core/automation-prompt-hook.ts';
-import { AutomationError } from '../agent/automations/automation-errors.ts';
+import {
+  AutomationError,
+  AutomationVerificationError,
+} from '../agent/automations/automation-errors.ts';
 
 function fixture(runtime = 'codex') {
   let configFailure = false;
@@ -302,6 +305,16 @@ describe('core/automation-prompt-hook', () => {
       assert.equal(failed.outcome, 'failed');
       assert.ok(!f.logs.join().includes('private'));
     }
+  });
+
+  it('should distinguish pending registration from pending prompt preparation in the failure trace', async () => {
+    const f = fixture();
+    f.fail(new AutomationVerificationError('registration-pending'));
+    await f.call('before_agent_reply');
+    const failed = f.events().at(-1);
+    assert.equal(failed.reason, 'automation-lifecycle-unverified');
+    assert.equal(failed.check, 'registration-pending');
+    assert.equal(failed.prepared, 'pending');
   });
 
   it('should hash binding correlation and preserve missing and changed field diagnostics', async () => {

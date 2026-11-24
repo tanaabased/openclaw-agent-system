@@ -67,6 +67,7 @@ jobs:
       - name: Run Leia-backed example
         shell: bash
         env:
+          OPENCLAW_CONFIG_PATH: ${{ startsWith(matrix.example, 'codex-') && format('{0}/fixtures/sqlite-storage.json', github.workspace) || env.OPENCLAW_CONFIG_PATH }}
           AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
           CODEX_HOME: ${{ runner.temp }}/codex-home
           CODEX_TOOLS_CODEX_HOME: ${{ runner.temp }}/codex-home
@@ -79,7 +80,11 @@ jobs:
         if: failure()
         shell: bash
         run: |
-          jq -s '[.. | objects | select(.providerDiagnostic? != null) | {code, providerDiagnostic, retry, retryAfter}]' "$RUNNER_TEMP/agent-system-config/tanaab/agent-system/agent-system-dispatch-v2/"*.json || true
+          state_root="$OPENCLAW_STATE_DIR"
+          if [[ "${{ matrix.example }}" == codex-notifications ]]; then
+            state_root="$RUNNER_TEMP/agent-system-codex-notifications/notification-data"
+          fi
+          node scripts/sqlite-example-state.mjs provider "$state_root" | jq -s '[.. | objects | select(.providerDiagnostic? != null) | {code, providerDiagnostic, retry, retryAfter}]' || true
           if command -v openclaw-diagnostics >/dev/null; then
             helper_dir=$(dirname "$(command -v openclaw-diagnostics)")
             if [[ -d "${SETUP_OPENCLAW_STATE_DIR:-}" ]]; then

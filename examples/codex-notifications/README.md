@@ -221,6 +221,9 @@ runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/notification-data"
 node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/active" --confirm \
   | jq -e '.status == "bound" and .preview.manifest.status == "valid"'
+node "$runtime" setup install --plugin-data "$plugin_data" | jq -e '.status == "requires-native-app-sync"'
+# clear the install receipt so the later read-only inspection can prove it does not apply setup.
+rm "$GITHUB_WORKSPACE/examples/codex-notifications/active/.setup-applied"
 node "$runtime" intake inspect --plugin-data "$plugin_data" \
   | jq -e '.status == "blocked" and .code == "intake-activation-required" and .records == []'
 if output=$(node "$runtime" intake scan --plugin-data "$plugin_data" 2>&1); then exit 1; fi
@@ -420,6 +423,7 @@ runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/disabled-notification-data"
 node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/disabled" --confirm \
   | jq -e '.status == "bound" and .preview.manifest.status == "valid"'
+node "$runtime" setup install --plugin-data "$plugin_data" | jq -e '.status == "requires-native-app-sync"'
 printf '%s\n' '{"nativeInventory":{"schemaVersion":4,"sections":[],"unavailableHosts":[],"unavailableSources":[]}}' | node "$runtime" automations plan --plugin-data "$plugin_data" \
   | jq -e '.status == "requires-native-app-sync" and any(.findings[]; .code == "automation-thread-sync-required")'
 if output=$(node "$runtime" intake scan --plugin-data "$plugin_data" 2>&1); then exit 1; fi

@@ -1,0 +1,533 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "cf38f76d-c6c2-4b07-8172-7374a8ca4729",
+  "prevIds": ["0cccee06-abdb-4603-8739-facc14a3f3a4"],
+  "ddl": [
+    {
+      "name": "automation_registrations",
+      "entityType": "tables"
+    },
+    {
+      "name": "automation_reports",
+      "entityType": "tables"
+    },
+    {
+      "name": "automation_state",
+      "entityType": "tables"
+    },
+    {
+      "name": "automation_threads",
+      "entityType": "tables"
+    },
+    {
+      "name": "direct_entries",
+      "entityType": "tables"
+    },
+    {
+      "name": "dispatch_records",
+      "entityType": "tables"
+    },
+    {
+      "name": "dispatch_state",
+      "entityType": "tables"
+    },
+    {
+      "name": "github_identity_pins",
+      "entityType": "tables"
+    },
+    {
+      "name": "intake_records",
+      "entityType": "tables"
+    },
+    {
+      "name": "intake_state",
+      "entityType": "tables"
+    },
+    {
+      "name": "notification_resets",
+      "entityType": "tables"
+    },
+    {
+      "name": "path_projections",
+      "entityType": "tables"
+    },
+    {
+      "name": "pickup_enrollments",
+      "entityType": "tables"
+    },
+    {
+      "name": "reply_drafts",
+      "entityType": "tables"
+    },
+    {
+      "table": "automation_registrations",
+      "name": "scope",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "automation_registrations",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "automation_registrations",
+      "name": "value",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "automation_reports",
+      "name": "execution_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "automation_reports",
+      "name": "value",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "automation_state",
+      "name": "scope",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "automation_state",
+      "name": "value",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "automation_threads",
+      "name": "scope",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "automation_threads",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "automation_threads",
+      "name": "value",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "direct_entries",
+      "name": "scope",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "direct_entries",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "direct_entries",
+      "name": "value",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "direct_entries",
+      "name": "kind",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "dispatch_records",
+      "name": "scope",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "dispatch_records",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "dispatch_records",
+      "name": "value",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "dispatch_state",
+      "name": "scope",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "dispatch_state",
+      "name": "value",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "github_identity_pins",
+      "name": "scope",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "github_identity_pins",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "github_identity_pins",
+      "name": "value",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "intake_records",
+      "name": "scope",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "intake_records",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "intake_records",
+      "name": "value",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "intake_state",
+      "name": "scope",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "intake_state",
+      "name": "value",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "notification_resets",
+      "name": "scope",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "notification_resets",
+      "name": "value",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "path_projections",
+      "name": "scope",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "path_projections",
+      "name": "value",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "pickup_enrollments",
+      "name": "runtime",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "pickup_enrollments",
+      "name": "scope",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "pickup_enrollments",
+      "name": "value",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "reply_drafts",
+      "name": "scope",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "reply_drafts",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "reply_drafts",
+      "name": "value",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "automation_registrations",
+      "name": "automation_registrations_pk",
+      "columns": ["scope", "id"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "automation_reports",
+      "name": "automation_reports_pk",
+      "columns": ["execution_id"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "automation_state",
+      "name": "automation_state_pk",
+      "columns": ["scope"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "automation_threads",
+      "name": "automation_threads_pk",
+      "columns": ["scope", "id"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "direct_entries",
+      "name": "direct_entries_pk",
+      "columns": ["scope", "kind", "id"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "dispatch_records",
+      "name": "dispatch_records_pk",
+      "columns": ["scope", "id"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "dispatch_state",
+      "name": "dispatch_state_pk",
+      "columns": ["scope"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "github_identity_pins",
+      "name": "github_identity_pins_pk",
+      "columns": ["scope", "id"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "intake_records",
+      "name": "intake_records_pk",
+      "columns": ["scope", "id"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "intake_state",
+      "name": "intake_state_pk",
+      "columns": ["scope"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "notification_resets",
+      "name": "notification_resets_pk",
+      "columns": ["scope"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "path_projections",
+      "name": "path_projections_pk",
+      "columns": ["scope"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "pickup_enrollments",
+      "name": "pickup_enrollments_pk",
+      "columns": ["runtime", "scope"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "reply_drafts",
+      "name": "reply_drafts_pk",
+      "columns": ["scope", "id"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    }
+  ],
+  "renames": []
+}

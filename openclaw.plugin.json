@@ -77,6 +77,13 @@
     "type": "object",
     "additionalProperties": false,
     "properties": {
+      "storage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "backend": { "type": "string", "enum": ["file", "sqlite"], "default": "file" }
+        }
+      },
       "cleanup": {
         "type": "object",
         "description": "Grace before automatic managed-task cleanup. Ownership and resource-preservation checks always apply.",

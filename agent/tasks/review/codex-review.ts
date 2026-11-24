@@ -1,6 +1,5 @@
 import { parseReviewRequest } from '../../../tools/dispatch/review-schema.ts';
 import GitHubWorkEventClient from '../../../channels/github/provider/work-event-client.ts';
-import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
 import discoverReviews from './discover-reviews.ts';
 import repositoryScope from '../../../channels/github/repository-scope.ts';
 import GitHubAssignmentClaimClient from '../../../channels/github/provider/assignment-claim-client.ts';
@@ -13,7 +12,6 @@ import {
 } from '../context/codex-task-context.ts';
 import { selectCodexTaskOwner } from '../context/codex-turn-task.ts';
 import { codexDispatchNative } from '../dispatch/codex-dispatch-native.ts';
-import CodexDispatchStore from '../dispatch/codex-dispatch-state.ts';
 import { verifyDispatchWorktree, type DispatchGit } from '../dispatch/codex-dispatch-project.ts';
 import { codexNativeHandoff } from '../dispatch/codex-dispatch-handoff.ts';
 import { codexInstanceStore } from '../dispatch/codex-assignment-claims.ts';
@@ -92,7 +90,7 @@ export default async function codexReview(
   const current = await selectCodexTaskContext(pluginData, deps, { resolvePolicy: false });
   const policy = current.manifest.github?.notifications;
   if (!policy || !policy.runtimes.includes('codex')) throw new Error('review-runtime-disabled');
-  const journal = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+  const journal = current.journal;
   const connection = deps.native
     ? undefined
     : await connectCodexThreads(current.workspace, current.codexHome);
@@ -154,7 +152,7 @@ export default async function codexReview(
         client.identity.login.toLowerCase() !== current.manifest.github.username.toLowerCase()
       )
         throw new Error('review-account-mismatch');
-      await new GitHubIdentityCache(current.store.location).resolve(policy, client, 'review');
+      await current.store.identities.resolve(policy, client, 'review');
       const fresh = async () => {
         signal.throwIfAborted();
         const next = await selectCodexTaskContext(pluginData, deps, {
@@ -446,7 +444,7 @@ export default async function codexReview(
               !pending.reviewPublication?.attempted
             ) {
               await acceptAssignmentClaim({
-                store: codexInstanceStore(pluginData),
+                store: codexInstanceStore(pluginData, deps.storageBackend),
                 client: claimClient(),
                 source: reviewClaimSource(admission),
                 nativeReceipt: found.id,
@@ -526,7 +524,7 @@ export default async function codexReview(
           }
           if (
             !operator &&
-            codexCapacity(state, policy.maxConcurrentItems, state.projectPickup).available === 0
+            codexCapacity(state, policy.maxConcurrentItems, state.issuePickup).available === 0
           )
             return { status: 'at-capacity' };
           const item = observation.item;
@@ -536,7 +534,7 @@ export default async function codexReview(
           if (admission.origin.kind === 'request') {
             const route = repositoryScope(policy, repository, 'review-request');
             const decision = await selectAssignmentClaim({
-              store: codexInstanceStore(pluginData),
+              store: codexInstanceStore(pluginData, deps.storageBackend),
               client: claimClient(),
               source: reviewClaimSource(admission),
               passId: automationHash({ caller, turnId }),

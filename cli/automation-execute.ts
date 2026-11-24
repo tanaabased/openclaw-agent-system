@@ -65,7 +65,7 @@ export default async function executeAutomation(options: {
               if (target)
                 await deliverAutomationReport({
                   target,
-                  store: options.automations.reports,
+                  store: await options.automations.reportStore(installed.manifest.agent.id),
                   hash: options.hash,
                   manifestDigest: installed.digest,
                   input: {
@@ -164,7 +164,7 @@ export default async function executeAutomation(options: {
     const reporting = reportTarget
       ? await deliverAutomationReport({
           target: reportTarget,
-          store: options.automations.reports,
+          store: await options.automations.reportStore(installed.manifest.agent.id),
           hash: options.hash,
           manifestDigest: snapshot.digest,
           input: {

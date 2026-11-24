@@ -21,7 +21,6 @@ import codexContinuationNative from './codex-continuation-native.ts';
 import runCodexDelivery from '../delivery/codex-delivery.ts';
 import { codexDispatchNative } from '../dispatch/codex-dispatch-native.ts';
 import { dispatchGit } from '../dispatch/codex-dispatch-project.ts';
-import CodexDispatchStore from '../dispatch/codex-dispatch-state.ts';
 import { selectCodexTaskContext } from '../context/codex-task-context.ts';
 import codexLiveTurn from '../../codex-live-turn.ts';
 import { connectCodexThreads } from '../../codex-thread-client.ts';
@@ -56,7 +55,7 @@ async function runCodexContinuationScoped(
   const retryDenied = input.action === 'retry-denied';
   const retry = input.action === 'retry' || retryDenied;
   if (!caller) throw new Error('continuation-caller-required');
-  const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+  const store = current.journal;
   const localOwner = (await store.read()).records.find(
     (record) =>
       record.id === input.id &&
@@ -67,7 +66,7 @@ async function runCodexContinuationScoped(
     ? { sourceThreadId: localOwner.sourceThreadId }
     : await (deps.activation ?? inspectCodexDispatchActivation)(
         pluginData,
-        { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+        current.automationBinding,
         false,
         true,
         input.action === 'delivery' ? 'publication' : 'implementation',
@@ -243,8 +242,7 @@ async function runCodexContinuationScoped(
       { ...input.delivery, id: input.id },
       {
         ...deps.deliveryDependencies,
-        codexHome: current.codexHome,
-        inspectBinding: deps.inspectBinding,
+        ...current.automationBinding,
         threadId: caller,
         schedule,
         authorizeSchedule: async () => {
@@ -265,7 +263,7 @@ async function runCodexContinuationScoped(
               ? { sourceThreadId: record.sourceThreadId }
               : await (deps.activation ?? inspectCodexDispatchActivation)(
                   pluginData,
-                  { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+                  current.automationBinding,
                   false,
                   true,
                   'publication',

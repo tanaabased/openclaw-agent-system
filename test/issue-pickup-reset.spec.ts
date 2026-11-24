@@ -12,7 +12,7 @@ describe('agent/issue-pickup-reset', () => {
     it(`should discard discovery and preserve allowance and only unconsumed receipts in ${runtime}`, async () => {
       const f = fixture(runtime);
       assert.equal((await f.run({ selection: await f.select() })).status, 'assigned');
-      const original = structuredClone(f.state.projectPickup!);
+      const original = structuredClone(f.state.issuePickup!);
       original.operations.push({
         ...structuredClone(original.operations[0]!),
         id: 'scan',
@@ -34,7 +34,7 @@ describe('agent/issue-pickup-reset', () => {
         },
       ])!;
       assert.deepEqual(consumed.operations, []);
-      f.state.projectPickup = consumed;
+      f.state.issuePickup = consumed;
       f.tx.runId = 'after-reset';
       assert.equal((await f.run()).status, 'allowance-reached');
       assert.equal(f.effects.writes, 1);
@@ -42,7 +42,7 @@ describe('agent/issue-pickup-reset', () => {
       f.clock.now += 86400000;
       f.tx.runId = 'tomorrow';
       await f.run();
-      assert.deepEqual(f.state.projectPickup.charges, []);
+      assert.deepEqual(f.state.issuePickup.charges, []);
     });
 
     it(`should reconcile retained uncertain writes without assigning again in ${runtime}`, async () => {
@@ -53,9 +53,9 @@ describe('agent/issue-pickup-reset', () => {
         throw new Error('response lost');
       };
       assert.equal((await f.run({ selection: await f.select() })).status, 'attempted');
-      const pending = structuredClone(f.state.projectPickup!.operations[0]!);
-      f.state.projectPickup = resetIssuePickup(f.state.projectPickup, [])!;
-      const retained = f.state.projectPickup.operations[0]!;
+      const pending = structuredClone(f.state.issuePickup!.operations[0]!);
+      f.state.issuePickup = resetIssuePickup(f.state.issuePickup, [])!;
+      const retained = f.state.issuePickup.operations[0]!;
       assert.deepEqual(retained.beforeEvents, pending.beforeEvents);
       assert.equal(retained.attemptedAt, pending.attemptedAt);
       assert.deepEqual(retained.selected, pending.selected);
@@ -63,7 +63,7 @@ describe('agent/issue-pickup-reset', () => {
       assert.equal((await f.run()).status, 'assigned');
       assert.equal((await f.run()).status, 'allowance-reached');
       assert.equal(f.effects.writes, 1);
-      assert.equal(pickupAuthority(f.state.projectPickup)?.retained?.length, 1);
+      assert.equal(pickupAuthority(f.state.issuePickup)?.retained?.length, 1);
     });
   }
 });

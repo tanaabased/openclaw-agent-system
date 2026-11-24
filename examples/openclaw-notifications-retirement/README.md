@@ -30,6 +30,7 @@ disposal, active execution, helper ownership and explicit retirement of open wor
 ```bash
 # should prepare the packed plugin and strict notification fixture
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --needs-ssh-key --yolo
+openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 openclaw-aimock prepare --scenario openclaw-notifications-retirement
 openclaw config set skills.workshop.autonomous.mode off
 # keep unrelated nightly memory turns out of the strict notification fixture
@@ -102,13 +103,13 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 60
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for worktree-ready --timeout 600 --json | tee "$TMPDIR/notification-plan.json" | jq -e '.status == "completed" and (.observation.items | length) == 1'
 conversation=$(jq -er .observation.items[0].workflow.conversation "$TMPDIR/notification-plan.json")
-jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
+node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' > "$TMPDIR/notification-dispatch-before.json"
 run_id=$(jq -er '(.nativeTurns | map(select(.role == "assessment")) | last | .turn).runId' "$TMPDIR/notification-dispatch-before.json")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 # reconcile native completion before a later run selects feedback for this issue
 reconcile_run=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$reconcile_run" 600000
-jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
+node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' > "$TMPDIR/notification-dispatch-before.json"
 openclaw agent-system tool worktree -- list > "$TMPDIR/notification-worktrees-before.json"
 
 # should retain a finished native helper in the task checkout
@@ -151,7 +152,7 @@ openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-b
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/tanaabot"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
-jq -es --slurpfile before "$TMPDIR/notification-dispatch-before.json" '[.[].records[] | select(.id == $before[0].id)] | length == 1 and .[0].retirement.code == "retirement-native-work-unresolved"' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -es --slurpfile before "$TMPDIR/notification-dispatch-before.json" '[.[].records[] | select(.id == $before[0].id)] | length == 1 and .[0].retirement.code == "retirement-native-work-unresolved"'
 touch "$TMPDIR/retirement-queue-release"
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" retirement-queue-hold 600000
 sleep 61
@@ -173,7 +174,7 @@ run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" 
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for worktree-ready --timeout 600 --json > "$TMPDIR/notification-unavailable-plan.json"
 conversation=$(jq -er .observation.items[0].workflow.conversation "$TMPDIR/notification-unavailable-plan.json")
-jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-unavailable-before.json"
+node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' > "$TMPDIR/notification-unavailable-before.json"
 run_id=$(jq -er '(.nativeTurns | map(select(.role == "assessment")) | last | .turn).runId' "$TMPDIR/notification-unavailable-before.json")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 
@@ -186,7 +187,7 @@ leaf=$(openclaw gateway call chat.history --params "$(jq -nc --arg key "$convers
 params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg receipt "$receipt" '{sessionKey:$key,agentId:"retirement-tanaabot",sessionId:$session,message:("Retire this managed task now " + $receipt),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"notification-manual-retire"}')"
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; const result = await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"}); console.log(JSON.stringify(result));' "$params" | jq -e '.runId == "notification-manual-retire"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-manual-retire 600000
-jq -es --arg id "$receipt" '[.[].records[] | select(.id == $id)] | length == 1 and (.[0] | .retirement.reason == "operator-requested" and .retirement.eligibleAt == .retirement.operatorRequest.at and .retirement.code == "retirement-native-work-unresolved" and .retirement.archivedAt == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -es --arg id "$receipt" '[.[].records[] | select(.id == $id)] | length == 1 and (.[0] | .retirement.reason == "operator-requested" and .retirement.eligibleAt == .retirement.operatorRequest.at and .retirement.code == "retirement-native-work-unresolved" and .retirement.archivedAt == null)'
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$(jq -er .number "$TMPDIR/notification-unavailable-issue.json")" | jq -e '.state == "open" and any(.assignees[]; .login == "tanaabot")'
 
 # should leave a dirty managed checkout after deleting its exact completed session
@@ -216,7 +217,7 @@ openclaw agent-system tool worktree -- list | jq -e --arg path "$worktree" 'all(
 ```bash
 # should enroll paused pickup after retirement while retaining consumed assignment evidence
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/tanaabot"
-jq -es --slurpfile before "$TMPDIR/notification-dispatch-before.json" 'any(.[].observedAssignments[]?; .consumedBy == $before[0].id)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-intake-v2/"github-intake-*.json
+node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" intake | jq -es --slurpfile before "$TMPDIR/notification-dispatch-before.json" 'any(.[].observedAssignments[]?; .consumedBy == $before[0].id)'
 milestone=$(GH_TOKEN="$GH_TOKEN_TANAABOT" gh api --method POST repos/tanaabased/big-test-bucket/milestones -f "title=agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-reset" --jq .number)
 printf '%s\n' "$milestone" > "$TMPDIR/reset-milestone"
 node --input-type=module - "$milestone" <<'NODE'
@@ -255,8 +256,8 @@ pickup=$(jq -er '.jobs[] | select(.id == "github-issue-pickup") | .routing | sub
 test "$pickup" != "$old_pickup"
 coordinator=$(jq -er '.jobs[] | select(.id == "github-issue-assignment") | .routing | sub("^session:"; "")' "$TMPDIR/reset-automations-after.json")
 openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$coordinator" '{key:$key}')" --json | jq -e '.session.category == "AGENT SYSTEM"'
-jq -es 'all(.[]; (.records | length) == 0 and .resetGeneration != null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
-jq -es --slurpfile before "$TMPDIR/notification-dispatch-before.json" 'all(.[].observedAssignments[]?; .consumedBy != $before[0].id)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-intake-v2/"github-intake-*.json
+node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -es 'all(.[]; (.records | length) == 0 and .resetGeneration != null)'
+node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" intake | jq -es --slurpfile before "$TMPDIR/notification-dispatch-before.json" 'all(.[].observedAssignments[]?; .consumedBy != $before[0].id)'
 openclaw agent-system notifications status --agent retirement-tanaabot --json | jq -e '.baseline.status == "ready" and (.items | length) == 0'
 ```
 

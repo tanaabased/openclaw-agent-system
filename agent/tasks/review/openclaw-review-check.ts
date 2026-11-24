@@ -1,9 +1,7 @@
 import GitHubWorkEventClient from '../../../channels/github/provider/work-event-client.ts';
-import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
 import type { AgentManifest } from '../../../manifest/types.ts';
 import { selectOpenClawTaskContext } from '../context/openclaw-task-context.ts';
 import type { OpenClawDispatchDependencies } from '../dispatch/openclaw-dispatch-context.ts';
-import OpenClawDispatchStore from '../dispatch/openclaw-dispatch-state.ts';
 import { scanReviewFeedback } from './openclaw-review-feedback.ts';
 import workflowFailure from '../workflow-failure.ts';
 import repositoryScope from '../../../channels/github/repository-scope.ts';
@@ -30,8 +28,8 @@ export default async function openClawReviewCheck(
     resolvePolicy: false,
   });
   const scope = current.store.location.scope;
-  await assertNotificationManagement(deps.root, scope);
-  const journal = new OpenClawDispatchStore(deps.root, scope);
+  await assertNotificationManagement(deps.root, scope, current.store.agentStorage);
+  const journal = current.dispatch(deps.root);
   const state = await journal.read();
   const records = state.records.filter((r) => r.reviewAdmission && !r.reset && !r.supersededBy);
   const pending = new Map<string, ReviewAdmission>(
@@ -43,7 +41,7 @@ export default async function openClawReviewCheck(
     client.identity.login.toLowerCase() !== selected.username.toLowerCase()
   )
     throw new Error('review-account-mismatch');
-  await new GitHubIdentityCache(current.store.location).resolve(policy, client, 'review');
+  await current.store.identities.resolve(policy, client, 'review');
   const obstacles = await discoverReviews(
     client,
     policy,
@@ -83,12 +81,7 @@ export default async function openClawReviewCheck(
       if ((observed.status === 'closed' && r?.request) || r?.retirement)
         return { status: 'ready', changed: true, obstacles };
       if (observed.status === 'ready' && r?.sessionCreation?.verified) {
-        await new GitHubIdentityCache(current.store.location).resolve(
-          policy,
-          client,
-          'review-feedback',
-          true,
-        );
+        await current.store.identities.resolve(policy, client, 'review-feedback', true);
         if (await scanReviewFeedback(r, deps, client, policy))
           return { status: 'ready', changed: true, obstacles };
       }

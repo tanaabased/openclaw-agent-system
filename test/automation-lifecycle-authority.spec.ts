@@ -146,7 +146,10 @@ describe('agent/automation-lifecycle-authority', () => {
     await verify();
     declared.enabled = false;
     native.enabled = false;
-    await assert.rejects(verify());
+    await assert.rejects(verify(), {
+      code: 'automation-lifecycle-unverified',
+      check: 'declaration-disabled',
+    });
     await verifyAutomationLifecycleRun(
       service,
       scheduler,

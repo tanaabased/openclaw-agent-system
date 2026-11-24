@@ -12,7 +12,6 @@ import codexAssessmentSkill from '../assessment/codex-assessment-skill.ts';
 import codexDirectInput from '../../codex-direct-input.ts';
 import { withNative } from '../dispatch/codex-dispatch-context.ts';
 import { dispatchGit } from '../dispatch/codex-dispatch-project.ts';
-import CodexDispatchStore from '../dispatch/codex-dispatch-state.ts';
 import type { CodexFeedbackDependencies } from '../feedback/codex-feedback.ts';
 import { selectCodexTaskContext } from './codex-task-context.ts';
 import { connectCodexThreads } from '../../codex-thread-client.ts';
@@ -43,10 +42,7 @@ export default async function codexEntryContext<T>(
     current.codexHome,
   );
   try {
-    const journal = new CodexDispatchStore(
-      current.store.location.root,
-      current.store.location.scope,
-    );
+    const journal = current.journal;
     const managed: AssessmentEntryDependencies['managed'] = async (target) => {
       const state = await journal.read();
       const admitted = await current.store.read();
@@ -128,6 +124,7 @@ export default async function codexEntryContext<T>(
       entry.manifest = fresh.manifest;
     };
     const entry: AssessmentEntryDependencies = {
+      sessionStorage: current.sessionStorage,
       operator: true,
       root: pluginData,
       currentTarget,

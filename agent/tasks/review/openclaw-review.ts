@@ -7,7 +7,6 @@ import { operatorInputEvent } from '../../openclaw-session-input.ts';
 import workflowFailure from '../workflow-failure.ts';
 import { parseReviewRequest } from '../../../tools/dispatch/review-schema.ts';
 import GitHubWorkEventClient from '../../../channels/github/provider/work-event-client.ts';
-import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
 import type { AgentManifest } from '../../../manifest/types.ts';
 import type { DispatchAuthority } from '../../../credentials/session-dispatch.ts';
 import createIssueSession, {
@@ -17,7 +16,6 @@ import createIssueSession, {
 import { openClawSkillResolver } from '../../openclaw-skill.ts';
 import { automationHash } from '../../automation-hash.ts';
 import type { OpenClawTurn } from '../../openclaw-turn-state.ts';
-import OpenClawDispatchStore from '../dispatch/openclaw-dispatch-state.ts';
 import { selectOpenClawTaskContext } from '../context/openclaw-task-context.ts';
 import reviewPolicy from './review-policy.ts';
 import reviewContext, { reviewerInstructions, reviewTarget } from './review-context.ts';
@@ -61,8 +59,8 @@ export default async function openClawReview(
   const selected = reviewPolicy(manifest, 'openclaw', true);
   if (!selected) throw new Error('review-runtime-disabled');
   const { policy } = selected;
-  const journal = new OpenClawDispatchStore(deps.root, current.store.location.scope);
-  await assertNotificationManagement(deps.root, journal.scope);
+  const journal = current.dispatch(deps.root);
+  await assertNotificationManagement(deps.root, journal.scope, current.store.agentStorage);
   const operatorInput =
     operator &&
     ['launch', 'retire', 'next', 'prepare', 'reconcile'].includes(input.operation) &&
@@ -139,8 +137,8 @@ export default async function openClawReview(
       throw new Error('review-provider-binding-required');
     if (client.identity.login.toLowerCase() !== selected.username.toLowerCase())
       throw new Error('review-account-mismatch');
-    await new GitHubIdentityCache(current.store.location).resolve(policy, client, 'review');
-    await new GitHubIdentityCache(current.store.location).hydrate(policy);
+    await current.store.identities.resolve(policy, client, 'review');
+    await current.store.identities.hydrate(policy);
     const manifestDigest = automationHash([
       reviewPolicy(manifest, 'openclaw', true)!.digest,
       manifest.models,
@@ -158,9 +156,7 @@ export default async function openClawReview(
         loaded.manifest.github?.username !== selected.username
       )
         throw new Error('review-policy-changed');
-      await new GitHubIdentityCache(current.store.location).hydrate(
-        loaded.manifest.github?.notifications,
-      );
+      await current.store.identities.hydrate(loaded.manifest.github?.notifications);
       const live = reviewPolicy(loaded.manifest, 'openclaw', true);
       if (
         !live ||
@@ -271,12 +267,7 @@ export default async function openClawReview(
           continue;
         }
         if (record.sessionCreation?.verified) {
-          await new GitHubIdentityCache(current.store.location).resolve(
-            policy,
-            client,
-            'review-feedback',
-            true,
-          );
+          await current.store.identities.resolve(policy, client, 'review-feedback', true);
           const event = await scanReviewFeedback(record, deps, client, policy);
           if (record.feedback) await save();
           if (event && record.reviewObservation === observed.fingerprint) {
@@ -323,7 +314,7 @@ export default async function openClawReview(
         if (!record.request) {
           if (admission.origin.kind === 'request') {
             if (
-              openClawCapacity(state, policy.maxConcurrentItems, state.projectPickup).available < 1
+              openClawCapacity(state, policy.maxConcurrentItems, state.issuePickup).available < 1
             ) {
               if (target) return { status: 'at-capacity', target };
               continue;
@@ -338,8 +329,7 @@ export default async function openClawReview(
               mode: route.decision,
               eligibleInstanceIds: route.eligibleInstanceIds,
               hasCapacity:
-                openClawCapacity(state, policy.maxConcurrentItems, state.projectPickup).available >
-                0,
+                openClawCapacity(state, policy.maxConcurrentItems, state.issuePickup).available > 0,
             });
             if (!['local', 'owned'].includes(decision.status)) {
               if (target) return { ...decision, target: url };

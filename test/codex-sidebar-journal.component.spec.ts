@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 
+import { bindSqliteInstallation } from '../agent/storage/agent-database.ts';
+import codexStorageLocation, { codexSidebarJournal } from '../agent/storage/codex-storage.ts';
 import CodexSidebarJournal from '../agent/codex-sidebar-journal.ts';
 import codexSidebarPlacement from '../agent/codex-sidebar-placement.ts';
 
@@ -57,23 +59,39 @@ describe('agent/codex-sidebar-journal', () => {
     assert.equal((await journal.apply('workspace-a', current, 'chat')).status, 'done');
     assert.equal(current.sections[0]!.name, 'operations');
   });
-  it('should serialize creates across workspaces and recover lost responses without replay', async () => {
-    const a = new CodexSidebarJournal(root, 'profile', 'operations');
-    const b = new CodexSidebarJournal(root, 'profile', 'OPERATIONS');
-    const results = await Promise.all([
-      a.apply('a', inventory(), 'chat-a'),
-      b.apply('b', inventory(), 'chat-b'),
-    ]);
-    assert.equal(results.filter(({ status }) => status === 'native-action').length, 1);
-    const pending = (await a.read()).pending!;
-    const recovered = await b.apply('b', inventory([section('created')]), 'chat-b');
-    assert.equal(recovered.status, 'native-action');
-    if (recovered.status !== 'native-action') return;
-    assert.equal(recovered.request.tool, 'move_thread_to_sidebar_section');
-    assert.equal((await a.read()).sectionId, 'created');
-    assert.notEqual((await a.read()).pending!.digest, pending.digest);
-    assert.equal((await a.apply('a', inventory(), 'chat-a')).status, 'incomplete');
-  });
+  for (const backend of ['file', 'sqlite'] as const) {
+    it(`should serialize creates across workspaces and recover lost responses in ${backend}`, async () => {
+      const installation = bindSqliteInstallation(codexStorageLocation(root));
+      if (backend === 'sqlite') await installation.install();
+      const a = await codexSidebarJournal(root, 'profile', 'operations', backend);
+      const b = await codexSidebarJournal(root, 'profile', 'OPERATIONS', backend);
+      const results = await Promise.all([
+        a.apply('a', inventory(), 'chat-a'),
+        b.apply('b', inventory(), 'chat-b'),
+      ]);
+      assert.equal(results.filter(({ status }) => status === 'native-action').length, 1);
+      const pending = (await a.read()).pending!;
+      if (backend === 'sqlite') {
+        const { sidebarPlacements } = await installation.read({
+          sidebarPlacements: { scope: a.scope },
+        });
+        assert.deepEqual(sidebarPlacements[0]?.value.pending, pending);
+        assert.ok(!(await readdir(root)).some((name) => name.endsWith('.json')));
+        assert.equal(
+          (await (await codexSidebarJournal(root, 'other-profile', 'operations', backend)).read())
+            .pending,
+          undefined,
+        );
+      }
+      const recovered = await b.apply('b', inventory([section('created')]), 'chat-b');
+      assert.equal(recovered.status, 'native-action');
+      if (recovered.status !== 'native-action') return;
+      assert.equal(recovered.request.tool, 'move_thread_to_sidebar_section');
+      assert.equal((await a.read()).sectionId, 'created');
+      assert.notEqual((await a.read()).pending!.digest, pending.digest);
+      assert.equal((await a.apply('a', inventory(), 'chat-a')).status, 'incomplete');
+    });
+  }
   for (const changed of ['deleted', 'renamed']) {
     it(`should reconcile a ${changed} confirmed group without replaying an unresolved creation`, async () => {
       const journal = new CodexSidebarJournal(root, 'profile', 'operations');

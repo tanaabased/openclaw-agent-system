@@ -1,3 +1,6 @@
+import { bindSqliteInstallation } from '../agent/storage/agent-database.ts';
+import codexStorageLocation from '../agent/storage/codex-storage.ts';
+import type { RuntimeStorageOptions } from '../agent/storage/backend.ts';
 import assert from 'node:assert/strict';
 import { chmod, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -20,8 +23,12 @@ describe('tools/git/repository-service', () => {
   afterEach(async () => {
     await rm(fixture.workspaceDir, { recursive: true, force: true });
   });
-  const prepare = async (repositoryId = id, remote = source) => {
-    const service = new GitRepositoryService();
+  const prepare = async (
+    repositoryId = id,
+    remote = source,
+    storage: RuntimeStorageOptions = {},
+  ) => {
+    const service = new GitRepositoryService(storage);
     const lease = await service.acquire(fixture.context, fixture.layout, repositoryId, remote);
     try {
       return await withPrivateStateLock(lease, () =>
@@ -33,9 +40,14 @@ describe('tools/git/repository-service', () => {
   };
 
   it('should clone once at the configured name and recover through a new service', async () => {
-    const first = await prepare();
+    const location = codexStorageLocation(fixture.workspaceDir);
+    const db = bindSqliteInstallation(location);
+    await db.install();
+    const storage = { sqliteInstallation: location, storageBackend: 'sqlite' as const };
+    const first = await prepare(id, source, storage);
+    assert.equal((await db.readRepository(fixture.layout.repositoryRoot, id))?.path, first.path);
     assert.equal(first.path, join(fixture.layout.workingDirectory!, 'repo'));
-    const again = await prepare();
+    const again = await prepare(id, source, storage);
     assert.equal(again.path, first.path);
     assert.equal(fixture.git.calls.filter(({ argv }) => argv[0] === 'clone').length, 1);
     assert.equal(
@@ -43,8 +55,9 @@ describe('tools/git/repository-service', () => {
       false,
     );
     assert.equal(
-      (await new GitRepositoryService().workingRepositories(fixture.context, fixture.layout))[0]!
-        .path,
+      (
+        await new GitRepositoryService(storage).workingRepositories(fixture.context, fixture.layout)
+      )[0]!.path,
       first.path,
     );
   });

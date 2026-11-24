@@ -1,3 +1,6 @@
+import codexStorageLocation from '../agent/storage/codex-storage.ts';
+import { bindSqliteInstallation } from '../agent/storage/agent-database.ts';
+import { bindInstanceStore } from '../agent/storage/pickup-backend.ts';
 import recoverAssignmentClaim from '../agent/tasks/dispatch/assignment-claim-recovery.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -222,6 +225,30 @@ describe('agent/assignment-claim', () => {
     assert.deepEqual(results.map((result) => result.status).sort(), ['other-owner', 'owned']);
     assert.equal(comments.length, 1);
     assert.ok(results.every((result) => result.winnerId === comments[0]!.databaseId));
+  });
+
+  it('should retain one assignment winner across two sqlite installations and a restart', async () => {
+    const locations = ['a', 'b'].map((name) => codexStorageLocation(join(root, name)));
+    const reopen = () => locations.map((location) => bindInstanceStore(location, 'sqlite'));
+    await Promise.all(locations.map((location) => bindSqliteInstallation(location).install()));
+    stores = reopen();
+    const pool = await Promise.all(
+      stores.map(async (store) => (await store.identity()).instanceId),
+    );
+    assert.ok((await race(pool)).every((decision) => decision.status === 'pending'));
+    stores = reopen();
+    const results = await Promise.all(stores.map((_, i) => pass(i, 'second', {}, true, pool)));
+    assert.deepEqual(results.map((result) => result.status).sort(), ['other-owner', 'owned']);
+    const winner = results.findIndex((result) => result.status === 'owned');
+    const store = stores[winner]!;
+    const before = await store.read();
+    const rotated = await store.rotate(pool[winner]!);
+    stores = reopen();
+    const after = await stores[winner]!.read();
+    assert.equal(after?.instanceId, rotated.instanceId);
+    assert.deepEqual(after?.claims, before?.claims);
+    assert.equal((await pass(winner)).code, 'claim-instance-rotated');
+    assert.equal(comments.length, 1);
   });
 
   it('should elect one reviewer for the same real review request through the shared claim owner', async () => {

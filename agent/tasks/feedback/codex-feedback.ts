@@ -2,7 +2,6 @@ import { withDispatchTask } from '../dispatch/dispatch-task-scope.ts';
 import { resolve } from 'node:path';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
-import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
 import {
   isReviewFeedback,
   type GitHubCanonicalFeedback,
@@ -18,7 +17,7 @@ import type { CodexDispatchDependencies } from '../dispatch/codex-dispatch-conte
 import { codexDispatchNative } from '../dispatch/codex-dispatch-native.ts';
 import unsubmittedNativeRequest from '../dispatch/codex-dispatch-unsubmitted.ts';
 import { codexNativeHandoff } from '../dispatch/codex-dispatch-handoff.ts';
-import CodexDispatchStore, { type DispatchRecord } from '../dispatch/codex-dispatch-state.ts';
+import { type DispatchRecord } from '../dispatch/codex-dispatch-state.ts';
 import type { FeedbackEvent } from './codex-feedback-state.ts';
 import authorizeCodexFeedback from './codex-feedback-authority.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';
@@ -93,7 +92,7 @@ async function runCodexFeedbackScoped(
     reviewPolicy(current.manifest, 'codex') ??
     (admittedState ? retainedIntakePolicy(current.manifest, admittedState, 'codex') : undefined);
   const policy = selected?.policy;
-  const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+  const store = current.journal;
   if (!policy || !selected) return { status: 'disabled' };
   current.policy = selected;
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
@@ -112,13 +111,7 @@ async function runCodexFeedbackScoped(
     );
   const activation = nativeContext
     ? undefined
-    : await activationFor(
-        pluginData,
-        { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
-        false,
-        true,
-        'feedback',
-      );
+    : await activationFor(pluginData, current.automationBinding, false, true, 'feedback');
   const schedule = activation?.schedule;
   const workflow =
     schedule?.current.workflow ??
@@ -182,7 +175,7 @@ async function runCodexFeedbackScoped(
     if (scans.length) {
       const fresh = await activationFor(
         pluginData,
-        { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+        current.automationBinding,
         false,
         true,
         'feedback',
@@ -238,7 +231,7 @@ async function runCodexFeedbackScoped(
             current.workspace,
             signal,
           );
-          await new GitHubIdentityCache(current.store.location).resolve(
+          await current.store.identities.resolve(
             current.manifest.github?.notifications,
             connection.client,
             workflow === 'review-request' ? 'review-feedback' : 'feedback',
@@ -420,7 +413,7 @@ async function runCodexFeedbackScoped(
               if (!nativeContext) {
                 const fresh = await activationFor(
                   pluginData,
-                  { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+                  current.automationBinding,
                   false,
                   true,
                   'feedback',

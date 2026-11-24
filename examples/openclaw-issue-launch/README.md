@@ -32,6 +32,7 @@ same-repository draft PR through an authorized update to that original PR.
 ```bash
 # should prepare the packed plugin and strict manual-launch fixture
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --needs-ssh-key --yolo
+openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 openclaw-aimock prepare --scenario openclaw-issue-launch
 openclaw config set skills.workshop.autonomous.mode off
 openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --strict-json
@@ -77,8 +78,8 @@ import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, writeFileSync, realpathSync } from 'node:fs';
 import { setTimeout } from 'node:timers/promises';
 import { callGatewayFromCli } from 'openclaw/plugin-sdk/gateway-runtime';
-const root = process.env.XDG_CONFIG_HOME + '/tanaab/agent-system/agent-system-dispatch-v2';
-const records = () => readdirSync(root).filter(name => name.startsWith('openclaw-dispatch-') && name.endsWith('.json')).flatMap(name => JSON.parse(readFileSync(root + '/' + name, 'utf8')).records);
+const { readExampleState } = await import(process.env.GITHUB_WORKSPACE + '/scripts/sqlite-example-state.mjs');
+const records = () => readExampleState('dispatch').flatMap((journal) => journal.records);
 let record;
 const deadline = Date.now() + 300000;
 while (Date.now() < deadline) {
@@ -115,8 +116,8 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" manual-launc
 node --input-type=module <<'NODE'
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
-const root = process.env.XDG_CONFIG_HOME + '/tanaab/agent-system/agent-system-dispatch-v2';
-const records = readdirSync(root).filter(name => name.startsWith('openclaw-dispatch-') && name.endsWith('.json')).flatMap(name => JSON.parse(readFileSync(root + '/' + name, 'utf8')).records);
+const { readExampleState } = await import(process.env.GITHUB_WORKSPACE + '/scripts/sqlite-example-state.mjs');
+const records = readExampleState('dispatch').flatMap((journal) => journal.records);
 const previous = JSON.parse(readFileSync(process.env.TMPDIR + '/manual-launch-evidence.json', 'utf8'));
 assert.equal(records.length, 2);
 const original = records.find(record => record.id === previous.id);
@@ -154,9 +155,9 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { setTimeout } from 'node:timers/promises';
-const root = process.env.XDG_CONFIG_HOME + '/tanaab/agent-system/agent-system-dispatch-v2';
+const { readExampleState } = await import(process.env.GITHUB_WORKSPACE + '/scripts/sqlite-example-state.mjs');
 const pr = JSON.parse(readFileSync(process.env.TMPDIR + '/manual-pr.json', 'utf8'));
-const records = () => readdirSync(root).filter(name => name.startsWith('openclaw-dispatch-') && name.endsWith('.json')).flatMap(name => JSON.parse(readFileSync(root + '/' + name, 'utf8')).records).filter(record => record.manualIssue?.issue.nodeId === pr.node_id);
+const records = () => readExampleState('dispatch').flatMap((journal) => journal.records).filter(record => record.manualIssue?.issue.nodeId === pr.node_id);
 let record;
 const deadline = Date.now() + 300000;
 while (Date.now() < deadline) {
@@ -199,9 +200,9 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" manual-pr-re
 node --input-type=module <<'NODE'
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
-const root = process.env.XDG_CONFIG_HOME + '/tanaab/agent-system/agent-system-dispatch-v2';
+const { readExampleState } = await import(process.env.GITHUB_WORKSPACE + '/scripts/sqlite-example-state.mjs');
 const before = JSON.parse(readFileSync(process.env.TMPDIR + '/manual-pr-launch.json', 'utf8'));
-const records = readdirSync(root).filter(name => name.startsWith('openclaw-dispatch-') && name.endsWith('.json')).flatMap(name => JSON.parse(readFileSync(root + '/' + name, 'utf8')).records).filter(record => record.manualIssue?.issue.nodeId === before.manualIssue.issue.nodeId);
+const records = readExampleState('dispatch').flatMap((journal) => journal.records).filter(record => record.manualIssue?.issue.nodeId === before.manualIssue.issue.nodeId);
 assert.equal(records.length, 1);
 for (const field of ['id', 'threadId', 'worktree']) assert.equal(records[0][field], before[field]);
 assert.equal(records[0].delivery.pullRequest.pullRequestNodeId, before.manualIssue.issue.nodeId);

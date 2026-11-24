@@ -6,13 +6,13 @@ import {
   default as automationReport,
 } from '../agent/automations/automation-report.ts';
 import type AutomationReportStore from '../agent/automations/automation-report-store.ts';
-import type { AutomationReportRecord } from '../agent/automations/automation-report-store.ts';
+import type AutomationService from '../agent/automations/automation-service.ts';
 
 /** only retained native run identities select a formatter turn; prompt prose never does. */
 export default function registerAutomationReportHooks(
   api: Pick<OpenClawPluginApi, 'on' | 'logger'>,
-  store: AutomationReportStore,
-  reconcile: (id?: string) => Promise<void>,
+  reports: Pick<AutomationService, 'reportStore' | 'reportStores'>,
+  reconcile: (store: AutomationReportStore, id: string) => Promise<void>,
 ) {
   async function selected(
     context: {
@@ -22,7 +22,7 @@ export default function registerAutomationReportHooks(
       sessionId?: string;
     },
     hook?: string,
-  ): Promise<AutomationReportRecord | undefined> {
+  ) {
     if (!context.runId || !/^[a-f0-9-]{36}$/.test(context.runId)) {
       if (hook)
         api.logger.debug?.(
@@ -30,6 +30,8 @@ export default function registerAutomationReportHooks(
         );
       return;
     }
+    if (!context.agentId) return;
+    const store = await reports.reportStore(context.agentId);
     const record = await store.read(context.runId);
     if (hook)
       api.logger.debug?.(
@@ -49,11 +51,12 @@ export default function registerAutomationReportHooks(
       record.target.sessionId !== context.sessionId
     )
       return;
-    return record;
+    return { record, store };
   }
   api.on('before_prompt_build', async (_event, context) => {
-    const record = await selected(context, 'before_prompt_build');
-    if (!record) return;
+    const match = await selected(context, 'before_prompt_build');
+    if (!match) return;
+    const { record, store } = match;
     await store.update(record.executionId, (current) => {
       current.guarded = true;
     });
@@ -80,8 +83,9 @@ export default function registerAutomationReportHooks(
     };
   });
   api.on('llm_output', async (event, context) => {
-    const record = await selected({ ...context, runId: event.runId });
-    if (!record) return;
+    const match = await selected({ ...context, runId: event.runId });
+    if (!match) return;
+    const { record, store } = match;
     await store.update(record.executionId, (current) => {
       current.effective = {
         model: event.resolvedRef ?? `${event.provider}/${event.model}`,
@@ -91,11 +95,12 @@ export default function registerAutomationReportHooks(
     });
   });
   api.on('before_agent_finalize', async (event, context) => {
-    const record = await selected(
+    const match = await selected(
       { ...context, runId: context.runId ?? event.runId },
       'before_agent_finalize',
     );
-    if (!record) return;
+    if (!match) return;
+    const { record } = match;
     const valid = automationReportCardValid(event.lastAssistantMessage ?? '', record.input);
     api.logger.debug?.(
       `automation report hook: ${JSON.stringify({
@@ -119,19 +124,32 @@ export default function registerAutomationReportHooks(
     };
   });
   api.on('agent_end', async (event, context) => {
-    const record = await selected({ ...context, runId: context.runId ?? event.runId });
-    if (!record) return;
+    const match = await selected({ ...context, runId: context.runId ?? event.runId });
+    if (!match) return;
+    const { record, store } = match;
     if (!event.success)
       await store.update(record.executionId, (current) => {
         current.state = 'failed';
         current.code = 'automation-report-model-failed';
       });
-    await reconcile(record.executionId);
+    await reconcile(store, record.executionId);
   });
+  async function recover() {
+    for await (const store of reports.reportStores()) {
+      try {
+        for (const id of await store.recoveryIds()) await reconcile(store, id);
+      } catch {
+        api.logger.warn('automation-report: recovery-unavailable');
+      }
+      try {
+        await store.prune();
+      } catch {
+        api.logger.warn('automation-report: cleanup-unavailable');
+      }
+    }
+  }
   api.on('cron_changed', async (event) => {
-    if (event.action === 'finished') await reconcile();
+    if (event.action === 'finished') await recover();
   });
-  api.on('cron_reconciled', async () => {
-    await reconcile();
-  });
+  api.on('cron_reconciled', recover);
 }

@@ -5,6 +5,9 @@ import { Value } from 'typebox/value';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
 import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
 import PrivateStateFile from '../core/private-state-file.ts';
+import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
+import nodeErrorCode from '../utils/node-error-code.ts';
+import type { BoundStorage } from './storage/storage-lifecycle.ts';
 import managedGroupName from '../utils/managed-group-name.ts';
 import { automationHash } from './automation-hash.ts';
 import codexSidebarPlacement, {
@@ -12,8 +15,9 @@ import codexSidebarPlacement, {
   type SidebarAction,
 } from './codex-sidebar-placement.ts';
 
+const maximumBytes = 1024 * 1024;
 const text = Type.String({ minLength: 1 });
-const stateSchema = Type.Object(
+export const stateSchema = Type.Object(
   {
     version: Type.Literal(1),
     name: text,
@@ -34,7 +38,7 @@ const stateSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-type State = Static<typeof stateSchema>;
+export type SidebarState = Static<typeof stateSchema>;
 export const sidebarReceiptSchema = Type.Object(
   { digest: text, sectionId: text },
   { additionalProperties: false },
@@ -47,6 +51,7 @@ export type SidebarEffect =
 
 /** one profile/name intent spans workspaces; uncertain native creation is never replayed. */
 export default class CodexSidebarJournal {
+  readonly scope: string;
   readonly name: string;
   readonly path: string;
   readonly file: PrivateStateFile;
@@ -54,23 +59,44 @@ export default class CodexSidebarJournal {
     readonly root: string,
     profile: string,
     name: string,
+    private readonly storage?: BoundStorage['installation'],
   ) {
     this.name = managedGroupName(name);
-    this.path = join(
-      root,
-      `codex-sidebar-${automationHash({ profile, host: 'local', name: this.name })}.json`,
-    );
+    this.scope = automationHash({ profile, host: 'local', name: this.name });
+    this.path = join(root, `codex-sidebar-${this.scope}.json`);
     this.file = new PrivateStateFile({
       path: this.path,
       directories: [root],
       currentUid: process.getuid?.(),
       label: 'Codex sidebar placement',
-      maximumBytes: 1024 * 1024,
+      maximumBytes,
     });
   }
-  async read(): Promise<State> {
-    const saved = await this.file.read();
-    const state: unknown = saved ? JSON.parse(saved) : { version: 1, name: this.name };
+  private async readSaved(): Promise<unknown> {
+    if (!this.storage) {
+      const saved = await this.file.read();
+      return saved ? JSON.parse(saved) : undefined;
+    }
+    const rows = await this.storage
+      .read({ sidebarPlacements: { scope: this.scope } })
+      .catch((error: unknown) => {
+        if (nodeErrorCode(error) !== 'ENOENT') throw error;
+        return { sidebarPlacements: [] };
+      });
+    return rows.sidebarPlacements[0]?.value;
+  }
+  private async write(state: SidebarState) {
+    const contents = JSON.stringify(state);
+    if (!this.storage) return this.file.write(contents);
+    if (Buffer.byteLength(contents) > maximumBytes)
+      throw new Error('The Codex sidebar placement exceeds its size limit.');
+    await this.storage.write([
+      { table: 'sidebarPlacements', action: 'save', row: { scope: this.scope, value: state } },
+    ]);
+  }
+  async read(): Promise<SidebarState> {
+    const saved = await this.readSaved();
+    const state = saved === undefined ? { version: 1, name: this.name } : saved;
     if (!Value.Check(stateSchema, state) || state.name !== this.name)
       throw new Error('automation-sidebar-state-invalid');
     return state;
@@ -109,7 +135,7 @@ export default class CodexSidebarJournal {
     });
     try {
       const state = await this.read();
-      const save = () => this.file.write(JSON.stringify(state));
+      const save = () => withPrivateStateLock(lock, () => this.write(state));
       if (receipt) {
         if (
           !state.pending ||
