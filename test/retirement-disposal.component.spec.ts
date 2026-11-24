@@ -272,7 +272,7 @@ describe('agent/retirement disposal', () => {
       publication,
       attempted: true,
     };
-    await store.exclusive(async (drafts, save) => {
+    await store.edit(async (drafts, save) => {
       drafts.push(
         draft,
         { ...draft, id: 'b'.repeat(64), attempted: false },

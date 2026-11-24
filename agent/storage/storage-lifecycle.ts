@@ -23,7 +23,13 @@ type DirectRow = AgentRows['directEntries'];
 type Draft = AgentRows['replyDrafts']['value'];
 export interface SessionStorage {
   readReplies(scope: string): Promise<Draft[]>;
-  saveReplies(scope: string, changed: Draft[], removed: string[]): Promise<void>;
+  saveReplies(
+    scope: string,
+    expected: ReadonlyMap<string, string>,
+    changed: Draft[],
+    removed: string[],
+    checkSelection: boolean,
+  ): Promise<void>;
   readDirectEntries(scope: string, kind: DirectRow['kind']): Promise<DirectRow['value'][]>;
   saveDirectEntries(
     scope: string,

@@ -90,6 +90,7 @@ export default class ReplyStore {
     });
   }
   async publication<T>(key: string, run: () => Promise<T>) {
+    await this.ensureRoot();
     const lock = await acquirePrivateStateFileLock(
       join(this.root, `github-reply-publication-${automationHash(key)}`),
       { staleMs: 30000, retries: { retries: 0, factor: 1, minTimeout: 25, maxTimeout: 25 } },
@@ -140,41 +141,46 @@ export default class ReplyStore {
     }
     return [...drafts.values()];
   }
-  async exclusive<T>(run: (drafts: ReplyDraft[], save: () => Promise<void>) => Promise<T>) {
-    await ensurePrivateStateDirectories({
+  private ensureRoot() {
+    return ensurePrivateStateDirectories({
       directories: [this.root],
       currentUid: process.getuid?.(),
       label: 'reply drafts',
     });
+  }
+  async edit<T>(run: (drafts: ReplyDraft[], save: () => Promise<void>) => Promise<T>) {
+    const edit = async () => {
+      const drafts = await this.read();
+      let checkSelection = true;
+      const saved = new Map(drafts.map((draft) => [draft.id, JSON.stringify(draft)]));
+      return run(drafts, async () => {
+        if (!Value.Check(schema, { scope: this.scope, drafts }))
+          throw new Error('reply-state-invalid');
+        const changed = drafts.filter((draft) => saved.get(draft.id) !== JSON.stringify(draft));
+        const removed = [...saved.keys()].filter((id) => !drafts.some((draft) => draft.id === id));
+        if (this.storage)
+          await this.storage.saveReplies(this.scope, saved, changed, removed, checkSelection);
+        // Once the send is reserved, its receipt depends only on the rows being updated.
+        checkSelection = false;
+        for (const draft of changed) {
+          const content = JSON.stringify(draft);
+          if (!this.storage) await this.draftFile(draft.id).write(content);
+          saved.set(draft.id, content);
+        }
+        for (const id of removed) {
+          if (!this.storage) await this.draftFile(id).remove();
+          saved.delete(id);
+        }
+      });
+    };
+    if (this.storage) return edit();
+    await this.ensureRoot();
     const lock = await acquirePrivateStateFileLock(this.path, {
       staleMs: 30000,
       retries: { retries: 0, factor: 1, minTimeout: 25, maxTimeout: 25 },
     });
     try {
-      return await withPrivateStateLock(lock, async () => {
-        const drafts = await this.read();
-        const saved = new Map(drafts.map((draft) => [draft.id, JSON.stringify(draft)]));
-        return run(drafts, async () => {
-          lock.assertHeld();
-          if (!Value.Check(schema, { scope: this.scope, drafts }))
-            throw new Error('reply-state-invalid');
-          const changed = drafts.filter((draft) => saved.get(draft.id) !== JSON.stringify(draft));
-          const removed = [...saved.keys()].filter(
-            (id) => !drafts.some((draft) => draft.id === id),
-          );
-          if (this.storage && (changed.length || removed.length))
-            await this.storage.saveReplies(this.scope, changed, removed);
-          for (const draft of changed) {
-            const content = JSON.stringify(draft);
-            if (!this.storage) await this.draftFile(draft.id).write(content);
-            saved.set(draft.id, content);
-          }
-          for (const id of removed) {
-            if (!this.storage) await this.draftFile(id).remove();
-            saved.delete(id);
-          }
-        });
-      });
+      return await withPrivateStateLock(lock, edit);
     } finally {
       await lock.release();
     }

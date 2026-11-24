@@ -93,7 +93,7 @@ async function runFeedbackReply(
   };
   await deps.assertCurrent();
   const store = new ReplyStore(deps.root, deps.binding, deps.sessionStorage);
-  const result = await store.exclusive(async (drafts, save) => {
+  const result = await store.edit(async (drafts, save) => {
     const independent = !input.purpose && !deps.feedback;
     let draft =
       input.operation !== 'compose' || input.material

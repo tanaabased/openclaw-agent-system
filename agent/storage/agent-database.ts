@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { backup, DatabaseSync } from 'node:sqlite';
 
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { omit } from 'lodash-es';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import { drizzle } from 'drizzle-orm/node-sqlite';
@@ -22,6 +22,7 @@ import type { AgentRows, InstallationRows } from './workflow-records.ts';
 import {
   automationReports,
   githubIdentityPins,
+  replyDrafts,
   pathProjections,
   directEntries,
   dispatchRecords,
@@ -366,19 +367,50 @@ class SqliteAgentStore extends SqliteDatabase {
       });
   }
 
-  saveReplies(scope: string, changed: AgentRows['replyDrafts']['value'][], removed: string[]) {
-    return this.write([
-      ...changed.map((value) => ({
-        table: 'replyDrafts' as const,
-        action: 'save' as const,
-        row: { scope, id: value.id, value },
-      })),
-      ...removed.map((id) => ({
-        table: 'replyDrafts' as const,
-        action: 'remove' as const,
-        key: { scope, id },
-      })),
-    ]);
+  saveReplies(
+    scope: string,
+    expected: ReadonlyMap<string, string>,
+    changed: AgentRows['replyDrafts']['value'][],
+    removed: string[],
+    checkSelection: boolean,
+  ) {
+    return this.use(false, (db) =>
+      db.transaction(
+        (tx) => {
+          assertPrivateStateLocksHeld();
+          // Selection, update deduplication and retirement all depend on the whole session.
+          const ids = [...changed.map(({ id }) => id), ...removed];
+          const scopeKey = eq(replyDrafts.scope, scope);
+          const rows = tx
+            .select()
+            .from(replyDrafts)
+            .where(checkSelection ? scopeKey : and(scopeKey, inArray(replyDrafts.id, ids)))
+            .all();
+          const expectedCount = checkSelection
+            ? expected.size
+            : ids.filter((id) => expected.has(id)).length;
+          if (
+            rows.length !== expectedCount ||
+            rows.some(({ id, value }) => expected.get(id) !== JSON.stringify(value))
+          )
+            throw new Error('reply-draft-conflict');
+          for (const value of changed) {
+            tx.insert(replyDrafts)
+              .values({ scope, id: value.id, value })
+              .onConflictDoUpdate({
+                target: [replyDrafts.scope, replyDrafts.id],
+                set: { value },
+              })
+              .run();
+          }
+          for (const id of removed)
+            tx.delete(replyDrafts)
+              .where(and(eq(replyDrafts.scope, scope), eq(replyDrafts.id, id)))
+              .run();
+        },
+        { behavior: 'immediate' },
+      ),
+    );
   }
 
   async readDirectEntries(scope: string, kind: AgentRows['directEntries']['kind']) {

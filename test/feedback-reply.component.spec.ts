@@ -346,6 +346,42 @@ describe('agent/feedback-reply', () => {
       assert.equal(writes, 1);
     });
   }
+  it('should reject a stale draft edit while a second connection publishes and records the receipt', async () => {
+    const first = await sqliteAgentFixture(root, deps.binding.agentId);
+    const second = await sqliteAgentFixture(root, deps.binding.agentId);
+    deps.sessionStorage = first.agent;
+    const draft = new ReplyStore(deps.root, deps.binding, first.agent);
+    await mkdir(deps.root, { mode: 0o700 });
+    await mkdir(draft.path + '.lock');
+    await call('compose', { target: url, privateText: 'Original draft.' });
+    const peer = (operation: string, extra: object) =>
+      feedbackReply(
+        { action: 'reply', operation, target: url, ...extra },
+        { ...deps, sessionStorage: second.agent },
+      );
+    const create = provider.createIssueComment.bind(provider);
+    provider.createIssueComment = async (...args) => {
+      // A different draft can commit while the send is in progress.
+      await peer('compose', { privateText: 'Other draft.' });
+      return create(...args);
+    };
+    await draft.edit(async (drafts, save) => {
+      const selected = drafts[0]!;
+      await peer('candidate', { privateText: selected.privateText, publicText: 'Winning text.' });
+      selected.publicText = 'Stale text.';
+      await assert.rejects(save(), /reply-draft-conflict/);
+      assert.equal((await peer('publish', { publicText: 'Winning text.' })).status, 'published');
+      await assert.rejects(save(), /reply-draft-conflict/);
+    });
+    const current = await draft.read();
+    assert.equal(current.length, 2);
+    const winner = current.find((entry) => entry.privateText === 'Original draft.')!;
+    assert.equal(winner.publicText, 'Winning text.');
+    assert.equal(winner.receipt?.nodeId, 'C_published');
+    assert.equal((await peer('reconcile', { publicText: 'Winning text.' })).status, 'published');
+    assert.equal(writes, 1);
+  });
+
   it('should reject an aggregate reply journal without migrating or changing it', async () => {
     await candidate();
     const store = new ReplyStore(deps.root, deps.binding);
@@ -858,9 +894,9 @@ describe('agent/feedback-reply', () => {
     ];
     const reply = await updateCandidate();
     const store = new ReplyStore(deps.root, deps.binding);
-    const stored = () => store.exclusive(async (drafts) => structuredClone(drafts[0]!));
+    const stored = () => store.edit(async (drafts) => structuredClone(drafts[0]!));
     assert.equal((await stored()).ownerId, owners[0]!.id);
-    await store.exclusive(async (drafts, save) => {
+    await store.edit(async (drafts, save) => {
       drafts[0]!.update!.observation = 'f'.repeat(64);
       await save();
     });

@@ -1,3 +1,4 @@
+import WorkflowRequestError from '../workflow-request-error.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
 import managedOwner from '../managed-owner.ts';
 import type { ReplyTarget } from './reply-target.ts';
@@ -73,6 +74,19 @@ export default function replyOwner(
   if (ownership.status === 'ambiguous') throw new Error('reply-managed-owner-ambiguous');
   const { owner } = ownership;
   if (!owner) {
+    if (
+      ownership.status === 'absent' &&
+      caller &&
+      !caller.pullRequestNumber &&
+      caller.workflow !== 'review-request' &&
+      caller.repository?.toLowerCase() === repository &&
+      target.itemType === 'pull-request' &&
+      !target.source
+    )
+      throw new WorkflowRequestError(
+        'reply-pull-request-unlinked',
+        'This issue chat has no linked pull request. Use the issue for this update, or verify the intended PR and link it through delivery link before updating it.',
+      );
     if (ownership.status === 'historical' || (purpose && caller))
       throw new Error('reply-managed-owner-required');
     return;

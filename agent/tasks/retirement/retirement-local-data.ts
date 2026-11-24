@@ -20,7 +20,7 @@ export default async function retirementLocalData(input: {
   const owns = (entry: { repositoryId: string; subjectId: string }) =>
     entry.repositoryId === input.intake.repository.nodeId &&
     entry.subjectId === input.intake.issue.nodeId;
-  await new ReplyStore(input.root, input.binding, input.sessionStorage).exclusive(
+  await new ReplyStore(input.root, input.binding, input.sessionStorage).edit(
     async (drafts, save) => {
       await input.retain(
         drafts.flatMap((draft) => {
