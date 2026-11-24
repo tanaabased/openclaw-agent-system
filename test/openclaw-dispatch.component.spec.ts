@@ -2616,3 +2616,27 @@ describe('agent/openclaw dispatch', () => {
     );
   });
 });
+
+describe('openclaw sqlite dispatch', () => {
+  const f = openclawDispatchFixture({ storageBackend: 'sqlite' });
+  it('should recover the same issue session after restarting dispatch', async () => {
+    const routed = await f.next();
+    f.lost = true;
+    assert.equal((await f.prepare(routed)).status, 'waiting');
+    f.service = new OpenClawDispatch(f.service.dependencies);
+    const recovered = await f.service.run(f.manifest, f.root, f.coordinator, {
+      action: 'reconcile',
+      id: routed.id,
+    });
+    assert.equal(recovered.status, 'session-created');
+    await f.assess(routed.id);
+    assert.equal((await f.context(routed.id)).status, 'verified');
+    const { journal } = await f.service.scope(f.manifest, f.root);
+    assert.deepEqual(
+      (await journal.read()).records.map((r) => [r.id, r.threadId]),
+      [[routed.id, f.session?.key]],
+    );
+    assert.equal(await journal.file.read(), undefined);
+    assert.equal(f.creates().length, 1);
+  });
+});

@@ -1,11 +1,16 @@
+import OpenClawDispatchStore from '../dispatch/openclaw-dispatch-state.ts';
+import { sqliteDispatchPersistence, pickupDispatchScope } from '../../storage/dispatch-backend.ts';
+import type { SqliteInstallation } from '../../storage/storage-lifecycle.ts';
+import { bindAgentStore, bindIntakeStore, type StorageBackend } from '../../storage/backend.ts';
 import { realpath } from 'node:fs/promises';
-import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
-import IntakeRecordStore, { intakeLocation } from '../../../channels/github/intake/record-store.ts';
+import { intakeLocation } from '../../../channels/github/intake/record-store.ts';
 import type AgentManifestService from '../../../manifest/service.ts';
 import type { AgentManifest } from '../../../manifest/types.ts';
 import assignmentIntakePolicy from '../../automations/assignment-intake-policy.ts';
 
 export interface OpenClawTaskContextDependencies {
+  storageBackend?: StorageBackend;
+  sqliteInstallation?: SqliteInstallation;
   root: string;
   resetRoot?: string;
   namespace: string;
@@ -21,7 +26,12 @@ export async function selectOpenClawTaskContext(
   const workspace = await realpath(workspaceDir);
   const selected =
     options.resolvePolicy === false ? undefined : assignmentIntakePolicy(manifest, 'openclaw');
-  const store = new IntakeRecordStore(
+  const agent = await bindAgentStore(
+    manifest.agent.id,
+    deps.sqliteInstallation,
+    deps.storageBackend,
+  );
+  const store = bindIntakeStore(
     intakeLocation({
       runtime: 'openclaw',
       root: deps.root,
@@ -30,9 +40,19 @@ export async function selectOpenClawTaskContext(
       agentId: manifest.agent.id,
       resetRoot: deps.resetRoot,
     }),
+    agent,
   );
-  await new GitHubIdentityCache(store.location).hydrate(manifest.github?.notifications);
-  return { selected, store, workspace };
+  await store.identities.hydrate(manifest.github?.notifications);
+  const dispatch = (root: string) => {
+    const scope = store.location.scope;
+    const pickup = root === deps.root && deps.resetRoot && deps.resetRoot !== root;
+    return new OpenClawDispatchStore(
+      root,
+      scope,
+      sqliteDispatchPersistence(agent, pickup ? pickupDispatchScope(scope) : scope, deps.resetRoot),
+    );
+  };
+  return { selected, store, workspace, dispatch, ...(agent && { sessionStorage: agent }) };
 }
 
 export type OpenClawTaskContext = Awaited<ReturnType<typeof selectOpenClawTaskContext>>;

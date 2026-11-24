@@ -2,7 +2,6 @@ import type {
   CodexTaskContextDependencies,
   CodexTaskSelection,
 } from '../context/codex-task-context.ts';
-import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
 import type AssignmentClaimStore from './assignment-claim-store.ts';
 import type { CleanupConfiguration } from '../../cleanup-configuration.ts';
 import {
@@ -82,7 +81,7 @@ export async function revalidateDispatchAssignment(
   )
     throw new Error('dispatch-workspace-binding-changed');
   const client = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
-  await new GitHubIdentityCache(current.store.location).resolve(
+  await current.store.identities.resolve(
     current.manifest.github?.notifications,
     client,
     'assignment',

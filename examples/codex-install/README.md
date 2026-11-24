@@ -143,7 +143,7 @@ printf '%s\n' "$inspection" \
   | jq -e '.status == "inspected" and [.findings[] | select(.component == "setup") | [.stepId, .code]] == [["codex-tools-debug", "setup-healthy"], ["shared", "setup-drift"], ["codex-only", "setup-manual"], ["openclaw-only", "setup-not-applicable"]]'
 installed=$(node "$runtime" setup install --plugin-data "$plugin_data")
 printf '%s\n' "$installed" \
-  | jq -e '.status == "requires-native-app-sync" and .automations.status == "requires-fresh-inspection" and [.outcomes[] | select(.component == "setup") | [.stepId, .code]] == [["codex-tools-debug", "setup-unchanged"], ["shared", "setup-applied"], ["codex-only", "setup-applied"], ["openclaw-only", "setup-not-applicable"]]'
+  | jq -e '.status == "requires-native-app-sync" and any(.outcomes[]; .component == "agent-storage" and .status == "created") and .automations.status == "requires-fresh-inspection" and [.outcomes[] | select(.component == "setup") | [.stepId, .code]] == [["codex-tools-debug", "setup-unchanged"], ["shared", "setup-applied"], ["codex-only", "setup-applied"], ["openclaw-only", "setup-not-applicable"]]'
 # a fresh invocation loads the installed runtime before inspecting automation state.
 node "$runtime" automations inspect --plugin-data "$plugin_data" <<<'{}' | jq -e '.status == "aligned"'
 test -f "$GITHUB_WORKSPACE/examples/codex-install/workspace/.codex-shared"
@@ -160,8 +160,16 @@ node "$runtime" instance inspect --plugin-data "$plugin_data" <<<'{}' > "$root/i
 node "$runtime" setup install --plugin-data "$plugin_data" | jq -e 'any(.outcomes[]; .component == "instance-identity" and .status == "unchanged")'
 original=$(jq -er .instanceId "$root/identity.json")
 node "$runtime" instance rename --plugin-data "$plugin_data" <<<'{"name":"CI Laptop"}' | jq -e --arg id "$original" '.status == "renamed" and .instanceId == $id and .displayName == "ci-laptop"'
+node --input-type=module - "$plugin_data/instance/agent-system.sqlite" "$original" <<'NODE'
+import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
+const db = new DatabaseSync(process.argv[2], { readOnly: true });
+const row = db.prepare('SELECT value FROM instances WHERE id = ?').get(process.argv[3]);
+assert.equal(JSON.parse(row.value).displayName, 'ci-laptop');
+db.close();
+NODE
 jq -nc --arg id "$original" '{expectedInstanceId:$id}' | node "$runtime" instance rotate --plugin-data "$plugin_data" | jq -e --arg id "$original" '.status == "rotated" and .instanceId != $id and .displayName == "ci-laptop"'
-node "$runtime" setup inspect --plugin-data "$plugin_data" | jq -e 'any(.findings[]; .code == "instance-identity-ready")'
+node "$runtime" setup inspect --plugin-data "$plugin_data" | jq -e 'any(.findings[]; .code == "instance-identity-ready") and any(.findings[]; .code == "agent-storage-ready") and any(.findings[]; .code == "agent-system-storage-ready")'
 
 # should report a blocked setup check when an exited parent leaves inherited pipes open
 root="$TMPDIR/agent-system-codex-install"

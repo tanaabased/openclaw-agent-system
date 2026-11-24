@@ -3,6 +3,7 @@ import type { ChatCompletionRequest, Fixture } from '@copilotkit/aimock';
 export interface OpenClawAIMockToolCall {
   id: string;
   name: string;
+  resultMarker?: string;
 }
 
 /** One strict fixture set and its expected observable exchange. */

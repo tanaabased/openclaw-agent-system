@@ -1,8 +1,8 @@
+import { configuredStorageBackend } from '../agent/storage/backend.ts';
 import { retainOpenClawTurnInput } from '../agent/openclaw-turn-binding.ts';
 import OpenClawAssignmentClaims from '../agent/tasks/dispatch/openclaw-assignment-claims.ts';
 import GitHubAssignmentClaimClient from '../channels/github/provider/assignment-claim-client.ts';
 import { commandTerminationGraceMs } from '../api/cli-budget.ts';
-import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import createGitHubStatusChannel from '../channels/github/channel.ts';
 import createGitHubChannelLifecycle from '../agent/lifecycle/github-channel-lifecycle.ts';
 import notificationAutomationReadiness, {
@@ -14,15 +14,14 @@ import { openclawIntakeAutomationId } from '../agent/automations/openclaw-intake
 import { readFile, realpath } from 'node:fs/promises';
 
 import OpenClawIntake from '../agent/openclaw-intake.ts';
-import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import resolveOpenClawCommandWorktree from '../agent/tasks/context/openclaw-command-worktree.ts';
 import isPathContained from '../utils/is-path-contained.ts';
 import createIntakeTool from '../tools/intake/tool.ts';
-import IssuePickupEnrollmentStore from '../agent/issue-pickup-enrollment.ts';
+import { sqliteStorageLifecycle } from '../agent/storage/storage-lifecycle.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { issuePickupAutomationId } from '../agent/automations/issue-pickup-jobs.ts';
 import createDispatchTool from '../tools/dispatch/tool.ts';
-import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
+import { bindInstanceStore, bindPickupStore } from '../agent/storage/pickup-backend.ts';
 import instanceIdentity from '../agent/identity/instance-identity.ts';
 import executeOpenClawDeliveryGit from './openclaw-delivery-git.ts';
 import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
@@ -136,6 +135,16 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     },
   });
   const privateStateRoot = resolveFileCredentialStoreRoot(process.env);
+  const sqliteInstallation = {
+    agentRoot: join(api.runtime.state.resolveStateDir(), 'agent-system-storage'),
+    installationRoot: join(
+      privateStateRoot ?? api.runtime.state.resolveStateDir(),
+      'agent-system-instance',
+    ),
+    schemaRoot: join(packageDir, 'agent', 'storage'),
+  };
+  const storageBackend = configuredStorageBackend(api.pluginConfig?.storage);
+  const storage = { sqliteInstallation, storageBackend };
   const readConfig = readLifecycleConfig;
   const readRuntimeConfig = () => api.runtime.config.current() as OpenClawConfig;
   const sessionDispatch = createSessionDispatchCredential({
@@ -232,6 +241,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     },
     packageDir,
     projectionStore: new PathProjectionStore({
+      ...storage,
       ...(currentUid === undefined ? {} : { currentUid }),
       ...(privateStateRoot === undefined ? {} : { rootDir: privateStateRoot }),
     }),
@@ -278,6 +288,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...(process.env.HOME ? { homeDirectory: process.env.HOME } : {}),
   };
   const gitCapability = createGitCapability({
+    ...storage,
     ...capabilityDependencies,
     environmentService: lifecycleEnvironmentService,
     gitignoreService,
@@ -300,10 +311,9 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     privateStateRoot,
   });
   let readScheduler: (() => NotificationScheduler | undefined) | undefined;
-  const pickupStore = new IssuePickupEnrollmentStore(
-    join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-instance'),
-  );
+  const instanceStore = bindInstanceStore(sqliteInstallation, storageBackend);
   const taskContext = {
+    ...storage,
     root: join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-intake-v2'),
     resetRoot: join(
       privateStateRoot ?? api.runtime.state.resolveStateDir(),
@@ -314,7 +324,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   };
   const intakeV2: OpenClawIntake = new OpenClawIntake({
     ...taskContext,
-    pickupStore,
     // tool registrations need not share the service-start closure; use enrolled read authority.
     readiness: (manifest, workspace, automationId, expectedNativeId, signal) =>
       sessionDispatch.use({ signal: signal ?? AbortSignal.timeout(25000) }, (request) =>
@@ -355,11 +364,19 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     },
   });
   const automationDependencies = {
+    ...storage,
     pickup: {
       prepare: (manifest: AgentManifest, workspace: string) =>
         intakeV2.preparePickup(manifest, workspace),
-      activate: (id: string, nativeId: string, previousNativeId?: string) =>
-        pickupStore.activate(id, nativeId, previousNativeId),
+      activate: async (
+        manifest: AgentManifest,
+        id: string,
+        nativeId: string,
+        previousNativeId?: string,
+      ) => {
+        const store = await bindPickupStore(sqliteInstallation, manifest.agent.id, storageBackend);
+        await store.activate(id, nativeId, previousNativeId);
+      },
     },
     root: join(api.runtime.state.resolveStateDir(), 'agent-system-automations'),
     profile: api.runtime.state.resolveStateDir(),
@@ -372,32 +389,20 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     manifestService: lifecycleManifestService,
   };
   const automationService: AutomationService = new AutomationService(automationDependencies);
-  registerAutomationReportHooks(api, automationService.reports, async (id) => {
-    for (const executionId of id ? [id] : await automationService.reports.recoveryIds()) {
-      try {
-        await reconcileAutomationReport({
-          store: automationService.reports,
-          executionId,
-          credential: sessionDispatch,
-          assertCurrent: (record) => automationService.assertReportCurrent(record),
-          selectSettings: (record, request) =>
-            automationService.selectReportSettings(record, request),
-        });
-      } catch {
-        logger.warn('automation-report: recovery-unavailable');
-      }
-    }
-    if (!id) {
-      try {
-        await automationService.reports.prune();
-      } catch {
-        logger.warn('automation-report: cleanup-unavailable');
-      }
+  registerAutomationReportHooks(api, automationService, async (store, executionId) => {
+    try {
+      await reconcileAutomationReport({
+        store,
+        executionId,
+        credential: sessionDispatch,
+        assertCurrent: (record) => automationService.assertReportCurrent(record),
+        selectSettings: (record, request) =>
+          automationService.selectReportSettings(record, request),
+      });
+    } catch {
+      logger.warn('automation-report: recovery-unavailable');
     }
   });
-  const instanceStore = new AssignmentClaimStore(
-    join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-instance'),
-  );
   const dispatchRoot = join(
     privateStateRoot ?? api.runtime.state.resolveStateDir(),
     'agent-system-dispatch-v2',
@@ -459,7 +464,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
               signal,
             );
       const selection = await intakeV2.select(manifest, workspaceDir);
-      await new GitHubIdentityCache(selection.store.location).resolve(
+      await selection.store.identities.resolve(
         manifest.github?.notifications,
         new GitHubWorkEventClient(account),
         'delivery',
@@ -511,15 +516,14 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
               (await realpath(admitted.run.workspaceDir))
           )
             throw new AutomationError('automation-workspace-mismatch');
-          const { store } = await intakeV2.select(loaded.manifest, admitted.run.workspaceDir, {
-            resolvePolicy: false,
-          });
-          const pickup = (
-            await new OpenClawDispatchStore(
-              store.location.root,
-              store.location.scope,
-            ).inspectIntake()
-          ).projectPickup;
+          const { store, dispatch } = await intakeV2.select(
+            loaded.manifest,
+            admitted.run.workspaceDir,
+            {
+              resolvePolicy: false,
+            },
+          );
+          const pickup = (await dispatch(store.location.root).inspectIntake()).issuePickup;
           const acceptedOccurrence = Boolean(
             pickup?.operations.some((entry) => entry.runId === admitted.run.runId),
           );
@@ -760,6 +764,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         return createAgentToolAccessGrants(toolRegistry, manifest);
       },
     }),
+    ...sqliteStorageLifecycle(() => sqliteInstallation),
     createPathLifecycleContribution({ pathService }),
     ...gitCapability.lifecycleContributions,
     ...githubCapability.lifecycleContributions,
@@ -1092,6 +1097,8 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
             cwd,
             timeoutMs: 600_000,
           }),
+        undefined,
+        storage,
       ),
       commandAuthority,
       credentialInput: opCredentialInput,

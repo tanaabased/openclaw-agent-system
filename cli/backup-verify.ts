@@ -42,6 +42,9 @@ async function backupVerify(
           { label: 'verification', style: 'status', value: 'verified' },
           { label: 'agent', style: 'target', value: manifest.agentId },
           { label: 'archive', style: 'target', value: archive },
+          ...(manifest.version === 2 && manifest.storage
+            ? [{ label: 'agent system storage', style: 'status' as const, value: 'verified' }]
+            : []),
           { label: 'entries', style: 'field', value: String(manifest.inventory.length) },
           {
             label: 'coverage',

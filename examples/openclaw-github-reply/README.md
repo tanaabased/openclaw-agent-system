@@ -27,6 +27,7 @@ operator-requested status update and confirm that an already-current issue needs
 ```bash
 # should prepare the packed plugin and strict direct-operation fixture
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --yolo
+openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 openclaw-aimock prepare --scenario openclaw-github-reply
 openclaw config set skills.workshop.autonomous.mode off
 # keep unrelated nightly memory turns out of the strict direct-operation fixture
@@ -76,15 +77,15 @@ target=$(jq -er .html_url "$TMPDIR/notification-manual-issue.json")
 params=$(jq -nc --arg target "$target" '{sessionKey:"agent:github-reply-tanaabot:manual-reply",agentId:"github-reply-tanaabot",message:("Direct reply draft target: " + $target),deliver:false,idempotencyKey:"notification-manual-draft"}')
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-manual-draft"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-manual-draft 600000
-jq -es '[.[] | .] | if length == 1 then .[0] else error("one manual draft required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-manual-draft.json"
+node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" replies | jq -es '[.[] | .] | if length == 1 then .[0] else error("one manual draft required") end' > "$TMPDIR/notification-manual-draft.json"
 jq -e '.publicText != null and .receipt == null and .attempted != true' "$TMPDIR/notification-manual-draft.json"
 number=$(jq -er .number "$TMPDIR/notification-manual-issue.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e 'length == 0'
 node --input-type=module <<'NODE'
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
-const root = process.env.XDG_CONFIG_HOME + '/tanaab/agent-system/agent-system-dispatch-v2';
-const records = readdirSync(root).filter(name => name.startsWith('openclaw-dispatch-') && name.endsWith('.json')).flatMap(name => JSON.parse(readFileSync(root + '/' + name, 'utf8')).records);
+const { readExampleState } = await import(process.env.GITHUB_WORKSPACE + '/scripts/sqlite-example-state.mjs');
+const records = readExampleState('dispatch').flatMap((journal) => journal.records);
 assert.equal(records.length, 0);
 NODE
 
@@ -116,7 +117,7 @@ target=$(jq -er .html_url "$TMPDIR/notification-manual-issue.json")
 params=$(jq -nc --arg key "$conversation" --arg target "$target" '{sessionKey:$key,agentId:"github-reply-tanaabot",message:("Operator status update target: " + $target + "\nDecision: use the shared reply approach; implementation remains unstarted. Draft this public update."),deliver:false,idempotencyKey:"notification-status-draft"}')
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-status-draft"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-status-draft 600000
-jq -es --arg target "$target" '[.[] | select(.update != null and .receipt == null and .attempted != true and (.target | fromjson | .url) == $target and .publicText == "The operator selected the shared reply approach. Implementation remains unstarted.")] | if length == 1 then .[0] else error("one pending operator update required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-status-draft.json"
+node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" replies | jq -es --arg target "$target" '[.[] | select(.update != null and .receipt == null and .attempted != true and (.target | fromjson | .url) == $target and .publicText == "The operator selected the shared reply approach. Implementation remains unstarted.")] | if length == 1 then .[0] else error("one pending operator update required") end' > "$TMPDIR/notification-status-draft.json"
 jq -e '.publicText != null and .receipt == null and .attempted != true' "$TMPDIR/notification-status-draft.json"
 number=$(jq -er .number "$TMPDIR/notification-manual-issue.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-status-before.json"
@@ -153,14 +154,14 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-github-reply/tanaabot"
 conversation="agent:github-reply-tanaabot:manual-reply"
 target=$(jq -er .html_url "$TMPDIR/notification-manual-issue.json")
 number=$(jq -er .number "$TMPDIR/notification-manual-issue.json")
-jq -s 'sort_by(.id)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-status-drafts-before.json"
+node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" replies | jq -s 'sort_by(.id)' > "$TMPDIR/notification-status-drafts-before.json"
 params=$(jq -nc --arg key "$conversation" --arg target "$target" '{sessionKey:$key,agentId:"github-reply-tanaabot",message:("Check current status target: " + $target),deliver:false,idempotencyKey:"notification-status-current"}')
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-status-current"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-status-current 600000
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-status-after.json"
 jq -e --slurpfile before "$TMPDIR/notification-status-comments.json" '. == $before[0]' "$TMPDIR/notification-status-after.json"
-jq -es --slurpfile draft "$TMPDIR/notification-status-draft.json" '[.[] | select(.id == $draft[0].id)] | length == 1 and .[0].receipt != null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json
-jq -es --slurpfile before "$TMPDIR/notification-status-drafts-before.json" 'sort_by(.id) == $before[0]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json
+node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" replies | jq -es --slurpfile draft "$TMPDIR/notification-status-draft.json" '[.[] | select(.id == $draft[0].id)] | length == 1 and .[0].receipt != null'
+node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" replies | jq -es --slurpfile before "$TMPDIR/notification-status-drafts-before.json" 'sort_by(.id) == $before[0]'
 ```
 
 ## Cleanup

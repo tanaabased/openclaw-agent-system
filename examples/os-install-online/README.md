@@ -41,6 +41,7 @@ set -euo pipefail
 git -C "$GITHUB_WORKSPACE" rev-parse HEAD | tee "$TMPDIR/online-agent-system-revision.txt"
 chmod +x "$GITHUB_WORKSPACE/examples/os-dispatch-enrollment/provider/gh"
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service
+openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 export OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$GITHUB_WORKSPACE/examples/os-dispatch-enrollment/provider:$PATH"
 openclaw config set cron.enabled false --strict-json
 openclaw config set logging.file "$TMPDIR/online-native.log"

@@ -49,7 +49,7 @@ export default function prepareDispatchReport(input: {
       ].includes(record.retirement.code),
   );
   const managing = active.filter((record) => record.effective && record.threadId);
-  const occupied = codexCapacity(state, input.slots, state.projectPickup).occupied;
+  const occupied = codexCapacity(state, input.slots, state.issuePickup).occupied;
   const pending = pendingDispatchAssignments(state, intake).filter(
     ({ record, intake: item }) => !record?.creationFailure?.terminal || record.intakeId !== item.id,
   ).length;

@@ -31,6 +31,15 @@ export default function writeBackupSelection(
       : []),
     { label: 'entries', style: 'field', value: String(result.files.length) },
     { label: 'coverage', style: 'field', value: `workspace selected; ${state}` },
+    ...(result.coverage.agentSystemStorage
+      ? [
+          {
+            label: 'agent system storage',
+            style: 'field' as const,
+            value: result.coverage.agentSystemStorage,
+          },
+        ]
+      : []),
     {
       label: 'scope',
       style: 'field',

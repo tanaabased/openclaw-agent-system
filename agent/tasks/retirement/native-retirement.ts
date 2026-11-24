@@ -1,11 +1,12 @@
-import { Type } from 'typebox';
+import type { SessionStorage } from '../../storage/storage-lifecycle.ts';
+import { Type, type Static } from 'typebox';
 
 import { automationHash } from '../../automation-hash.ts';
 import { DirectEntryStore, type DirectEntryBinding } from '../direct-entry-store.ts';
 import workflowFailure from '../workflow-failure.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
-const entriesSchema = Type.Array(
+export const entriesSchema = Type.Array(
   Type.Object(
     {
       digest: text,
@@ -20,6 +21,8 @@ const entriesSchema = Type.Array(
   ),
   { maxItems: 1 },
 );
+
+export type NativeRetirementEntry = Static<typeof entriesSchema>[number];
 
 export interface NativeRetirementTarget {
   id: string;
@@ -44,6 +47,7 @@ export interface NativeRetirementResult {
 
 /** explicit disposal receipts are separate from assignment custody and preservation policy. */
 export default async function nativeRetirement(input: {
+  sessionStorage?: SessionStorage;
   root: string;
   binding: DirectEntryBinding;
   target: string;
@@ -72,7 +76,13 @@ export default async function nativeRetirement(input: {
     session: target.id,
     incarnation: target.incarnation,
   };
-  const store = new DirectEntryStore(input.root, binding, entriesSchema, 'native-retirement');
+  const store = new DirectEntryStore(
+    input.root,
+    binding,
+    entriesSchema,
+    'native-retirement',
+    input.sessionStorage,
+  );
   const digest = automationHash({ binding, target, turnId: input.turnId, inputId: input.inputId });
   const result = (
     status: NativeRetirementResult['status'],

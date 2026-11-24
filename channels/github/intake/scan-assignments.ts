@@ -1,5 +1,4 @@
 import itemReadFailure from '../provider/item-read-failure.ts';
-import GitHubIdentityCache from '../identity-cache.ts';
 import repositoryScope, { type RepositoryScopeDecision } from '../repository-scope.ts';
 import authorizeProjectAssignment, {
   type IssuePickupAuthority,
@@ -30,7 +29,7 @@ export interface AssignmentScanInput {
   issuePickup?: IssuePickupAuthority;
   readIssuePickup?(): Promise<IssuePickupAuthority | undefined>;
   runtime?: 'codex' | 'openclaw';
-  store: Pick<IntakeRecordStore, 'exclusive' | 'location'>;
+  store: Pick<IntakeRecordStore, 'exclusive' | 'location' | 'identities'>;
   workspaceDir: string;
   agentId: string;
   policy: GitHubNotificationPolicy;
@@ -103,7 +102,7 @@ export default async function scanAssignments(
       const client = await budget.read('assignment-connection', () =>
         input.connect(AbortSignal.any([signal, budget.signal])),
       );
-      const identities = new GitHubIdentityCache(input.store.location);
+      const identities = input.store.identities;
       await budget.read('assignment-identities', () =>
         identities.resolve(input.policy, client, 'assignment', true),
       );

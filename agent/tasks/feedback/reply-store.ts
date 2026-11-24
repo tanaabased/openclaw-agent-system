@@ -1,3 +1,4 @@
+import type { SessionStorage } from '../../storage/storage-lifecycle.ts';
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Type, type Static } from 'typebox';
@@ -14,7 +15,7 @@ import { automationHash } from '../../automation-hash.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
-const draftSchema = Type.Object(
+export const draftSchema = Type.Object(
   {
     id: hash,
     turnId: text,
@@ -68,7 +69,7 @@ export interface ReplyBinding {
   incarnation: string;
 }
 
-/** draft custody uses existing private-file and lease primitives, never an intake event. */
+/** Bind reply drafts and publication leases to their existing native custody. */
 export default class ReplyStore {
   readonly scope: string;
   readonly path: string;
@@ -76,6 +77,7 @@ export default class ReplyStore {
   constructor(
     private readonly root: string,
     binding: ReplyBinding,
+    private readonly storage?: SessionStorage,
   ) {
     this.scope = automationHash(binding);
     this.path = join(root, `github-reply-${this.scope}.json`);
@@ -109,6 +111,12 @@ export default class ReplyStore {
     });
   }
   async read(): Promise<ReplyDraft[]> {
+    if (this.storage) {
+      const drafts = await this.storage.readReplies(this.scope);
+      if (!Value.Check(schema, { scope: this.scope, drafts }))
+        throw new Error('reply-state-invalid');
+      return drafts;
+    }
     if ((await this.file.read()) !== undefined) throw new Error('reply-clean-start-required');
     const drafts = new Map<string, ReplyDraft>();
     let names: string[];
@@ -150,20 +158,20 @@ export default class ReplyStore {
           lock.assertHeld();
           if (!Value.Check(schema, { scope: this.scope, drafts }))
             throw new Error('reply-state-invalid');
-          for (const draft of drafts) {
-            const content = JSON.stringify(draft);
-            if (saved.get(draft.id) === content) continue;
-            await this.draftFile(draft.id).write(content);
-            saved.set(draft.id, content);
-          }
+          const changed = drafts.filter((draft) => saved.get(draft.id) !== JSON.stringify(draft));
           const removed = [...saved.keys()].filter(
             (id) => !drafts.some((draft) => draft.id === id),
           );
-          if (removed.length) {
-            for (const id of removed) {
-              await this.draftFile(id).remove();
-              saved.delete(id);
-            }
+          if (this.storage && (changed.length || removed.length))
+            await this.storage.saveReplies(this.scope, changed, removed);
+          for (const draft of changed) {
+            const content = JSON.stringify(draft);
+            if (!this.storage) await this.draftFile(draft.id).write(content);
+            saved.set(draft.id, content);
+          }
+          for (const id of removed) {
+            if (!this.storage) await this.draftFile(id).remove();
+            saved.delete(id);
           }
         });
       });

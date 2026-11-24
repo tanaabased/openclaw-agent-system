@@ -5,8 +5,6 @@ import {
   type CodexAutomationDependencies,
 } from './codex-automation-snapshot.ts';
 import { mkdir, rmdir } from 'node:fs/promises';
-import { codexInstanceStore } from '../tasks/dispatch/codex-assignment-claims.ts';
-import IssuePickupEnrollmentStore from '../issue-pickup-enrollment.ts';
 import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
 import automationReportName from './automation-report-name.ts';
 
@@ -46,7 +44,11 @@ import {
   prepareCodexPickupEnrollment,
   runCodexIntake,
 } from '../codex-intake.ts';
-import CodexSidebarJournal, { type SidebarEffect } from '../codex-sidebar-journal.ts';
+import { codexSidebarJournal } from '../storage/codex-storage.ts';
+import {
+  type default as CodexSidebarJournal,
+  type SidebarEffect,
+} from '../codex-sidebar-journal.ts';
 import { sidebarSections } from '../codex-sidebar-placement.ts';
 import { codexThreadAdapter, connectCodexThreads } from '../codex-thread-client.ts';
 
@@ -86,7 +88,12 @@ async function resolveThreads(
     const selection = automationThreadSelection(job, 'codex')!;
     const group = selection.group!;
     if (journals.has(group)) continue;
-    const journal = new CodexSidebarJournal(selected.root, selected.codexHome, group);
+    const journal = await codexSidebarJournal(
+      selected.root,
+      selected.codexHome,
+      group,
+      selected.dependencies.storageBackend,
+    );
     const { placement, state } = await journal.inspect(
       inputs.nativeInventory,
       selection.exact ?? 'pending',
@@ -162,6 +169,7 @@ async function resolveThreads(
           pendingGroups.delete(group);
         },
       },
+      selected.agentStorage,
     );
     const bindings = apply
       ? await threads.resolve(jobs, true)
@@ -301,7 +309,7 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
     ledger.records.some((record) => record.id === issuePickupAutomationId)
   ) {
     const findings = await inspectSelectedCodexPickup(
-      selected.root,
+      await selected.pickupStore(),
       assignmentIntakePolicy(loaded.manifest, 'codex')?.policy,
       intakeLocation({
         runtime: 'codex',
@@ -651,7 +659,7 @@ export async function replaceCodexNotificationCoordinator(
       };
     }
     if (jobId === issuePickupAutomationId) {
-      const enrollments = new IssuePickupEnrollmentStore(codexInstanceStore(pluginData).root);
+      const enrollments = await selected.pickupStore();
       const matches = (await enrollments.read()).records.filter(
         (entry) =>
           entry.enrollment.workspaceDir === selected.workspace &&
@@ -671,7 +679,7 @@ export async function replaceCodexNotificationCoordinator(
     }
     record.nativeId = actual.id;
     record.definition = definition;
-    await selected.file.write(JSON.stringify(selected.ledger));
+    await selected.writeLedger(selected.ledger);
     return {
       status: 'done' as const,
       automation: JSON.stringify({ ...before, id: actual.id, definition }),
@@ -799,7 +807,7 @@ export async function reconcileCodexAutomationRetirements(
     }
     if (!Value.Check(ledgerSchema, selected.ledger))
       throw new CodexAutomationError('automation-ownership-invalid');
-    await selected.file.write(JSON.stringify(selected.ledger));
+    await selected.writeLedger(selected.ledger);
   });
 }
 
@@ -835,12 +843,14 @@ export async function prepareCodexAutomation(
     if (action.manifestId === issuePickupAutomationId && action.expected.status === 'ACTIVE')
       await prepareCodexPickupEnrollment(pluginData, {
         ...dependencies.intake,
+        storageBackend: dependencies.storageBackend,
         codexHome: selected.codexHome,
         inspectBinding: dependencies.inspectBinding,
       });
     if (action.manifestId === intakeAutomationId && action.expected.status === 'ACTIVE') {
       const verified = await preflightCodexIntake(pluginData, {
         ...dependencies.intake,
+        storageBackend: dependencies.storageBackend,
         codexHome: selected.codexHome,
         inspectBinding: dependencies.inspectBinding,
       });
@@ -869,7 +879,7 @@ export async function prepareCodexAutomation(
         },
       },
     };
-    await selected.file.write(JSON.stringify(ledger));
+    await selected.writeLedger(ledger);
     return {
       status: 'prepared',
       digest,
@@ -930,6 +940,7 @@ export async function acknowledgeCodexAutomation(
     ) {
       const intake = await runCodexIntake(pluginData, true, {
         ...dependencies.intake,
+        storageBackend: dependencies.storageBackend,
         codexHome: selected.codexHome,
         inspectBinding: dependencies.inspectBinding,
       });
@@ -940,14 +951,13 @@ export async function acknowledgeCodexAutomation(
         throw new CodexAutomationError('automation-plan-stale-or-blocked');
       const enrollment = await prepareCodexPickupEnrollment(pluginData, {
         ...dependencies.intake,
+        storageBackend: dependencies.storageBackend,
         codexHome: selected.codexHome,
         inspectBinding: dependencies.inspectBinding,
       });
-      await new IssuePickupEnrollmentStore(codexInstanceStore(pluginData).root).activate(
-        enrollment.enrollment.id,
-        actual.id,
-        enrollment.nativeId,
-      );
+      await (
+        await selected.pickupStore()
+      ).activate(enrollment.enrollment.id, actual.id, enrollment.nativeId);
     }
     const records = selected.ledger.records.filter((record) => record.id !== action.manifestId);
     const completed = {
@@ -959,15 +969,13 @@ export async function acknowledgeCodexAutomation(
     const retired = [...(selected.ledger.retired ?? [])];
     if (action.retire) retired.push(completed);
     else records.push(completed);
-    await selected.file.write(
-      JSON.stringify({
-        version: 1,
-        scope: selected.scope,
-        binding: selected.ledger.binding,
-        records,
-        ...(retired.length ? { retired } : {}),
-      }),
-    );
+    await selected.writeLedger({
+      version: 1,
+      scope: selected.scope,
+      binding: selected.ledger.binding,
+      records,
+      ...(retired.length ? { retired } : {}),
+    });
     return { status: 'verified', manifestId: action.manifestId, nativeId: actual.id, digest };
   });
 }
@@ -999,7 +1007,7 @@ export async function cancelCodexAutomation(
           saved.every((item) => before.nativeIds.includes(item.id)))
       : automationHash(saved) === pending.beforeHash;
     if (!unchanged) throw new CodexAutomationError('automation-cancel-recovery-required');
-    await selected.file.write(JSON.stringify({ ...selected.ledger, pending: undefined }));
+    await selected.writeLedger({ ...selected.ledger, pending: undefined });
     return { status: 'cancelled', digest };
   });
 }

@@ -2,9 +2,10 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import readCleanupConfigurationSource, {
-  type CleanupConfigurationSource,
-} from './cleanup-configuration-source.ts';
+import readGlobalConfigurationSource, {
+  pluginSetting,
+  type GlobalConfigurationSource,
+} from './global-configuration.ts';
 
 export const defaultCleanupGraceMinutes = 60;
 
@@ -30,21 +31,18 @@ export function parseCleanupConfiguration(value?: unknown): CleanupConfiguration
 
 /** project only the shared cleanup policy; unresolved source includes must not look absent. */
 export function projectCleanupConfiguration(config: unknown): CleanupConfiguration {
-  let value = config;
-  for (const key of ['plugins', 'entries', 'agent-system', 'config', 'cleanup']) {
-    if (value === undefined) return parseCleanupConfiguration();
-    if (!value || typeof value !== 'object' || Array.isArray(value) || '$include' in value)
-      return { status: 'blocked', code: 'retirement-configuration-invalid' };
-    value = Object.hasOwn(value, key) ? (value as Record<string, unknown>)[key] : undefined;
+  try {
+    return parseCleanupConfiguration(pluginSetting(config, 'cleanup'));
+  } catch {
+    return { status: 'blocked', code: 'retirement-configuration-invalid' };
   }
-  return parseCleanupConfiguration(value);
 }
 
 export default async function cleanupConfiguration(
-  source: CleanupConfigurationSource = {},
+  source: GlobalConfigurationSource = {},
 ): Promise<CleanupConfiguration> {
   try {
-    return projectCleanupConfiguration(await readCleanupConfigurationSource(source));
+    return projectCleanupConfiguration(await readGlobalConfigurationSource(source));
   } catch (error) {
     return {
       status: 'blocked',

@@ -2,7 +2,10 @@ import { getTextContent, type ChatCompletionRequest } from '@copilotkit/aimock';
 
 import openClawAIMockEvidence from './aimock-evidence.ts';
 import type { OpenClawAIMockScenario } from './aimock-scenario.ts';
-import { matchesOpenClawAIMockToolCallId } from './aimock-tool-result.ts';
+import {
+  matchesOpenClawAIMockToolCallId,
+  openClawAIMockToolResultText,
+} from './aimock-tool-result.ts';
 import { normalizeToolSearchRequest } from './aimock-tool-search.ts';
 
 type JournalEntry = Parameters<typeof openClawAIMockEvidence>[1][number];
@@ -24,6 +27,7 @@ interface OpenClawAIMockDiagnostics {
       userPrompt: boolean;
       toolSearch: boolean;
       tools: Record<string, boolean>;
+      resultMarkers?: Record<string, string>;
     };
     results: Array<{
       callId: string | undefined;
@@ -111,11 +115,21 @@ function requestChecks(scenario: OpenClawAIMockScenario, entry: JournalEntry) {
       return undefined;
     }
   })();
+  const resultMarkers = Object.fromEntries(
+    scenario.toolCalls.flatMap(({ id, resultMarker }) => {
+      if (!resultMarker) return [];
+      if (!normalized) return [[id, 'normalization-failed']];
+      const result = openClawAIMockToolResultText(normalized.messages ?? [], id);
+      if (result === undefined) return [[id, 'no-result-for-call']];
+      return [[id, result.includes(resultMarker) ? 'marker-present' : 'marker-missing']];
+    }),
+  );
   return {
     model: scenario.model.match.test(request.model ?? ''),
     systemPrompt: scenario.systemPromptSignals.every((signal) => text('system').includes(signal)),
     userPrompt: (scenario.userPromptSignals ?? []).every((signal) => text('user').includes(signal)),
     toolSearch: normalized !== undefined,
+    ...(Object.keys(resultMarkers).length ? { resultMarkers } : {}),
     tools: Object.fromEntries(
       scenario.toolCalls.map(({ name }) => [
         name,

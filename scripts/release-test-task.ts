@@ -11,6 +11,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { DatabaseSync } from 'node:sqlite';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -607,7 +608,10 @@ try {
       workspace,
       '--confirm',
     ]);
-    const setup = (...args: string[]) => run(process.execPath, [runtime, 'setup', ...args]);
+    const setup = (...args: string[]) =>
+      run(process.execPath, [runtime, 'setup', ...args], {
+        env: { ...process.env, OPENCLAW_CONFIG_PATH: resolve('fixtures/sqlite-storage.json') },
+      });
     const setupInspection = JSON.parse(
       (await setup('inspect', '--plugin-data', pluginData)).output,
     ) as { findings?: Array<{ code?: string; stepId?: string }> };
@@ -616,6 +620,8 @@ try {
       [
         { code: 'setup-drift', stepId: 'shared' },
         { code: 'setup-not-applicable', stepId: 'openclaw-only' },
+        { code: 'agent-storage-missing', stepId: undefined },
+        { code: 'agent-system-storage-missing', stepId: undefined },
         { code: 'instance-identity-missing', stepId: undefined },
       ],
     );
@@ -627,9 +633,33 @@ try {
       [
         { code: 'setup-applied', stepId: 'shared' },
         { code: 'setup-not-applicable', stepId: 'openclaw-only' },
+        { code: 'agent-storage-ready', stepId: undefined },
+        { code: 'agent-system-storage-ready', stepId: undefined },
         { code: 'instance-identity-ready', stepId: undefined },
       ],
     );
+    const store = join(pluginData, 'agent-system-storage');
+    const database = new DatabaseSync(join(store, 'package-test.sqlite'), { readOnly: true });
+    try {
+      assert.equal(
+        database.prepare('SELECT count(*) AS count FROM dispatch_records').get()?.count,
+        0,
+      );
+    } finally {
+      database.close();
+    }
+    const shared = new DatabaseSync(join(pluginData, 'instance', 'agent-system.sqlite'), {
+      readOnly: true,
+    });
+    try {
+      assert.equal(shared.prepare('SELECT count(*) AS count FROM instances').get()?.count, 1);
+      assert.equal(
+        shared.prepare('SELECT count(*) AS count FROM assignment_claims').get()?.count,
+        0,
+      );
+    } finally {
+      shared.close();
+    }
     await access(join(workspace, '.codex-installed'));
     await assert.rejects(access(join(workspace, '.openclaw-installed')));
   });

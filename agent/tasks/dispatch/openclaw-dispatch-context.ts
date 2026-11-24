@@ -7,7 +7,6 @@ import { withDispatchTask } from './dispatch-task-scope.ts';
 import { realpath } from 'node:fs/promises';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import AgentSystemToolError from '../../../api/error.ts';
-import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
 import { IntakeError } from '../../../channels/github/intake/record-store.ts';
 import { GitHubWorkEventClientError } from '../../../channels/github/provider/work-event-api-client.ts';
 import type {
@@ -58,7 +57,7 @@ import {
 import { assertNotificationManagement } from '../../notification-reset-state.ts';
 import type OpenClawAssignmentClaims from './openclaw-assignment-claims.ts';
 import { type OpenClawDeliveryConnection } from '../delivery/openclaw-delivery.ts';
-import OpenClawDispatchStore, {
+import {
   type OpenClawDispatchRecord,
   type OpenClawDispatchState,
 } from './openclaw-dispatch-state.ts';
@@ -194,8 +193,12 @@ export default class OpenClawDispatchContext {
     const current =
       selection ??
       (await selectOpenClawTaskContext(this.dependencies.taskContext, manifest, workspace));
-    await assertNotificationManagement(this.dependencies.root, current.store.location.scope);
-    const journal = new OpenClawDispatchStore(this.dependencies.root, current.store.location.scope);
+    await assertNotificationManagement(
+      this.dependencies.root,
+      current.store.location.scope,
+      current.store.agentStorage,
+    );
+    const journal = current.dispatch(this.dependencies.root);
     const admitted = managedIssueState(await current.store.read(), (await journal.read()).records);
     if (!admitted) throw new Error('dispatch-intake-activation-required');
     const selected = current.selected ?? retainedIntakePolicy(manifest, admitted, 'openclaw');
@@ -253,9 +256,7 @@ export default class OpenClawDispatchContext {
         intake.scope !== current.store.location.scope)
     )
       throw new Error('dispatch-workspace-binding-changed');
-    await new GitHubIdentityCache(current.store.location).hydrate(
-      fresh.manifest.github?.notifications,
-    );
+    await current.store.identities.hydrate(fresh.manifest.github?.notifications);
     const held = liveWorkflowPolicy(
       fresh.manifest,
       'openclaw',
@@ -304,7 +305,7 @@ export default class OpenClawDispatchContext {
         { manifest, workspaceDir: current.workspace },
         signal ?? AbortSignal.timeout(25000),
       ));
-    const identities = new GitHubIdentityCache(current.store.location);
+    const identities = current.store.identities;
     await identities.resolve(
       liveManifest.github?.notifications,
       client,
@@ -406,7 +407,7 @@ export default class OpenClawDispatchContext {
         resolvePolicy: false,
       },
     );
-    const journal = new OpenClawDispatchStore(this.dependencies.root, current.store.location.scope);
+    const journal = current.dispatch(this.dependencies.root);
     const records = (await journal.read()).records.filter(
       (entry) =>
         entry.threadId === binding.sessionKey ||
@@ -517,7 +518,7 @@ export default class OpenClawDispatchContext {
       manifest,
       workspace,
     );
-    const journal = new OpenClawDispatchStore(this.dependencies.root, current.store.location.scope);
+    const journal = current.dispatch(this.dependencies.root);
     const dispatchState = await journal.read();
     const state = managedIssueState(await current.store.read(), dispatchState.records);
     if (!state) throw new Error('dispatch-intake-record-missing');

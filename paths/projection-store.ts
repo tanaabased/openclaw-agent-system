@@ -2,6 +2,10 @@ import { join, resolve } from 'node:path';
 
 import PrivateStateFile from '../core/private-state-file.ts';
 
+import { bindAgentStore, type StorageBackend } from '../agent/storage/backend.ts';
+import type { SqliteInstallation } from '../agent/storage/storage-lifecycle.ts';
+import nodeErrorCode from '../utils/node-error-code.ts';
+
 export interface StoredPathProjection {
   agentId: string;
   openClawPaths: string[];
@@ -12,6 +16,8 @@ export interface StoredPathProjection {
 export interface PathProjectionStoreDependencies {
   currentUid?: number;
   rootDir?: string;
+  sqliteInstallation?: SqliteInstallation;
+  storageBackend?: StorageBackend;
 }
 
 const maximumPathProjectionBytes = 64 * 1024;
@@ -35,21 +41,40 @@ export default class PathProjectionStore {
   readonly #currentUid: number | undefined;
   readonly #rootDir: string | undefined;
 
-  constructor(dependencies: PathProjectionStoreDependencies) {
+  constructor(private readonly dependencies: PathProjectionStoreDependencies) {
     this.#currentUid = dependencies.currentUid;
     this.#rootDir = dependencies.rootDir ? resolve(dependencies.rootDir) : undefined;
   }
 
-  async read(agentId: string): Promise<StoredPathProjection | undefined> {
-    const file = this.#file(agentId);
-    if (!file) return undefined;
-    const contents = await file.read();
-    if (contents === undefined) return undefined;
+  async read(agentId: string, workspaceDir?: string): Promise<StoredPathProjection | undefined> {
+    const db = await bindAgentStore(
+      agentId,
+      this.dependencies.sqliteInstallation,
+      this.dependencies.storageBackend,
+    );
     let value: unknown;
-    try {
-      value = JSON.parse(contents) as unknown;
-    } catch (error) {
-      throw new Error('The path projection receipt is invalid.', { cause: error });
+    if (db) {
+      const rows = await db
+        .read({ pathProjections: workspaceDir ? { scope: resolve(workspaceDir) } : {} })
+        .catch((error: unknown) => {
+          if (nodeErrorCode(error) !== 'ENOENT') throw error;
+          return { pathProjections: [] };
+        });
+      const row = rows.pathProjections[0];
+      if (!row) return;
+      if (row.scope !== row.value?.workspaceDir)
+        throw new Error('The path projection receipt is invalid.');
+      value = row.value;
+    } else {
+      const file = this.#file(agentId);
+      if (!file) return;
+      const contents = await file.read();
+      if (contents === undefined) return;
+      try {
+        value = JSON.parse(contents);
+      } catch (error) {
+        throw new Error('The path projection receipt is invalid.', { cause: error });
+      }
     }
     if (!isStoredPathProjection(value) || value.agentId !== agentId) {
       throw new Error('The path projection receipt is invalid.');
@@ -58,6 +83,18 @@ export default class PathProjectionStore {
   }
 
   async write(state: StoredPathProjection): Promise<void> {
+    const db = await bindAgentStore(
+      state.agentId,
+      this.dependencies.sqliteInstallation,
+      this.dependencies.storageBackend,
+    );
+    if (db) {
+      if (
+        Buffer.byteLength(JSON.stringify(state, undefined, 2) + '\n') > maximumPathProjectionBytes
+      )
+        throw new Error('The path projection receipt exceeds its size limit.');
+      return db.replacePathProjection(state);
+    }
     const file = this.#file(state.agentId);
     if (!file) {
       throw new Error('The path projection store does not have a usable configuration directory.');

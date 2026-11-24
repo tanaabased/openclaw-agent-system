@@ -1,3 +1,4 @@
+import type { RuntimeStorageOptions } from '../../agent/storage/backend.ts';
 import { join } from 'node:path';
 
 import type { AgentSystemCapability } from '../../api/capability.ts';
@@ -17,7 +18,7 @@ import GitWorktreeLayoutService from './worktree-layout-service.ts';
 import GitWorktreeService from './worktree-service.ts';
 import { createGitWorktreeToolDefinition } from './worktree-tool.ts';
 
-export interface GitCapabilityDependencies {
+export interface GitCapabilityDependencies extends RuntimeStorageOptions {
   baseEnvironment: Readonly<NodeJS.ProcessEnv>;
   runCli: AgentSystemCliRunner;
   currentUid?: number;
@@ -69,7 +70,11 @@ export default function createGitCapability(
     excludedExecutableDirectories: dependencies.excludedExecutableDirectories,
     sshResourceService,
   });
-  const worktreeService = new GitWorktreeService({ layoutService: worktreeLayoutService });
+  const worktreeService = new GitWorktreeService({
+    layoutService: worktreeLayoutService,
+    sqliteInstallation: dependencies.sqliteInstallation,
+    storageBackend: dependencies.storageBackend,
+  });
   const worktreeDefinition = createGitWorktreeToolDefinition({
     runnerFactory,
     service: worktreeService,

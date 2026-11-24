@@ -1,5 +1,7 @@
 import { codexInstanceStore } from '../agent/tasks/dispatch/codex-assignment-claims.ts';
-import IssuePickupEnrollmentStore from '../agent/issue-pickup-enrollment.ts';
+import { bindSqliteInstallation } from '../agent/storage/agent-database.ts';
+import { codexPickupStore } from '../agent/storage/codex-storage.ts';
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import selectionFixture from './issue-pickup-selection-fixture.ts';
 import checkCodexActivationIsolation from './codex-activation-fixture.ts';
 import assert from 'node:assert/strict';
@@ -739,7 +741,12 @@ describe('agent/codex-automations', () => {
 
   it('should enroll one coordinator-free pickup job and preserve its window anchor across pause and repeated installs', async () => {
     const provider = selectionFixture();
-    await codexInstanceStore(pluginData).identity();
+    const { agent, sqliteInstallation, storageBackend } = await sqliteAgentFixture(
+      pluginData,
+      'fixture',
+    );
+    await bindSqliteInstallation(sqliteInstallation).install();
+    await codexInstanceStore(pluginData, storageBackend).identity();
     const source = {
       'schema-version': 1,
       agent: { id: 'fixture' },
@@ -780,6 +787,7 @@ describe('agent/codex-automations', () => {
     >();
     const dependencies = {
       ...deps(),
+      storageBackend,
       intake: { connect: async () => provider.client },
       threadAdapter: {
         async lookup(id: string) {
@@ -847,13 +855,14 @@ describe('agent/codex-automations', () => {
     const legacyChat = legacyPickup.definition.targetThreadId;
     const legacyHistory = structuredClone(conversations.get(legacyChat));
     await saveManifest();
-    const enrollments = new IssuePickupEnrollmentStore(codexInstanceStore(pluginData).root);
+    const enrollments = await codexPickupStore(pluginData, 'fixture', storageBackend);
     provider.milestone.state = 'closed';
     provider.client.discoverProject = async () => {
       throw Error('installation must not scan');
     };
     const priorEnrollment = await prepareCodexPickupEnrollment(pluginData, {
       ...dependencies.intake,
+      storageBackend,
       codexHome,
     });
     await enrollments.activate(priorEnrollment.enrollment.id, legacyPickup.id);
@@ -1037,7 +1046,13 @@ describe('agent/codex-automations', () => {
       (await codexNotificationResetPickupAutomation(pluginData, dependencies))?.definition.status,
       'PAUSED',
     );
-    await rm(enrollments.path);
+    await agent.write([
+      {
+        table: 'pickupEnrollments',
+        action: 'remove',
+        key: { runtime: 'codex', scope: first.enrollment.scope },
+      },
+    ]);
     assert.equal(
       (await replaceCoordinator(resetBefore, dependencies, 'github-issue-pickup')).status,
       'done',
@@ -1050,6 +1065,24 @@ describe('agent/codex-automations', () => {
         'github-issue-pickup',
       ),
       /issue-pickup-enrollment-missing/,
+    );
+
+    const newWorkspace = join(root, 'replacement');
+    await mkdir(newWorkspace);
+    await writeFile(
+      join(newWorkspace, 'agent.yaml'),
+      'schema-version: 1\nagent: {id: replacement}\n',
+    );
+    await bindCodexWorkspace(pluginData, newWorkspace);
+    const cleanup = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    assert.ok(
+      cleanup.actions.some(
+        (action) =>
+          action.manifestId === 'github-issue-assignment' &&
+          action.mode === 'update' &&
+          action.expected.status === 'PAUSED',
+      ),
+      JSON.stringify(cleanup),
     );
   });
 
@@ -1536,8 +1569,17 @@ describe('agent/codex-automations', () => {
         throw new AutomationError('automation-thread-settings-busy');
       },
     };
-    const dependencies = { ...deps(), threadAdapter: adapter };
+    const { agent, sqliteInstallation, storageBackend } = await sqliteAgentFixture(
+      pluginData,
+      'fixture',
+    );
+    const installation = bindSqliteInstallation(sqliteInstallation);
+    await installation.install();
+    const dependencies = { ...deps(), storageBackend, threadAdapter: adapter };
     await syncThreads(dependencies);
+    assert.ok(
+      (await installation.read({ sidebarPlacements: {} })).sidebarPlacements[0]?.value.sectionId,
+    );
     await syncOne(dependencies);
     await manifest(declaration('desired'));
     const drift = await inspectCodexAutomations(pluginData, inputs(), dependencies);
@@ -1573,6 +1615,9 @@ describe('agent/codex-automations', () => {
       nativeInput('idle'),
       dependencies,
     );
+    const readThread = async () =>
+      (await agent.read({ automationThreads: {} })).automationThreads[0]?.value;
+    assert.equal((await readThread())?.settingsUpdate?.phase, 'uncertain');
     assert.equal(effect.status, 'native-action');
     assert.ok('request' in effect && effect.request.tool === 'send_message_to_thread');
     assert.equal(effect.request.arguments.threadId, 'thread-1');
@@ -1619,6 +1664,12 @@ describe('agent/codex-automations', () => {
     );
     assert.equal(writes, 1);
     assert.equal(creates, 1);
+    const ready = await readThread();
+    assert.equal(ready?.nativeId, 'thread-1');
+    assert.equal(ready?.settingsUpdate, undefined);
+    assert.ok(
+      !(await readdir(pluginData)).some((name) => /^automation-threads-.*\.json$/u.test(name)),
+    );
   });
 
   it('should identify settings and thread failures while retaining full read-only codex evidence', async () => {
@@ -2032,24 +2083,39 @@ describe('agent/codex-automations', () => {
   });
 
   it('should reject a stale plan and serialize pending writes until exact recovery', async () => {
-    const plan = await inspect();
+    const { agent, storageBackend } = await sqliteAgentFixture(pluginData, 'fixture');
+    const dependencies = { ...deps(), storageBackend };
+    const inspectSelected = () => inspectCodexAutomations(pluginData, inputs(), dependencies);
+    const plan = await inspectSelected();
     await manifest(job().replace('Review this workspace.', 'Changed prompt.'));
     await assert.rejects(
-      prepareCodexAutomation(pluginData, plan.digest, inputs(), deps()),
+      prepareCodexAutomation(pluginData, plan.digest, inputs(), dependencies),
       rejectsCode('automation-plan-stale-or-blocked'),
     );
-    const fresh = await inspect();
-    await prepareCodexAutomation(pluginData, fresh.digest, inputs(), deps());
-    await assert.rejects(prepareCodexAutomation(pluginData, fresh.digest, inputs(), deps()));
+    const fresh = await inspectSelected();
+    await prepareCodexAutomation(pluginData, fresh.digest, inputs(), dependencies);
+    await assert.rejects(prepareCodexAutomation(pluginData, fresh.digest, inputs(), dependencies));
     await assert.rejects(
-      acknowledgeCodexAutomation(pluginData, fresh.digest, undefined, deps()),
+      acknowledgeCodexAutomation(pluginData, fresh.digest, undefined, dependencies),
       rejectsCode('automation-readback-diverged'),
     );
-    assert.equal((await inspect()).status, 'blocked');
+    assert.equal((await inspectSelected()).status, 'blocked');
+    const pending = await agent.read({ automationState: {}, automationRegistrations: {} });
+    assert.equal(pending.automationState[0]?.value.pending?.digest, fresh.digest);
+    assert.equal(pending.automationRegistrations.length, 0);
     await nativeWrite(fresh.actions[0]!.expected);
-    await assert.rejects(cancelCodexAutomation(pluginData, fresh.digest, deps()));
-    await acknowledgeCodexAutomation(pluginData, fresh.digest, undefined, deps());
-    assert.equal((await inspect()).status, 'aligned');
+    await assert.rejects(cancelCodexAutomation(pluginData, fresh.digest, dependencies));
+    await acknowledgeCodexAutomation(pluginData, fresh.digest, undefined, dependencies);
+    assert.equal((await inspectSelected()).status, 'aligned');
+    const verified = await agent.read({ automationState: {}, automationRegistrations: {} });
+    assert.equal(verified.automationState[0]?.value.pending, undefined);
+    assert.deepEqual(
+      verified.automationRegistrations.map(({ id, value }) => [id, value.nativeId]),
+      [['review', 'fixture-native']],
+    );
+    assert.ok(
+      !(await readdir(pluginData)).some((name) => /^codex-automations-.*\.json$/u.test(name)),
+    );
   });
 
   it('should cancel a failed native write only while its original saved state remains unchanged', async () => {

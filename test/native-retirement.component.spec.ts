@@ -1,3 +1,4 @@
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -8,7 +9,6 @@ import {
   runCodexDispatch,
   type CodexDispatchDependencies,
 } from '../agent/tasks/dispatch/codex-dispatch.ts';
-import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
 import nativeRetirement, {
@@ -16,26 +16,23 @@ import nativeRetirement, {
 } from '../agent/tasks/retirement/native-retirement.ts';
 import NotificationResetStore from '../agent/notification-reset-state.ts';
 import OpenClawDispatch from '../agent/tasks/dispatch/openclaw-dispatch.ts';
-import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { dispatchParameters, dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 
 async function pendingReset(
-  root: string,
-  scope: string,
+  store: NotificationResetStore,
   runtime: 'codex' | 'openclaw',
   workspace: string,
   target: string,
 ) {
-  const store = new NotificationResetStore(root, scope);
   await store.exclusive(async (_record, save) =>
     save({
       version: 1,
       id: 'reset',
       runtime,
-      scope,
+      scope: store.scope,
       workspace,
       agentId: 'fixture',
       purge: true,
@@ -257,7 +254,10 @@ describe('agent/native retirement runtime entries', () => {
     const unsupported = async (): Promise<never> => {
       throw new Error('unexpected provider or managed lifecycle call');
     };
+    const sqlite = await sqliteAgentFixture(root, manifest.agent.id);
     const intake = new OpenClawIntake({
+      sqliteInstallation: sqlite.sqliteInstallation,
+      storageBackend: sqlite.storageBackend,
       root: join(root, 'intake'),
       namespace: root,
       connect: unsupported,
@@ -301,8 +301,11 @@ describe('agent/native retirement runtime entries', () => {
     const action = { action: 'retire', native: target.key };
     const resetScope = await intake.select(manifest, root, { resolvePolicy: false });
     const reset = await pendingReset(
-      join(root, 'dispatch'),
-      resetScope.store.location.scope,
+      new NotificationResetStore(
+        join(root, 'dispatch'),
+        resetScope.store.location.scope,
+        sqlite.agent,
+      ),
       'openclaw',
       root,
       'agent:fixture:reset-owned',
@@ -350,14 +353,16 @@ describe('agent/native retirement runtime entries', () => {
       },
     ]);
     assert.equal(await readFile(join(root, 'local-only.txt'), 'utf8'), 'unpreserved local work');
+    assert.equal(
+      (await sqlite.agent.read({ directEntries: { kind: 'native-retirement' } })).directEntries
+        .length,
+      1,
+    );
     assert.equal((await reset.read())?.phase, 'coordinator');
     await reset.exclusive(async (_record, _save, remove) => remove());
     const selected = await intake.select(manifest, root, { resolvePolicy: false });
     assert.equal(await selected.store.read(), undefined);
-    const journal = new OpenClawDispatchStore(
-      join(root, 'dispatch'),
-      selected.store.location.scope,
-    );
+    const journal = selected.dispatch(join(root, 'dispatch'));
     assert.deepEqual((await journal.read()).records, []);
     await journal.exclusive(async (state, save) => {
       state.records.push({
@@ -396,7 +401,9 @@ describe('agent/native retirement runtime entries', () => {
     const unsupported = async (): Promise<never> => {
       throw new Error('unexpected provider, git or activation access');
     };
+    const sqlite = await sqliteAgentFixture(pluginData, manifest.agent.id);
     const deps: CodexDispatchDependencies = {
+      storageBackend: sqlite.storageBackend,
       codexHome,
       threadId: 'operator',
       activation: unsupported,
@@ -433,8 +440,7 @@ describe('agent/native retirement runtime entries', () => {
       (await runCodexDispatch(pluginData, 'retire', input, deps)) as Record<string, unknown>;
     const resetScope = await selectCodexTaskContext(pluginData, deps, { resolvePolicy: false });
     const reset = await pendingReset(
-      pluginData,
-      resetScope.store.location.scope,
+      new NotificationResetStore(pluginData, resetScope.store.location.scope, sqlite.agent),
       'codex',
       workspace,
       'reset-owned',
@@ -454,6 +460,11 @@ describe('agent/native retirement runtime entries', () => {
     assert.equal((await run({ native: 'native' }))?.status, 'failed');
     archived = true;
     assert.equal((await run({ native: 'native' }))?.status, 'archived');
+    assert.equal(
+      (await sqlite.agent.read({ directEntries: { kind: 'native-retirement' } })).directEntries
+        .length,
+      1,
+    );
     assert.equal((await reset.read())?.phase, 'coordinator');
     await reset.exclusive(async (_record, _save, remove) => remove());
     assert.ok(
@@ -463,10 +474,7 @@ describe('agent/native retirement runtime entries', () => {
     );
     const current = await selectCodexTaskContext(pluginData, deps, { resolvePolicy: false });
     assert.equal(await current.store.read(), undefined);
-    const journal = new CodexDispatchStore(
-      current.store.location.root,
-      current.store.location.scope,
-    );
+    const journal = current.journal;
     assert.deepEqual((await journal.read()).records, []);
     await journal.exclusive(async (state, save) => {
       state.records.push({

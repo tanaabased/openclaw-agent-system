@@ -1,10 +1,13 @@
+import { bindIntakeStore } from '../agent/storage/backend.ts';
+import { sqliteDispatchPersistence } from '../agent/storage/dispatch-backend.ts';
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
+import { bindSqliteInstallation } from '../agent/storage/agent-database.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { automationHash } from '../agent/automation-hash.ts';
 import type { SavedAutomation } from '../agent/automations/codex-automation-state.ts';
-import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import runCodexNotificationReset from '../agent/codex-notification-reset.ts';
 import {
@@ -21,6 +24,21 @@ import { account, intakeFixture } from './github-intake-fixture.ts';
 
 describe('agent/notification reset runtime adapters', () => {
   let root: string;
+  function resetIntake(store: IntakeRecordStore) {
+    return {
+      select: async () => ({
+        store,
+        workspace: root,
+        selected: undefined,
+        dispatch: (path: string) =>
+          new OpenClawDispatchStore(
+            path,
+            store.location.scope,
+            sqliteDispatchPersistence(store.agentStorage, store.location.scope),
+          ),
+      }),
+    };
+  }
   let originalEnv: NodeJS.ProcessEnv;
   beforeEach(async () => {
     originalEnv = process.env;
@@ -154,6 +172,7 @@ describe('agent/notification reset runtime adapters', () => {
         root: pluginData,
         intake: {
           select: async () => ({
+            dispatch: (root) => new OpenClawDispatchStore(root, current.store.location.scope),
             store: current.store,
             workspace: current.workspace,
             selected: assignmentIntakePolicy(manifest, 'openclaw'),
@@ -312,7 +331,7 @@ describe('agent/notification reset runtime adapters', () => {
     const manifest = { schemaVersion: 1 as const, agent: { id: 'receiver' } };
     const service = new OpenClawNotificationReset({
       root,
-      intake: { select: async () => ({ store: intake, selected: undefined, workspace: root }) },
+      intake: resetIntake(intake),
       automations: {
         notificationResetReplace: native.replace,
         notificationResetSnapshot: async () => ({
@@ -472,7 +491,7 @@ describe('agent/notification reset runtime adapters', () => {
       });
       const service = new OpenClawNotificationReset({
         root,
-        intake: { select: async () => ({ store: intake, selected: undefined, workspace: root }) },
+        intake: resetIntake(intake),
         automations: {
           notificationResetSnapshot: snapshot,
           notificationResetPickupSnapshot: async () => snapshot({}, root, 'github-issue-pickup'),
@@ -753,7 +772,7 @@ describe('agent/notification reset runtime adapters', () => {
     const manifest = { schemaVersion: 1 as const, agent: { id: 'receiver' } };
     const service = new OpenClawNotificationReset({
       root,
-      intake: { select: async () => ({ store: intake, selected: undefined, workspace: root }) },
+      intake: resetIntake(intake),
       automations: {
         notificationResetReplace: native.replace,
         notificationResetSnapshot: async () => ({
@@ -870,7 +889,7 @@ describe('agent/notification reset runtime adapters', () => {
     const manifest = { schemaVersion: 1 as const, agent: { id: 'receiver' } };
     const service = new OpenClawNotificationReset({
       root,
-      intake: { select: async () => ({ store: intake, selected: undefined, workspace: root }) },
+      intake: resetIntake(intake),
       automations: {
         notificationResetReplace: native.replace,
         notificationResetSnapshot: async () => ({
@@ -928,7 +947,7 @@ describe('agent/notification reset runtime adapters', () => {
     const manifest = { schemaVersion: 1 as const, agent: { id: 'receiver' } };
     const service = new OpenClawNotificationReset({
       root,
-      intake: { select: async () => ({ store: intake, selected: undefined, workspace: root }) },
+      intake: resetIntake(intake),
       automations: {
         notificationResetReplace: native.replace,
         notificationResetSnapshot: async () => ({
@@ -980,7 +999,13 @@ describe('agent/notification reset runtime adapters', () => {
       JSON.stringify({ 'schema-version': 1, agent: { id: 'receiver' } }),
     );
     await bindCodexWorkspace(pluginData, workspace);
-    const current = await selectCodexTaskContext(pluginData, { codexHome });
+    const { agent, sqliteInstallation, storageBackend } = await sqliteAgentFixture(
+      pluginData,
+      'receiver',
+    );
+    const installation = bindSqliteInstallation(sqliteInstallation);
+    await installation.install();
+    const current = await selectCodexTaskContext(pluginData, { codexHome, storageBackend });
     await seed(current.store, current.workspace);
     const saved: SavedAutomation = {
       id: 'job',
@@ -995,7 +1020,7 @@ describe('agent/notification reset runtime adapters', () => {
         notificationPolicy: null,
       },
     };
-    const journal = new CodexDispatchStore(pluginData, current.store.location.scope);
+    const journal = current.journal;
     await journal.exclusive(async (state, save) => {
       for (const index of [0])
         state.records.push({
@@ -1050,6 +1075,7 @@ describe('agent/notification reset runtime adapters', () => {
     let creation: 'unavailable' | 'found' | 'absent' = 'unavailable';
     const searched = new Set<boolean>();
     const deps = {
+      storageBackend,
       codexHome,
       caller: 'operator',
       automation: async () => structuredClone(saved),
@@ -1138,6 +1164,14 @@ describe('agent/notification reset runtime adapters', () => {
     assert.equal((await run()).status, 'incomplete');
     saved.definition.status = 'PAUSED';
     assert.equal((await run()).status, 'waiting');
+    const pending = await agent.read({
+      notificationResets: { scope: current.store.location.scope },
+    });
+    assert.equal(pending.notificationResets[0]?.value.agentId, 'receiver');
+    await assert.rejects(
+      selectCodexTaskContext(pluginData, { codexHome, storageBackend }),
+      /notification-reset-in-progress/u,
+    );
     assert.equal((await current.store.read())!.baselineAt, 1);
     finished = true;
     coordinatorWorkspace = root;
@@ -1188,6 +1222,13 @@ describe('agent/notification reset runtime adapters', () => {
     assert.equal('request' in restoring && restoring.request?.arguments.status, 'ACTIVE');
     saved.definition.status = 'ACTIVE';
     assert.equal((await run()).status, 'complete');
+    assert.deepEqual((await agent.read({ notificationResets: {} })).notificationResets, []);
+    assert.deepEqual(
+      (await installation.read({ sidebarPlacements: {} })).sidebarPlacements.map(
+        ({ value }) => value,
+      ),
+      [{ version: 1, name: 'AGENT SYSTEM', sectionId: 'group' }],
+    );
     assert.ok((await current.store.read())!.baselineAt > 1);
     await assert.rejects(
       runCodexNotificationReset(
@@ -1201,7 +1242,8 @@ describe('agent/notification reset runtime adapters', () => {
 
   async function verifyOpenClawPurge(missing: boolean) {
     const scope = 'c'.repeat(64);
-    const intake = new IntakeRecordStore({ root, path: join(root, 'intake.json'), scope });
+    const { agent } = await sqliteAgentFixture(root, 'receiver');
+    const intake = bindIntakeStore({ root, path: join(root, 'intake.json'), scope }, agent);
     const fixture = intakeFixture();
     const receiver = { login: account.login, nodeId: account.nodeId };
     const intakeId = automationHash([
@@ -1263,7 +1305,7 @@ describe('agent/notification reset runtime adapters', () => {
     const worktree = join(root, 'checkout');
     await mkdir(worktree);
     const key = 'agent:receiver:issue:one';
-    const journal = new OpenClawDispatchStore(root, scope);
+    const journal = new OpenClawDispatchStore(root, scope, sqliteDispatchPersistence(agent, scope));
     await journal.exclusive(async (state, save) => {
       state.records.push({
         id: 'd'.repeat(64),
@@ -1344,7 +1386,7 @@ describe('agent/notification reset runtime adapters', () => {
     const manifest = { schemaVersion: 1 as const, agent: { id: 'receiver' } };
     const service = new OpenClawNotificationReset({
       root,
-      intake: { select: async () => ({ store: intake, selected: undefined, workspace: root }) },
+      intake: resetIntake(intake),
       automations: {
         notificationResetReplace: native.replace,
         notificationResetSnapshot: async () => ({
@@ -1444,8 +1486,20 @@ describe('agent/notification reset runtime adapters', () => {
     await assert.rejects(run(), /notification-reset-worktree-shared/u);
     assert.equal(archives, missing ? 0 : 1);
     assert.equal(removals, 0);
+    const pending = (await agent.read({ notificationResets: { scope } })).notificationResets[0];
+    assert.equal(pending?.value.phase, 'purge');
+    await assert.rejects(
+      journal.exclusive(async () => {}),
+      /notification-reset-in-progress/u,
+    );
     shared = false;
-    const completed = await run();
+    const reopened = new OpenClawNotificationReset(service.dependencies);
+    const completed = await reopened.run(
+      manifest,
+      root,
+      await reopened.preview(manifest, root, true),
+    );
+    assert.deepEqual((await agent.read({ notificationResets: { scope } })).notificationResets, []);
     assert.equal(completed.status, 'complete');
     if (missing) assert.equal(completed.warnings, undefined);
     assert.equal(archives, missing ? 0 : 1);

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import codexStorageLocation from '../agent/storage/codex-storage.ts';
+import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import codexReview, { type CodexReviewDependencies } from '../agent/tasks/review/codex-review.ts';
 import type { GitHubPullRequestReview } from '../channels/github/provider/review-types.ts';
 import { reviewEventState } from '../channels/github/provider/review-draft.ts';
@@ -133,41 +135,56 @@ describe('agent/tasks/review native first review', () => {
   const call = (operation: string, input: Record<string, unknown> = {}, threadId = deps.threadId) =>
     codexReview(f.pluginData, { action: 'review', operation, ...input }, { ...deps, threadId });
 
-  it('should retain an old request quietly through running ci and publish the first review after failure', async () => {
-    const scan = await call('scan');
-    assert.equal(scan.status, 'observed');
-    assert.equal((await call('scan')).status, 'observed');
-    assert.equal((await call('next', { projects: f.projects })).status, 'unchanged');
-    assert.equal((await call('next', { projects: f.projects })).status, 'unchanged');
-    assert.equal(writes, 0);
-    ci.state = 'settled';
-    assert.equal((await call('next', { projects: f.projects })).status, 'routing-required');
-    const prepared = await call('prepare', {
-      target,
-      assessment: { complexity: 'medium', reason: 'Review interacting concerns.' },
-    });
-    assert.equal(prepared.status, 'prepared');
-    assert.equal((await call('reconcile', { target })).status, 'creation-uncertain');
-    f.created();
-    const context = await call('context', {}, 'issue-thread');
-    assert.equal(context.status, 'verified'); // child begins before coordinator bookkeeping
-    assert.equal((await call('reconcile', { target })).status, 'reconciled');
-    const result = await call(
-      'publish',
-      {
-        draft: {
-          event: 'REQUEST_CHANGES',
-          body: '@operator Fix the demonstrated failed assertion.',
-          comments: [],
-        },
+  for (const backend of ['file', 'sqlite'] as const)
+    it(
+      'should resume an old review request through running ci and publish once using ' + backend,
+      async () => {
+        deps.storageBackend = backend;
+        const db = bindSqliteStorage(codexStorageLocation(f.pluginData), f.manifest.agent.id).agent;
+        if (backend === 'sqlite') await db.install();
+        const scan = await call('scan');
+        assert.equal(scan.status, 'observed');
+        assert.equal((await call('scan')).status, 'observed');
+        assert.equal((await call('next', { projects: f.projects })).status, 'unchanged');
+        assert.equal((await call('next', { projects: f.projects })).status, 'unchanged');
+        assert.equal(writes, 0);
+        ci.state = 'settled';
+        assert.equal((await call('next', { projects: f.projects })).status, 'routing-required');
+        const prepared = await call('prepare', {
+          target,
+          assessment: { complexity: 'medium', reason: 'Review interacting concerns.' },
+        });
+        assert.equal(prepared.status, 'prepared');
+        assert.equal((await call('reconcile', { target })).status, 'creation-uncertain');
+        f.created();
+        const context = await call('context', {}, 'issue-thread');
+        assert.equal(context.status, 'verified'); // child begins before coordinator bookkeeping
+        assert.equal((await call('reconcile', { target })).status, 'reconciled');
+        const result = await call(
+          'publish',
+          {
+            draft: {
+              event: 'REQUEST_CHANGES',
+              body: '@operator Fix the demonstrated failed assertion.',
+              comments: [],
+            },
+          },
+          'issue-thread',
+        );
+        assert.equal(result.status, 'published');
+        assert.equal(writes, 1);
+        assert.equal((await call('reconcile', {}, 'issue-thread')).status, 'reconciled');
+        assert.equal(writes, 1);
+        if (backend === 'sqlite') {
+          const { journal } = await selectCodexTaskContext(f.pluginData, deps);
+          const { dispatchRecords } = await db.read({ dispatchRecords: { scope: journal.scope } });
+          assert.equal(dispatchRecords.length, 1);
+          assert.equal(dispatchRecords[0]?.value.threadId, 'issue-thread');
+          assert.equal(dispatchRecords[0]?.value.reviewPublication?.receipt?.databaseId, 81);
+          assert.equal(await journal.file.read(), undefined);
+        }
       },
-      'issue-thread',
     );
-    assert.equal(result.status, 'published');
-    assert.equal(writes, 1);
-    assert.equal((await call('reconcile', {}, 'issue-thread')).status, 'reconciled');
-    assert.equal(writes, 1);
-  });
 
   it('should retain a removed request without launching or publishing', async () => {
     await call('scan');

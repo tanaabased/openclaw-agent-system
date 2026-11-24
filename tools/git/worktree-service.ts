@@ -1,3 +1,4 @@
+import type { RuntimeStorageOptions } from '../../agent/storage/backend.ts';
 import { lstat, mkdir, readdir, realpath } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
@@ -132,10 +133,12 @@ export default class GitWorktreeService {
   readonly #repositoryService: GitRepositoryService;
   readonly #layoutService: Pick<GitWorktreeLayoutService, 'inspect'>;
 
-  constructor(dependencies: {
-    acquireFileLock?: typeof acquirePrivateStateFileLock;
-    layoutService: Pick<GitWorktreeLayoutService, 'inspect'>;
-  }) {
+  constructor(
+    dependencies: RuntimeStorageOptions & {
+      acquireFileLock?: typeof acquirePrivateStateFileLock;
+      layoutService: Pick<GitWorktreeLayoutService, 'inspect'>;
+    },
+  ) {
     this.#repositoryService = new GitRepositoryService(dependencies);
     this.#layoutService = dependencies.layoutService;
   }

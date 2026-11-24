@@ -77,7 +77,7 @@ jobs:
         if: failure()
         shell: bash
         run: |
-          jq -s '[.. | objects | select(.providerDiagnostic? != null) | {code, providerDiagnostic, retry, retryAfter}]' "$RUNNER_TEMP/agent-system-config/tanaab/agent-system/agent-system-dispatch-v2/"*.json || true
+          node scripts/sqlite-example-state.mjs provider | jq -s '[.. | objects | select(.providerDiagnostic? != null) | {code, providerDiagnostic, retry, retryAfter}]' || true
           if command -v openclaw-diagnostics >/dev/null; then
             helper_dir=$(dirname "$(command -v openclaw-diagnostics)")
             if [[ -d "${SETUP_OPENCLAW_STATE_DIR:-}" ]]; then

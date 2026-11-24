@@ -4,18 +4,18 @@ import type { IssuePickupState } from './issue-pickup-state.ts';
 
 /** live selection policy owns future work; retained effects keep their original scope. */
 export default async function reconcileIssuePickup(
-  state: { projectPickup?: IssuePickupState },
+  state: { issuePickup?: IssuePickupState },
   save: () => Promise<void>,
   record: Pick<PickupEnrollment, 'enrollment' | 'timezone'>,
   commit: () => Promise<void>,
 ) {
-  const previous = state.projectPickup;
+  const previous = state.issuePickup;
   const changed =
     previous &&
     (automationHash(previous.enrollment) !== automationHash(record.enrollment) ||
       previous.timezone !== record.timezone);
   if (changed) {
-    state.projectPickup = {
+    state.issuePickup = {
       ...previous,
       enrollment: structuredClone(record.enrollment),
       timezone: record.timezone,

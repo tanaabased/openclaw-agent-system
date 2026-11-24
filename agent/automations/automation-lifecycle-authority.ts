@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import type AutomationService from './automation-service.ts';
 import type { NotificationScheduler } from './automation-readiness.ts';
 import { listNativeAutomations, type AutomationGateway } from './automation-gateway.ts';
-import { AutomationError } from './automation-errors.ts';
+import { AutomationError, AutomationVerificationError } from './automation-errors.ts';
 import { automationReconciliationState } from './automation-drift.ts';
 import { effectiveAutomation, nativeAutomationHash } from './automation-projection.ts';
 import openclawIntakeJobs from './openclaw-intake-policy.ts';
@@ -50,26 +50,33 @@ export async function verifyAutomationLifecycleRun(
       : undefined;
   if (installedPrompt !== undefined && !declared)
     throw new AutomationError('automation-declaration-removed');
-  if (
-    manifest.agent.id !== run.agentId ||
-    context.agentId !== run.agentId ||
-    records.length !== 1 ||
-    !record ||
-    (expectedId !== undefined && record.id !== expectedId) ||
-    record.pending ||
-    record.retired ||
-    record.removed ||
-    (installedPrompt === undefined &&
-      (!declared ||
-        declared.payload.kind !== 'prompt' ||
-        !declared.runtimes.includes('openclaw') ||
-        (!acceptedOccurrence && !declared.enabled) ||
-        !(acceptedOccurrence ? [true, false] : [declared.enabled]).some(
-          (enabled) => record.hash === effectiveAutomation({ ...declared, enabled }, context).hash,
-        ))) ||
-    !record.nativeHash
-  )
-    throw new AutomationError('automation-lifecycle-unverified');
+  if (manifest.agent.id !== run.agentId)
+    throw new AutomationVerificationError('manifest-agent-mismatch');
+  if (context.agentId !== run.agentId)
+    throw new AutomationVerificationError('scope-agent-mismatch');
+  if (!record) throw new AutomationVerificationError('registration-missing');
+  if (records.length !== 1) throw new AutomationVerificationError('registration-ambiguous');
+  if (expectedId !== undefined && record.id !== expectedId)
+    throw new AutomationVerificationError('automation-id-mismatch');
+  if (record.pending) throw new AutomationVerificationError('registration-pending');
+  if (record.retired) throw new AutomationVerificationError('registration-retired');
+  if (record.removed) throw new AutomationVerificationError('registration-removed');
+  if (installedPrompt === undefined) {
+    if (!declared) throw new AutomationVerificationError('declaration-missing');
+    if (declared.payload.kind !== 'prompt')
+      throw new AutomationVerificationError('declaration-not-prompt');
+    if (!declared.runtimes.includes('openclaw'))
+      throw new AutomationVerificationError('runtime-mismatch');
+    if (!acceptedOccurrence && !declared.enabled)
+      throw new AutomationVerificationError('declaration-disabled');
+    if (
+      !(acceptedOccurrence ? [true, false] : [declared.enabled]).some(
+        (enabled) => record.hash === effectiveAutomation({ ...declared, enabled }, context).hash,
+      )
+    )
+      throw new AutomationVerificationError('declaration-hash-mismatch');
+  }
+  if (!record.nativeHash) throw new AutomationVerificationError('native-hash-missing');
   if (!scheduler && !request) throw new AutomationError('automation-observation-unavailable');
   const jobs = scheduler
     ? await scheduler.list({ includeDisabled: true })

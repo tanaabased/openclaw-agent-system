@@ -63,7 +63,8 @@ import OpenClawDispatchCoordinator from './openclaw-dispatch-coordinator.ts';
 import OpenClawDispatchIssue from './openclaw-dispatch-issue.ts';
 import recoverOpenClawTask from './openclaw-dispatch-recovery.ts';
 import retireOpenClawTask from '../retirement/openclaw-dispatch-retirement.ts';
-import OpenClawDispatchStore, {
+import {
+  type default as OpenClawDispatchStore,
   preserveOpenClawProgress,
   type OpenClawDispatchRecord,
 } from './openclaw-dispatch-state.ts';
@@ -336,10 +337,7 @@ export default class OpenClawDispatch {
           resolvePolicy: false,
         },
       );
-      const journal = new OpenClawDispatchStore(
-        this.dependencies.root,
-        current.store.location.scope,
-      );
+      const journal = current.dispatch(this.dependencies.root);
       response = nativeDispatchResponse(
         response,
         (await journal.read()).records,
@@ -456,10 +454,7 @@ export default class OpenClawDispatch {
             resolvePolicy: false,
           },
         );
-        const journal = new OpenClawDispatchStore(
-          this.dependencies.root,
-          selected.store.location.scope,
-        );
+        const journal = selected.dispatch(this.dependencies.root);
         const client = await this.dependencies.connect(
           { manifest, workspaceDir: workspace },
           authority.signal ?? AbortSignal.timeout(60000),
@@ -602,10 +597,7 @@ export default class OpenClawDispatch {
             resolvePolicy: false,
           },
         );
-        const journal = new OpenClawDispatchStore(
-          this.dependencies.root,
-          current.store.location.scope,
-        );
+        const journal = current.dispatch(this.dependencies.root);
         return renderBoundAssessment(input, {
           runtime: 'openclaw',
           records: (await journal.read()).records,
@@ -700,10 +692,7 @@ export default class OpenClawDispatch {
       );
       const admitted = (await this.context.scope(manifest, workspace)).admitted;
       if (!admitted) throw new Error('dispatch-intake-record-missing');
-      const journal = new OpenClawDispatchStore(
-        this.dependencies.root,
-        selected.store.location.scope,
-      );
+      const journal = selected.dispatch(this.dependencies.root);
       return this.issue.present(manifest, workspace, caller, input, authority, {
         admitted,
         journal,
@@ -885,7 +874,7 @@ export default class OpenClawDispatch {
         );
         if (
           newlyReserved &&
-          dispatchCapacity(after, current.policy.policy.maxConcurrentItems, after.projectPickup)
+          dispatchCapacity(after, current.policy.policy.maxConcurrentItems, after.issuePickup)
             .occupied > current.policy.policy.maxConcurrentItems
         )
           throw new Error('dispatch-at-capacity');

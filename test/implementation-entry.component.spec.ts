@@ -1,3 +1,4 @@
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -802,7 +803,9 @@ describe('agent/native-implementation-entry', () => {
     await bindCodexWorkspace(data, workspace);
     const calls: string[] = [];
     const fixture = intakeFixture();
+    const sqlite = await sqliteAgentFixture(data, 'receiver');
     const deps = {
+      storageBackend: sqlite.storageBackend,
       codexHome: home,
       threadId: 'chat',
       git,
@@ -869,6 +872,12 @@ describe('agent/native-implementation-entry', () => {
       deps,
     );
     assert.equal(result.status, 'native');
+    assert.deepEqual(
+      (await sqlite.agent.read({ directEntries: { kind: 'implementation' } })).directEntries.map(
+        (row) => row.id,
+      ),
+      [context.id],
+    );
     assert.deepEqual('handoff' in result && result.handoff, { next: 'complete' });
     assert.equal(calls.filter((name) => name === 'skills/list').length, 1);
     assert.ok(
@@ -904,7 +913,10 @@ describe('agent/native-implementation-entry', () => {
       },
     };
     const calls: string[] = [];
+    const sqlite = await sqliteAgentFixture(root, manifest.agent.id);
     const intake = new OpenClawIntake({
+      sqliteInstallation: sqlite.sqliteInstallation,
+      storageBackend: sqlite.storageBackend,
       root: join(root, 'intake'),
       namespace: root,
       connect: async () => provider,
@@ -1003,6 +1015,12 @@ describe('agent/native-implementation-entry', () => {
       true,
     );
     assert.equal(result.status, 'native');
+    assert.deepEqual(
+      (await sqlite.agent.read({ directEntries: { kind: 'implementation' } })).directEntries.map(
+        (row) => row.id,
+      ),
+      [context.id],
+    );
     assert.deepEqual('handoff' in result && result.handoff, { next: 'complete' });
     assert.equal(calls.filter((name) => name === 'skills.status').length, 1);
     assert.ok(

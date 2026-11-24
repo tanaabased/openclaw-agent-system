@@ -1,3 +1,4 @@
+import type { SessionStorage } from '../../storage/storage-lifecycle.ts';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import nativeTaskContext from '../context/native-task-context.ts';
@@ -21,6 +22,7 @@ import { replyLocator } from '../feedback/reply-target.ts';
 import { selectWorkflowStage } from '../workflow-stage.ts';
 
 export interface AssessmentEntryDependencies {
+  sessionStorage?: SessionStorage;
   root: string;
   binding: DirectEntryBinding;
   turnId: string;

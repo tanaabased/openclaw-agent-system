@@ -11,7 +11,6 @@ import type { AgentManifest } from '../../../manifest/types.ts';
 import type { AssessmentEntryDependencies } from '../assessment/assessment-entry.ts';
 import assessmentOwner from '../assessment/assessment-owner.ts';
 import type { OpenClawTaskDependencies } from '../dispatch/openclaw-dispatch-context.ts';
-import OpenClawDispatchStore from '../dispatch/openclaw-dispatch-state.ts';
 import { describeIssueSession, type DispatchCaller } from '../../openclaw-session-create.ts';
 import { nativeInputEvent, operatorInputEvent } from '../../openclaw-session-input.ts';
 import openClawSkill from '../../openclaw-skill.ts';
@@ -50,7 +49,7 @@ export default async function openClawEntryContext<T>(
   const current = await selectOpenClawTaskContext(deps.taskContext, manifest, input.workspace, {
     resolvePolicy: false,
   });
-  const journal = new OpenClawDispatchStore(deps.root, current.store.location.scope);
+  const journal = current.dispatch(deps.root);
   return deps.credential.use(authority, async (request) => {
     const managed: AssessmentEntryDependencies['managed'] = async (target) => {
       const state = await journal.read();
@@ -152,6 +151,7 @@ export default async function openClawEntryContext<T>(
       entry.manifest = fresh.manifest;
     };
     const entry: AssessmentEntryDependencies = {
+      sessionStorage: current.sessionStorage,
       operator: input.operator,
       root: deps.root,
       currentTarget,

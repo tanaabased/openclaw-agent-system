@@ -3,15 +3,19 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
-import { codexInstanceStore } from '../tasks/dispatch/codex-assignment-claims.ts';
-import IssuePickupEnrollmentStore from '../issue-pickup-enrollment.ts';
+import codexStorageLocation, {
+  codexStorageBackend,
+  codexAgentDatabases,
+  codexPickupStore,
+} from '../storage/codex-storage.ts';
+import automationLedgerStorage from '../storage/automation-backend.ts';
+import { bindAgentStore, type StorageBackend } from '../storage/backend.ts';
 import {
   issuePickupAutomationId,
   issuePickupConfigurationCode,
   issuePickupErrorCode,
 } from './issue-pickup-jobs.ts';
 import { IntakeError } from '../../channels/github/intake/record-store.ts';
-import PrivateStateFile from '../../core/private-state-file.ts';
 import type { ResolvedAutomation } from '../../manifest/automation-schema.ts';
 import type { AgentManifest } from '../../manifest/types.ts';
 import { AutomationError, CodexAutomationError } from './automation-errors.ts';
@@ -81,12 +85,63 @@ const ownershipSchema = Type.Object(
 
 export type Ledger = Static<typeof ledgerSchema>;
 export interface CodexAutomationDependencies {
+  storageBackend?: CodexIntakeDependencies['storageBackend'];
   codexHome?: string;
   readAutomations?: typeof readCodexAutomations;
   now?: () => number;
   inspectBinding?: typeof inspectCodexWorkspaceBinding;
   threadAdapter?: AutomationThreadAdapter;
-  intake?: CodexIntakeDependencies;
+  intake?: Omit<CodexIntakeDependencies, 'storageBackend'>;
+}
+
+function validOwner(
+  value: unknown,
+  scope: string,
+  agentId?: string,
+): value is Static<typeof ownershipSchema> {
+  if (!Value.Check(ownershipSchema, value) || value.scope !== scope) return false;
+  const binding = value.binding;
+  return (
+    !binding ||
+    ((!agentId || binding.agentId === agentId) &&
+      scope ===
+        automationHash({
+          runtime: 'codex',
+          profile: binding.codexHome,
+          workspaceDir: binding.workspace,
+          agentId: binding.agentId,
+        }))
+  );
+}
+
+async function* ownershipCandidates(root: string, backend: StorageBackend) {
+  if (backend === 'sqlite') {
+    for await (const { agentId, agent } of codexAgentDatabases(root)) {
+      const { automationState } = await agent.read({ automationState: {} });
+      for (const { scope, value } of automationState) {
+        // Inspect the owner before loading another installation's registrations.
+        yield {
+          scope,
+          agentId,
+          header: value,
+          read: automationLedgerStorage('codex', root, scope, agent).read,
+        };
+      }
+    }
+    return;
+  }
+  const names = await readdir(root).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return [] as string[];
+    throw error;
+  });
+  if (names.length > 2000) throw new CodexAutomationError('automation-ownership-invalid');
+  for (const name of names) {
+    const match = /^codex-automations-([a-f0-9]{64})\.json$/u.exec(name);
+    if (!match) continue;
+    const scope = match[1]!;
+    const header = await automationLedgerStorage('codex', root, scope).read();
+    yield { scope, agentId: undefined, header, read: () => header };
+  }
 }
 
 export async function readCodexAutomationSnapshot(
@@ -108,48 +163,29 @@ export async function readCodexAutomationSnapshot(
     inspection.status === 'bound' &&
     inspection.preview.status === 'ready' &&
     inspection.preview.manifest.status === 'loaded';
-  const names = await readdir(root).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === 'ENOENT') return [] as string[];
-    throw error;
-  });
-  if (names.length > 2000) throw new CodexAutomationError('automation-ownership-invalid');
+  const backend = dependencies.storageBackend ?? codexStorageBackend();
   const retained: Ledger[] = [];
-  for (const name of names.filter((name) => /^codex-automations-[a-f0-9]{64}\.json$/u.test(name))) {
-    const stored = new PrivateStateFile({
-      path: join(root, name),
-      directories: [root],
-      currentUid: process.getuid?.(),
-      label: 'Codex automation ownership',
-      maximumBytes: 1024 * 1024,
-    });
-    const value: unknown = JSON.parse((await stored.read()) ?? 'null');
-    if (
-      !Value.Check(ownershipSchema, value) ||
-      name !== `codex-automations-${value.scope}.json` ||
-      (value.binding &&
-        value.scope !==
-          automationHash({
-            runtime: 'codex',
-            profile: value.binding.codexHome,
-            workspaceDir: value.binding.workspace,
-            agentId: value.binding.agentId,
-          }))
-    )
+  for await (const candidate of ownershipCandidates(root, backend)) {
+    const { header } = candidate;
+    if (!validOwner(header, candidate.scope, candidate.agentId))
       throw new CodexAutomationError('automation-ownership-invalid');
     if (
-      value.binding &&
-      isAbsolute(value.binding.codexHome) &&
-      value.binding.codexHome !== codexHome
+      header.binding &&
+      isAbsolute(header.binding.codexHome) &&
+      header.binding.codexHome !== codexHome
     ) {
-      const ownerHome = await realpath(value.binding.codexHome).catch(
+      const ownerHome = await realpath(header.binding.codexHome).catch(
         (error: NodeJS.ErrnoException) => {
-          if (error.code === 'ENOENT') return resolve(value.binding!.codexHome);
+          if (error.code === 'ENOENT') return resolve(header.binding!.codexHome);
           throw error;
         },
       );
       // aliases of this home are not evidence of unrelated ownership.
       if (ownerHome !== codexHome) continue;
     }
+    const value = await candidate.read();
+    if (!validOwner(value, candidate.scope, candidate.agentId))
+      throw new CodexAutomationError('automation-ownership-invalid');
     if (!Value.Check(ledgerSchema, value))
       throw new CodexAutomationError('automation-ownership-invalid');
     if (
@@ -207,20 +243,13 @@ export async function readCodexAutomationSnapshot(
     workspaceDir: workspace,
     agentId: loaded.manifest.agent.id,
   });
-  const path = join(root, `codex-automations-${scope}.json`);
-  const file = new PrivateStateFile({
-    path,
-    directories: [root],
-    currentUid: process.getuid?.(),
-    label: 'Codex automation ownership',
-    maximumBytes: 1024 * 1024,
-  });
+  const agent = await bindAgentStore(loaded.manifest.agent.id, codexStorageLocation(root), backend);
+  const storage = automationLedgerStorage('codex', root, scope, agent);
   let ledger: Ledger;
   try {
-    const contents = await file.read();
-    const parsed: unknown =
-      contents === undefined ? { version: 1, scope, records: [] } : JSON.parse(contents);
-    if (!Value.Check(ledgerSchema, parsed) || parsed.scope !== scope)
+    const contents = await storage.read();
+    const parsed = contents === undefined ? { version: 1, scope, records: [] } : contents;
+    if (!Value.Check(ledgerSchema, parsed) || !validOwner(parsed, scope, loaded.manifest.agent.id))
       throw new Error('invalid ledger');
     ledger = parsed;
     if (ledger.pending && !ledger.pending.targetBefore && !ledger.pending.beforeHash)
@@ -235,6 +264,8 @@ export async function readCodexAutomationSnapshot(
   } catch {
     throw new CodexAutomationError('automation-ownership-invalid');
   }
+  const pickupStore = () =>
+    codexPickupStore(pluginData, loaded.manifest.agent.id, dependencies.storageBackend);
   let jobs: ResolvedAutomation[] = [];
   let policyBlocker: string | undefined;
   let pickupBlocker: string | undefined;
@@ -249,7 +280,7 @@ export async function readCodexAutomationSnapshot(
         pickupBlocker = issuePickupConfigurationCode(policy);
         if (!pickupBlocker) {
           try {
-            await new IssuePickupEnrollmentStore(codexInstanceStore(pluginData).root).owner();
+            await (await pickupStore()).owner();
           } catch (error) {
             pickupBlocker = issuePickupErrorCode(error);
           }
@@ -269,15 +300,17 @@ export async function readCodexAutomationSnapshot(
     workspace,
     codexHome,
     scope,
-    file,
+    agentStorage: agent,
+    writeLedger: storage.write,
     ledger,
     root,
-    path,
+    path: storage.path,
     dependencies,
     cleanupOnly,
     jobs,
     policyBlocker,
     pickupBlocker,
+    pickupStore,
   };
 }
 

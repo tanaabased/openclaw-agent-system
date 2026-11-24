@@ -49,21 +49,26 @@ describe('agent/instance-identity', () => {
     await mkdir(workspace);
     await writeFile(join(workspace, 'agent.yaml'), 'schema-version: 1\nagent: {id: receiver}\n');
     await bindCodexWorkspace(pluginData, workspace);
-    const deps = { codexHome: join(root, 'codex') };
+    const deps = { codexHome: join(root, 'codex'), storageBackend: 'sqlite' as const };
     const inspection = await inspectCodexSetup(pluginData, undefined, deps);
     assert.ok(inspection.findings.some((f) => f.code === 'instance-identity-missing'));
-    const store = codexInstanceStore(pluginData);
+    const store = codexInstanceStore(pluginData, deps.storageBackend);
     assert.equal(await store.inspect(), undefined);
     await installCodexSetup(pluginData, undefined, deps);
     const saved = await store.inspect();
     const replacement = join(root, 'replacement');
     await mkdir(replacement);
-    await writeFile(
-      join(replacement, 'agent.yaml'),
-      'schema-version: 1\nagent: {id: replacement}\n',
-    );
+    await writeFile(join(replacement, 'agent.yaml'), 'schema-version: 1\nagent: {id: receiver}\n');
     await bindCodexWorkspace(pluginData, replacement);
-    await installCodexSetup(pluginData, undefined, deps);
+    const rebound = await installCodexSetup(pluginData, undefined, deps);
+    assert.equal(
+      rebound.outcomes.find((row) => row.component === 'agent-storage')?.status,
+      'unchanged',
+    );
+    assert.equal(
+      rebound.outcomes.find((row) => row.component === 'agent-system-storage')?.status,
+      'unchanged',
+    );
     assert.deepEqual(await store.inspect(), saved);
   });
 

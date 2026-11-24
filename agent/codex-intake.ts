@@ -1,3 +1,10 @@
+import { bindAgentStore } from './storage/backend.ts';
+import { sqliteDispatchPersistence } from './storage/dispatch-backend.ts';
+import codexStorageLocation, {
+  codexStorageBackend,
+  codexPickupStore,
+  retainedIntakeCandidates,
+} from './storage/codex-storage.ts';
 import { withDispatchTask } from './tasks/dispatch/dispatch-task-scope.ts';
 import IssuePickupFailure from './issue-pickup-failure.ts';
 import { omit } from 'lodash-es';
@@ -7,8 +14,6 @@ import type { GitHubNotificationPolicy } from '../channels/github/workflow-polic
 import issuePickupReport from './issue-pickup-report.ts';
 import { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
 import codexCapacity, { codexItemOccupied } from './tasks/dispatch/codex-capacity.ts';
-import { codexInstanceStore } from './tasks/dispatch/codex-assignment-claims.ts';
-import IssuePickupEnrollmentStore from './issue-pickup-enrollment.ts';
 import {
   issuePickupAutomationId,
   issuePickupConfigurationCode,
@@ -16,7 +21,6 @@ import {
 import issuePickup, { pickupAuthority, type PickupInput } from './issue-pickup.ts';
 import type { IssuePickupClient } from '../channels/github/provider/issue-pickup-client.ts';
 import { assertDispatchStorage } from './tasks/dispatch/dispatch-storage.ts';
-import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type { IssuePickupAuthority } from './issue-pickup-authority.ts';
 import { connectCodexGitHub } from './codex-github-client.ts';
 import {
@@ -27,7 +31,7 @@ import acceptCodexIntakeOccurrence from './codex-intake-occurrence.ts';
 import CodexDispatchStore from './tasks/dispatch/codex-dispatch-state.ts';
 import { codexDispatchNative } from './tasks/dispatch/codex-dispatch-native.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
-import { readdir, realpath } from 'node:fs/promises';
+import { realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -38,7 +42,8 @@ import {
   inspectCodexPickupActivation,
 } from './automations/codex-automation-activation.ts';
 import { inspectCodexWorkspaceBinding } from './identity/codex-workspace-binding.ts';
-import IntakeRecordStore, {
+import {
+  type default as IntakeRecordStore,
   IntakeError,
   intakeLocation,
   intakeRemediation,
@@ -66,22 +71,15 @@ async function retainedStore(pluginData: string, deps: CodexIntakeDependencies) 
   );
   const namespace = await realpath(requestedHome).catch(() => requestedHome);
   const binding = await (deps.inspectBinding ?? inspectCodexWorkspaceBinding)(pluginData);
-  const names = await readdir(pluginData).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === 'ENOENT') return [] as string[];
-    throw error;
-  });
-  if (names.length > 2000) throw new IntakeError('intake-state-invalid');
   const matches: IntakeRecordStore[] = [];
-  for (const name of names.filter((name) => /^github-intake-[a-f0-9]{64}\.json$/u.test(name))) {
-    const scope = name.slice('github-intake-'.length, -'.json'.length);
-    const store = new IntakeRecordStore({
-      root: resolve(pluginData),
-      path: join(resolve(pluginData), name),
-      scope,
-    });
+  for await (const { store, agentId } of retainedIntakeCandidates(
+    pluginData,
+    deps.storageBackend,
+  )) {
     const state = await store.read();
     if (
       !state ||
+      (agentId !== undefined && state.agentId !== agentId) ||
       (binding.status === 'bound' && state.workspaceDir !== binding.binding.workspaceDir)
     )
       continue;
@@ -92,7 +90,7 @@ async function retainedStore(pluginData: string, deps: CodexIntakeDependencies) 
         namespace,
         workspaceDir: state.workspaceDir,
         agentId: state.agentId,
-      }).scope === scope
+      }).scope === store.location.scope
     )
       matches.push(store);
   }
@@ -107,7 +105,7 @@ async function connectSelected(
   if (!current.policy) throw new IntakeError('intake-policy-disabled');
   const { policy, username } = current.policy;
   const client = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
-  await new GitHubIdentityCache(current.store.location).resolve(policy, client, 'assignment');
+  await current.store.identities.resolve(policy, client, 'assignment');
   const pin = policy.issueAssignment?.allowed.find(
     (actor) => actor.login.toLowerCase() === username.toLowerCase(),
   );
@@ -139,7 +137,7 @@ async function assertCodexIntakeActive(
     else
       await inspectCodexDispatchActivation(
         pluginData,
-        { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+        current.automationBinding,
         false,
         false,
         'intake',
@@ -166,7 +164,7 @@ export async function runCodexIntake(
         const caller = deps.threadId;
         const activation = await inspectCodexDispatchActivation(
           pluginData,
-          { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+          current.automationBinding,
           false,
           true,
           'intake',
@@ -180,10 +178,7 @@ export async function runCodexIntake(
           const occurrence = await (
             deps.intakeNative ?? codexDispatchNative(connection!.request)
           ).occurrence(caller);
-          const journal = new CodexDispatchStore(
-            current.store.location.root,
-            current.store.location.scope,
-          );
+          const journal = current.journal;
           await journal.observeIntake(async (state, save) =>
             acceptCodexIntakeOccurrence(
               state,
@@ -205,14 +200,7 @@ export async function runCodexIntake(
     const result = await scanAssignments({
       runtime: 'codex',
       readIssuePickup: async () =>
-        pickupAuthority(
-          (
-            await new CodexDispatchStore(
-              current.store.location.root,
-              current.store.location.scope,
-            ).inspectIntake()
-          ).projectPickup,
-        ) ?? deps.issuePickup,
+        pickupAuthority((await current.journal.inspectIntake()).issuePickup) ?? deps.issuePickup,
       store: current.store,
       workspaceDir: current.workspace,
       agentId: current.agentId,
@@ -308,11 +296,13 @@ export async function runCodexIntake(
 export async function inspectCodexIntake(pluginData: string, deps: CodexIntakeDependencies = {}) {
   let state: IntakeState | undefined;
   let code: string | undefined;
+  let journal: CodexDispatchStore | undefined;
   let context: { workspaceDir: string; scope: string } | undefined;
   try {
     const current = await selectCodexTaskContext(pluginData, deps);
     context = { workspaceDir: current.workspace, scope: current.store.location.scope };
     state = await current.store.read();
+    journal = current.journal;
     code = !current.policy
       ? 'intake-policy-disabled'
       : !state
@@ -324,19 +314,26 @@ export async function inspectCodexIntake(pluginData: string, deps: CodexIntakeDe
       .then((store) => store?.read())
       .catch(() => undefined);
     code = error instanceof IntakeError ? error.code : 'intake-inspection-failed';
-    if (state) context = { workspaceDir: state.workspaceDir, scope: state.scope };
+    if (state) {
+      context = { workspaceDir: state.workspaceDir, scope: state.scope };
+      const agent = await bindAgentStore(
+        state.agentId,
+        codexStorageLocation(pluginData),
+        deps.storageBackend ?? codexStorageBackend(),
+      );
+      journal = new CodexDispatchStore(
+        pluginData,
+        state.scope,
+        sqliteDispatchPersistence(agent, state.scope),
+      );
+    }
   }
   return {
     version: 1,
     status: code ? 'blocked' : 'ready',
     ...(code ? { code, remediation: intakeRemediation(code) } : {}),
     ...context,
-    ...(context
-      ? {
-          storage: (await new CodexDispatchStore(pluginData, context.scope).inspectIntake())
-            .storage,
-        }
-      : {}),
+    ...(journal ? { storage: (await journal.inspectIntake()).storage } : {}),
     baselineAt: state?.baselineAt ?? null,
     checkpoint: state?.checkpoint ?? null,
     blocker: state?.blocker ?? null,
@@ -356,11 +353,12 @@ export async function runCodexIssuePickup(
   try {
     const current = await selectCodexTaskContext(pluginData, deps);
     debug = current.manifest.debug;
-    const enrollmentStore = new IssuePickupEnrollmentStore(codexInstanceStore(pluginData).root);
-    const journal = new CodexDispatchStore(
-      current.store.location.root,
-      current.store.location.scope,
+    const enrollmentStore = await codexPickupStore(
+      pluginData,
+      current.agentId,
+      deps.storageBackend,
     );
+    const journal = current.journal;
     const verifyNative = async (policy: GitHubNotificationPolicy) => {
       const retained = await enrollmentStore.inspect(policy, 'codex', current.store.location.scope);
       if (!deps.threadId) throw new IntakeError('issue-pickup-native-caller-required');
@@ -372,7 +370,7 @@ export async function runCodexIssuePickup(
           deps.intakeNative ?? codexDispatchNative(connection!.request)
         ).occurrence(deps.threadId);
         const acceptedOccurrence = Boolean(
-          (await journal.inspectIntake()).projectPickup?.operations.some(
+          (await journal.inspectIntake()).issuePickup?.operations.some(
             (entry) => entry.runId === occurrence.id,
           ),
         );
@@ -380,10 +378,7 @@ export async function runCodexIssuePickup(
           ? await deps.pickupActivation(acceptedOccurrence)
           : await inspectCodexPickupActivation(
               pluginData,
-              {
-                codexHome: current.codexHome,
-                inspectBinding: deps.inspectBinding,
-              },
+              current.automationBinding,
               acceptedOccurrence,
             );
         if (
@@ -439,7 +434,7 @@ export async function runCodexIssuePickup(
           now: deps.now ?? Date.now,
           readPolicy,
           client,
-          instance: codexInstanceStore(pluginData),
+          instance: enrollmentStore.instance,
           runId: nativeOccurrence?.id ?? authority.enrollment.id,
           occupied: codexItemOccupied,
           input,
@@ -460,7 +455,7 @@ export async function runCodexIssuePickup(
           outcome: result,
           debug: current.manifest.debug,
           capacity: {
-            occupied: codexCapacity(state, reportPolicy.maxConcurrentItems, state.projectPickup)
+            occupied: codexCapacity(state, reportPolicy.maxConcurrentItems, state.issuePickup)
               .occupied,
             limit: reportPolicy.maxConcurrentItems,
           },
@@ -495,17 +490,14 @@ export async function prepareCodexPickupEnrollment(
   const policy = current.policy.policy;
   const code = issuePickupConfigurationCode(policy);
   if (code) throw new IntakeError(code);
-  const store = new IssuePickupEnrollmentStore(codexInstanceStore(pluginData).root);
+  const store = await codexPickupStore(pluginData, current.agentId, deps.storageBackend);
   await store.owner();
   const client = (await connectSelected(
     current,
     deps,
     AbortSignal.timeout(30_000),
   )) as IssuePickupClient;
-  return new CodexDispatchStore(
-    current.store.location.root,
-    current.store.location.scope,
-  ).exclusive(async (state, save) =>
+  return current.journal.exclusive(async (state, save) =>
     store.prepare({
       policy,
       runtime: 'codex',

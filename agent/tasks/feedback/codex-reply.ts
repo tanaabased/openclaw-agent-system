@@ -4,7 +4,6 @@ import codexAssessmentSkill from '../assessment/codex-assessment-skill.ts';
 import codexContinuationNative from '../implementation/codex-continuation-native.ts';
 import codexReplyInput from '../../codex-direct-input.ts';
 import { withNative } from '../dispatch/codex-dispatch-context.ts';
-import CodexDispatchStore from '../dispatch/codex-dispatch-state.ts';
 import authorizeCodexFeedback from './codex-feedback-authority.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';
 import codexFeedbackInput from './codex-feedback-input.ts';
@@ -41,10 +40,7 @@ async function codexReplyScoped(
     current.codexHome,
   );
   try {
-    const journal = new CodexDispatchStore(
-      current.store.location.root,
-      current.store.location.scope,
-    );
+    const journal = current.journal;
     const binding = {
       runtime: 'codex' as const,
       agentId: current.agentId,
@@ -53,7 +49,7 @@ async function codexReplyScoped(
       session: caller,
       incarnation: caller,
     };
-    const replyStore = new ReplyStore(pluginData, binding);
+    const replyStore = new ReplyStore(pluginData, binding, current.sessionStorage);
     let feedback: ReplyDraft['feedback'];
     let defaultTarget: string | undefined;
     const nativeInput = () =>
@@ -186,6 +182,7 @@ async function codexReplyScoped(
     };
     return await feedbackReply(input, {
       defaultTarget,
+      sessionStorage: current.sessionStorage,
       root: pluginData,
       binding,
       ...turn,

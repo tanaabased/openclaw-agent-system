@@ -1,3 +1,4 @@
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -158,11 +159,13 @@ describe('agent/retirement disposal', () => {
       repository: fixture.repository,
       issue: fixture.item,
     } as unknown as ManagedIssue;
+    const { agent } = await sqliteAgentFixture(root, binding.agentId);
     const store = new DirectEntryStore(
       root,
       binding,
       implementationEntriesSchema,
       'implementation',
+      agent,
     );
     const source = { turnId: 'turn', inputId: 'input' };
     const entry = {
@@ -181,7 +184,22 @@ describe('agent/retirement disposal', () => {
       entries.push(entry, unrelated);
       await save();
     });
-    await retirementLocalData({ root, binding, intake, retain: async () => {} });
+    const retirement = {
+      digest: 'pending',
+      source: 'operator',
+      turnId: 'turn',
+      inputId: 'input',
+      at: 1,
+    };
+    await agent.saveDirectEntries(store.scope, 'native-retirement', [retirement]);
+    await retirementLocalData({
+      root,
+      binding,
+      intake,
+      sessionStorage: agent,
+      retain: async () => {},
+    });
+    assert.deepEqual(await agent.readDirectEntries(store.scope, 'native-retirement'), [retirement]);
     await store.exclusive(async (entries) => {
       assert.deepEqual(entries, [unrelated]);
     });
@@ -232,7 +250,8 @@ describe('agent/retirement disposal', () => {
       session: 'task',
       incarnation: 'task',
     };
-    const store = new ReplyStore(root, binding);
+    const { agent } = await sqliteAgentFixture(root, binding.agentId);
+    const store = new ReplyStore(root, binding, agent);
     const draft: ReplyDraft = {
       id: 'a'.repeat(64),
       turnId: 'turn',
@@ -270,6 +289,7 @@ describe('agent/retirement disposal', () => {
     const effects: RetirementEffect[] = [];
     await assert.rejects(
       retirementLocalData({
+        sessionStorage: agent,
         root,
         binding,
         intake,
@@ -281,6 +301,7 @@ describe('agent/retirement disposal', () => {
     );
     assert.equal((await store.read()).length, 3);
     await retirementLocalData({
+      sessionStorage: agent,
       root,
       binding,
       intake,

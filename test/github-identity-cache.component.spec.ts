@@ -1,3 +1,4 @@
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -37,7 +38,8 @@ describe('channels/github/identity-cache', () => {
   };
 
   it('should resolve mixed forms into equivalent authority and read pins without network', async () => {
-    const cache = new GitHubIdentityCache({ root, scope: 'test' });
+    const { agent } = await sqliteAgentFixture(root, 'receiver');
+    const cache = new GitHubIdentityCache({ root, scope: 'test' }, agent);
     const input = policy();
     await cache.resolve(input, { resolveIdentity });
     assert.deepEqual(
@@ -48,9 +50,10 @@ describe('channels/github/identity-cache', () => {
       ],
     );
     const fresh = policy();
-    await new GitHubIdentityCache({ root, scope: 'test' }).hydrate(fresh);
+    await new GitHubIdentityCache({ root, scope: 'test' }, agent).hydrate(fresh);
     assert.equal(fresh.issueAssignment!.allowed[0]!.nodeId, actor.nodeId);
     assert.equal(fresh.issueAssignment!.allowed[1]!.login, actor.login);
+    assert.equal(await cache.file.read(), undefined);
   });
 
   it('should resolve only workflow users for routed assignment', async () => {

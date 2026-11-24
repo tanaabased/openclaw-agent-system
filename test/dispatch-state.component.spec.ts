@@ -380,7 +380,7 @@ describe('agent/shared dispatch state', () => {
       const result = await store.inspectIntake();
       assert.equal(result.storage.level, 'normal');
       assert.equal(result.storage.protectedRecords['active-workflow'], 2);
-      assert.equal(result.projectPickup, undefined);
+      assert.equal(result.issuePickup, undefined);
       assert.equal(await readFile(store.path, 'utf8'), before);
       await store.observeIntake(async (state, save) => {
         state.run = {
@@ -417,7 +417,7 @@ describe('agent/shared dispatch state', () => {
         /dispatch-task-record-invalid/,
       );
       assert.deepEqual(JSON.parse(await readFile(store.path, 'utf8')).records[1], damaged());
-      for (const extra of [{ scope: 'e'.repeat(64) }, { projectPickup: { invalid: true } }]) {
+      for (const extra of [{ scope: 'e'.repeat(64) }, { issuePickup: { invalid: true } }]) {
         await write(store, [healthy(), damaged()], extra);
         await assert.rejects(store.inspectIntake(), /dispatch-state-invalid/);
       }

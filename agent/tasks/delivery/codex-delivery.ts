@@ -12,7 +12,6 @@ import { realpath } from 'node:fs/promises';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 import { workflowFeedbackAvailable } from '../../../channels/github/feedback-policy.ts';
-import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
 import { cardCopyInstructions } from '../../../channels/github/presentation/card.ts';
 import { githubNotificationPullRequestOpenedCard } from '../../../channels/github/presentation/pull-request-opened.ts';
 import GitHubIssueCommentClient from '../../../channels/github/provider/issue-comment-client.ts';
@@ -41,7 +40,6 @@ import {
   verifyDispatchWorktree,
   type DispatchGit,
 } from '../dispatch/codex-dispatch-project.ts';
-import CodexDispatchStore from '../dispatch/codex-dispatch-state.ts';
 import authorizeCodexFeedback from '../feedback/codex-feedback-authority.ts';
 import connectCodexFeedback from '../feedback/codex-feedback-client.ts';
 import connectCodexGitHubAccount from '../../codex-github-client.ts';
@@ -223,11 +221,8 @@ async function runCodexDeliveryScoped(
     throw invalidDeliveryRequest(input.action, 'codex');
   if (input.title?.includes('\0') || input.body?.includes('\0'))
     throw invalidDeliveryRequest(input.action, 'codex');
-  const current = await selectCodexTaskContext(pluginData, {
-    codexHome: deps.codexHome,
-    inspectBinding: deps.inspectBinding,
-  });
-  const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+  const current = await selectCodexTaskContext(pluginData, deps);
+  const store = current.journal;
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
   const git = deps.git ?? dispatchGit;
   const connection = deps.native
@@ -520,7 +515,7 @@ async function runCodexDeliveryScoped(
           try {
             const activation = await (deps.activation ?? inspectCodexDispatchActivation)(
               pluginData,
-              { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+              current.automationBinding,
               false,
               false,
               'feedback',
@@ -743,7 +738,7 @@ async function runCodexDeliveryScoped(
           : undefined,
       );
       if (!adoptedPullRequest && !adopted)
-        await new GitHubIdentityCache(current.store.location).resolve(
+        await current.store.identities.resolve(
           current.manifest.github?.notifications,
           connected.client,
           'delivery',

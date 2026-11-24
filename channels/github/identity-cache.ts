@@ -11,6 +11,10 @@ import type { GitHubIdentityPin, GitHubNotificationPolicy } from './workflow-pol
 import type { GitHubNotificationIntakeClient } from './provider/work-event-types.ts';
 import type { GitHubIdentity } from './provider/work-item.ts';
 
+import type { BoundStorage } from '../../agent/storage/storage-lifecycle.ts';
+import nodeErrorCode from '../../utils/node-error-code.ts';
+
+const maximumBytes = 1024 * 1024;
 const identitySchema = Type.Object(
   {
     login: Type.String({ minLength: 1 }),
@@ -67,17 +71,34 @@ export default class GitHubIdentityCache {
   static readonly #refreshed = new WeakMap<object, Map<string, GitHubIdentity>>();
   readonly file: PrivateStateFile;
   readonly path: string;
-  constructor(readonly location: { root: string; scope: string }) {
+  constructor(
+    readonly location: { root: string; scope: string },
+    private readonly storage?: BoundStorage['agent'],
+  ) {
     this.path = join(location.root, `github-identities-${location.scope}.json`);
     this.file = new PrivateStateFile({
       path: this.path,
       directories: [location.root],
       label: 'GitHub identity cache',
-      maximumBytes: 1024 * 1024,
+      maximumBytes,
     });
   }
 
   async read() {
+    if (this.storage) {
+      const rows = await this.storage
+        .read({ githubIdentityPins: { scope: this.location.scope } })
+        .catch((error: unknown) => {
+          if (nodeErrorCode(error) !== 'ENOENT') throw error;
+          return { githubIdentityPins: [] };
+        });
+      const entries = Object.fromEntries(
+        rows.githubIdentityPins.map(({ id, value }) => [id, value]),
+      );
+      const state = { version: 1 as const, entries };
+      if (!Value.Check(cacheSchema, state)) throw new Error('github-identity-cache-invalid');
+      return state;
+    }
     const contents = await this.file.read();
     if (contents === undefined)
       return { version: 1 as const, entries: {} as Record<string, GitHubIdentity> };
@@ -194,7 +215,17 @@ export default class GitHubIdentityCache {
         const state = await this.read();
         if (unchanged(state.entries[reference])) return;
         state.entries[reference] = identity;
-        await this.file.write(JSON.stringify(state));
+        const contents = JSON.stringify(state);
+        if (!this.storage) return this.file.write(contents);
+        if (Buffer.byteLength(contents) > maximumBytes)
+          throw new Error('The GitHub identity cache exceeds its size limit.');
+        await this.storage.write([
+          {
+            table: 'githubIdentityPins',
+            action: 'save',
+            row: { scope: this.location.scope, id: reference, value: identity },
+          },
+        ]);
       });
     } finally {
       await lock.release();

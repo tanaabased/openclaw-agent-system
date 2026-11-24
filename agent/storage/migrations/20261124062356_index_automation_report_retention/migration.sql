@@ -1,0 +1,2 @@
+CREATE INDEX `automation_reports_recovery` ON `automation_reports` (`execution_id`) WHERE not (json_extract("automation_reports"."value", '$.state') in ('delivered', 'failed')) or json_extract("automation_reports"."value", '$.completedAt') is null;--> statement-breakpoint
+CREATE INDEX `automation_reports_expiry` ON `automation_reports` (coalesce(julianday(json_extract("value", '$.completedAt')), 0)) WHERE json_extract("automation_reports"."value", '$.state') in ('delivered', 'failed');

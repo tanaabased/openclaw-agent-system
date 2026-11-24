@@ -32,6 +32,7 @@ public summary from its independent draft while keeping the same chat and checko
 ```bash
 # should prepare the packed plugin and strict notification fixture
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --needs-ssh-key --yolo
+openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 openclaw-aimock prepare --scenario openclaw-issue-assessment-recovery
 openclaw config set skills.workshop.autonomous.mode off
 # keep unrelated nightly memory turns out of the strict notification fixture
@@ -103,13 +104,13 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 60
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for worktree-ready --timeout 600 --json | tee "$TMPDIR/notification-plan.json" | jq -e '.status == "completed" and (.observation.items | length) == 1'
 conversation=$(jq -er .observation.items[0].workflow.conversation "$TMPDIR/notification-plan.json")
-jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
+node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' > "$TMPDIR/notification-dispatch-before.json"
 run_id=$(jq -er '(.nativeTurns | map(select(.role == "assessment")) | last | .turn).runId' "$TMPDIR/notification-dispatch-before.json")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 # reconcile native completion before a later run selects feedback for this issue
 reconcile_run=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$reconcile_run" 600000
-jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
+node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' > "$TMPDIR/notification-dispatch-before.json"
 
 # should recover the same issue after permission reordering and restart with fresh private facts
 cp "$TMPDIR/notification-dispatch-before.json" "$TMPDIR/notification-pre-refresh.json"
@@ -121,7 +122,7 @@ printf '\nModel-only verification fact: notification-hidden-later-fact.\n' >> "$
 openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -F "body=@$TMPDIR/notification-later-issue.md" | jq -e '.state == "open"'
 openclaw-gateway stop --timeout 340
 node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import {parse,stringify} from "yaml"; const path=process.env.GITHUB_WORKSPACE+"/examples/openclaw-issue-assessment-recovery/tanaabot/agent.yaml"; const value=parse(readFileSync(path,"utf8")); value.github["issue-assignment"].allowed.reverse(); writeFileSync(path,stringify(value));'
-node --input-type=module -e 'import {readFileSync,writeFileSync,readdirSync} from "node:fs"; import {join} from "node:path"; const directory=process.env.XDG_CONFIG_HOME+"/tanaab/agent-system/agent-system-dispatch-v2"; const owner=JSON.parse(readFileSync(process.env.TMPDIR+"/notification-dispatch-before.json","utf8")); const damaged=JSON.parse(readFileSync(process.env.GITHUB_WORKSPACE+"/examples/openclaw-issue-assessment-recovery/damaged-tasks.json","utf8")); const paths=readdirSync(directory).filter(name=>name.startsWith("openclaw-dispatch-") && name.endsWith(".json")).map(name=>join(directory,name)).filter(path=>JSON.parse(readFileSync(path,"utf8")).records.some(record=>record.id===owner.id)); if(paths.length!==1) throw new Error("one owning journal required"); const path=paths[0]; const state=JSON.parse(readFileSync(path,"utf8")); state.records.push(...damaged); writeFileSync(path,JSON.stringify(state)); writeFileSync(process.env.TMPDIR+"/damaged-task-journal",path);'
+node "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment-recovery/damaged-journal.mjs" seed "$TMPDIR/notification-dispatch-before.json"
 openclaw-gateway start
 conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
 session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-dispatch-before.json")
@@ -132,16 +133,16 @@ params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg lea
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; const result = await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"}); console.log(JSON.stringify(result));' "$params" | jq -e '.runId == "notification-refresh-context"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "notification-refresh-context" 600000
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key}')" --json | jq -e 'any(.messages[]; .role == "user" and .__openclaw.idempotencyKey == "notification-refresh-context:user" and .__openclaw.truncated == true)'
-jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
+node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' > "$TMPDIR/notification-dispatch-before.json"
 jq -e --slurpfile before "$TMPDIR/notification-pre-refresh.json" '$before[0] as $before | .sessionCreation.sessionId == $before.sessionCreation.sessionId and .threadId == $before.threadId and .worktree == $before.worktree and .request == $before.request and .routing == $before.routing and .effective.status == "verified" and .effective == $before.effective and .request.thinkingLevel == "medium"' "$TMPDIR/notification-dispatch-before.json"
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200,inputRunIds:["notification-refresh-context"]}')" --json | jq -e '[.messages[] | select(.role == "assistant" and .__openclaw.runId == "notification-refresh-context" and .stopReason == "stop")] | if length == 1 then .[0].content | (if type == "string" then . else map(.text // "") | join("") end) | test("disposable (test )?issues"; "i") and test("close|cleanup"; "i") and test("evidence"; "i") and contains("Fresh issue facts") and (contains("Documentation-only change:") | not) and (contains("notification-hidden-initial-fact") | not) and (contains("notification-hidden-later-fact") | not) else error("one stopped refreshed response required") end'
 
 # should preserve the unrelated damaged records and unresolved effect across healthy native progress
-node --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync,writeFileSync} from "node:fs"; const path=readFileSync(process.env.TMPDIR+"/damaged-task-journal","utf8"); const expected=JSON.parse(readFileSync(process.env.GITHUB_WORKSPACE+"/examples/openclaw-issue-assessment-recovery/damaged-tasks.json","utf8")); const state=JSON.parse(readFileSync(path,"utf8")); const actual=state.records.filter(record=>expected.some(entry=>entry.id===record.id)); assert.deepEqual(actual,expected); state.records=state.records.filter(record=>!expected.some(entry=>entry.id===record.id)); writeFileSync(path,JSON.stringify(state));'
+node "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment-recovery/damaged-journal.mjs" verify "$TMPDIR/notification-dispatch-before.json"
 
 # should recover only an explicitly prepared public summary after restart in the same native issue owner
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment-recovery/tanaabot"
-jq -es '[.[] | . | select(.update != null and .turnId == "notification-refresh-context")] | if length == 1 then .[0] else error("one pending reply required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-summary-before.json"
+node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" replies | jq -es '[.[] | . | select(.update != null and .turnId == "notification-refresh-context")] | if length == 1 then .[0] else error("one pending reply required") end' > "$TMPDIR/notification-summary-before.json"
 jq -e '(.publicText | length > 0) and .attempted != true and .receipt == null' "$TMPDIR/notification-summary-before.json"
 conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
 node --input-type=module -e 'import {callGatewayFromCli} from "openclaw/plugin-sdk/gateway-runtime"; for (let index = 0; index < 201; index++) await callGatewayFromCli("chat.inject", {json:true}, {sessionKey:process.argv[1],message:"Recovery history filler " + index}, {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"});' "$conversation"
@@ -150,7 +151,7 @@ openclaw-gateway stop --timeout 340
 openclaw-gateway start
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
-jq -es --slurpfile before "$TMPDIR/notification-summary-before.json" '[.[] | . | select(.id == $before[0].id)] | length == 1 and .[0] == $before[0]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json
+node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" replies | jq -es --slurpfile before "$TMPDIR/notification-summary-before.json" '[.[] | . | select(.id == $before[0].id)] | length == 1 and .[0] == $before[0]'
 receipt=$(jq -er .id "$TMPDIR/notification-dispatch-before.json")
 session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-dispatch-before.json")
 leaf=$(openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:1}')" --json | jq -er .sessionInfo.activeLeafEntryId)
@@ -158,8 +159,8 @@ draft=$(jq -c '{target:(.target | fromjson | .url),publicText}' "$TMPDIR/notific
 params=$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg draft "$draft" '{sessionKey:$key,agentId:"assessment-recovery-tanaabot",sessionId:$session,message:("Direct reply publish: " + $draft),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"notification-summary-recovery"}')
 node --input-type=module -e 'import {callGatewayFromCli} from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-summary-recovery"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-summary-recovery 600000
-jq -es --slurpfile before "$TMPDIR/notification-dispatch-before.json" '[.[].records[] | select(.id == $before[0].id)] | if length == 1 then .[0] else error("one retained owner required") end | .threadId == $before[0].threadId and .worktree == $before[0].worktree and .sessionCreation.sessionId == $before[0].sessionCreation.sessionId and .request == $before[0].request and .routing == $before[0].routing' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
-jq -es --slurpfile before "$TMPDIR/notification-summary-before.json" '[.[] | . | select(.id == $before[0].id)] | length == 1 and .[0].receipt.databaseId > 0 and .[0].publicText == $before[0].publicText and .[0].publication == $before[0].publication' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json
+node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -es --slurpfile before "$TMPDIR/notification-dispatch-before.json" '[.[].records[] | select(.id == $before[0].id)] | if length == 1 then .[0] else error("one retained owner required") end | .threadId == $before[0].threadId and .worktree == $before[0].worktree and .sessionCreation.sessionId == $before[0].sessionCreation.sessionId and .request == $before[0].request and .routing == $before[0].routing'
+node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" replies | jq -es --slurpfile before "$TMPDIR/notification-summary-before.json" '[.[] | . | select(.id == $before[0].id)] | length == 1 and .[0].receipt.databaseId > 0 and .[0].publicText == $before[0].publicText and .[0].publication == $before[0].publication'
 ```
 
 ## Cleanup

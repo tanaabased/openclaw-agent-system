@@ -345,7 +345,7 @@ describe('agent/openclaw task-continuation', () => {
       const intake = state!.records[0]!;
       const pickup = reservedIssuePickup(intake, 'openclaw');
       await journal.exclusive(async (dispatch, save) => {
-        dispatch.projectPickup = pickup;
+        dispatch.issuePickup = pickup;
         await save();
       });
       intake.evidence.mode = 'work';

@@ -9,6 +9,9 @@ import AutomationReportStore, {
   reportLifetimeMs,
   type AutomationReportRecord,
 } from '../agent/automations/automation-report-store.ts';
+import AutomationService from '../agent/automations/automation-service.ts';
+import registerAutomationReportHooks from '../core/automation-report-hook.ts';
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import { prepareAutomationReport } from '../agent/automations/automation-report.ts';
 
 describe('agent/automation-report-store', () => {
@@ -141,6 +144,63 @@ describe('agent/automation-report-store', () => {
     });
     assert.equal(replay.code, 'automation-report-expired');
     assert.equal(await store.read(complete.executionId), undefined);
+  });
+
+  it('should resume and prune reports in each sqlite agent database after restart', async () => {
+    const { sqliteInstallation, storageBackend } = await sqliteAgentFixture(root, 'a');
+    await sqliteAgentFixture(root, 'b');
+    const service = new AutomationService({
+      sqliteInstallation,
+      storageBackend,
+      root,
+      profile: root,
+      command: [],
+      environment: {},
+      now: () => now,
+      manifestService: { loadForAgentId: async () => assert.fail('unexpected manifest lookup') },
+    });
+    const a = await service.reportStore('a');
+    const b = await service.reportStore('b');
+    const pending = report('submitted');
+    const old = report('failed');
+    old.completedAt = new Date(now).toUTCString();
+    await a.write(pending);
+    await a.write(old);
+    const other = {
+      ...pending,
+      target: { ...pending.target, agentId: 'b' },
+      state: 'uncertain' as const,
+    };
+    await b.write(other);
+    now += reportLifetimeMs + 1;
+    const recent = report('delivered');
+    await a.write(recent);
+
+    const recovered: string[] = [];
+    let tick!: () => Promise<void>;
+    registerAutomationReportHooks(
+      {
+        on: (name: string, hook: () => Promise<void>) => {
+          if (name === 'cron_reconciled') tick = hook;
+        },
+        logger: { warn: (warning: string) => assert.fail(warning) },
+      } as never,
+      new AutomationService(service.dependencies),
+      async (selected, id) => {
+        const retained = (await selected.read(id))!;
+        recovered.push(retained.target.agentId + ':' + retained.state);
+        await selected.update(id, (value) => {
+          value.state = 'delivered';
+        });
+      },
+    );
+    await tick();
+    await tick();
+    assert.deepEqual(recovered.sort(), ['a:submitted', 'b:uncertain']);
+    assert.deepEqual(new Set(await a.ids()), new Set([pending.executionId, recent.executionId]));
+    assert.deepEqual(await b.ids(), [pending.executionId]);
+    assert.equal(await a.read(old.executionId), undefined);
+    assert.equal(await a.file(pending.executionId, true).read(), undefined);
   });
 
   it('should migrate legacy terminal records and prefer committed terminal evidence after interruption', async () => {
