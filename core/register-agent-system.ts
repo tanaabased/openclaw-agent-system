@@ -285,6 +285,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...(process.env.HOME ? { homeDirectory: process.env.HOME } : {}),
   };
   const gitCapability = createGitCapability({
+    sqliteInstallation,
     ...capabilityDependencies,
     environmentService: lifecycleEnvironmentService,
     gitignoreService,

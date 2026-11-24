@@ -1,3 +1,4 @@
+import codexStorageLocation from '../../storage/codex-storage.ts';
 import { Value } from 'typebox/value';
 import { type Static } from 'typebox';
 
@@ -782,6 +783,8 @@ export default async function codexReview(
                 previous: pending.repositoryPreparation,
               },
               {
+                sqliteInstallation: codexStorageLocation(pluginData),
+                storageBackend: deps.storageBackend,
                 git: deps.git,
                 signal,
                 authorize: fresh,

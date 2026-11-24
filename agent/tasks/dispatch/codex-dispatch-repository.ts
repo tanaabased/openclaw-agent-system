@@ -1,3 +1,4 @@
+import type { RuntimeStorageOptions } from '../../storage/backend.ts';
 import resolveGitProtocol, { type GitProtocol } from '../../../tools/git/protocol.ts';
 import { realpath } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -34,7 +35,7 @@ export default async function prepareDispatchRepository(
     defaultBranch: string;
     previous?: DispatchRepositoryPreparation;
   },
-  dependencies: {
+  dependencies: RuntimeStorageOptions & {
     git?: DispatchGit;
     signal?: AbortSignal;
     authorize(): Promise<void>;
@@ -43,7 +44,7 @@ export default async function prepareDispatchRepository(
 ): Promise<string> {
   const git = dependencies.git ?? dispatchGit;
   const layout = resolveGitWorktreeLayout(await realpath(input.workspace), input.configuration);
-  const service = new GitRepositoryService();
+  const service = new GitRepositoryService(dependencies);
   const identity = gitRemoteIdentity(input.cloneUrl);
   if (identity !== 'github.com/' + input.repository.toLowerCase())
     throw new Error('dispatch-repository-identity-invalid');

@@ -1,3 +1,4 @@
+import { bindInstallationStore, type RuntimeStorageOptions } from '../../agent/storage/backend.ts';
 import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, readdir, realpath, rename, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
@@ -135,7 +136,11 @@ export interface RepositorySelection {
 export default class GitRepositoryService {
   readonly #acquireFileLock: typeof acquirePrivateStateFileLock;
 
-  constructor(dependencies: { acquireFileLock?: typeof acquirePrivateStateFileLock } = {}) {
+  constructor(
+    private readonly dependencies: RuntimeStorageOptions & {
+      acquireFileLock?: typeof acquirePrivateStateFileLock;
+    } = {},
+  ) {
     this.#acquireFileLock = dependencies.acquireFileLock ?? acquirePrivateStateFileLock;
   }
   async acquire(
@@ -274,11 +279,23 @@ export default class GitRepositoryService {
     layout: GitWorktreeLayout,
     repositoryId: string,
   ): Promise<RepositoryRecord | undefined> {
-    const text = await this.#recordFile(layout, repositoryId).read();
+    const db = await bindInstallationStore(this.dependencies);
+    const text = db
+      ? JSON.stringify(await db.readRepository(layout.repositoryRoot, repositoryId))
+      : await this.#recordFile(layout, repositoryId).read();
     if (text === undefined) return;
     const record = parseRepositoryRecord(text);
     if (record.repositoryId !== repositoryId) throw new Error('repository-record-invalid');
     return record;
+  }
+
+  async #saveRecord(layout: GitWorktreeLayout, record: RepositoryRecord) {
+    const db = await bindInstallationStore(this.dependencies);
+    const contents = JSON.stringify(record);
+    if (!db) return this.#recordFile(layout, record.repositoryId).write(contents);
+    if (Buffer.byteLength(contents) > 32768)
+      throw new Error('The repository preparation exceeds its size limit.');
+    await db.saveRepository(layout.repositoryRoot, record);
   }
 
   async selection(
@@ -354,7 +371,6 @@ export default class GitRepositoryService {
   ): Promise<ResolvedRepository> {
     const selected = await this.selection(layout, repositoryId, cloneUrl);
     const { path, source, kind } = selected;
-    const state = this.#recordFile(layout, repositoryId);
     const retained = await this.#record(layout, repositoryId);
     const exists = await repositoryPathKind(path);
     if (exists !== 'absent') {
@@ -382,13 +398,13 @@ export default class GitRepositoryService {
           await this.#reconcileManagedOrigin(context, path, origin, source);
       }
       if (kind !== 'local')
-        await state.write(JSON.stringify({ version: 1, repositoryId, source, path }));
+        await this.#saveRecord(layout, { version: 1, repositoryId, source, path });
       return { path, repositoryId, refreshBeforeCreate: kind !== 'local' };
     }
     if (kind === 'local') throw new RepositoryPreparationError('repository-path-missing', path);
     await ensureRepositoryDirectory(dirname(path));
     const temporaryPath = retained?.temporaryPath ?? `${path}.${randomUUID()}.tmp`;
-    await state.write(JSON.stringify({ version: 1, repositoryId, source, path, temporaryPath }));
+    await this.#saveRecord(layout, { version: 1, repositoryId, source, path, temporaryPath });
     if ((await repositoryPathKind(temporaryPath)) !== 'absent') {
       // after interruption, only a fully verified clone can advance; partial clones need an operator.
       try {
@@ -429,7 +445,7 @@ export default class GitRepositoryService {
       } catch (error) {
         assertPrivateStateLocksHeld();
         await rm(temporaryPath, { recursive: true, force: true });
-        await state.write(JSON.stringify({ version: 1, repositoryId, source, path }));
+        await this.#saveRecord(layout, { version: 1, repositoryId, source, path });
         throw error;
       }
     }
@@ -447,7 +463,7 @@ export default class GitRepositoryService {
       throw new RepositoryPreparationError('repository-path-conflict', path);
     await rename(temporaryPath, path);
     await this.verify(context, path, source);
-    await state.write(JSON.stringify({ version: 1, repositoryId, source, path }));
+    await this.#saveRecord(layout, { version: 1, repositoryId, source, path });
     return { path, repositoryId, refreshBeforeCreate: false };
   }
 
@@ -457,12 +473,38 @@ export default class GitRepositoryService {
     repositoryId?: string,
   ): Promise<ResolvedRepository[]> {
     if (!layout.workingDirectory) return [];
+    const ids = await this.#repositoryIds(layout, repositoryId);
+    const result: ResolvedRepository[] = [];
+    for (const id of ids) {
+      const selected = await this.selection(layout, id);
+      if (selected.kind !== 'working' || (await repositoryPathKind(selected.path)) === 'absent')
+        continue;
+      await this.verify(context, selected.path, selected.source);
+      result.push({ path: selected.path, repositoryId: id, refreshBeforeCreate: true });
+    }
+    return result;
+  }
+
+  async #repositoryIds(layout: GitWorktreeLayout, repositoryId?: string) {
+    const db = await bindInstallationStore(this.dependencies);
+    if (db) {
+      const rows = await db.read({
+        managedRepositories: {
+          root: layout.repositoryRoot,
+          ...(repositoryId !== undefined && { id: repositoryId }),
+        },
+      });
+      return rows.managedRepositories.map(({ id, value }) => {
+        if (id !== value?.repositoryId) throw new Error('repository-record-invalid');
+        return id;
+      });
+    }
     const records = (await readdir(layout.repositoryRoot)).filter((name) =>
       repositoryId === undefined
         ? name.endsWith('.repository.json')
         : name === gitWorktreeRepositoryDirectoryName(repositoryId) + '.repository.json',
     );
-    const result: ResolvedRepository[] = [];
+    const ids: string[] = [];
     for (const name of records) {
       const file = new PrivateStateFile({
         path: join(layout.repositoryRoot, name),
@@ -482,13 +524,9 @@ export default class GitRepositoryService {
       const id = value.repositoryId;
       if (name !== gitWorktreeRepositoryDirectoryName(id) + '.repository.json')
         throw new Error('repository-record-invalid');
-      const selected = await this.selection(layout, id);
-      if (selected.kind !== 'working' || (await repositoryPathKind(selected.path)) === 'absent')
-        continue;
-      await this.verify(context, selected.path, selected.source);
-      result.push({ path: selected.path, repositoryId: id, refreshBeforeCreate: true });
+      ids.push(id);
     }
-    return result;
+    return ids;
   }
 
   async #reconcileManagedOrigin(

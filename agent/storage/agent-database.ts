@@ -359,6 +359,7 @@ class SqliteInstallationStore extends SqliteDatabase {
 
   saveRepository(root: string, record: RepositoryRecord) {
     return this.use(false, (db) => {
+      assertPrivateStateLocksHeld();
       db.insert(managedRepositories)
         .values({ root, id: record.repositoryId, value: record })
         .onConflictDoUpdate({

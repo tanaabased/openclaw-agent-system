@@ -31,3 +31,18 @@ export async function bindAgentStore(
   const { bindSqliteStorage } = await import('./agent-database.ts');
   return bindSqliteStorage(installation, agentId).agent;
 }
+
+export interface RuntimeStorageOptions {
+  sqliteInstallation?: SqliteInstallation;
+  storageBackend?: StorageBackend;
+}
+
+export async function bindInstallationStore({
+  sqliteInstallation,
+  storageBackend = defaultStorageBackend,
+}: RuntimeStorageOptions) {
+  if (storageBackend === 'file') return;
+  if (!sqliteInstallation) throw new Error('SQLite requires runtime storage locations');
+  const { bindSqliteInstallation } = await import('./agent-database.ts');
+  return bindSqliteInstallation(sqliteInstallation);
+}
