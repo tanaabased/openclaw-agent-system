@@ -17,7 +17,13 @@ import * as agentTables from './schema.ts';
 import * as installationTables from './installation-schema.ts';
 import sqliteRecords from './sqlite-records.ts';
 import type { AgentRows, InstallationRows } from './workflow-records.ts';
-import { automationReports, directEntries, intakeRecords, intakeState } from './schema.ts';
+import {
+  automationReports,
+  pathProjections,
+  directEntries,
+  intakeRecords,
+  intakeState,
+} from './schema.ts';
 import { managedRepositories } from './installation-schema.ts';
 import type { BoundStorage, SqliteInstallation, StorageSchema } from './storage-lifecycle.ts';
 import type { IntakeState } from '../../channels/github/intake/record-store.ts';
@@ -191,6 +197,17 @@ class SqliteAgentStore extends SqliteDatabase {
   private readonly records = sqliteRecords<AgentRows>(agentTables, this.use.bind(this));
   readonly read = this.records.read;
   readonly write = this.records.write;
+
+  replacePathProjection(value: AgentRows['pathProjections']['value']) {
+    return this.use(false, (db) =>
+      db.transaction((tx) => {
+        assertPrivateStateLocksHeld();
+        // The OpenClaw agent has one current PATH prefix, including after a workspace move.
+        tx.delete(pathProjections).run();
+        tx.insert(pathProjections).values({ scope: value.workspaceDir, value }).run();
+      }),
+    );
+  }
 
   listReportIds(selection: 'all' | 'recoverable' | { completedBefore: string }) {
     const terminal = sql`json_extract(${automationReports.value}, '$.state') in ('delivered', 'failed')`;

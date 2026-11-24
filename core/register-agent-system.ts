@@ -134,6 +134,14 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     },
   });
   const privateStateRoot = resolveFileCredentialStoreRoot(process.env);
+  const sqliteInstallation = {
+    agentRoot: join(api.runtime.state.resolveStateDir(), 'agent-system-storage'),
+    installationRoot: join(
+      privateStateRoot ?? api.runtime.state.resolveStateDir(),
+      'agent-system-instance',
+    ),
+    schemaRoot: join(packageDir, 'agent', 'storage'),
+  };
   const readConfig = readLifecycleConfig;
   const readRuntimeConfig = () => api.runtime.config.current() as OpenClawConfig;
   const sessionDispatch = createSessionDispatchCredential({
@@ -230,6 +238,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     },
     packageDir,
     projectionStore: new PathProjectionStore({
+      sqliteInstallation,
       ...(currentUid === undefined ? {} : { currentUid }),
       ...(privateStateRoot === undefined ? {} : { rootDir: privateStateRoot }),
     }),
@@ -298,14 +307,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     privateStateRoot,
   });
   let readScheduler: (() => NotificationScheduler | undefined) | undefined;
-  const sqliteInstallation = {
-    agentRoot: join(api.runtime.state.resolveStateDir(), 'agent-system-storage'),
-    installationRoot: join(
-      privateStateRoot ?? api.runtime.state.resolveStateDir(),
-      'agent-system-instance',
-    ),
-    schemaRoot: join(packageDir, 'agent', 'storage'),
-  };
   const instanceStore = bindInstanceStore(sqliteInstallation);
   const taskContext = {
     sqliteInstallation,
@@ -759,12 +760,12 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         return createAgentToolAccessGrants(toolRegistry, manifest);
       },
     }),
+    ...sqliteStorageLifecycle(() => sqliteInstallation),
     createPathLifecycleContribution({ pathService }),
     ...gitCapability.lifecycleContributions,
     ...githubCapability.lifecycleContributions,
     ...googleCapability.lifecycleContributions,
     createSessionDispatchLifecycle(sessionDispatch),
-    ...sqliteStorageLifecycle(() => sqliteInstallation),
     instanceIdentity(instanceStore),
     intakeV2.contribution(),
     automationService.contribution(),

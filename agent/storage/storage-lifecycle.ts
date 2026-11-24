@@ -35,6 +35,7 @@ export interface SessionStorage {
 export interface BoundStorage {
   agent: WorkflowRecords<AgentRows> &
     SessionStorage & {
+      replacePathProjection(value: AgentRows['pathProjections']['value']): Promise<void>;
       listReportIds(
         selection: 'all' | 'recoverable' | { completedBefore: string },
       ): Promise<string[]>;
