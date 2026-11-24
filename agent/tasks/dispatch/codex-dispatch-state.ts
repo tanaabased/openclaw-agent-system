@@ -25,23 +25,26 @@ const creationSchema = Type.Object(
     prompt: Type.String({ minLength: 1, maxLength: 128000 }),
     model: text,
     thinking: text,
-    target: Type.Object(
-      {
-        type: Type.Literal('project'),
-        projectId: text,
-        environment: Type.Object(
-          {
-            type: Type.Literal('worktree'),
-            startingState: Type.Object(
-              { type: Type.Literal('branch'), branchName: text },
-              { additionalProperties: false },
-            ),
-          },
-          { additionalProperties: false },
-        ),
-      },
-      { additionalProperties: false },
-    ),
+    target: Type.Union([
+      Type.Object({ type: Type.Literal('projectless') }, { additionalProperties: false }),
+      Type.Object(
+        {
+          type: Type.Literal('project'),
+          projectId: text,
+          environment: Type.Object(
+            {
+              type: Type.Literal('worktree'),
+              startingState: Type.Object(
+                { type: Type.Literal('branch'), branchName: text },
+                { additionalProperties: false },
+              ),
+            },
+            { additionalProperties: false },
+          ),
+        },
+        { additionalProperties: false },
+      ),
+    ]),
   },
   { additionalProperties: false },
 );
@@ -83,7 +86,6 @@ export const dispatchRecordSchema = Type.Object(
   {
     ...dispatchRecordProperties,
     // Provider evidence and exact native send receipts, never reviewer progress or reasoning.
-    reviewObservation: Type.Optional(Type.String({ minLength: 1 })),
     reviewInput: Type.Optional(feedbackEventSchema.properties.attempt),
     creationFailure: Type.Optional(
       Type.Object(
@@ -188,7 +190,10 @@ export default class CodexDispatchStore extends DispatchStore<DispatchRecord> {
       recordSchema: dispatchRecordSchema,
       validRecord: (record) =>
         (!record.issueBranch || record.issueBranch.attemptId === record.id) &&
-        (!record.request || Boolean(record.project)) &&
+        (!record.request ||
+          (record.request.target.type === 'projectless'
+            ? Boolean(record.reviewAdmission && !record.project && !record.worktree)
+            : Boolean(record.project))) &&
         (!record.claimAccepted || Boolean(record.claimId && record.effective && record.threadId)),
     });
   }

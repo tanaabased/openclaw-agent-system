@@ -147,7 +147,10 @@ export async function selectCodexTurnTask(
     contextRuntime: implementation ? 'continuationRuntime' : 'dispatchRuntime',
     feedbackContextRequest: source && { action: 'context', id: record.id, eventId: source.id },
     ...(feedbackLimitation ? { feedbackLimitation } : {}),
-    worktree: record.worktree ?? native.cwd,
+    worktree:
+      record.reviewAdmission && record.request?.target?.type === 'projectless'
+        ? undefined
+        : (record.worktree ?? native.cwd),
     nativeCwd: native.cwd,
     pullRequest: taskPullRequest(record),
     branch: record.issueBranch?.name,

@@ -30,6 +30,7 @@ export function openClawFeedbackRecords(state: OpenClawDispatchState) {
   return state.records
     .filter(
       (record) =>
+        !record.reviewAdmission &&
         !record.supersededBy &&
         !record.retirement &&
         !record.reset &&

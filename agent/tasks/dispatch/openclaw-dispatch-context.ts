@@ -49,12 +49,7 @@ import authorizeFeedback from '../feedback/feedback-source-context.ts';
 import { ContextMaterialError } from '../implementation/implementation-material.ts';
 import { retainedIssueProgression } from '../issue-progression.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from '../live-workflow-policy.ts';
-import {
-  dispatchAdmission,
-  managedIssueState,
-  managedPullRequest,
-  managedTargetUrl,
-} from '../managed-issue.ts';
+import { dispatchAdmission, managedIssueState, managedPullRequest } from '../managed-issue.ts';
 import { assertNotificationManagement } from '../../notification-reset-state.ts';
 import type OpenClawAssignmentClaims from './openclaw-assignment-claims.ts';
 import { type OpenClawDeliveryConnection } from '../delivery/openclaw-delivery.ts';
@@ -74,6 +69,8 @@ import { type DispatchCaller } from '../../openclaw-session-create.ts';
 import { openClawSkillResolver } from '../../openclaw-skill.ts';
 import openclawTurnContext from '../context/openclaw-turn-context.ts';
 import retainedIntakePolicy from '../retained-intake-policy.ts';
+import { taskAdmission, taskTarget } from '../task-admission.ts';
+import reviewContext from '../review/review-context.ts';
 import taskTurnContext from '../context/task-turn-context.ts';
 import WorkflowRequestError from '../workflow-request-error.ts';
 export interface OpenClawTaskDependencies {
@@ -101,6 +98,7 @@ export interface OpenClawTaskDependencies {
     caller: DispatchCaller,
     authority: DispatchAuthority,
   ): Promise<number | undefined>;
+  reviewOccurrence?: OpenClawTaskDependencies['occurrenceStartedAt'];
   claimStore?: AssignmentClaimStore;
   claims?: OpenClawAssignmentClaims;
   config(): OpenClawConfig;
@@ -414,11 +412,10 @@ export default class OpenClawDispatchContext {
     );
     if (records.length > 1) throw new Error('native-context-owner-ambiguous');
     const record = records[0];
-    const admission =
-      record && dispatchAdmission(record, (await current.store.read())?.records ?? []);
+    const admission = record && taskAdmission(record, (await current.store.read())?.records ?? []);
     if (!record) {
       // generated issue keys establish expected ownership, never execution authority.
-      if (/^agent:[^:]+:dashboard:agent-system-issue-/.test(binding.sessionKey ?? ''))
+      if (/^agent:[^:]+:dashboard:agent-system-(?:issue|review)-/.test(binding.sessionKey ?? ''))
         throw new Error('native-context-owner-unavailable');
       return;
     }
@@ -473,7 +470,9 @@ export default class OpenClawDispatchContext {
           event,
           repository: `${admission.repository.owner.login}/${admission.repository.name}`,
           mode: feedbackConversationMode(record, manifest.github!.notifications!),
-          issueStage: retainedIssueProgression(record)?.stage ?? 'planning',
+          issueStage: record.reviewAdmission
+            ? 'review'
+            : (retainedIssueProgression(record)?.stage ?? 'planning'),
           self: JSON.parse(event.source).author?.nodeId === provider.identity.nodeId,
         });
       }
@@ -488,22 +487,29 @@ export default class OpenClawDispatchContext {
         : record.feedback?.events.length && !initial
           ? 'conversation'
           : 'assessment';
-    const context = await taskTurnContext({
-      runtime: 'openclaw',
-      manifest,
-      workspace,
-      record,
-      target: managedTargetUrl(admission),
-      stage,
-      feedback,
-      feedbackLimitation,
-      resolveSkill: openClawSkillResolver(
-        (method, params) =>
-          this.dependencies.credential.use(nativeAuthority, (request) => request(method, params)),
-        { agentId: binding.agentId!, key: binding.sessionKey! },
-      ),
-      now: this.dependencies.now?.(),
-    });
+    const resolveSkill = openClawSkillResolver(
+      (method, params) =>
+        this.dependencies.credential.use(nativeAuthority, (request) => request(method, params)),
+      { agentId: binding.agentId!, key: binding.sessionKey! },
+    );
+    const context = record.reviewAdmission
+      ? {
+          ...(await reviewContext({ record, manifest, workspace, resolveSkill })),
+          feedback,
+          feedbackLimitation,
+        }
+      : await taskTurnContext({
+          runtime: 'openclaw',
+          manifest,
+          workspace,
+          record,
+          target: taskTarget(admission),
+          stage,
+          feedback,
+          feedbackLimitation,
+          resolveSkill,
+          now: this.dependencies.now?.(),
+        });
     await assertCurrent();
     return {
       record,

@@ -61,6 +61,7 @@ export const dispatchRecordProperties = {
   intakeId: Type.Optional(hash),
   manualIssue: Type.Optional(operatorIssueSchema),
   reviewAdmission: Type.Optional(reviewAdmissionSchema),
+  reviewObservation: Type.Optional(Type.String({ minLength: 1 })),
   reviewPublication: Type.Optional(
     Type.Object(
       {

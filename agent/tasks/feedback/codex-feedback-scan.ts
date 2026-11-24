@@ -51,7 +51,7 @@ export async function scanCodexFeedback(input: {
         !record.reset &&
         record.threadId &&
         record.request &&
-        record.worktree &&
+        (record.worktree || record.request.target.type === 'projectless') &&
         record.feedback?.scannedAt !== input.occurrence,
     )
     .sort((a, b) => (a.feedback?.scannedTime ?? 0) - (b.feedback?.scannedTime ?? 0))

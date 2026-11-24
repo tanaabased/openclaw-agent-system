@@ -358,16 +358,13 @@ describe('github readiness channel', () => {
     automation = undefined;
     checkpoint = baseline;
     value.github!.notifications!.issueAssignment!.feedback = { inherit: true, allowed: [] };
-    value.github!.notifications!.reviewRequest = {
-      paused: false,
-      allowed: [{ login: 'operator', nodeId: 'U_operator' }],
-    };
+    value.github!.notifications!.issuePickup = { paused: false, projects: [], windowMinutes: 0 };
     const degraded = await snapshot();
     assert.equal(degraded.statusState, 'degraded');
     assert.equal(degraded.lifecycle, 'ready');
     assert.equal(degraded.running, true);
     assert.doesNotMatch(degraded.lastError!, /feedback/);
-    assert.match(degraded.lastError!, /review requests/);
+    assert.match(degraded.lastError!, /pickup timing/i);
     checkpoint = null;
     assert.equal((await snapshot()).stateReason, 'github-notification-capabilities-degraded');
     checkpoint = baseline - 20 * 60_000;

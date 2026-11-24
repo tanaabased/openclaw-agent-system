@@ -6,10 +6,11 @@ import { parseReplyRequest } from '../../../tools/dispatch/reply-schema.ts';
 import assignmentIntakePolicy from '../../automations/assignment-intake-policy.ts';
 import { inspectIssueIdentity } from '../dispatch/dispatch-assignment.ts';
 import feedbackReply from './feedback-reply.ts';
-import { dispatchAdmission, managedTargetUrl } from '../managed-issue.ts';
+import { taskAdmission, taskTarget } from '../task-admission.ts';
+import reviewPolicy from '../review/review-policy.ts';
 import type { OpenClawTaskDependencies } from '../dispatch/openclaw-dispatch-context.ts';
 import OpenClawDispatchStore from '../dispatch/openclaw-dispatch-state.ts';
-import openClawFeedbackInput from './openclaw-feedback-input.ts';
+import openClawFeedbackInput, { resolveOpenClawTurnFeedback } from './openclaw-feedback-input.ts';
 import { authorizeFeedback } from './openclaw-feedback.ts';
 import openClawNativeTurns from '../../openclaw-native-turns.ts';
 import { describeIssueSession, type DispatchCaller } from '../../openclaw-session-create.ts';
@@ -65,7 +66,11 @@ export default async function openClawReply(input: {
           retained: [record?.assessmentCaller, record?.work?.caller],
         });
       let native: Awaited<ReturnType<typeof readNativeInput>> | undefined;
-      let matched = record && (await openClawFeedbackInput(record, caller, request, deps.config()));
+      let matched =
+        record &&
+        (record.reviewAdmission
+          ? await resolveOpenClawTurnFeedback(record, caller, request, deps.config())
+          : await openClawFeedbackInput(record, caller, request, deps.config()));
       if (!matched && action.target && (action.operation !== 'compose' || action.material)) {
         native = await readNativeInput();
         const draft = selectReplyDraft(await replyStore.read(), action, {
@@ -82,7 +87,7 @@ export default async function openClawReply(input: {
           );
       }
       const admission =
-        record && dispatchAdmission(record, (await current.store.read())?.records ?? []);
+        record && taskAdmission(record, (await current.store.read())?.records ?? []);
       defaultTarget =
         admission &&
         (matched
@@ -90,7 +95,7 @@ export default async function openClawReply(input: {
               `${admission.repository.owner.login}/${admission.repository.name}`,
               matched.event,
             )
-          : managedTargetUrl(admission));
+          : taskTarget(admission));
       if (record && matched) {
         feedback = {
           ownerId: record.id,
@@ -180,9 +185,11 @@ export default async function openClawReply(input: {
         const retained = record?.feedback?.events.find((entry) => entry.id === source.eventId);
         const event = source;
         const admitted =
-          record && dispatchAdmission(record, (await current.store.read())?.records ?? []);
+          record && taskAdmission(record, (await current.store.read())?.records ?? []);
         const fresh = await readManifest();
-        const policy = assignmentIntakePolicy(fresh, 'openclaw');
+        const policy = record?.reviewAdmission
+          ? reviewPolicy(fresh, 'openclaw', true)
+          : assignmentIntakePolicy(fresh, 'openclaw');
         if (
           !record ||
           !retained ||
@@ -203,7 +210,18 @@ export default async function openClawReply(input: {
           policy: policy.policy,
           provider,
           assertCurrent,
-          reauthorize: async () => (await inspectIssueIdentity(admitted, provider)).item,
+          reauthorize: async () => {
+            if (!('origin' in admitted))
+              return (await inspectIssueIdentity(admitted, provider)).item;
+            if (provider.identity.nodeId !== admitted.receiving.nodeId)
+              throw new Error('review-feedback-owner-changed');
+            const repository = await provider.getRepository(
+              admitted.repository.owner.login,
+              admitted.repository.name,
+            );
+            if (repository.nodeId !== admitted.repository.nodeId)
+              throw new Error('review-feedback-owner-changed');
+          },
         });
       },
       manifest,
@@ -229,7 +247,7 @@ export default async function openClawReply(input: {
               replyOwnerContext({
                 record,
                 conversation: Boolean(feedback),
-                intake: dispatchAdmission(record, admitted?.records ?? []),
+                intake: taskAdmission(record, admitted?.records ?? []),
                 caller: caller.sessionKey,
                 incarnation: record.sessionCreation?.sessionId,
                 custodyInvalid:

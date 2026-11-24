@@ -82,7 +82,9 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
         if (record.request) {
           return Boolean(
             record.sessionCreation &&
-            record.worktree === record.request.cwd &&
+            (record.reviewAdmission
+              ? record.reviewAdmission.workspaceDir === record.request.cwd && !record.worktree
+              : record.worktree === record.request.cwd) &&
             (!record.sessionCreation.sessionId || record.sessionCreation.attempted) &&
             (!record.sessionCreation.verified ||
               (record.sessionCreation.sessionId &&

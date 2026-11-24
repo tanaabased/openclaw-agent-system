@@ -6,6 +6,7 @@ publish a reply. Verify that another scan repeats none of the completed actions.
 
 ## What Belongs Here
 
+- Request an independent GitHub-only review, address its inline finding, and verify approval on the repaired revision in the same reviewer chat.
 - Preserve a real collaborator commit while pushing approved feedback to the same PR.
 
 - An initial question shown in chat and on GitHub, followed by an approved answer entering Work without rewriting the assessment or requiring another handoff.
@@ -18,7 +19,7 @@ publish a reply. Verify that another scan repeats none of the completed actions.
 - Initial-turn Work and Auto Work delivery: [custom delivery](../openclaw-issue-work-custom/README.md).
 - Recipient preview, dirty-checkout card readback, and operator updates: [PR operator update](../openclaw-pr-update/README.md).
 - Provider deadline and interrupted reply recovery: [PR discovery](../openclaw-pr-discovery/README.md).
-- Mode transitions and implementation clarification: [progression](../openclaw-issue-auto-plan/README.md). Inline review-thread processing and replacement-coordinator recovery remain separate acceptance work.
+- Mode transitions and implementation clarification: [progression](../openclaw-issue-auto-plan/README.md). This journey exercises inline review threads; replacement-coordinator recovery is separate.
 
 ## Notes
 
@@ -90,7 +91,7 @@ registration_diagnostics() {
 }
 trap registration_diagnostics EXIT
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/emori"
-openclaw agent-system install --json
+openclaw agent-system install --yes --json
 
 # should install tanaabot and activate native intake with explicit dispatch enrollment
 set -o pipefail
@@ -218,7 +219,10 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/emori"
 number=$(jq -er .delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
 branch=$(jq -er .delivery.binding.branch "$TMPDIR/notification-delivery.json")
 openclaw agent-system tool gh -- api --method PUT "repos/tanaabased/big-test-bucket/contents/collaborator-$number.txt" -f message="preserve disposable collaborator evidence" -f branch="$branch" -f content=Q29sbGFib3JhdG9yIHdvcmsuCg== > "$TMPDIR/notification-collaborator.json"
-openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/comments" -f 'body=@tanaabot add a note that feedback changes stay on the original PR, check it, and push the change.' > "$TMPDIR/notification-feedback-source.json"
+cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
+openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/pulls/$number/requested_reviewers" -f 'reviewers[]=emoriwan' | jq -e 'any(.requested_reviewers[]; .login == "emoriwan")'
+cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/emori"
+node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/wait-review.ts" "$number" CHANGES_REQUESTED > "$TMPDIR/notification-feedback-source.json"
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
@@ -256,13 +260,13 @@ openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --hea
 # should verify the exact response and suppress another reply on a repeat scan
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
 number=$(jq -er .feedback.events[1].number "$TMPDIR/notification-feedback.json")
-openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-feedback-replies.json"
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/pulls/$number/comments" > "$TMPDIR/notification-feedback-replies.json"
 jq -s '[.[] | .]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-reply-drafts.json"
-node --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; const read=n=>JSON.parse(readFileSync(process.env.TMPDIR+"/notification-"+n+".json","utf8")); const record=read("feedback"); const replies=read("feedback-replies"); const history=read("feedback-history"); assert.equal(record.feedback.events.length,2); const event=record.feedback.events[1]; assert.equal(event.itemType,"pull-request"); assert.equal(JSON.parse(event.source).nodeId,read("feedback-source").node_id); assert.equal(history.requestedRunId,event.turn.runId); const draft=read("reply-drafts").find(d=>d.feedback?.eventId===event.id); assert.ok(draft); const found=replies.filter(c=>c.node_id===draft.receipt.nodeId); assert.equal(found.length,1); assert.equal(found[0].user.login,"tanaabot"); assert.ok(found[0].body.includes(draft.publicText)); const answer=history.messages.filter(m=>m.role==="assistant" && m.__openclaw?.runId===event.turn.runId && m.stopReason==="stop"); assert.equal(answer.length,1); const text=typeof answer[0].content==="string"?answer[0].content:answer[0].content.map(c=>c.text??"").join(""); assert.ok(text.includes(draft.privateText)); assert.ok(text.includes(draft.publicText.replace(/^@([a-z\d-]+), /iu, "[@$1](https://github.com/$1), "))); assert.ok(text.includes("[Reply ↗]("+found[0].html_url+") from [@tanaabot](https://github.com/tanaabot)")); assert.ok(!text.includes("Reply published")); assert.equal(replies.filter(c=>c.user.login==="tanaabot" && c.body.includes("<!-- agent-system-github-publication:")).length,1);'
+node --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; const read=n=>JSON.parse(readFileSync(process.env.TMPDIR+"/notification-"+n+".json","utf8")); const record=read("feedback"); const replies=read("feedback-replies"); const history=read("feedback-history"); assert.equal(record.feedback.events.length,2); const event=record.feedback.events[1]; assert.equal(event.itemType,"pull-request"); assert.equal(JSON.parse(event.source).nodeId,read("feedback-source").node_id); assert.equal(history.requestedRunId,event.turn.runId); const draft=read("reply-drafts").find(d=>d.feedback?.eventId===event.id); assert.ok(draft); const found=replies.filter(c=>c.node_id===draft.receipt.nodeId); assert.equal(found.length,1); assert.equal(found[0].user.login,"tanaabot"); assert.ok(found[0].body.includes(draft.publicText)); const root=replies.filter(c=>c.pull_request_review_id===read("feedback-source").id && !c.in_reply_to_id); assert.equal(root.length,1); assert.equal(found[0].in_reply_to_id,root[0].id); const answer=history.messages.filter(m=>m.role==="assistant" && m.__openclaw?.runId===event.turn.runId && m.stopReason==="stop"); assert.equal(answer.length,1); const text=typeof answer[0].content==="string"?answer[0].content:answer[0].content.map(c=>c.text??"").join(""); assert.ok(text.includes(draft.privateText)); assert.ok(text.includes(draft.publicText.replace(/^@([a-z\d-]+), /iu, "[@$1](https://github.com/$1), "))); assert.ok(text.includes("[Reply ↗]("+found[0].html_url+") from [@tanaabot](https://github.com/tanaabot)")); assert.ok(!text.includes("Reply published")); assert.equal(replies.filter(c=>c.user.login==="tanaabot" && c.body.includes("<!-- agent-system-github-publication:")).length,1);'
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 jq -es --slurpfile owner "$TMPDIR/notification-dispatch-before.json" '[.[].records[] | select(.id == $owner[0].id)] | length == 1 and (.[0].feedback.events | length) == 2 and all(.[0].feedback.events[]; .turn.status == "consumed" and .phase == "delivered")' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
-openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile before "$TMPDIR/notification-feedback-replies.json" '[.[] | select(.user.login == "tanaabot" and (.body | contains("<!-- agent-system-github-publication:"))) | .node_id] == [$before[0][] | select(.user.login == "tanaabot" and (.body | contains("<!-- agent-system-github-publication:"))) | .node_id]'
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/pulls/$number/comments" | jq -e --slurpfile before "$TMPDIR/notification-feedback-replies.json" '[.[] | select(.user.login == "tanaabot" and (.body | contains("<!-- agent-system-github-publication:"))) | .node_id] == [$before[0][] | select(.user.login == "tanaabot" and (.body | contains("<!-- agent-system-github-publication:"))) | .node_id]'
 
 # should acknowledge verified feedback in intake without repeating it on a quiet scan
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
@@ -271,7 +275,14 @@ openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" 
 node --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; const record=JSON.parse(readFileSync(process.env.TMPDIR+"/notification-feedback.json","utf8")); const history=JSON.parse(readFileSync(process.env.TMPDIR+"/notification-intake-history.json","utf8")); const text=history.messages.filter(m=>m.role==="assistant" && m.stopReason==="stop").map(m=>typeof m.content==="string"?m.content:m.content.map(c=>c.text??"").join("")); const {buildControlUiSessionPath}=await import("openclaw/plugin-sdk/session-discussion"); const destination=buildControlUiSessionPath({namespace:"chat",sessionKey:record.threadId,exactKey:true}); assert.ok(destination); const notices=text.flatMap(t=>t.split("\n").filter(l=>l.includes("Feedback delivered to chat:") && l.includes("]("+destination+")"))); assert.equal(notices.reduce((sum,l)=>sum+Number(/· ([0-9]+) items?/.exec(l)?.[1]),0),2,JSON.stringify({sourceThreadId:record.sourceThreadId,threadId:record.threadId,events:record.feedback.events.map(e=>({phase:e.phase,intakeReportedAt:e.intakeReportedAt})),sessionId:history.sessionId,hasMore:history.hasMore,notices,assistant:text.slice(-8).map(t=>t.slice(0,500))}));'
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
-jq -es 'all(.[]; (.intakeReport.response | contains("Feedback delivered to chat:")) | not)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+jq -es 'all(.[]; ((.intakeReport.response // "") | contains("Feedback delivered to chat:")) | not)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+
+# should review the repaired revision in the original independent reviewer chat
+cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/emori"
+number=$(jq -er .delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
+node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/wait-review.ts" "$number" APPROVED > "$TMPDIR/notification-approval.json"
+jq -e --slurpfile first "$TMPDIR/notification-feedback-source.json" --slurpfile repair "$TMPDIR/notification-feedback.json" '.id != $first[0].id and .commit_id != $first[0].commit_id and .commit_id == $repair[0].delivery.pushedHead' "$TMPDIR/notification-approval.json"
+jq -es --argjson pr "$number" --slurpfile first "$TMPDIR/notification-feedback-source.json" --slurpfile approval "$TMPDIR/notification-approval.json" --slurpfile author "$TMPDIR/notification-feedback.json" '[.[].records[] | select(.reviewAdmission.issue.number == $pr)] | length == 1 and .[0].sessionCreation.verified and .[0].threadId != $author[0].threadId and .[0].worktree == null and .[0].reviewPublication.receipt.nodeId == $approval[0].node_id' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 
 ```
 

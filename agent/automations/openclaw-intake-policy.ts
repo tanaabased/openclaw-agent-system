@@ -1,4 +1,6 @@
+import openClawDispatchTrigger from './openclaw-dispatch-trigger.ts';
 import automationModels from './automation-models.ts';
+import reviewJobs, { reviewAutomationId } from './review-jobs.ts';
 import issuePickupJobs, { issuePickupAutomationId } from './issue-pickup-jobs.ts';
 import { issueChatTitleGuidance } from '../tasks/dispatch/issue-chat-title.ts';
 import { taskUpdateConsent } from '../tasks/feedback/task-update-instructions.ts';
@@ -14,11 +16,14 @@ export default function openclawIntakeJobs(manifest: AgentManifest): ResolvedAut
   const declarations = manifest.automations ?? [];
   if (
     declarations.some((job) =>
-      [openclawIntakeAutomationId, issuePickupAutomationId].includes(job.id),
+      [openclawIntakeAutomationId, issuePickupAutomationId, reviewAutomationId].includes(job.id),
     )
   )
     throw new IntakeError('intake-automation-id-reserved');
-  const jobs = automationModels(declarations, manifest.models, 'openclaw');
+  const jobs = [
+    ...automationModels(declarations, manifest.models, 'openclaw'),
+    ...reviewJobs(manifest, undefined, 'openclaw'),
+  ];
   const selected = assignmentIntakePolicy(manifest, 'openclaw');
   if (!selected) return jobs;
   const settings = selected.policy.issueAssignment!;
@@ -33,16 +38,7 @@ export default function openclawIntakeJobs(manifest: AgentManifest): ResolvedAut
     'Read the live bound agent.yaml for every dispatch and publication decision. Observe incoming activity independently of eligibility. Hold unsupported or disabled workflow effects without losing observations or stopping other supported work. Policy edits do not require Install; only installed automation changes do.',
     'Use only the invoking agent’s bound tools. Never choose another workspace, account, executable or credentials. A failed or incomplete scan is not an empty successful scan.',
   ].join('\n\n');
-  const script = [
-    'function unwrap(v){if(typeof v === "string")return unwrap(JSON.parse(v));if(v.output)return unwrap(v.output);if(v.content)return unwrap(v.content.filter(x=>x.type==="text").map(x=>x.text).join("\\n"));return v;}',
-    'let stage="dispatch"; const started=Date.now();',
-    'try {',
-    'stage="dispatch";',
-    'const d=unwrap(await agent_system_dispatch({action:"check"}));',
-    'if (!d || d.status!=="ready" || typeof d.changed!=="boolean") throw new Error("dispatch-condition-invalid");',
-    'json({fire:d.changed===true,state:{status:d.status,outcome:d.outcome,more:d.more,code:d.code,diagnostic:d.diagnostic}});',
-    '} catch (error) { const code=[error?.code,error?.message].find(value=>typeof value==="string" && /^(?:intake|dispatch|feedback|continuation|github|automation|private-state)-[a-z0-9-]{1,100}$/.test(value))??stage+"-condition-failed"; json({fire:true,state:{status:code.endsWith("-busy")?"busy":"failed",stage,code,diagnostic:{phase:stage,elapsedMs:Math.max(0,Date.now()-started),reason:["AbortError","TimeoutError","TypeError","SyntaxError"].includes(error?.name)?error.name:code}}}); }',
-  ].join('\n');
+  const script = openClawDispatchTrigger({ action: 'check' });
   return [
     ...jobs,
     ...automationModels(

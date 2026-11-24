@@ -4,6 +4,7 @@ import codexIssueNotice from '../../agent/codex-issue-notice.ts';
 import contextMaterialTransport from '../../agent/tasks/context/context-material-transport.ts';
 import { dispatchFailurePhase } from '../../agent/tasks/dispatch/dispatch-retry.ts';
 import nativeTaskInstructions from '../../agent/tasks/context/native-task-instructions.ts';
+import openClawReviewCheck from '../../agent/tasks/review/openclaw-review-check.ts';
 import openClawConditionCheck from '../../agent/openclaw-condition-check.ts';
 import { readOpenClawTurnInput } from '../../agent/openclaw-turn-binding.ts';
 import workflowFailure, { workflowFailureScope } from '../../agent/tasks/workflow-failure.ts';
@@ -143,6 +144,16 @@ export default function createDispatchTool(input: {
     assessmentGit: input.assessmentGit,
     discoveryTrace: (event) =>
       api.logger?.debug?.(`code=dispatch-discovery ${JSON.stringify(event)}`),
+    reviewOccurrence: (manifest, workspace, caller, authority) =>
+      input.credential.use(authority, (request) =>
+        input.automations.occurrenceStartedAt(
+          manifest,
+          workspace,
+          'github-review-request',
+          caller,
+          (id) => request('cron.get', { id }),
+        ),
+      ),
     occurrenceStartedAt: (manifest, workspace, caller, authority) =>
       input.credential.use(authority, (request) =>
         input.automations.occurrenceStartedAt(
@@ -178,8 +189,11 @@ export default function createDispatchTool(input: {
   });
   api.on('before_tool_call', async (event, context) => {
     if (!['agent_system_dispatch', 'agent_system_context'].includes(event.toolName)) return;
+    const condition =
+      event.params.action === 'check' ||
+      (event.params.action === 'review' && event.params.operation === 'check');
     if (!context.agentId || !context.sessionKey) {
-      if (event.params.action !== 'check')
+      if (!condition)
         return { block: true, blockReason: 'dispatch-native-hook-context-unavailable' };
       return;
     }
@@ -188,8 +202,7 @@ export default function createDispatchTool(input: {
       readConsistency: 'latest',
     });
     // headless predicates have no conversation session ID; agent binding still applies in execute.
-    if (event.params.action === 'check' && Value.Check(dispatchModelParameters, event.params))
-      return;
+    if (condition && Value.Check(dispatchModelParameters, event.params)) return;
     try {
       const who = caller(context, event, nativeCaller);
       const occurrence = api.runContext.getRunContext({
@@ -247,7 +260,7 @@ export default function createDispatchTool(input: {
             : 'Managed task context normally arrives through the native hook; if expected but missing, use agent_system_context with {}. Ordinary home chats and general automation/intake need no issue context; unmanaged-turn is normal, not a workflow failure. Use dispatch for explicitly requested Agent System operations and existing admitted workflows. Ordinary native chat creation, context handoffs, research and authorized implementation stay native; an issue reference or repository does not request enrollment. Do not require repeated human authorization or transfer managed ownership for a native handoff. ' +
               'Operator recovery: action recover selects the predecessor by issue target or explicit chat and same-repository pullRequest. The runtime verifies native operator input and reserves one successor internally; preview:true is optional. Never supply receipt IDs or digests. Preserve old work and native denials. Existing-task delivery bind selects and verifies an explicit PR in one native-approved call. Delivery publish accepts authored title/body and an optional base branch and resolves its task and checkout internally; prepare is an optional preview. Do not supply task IDs or digests to delivery operations. Manual launch: action launch with operation context accepts an explicit issue or open same-repository PR reference without prior assignment or intake activation. New issue-launch requests attempt additive self-assignment and create independent tasks through normal dispatch, bypassing automatic routing and capacity; existing tasks and claims do not veto launch. Use the same target with launch prepare, then reconcile uncertain creation through that target. Retries and existing PR continuation reuse their exact destinations and stages; never fabricate assignment or schedule evidence. Missing enrollment needs explicit Install with manualSessionDispatch:true, never automatic enrollment. See $agent-system-task-launch. ' +
               'Read-only response assembly: action response gathers current-turn presentation output with optional blocks of {section, markdown} for ordinary prose. No IDs or receipts. Preserve the complete composed Markdown and any later addendum; formatting never gates work or repeats effects. ' +
-              'Direct assessment: action assessment with operation context accepts an explicit GitHub issue target and existing checkout path in the current chat. It uses current agent assessment configuration without intake activation. Use the returned selected method once, then assessment render with target and the full result. It returns native tool context and a concise presentation without saving a plan or summary. All outputs remain assessment-only; no assignment, setup, implementation or publication. Invalid managed context never falls back to manual. ' +
+              'Independent PR reviews: action review with operation launch takes an explicit PR target. In the reviewer chat use review context, publish an authored draft, or reconcile its original submission. The review coordinator uses scan, next and prepare; do not create reviewer chats directly. Direct assessment: action assessment with operation context accepts an explicit GitHub issue target and existing checkout path in the current chat. It uses current agent assessment configuration without intake activation. Use the returned selected method once, then assessment render with target and the full result. It returns native tool context and a concise presentation without saving a plan or summary. All outputs remain assessment-only; no assignment, setup, implementation or publication. Invalid managed context never falls back to manual. ' +
               'Manual managed-task retirement: action retire accepts a target issue URL or the current verified issue session, resolves ownership internally, and applies cleanup. Use preview:true for optional inspection; never supply IDs or digests. Only native owner input authorizes retirement. Reuse existing safe cleanup immediately; running work and incomplete native cleanup remain pending. Never fall back to unmanaged cleanup. ' +
               'Explicit unmanaged cleanup: action retire with native set to an exact session key (OpenClaw) or thread id (standalone Codex), performs normal native disposal using existing operator intent. Use preview:true for optional inspection; no copied digest or another conversational confirmation is required. Native cleanup may stop work, archive descendants or reclaim native checkouts/local branches and lose local-only work. No preservation audit, enrollment or issue/assignment/remote-branch changes. Known managed targets must use managed retirement. Honor native denial; reconcile the original attempt and distinguish archived history from disk reclamation. ' +
               'Operator status updates: action reply with operation context and purpose status-update reads bounded public facts and the verified owner outcomes. Reconcile only material missing facts, then compose with purpose status-update and update {facts:[{reference,text}]}; empty facts means no-op without a composer. Reconcile an uncertain overlapping publication through its original receipt; unrelated updates remain independent. Preserve task mode and lifecycle. Direct reply: action reply with operation compose accepts an exact GitHub target URL and supplied privateText/outcome in the current chat. It resolves the invoking agent configuration without intake activation and returns ordinary composition inputs or an exact existing-reply route. A newly authorized independent comment does not require destination task ownership or transfer; destination records grant no publication authority. Existing attempts retain their original source, text and reconciliation owner. Use candidate to retain and show a draft; only an explicit user publication request authorizes publish with the exact target and publicText through native approval. Reconcile uncertain attempts without reposting. Never treat invalid managed context as manual entry. ' +
@@ -269,7 +282,17 @@ export default function createDispatchTool(input: {
             signal?.throwIfAborted();
             assertDispatchModelRequest(params, 'dispatch-request-invalid');
             let result;
-            if (params.action === 'check')
+            if (params.action === 'review' && params.operation === 'check')
+              result = await openClawConditionCheck(async (budget) => {
+                const binding = await loaded(context);
+                return openClawReviewCheck(
+                  service.dependencies,
+                  binding.manifest,
+                  binding.scope.workspaceDir,
+                  budget.signal,
+                );
+              }, signal);
+            else if (params.action === 'check')
               result = await openClawConditionCheck(async (budget) => {
                 const binding = await budget.read('manifest-binding', () => loaded(context));
                 return service.check(

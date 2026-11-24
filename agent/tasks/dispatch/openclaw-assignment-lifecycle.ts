@@ -1,3 +1,5 @@
+import { selectOpenClawTaskContext } from '../context/openclaw-task-context.ts';
+import reviewPolicy from '../review/review-policy.ts';
 import { lstat } from 'node:fs/promises';
 import type { DispatchAuthority, DispatchRequest } from '../../../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../../../manifest/types.ts';
@@ -7,7 +9,10 @@ import { openClawCleanupConfiguration } from '../../cleanup-configuration.ts';
 import DiscoveryBudget from '../../discovery-budget.ts';
 import { managedPullRequest } from '../managed-issue.ts';
 import type OpenClawDispatchContext from './openclaw-dispatch-context.ts';
-import type { OpenClawDispatchRecord, OpenClawDispatchState } from './openclaw-dispatch-state.ts';
+import OpenClawDispatchStore, {
+  type OpenClawDispatchRecord,
+  type OpenClawDispatchState,
+} from './openclaw-dispatch-state.ts';
 import reconcileOpenClawRetirementEffects from '../retirement/openclaw-retirement-effects.ts';
 import observeRetirementSession, {
   observeRetiringResource,
@@ -26,6 +31,7 @@ export default async function reconcileOpenClawLifecycle(input: {
   manifest: AgentManifest;
   workspace: string;
   authority: DispatchAuthority;
+  reviewOwner?: string;
   targetId?: string;
   activeSessionKey?: string;
   budget?: DiscoveryBudget;
@@ -41,9 +47,27 @@ export default async function reconcileOpenClawLifecycle(input: {
   const configuration = await readConfiguration();
   const read = <T>(operation: string, run: () => Promise<T>) =>
     input.budget ? input.budget.read(operation, run) : run();
-  const current = await read('lifecycle-scope', () => service.scope(manifest, workspace));
-  current.policy.policy.issueAssignment!.allowed =
-    manifest.github?.notifications?.issueAssignment?.allowed ?? [];
+  const selectScope = async (live: AgentManifest) => {
+    if (!input.reviewOwner) return service.scope(live, workspace);
+    const current = await selectOpenClawTaskContext(
+      service.dependencies.taskContext,
+      live,
+      workspace,
+      { resolvePolicy: false },
+    );
+    const policy = reviewPolicy(live, 'openclaw', true);
+    if (!policy) throw new Error('review-runtime-disabled');
+    return {
+      ...current,
+      policy,
+      journal: new OpenClawDispatchStore(service.dependencies.root, current.store.location.scope),
+      admitted: { records: [] },
+    };
+  };
+  const current = await read('lifecycle-scope', () => selectScope(manifest));
+  if (!input.reviewOwner)
+    current.policy.policy.issueAssignment!.allowed =
+      manifest.github?.notifications?.issueAssignment?.allowed ?? [];
   const feedbackBudget = input.budget ?? new DiscoveryBudget();
   const now = (service.dependencies.now ?? Date.now)();
   const snapshot = await current.journal.read();
@@ -58,11 +82,13 @@ export default async function reconcileOpenClawLifecycle(input: {
   const manualTarget =
     input.targetId &&
     snapshot.records.find((record) => record.id === input.targetId && record.manualIssue);
-  const owner = manualTarget
-    ? manualTarget.sourceThreadId
-    : await read('lifecycle-coordinator', () =>
-        service.dependencies.coordinator(manifest, workspace),
-      );
+  const owner =
+    input.reviewOwner ??
+    (manualTarget
+      ? manualTarget.sourceThreadId
+      : await read('lifecycle-coordinator', () =>
+          service.dependencies.coordinator(manifest, workspace),
+        ));
   input.budget?.check();
   const client = await read('lifecycle-connection', () =>
     service.dependencies.connect(
@@ -79,13 +105,16 @@ export default async function reconcileOpenClawLifecycle(input: {
     );
     if (loaded.status !== 'loaded' || loaded.scope.workspaceDir !== workspace)
       throw new Error('retirement-workflow-changed');
-    const selected = await service.scope(loaded.manifest, workspace);
+    const selected = await selectScope(loaded.manifest);
     current.policy.policy = selected.policy.policy;
-    current.policy.policy.issueAssignment!.allowed =
-      loaded.manifest.github?.notifications?.issueAssignment?.allowed ?? [];
+    if (!input.reviewOwner)
+      current.policy.policy.issueAssignment!.allowed =
+        loaded.manifest.github?.notifications?.issueAssignment?.allowed ?? [];
     if (
       selected.workspace !== current.workspace ||
-      (!manualTarget && (await service.dependencies.coordinator(manifest, workspace)) !== owner)
+      (!input.reviewOwner &&
+        !manualTarget &&
+        (await service.dependencies.coordinator(manifest, workspace)) !== owner)
     )
       throw new Error('retirement-workflow-changed');
   };
@@ -126,6 +155,7 @@ export default async function reconcileOpenClawLifecycle(input: {
     if (input.targetId && (!target || target.retirement?.operatorRequest?.targetId !== target.id))
       throw new Error('dispatch-retire-target-mismatch');
     await reconcileAssignmentLifecycle({
+      workflow: input.reviewOwner ? 'review-request' : 'issue-assignment',
       configuration,
       readConfiguration,
       records: state.records,
@@ -239,6 +269,7 @@ export default async function reconcileOpenClawLifecycle(input: {
             observed.row?.key === owner
           )
             throw new Error('retirement-native-resource-protected');
+          const projectless = Boolean(record.reviewAdmission && !record.worktree);
           const held = archiveHolds.get(record.id);
           if (held && !record.retirement!.archiveRequest && observed.row) {
             record.retirement!.archiveRequest = {
@@ -260,6 +291,19 @@ export default async function reconcileOpenClawLifecycle(input: {
               after.jobs !== before.jobs
             )
               throw new Error('retirement-automation-ownership-unavailable');
+            if (projectless) {
+              if (
+                jobs.some(
+                  (job) =>
+                    (job.enabled || job.state.runningAtMs !== undefined) &&
+                    [record.threadId, 'session:' + record.threadId].some(
+                      (key) => key === job.sessionTarget || key === job.sessionKey,
+                    ),
+                )
+              )
+                throw new Error('retirement-automation-owner');
+              return new Map<string, Record<string, unknown>>();
+            }
             const custodians = state.records.filter(
               (entry) => entry.id !== record.id && entry.worktree === record.worktree,
             );
@@ -427,7 +471,9 @@ export default async function reconcileOpenClawLifecycle(input: {
                 : ('issue' as const),
             ...(discard ? { closedIssueWorktree: record.worktree } : {}),
           };
-          const worktree = await service.dependencies.worktrees.inspectGitHub(worktreeInput);
+          const worktree = projectless
+            ? undefined
+            : await service.dependencies.worktrees.inspectGitHub(worktreeInput);
           if (worktree && worktree.path !== record.worktree)
             throw new Error('retirement-worktree-identity-changed');
           if (worktree) {
@@ -439,7 +485,7 @@ export default async function reconcileOpenClawLifecycle(input: {
             });
             if (proof.status !== 'preserved')
               throw new Error('retirement-worktree-' + proof.status);
-          } else if (!record.retirement?.worktreeRemovedAt) {
+          } else if (!projectless && !record.retirement?.worktreeRemovedAt) {
             // native custody and managed inventory are checked before observing external removal.
             const absent =
               record.worktree &&

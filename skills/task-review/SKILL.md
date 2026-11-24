@@ -47,13 +47,13 @@ the runtime owns request authorization, routing, native creation and publication
 ## Preconditions
 
 Use trusted native context directly. If it is missing, request `dispatch review context`
-in standalone Codex through its supplied dispatch runtime. Do not reconstruct binding
+through the supplied Codex dispatch runtime or OpenClaw's `agent_system_dispatch` tool.
+Do not reconstruct binding
 IDs, select another workspace, or launch a duplicate chat.
 
 For explicit launch without an existing reviewer chat, use `dispatch review launch`
 with the exact PR URL, then the returned readiness and routing instructions. A manual
-launch does not need a review-request event or a running schedule. OpenClaw's native
-review adapter is a separate capability; preserve an explicit unavailable result.
+launch does not need a review-request event or a running schedule.
 Optional `overrides: {model, effort}` selects an explicit provider/model and effort.
 Otherwise use the shared routing assessment returned by the runtime, including verified
 Complexity from a unique linked issue. Do not copy the author's model or substitute a
@@ -64,9 +64,10 @@ resume it with the same PR target after checks settle; do not activate a schedul
 
 1. Identify the exact PR head, base, author, linked requirements and review scope.
    Inspect the diff and relevant definitions, callers, tests and operational contracts.
-   A short diff can still change a critical invariant. Read-only code access is the
-   default; do not modify implementation files or execute repository scripts that
-   mutate state. Respect native and provider restrictions.
+   Start on GitHub. If the available evidence answers the review question, no
+   checkout is needed. Otherwise use a separate checkout of the reviewed revision
+   to inspect history, run focused tests, or try a temporary local experiment.
+   Use the runtime’s managed worktree tool when available, otherwise a disposable checkout in an allowed directory. Verify `git rev-parse HEAD` matches the head in review context before testing. Never reuse the author’s checkout. Report what you observed; leave commits and fixes to the author.
 2. Inspect CI for the exact head or a verified merge revision. While relevant checks
    run, stay quiet: no review comments, code changes or reruns. Failed observations
    are unavailable evidence, not absent CI. Once checks finish, review failures as

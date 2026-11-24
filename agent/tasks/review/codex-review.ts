@@ -1,13 +1,10 @@
-import { Value } from 'typebox/value';
-import { type Static } from 'typebox';
-
-import { reviewRequestSchema } from '../../../tools/dispatch/review-schema.ts';
+import { parseReviewRequest } from '../../../tools/dispatch/review-schema.ts';
 import GitHubWorkEventClient from '../../../channels/github/provider/work-event-client.ts';
 import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
-import { githubRepositoryPath } from '../../../channels/github/provider/work-item.ts';
+import discoverReviews from './discover-reviews.ts';
 import repositoryScope from '../../../channels/github/repository-scope.ts';
 import GitHubAssignmentClaimClient from '../../../channels/github/provider/assignment-claim-client.ts';
-import reviewPublisher from '../../../channels/github/publication/review-publisher.ts';
+import publishOwnedReview from './publish-owned-review.ts';
 import connectCodexGitHubAccount from '../../codex-github-client.ts';
 import { connectCodexThreads } from '../../codex-thread-client.ts';
 import {
@@ -17,12 +14,7 @@ import {
 import { selectCodexTaskOwner } from '../context/codex-turn-task.ts';
 import { codexDispatchNative } from '../dispatch/codex-dispatch-native.ts';
 import CodexDispatchStore from '../dispatch/codex-dispatch-state.ts';
-import {
-  resolveDispatchProject,
-  verifyDispatchWorktree,
-  type DispatchGit,
-} from '../dispatch/codex-dispatch-project.ts';
-import prepareDispatchRepository from '../dispatch/codex-dispatch-repository.ts';
+import { verifyDispatchWorktree, type DispatchGit } from '../dispatch/codex-dispatch-project.ts';
 import { codexNativeHandoff } from '../dispatch/codex-dispatch-handoff.ts';
 import { codexInstanceStore } from '../dispatch/codex-assignment-claims.ts';
 import {
@@ -41,7 +33,6 @@ import routingInstructions, {
   routingInstructionsGuidance,
   routingInstructionsReference,
 } from '../../models/routing-instructions.ts';
-import redactFeedback from '../feedback/feedback-redaction.ts';
 import { admitReview, reviewKey } from './review-admission.ts';
 import observeReview from './review-observation.ts';
 import reviewClaimSource from './review-claim-source.ts';
@@ -50,15 +41,13 @@ import reviewContext, { reviewerInstructions, reviewTarget } from './review-cont
 import retireCodexReviews from './codex-review-retirement.ts';
 import codexRetirementNative from '../retirement/codex-retirement-native.ts';
 import type cleanupConfiguration from '../../cleanup-configuration.ts';
-import { resolve, join } from 'node:path';
+import { resolve } from 'node:path';
 import codexContinuationNative from '../implementation/codex-continuation-native.ts';
 import deliverTaskInput from '../context/task-input-delivery.ts';
-import resolveGitWorktreeLayout from '../../../tools/git/worktree-layout.ts';
 import assignmentRetirement from '../retirement/assignment-retirement.ts';
 import reconcileRetirementEffects from '../retirement/reconcile-retirement-effects.ts';
 import codexSessionSettings from '../../models/codex-session-settings.ts';
 
-type ReviewRequest = Static<typeof reviewRequestSchema>;
 type ReviewClient = Pick<
   GitHubWorkEventClient,
   | 'identity'
@@ -82,7 +71,6 @@ export interface CodexReviewDependencies extends CodexTaskContextDependencies {
   claimClient?: ClaimClient;
   activation?: typeof inspectCodexReviewActivation;
   git?: DispatchGit;
-  prepareRepository?: typeof prepareDispatchRepository;
   readCleanupConfiguration?: typeof cleanupConfiguration;
   retirementNative?: ReturnType<typeof codexRetirementNative>;
   continuationNative?: ReturnType<typeof codexContinuationNative>;
@@ -94,28 +82,11 @@ export default async function codexReview(
   raw: Record<string, unknown>,
   deps: CodexReviewDependencies = {},
 ) {
-  const { projects } = raw;
   const authored = { ...raw };
   delete authored.projects;
   delete authored.threads;
-  if (!Value.Check(reviewRequestSchema, authored)) throw new Error('review-request-invalid');
-  const input: ReviewRequest = authored;
-  const allowed: Record<ReviewRequest['operation'], string[]> = {
-    scan: [],
-    next: ['target'],
-    prepare: ['target', 'title', 'assessment', 'overrides'],
-    reconcile: ['target'],
-    context: [],
-    publish: ['draft'],
-    launch: ['target', 'overrides'],
-    retire: ['target'],
-  };
-  if (
-    Object.keys(authored).some(
-      (key) => !['action', 'operation', ...allowed[input.operation]].includes(key),
-    )
-  )
-    throw new Error('review-operation-arguments-invalid');
+  const input = parseReviewRequest(authored);
+  if (input.operation === 'check') throw new Error('review-condition-openclaw-only');
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
   if (!caller) throw new Error('review-native-caller-required');
   const current = await selectCodexTaskContext(pluginData, deps, { resolvePolicy: false });
@@ -222,53 +193,25 @@ export default async function codexReview(
       const obstacles: Array<{ target?: string; code: string }> = [];
       if (input.operation === 'scan') {
         let admitted = 0;
-        for (let page = 1; ;) {
-          const result = await client.discoverReviewRequests(page);
-          if (result.incomplete) throw new Error('review-discovery-incomplete');
-          for (const candidate of result.candidates) {
-            try {
-              const { owner, name } = githubRepositoryPath(candidate.repositoryPath);
-              const repository = await client.getRepository(owner!, name!);
-              if (repositoryScope(policy, repository, 'review-request').decision === 'deny')
-                continue;
-              const item = await client.getItem(owner!, name!, candidate.number);
-              const request = await client.reviewRequests.current(owner!, name!, candidate.number);
-              if (
-                !request ||
-                !policy.reviewRequest?.allowed.some(
-                  (actor) =>
-                    actor.nodeId === request.requester.nodeId &&
-                    actor.login.toLowerCase() === request.requester.login.toLowerCase(),
-                )
-              )
-                continue;
-              const admission = admitReview({
-                scope: journal.scope,
-                workspaceDir: current.workspace,
-                agentId: current.agentId,
-                identity: client.identity,
-                repository,
-                item,
-                request,
-                policy,
-                now,
-              });
-              if (!state.records.some((entry) => entry.id === admission.id)) {
-                const count = state.records.length;
-                await retain(admission);
-                if (state.records.length > count) admitted++;
-              }
-            } catch (error) {
-              signal.throwIfAborted();
-              obstacles.push({
-                code: workflowFailure(error, 'review-request-observation-failed').code,
-              });
-            }
-          }
-          if (!result.nextPage || result.nextPage === 1) break;
-          if (page >= 10) throw new Error('review-discovery-incomplete'); // GitHub search exposes at most 1,000 results.
-          page = result.nextPage;
-        }
+        obstacles.push(
+          ...(await discoverReviews(
+            client,
+            policy,
+            {
+              scope: journal.scope,
+              workspaceDir: current.workspace,
+              agentId: current.agentId,
+            },
+            now,
+            signal,
+            async (admission) => {
+              if (state.records.some((entry) => entry.id === admission.id)) return;
+              const count = state.records.length;
+              await retain(admission);
+              if (state.records.length > count) admitted++;
+            },
+          )),
+        );
         return {
           status: 'observed',
           admitted,
@@ -320,108 +263,23 @@ export default async function codexReview(
         if (input.target || input.overrides || input.assessment || input.title)
           throw new Error('review-owner-selectors-forbidden');
         const owned = currentOwner.record;
-        if (!owned.project || !owned.request) throw new Error('review-native-creation-unverified');
-        const path = await verifyDispatchWorktree(
-          owned.project,
-          currentOwner.native.cwd,
-          `${owned.reviewAdmission!.repository.owner.login}/${owned.reviewAdmission!.repository.name}`,
-          deps.git,
-        );
+        if (!owned.request) throw new Error('review-native-creation-unverified');
+        const path = owned.project
+          ? await verifyDispatchWorktree(
+              owned.project,
+              currentOwner.native.cwd,
+              `${owned.reviewAdmission!.repository.owner.login}/${owned.reviewAdmission!.repository.name}`,
+              deps.git,
+            )
+          : undefined;
         if (input.operation === 'context')
           return reviewContext({
             record: { ...owned, worktree: path },
             manifest: current.manifest,
             workspace: current.workspace,
-            resolveSkill: (id) => native.assessmentSkill(path, id),
+            resolveSkill: (id) => native.assessmentSkill(path ?? current.workspace, id),
           });
-        const observed = await observeReview(owned.reviewAdmission!, client, policy, true);
-        if (input.operation === 'publish' && !turnId)
-          throw new Error('review-native-turn-unavailable');
-        if (input.operation === 'publish' && observed.status !== 'ready')
-          throw new Error('review-publication-not-ready');
-        if (
-          input.operation === 'publish' &&
-          (!owned.reviewPublication?.attempted ||
-            (owned.reviewPublication.receipt && owned.reviewPublication.turnId !== turnId))
-        ) {
-          if (!input.draft) throw new Error('review-draft-required');
-          owned.reviewPublication = {
-            head: owned.reviewAdmission!.head,
-            turnId,
-            draft: structuredClone(input.draft),
-            attempted: false,
-          };
-          await save();
-        }
-        const publication = owned.reviewPublication;
-        if (!publication) return { status: 'no-publication' };
-        if (input.draft && automationHash(input.draft) !== automationHash(publication.draft))
-          throw new Error('review-publication-candidate-changed');
-        if (publication.rejected) throw new Error('review-publication-denied');
-        const admission = owned.reviewAdmission!;
-        const publisher = reviewPublisher(
-          {
-            item: {
-              lifecycleId: 'pull-request-review',
-              repositoryOwner: admission.repository.owner.login,
-              repositoryName: admission.repository.name,
-              repositoryNodeId: admission.repository.nodeId,
-              number: admission.issue.number,
-            },
-            head: publication.head,
-            draft: publication.draft,
-            publicationId: publication.turnId
-              ? automationHash([owned.id, publication.turnId])
-              : owned.id,
-          },
-          {
-            connect: async () => client,
-            redactText: redactFeedback,
-            exclusive: async (_key, run) => run(),
-            authorize: async () => {
-              await fresh();
-              const live = await observeReview(admission, client, policy, true);
-              if (
-                live.status !== 'ready' &&
-                !(publication.attempted && live.status === 'waiting-ci')
-              )
-                throw new Error('review-publication-not-ready');
-              if (
-                !publication.attempted &&
-                owned.reviewObservation !== live.fingerprint &&
-                owned.reviewObservation !== live.legacyFingerprint
-              )
-                throw new Error('review-publication-evidence-changed');
-              return { authorized: true };
-            },
-            beforeCreate: async () => {
-              publication.attempted = true;
-              await save();
-            },
-            onCreateRejected: async () => {
-              publication.rejected = true;
-              await save();
-            },
-          },
-        );
-        const result =
-          publication.attempted || input.operation === 'reconcile'
-            ? await publisher.reconcile()
-            : await publisher.publish();
-        if (!result)
-          return {
-            status: 'publication-uncertain',
-            instruction: 'Reconcile the original submission; do not post another review.',
-          };
-        publication.receipt = {
-          databaseId: result.receipt.databaseId,
-          nodeId: result.receipt.nodeId,
-        };
-        await save();
-        return {
-          status: result.status,
-          url: `${reviewTarget(owned)}#pullrequestreview-${result.receipt.databaseId}`,
-        };
+        return publishOwnedReview(owned, input, turnId, client, policy, fresh, save);
       }
       if (input.operation === 'context' || input.operation === 'publish')
         throw new Error('review-native-owner-required');
@@ -567,15 +425,16 @@ export default async function codexReview(
                   'Reconcile native creation. Never repeat the prepared create_thread request.',
               };
             }
-            const worktree = await verifyDispatchWorktree(
-              pending.project!,
-              found.cwd,
-              `${admission.repository.owner.login}/${admission.repository.name}`,
-              deps.git,
-            );
+            if (pending.project) {
+              pending.worktree = await verifyDispatchWorktree(
+                pending.project,
+                found.cwd,
+                `${admission.repository.owner.login}/${admission.repository.name}`,
+                deps.git,
+              );
+            }
             const effective = codexSessionSettings(pending, found);
             pending.threadId = found.id;
-            pending.worktree = worktree;
             pending.effective = effective;
             pending.nativeInactive =
               ['idle', 'notLoaded'].includes(found.status) && found.turnEnded === true;
@@ -697,8 +556,7 @@ export default async function codexReview(
             if (
               !record ||
               !pending.context ||
-              !pending.project ||
-              pending.project.commit !== item.pullRequest.headSha ||
+              admission.head !== item.pullRequest.headSha ||
               pending.manifestDigest !== current.digest
             )
               throw new Error('review-preparation-stale');
@@ -731,17 +589,10 @@ export default async function codexReview(
             pending.request = {
               title:
                 input.title ?? `Review ${repository.owner.login}/${repository.name}#${item.number}`,
-              prompt: `${reviewerInstructions}\n\nReview ${target} at ${pending.project.commit}. Read your trusted review turn context and its configured skill. This is independent review work, never author implementation.`,
+              prompt: `${reviewerInstructions}\n\nReview ${target} at ${admission.head}. Read your trusted review turn context and its configured skill. This is independent review work, never author implementation.`,
               model: routing.candidate.model,
               thinking: routing.candidate.thinking,
-              target: {
-                type: 'project',
-                projectId: pending.project.id,
-                environment: {
-                  type: 'worktree',
-                  startingState: { type: 'branch', branchName: pending.project.commit },
-                },
-              },
+              target: { type: 'projectless' },
             };
             await fresh();
             if (!operator && state.run) state.run.actions++;
@@ -752,68 +603,7 @@ export default async function codexReview(
               nativeHandoff: codexNativeHandoff('create_thread', pending.request),
             };
           }
-          const repositoryPath = `${repository.owner.login}/${repository.name}`;
-          const layout = resolveGitWorktreeLayout(
-            current.workspace,
-            current.manifest.git?.worktrees ?? {},
-          );
-          const repositoryId = 'github-' + repository.databaseId;
-          let explicitPath = Object.hasOwn(layout.localRepositories, repositoryId)
-            ? layout.localRepositories[repositoryId]
-            : layout.workingDirectory
-              ? join(layout.workingDirectory, repository.name)
-              : undefined;
-          const projectInput = {
-            projects,
-            repository: repositoryPath,
-            defaultBranch: repository.defaultBranch,
-            workspace: current.workspace,
-            reviewHead: { number: item.number, sha: item.pullRequest.headSha },
-            explicitPath,
-          };
-          const prepareRepository = async () =>
-            await (deps.prepareRepository ?? prepareDispatchRepository)(
-              {
-                workspace: current.workspace,
-                configuration: current.manifest.git?.worktrees ?? {},
-                repositoryId: `github-${repository.databaseId}`,
-                repository: repositoryPath,
-                cloneUrl: repository.cloneUrl,
-                protocol: 'https',
-                defaultBranch: repository.defaultBranch,
-                previous: pending.repositoryPreparation,
-              },
-              {
-                git: deps.git,
-                signal,
-                authorize: fresh,
-                retain: async (value) => {
-                  pending.repositoryPreparation = value;
-                  await save();
-                },
-              },
-            );
-          if (pending.repositoryPreparation) projectInput.explicitPath = await prepareRepository();
-          try {
-            pending.project = await resolveDispatchProject(projectInput, deps.git);
-          } catch (error) {
-            if (
-              !(error instanceof Error) ||
-              !['dispatch-project-missing', 'dispatch-configured-project-missing'].includes(
-                error.message,
-              )
-            )
-              throw error;
-            explicitPath = await prepareRepository();
-            await save();
-            return {
-              status: 'project-registration-required',
-              path: explicitPath,
-              target,
-              instruction:
-                'Register this checkout using the supported native project UI, refresh list_projects, then retry review next.',
-            };
-          }
+          delete pending.project;
           admission.head = item.pullRequest.headSha;
           pending.context = JSON.stringify(
             await client.getReviewRoutingContext(
@@ -835,7 +625,7 @@ export default async function codexReview(
             intakeId: pending.id,
             digest: automationHash({
               context: pending.context,
-              project: pending.project,
+              head: admission.head,
               manifest: current.digest,
             }),
             at: now,

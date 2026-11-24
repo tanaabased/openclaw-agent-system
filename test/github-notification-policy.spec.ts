@@ -30,7 +30,7 @@ function parsed(configuration: unknown) {
 }
 
 describe('channels/github/notification-policy', () => {
-  it('should allow openclaw planning while naming unsupported enabled capabilities', () => {
+  it('should allow native OpenClaw assignment and review workflows', () => {
     const supported = {
       ...policy,
       runtimes: ['openclaw', 'codex'],
@@ -65,11 +65,7 @@ describe('channels/github/notification-policy', () => {
     }
     const review = parsed({ ...supported, 'review-request': { allowed: [{ ...actor }] } });
     assert.equal(githubNotificationRuntimeBlocker(review, 'openclaw'), undefined);
-    assert.ok(
-      githubNotificationRuntimeDiagnostics(review, 'openclaw').some(
-        ({ status, workflow }) => status === 'warning' && workflow === 'review-request',
-      ),
-    );
+    assert.deepEqual(githubNotificationRuntimeDiagnostics(review, 'openclaw'), []);
     for (const skill of [
       'agent-system-task-assessment',
       'agent-system:agent-system-task-assessment',
@@ -103,7 +99,7 @@ describe('channels/github/notification-policy', () => {
       new Set(
         diagnostics.filter(({ status }) => status === 'warning').map(({ fieldPath }) => fieldPath),
       ),
-      new Set(['/github/review-request']),
+      new Set(),
     );
     assert.deepEqual(
       new Set(

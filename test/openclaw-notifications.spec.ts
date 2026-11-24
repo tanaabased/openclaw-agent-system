@@ -276,9 +276,10 @@ describe('agent/openclaw-notifications', () => {
   it('should expose capability warnings without failing supported refreshes and waits', async () => {
     const f = fixture();
     f.manifest.github!.notifications!.issueAssignment!.feedback = { inherit: true, allowed: [] };
-    f.manifest.github!.notifications!.reviewRequest = {
+    f.manifest.github!.notifications!.issuePickup = {
       paused: false,
-      allowed: [{ login: 'operator', nodeId: 'U_operator' }],
+      projects: [],
+      windowMinutes: 0,
     };
     f.state!.policyDigest = assignmentIntakePolicy(f.manifest, 'openclaw')!.digest;
     const observed = await f.service.inspect(f.manifest, '/workspace');
@@ -347,9 +348,10 @@ describe('agent/openclaw-notifications', () => {
 
   it('should print capability warnings after status output and preserve structured degraded results', async () => {
     const f = fixture();
-    f.manifest.github!.notifications!.reviewRequest = {
+    f.manifest.github!.notifications!.issuePickup = {
       paused: false,
-      allowed: [{ login: 'operator', nodeId: 'U_operator' }],
+      projects: [],
+      windowMinutes: 0,
     };
     f.state!.policyDigest = assignmentIntakePolicy(f.manifest, 'openclaw')!.digest;
     const loaded = {
@@ -383,12 +385,12 @@ describe('agent/openclaw-notifications', () => {
         events.map(({ stream }) => stream),
         ['stdout', 'stderr'],
       );
-      assert.match(events[1]!.text, /review requests/);
+      assert.match(events[1]!.text, /pickup timing/i);
       assert.deepEqual(exits, []);
       if (json) {
         const result = JSON.parse(events[0]!.text);
         assert.equal(result.status, 'ready');
-        assert.equal(result.warnings[0].fieldPath, '/github/review-request');
+        assert.equal(result.warnings[0].fieldPath, '/github/issue-pickup');
         assert.equal(result.diagnosticCode, undefined);
       } else {
         assert.equal((events[1]!.text.match(/messages/g) ?? []).length, 1);
