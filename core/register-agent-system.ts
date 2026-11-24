@@ -1094,6 +1094,8 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
             cwd,
             timeoutMs: 600_000,
           }),
+        undefined,
+        { sqliteInstallation },
       ),
       commandAuthority,
       credentialInput: opCredentialInput,

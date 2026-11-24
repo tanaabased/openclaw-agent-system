@@ -41,6 +41,12 @@ export interface BoundStorage {
       ): Promise<string[]>;
       listIntakeScopes(): Promise<string[]>;
       readIntake(scope: string): Promise<IntakeState | undefined>;
+      saveDispatch(
+        scope: string,
+        state: AgentRows['dispatchState']['value'] & {
+          records: AgentRows['dispatchRecords']['value'][];
+        },
+      ): Promise<void>;
       saveIntake(state: IntakeState): Promise<void>;
       clearIntake(scope: string): Promise<void>;
     };

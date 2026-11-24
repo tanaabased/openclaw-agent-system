@@ -163,6 +163,7 @@ describe('agent/automation-report-store', () => {
     const b = await service.reportStore('b');
     const pending = report('submitted');
     const old = report('failed');
+    old.completedAt = new Date(now).toUTCString();
     await a.write(pending);
     await a.write(old);
     const other = {

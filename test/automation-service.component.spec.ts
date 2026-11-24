@@ -1209,6 +1209,15 @@ describe('agent/automation-service', () => {
   });
 
   it('should install the derived v2 job and group, detect drift and converge without duplicates', async () => {
+    const { sqliteInstallation, storageBackend } = await sqliteAgentFixture(
+      root,
+      manifest.agent.id,
+    );
+    service = new AutomationService({
+      ...service.dependencies,
+      sqliteInstallation,
+      storageBackend,
+    });
     const sessions = new Map<string, Record<string, unknown>>();
     let saveCategory = true;
     const original = service.dependencies.request!;
@@ -1319,6 +1328,10 @@ describe('agent/automation-service', () => {
     delete native[0]!.state.runningAtMs;
     const identity = native[0]!.id;
     const coordinator = native[0]!.sessionTarget;
+    assert.equal(
+      await dispatch.service.dependencies.coordinator(manifest, root),
+      String(coordinator).slice('session:'.length),
+    );
     const schedule = structuredClone(native[0]!.schedule);
     assert.equal(native[0]!.payload.model, 'openai/gpt-6-luna');
     policy.issueAssignment!.model = 'high';
@@ -1508,10 +1521,6 @@ describe('agent/automation-service', () => {
     fixture.client.discoverProject = async () => {
       throw Error('install and inspection must not scan');
     };
-    const { sqliteInstallation, storageBackend } = await sqliteAgentFixture(
-      root,
-      manifest.agent.id,
-    );
     await bindSqliteInstallation(sqliteInstallation).install();
     const enrollments = await bindPickupStore(
       sqliteInstallation,

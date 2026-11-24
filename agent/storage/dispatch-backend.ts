@@ -28,16 +28,8 @@ export function sqliteDispatchPersistence(
         throw new Error('dispatch-state-invalid');
       return { ...header.value, records: dispatchRecords.map(({ value }) => value) };
     },
-    async save({ records, ...value }: DispatchEnvelope) {
-      await agent.write([
-        { table: 'dispatchState', action: 'save', row: { scope, value } },
-        { table: 'dispatchRecords', action: 'clearScope', scope },
-        ...records.map((record) => ({
-          table: 'dispatchRecords' as const,
-          action: 'insert' as const,
-          row: { scope, id: record.id, value: record },
-        })),
-      ]);
+    save(state: DispatchEnvelope) {
+      return agent.saveDispatch(scope, state);
     },
   };
 }

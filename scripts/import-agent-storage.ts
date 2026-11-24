@@ -1,3 +1,5 @@
+import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
+import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 // Temporary, operator-run importer for #792. Run from the source checkout with Node.
 import { normalizeDispatchPickup } from '../agent/tasks/dispatch/dispatch-state.ts';
 import { pickupDispatchScope } from '../agent/storage/dispatch-backend.ts';
@@ -35,7 +37,10 @@ import { draftSchema } from '../agent/tasks/feedback/reply-store.ts';
 import { implementationEntriesSchema } from '../agent/tasks/implementation/implementation-entry-state.ts';
 import { entriesSchema as retirementEntries } from '../agent/tasks/retirement/native-retirement.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
-import IntakeRecordStore, { intakeLocation } from '../channels/github/intake/record-store.ts';
+import IntakeRecordStore, {
+  intakeLocation,
+  intakeScopeLocation,
+} from '../channels/github/intake/record-store.ts';
 import PrivateStateFile from '../core/private-state-file.ts';
 import { resolveFileCredentialStoreRoot } from '../credentials/file-store.ts';
 import PathProjectionStore from '../paths/projection-store.ts';
@@ -88,15 +93,19 @@ class ImportPlan<Rows extends Record<string, object>> {
     this.tables.set(table, rows);
   }
 
-  async prepare(storage: WorkflowRecords<Rows>) {
+  async prepare(storage?: WorkflowRecords<Rows>) {
     const changes: RecordChange<Rows>[] = [];
     const counts: Record<string, { insert: number; present: number }> = {};
     const query = Object.fromEntries(
       [...this.tables.keys()].map((table) => [table, {}]),
     ) as Selection<Rows>;
-    const existing = await storage.read(query);
+    const existing = await storage?.read(query);
     for (const [table, rows] of this.tables) {
-      const found = new Map(existing[table].map((row) => [rowKey(row), row]));
+      const found = new Map((existing?.[table] ?? []).map((row) => [rowKey(row), row]));
+      if (table === 'instances' && [...found.keys()].some((key) => !rows.has(key)))
+        throw new Error(
+          'SQLite already contains a different instance identity. Import into the shared database before initializing a new instance.',
+        );
       const count = (counts[String(table)] = { insert: 0, present: 0 });
       for (const [key, row] of rows) {
         const previous = found.get(key);
@@ -140,10 +149,12 @@ export async function importAgentStorage(options: ImportOptions) {
   const intakeRoot = codex ? stateRoot : join(privateRoot, 'agent-system-intake-v2');
   const dispatchRoot = codex ? stateRoot : join(privateRoot, 'agent-system-dispatch-v2');
   const automationRoot = codex ? stateRoot : join(stateRoot, 'agent-system-automations');
-  const storage = bindSqliteStorage(
-    { agentRoot, installationRoot, schemaRoot: resolve(import.meta.dirname, '../agent/storage') },
-    agentId,
-  );
+  const installation = {
+    agentRoot,
+    installationRoot,
+    schemaRoot: resolve(import.meta.dirname, '../agent/storage'),
+  };
+  const storage = bindSqliteStorage(installation, agentId);
   for (const store of [storage.agent, storage.installation]) {
     const finding = await store.inspect();
     if (finding.status !== 'healthy')
@@ -151,99 +162,6 @@ export async function importAgentStorage(options: ImportOptions) {
   }
   const agent = new ImportPlan<AgentRows>();
   const shared = new ImportPlan<InstallationRows>();
-  const location = intakeLocation({
-    runtime,
-    agentId,
-    root: intakeRoot,
-    workspaceDir: workspace,
-    namespace: profile,
-  });
-  const { scope } = location;
-  const intake = await new IntakeRecordStore(location).read();
-  if (intake) {
-    const { records, ...value } = intake;
-    if (value.agentId !== agentId || value.workspaceDir !== workspace)
-      throw new Error('intake owner mismatch');
-    agent.add('intakeState', { scope, value });
-    for (const record of records)
-      agent.add('intakeRecords', { scope, id: record.id, value: record });
-  }
-  const pins = await new GitHubIdentityCache(location).read();
-  for (const [id, value] of Object.entries(pins.entries))
-    agent.add('githubIdentityPins', { scope, id, value });
-  const reset = await new NotificationResetStore(dispatchRoot, scope).read();
-  if (reset) {
-    if (reset.agentId !== agentId || reset.runtime !== runtime || reset.workspace !== workspace)
-      throw new Error('reset owner mismatch');
-    agent.add('notificationResets', { scope, value: reset });
-  }
-  const sessions = new Set(options.sessionScopes);
-  const dispatchFiles = await names(dispatchRoot);
-  const journalName = runtime + '-dispatch-' + scope + '.json';
-  const journals = [{ root: dispatchRoot, key: scope, files: dispatchFiles }];
-  if (!codex)
-    journals.push({
-      root: intakeRoot,
-      key: pickupDispatchScope(scope),
-      files: await names(intakeRoot),
-    });
-  for (const { root, key, files } of journals) {
-    if (!files.includes(journalName)) continue;
-    const store = codex
-      ? new CodexDispatchStore(root, scope)
-      : new OpenClawDispatchStore(root, scope);
-    const { records, ...value } = await store.readEnvelope();
-    agent.add('dispatchState', { scope: key, value });
-    for (const record of records) {
-      if (!record || typeof record.id !== 'string' || !record.id)
-        throw new Error('dispatch record missing id');
-      agent.add('dispatchRecords', { scope: key, id: record.id, value: record });
-      const session = record.threadId;
-      const incarnation = codex
-        ? session
-        : 'sessionCreation' in record && record.sessionCreation?.sessionId;
-      if (typeof session === 'string' && typeof incarnation === 'string') {
-        sessions.add(
-          automationHash({ runtime, agentId, workspace, namespace: profile, session, incarnation }),
-        );
-      }
-    }
-  }
-  const unattributed = new Set<string>();
-  for (const name of dispatchFiles) {
-    const match =
-      /^github-(reply|implementation|native-retirement)-([a-f0-9]{64})(?:-([a-f0-9]{64}))?\.json$/u.exec(
-        name,
-      );
-    if (!match) continue;
-    const [, kind, sessionScope, draftId] = match;
-    if (!sessions.has(sessionScope!)) {
-      unattributed.add(sessionScope!);
-      continue;
-    }
-    const path = join(dispatchRoot, name);
-    const raw = JSON.parse(await contents(path));
-    if (kind === 'reply') {
-      const draft = checked(draftSchema, raw, path);
-      if (draft.id !== draftId) throw new Error('reply draft id mismatch: ' + path);
-      agent.add('replyDrafts', { scope: sessionScope!, id: draft.id, value: draft });
-    } else {
-      if (draftId || raw?.scope !== sessionScope) throw new Error('entry scope mismatch: ' + path);
-      if (kind === 'implementation') {
-        for (const value of checked(implementationEntriesSchema, raw.entries, path))
-          agent.add('directEntries', { scope: sessionScope!, kind, id: value.id, value });
-      } else {
-        for (const value of checked(retirementEntries, raw.entries, path))
-          agent.add('directEntries', {
-            scope: sessionScope!,
-            kind: 'native-retirement',
-            id: value.digest,
-            value,
-          });
-      }
-    }
-  }
-
   const auto = new AutomationStore({
     root: automationRoot,
     agentId,
@@ -254,32 +172,220 @@ export async function importAgentStorage(options: ImportOptions) {
     ? automationHash({ runtime, profile, agentId, workspaceDir: workspace })
     : auto.scope;
   const autoFiles = await names(automationRoot);
-  const ledgerName = (codex ? 'codex-automations-' : 'automations-') + autoScope + '.json';
-  if (autoFiles.includes(ledgerName)) {
-    const path = join(automationRoot, ledgerName);
-    const { records, ...value } = codex
-      ? checked(codexAutomations, JSON.parse(await contents(path)), path)
-      : await auto.read();
-    if (
-      value.scope !== autoScope ||
-      ('binding' in value &&
-        value.binding &&
-        (value.binding.agentId !== agentId ||
-          value.binding.workspace !== workspace ||
-          value.binding.codexHome !== profile))
-    )
-      throw new Error('automation owner mismatch');
-    agent.add('automationState', { scope: autoScope, value });
-    for (const record of records)
-      agent.add('automationRegistrations', { scope: autoScope, id: record.id, value: record });
+  const dispatchFiles = await names(dispatchRoot);
+  const unattributed = new Set<string>();
+  const attributed = new Map<string, string>();
+  const scopes = new Map([[autoScope, { agentId, workspace }]]);
+  const retainedPlans = new Map<string, ImportPlan<AgentRows>>();
+  const enrollments = await new IssuePickupEnrollmentStore(installationRoot).read();
+  async function collectWorkspace(
+    agentId: string,
+    workspace: string,
+    agent: ImportPlan<AgentRows>,
+    selectedSessions: string[],
+  ) {
+    const location = intakeLocation({
+      runtime,
+      agentId,
+      root: intakeRoot,
+      workspaceDir: workspace,
+      namespace: profile,
+    });
+    const { scope } = location;
+    const intake = await new IntakeRecordStore(location).read();
+    if (intake) {
+      const { records, ...value } = intake;
+      if (value.agentId !== agentId || value.workspaceDir !== workspace)
+        throw new Error('intake owner mismatch');
+      agent.add('intakeState', { scope, value });
+      for (const record of records)
+        agent.add('intakeRecords', { scope, id: record.id, value: record });
+    }
+    const pins = await new GitHubIdentityCache(location).read();
+    for (const [id, value] of Object.entries(pins.entries))
+      agent.add('githubIdentityPins', { scope, id, value });
+    const reset = await new NotificationResetStore(dispatchRoot, scope).read();
+    if (reset) {
+      if (reset.agentId !== agentId || reset.runtime !== runtime || reset.workspace !== workspace)
+        throw new Error('reset owner mismatch');
+      agent.add('notificationResets', { scope, value: reset });
+    }
+    const sessions = new Set(selectedSessions);
+
+    const journalName = runtime + '-dispatch-' + scope + '.json';
+    const journals = [{ root: dispatchRoot, key: scope, files: dispatchFiles }];
+    if (!codex)
+      journals.push({
+        root: intakeRoot,
+        key: pickupDispatchScope(scope),
+        files: await names(intakeRoot),
+      });
+    for (const { root, key, files } of journals) {
+      if (!files.includes(journalName)) continue;
+      const store = codex
+        ? new CodexDispatchStore(root, scope)
+        : new OpenClawDispatchStore(root, scope);
+      const { records, ...value } = await store.readEnvelope();
+      agent.add('dispatchState', { scope: key, value });
+      for (const record of records) {
+        if (!record || typeof record.id !== 'string' || !record.id)
+          throw new Error('dispatch record missing id');
+        agent.add('dispatchRecords', { scope: key, id: record.id, value: record });
+        const session = record.threadId;
+        const incarnation = codex
+          ? session
+          : 'sessionCreation' in record && record.sessionCreation?.sessionId;
+        if (typeof session === 'string' && typeof incarnation === 'string') {
+          sessions.add(
+            automationHash({
+              runtime,
+              agentId,
+              workspace,
+              namespace: profile,
+              session,
+              incarnation,
+            }),
+          );
+        }
+      }
+    }
+
+    for (const name of dispatchFiles) {
+      const match =
+        /^github-(reply|implementation|native-retirement)-([a-f0-9]{64})(?:-([a-f0-9]{64}))?\.json$/u.exec(
+          name,
+        );
+      if (!match) continue;
+      const [, kind, sessionScope, draftId] = match;
+      if (!sessions.has(sessionScope!)) {
+        unattributed.add(sessionScope!);
+        continue;
+      }
+      const previousOwner = attributed.get(sessionScope!);
+      if (previousOwner && previousOwner !== agentId)
+        throw new Error('session scope selected for two agents: ' + sessionScope);
+      attributed.set(sessionScope!, agentId);
+      const path = join(dispatchRoot, name);
+      const raw = JSON.parse(await contents(path));
+      if (kind === 'reply') {
+        const draft = checked(draftSchema, raw, path);
+        if (draft.id !== draftId) throw new Error('reply draft id mismatch: ' + path);
+        agent.add('replyDrafts', { scope: sessionScope!, id: draft.id, value: draft });
+      } else {
+        if (draftId || raw?.scope !== sessionScope)
+          throw new Error('entry scope mismatch: ' + path);
+        if (kind === 'implementation') {
+          for (const value of checked(implementationEntriesSchema, raw.entries, path))
+            agent.add('directEntries', { scope: sessionScope!, kind, id: value.id, value });
+        } else {
+          for (const value of checked(retirementEntries, raw.entries, path))
+            agent.add('directEntries', {
+              scope: sessionScope!,
+              kind: 'native-retirement',
+              id: value.digest,
+              value,
+            });
+        }
+      }
+    }
+
+    for (const value of enrollments.records) {
+      const owner = value.enrollment;
+      if (
+        owner.runtime === runtime &&
+        owner.agentId === agentId &&
+        owner.workspaceDir === workspace &&
+        owner.scope === scope
+      )
+        agent.add('pickupEnrollments', { runtime, scope: owner.scope, value });
+    }
   }
-  const threads = 'automation-threads-' + autoScope + '.json';
-  if (autoFiles.includes(threads)) {
-    const path = join(automationRoot, threads);
-    const ledger = checked(threadsSchema, JSON.parse(await contents(path)), path);
-    if (ledger.scope !== autoScope) throw new Error('thread scope mismatch');
-    for (const value of ledger.records)
-      agent.add('automationThreads', { scope: autoScope, id: value.key, value });
+  if (codex) {
+    // Codex can recover intake from an earlier binding even when it has no automation ledger.
+    for (const name of dispatchFiles) {
+      const match = /^github-intake-([a-f0-9]{64})\.json$/u.exec(name);
+      if (!match) continue;
+      const store = new IntakeRecordStore(intakeScopeLocation(stateRoot, match[1]!));
+      const state = await store.read();
+      if (!state) continue;
+      const owner = { agentId: state.agentId, workspace: state.workspaceDir };
+      if (
+        intakeLocation({
+          runtime,
+          root: intakeRoot,
+          agentId: owner.agentId,
+          workspaceDir: owner.workspace,
+          namespace: profile,
+        }).scope === store.location.scope
+      )
+        scopes.set(
+          automationHash({
+            runtime,
+            profile,
+            agentId: owner.agentId,
+            workspaceDir: owner.workspace,
+          }),
+          owner,
+        );
+    }
+    for (const name of autoFiles) {
+      const match = /^codex-automations-([a-f0-9]{64})\.json$/u.exec(name);
+      if (!match || match[1] === autoScope) continue;
+      const path = join(automationRoot, name);
+      const raw = JSON.parse(await contents(path));
+      const binding = raw?.binding;
+      if (!binding || binding.codexHome !== profile) continue;
+      const ledger = checked(codexAutomations, raw, path);
+      const expected = automationHash({
+        runtime,
+        profile,
+        agentId: binding.agentId,
+        workspaceDir: binding.workspace,
+      });
+      if (ledger.scope !== match[1] || expected !== match[1])
+        throw new Error('automation owner mismatch: ' + path);
+      scopes.set(ledger.scope, { agentId: binding.agentId, workspace: binding.workspace });
+    }
+  }
+  for (const [ledgerScope, owner] of scopes) {
+    const plan =
+      owner.agentId === agentId
+        ? agent
+        : (retainedPlans.get(owner.agentId) ?? new ImportPlan<AgentRows>());
+    if (owner.agentId !== agentId) retainedPlans.set(owner.agentId, plan);
+    await collectWorkspace(
+      owner.agentId,
+      owner.workspace,
+      plan,
+      ledgerScope === autoScope ? options.sessionScopes : [],
+    );
+    const ledgerName = (codex ? 'codex-automations-' : 'automations-') + ledgerScope + '.json';
+    if (autoFiles.includes(ledgerName)) {
+      const path = join(automationRoot, ledgerName);
+      const { records, ...value } = codex
+        ? checked(codexAutomations, JSON.parse(await contents(path)), path)
+        : await auto.read();
+      if (
+        value.scope !== ledgerScope ||
+        ('binding' in value &&
+          value.binding &&
+          (value.binding.agentId !== owner.agentId ||
+            value.binding.workspace !== owner.workspace ||
+            value.binding.codexHome !== profile))
+      )
+        throw new Error('automation owner mismatch');
+      plan.add('automationState', { scope: ledgerScope, value });
+      for (const record of records)
+        plan.add('automationRegistrations', { scope: ledgerScope, id: record.id, value: record });
+    }
+    const threads = 'automation-threads-' + ledgerScope + '.json';
+    if (autoFiles.includes(threads)) {
+      const path = join(automationRoot, threads);
+      const ledger = checked(threadsSchema, JSON.parse(await contents(path)), path);
+      if (ledger.scope !== ledgerScope) throw new Error('thread scope mismatch');
+      for (const value of ledger.records)
+        plan.add('automationThreads', { scope: ledgerScope, id: value.key, value });
+    }
   }
   if (!codex) {
     const reports = new AutomationReportStore(join(automationRoot, 'reports'));
@@ -304,12 +410,6 @@ export async function importAgentStorage(options: ImportOptions) {
         shared.add('sidebarPlacements', { scope: match[1], value });
     }
   }
-  const enrollments = await new IssuePickupEnrollmentStore(installationRoot).read();
-  for (const value of enrollments.records) {
-    const owner = value.enrollment;
-    if (owner.runtime === runtime && owner.agentId === agentId && owner.workspaceDir === workspace)
-      agent.add('pickupEnrollments', { runtime, scope: owner.scope, value });
-  }
   const instance = await new AssignmentClaimStore(installationRoot).read();
   if (instance) {
     const { claims, ...value } = instance;
@@ -327,10 +427,39 @@ export async function importAgentStorage(options: ImportOptions) {
     }
   }
   const agentPlan = await agent.prepare(storage.agent);
-  const sharedPlan = await shared.prepare(storage.installation);
+  const retained = await Promise.all(
+    [...retainedPlans].map(async ([id, plan]) => {
+      const target = bindSqliteStorage(installation, id).agent;
+      const finding = await target.inspect();
+      const missing = finding.code === 'agent-storage-missing';
+      if (!missing && finding.status !== 'healthy') throw new Error(finding.message);
+      const prepared = await plan.prepare(missing ? undefined : target);
+      return { id, target, missing, plan, ...prepared };
+    }),
+  );
+  let sharedPlan = await shared.prepare(storage.installation);
   if (options.apply) {
-    await storage.installation.write(sharedPlan.changes);
+    // Serialize the singleton identity check and insert with setup and other agent imports.
+    const lock = await acquirePrivateStateFileLock(
+      join(installationRoot, 'assignment-claims.json'),
+      {
+        staleMs: 30_000,
+        retries: { retries: 40, factor: 1, minTimeout: 25, maxTimeout: 25 },
+      },
+    );
+    try {
+      await withPrivateStateLock(lock, async () => {
+        sharedPlan = await shared.prepare(storage.installation);
+        await storage.installation.write(sharedPlan.changes);
+      });
+    } finally {
+      await lock.release();
+    }
     await storage.agent.write(agentPlan.changes);
+    for (const previous of retained) {
+      if (previous.missing) await previous.target.install();
+      await previous.target.write((await previous.plan.prepare(previous.target)).changes);
+    }
   }
   return {
     mode: options.apply ? 'applied' : 'preview',
@@ -338,7 +467,11 @@ export async function importAgentStorage(options: ImportOptions) {
     shared: join(installationRoot, 'agent-system.sqlite'),
     agentRows: agentPlan.counts,
     sharedRows: sharedPlan.counts,
-    unselectedSessionScopes: [...unattributed],
+    unselectedSessionScopes: [...unattributed].filter((scope) => !attributed.has(scope)),
+    workspaces: [...scopes.values()],
+    retainedAgentRows: Object.fromEntries(
+      retained.map((previous) => [previous.id, previous.counts]),
+    ),
   };
 }
 

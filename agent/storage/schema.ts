@@ -1,4 +1,5 @@
-import { primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { sql } from 'drizzle-orm';
+import { index, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 import type { AutomationReportRecord } from '../automations/automation-report-store.ts';
 import type { AutomationRecord } from '../automations/automation-store.ts';
@@ -89,6 +90,16 @@ export const automationReports = sqliteTable(
     executionId: text('execution_id').notNull(),
     value: text({ mode: 'json' }).$type<AutomationReportRecord>().notNull(),
   },
-  (table) => [primaryKey({ columns: [table.executionId] })],
+  (table) => [
+    primaryKey({ columns: [table.executionId] }),
+    index('automation_reports_recovery')
+      .on(table.executionId)
+      .where(
+        sql`not (json_extract(${table.value}, '$.state') in ('delivered', 'failed')) or json_extract(${table.value}, '$.completedAt') is null`,
+      ),
+    index('automation_reports_expiry')
+      .on(sql`coalesce(julianday(json_extract(${table.value}, '$.completedAt')), 0)`)
+      .where(sql`json_extract(${table.value}, '$.state') in ('delivered', 'failed')`),
+  ],
 );
 export const pathProjections = scopedState<StoredPathProjection>('path_projections');

@@ -1,3 +1,6 @@
+import { DatabaseSync } from 'node:sqlite';
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
+import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -205,6 +208,54 @@ describe('workspace backup', () => {
       assert.ok(selected.files.includes('MEMORY.md'));
       assert.ok(selected.files.includes('memory/daily.md'));
       assert.equal(selected.settings.openclawState, 'off');
+    }
+  });
+
+  it('should stage the selected agent and shared sqlite snapshots without replacing live state', async () => {
+    const storage = await sqliteAgentFixture(root, 'tanaabot');
+    await sqliteAgentFixture(root, 'another');
+    const { installation } = bindSqliteStorage(storage.sqliteInstallation, 'tanaabot');
+    await installation.install();
+    const snapshots = new WorkspaceBackupService(undefined, undefined, undefined, storage);
+    const repo = { version: 1 as const, repositoryId: 'repo', source: 'origin', path: '/work' };
+    await installation.saveRepository('/work', repo);
+    const live = new DatabaseSync(join(storage.sqliteInstallation.agentRoot, 'tanaabot.sqlite'));
+    try {
+      live.exec(
+        "PRAGMA journal_mode=WAL; CREATE TABLE backup_probe(value); INSERT INTO backup_probe VALUES('before')",
+      );
+      const plan = await snapshots.plan({ manifest, workspaceDir: workspace });
+      assert.equal(plan.coverage.agentSystemStorage, 'pending');
+      const { archive } = await snapshots.create(plan);
+      await assert.rejects(
+        snapshots.restore(
+          archive,
+          join(storage.sqliteInstallation.installationRoot, 'copy'),
+          'tanaabot',
+        ),
+        { code: 'backup-target-live' },
+      );
+      live.exec("UPDATE backup_probe SET value = 'after'");
+      await installation.saveRepository('/work', { ...repo, path: '/new' });
+      const { target } = await snapshots.restore(archive, join(root, 'recovered'), 'tanaabot');
+      assert.deepEqual(await readdir(join(target, 'agent-system-storage')), ['tanaabot.sqlite']);
+      const recovered = new DatabaseSync(join(target, 'agent-system-storage/tanaabot.sqlite'), {
+        readOnly: true,
+      });
+      try {
+        assert.equal(recovered.prepare('SELECT value FROM backup_probe').get()?.value, 'before');
+      } finally {
+        recovered.close();
+      }
+      const restored = bindSqliteStorage(
+        { ...storage.sqliteInstallation, installationRoot: join(target, 'instance') },
+        'tanaabot',
+      );
+      assert.deepEqual(await restored.installation.readRepository('/work', 'repo'), repo);
+      assert.equal((await installation.readRepository('/work', 'repo'))?.path, '/new');
+      assert.equal(live.prepare('SELECT value FROM backup_probe').get()?.value, 'after');
+    } finally {
+      live.close();
     }
   });
 

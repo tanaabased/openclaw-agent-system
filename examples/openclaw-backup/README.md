@@ -53,7 +53,7 @@ test -s "$database-wal"
 openclaw agent-system backup create --json | tee "$TMPDIR/backup-created.json" | jq -e '.status == "created" and .coverage.openclawState == "captured"'
 archive=$(jq -er .archive "$TMPDIR/backup-created.json")
 package_version=$(tar -xOf "$AGENT_SYSTEM_PACKAGE" package/package.json | jq -er .version)
-openclaw agent-system backup verify "$archive" --json | jq -e --arg version "$package_version" '.status == "verified" and .agentId == "backup-tanaabot" and .coverage.openclawState == "captured" and .snapshot.agentSystemVersion == $version'
+openclaw agent-system backup verify "$archive" --json | jq -e --arg version "$package_version" '.status == "verified" and .agentId == "backup-tanaabot" and .coverage.openclawState == "captured" and .snapshot.agentSystemVersion == $version and (if .storage then .coverage.agentSystemStorage == "captured" else .coverage.agentSystemStorage == null end)'
 git check-ignore "$archive"
 kill "$fixture_pid"
 wait "$fixture_pid" || true
@@ -64,6 +64,7 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-backup/data"
 archive=$(jq -er .archive "$TMPDIR/backup-created.json")
 mkdir -m 700 "$TMPDIR/backup-recovered"
 openclaw agent-system backup restore "$archive" --target "$TMPDIR/backup-recovered" --json | jq -e '.status == "restored" and .agentId == "backup-tanaabot" and .coverage.openclawState == "captured"'
+if jq -e '.storage' "$TMPDIR/backup-created.json" >/dev/null; then test -s "$TMPDIR/backup-recovered/agent-system-storage/backup-tanaabot.sqlite" && test -s "$TMPDIR/backup-recovered/instance/agent-system.sqlite"; fi
 node "$GITHUB_WORKSPACE/examples/openclaw-backup/agent-state-fixture.mjs" verify "$TMPDIR/backup-recovered/openclaw-state/openclaw-agent.sqlite"
 cmp "$GITHUB_WORKSPACE/examples/openclaw-backup/data/MEMORY.md" "$TMPDIR/backup-recovered/workspace/MEMORY.md"
 cmp "$GITHUB_WORKSPACE/examples/openclaw-backup/data/memory/day.md" "$TMPDIR/backup-recovered/workspace/memory/day.md"

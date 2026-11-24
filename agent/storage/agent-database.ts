@@ -2,7 +2,7 @@ import { assertPrivateStateLocksHeld } from '../../core/private-state-lock-conte
 import { constants } from 'node:fs';
 import { lstat, open, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { backup, DatabaseSync } from 'node:sqlite';
 
 import { and, eq, sql } from 'drizzle-orm';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
@@ -21,6 +21,8 @@ import {
   automationReports,
   pathProjections,
   directEntries,
+  dispatchRecords,
+  dispatchState,
   intakeRecords,
   intakeState,
 } from './schema.ts';
@@ -98,12 +100,23 @@ class SqliteDatabase {
         throw new Error('agent storage requires a private, owned database file');
       return {
         db: drizzle({
-          client: new DatabaseSync(this.path, { readOnly, ...(create ? { timeout: 5000 } : {}) }),
+          client: new DatabaseSync(this.path, { readOnly, timeout: 5000 }),
         }),
         empty: stat.size === 0,
       };
     } finally {
       await file.close();
+    }
+  }
+
+  async exportSnapshot(destination: string) {
+    await this.checkDirectory();
+    const { db } = await this.connect(false, true);
+    try {
+      await (await open(destination, 'wx', 0o600)).close();
+      await backup(db.$client, destination);
+    } finally {
+      db.$client.close();
     }
   }
 
@@ -193,6 +206,47 @@ class SqliteDatabase {
   }
 }
 
+type JournalTable = typeof intakeRecords | typeof dispatchRecords;
+type JournalRecord = IntakeState['records'][number] | AgentRows['dispatchRecords']['value'];
+type Transaction = Parameters<Parameters<ReturnType<typeof drizzle>['transaction']>[0]>[0];
+
+// Readers return rowid order. Keep the longest surviving prefix in place, then append
+// the rest in requested order (including a deliberate reorder or insertion in the middle).
+function saveJournalRows(
+  tx: Transaction,
+  table: JournalTable,
+  scope: string,
+  records: JournalRecord[],
+) {
+  const previous = tx
+    .select({ id: table.id, value: sql<string>`${table.value}` })
+    .from(table)
+    .where(eq(table.scope, scope))
+    .orderBy(sql`rowid`)
+    .all();
+  const positions = new Map(previous.map((row, index) => [row.id, index]));
+  const retained = new Set<string>();
+  let last = -1;
+  for (const record of records) {
+    const position = positions.get(record.id);
+    if (position === undefined || position <= last) break;
+    last = position;
+    retained.add(record.id);
+    if (previous[position]!.value !== JSON.stringify(record))
+      tx.update(table)
+        .set({ value: record })
+        .where(and(eq(table.scope, scope), eq(table.id, record.id)))
+        .run();
+  }
+  for (const { id } of previous)
+    if (!retained.has(id))
+      tx.delete(table)
+        .where(and(eq(table.scope, scope), eq(table.id, id)))
+        .run();
+  for (const record of records.slice(retained.size))
+    tx.insert(table).values({ scope, id: record.id, value: record }).run();
+}
+
 class SqliteAgentStore extends SqliteDatabase {
   private readonly records = sqliteRecords<AgentRows>(agentTables, this.use.bind(this));
   readonly read = this.records.read;
@@ -213,12 +267,14 @@ class SqliteAgentStore extends SqliteDatabase {
     const terminal = sql`json_extract(${automationReports.value}, '$.state') in ('delivered', 'failed')`;
     const completedAt = sql`json_extract(${automationReports.value}, '$.completedAt')`;
     // Legacy terminal reports get a completion date on first reconciliation.
+    // File reports accept all Date.parse timestamps. Let pruneOne check legacy formats
+    // SQLite cannot parse, alongside records whose ISO completion time is already due.
     const where =
       selection === 'recoverable'
         ? sql`not (${terminal}) or ${completedAt} is null`
         : selection === 'all'
           ? undefined
-          : sql`${terminal} and julianday(${completedAt}) <= julianday(${selection.completedBefore})`;
+          : sql`${terminal} and ${completedAt} is not null and coalesce(julianday(${completedAt}), 0) <= julianday(${selection.completedBefore})`;
     return this.use(true, (db) =>
       db
         .select({ id: automationReports.executionId })
@@ -316,13 +372,28 @@ class SqliteAgentStore extends SqliteDatabase {
           .values({ scope: state.scope, value: state })
           .onConflictDoUpdate({ target: intakeState.scope, set: { value: state } })
           .run();
-        tx.delete(intakeRecords).where(eq(intakeRecords.scope, state.scope)).run();
-        for (const record of records) {
-          if (record.scope !== state.scope) throw new Error('intake record scope mismatch');
-          tx.insert(intakeRecords)
-            .values({ scope: state.scope, id: record.id, value: record })
-            .run();
-        }
+        if (records.some((record) => record.scope !== state.scope))
+          throw new Error('intake record scope mismatch');
+        saveJournalRows(tx, intakeRecords, state.scope, records);
+      }),
+    );
+  }
+
+  saveDispatch(
+    scope: string,
+    {
+      records,
+      ...value
+    }: AgentRows['dispatchState']['value'] & { records: AgentRows['dispatchRecords']['value'][] },
+  ) {
+    return this.use(false, (db) =>
+      db.transaction((tx) => {
+        assertPrivateStateLocksHeld();
+        tx.insert(dispatchState)
+          .values({ scope, value })
+          .onConflictDoUpdate({ target: dispatchState.scope, set: { value } })
+          .run();
+        saveJournalRows(tx, dispatchRecords, scope, records);
       }),
     );
   }
@@ -383,7 +454,8 @@ export function bindSqliteInstallation(installation: SqliteInstallation) {
 export function bindSqliteStorage(
   installation: SqliteInstallation,
   agentId: string,
-): BoundStorage & Record<keyof BoundStorage, StorageSchema> {
+): BoundStorage &
+  Record<keyof BoundStorage, StorageSchema & Pick<SqliteDatabase, 'exportSnapshot'>> {
   if (!/^[a-z0-9][a-z0-9-]*$/u.test(agentId)) throw new Error('invalid agent database name');
   return {
     agent: new SqliteAgentStore(

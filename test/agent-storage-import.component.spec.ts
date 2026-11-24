@@ -1,3 +1,5 @@
+import { readCodexAutomationSnapshot } from '../agent/automations/codex-automation-snapshot.ts';
+import { intakeAutomationId } from '../agent/automations/codex-intake-policy.ts';
 import AutomationReportStore from '../agent/automations/automation-report-store.ts';
 import { prepareAutomationReport } from '../agent/automations/automation-report.ts';
 import AutomationThreads from '../agent/automations/automation-threads.ts';
@@ -278,6 +280,69 @@ describe('legacy agent storage import', () => {
           state: 'uncertain',
         });
       }
+      const foreignId = randomUUID();
+      await db.installation.write([
+        {
+          table: 'instances',
+          action: 'insert',
+          row: {
+            id: foreignId,
+            value: {
+              version: 1,
+              instanceId: foreignId,
+              displayName: 'existing-agent',
+              retiredInstanceIds: [],
+            },
+          },
+        },
+      ]);
+      for (const apply of [false, true])
+        await assert.rejects(
+          importAgentStorage({ ...options, apply }),
+          /different instance identity/,
+        );
+      assert.equal((await db.installation.read({ instances: {} })).instances.length, 1);
+      assert.equal(await db.agent.readIntake(scope), undefined);
+      await db.installation.write([
+        { table: 'instances', action: 'remove', key: { id: foreignId } },
+      ]);
+      const priorWorkspace = join(root, 'previous');
+      const previousAgent = 'previous-agent';
+      const intakeOnlyWorkspace = join(root, 'intake-only');
+      const intakeOnlyScope = automationHash({
+        runtime,
+        agentId,
+        namespace: profile,
+        workspaceDir: intakeOnlyWorkspace,
+      });
+      if (codex) {
+        await save(join(intake, 'github-intake-' + intakeOnlyScope + '.json'), {
+          ...checkpoint,
+          scope: intakeOnlyScope,
+          workspaceDir: intakeOnlyWorkspace,
+        });
+        const priorScope = automationHash({
+          runtime,
+          agentId: previousAgent,
+          profile,
+          workspaceDir: priorWorkspace,
+        });
+        await save(join(automations, 'codex-automations-' + priorScope + '.json'), {
+          version: 1,
+          scope: priorScope,
+          binding: { agentId: previousAgent, workspace: priorWorkspace, codexHome: profile },
+          records: [
+            {
+              ...registration,
+              id: intakeAutomationId,
+              definition: {
+                ...definition,
+                prompt: codexAutomationMarker(priorScope, intakeAutomationId),
+              },
+            },
+          ],
+        });
+      }
       const preview = await importAgentStorage(options);
       assert.equal(preview.agentRows.pickupEnrollments?.insert, 1);
       assert.deepEqual(preview.unselectedSessionScopes, [orphan]);
@@ -285,6 +350,20 @@ describe('legacy agent storage import', () => {
       options.apply = true;
       await importAgentStorage(options);
       if (codex) {
+        assert.equal(
+          (await db.agent.readIntake(intakeOnlyScope))?.workspaceDir,
+          intakeOnlyWorkspace,
+        );
+        const recoveredOwner = await readCodexAutomationSnapshot(stateRoot, {
+          codexHome: profile,
+          storageBackend: 'sqlite',
+        });
+        assert.equal(recoveredOwner.cleanupOnly, true);
+        assert.equal(recoveredOwner.loaded.manifest.agent.id, previousAgent);
+        assert.equal(recoveredOwner.workspace, priorWorkspace);
+        assert.ok(
+          recoveredOwner.ledger.records.some((record) => record.nativeId === registration.nativeId),
+        );
         const migrated = await codexSidebarJournal(stateRoot, profile, 'reports', 'sqlite');
         const recovered = await migrated.apply('workspace', emptySidebar, 'thread');
         assert.ok(

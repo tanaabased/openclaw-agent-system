@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { once } from 'node:events';
+import { Worker } from 'node:worker_threads';
 import { DatabaseSync } from 'node:sqlite';
 import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import type { IntakeState } from '../channels/github/intake/record-store.ts';
@@ -123,6 +125,54 @@ describe('agent database', () => {
     };
     await emori.installation.saveRepository('/work', repo);
     assert.deepEqual(await smutlord.installation.readRepository('/work', repo.repositoryId), repo);
+  });
+
+  it('should let an independent writer finish before committing runtime state', async () => {
+    const { agent } = bind(root, 'emori');
+    await agent.install();
+    const worker = new Worker(
+      `
+      const {parentPort, workerData} = require('node:worker_threads');
+      const {DatabaseSync} = require('node:sqlite');
+      const client = new DatabaseSync(workerData);
+      client.exec('BEGIN IMMEDIATE');
+      parentPort.once('message', () => setTimeout(() => { client.exec('COMMIT'); client.close(); }, 200));
+      parentPort.postMessage('locked');
+    `,
+      { eval: true, workerData: join(root, 'agents/emori.sqlite') },
+    );
+    try {
+      await once(worker, 'message');
+      worker.postMessage('release');
+      const state = sampleIntake('emori', baseline);
+      await agent.saveIntake(state);
+      assert.deepEqual(await agent.readIntake(state.scope), state);
+    } finally {
+      await worker.terminate();
+    }
+  });
+
+  it('should preserve untouched journal rows and return records in workflow order', async () => {
+    const { agent } = bind(root, 'emori');
+    await agent.install();
+    const state = sampleIntake('emori', baseline);
+    const [first] = state.records;
+    const second = { ...first!, id: 'later' };
+    state.records.push(second);
+    await agent.saveIntake(state);
+    const db = new DatabaseSync(join(root, 'agents/emori.sqlite'));
+    try {
+      db.exec(`CREATE TRIGGER keep_first BEFORE DELETE ON intake_records WHEN old.id = 'same-record'
+        BEGIN SELECT RAISE(ABORT, 'unrelated delete'); END`);
+      second.admittedAt++;
+      await agent.saveIntake(state);
+      db.exec('DROP TRIGGER keep_first');
+    } finally {
+      db.close();
+    }
+    state.records.reverse();
+    await agent.saveIntake(state);
+    assert.deepEqual(await agent.readIntake(state.scope), state);
   });
 
   it('should roll back the checkpoint and records together on a failed replacement', async () => {

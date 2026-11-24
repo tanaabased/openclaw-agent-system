@@ -1,3 +1,5 @@
+import { captureStorageBackup } from '../storage/backup.ts';
+import { defaultStorageBackend, type RuntimeStorageOptions } from '../storage/backend.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import {
@@ -291,12 +293,21 @@ async function captureWorkspace(
 
 export default class WorkspaceBackupService {
   constructor(
-    private readonly runtimeProtection: (
+    private readonly runtimeLocations: (
       agentId: string,
     ) => Promise<BackupRuntimeProtection> = async () => ({ paths: [] }),
     private readonly snapshotCommand?: BackupSnapshotCommand,
     private readonly beforePruneDelete?: (path: string) => Promise<void>,
+    private readonly storage: RuntimeStorageOptions = {},
   ) {}
+
+  private async runtimeProtection(agentId: string) {
+    const runtime = await this.runtimeLocations(agentId);
+    const dirs = this.storage.sqliteInstallation;
+    return dirs
+      ? { ...runtime, paths: [...runtime.paths, dirs.agentRoot, dirs.installationRoot] }
+      : runtime;
+  }
 
   async prune(options: {
     manifest: AgentManifest;
@@ -487,10 +498,13 @@ export default class WorkspaceBackupService {
     overrides?: BackupConfiguration;
     bound?: boolean;
   }): Promise<BackupPlan> {
-    return planWorkspaceBackup({
+    const plan = await planWorkspaceBackup({
       ...options,
       runtimeProtection: await this.runtimeProtection(options.manifest.agent.id),
     });
+    if ((this.storage.storageBackend ?? defaultStorageBackend) === 'sqlite')
+      plan.coverage.agentSystemStorage = 'pending';
+    return plan;
   }
 
   async create(plan: BackupPlan, signal?: AbortSignal) {
@@ -535,19 +549,23 @@ export default class WorkspaceBackupService {
         attempt.record.snapshotWriter = false;
         await attempt.save();
         // snapshot-owned files remain unregistered and therefore preserved after interruption.
+        const storage = await captureStorageBackup(this.storage, fresh.agentId, stage!, (path) =>
+          attempt!.add(path),
+        );
         const coverage = {
           ...fresh.coverage,
           stage:
-            snapshot.state === 'captured'
+            snapshot.state === 'captured' || storage
               ? ('workspace-and-agent-state' as const)
               : ('workspace-only' as const),
           openclawState: snapshot.state,
+          ...(storage && { agentSystemStorage: 'captured' as const }),
           limitations: [
             ...fresh.coverage.limitations,
             ...(snapshot.state === 'absent'
               ? ['The selected OpenClaw agent database did not exist at capture time.']
               : []),
-            ...(snapshot.state === 'captured'
+            ...(snapshot.state === 'captured' || storage
               ? ['OpenClaw omits transient agent database lease rows from its snapshot.']
               : []),
           ],
@@ -562,6 +580,7 @@ export default class WorkspaceBackupService {
           coverage,
           diagnostics: fresh.diagnostics,
           inventory: captured.inventory,
+          ...(storage && { storage }),
           ...(snapshot.manifest
             ? {
                 snapshot: {
@@ -663,7 +682,7 @@ export default class WorkspaceBackupService {
       archive,
       target,
       ...(agentId ? { expectedAgentId: agentId } : {}),
-      runtimeProtection: this.runtimeProtection,
+      runtimeProtection: (agentId) => this.runtimeProtection(agentId),
       ...(this.snapshotCommand ? { snapshotCommand: this.snapshotCommand } : {}),
     });
   }

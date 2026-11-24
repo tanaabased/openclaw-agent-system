@@ -17,6 +17,7 @@ import { maximumBackupInventoryEntries } from './backup-payload-paths.ts';
 import { safeBackupRelativePath } from './backup-selection.ts';
 import {
   BackupError,
+  storageArchivePaths,
   type BackupEntry,
   type OpenClawSnapshotManifest,
   type WorkspaceBackupManifest,
@@ -97,6 +98,13 @@ const legacyManifestSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+const storageFileSchema = Type.Object(
+  {
+    size: Type.Integer({ minimum: 1 }),
+    sha256: Type.String({ pattern: '^[a-f0-9]{64}$' }),
+  },
+  { additionalProperties: false },
+);
 const currentManifestSchema = Type.Object(
   {
     ...manifestBase,
@@ -114,6 +122,7 @@ const currentManifestSchema = Type.Object(
     ),
     coverage: Type.Object(
       {
+        agentSystemStorage: Type.Optional(Type.Literal('captured')),
         stage: Type.Union([
           Type.Literal('workspace-only'),
           Type.Literal('workspace-and-agent-state'),
@@ -128,6 +137,12 @@ const currentManifestSchema = Type.Object(
         limitations: Type.Array(Type.String()),
       },
       { additionalProperties: false },
+    ),
+    storage: Type.Optional(
+      Type.Object(
+        { agent: storageFileSchema, installation: storageFileSchema },
+        { additionalProperties: false },
+      ),
     ),
     snapshot: Type.Optional(
       Type.Object(
@@ -171,8 +186,10 @@ function validateInventory(manifest: WorkspaceBackupManifest): void {
   }
   if (
     manifest.version === 2 &&
-    ((manifest.coverage.openclawState === 'captured') !== Boolean(manifest.snapshot) ||
-      (manifest.coverage.stage === 'workspace-and-agent-state') !== Boolean(manifest.snapshot) ||
+    ((manifest.coverage.agentSystemStorage === 'captured') !== Boolean(manifest.storage) ||
+      (manifest.coverage.openclawState === 'captured') !== Boolean(manifest.snapshot) ||
+      (manifest.coverage.stage === 'workspace-and-agent-state') !==
+        Boolean(manifest.snapshot || manifest.storage) ||
       (manifest.snapshot && manifest.snapshot.manifest.database.agentId !== manifest.agentId))
   )
     throw new BackupError('backup-manifest-invalid', 'The snapshot coverage is inconsistent.');
@@ -239,6 +256,19 @@ function validateInventory(manifest: WorkspaceBackupManifest): void {
   }
 }
 
+function archiveEntries(manifest: WorkspaceBackupManifest): BackupEntry[] {
+  const entries = manifest.inventory.map((entry) => ({
+    ...entry,
+    path: 'workspace/' + entry.path,
+  }));
+  if (manifest.version === 2 && manifest.storage) {
+    const paths = storageArchivePaths(manifest.agentId);
+    for (const role of ['agent', 'installation'] as const)
+      entries.push({ path: paths[role], type: 'file', mode: 0o600, ...manifest.storage[role] });
+  }
+  return entries;
+}
+
 /** write only inventoried private copies; never let tar traverse a live directory. */
 export async function writeWorkspaceArchive(
   archive: string,
@@ -282,10 +312,10 @@ export async function writeWorkspaceArchive(
       source,
     );
     await add({ name: 'workspace/', type: 'directory', mode: 0o700 }, Buffer.alloc(0));
-    for (const entry of manifest.inventory) {
+    for (const entry of archiveEntries(manifest)) {
       signal?.throwIfAborted();
       const header: Partial<Header> & Pick<Header, 'name'> = {
-        name: `workspace/${entry.path}${entry.type === 'directory' ? '/' : ''}`,
+        name: `${entry.path}${entry.type === 'directory' ? '/' : ''}`,
         type: entry.type,
         mode: entry.mode,
         size: entry.size,
@@ -294,7 +324,11 @@ export async function writeWorkspaceArchive(
       };
       if (entry.type === 'file')
         await pipeline(
-          createReadStream(`${stage}/${entry.path}`),
+          createReadStream(
+            entry.path.startsWith('workspace/')
+              ? join(stage, entry.path.slice('workspace/'.length))
+              : join(dirname(stage), entry.path),
+          ),
           stream.entry(header) as unknown as Writable,
           { signal },
         );
@@ -383,7 +417,7 @@ export async function verifyWorkspaceArchive(
           throw new BackupError('backup-manifest-invalid', 'The root manifest is not valid JSON.');
         }
         validateInventory(manifest);
-        inventory = new Map(manifest.inventory.map((item) => [item.path, item]));
+        inventory = new Map(archiveEntries(manifest).map((item) => [item.path, item]));
         if (expectedAgentId && manifest.agentId !== expectedAgentId)
           throw new BackupError('backup-agent-mismatch', 'The archive belongs to another agent.');
         continue;
@@ -473,12 +507,12 @@ export async function verifyWorkspaceArchive(
         snapshotSeen.add(name);
         continue;
       }
-      if (!root || !header.name.startsWith('workspace/'))
+      if (!root)
         throw new BackupError(
           'backup-layout-invalid',
           'Unexpected archive entry outside workspace payload.',
         );
-      const path = header.name.slice('workspace/'.length).replace(/\/$/u, '');
+      const path = header.name.replace(/\/$/u, '');
       if (!safeBackupRelativePath(path) || seen.has(path))
         throw new BackupError(
           'backup-path-unsafe',
@@ -503,7 +537,7 @@ export async function verifyWorkspaceArchive(
       seen.add(path);
     }
     await reading;
-    if (!manifest || !root || seen.size !== manifest.inventory.length)
+    if (!manifest || !root || seen.size !== inventory.size)
       throw new BackupError(
         'backup-inventory-mismatch',
         'The archive is missing inventoried entries.',
@@ -609,7 +643,7 @@ export async function extractWorkspaceArchive(
   snapshotDirectory?: string,
 ): Promise<void> {
   validateInventory(manifest);
-  const entries = new Map(manifest.inventory.map((entry) => [entry.path, entry]));
+  const entries = new Map(archiveEntries(manifest).map((entry) => [entry.path, entry]));
   const directories = manifest.inventory
     .filter((entry) => entry.type === 'directory')
     .sort((a, b) => a.path.split('/').length - b.path.split('/').length);
@@ -617,6 +651,9 @@ export async function extractWorkspaceArchive(
   await mkdir(workspace, { mode: 0o700 });
   for (const directory of directories)
     await mkdir(join(workspace, directory.path), { mode: 0o700 });
+  if (manifest.version === 2 && manifest.storage)
+    for (const path of Object.values(storageArchivePaths(manifest.agentId)))
+      await mkdir(join(destination, dirname(path)), { mode: 0o700 });
   const parser = extract();
   const reading = pipeline(
     createReadStream(archive),
@@ -690,9 +727,9 @@ export async function extractWorkspaceArchive(
         snapshotSeen.add(name);
         continue;
       }
-      if (!workspaceRoot || !header.name.startsWith('workspace/'))
+      if (!workspaceRoot)
         throw new BackupError('backup-layout-invalid', 'The archive changed after verification.');
-      const path = header.name.slice('workspace/'.length).replace(/\/$/u, '');
+      const path = header.name.replace(/\/$/u, '');
       const expected = entries.get(path);
       if (
         !safeBackupRelativePath(path) ||
@@ -709,7 +746,7 @@ export async function extractWorkspaceArchive(
         );
       if (expected.type === 'file') {
         const output = await open(
-          join(workspace, path),
+          join(destination, path),
           constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
           0o600,
         );
@@ -725,7 +762,7 @@ export async function extractWorkspaceArchive(
         }
         if (hash.digest('hex') !== expected.sha256)
           throw new BackupError('backup-checksum-mismatch', `Archive checksum differs: ${path}.`);
-        await chmod(join(workspace, path), expected.mode);
+        await chmod(join(destination, path), expected.mode);
       } else {
         entry.resume();
         if (expected.type === 'symlink') links.push(expected);
@@ -740,7 +777,7 @@ export async function extractWorkspaceArchive(
       (snapshotDirectory && (!snapshotRoot || snapshotSeen.size !== 2))
     )
       throw new BackupError('backup-inventory-mismatch', 'The archive changed after verification.');
-    for (const link of links) await symlink(link.linkTarget!, join(workspace, link.path));
+    for (const link of links) await symlink(link.linkTarget!, join(destination, link.path));
     for (const directory of directories.reverse())
       await chmod(join(workspace, directory.path), directory.mode);
   } catch (error) {
