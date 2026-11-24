@@ -4,12 +4,72 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { eq } from 'drizzle-orm';
+import { DatabaseSync } from 'node:sqlite';
+import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
+import type { StorageBinding } from '../agent/storage/storage-lifecycle.ts';
+import type { IntakeState } from '../channels/github/intake/record-store.ts';
+import { account, baseline, intakeFixture } from './github-intake-fixture.ts';
 
-import { AgentDatabase } from '../agent/storage/agent-database.ts';
-import { dispatchRecords, intakeRecords, replyDrafts } from '../agent/storage/schema.ts';
+const schemaRoot = fileURLToPath(new URL('../agent/storage/', import.meta.url));
 
-const migrations = fileURLToPath(new URL('../agent/storage/migrations/', import.meta.url));
+function bind(
+  root: string,
+  runtime: StorageBinding['runtime'],
+  agentId: string,
+  schemas = schemaRoot,
+) {
+  return bindSqliteStorage(
+    {
+      agentRoot: join(root, 'agents'),
+      installationRoot: join(root, 'instance'),
+      schemaRoot: schemas,
+    },
+    { runtime, agentId, workspaceDir: '/work/' + agentId },
+  );
+}
+
+function sampleIntake(agentId: string, checkpoint: number): IntakeState {
+  const { repository, item, events } = intakeFixture();
+  const workspaceDir = '/work/' + agentId;
+  const scope = 'same-scope';
+  return {
+    version: 1,
+    scope,
+    agentId,
+    workspaceDir,
+    account,
+    policyDigest: 'policy',
+    baselineAt: baseline,
+    checkpoint,
+    records: [
+      {
+        version: 1,
+        id: 'same-record',
+        scope,
+        workspaceDir,
+        agentId,
+        receiving: account,
+        host: 'github.com',
+        repository,
+        issue: item,
+        assignment: { ...events[0]!, event: 'assigned', actor: account, assignee: account },
+        evidence: {
+          policyDigest: 'policy',
+          mode: 'plan',
+          open: true,
+          assigned: true,
+          repositoryReadable: true,
+          ownerPinned: true,
+          actorPinned: true,
+        },
+        observedAt: baseline,
+        admittedAt: checkpoint,
+        status: 'admitted',
+        requiresRevalidation: true,
+      },
+    ],
+  };
+}
 
 describe('agent database', () => {
   let root: string;
@@ -22,100 +82,121 @@ describe('agent database', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  it('should isolate the same logical record across agents and preserve edits on reinstall', async () => {
-    const first = new AgentDatabase(root, 'first');
-    const second = new AgentDatabase(root, 'second');
-    await assert.rejects(first.open(), { code: 'ENOENT' });
-    const id = 'a'.repeat(64);
-    const initial = {
-      id,
-      issueKey: 'b'.repeat(64),
-      sourceThreadId: 'intake',
-      createdAt: 1,
-      manifestDigest: 'manifest',
+  it('should keep two codex installs independent even with the same agent, workspace and record ids', async () => {
+    const laptopA = bind(join(root, 'laptop-a'), 'codex', 'pirog');
+    const laptopB = bind(join(root, 'laptop-b'), 'codex', 'pirog');
+    const a = sampleIntake('pirog', baseline + 1);
+    const b = sampleIntake('pirog', baseline + 2);
+    await assert.rejects(laptopA.agent.readIntake(a.scope), { code: 'ENOENT' });
+    await laptopA.agent.install();
+    await laptopB.agent.install();
+    await laptopA.agent.saveIntake(a);
+    await laptopB.agent.saveIntake(b);
+    assert.deepEqual(await laptopA.agent.readIntake(a.scope), a);
+    await laptopA.agent.clearIntake(a.scope);
+    assert.equal(await laptopA.agent.readIntake(a.scope), undefined);
+    assert.equal((await laptopB.agent.install()).status, 'unchanged');
+    assert.deepEqual(await laptopB.agent.readIntake(b.scope), b);
+    await laptopA.installation.install();
+    await laptopB.installation.install();
+    const repo = {
+      version: 1 as const,
+      repositoryId: 'repo',
+      source: 'origin',
+      path: '/work/repo',
     };
-    for (const agent of [first, second]) {
-      assert.equal((await agent.install(migrations)).status, 'created');
-      assert.equal((await stat(agent.path)).mode & 0o777, 0o600);
-      const db = await agent.open();
-      try {
-        assert.deepEqual(await db.select().from(intakeRecords), []);
-        assert.deepEqual(await db.select().from(replyDrafts), []);
-        await db.insert(dispatchRecords).values({ id, scope: 'scope', value: initial });
-      } finally {
-        db.$client.close();
-      }
-    }
-    const updated = { ...initial, threadId: 'issue-chat' };
-    const db = await first.open();
-    try {
-      await db.update(dispatchRecords).set({ value: updated }).where(eq(dispatchRecords.id, id));
-    } finally {
-      db.$client.close();
-    }
-    for (const agent of [first, second]) {
-      assert.equal((await agent.install(migrations)).status, 'unchanged');
-      const db = await agent.open();
-      try {
-        assert.deepEqual(await db.select().from(dispatchRecords), [
-          { scope: 'scope', id, value: agent === first ? updated : initial },
-        ]);
-      } finally {
-        db.$client.close();
-      }
-    }
+    await laptopA.installation.saveRepository('/work', repo);
+    assert.equal(await laptopB.installation.readRepository('/work', repo.repositoryId), undefined);
+  });
+
+  it('should share installation records between openclaw agents and keep their intake private', async () => {
+    const emori = bind(root, 'openclaw', 'emori');
+    const smutlord = bind(root, 'openclaw', 'smutlord');
+    const state = sampleIntake('emori', baseline + 1);
+    for (const store of [emori, smutlord]) await store.agent.install();
+    assert.equal((await emori.installation.install()).status, 'created');
+    assert.equal((await smutlord.installation.install()).status, 'unchanged');
+    assert.equal((await stat(join(root, 'agents/emori.sqlite'))).mode & 0o777, 0o600);
+    await emori.agent.saveIntake(state);
+    assert.equal(await smutlord.agent.readIntake(state.scope), undefined);
+    const repo = {
+      version: 1 as const,
+      repositoryId: 'repo',
+      source: 'origin',
+      path: '/work/repo',
+    };
+    await emori.installation.saveRepository('/work', repo);
+    assert.deepEqual(await smutlord.installation.readRepository('/work', repo.repositoryId), repo);
+  });
+
+  it('should roll back the checkpoint and records together on a failed replacement', async () => {
+    const { agent } = bind(root, 'openclaw', 'emori');
+    await agent.install();
+    const state = sampleIntake('emori', baseline + 1);
+    await agent.saveIntake(state);
+    await assert.rejects(
+      agent.saveIntake({
+        ...state,
+        checkpoint: baseline + 2,
+        records: [...state.records, ...state.records],
+      }),
+    );
+    assert.deepEqual(await agent.readIntake(state.scope), state);
   });
 
   it('should report the packaged upgrade without changing the database and apply it on install', async () => {
     const initial = '20261123213730_agent_records';
-    const oldMigrations = join(root, 'old-migrations');
-    await cp(join(migrations, initial), join(oldMigrations, initial), { recursive: true });
-    const database = new AgentDatabase(root, 'first');
-    assert.equal((await database.inspect(migrations)).code, 'agent-storage-missing');
-    await assert.rejects(stat(database.path), { code: 'ENOENT' });
-    await database.install(oldMigrations);
-    const db = await database.open();
+    const oldSchemas = join(root, 'old');
+    await cp(join(schemaRoot, 'migrations', initial), join(oldSchemas, 'migrations', initial), {
+      recursive: true,
+    });
+    const database = bind(root, 'openclaw', 'first').agent;
+    const path = join(root, 'agents/first.sqlite');
+    assert.equal((await database.inspect()).code, 'agent-storage-missing');
+    await assert.rejects(stat(path), { code: 'ENOENT' });
+    await bind(root, 'openclaw', 'first', oldSchemas).agent.install();
+    const db = new DatabaseSync(path);
     try {
-      db.$client
-        .prepare('INSERT INTO reply_drafts VALUES (?, ?, ?)')
-        .run('chat', 'draft', '{"body":"keep me"}');
+      db.prepare('INSERT INTO reply_drafts VALUES (?, ?, ?)').run(
+        'chat',
+        'draft',
+        '{"body":"keep me"}',
+      );
     } finally {
-      db.$client.close();
+      db.close();
     }
-    const before = await readFile(database.path);
-    const finding = await database.inspect(migrations);
+    const before = await readFile(path);
+    const finding = await database.inspect();
     assert.equal(finding.code, 'agent-storage-migrations-pending');
     assert.match(finding.message, /workflow_state/);
     assert.ok(!finding.message.includes(initial));
-    assert.deepEqual(await readFile(database.path), before);
-    assert.equal((await database.install(migrations)).status, 'updated');
-    assert.equal((await database.inspect(migrations)).status, 'healthy');
-    const upgraded = await database.open();
+    assert.deepEqual(await readFile(path), before);
+    assert.equal((await database.install()).status, 'updated');
+    assert.equal((await database.inspect()).status, 'healthy');
+    const upgraded = new DatabaseSync(path, { readOnly: true });
     try {
       assert.equal(
-        upgraded.$client.prepare('SELECT value FROM reply_drafts').get()?.value,
+        upgraded.prepare('SELECT value FROM reply_drafts').get()?.value,
         '{"body":"keep me"}',
       );
       assert.equal(
-        upgraded.$client.prepare('SELECT count(*) AS n FROM automation_registrations').get()?.n,
+        upgraded.prepare('SELECT count(*) AS n FROM automation_registrations').get()?.n,
         0,
       );
       assert.equal(
-        upgraded.$client
+        upgraded
           .prepare("SELECT count(*) AS n FROM sqlite_schema WHERE name = 'assignment_claims'")
           .get()?.n,
         0,
       );
     } finally {
-      upgraded.$client.close();
+      upgraded.close();
     }
   });
 
   it('should refuse to initialize another agent through a linked database', async () => {
-    const first = new AgentDatabase(root, 'first');
-    const second = new AgentDatabase(root, 'second');
-    await first.install(migrations);
-    await symlink(first.path, second.path);
-    await assert.rejects(second.install(migrations), { code: 'ELOOP' });
+    await bind(root, 'openclaw', 'first').agent.install();
+    await symlink(join(root, 'agents/first.sqlite'), join(root, 'agents/second.sqlite'));
+    await assert.rejects(bind(root, 'openclaw', 'second').agent.install(), { code: 'ELOOP' });
   });
 });

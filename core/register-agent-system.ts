@@ -19,7 +19,7 @@ import resolveOpenClawCommandWorktree from '../agent/tasks/context/openclaw-comm
 import isPathContained from '../utils/is-path-contained.ts';
 import createIntakeTool from '../tools/intake/tool.ts';
 import IssuePickupEnrollmentStore from '../agent/issue-pickup-enrollment.ts';
-import storageLifecycle from '../agent/storage/storage-lifecycle.ts';
+import { sqliteStorageLifecycle } from '../agent/storage/storage-lifecycle.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { issuePickupAutomationId } from '../agent/automations/issue-pickup-jobs.ts';
 import createDispatchTool from '../tools/dispatch/tool.ts';
@@ -766,12 +766,11 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...githubCapability.lifecycleContributions,
     ...googleCapability.lifecycleContributions,
     createSessionDispatchLifecycle(sessionDispatch),
-    ...storageLifecycle({
-      agentRoot: () => join(api.runtime.state.resolveStateDir(), 'agent-system-storage'),
-      agentName: ({ manifest }) => manifest.agent.id,
+    ...sqliteStorageLifecycle('openclaw', () => ({
+      agentRoot: join(api.runtime.state.resolveStateDir(), 'agent-system-storage'),
       installationRoot: instanceStore.root,
       schemaRoot: join(packageDir, 'agent', 'storage'),
-    }),
+    })),
     instanceIdentity(instanceStore),
     intakeV2.contribution(),
     automationService.contribution(),

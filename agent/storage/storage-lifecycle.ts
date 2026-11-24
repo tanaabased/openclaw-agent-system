@@ -1,33 +1,66 @@
-import { join } from 'node:path';
-import type { AgentSystemLifecycleContext } from '../../core/lifecycle-registry.ts';
+import type {
+  AgentSystemLifecycleContext,
+  AgentSystemLifecycleFinding,
+  AgentSystemLifecycleOutcome,
+} from '../../core/lifecycle-registry.ts';
+import type { IntakeState } from '../../channels/github/intake/record-store.ts';
+import type { RepositoryRecord } from '../../tools/git/repository-service.ts';
 
-/** The runtime selects the private roots and agent file; both use the packaged migration chains. */
-export default function storageLifecycle(options: {
-  agentRoot(): string;
-  agentName(context: AgentSystemLifecycleContext): string;
-  installationRoot: string;
-  schemaRoot: string;
-}) {
-  return (['agent-storage', 'installation-storage'] as const).map((component) => {
-    const agent = component === 'agent-storage';
-    const migrations = join(options.schemaRoot, agent ? 'migrations' : 'installation-migrations');
-    const database = async (context: AgentSystemLifecycleContext) => {
-      const { AgentDatabase } = await import('./agent-database.ts');
-      return agent
-        ? new AgentDatabase(options.agentRoot(), options.agentName(context), component)
-        : new AgentDatabase(options.installationRoot, 'installation', component);
-    };
-    return {
-      id: component,
-      isConfigured: () => true,
-      async inspect(context: AgentSystemLifecycleContext) {
-        const store = await database(context);
-        return [await store.inspect(migrations)];
-      },
-      async reconcile(context: AgentSystemLifecycleContext) {
-        const store = await database(context);
-        return { outcomes: [await store.install(migrations)] };
-      },
-    };
-  });
+export interface StorageBinding {
+  runtime: 'openclaw' | 'codex';
+  agentId: string;
+  workspaceDir: string;
+}
+
+export interface StorageSchema {
+  inspect(): Promise<AgentSystemLifecycleFinding>;
+  install(): Promise<AgentSystemLifecycleOutcome>;
+}
+
+/** The runtime binds both handles before a workflow can read or change any records. */
+export interface BoundStorage {
+  agent: {
+    readIntake(scope: string): Promise<IntakeState | undefined>;
+    saveIntake(state: IntakeState): Promise<void>;
+    clearIntake(scope: string): Promise<void>;
+  };
+  installation: {
+    readRepository(root: string, id: string): Promise<RepositoryRecord | undefined>;
+    saveRepository(root: string, record: RepositoryRecord): Promise<void>;
+  };
+}
+
+/** Register one migration target per physical database or shared schema. */
+export function storageSchemaLifecycle(
+  id: string,
+  resolve: (context: AgentSystemLifecycleContext) => Promise<StorageSchema>,
+) {
+  return {
+    id,
+    isConfigured: () => true,
+    async inspect(context: AgentSystemLifecycleContext) {
+      const schema = await resolve(context);
+      return [await schema.inspect()];
+    },
+    async reconcile(context: AgentSystemLifecycleContext) {
+      const schema = await resolve(context);
+      return { outcomes: [await schema.install()] };
+    },
+  };
+}
+
+export function sqliteStorageLifecycle(
+  runtime: StorageBinding['runtime'],
+  installation: () => { agentRoot: string; installationRoot: string; schemaRoot: string },
+) {
+  return (['agent', 'installation'] as const).map((scope) =>
+    storageSchemaLifecycle(scope + '-storage', async ({ manifest, workspaceDir }) => {
+      const { bindSqliteStorage } = await import('./agent-database.ts');
+      return bindSqliteStorage(installation(), {
+        runtime,
+        agentId: manifest.agent.id,
+        workspaceDir,
+      })[scope];
+    }),
+  );
 }

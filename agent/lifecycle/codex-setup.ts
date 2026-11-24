@@ -1,6 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import storageLifecycle from '../storage/storage-lifecycle.ts';
-import { automationHash } from '../automation-hash.ts';
+import { sqliteStorageLifecycle } from '../storage/storage-lifecycle.ts';
 import { delimiter, join } from 'node:path';
 import { codexInstanceStore } from '../tasks/dispatch/codex-assignment-claims.ts';
 import instanceIdentity from '../identity/instance-identity.ts';
@@ -154,12 +153,11 @@ async function runtime(
       }
     },
   };
-  const storage = storageLifecycle({
-    agentRoot: () => join(pluginData, 'agent-system-storage'),
-    agentName: () => automationHash([selected.agentId, selected.workspaceDir]),
+  const storage = sqliteStorageLifecycle('codex', () => ({
+    agentRoot: join(pluginData, 'agent-system-storage'),
     installationRoot: codexInstanceStore(pluginData).root,
     schemaRoot: fileURLToPath(new URL('../../agent/storage/', import.meta.url)),
-  });
+  }));
   return { context, lifecycle, selected, storage };
 }
 
