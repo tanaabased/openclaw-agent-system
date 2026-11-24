@@ -54,9 +54,10 @@ openclaw-gateway start
 step=read-worktree-path
 worktree_path=$(jq -er .path "$TMPDIR/worktree-remote.json")
 step=sessions.create
-openclaw gateway call sessions.create --params "$(jq -nc --arg cwd "$worktree_path" '{key:"agent:worktree-tanaabot:dashboard:worktree-leia",agentId:"worktree-tanaabot",label:"Worktree execution fixture",cwd:$cwd}')" --json > "$TMPDIR/worktree-session.json" || {
+openclaw gateway call sessions.create --timeout 120000 --params "$(jq -nc --arg cwd "$worktree_path" '{key:"agent:worktree-tanaabot:dashboard:worktree-leia",agentId:"worktree-tanaabot",label:"Worktree execution fixture",cwd:$cwd}')" --json > "$TMPDIR/worktree-session.json" || {
   rc=$?
   jq -c '.error | {type, code, message}' "$TMPDIR/worktree-session.json" >&2 || true
+  openclaw-diagnostics --debug >&2 || true
   exit "$rc"
 }
 jq -e '{ok, runStarted, sessionIdPresent: (.sessionId | type == "string"), responseFields: keys} | if .runStarted == false and .sessionIdPresent then true else error("sessions.create: " + tojson) end' "$TMPDIR/worktree-session.json"

@@ -31,7 +31,9 @@ const queueHold: Fixture = {
     const root = process.env.TMPDIR;
     assert.ok(root);
     await writeFile(join(root, 'conversation-queue-ready'), 'ready');
-    const signal = AbortSignal.timeout(120_000);
+    // The scenario releases the hold after verifying the pending input, or on shell exit.
+    // Allow the same ten-minute window as its coordinator wait if the runner disappears.
+    const signal = AbortSignal.timeout(600_000);
     while (
       !(await access(join(root, 'conversation-queue-release')).then(
         () => true,

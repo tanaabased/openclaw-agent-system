@@ -146,6 +146,7 @@ jq -e --slurp '.[1].retirement == null and .[0].id == .[1].id and .[0].threadId 
 # should answer queued github feedback with the earlier private explanation in context
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-conversation/tanaabot"
 conversation=$(jq -er .threadId "$TMPDIR/notification-feedback.json")
+trap 'touch "$TMPDIR/conversation-queue-release"' EXIT
 openclaw gateway call chat.send --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,message:"Hold conversation queue until release",queueMode:"followup",deliver:false,idempotencyKey:"conversation-queue-hold"}')" --json | jq -e '.runId == "conversation-queue-hold"'
 for attempt in $(seq 1 120); do
   if test -f "$TMPDIR/conversation-queue-ready"; then break; fi
@@ -161,6 +162,7 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 60
 feedback_run=$(node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -ers --arg source "$(jq -er .node_id "$TMPDIR/notification-followup-source.json")" '[.[].records[].feedback.events[] | select(.sourceId == $source and .turn != null)] | if length == 1 then .[0].turn.runId else error("one follow-up turn required") end')
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$feedback_run" '{sessionKey:$key,inputRunIds:[$run],limit:1}')" --json | jq -e --arg run "$feedback_run" '.sessionInfo.hasActiveRun == true and any(.inputReceipts[]; .runId == $run and .state == "pending" and .queued == true)'
 touch "$TMPDIR/conversation-queue-release"
+trap - EXIT
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" conversation-queue-hold 600000
 feedback_event=$(node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -ers --arg source "$(jq -er .node_id "$TMPDIR/notification-followup-source.json")" '[.[].records[].feedback.events[] | select(.sourceId == $source)] | if length == 1 then .[0].id else error("one follow-up source required") end')
 execution_run=''
