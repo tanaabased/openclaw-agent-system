@@ -1,10 +1,11 @@
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
+import { bindSqliteInstallation } from '../agent/storage/agent-database.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { automationHash } from '../agent/automation-hash.ts';
 import type { SavedAutomation } from '../agent/automations/codex-automation-state.ts';
-import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import runCodexNotificationReset from '../agent/codex-notification-reset.ts';
 import {
@@ -991,7 +992,10 @@ describe('agent/notification reset runtime adapters', () => {
       JSON.stringify({ 'schema-version': 1, agent: { id: 'receiver' } }),
     );
     await bindCodexWorkspace(pluginData, workspace);
-    const current = await selectCodexTaskContext(pluginData, { codexHome });
+    const { sqliteInstallation, storageBackend } = await sqliteAgentFixture(pluginData, 'receiver');
+    const installation = bindSqliteInstallation(sqliteInstallation);
+    await installation.install();
+    const current = await selectCodexTaskContext(pluginData, { codexHome, storageBackend });
     await seed(current.store, current.workspace);
     const saved: SavedAutomation = {
       id: 'job',
@@ -1006,7 +1010,7 @@ describe('agent/notification reset runtime adapters', () => {
         notificationPolicy: null,
       },
     };
-    const journal = new CodexDispatchStore(pluginData, current.store.location.scope);
+    const journal = current.journal;
     await journal.exclusive(async (state, save) => {
       for (const index of [0])
         state.records.push({
@@ -1061,6 +1065,7 @@ describe('agent/notification reset runtime adapters', () => {
     let creation: 'unavailable' | 'found' | 'absent' = 'unavailable';
     const searched = new Set<boolean>();
     const deps = {
+      storageBackend,
       codexHome,
       caller: 'operator',
       automation: async () => structuredClone(saved),
@@ -1199,6 +1204,12 @@ describe('agent/notification reset runtime adapters', () => {
     assert.equal('request' in restoring && restoring.request?.arguments.status, 'ACTIVE');
     saved.definition.status = 'ACTIVE';
     assert.equal((await run()).status, 'complete');
+    assert.deepEqual(
+      (await installation.read({ sidebarPlacements: {} })).sidebarPlacements.map(
+        ({ value }) => value,
+      ),
+      [{ version: 1, name: 'AGENT SYSTEM', sectionId: 'group' }],
+    );
     assert.ok((await current.store.read())!.baselineAt > 1);
     await assert.rejects(
       runCodexNotificationReset(

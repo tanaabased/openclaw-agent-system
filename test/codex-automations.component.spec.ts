@@ -1569,9 +1569,17 @@ describe('agent/codex-automations', () => {
         throw new AutomationError('automation-thread-settings-busy');
       },
     };
-    const { agent, storageBackend } = await sqliteAgentFixture(pluginData, 'fixture');
+    const { agent, sqliteInstallation, storageBackend } = await sqliteAgentFixture(
+      pluginData,
+      'fixture',
+    );
+    const installation = bindSqliteInstallation(sqliteInstallation);
+    await installation.install();
     const dependencies = { ...deps(), storageBackend, threadAdapter: adapter };
     await syncThreads(dependencies);
+    assert.ok(
+      (await installation.read({ sidebarPlacements: {} })).sidebarPlacements[0]?.value.sectionId,
+    );
     await syncOne(dependencies);
     await manifest(declaration('desired'));
     const drift = await inspectCodexAutomations(pluginData, inputs(), dependencies);

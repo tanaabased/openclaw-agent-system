@@ -19,7 +19,8 @@ import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
 import notificationResetBaseline from './notification-reset-baseline.ts';
 import observeResetThread from './codex-reset-observation.ts';
 import codexRetirementNative from './tasks/retirement/codex-retirement-native.ts';
-import CodexSidebarJournal, { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
+import { codexSidebarJournal } from './storage/codex-storage.ts';
+import { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
 import {
   codexThreadAdapter,
   CodexThreadRpcError,
@@ -338,7 +339,12 @@ export default async function runCodexNotificationReset(
       const saved = JSON.parse(replacement.automation) as SavedAutomation;
       if (saved.definition.kind !== 'heartbeat')
         throw new Error('notification-reset-coordinator-missing');
-      const journal = new CodexSidebarJournal(pluginData, current.codexHome, defaultManagedGroup);
+      const journal = await codexSidebarJournal(
+        pluginData,
+        current.codexHome,
+        defaultManagedGroup,
+        deps.storageBackend,
+      );
       const pending = (await journal.read()).pending;
       const receipt =
         pending?.digest === input.placementReceipt?.digest ? input.placementReceipt : undefined;

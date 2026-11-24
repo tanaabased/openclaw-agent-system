@@ -6,6 +6,7 @@ import IntakeRecordStore, {
 } from '../../channels/github/intake/record-store.ts';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import CodexSidebarJournal from '../codex-sidebar-journal.ts';
 import { bindPickupStore } from './pickup-backend.ts';
 import type { SqliteInstallation } from './storage-lifecycle.ts';
 
@@ -15,6 +16,21 @@ export default function codexStorageLocation(pluginData: string): SqliteInstalla
     installationRoot: resolve(pluginData, 'instance'),
     schemaRoot: fileURLToPath(new URL('../../agent/storage/', import.meta.url)),
   };
+}
+
+export async function codexSidebarJournal(
+  pluginData: string,
+  profile: string,
+  name: string,
+  backend = defaultStorageBackend,
+) {
+  const storage =
+    backend === 'sqlite'
+      ? (await import('./agent-database.ts')).bindSqliteInstallation(
+          codexStorageLocation(pluginData),
+        )
+      : undefined;
+  return new CodexSidebarJournal(pluginData, profile, name, storage);
 }
 
 export function codexPickupStore(

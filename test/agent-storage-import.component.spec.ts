@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, realpath, readFile, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
+import { codexSidebarJournal } from '../agent/storage/codex-storage.ts';
 import automationLedgerStorage from '../agent/storage/automation-backend.ts';
 import { codexAutomationMarker } from '../agent/automations/codex-automation-plan.ts';
 import { automationHash } from '../agent/automation-hash.ts';
@@ -237,12 +238,33 @@ describe('legacy agent storage import', () => {
       );
       const sourcePath = join(dispatch, runtime + '-dispatch-' + scope + '.json');
       const before = await readFile(sourcePath);
+      const emptySidebar = {
+        schemaVersion: 4,
+        sections: [],
+        unavailableHosts: [],
+        unavailableSources: [],
+      };
+      if (codex) {
+        const legacy = await codexSidebarJournal(stateRoot, profile, 'reports', 'file');
+        assert.equal(
+          (await legacy.apply('workspace', emptySidebar, 'thread')).status,
+          'native-action',
+        );
+      }
       const preview = await importAgentStorage(options);
       assert.equal(preview.agentRows.pickupEnrollments?.insert, 1);
       assert.deepEqual(preview.unselectedSessionScopes, [orphan]);
       assert.equal(await db.agent.readIntake(scope), undefined);
       options.apply = true;
       await importAgentStorage(options);
+      if (codex) {
+        const migrated = await codexSidebarJournal(stateRoot, profile, 'reports', 'sqlite');
+        const recovered = await migrated.apply('workspace', emptySidebar, 'thread');
+        assert.ok(
+          recovered.status === 'incomplete' &&
+            recovered.code === 'automation-sidebar-create-unresolved',
+        );
+      }
       assert.deepEqual(await db.agent.readIntake(scope), checkpoint);
       assert.deepEqual(
         await automationLedgerStorage(runtime, automations, autoScope, db.agent).read(),

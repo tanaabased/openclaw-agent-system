@@ -44,7 +44,11 @@ import {
   prepareCodexPickupEnrollment,
   runCodexIntake,
 } from '../codex-intake.ts';
-import CodexSidebarJournal, { type SidebarEffect } from '../codex-sidebar-journal.ts';
+import { codexSidebarJournal } from '../storage/codex-storage.ts';
+import {
+  type default as CodexSidebarJournal,
+  type SidebarEffect,
+} from '../codex-sidebar-journal.ts';
 import { sidebarSections } from '../codex-sidebar-placement.ts';
 import { codexThreadAdapter, connectCodexThreads } from '../codex-thread-client.ts';
 
@@ -84,7 +88,12 @@ async function resolveThreads(
     const selection = automationThreadSelection(job, 'codex')!;
     const group = selection.group!;
     if (journals.has(group)) continue;
-    const journal = new CodexSidebarJournal(selected.root, selected.codexHome, group);
+    const journal = await codexSidebarJournal(
+      selected.root,
+      selected.codexHome,
+      group,
+      selected.dependencies.storageBackend,
+    );
     const { placement, state } = await journal.inspect(
       inputs.nativeInventory,
       selection.exact ?? 'pending',
