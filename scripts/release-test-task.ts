@@ -608,7 +608,10 @@ try {
       workspace,
       '--confirm',
     ]);
-    const setup = (...args: string[]) => run(process.execPath, [runtime, 'setup', ...args]);
+    const setup = (...args: string[]) =>
+      run(process.execPath, [runtime, 'setup', ...args], {
+        env: { ...process.env, OPENCLAW_CONFIG_PATH: resolve('fixtures/sqlite-storage.json') },
+      });
     const setupInspection = JSON.parse(
       (await setup('inspect', '--plugin-data', pluginData)).output,
     ) as { findings?: Array<{ code?: string; stepId?: string }> };
@@ -649,6 +652,7 @@ try {
       readOnly: true,
     });
     try {
+      assert.equal(shared.prepare('SELECT count(*) AS count FROM instances').get()?.count, 1);
       assert.equal(
         shared.prepare('SELECT count(*) AS count FROM assignment_claims').get()?.count,
         0,

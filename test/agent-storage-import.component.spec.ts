@@ -5,7 +5,7 @@ import { prepareAutomationReport } from '../agent/automations/automation-report.
 import AutomationThreads from '../agent/automations/automation-threads.ts';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, realpath, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
@@ -46,7 +46,12 @@ describe('legacy agent storage import', () => {
       const workspace = join(root, 'workspace');
       const stateRoot = join(root, 'state');
       const privateRoot = join(root, 'private');
-      const profile = codex ? join(root, 'profile') : stateRoot;
+      const profile = join(root, 'profile');
+      if (!codex) {
+        await mkdir(profile);
+        await symlink(profile, stateRoot, 'dir');
+      }
+      const namespace = codex ? profile : stateRoot;
       const instance = codex
         ? join(stateRoot, 'instance')
         : join(privateRoot, 'agent-system-instance');
@@ -57,7 +62,7 @@ describe('legacy agent storage import', () => {
       const scope = automationHash({
         runtime,
         agentId,
-        namespace: profile,
+        namespace,
         workspaceDir: workspace,
       });
       const autoScope = automationHash({ runtime, agentId, profile, workspaceDir: workspace });
@@ -105,7 +110,7 @@ describe('legacy agent storage import', () => {
         runtime,
         agentId,
         workspace,
-        namespace: profile,
+        namespace,
         session,
         incarnation: sessionId,
       });
@@ -312,7 +317,7 @@ describe('legacy agent storage import', () => {
       const intakeOnlyScope = automationHash({
         runtime,
         agentId,
-        namespace: profile,
+        namespace,
         workspaceDir: intakeOnlyWorkspace,
       });
       if (codex) {
@@ -420,7 +425,7 @@ describe('legacy agent storage import', () => {
           {
             root: intake,
             resetRoot: dispatch,
-            namespace: profile,
+            namespace,
             storageBackend: 'sqlite',
             sqliteInstallation: installation,
             manifestService: {
@@ -445,7 +450,7 @@ describe('legacy agent storage import', () => {
           runtime,
           agentId,
           workspace,
-          namespace: profile,
+          namespace,
           session,
           incarnation: sessionId,
         },

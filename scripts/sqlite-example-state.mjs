@@ -3,18 +3,29 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 // Each hosted example owns the entire disposable OpenClaw state directory.
-export function agentDatabases() {
-  const root = join(process.env.OPENCLAW_STATE_DIR, 'agent-system-storage');
+export function agentDatabases(stateRoot = process.env.OPENCLAW_STATE_DIR) {
+  const root = join(stateRoot, 'agent-system-storage');
   return readdirSync(root)
     .filter((name) => name.endsWith('.sqlite'))
     .map((name) => join(root, name));
 }
 
-export function readExampleState(kind) {
+export function readExampleState(kind, stateRoot) {
   const result = [];
-  for (const path of agentDatabases()) {
+  for (const path of agentDatabases(stateRoot)) {
     const db = new DatabaseSync(path, { readOnly: true, timeout: 5000 });
     try {
+      if (kind === 'provider') {
+        // Provider failures can be retained by intake, ordinary dispatch, or pickup.
+        for (const row of db
+          .prepare(
+            'SELECT value FROM intake_state UNION ALL SELECT value FROM intake_records ' +
+              'UNION ALL SELECT value FROM dispatch_state UNION ALL SELECT value FROM dispatch_records',
+          )
+          .iterate())
+          result.push(JSON.parse(row.value));
+        continue;
+      }
       if (kind === 'replies') {
         for (const row of db.prepare('SELECT value FROM reply_drafts ORDER BY rowid').all())
           result.push(JSON.parse(row.value));
@@ -42,6 +53,6 @@ export function readExampleState(kind) {
 }
 
 if (import.meta.main) {
-  for (const row of readExampleState(process.argv[2]))
+  for (const row of readExampleState(process.argv[2], process.argv[3]))
     process.stdout.write(JSON.stringify(row) + '\n');
 }

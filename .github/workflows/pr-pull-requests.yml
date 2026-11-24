@@ -83,8 +83,8 @@ jobs:
           mkdir -p "$RUNNER_TEMP/discovery-diagnostics"
           curl --max-time 5 --silent --show-error http://127.0.0.1:4010/proof/diagnostics | jq '{scenario,failed,fixtureErrors,requests:[.requests[]? | {status,matched,intakeCondition,toolCalls,checks,results:[.results[]? | {callId,summary}]}]}' > "$RUNNER_TEMP/discovery-diagnostics/model.json" || true
           jq -c . "$RUNNER_TEMP/discovery-diagnostics/model.json" || true
-          jq -s '[.[] | {discoveryCheckedAt,discoveryRun,discoveryProgress,discoveryTimings,records:[.records[] | {id,nativeInactive,blocker,feedback:(.feedback | {code,discoveryPending,scannedTime,discoveryStalls,events:[.events[]? | {phase,code,policyHeld,turnStatus:.turn.status}]})}]}]' "$RUNNER_TEMP/agent-system-config/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$RUNNER_TEMP/discovery-diagnostics/state.json" || true
-          jq -s '[.. | objects | select(.providerDiagnostic? != null) | {code, providerDiagnostic, retry, retryAfter}]' "$RUNNER_TEMP/agent-system-config/tanaab/agent-system/agent-system-dispatch-v2/"*.json || true
+          node scripts/sqlite-example-state.mjs dispatch | jq -s '[.[] | {discoveryCheckedAt,discoveryRun,discoveryProgress,discoveryTimings,records:[.records[] | {id,nativeInactive,blocker,feedback:(.feedback | {code,discoveryPending,scannedTime,discoveryStalls,events:[.events[]? | {phase,code,policyHeld,turnStatus:.turn.status}]})}]}]' > "$RUNNER_TEMP/discovery-diagnostics/state.json" || true
+          node scripts/sqlite-example-state.mjs provider | jq -s '[.. | objects | select(.providerDiagnostic? != null) | {code, providerDiagnostic, retry, retryAfter}]' || true
           if command -v openclaw-diagnostics >/dev/null; then
             helper_dir=$(dirname "$(command -v openclaw-diagnostics)")
             if [[ -d "${SETUP_OPENCLAW_STATE_DIR:-}" ]]; then

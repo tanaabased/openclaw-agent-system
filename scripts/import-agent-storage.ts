@@ -142,6 +142,8 @@ export interface ImportOptions {
 export async function importAgentStorage(options: ImportOptions) {
   const { runtime, agentId, workspace, profile, stateRoot, privateRoot } = options;
   const codex = runtime === 'codex';
+  // Gateway intake and session scopes retain the configured path, even through a symlink.
+  const namespace = codex ? profile : stateRoot;
   const agentRoot = join(stateRoot, 'agent-system-storage');
   const installationRoot = codex
     ? join(stateRoot, 'instance')
@@ -189,7 +191,7 @@ export async function importAgentStorage(options: ImportOptions) {
       agentId,
       root: intakeRoot,
       workspaceDir: workspace,
-      namespace: profile,
+      namespace,
     });
     const { scope } = location;
     const intake = await new IntakeRecordStore(location).read();
@@ -241,7 +243,7 @@ export async function importAgentStorage(options: ImportOptions) {
               runtime,
               agentId,
               workspace,
-              namespace: profile,
+              namespace,
               session,
               incarnation,
             }),
@@ -498,7 +500,8 @@ async function main() {
   const runtime = values.runtime;
   if (runtime !== 'codex' && runtime !== 'openclaw') throw new Error('select codex or openclaw');
   if (!values['state-root']) throw new Error('--state-root is required');
-  const stateRoot = await realpath(values['state-root']);
+  const stateRoot =
+    runtime === 'codex' ? await realpath(values['state-root']) : resolve(values['state-root']);
   let preview;
   if (runtime === 'codex') {
     const binding = await inspectCodexWorkspaceBinding(stateRoot);
@@ -519,7 +522,7 @@ async function main() {
   const profile =
     runtime === 'codex'
       ? await realpath(values.profile ?? process.env.CODEX_HOME ?? join(homedir(), '.codex'))
-      : stateRoot;
+      : await realpath(stateRoot);
   const result = await importAgentStorage({
     runtime,
     profile,

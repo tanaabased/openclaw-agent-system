@@ -48,7 +48,7 @@ cd "$(jq -er .path "$TMPDIR/worktree-remote.json")"
 openclaw agent-system tool git -- remote get-url origin | grep -Fx git@github.com:tanaabased/big-test-bucket.git
 
 # should execute an ordinary worktree session with canonical agent context and identity
-trap 'rc=$?; set +e; if [ "$rc" -ne 0 ]; then echo "worktree first: $step failed (exit $rc)" >&2; curl -fsS --max-time 3 http://127.0.0.1:4010/proof/evidence | jq "{strictMissCount, finalResponseCount, execResponses: [.tools[]? | select(.name == \"exec\") | .callResponseCount]}" >&2; fi; exit "$rc"' EXIT
+trap 'rc=$?; if [ "$rc" -ne 0 ]; then sh "$GITHUB_WORKSPACE/examples/openclaw-worktree-session/diagnose.sh" first "$step" "$rc" >&2 || true; fi; exit "$rc"' EXIT
 step=openclaw-gateway-start
 openclaw-gateway start
 step=read-worktree-path
@@ -73,7 +73,7 @@ step=probe-directory
 test "$(cat "$TMPDIR/worktree-first.pwd")" = "$worktree_path"
 
 # should continue the same worktree session after restart without replaying its first turn
-trap 'rc=$?; set +e; if [ "$rc" -ne 0 ]; then echo "worktree continued: $step failed (exit $rc)" >&2; curl -fsS --max-time 3 http://127.0.0.1:4010/proof/evidence | jq "{strictMissCount, finalResponseCount, execResponses: [.tools[]? | select(.name == \"exec\") | .callResponseCount]}" >&2; fi; exit "$rc"' EXIT
+trap 'rc=$?; if [ "$rc" -ne 0 ]; then sh "$GITHUB_WORKSPACE/examples/openclaw-worktree-session/diagnose.sh" continued "$step" "$rc" >&2 || true; fi; exit "$rc"' EXIT
 step=openclaw-gateway-stop
 openclaw-gateway stop --timeout 340
 step=openclaw-gateway-start
