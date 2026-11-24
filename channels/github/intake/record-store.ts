@@ -5,6 +5,7 @@ import { refreshStateSnapshot } from '../../../core/merge-state-snapshot.ts';
 import { providerDiagnosticSchema } from '../../../utils/provider-diagnostic.ts';
 import { repositoryScopeDecisionSchema } from '../repository-scope.ts';
 const intakeCleanupBytes = 2 * 1024 * 1024;
+const maximumIntakeBytes = 4 * 1024 * 1024;
 
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
@@ -189,7 +190,15 @@ export function intakeRemediation(code: string): string {
   return 'Inspect the diagnostic for the affected operation before retrying. Retained evidence and the last successful checkpoint remain available; no credential failure has been established.';
 }
 
-/** host location mapping only; the openclaw production monitor does not consume this store. */
+export function intakeScopeLocation(root: string, scope: string) {
+  return {
+    root: resolve(root),
+    scope,
+    path: join(resolve(root), 'github-intake-' + scope + '.json'),
+  };
+}
+
+/** Both backends retain the same runtime/workspace scope and exclusive-operation lock. */
 export function intakeLocation(input: {
   runtime: 'codex' | 'openclaw';
   root: string;
@@ -205,30 +214,50 @@ export function intakeLocation(input: {
     agentId: input.agentId,
   });
   return {
-    root: resolve(input.root),
-    scope,
-    path: join(resolve(input.root), `github-intake-${scope}.json`),
+    ...intakeScopeLocation(input.root, scope),
     ...(input.resetRoot ? { resetRoot: input.resetRoot } : {}),
   };
 }
 
-/** one private transaction contains records and checkpoint so neither can outrun the other. */
+export interface IntakePersistence {
+  read(): Promise<unknown>;
+  save(state: IntakeState): Promise<void>;
+}
+
+export function fileIntakePersistence(location: ReturnType<typeof intakeLocation>) {
+  const file = new PrivateStateFile({
+    path: location.path,
+    directories: [location.root],
+    currentUid: process.getuid?.(),
+    label: 'GitHub assignment intake',
+    maximumBytes: maximumIntakeBytes,
+  });
+  return {
+    file,
+    async read(): Promise<unknown> {
+      const contents = await file.read();
+      if (contents === undefined) return;
+      try {
+        return JSON.parse(contents);
+      } catch {
+        throw new IntakeError('intake-state-invalid');
+      }
+    },
+    save(state: IntakeState) {
+      return file.write(JSON.stringify(state));
+    },
+  };
+}
+
 export default class IntakeRecordStore {
-  readonly file: PrivateStateFile;
-  constructor(readonly location: ReturnType<typeof intakeLocation>) {
-    this.file = new PrivateStateFile({
-      path: location.path,
-      directories: [location.root],
-      currentUid: process.getuid?.(),
-      label: 'GitHub assignment intake',
-      maximumBytes: 4 * 1024 * 1024,
-    });
-  }
+  constructor(
+    readonly location: ReturnType<typeof intakeLocation>,
+    private readonly persistence: IntakePersistence = fileIntakePersistence(location),
+  ) {}
   async read(): Promise<IntakeState | undefined> {
-    const contents = await this.file.read();
-    if (contents === undefined) return;
+    const value = await this.persistence.read();
+    if (value === undefined) return;
     try {
-      const value: unknown = JSON.parse(contents);
       if (
         !Value.Check(storedStateSchema, value) ||
         value.scope !== this.location.scope ||
@@ -316,11 +345,10 @@ export default class IntakeRecordStore {
               retained.observedAssignments = retained.observedAssignments?.filter(
                 (record) => record.consumedBy || !admitted.has(record.id),
               );
+              if (Buffer.byteLength(JSON.stringify(retained)) > maximumIntakeBytes)
+                throw new IntakeError('intake-state-capacity');
             }
-            const contents = JSON.stringify(retained);
-            if (Buffer.byteLength(contents) > 4 * 1024 * 1024)
-              throw new IntakeError('intake-state-capacity');
-            await this.file.write(contents);
+            await this.persistence.save(retained);
             refreshStateSnapshot(state, retained);
           },
           lock.signal,

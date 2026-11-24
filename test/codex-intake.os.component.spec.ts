@@ -1,3 +1,6 @@
+import { importAgentStorage } from '../scripts/import-agent-storage.ts';
+import codexStorageLocation from '../agent/storage/codex-storage.ts';
+import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -67,6 +70,65 @@ describe('agent/codex-intake', () => {
   });
   afterEach(async () => {
     await rm(root, { force: true, recursive: true });
+  });
+  it('should scan and recover from sqlite while preserving the file backend', async () => {
+    const fixture = intakeFixture();
+    const assigned = fixture.events.splice(0);
+    let now = baseline;
+    const deps = {
+      codexHome,
+      now: () => now,
+      connect: async () => fixture.client,
+      assertActive: async () => {},
+    };
+    await runCodexIntake(pluginData, true, deps);
+    const {
+      store: legacy,
+      workspace: boundWorkspace,
+      codexHome: profile,
+    } = await selectCodexTaskContext(pluginData, deps);
+    const originalFile = await readFile(legacy.location.path);
+    const { agent: database, installation } = bindSqliteStorage(
+      codexStorageLocation(pluginData),
+      manifest.agent.id,
+    );
+    await database.install();
+    await installation.install();
+    const sqlite = { ...deps, storageBackend: 'sqlite' as const };
+    assert.equal((await inspectCodexIntake(pluginData, sqlite)).baselineAt, null);
+    await importAgentStorage({
+      runtime: 'codex',
+      agentId: manifest.agent.id,
+      workspace: boundWorkspace,
+      profile,
+      stateRoot: pluginData,
+      privateRoot: pluginData,
+      repositories: [],
+      sessionScopes: [],
+      apply: true,
+    });
+    assert.equal((await inspectCodexIntake(pluginData, sqlite)).baselineAt, baseline);
+    fixture.events.push(...assigned);
+    now += 120000;
+    await runCodexIntake(pluginData, false, sqlite);
+    const inspected = await inspectCodexIntake(pluginData, sqlite);
+    assert.equal(inspected.records.length, 1);
+    assert.deepEqual(
+      (await database.readIntake(legacy.location.scope))?.records,
+      inspected.records,
+    );
+    const repeated = await runCodexIntake(pluginData, false, sqlite);
+    assert.ok('admitted' in repeated);
+    assert.equal(repeated.admitted, 0);
+    await writeFile(join(workspace, 'agent.yaml'), '[');
+    const blocked = await runCodexIntake(pluginData, false, sqlite);
+    assert.equal(blocked.status, 'blocked');
+    assert.equal(
+      (await database.readIntake(legacy.location.scope))?.blocker?.code,
+      'intake-manifest-unavailable',
+    );
+    assert.equal((await inspectCodexIntake(pluginData, sqlite)).records.length, 1);
+    assert.deepEqual(await readFile(legacy.location.path), originalFile);
   });
   it('should inspect and admit assignments while an unrelated task payload needs repair', async () => {
     const provider = intakeFixture();

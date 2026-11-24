@@ -7,6 +7,12 @@ import type {
 import type { IntakeState } from '../../channels/github/intake/record-store.ts';
 import type { RepositoryRecord } from '../../tools/git/repository-service.ts';
 
+export interface SqliteInstallation {
+  agentRoot: string;
+  installationRoot: string;
+  schemaRoot: string;
+}
+
 export interface StorageSchema {
   inspect(): Promise<AgentSystemLifecycleFinding>;
   install(): Promise<AgentSystemLifecycleOutcome>;
@@ -15,6 +21,7 @@ export interface StorageSchema {
 /** The runtime binds both handles before a workflow can read or change any records. */
 export interface BoundStorage {
   agent: WorkflowRecords<AgentRows> & {
+    listIntakeScopes(): Promise<string[]>;
     readIntake(scope: string): Promise<IntakeState | undefined>;
     saveIntake(state: IntakeState): Promise<void>;
     clearIntake(scope: string): Promise<void>;
@@ -44,9 +51,7 @@ export function storageSchemaLifecycle(
   };
 }
 
-export function sqliteStorageLifecycle(
-  installation: () => { agentRoot: string; installationRoot: string; schemaRoot: string },
-) {
+export function sqliteStorageLifecycle(installation: () => SqliteInstallation) {
   return (['agent', 'installation'] as const).map((scope) =>
     storageSchemaLifecycle(
       scope === 'agent' ? 'agent-storage' : 'agent-system-storage',

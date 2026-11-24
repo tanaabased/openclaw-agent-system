@@ -301,10 +301,18 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     privateStateRoot,
   });
   let readScheduler: (() => NotificationScheduler | undefined) | undefined;
-  const pickupStore = new IssuePickupEnrollmentStore(
+  const instanceStore = new AssignmentClaimStore(
     join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-instance'),
   );
+
+  const pickupStore = new IssuePickupEnrollmentStore(instanceStore.root);
+  const sqliteInstallation = {
+    agentRoot: join(api.runtime.state.resolveStateDir(), 'agent-system-storage'),
+    installationRoot: instanceStore.root,
+    schemaRoot: join(packageDir, 'agent', 'storage'),
+  };
   const taskContext = {
+    sqliteInstallation,
     root: join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-intake-v2'),
     resetRoot: join(
       privateStateRoot ?? api.runtime.state.resolveStateDir(),
@@ -396,9 +404,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       }
     }
   });
-  const instanceStore = new AssignmentClaimStore(
-    join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-instance'),
-  );
   const dispatchRoot = join(
     privateStateRoot ?? api.runtime.state.resolveStateDir(),
     'agent-system-dispatch-v2',
@@ -766,11 +771,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...githubCapability.lifecycleContributions,
     ...googleCapability.lifecycleContributions,
     createSessionDispatchLifecycle(sessionDispatch),
-    ...sqliteStorageLifecycle(() => ({
-      agentRoot: join(api.runtime.state.resolveStateDir(), 'agent-system-storage'),
-      installationRoot: instanceStore.root,
-      schemaRoot: join(packageDir, 'agent', 'storage'),
-    })),
+    ...sqliteStorageLifecycle(() => sqliteInstallation),
     instanceIdentity(instanceStore),
     intakeV2.contribution(),
     automationService.contribution(),

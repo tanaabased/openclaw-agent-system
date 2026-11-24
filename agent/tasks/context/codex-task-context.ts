@@ -1,16 +1,16 @@
+import codexStorageLocation from '../../storage/codex-storage.ts';
+import { bindIntakeStore, type StorageBackend } from '../../storage/intake-backend.ts';
 import { realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
-import IntakeRecordStore, {
-  IntakeError,
-  intakeLocation,
-} from '../../../channels/github/intake/record-store.ts';
+import { IntakeError, intakeLocation } from '../../../channels/github/intake/record-store.ts';
 import { inspectCodexWorkspaceBinding } from '../../identity/codex-workspace-binding.ts';
 import assignmentIntakePolicy from '../../automations/assignment-intake-policy.ts';
 import { assertNotificationManagement } from '../../notification-reset-state.ts';
 
 export interface CodexTaskContextDependencies {
+  storageBackend?: StorageBackend;
   codexHome?: string;
   inspectBinding?: typeof inspectCodexWorkspaceBinding;
 }
@@ -32,7 +32,7 @@ export async function selectCodexTaskContext(
     deps.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex'),
   );
   const namespace = await realpath(requestedHome).catch(() => requestedHome);
-  const store = new IntakeRecordStore(
+  const store = await bindIntakeStore(
     intakeLocation({
       runtime: 'codex',
       root: pluginData,
@@ -40,6 +40,9 @@ export async function selectCodexTaskContext(
       workspaceDir: workspace,
       agentId: loaded.manifest.agent.id,
     }),
+    loaded.manifest.agent.id,
+    codexStorageLocation(pluginData),
+    deps.storageBackend,
   );
   await new GitHubIdentityCache(store.location).hydrate(loaded.manifest.github?.notifications);
   if (!options.inspectionOnly) await assertNotificationManagement(pluginData, store.location.scope);

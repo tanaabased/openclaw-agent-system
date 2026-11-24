@@ -1,3 +1,4 @@
+import { assertPrivateStateLocksHeld } from '../../core/private-state-lock-context.ts';
 import { constants } from 'node:fs';
 import { lstat, open } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -18,7 +19,7 @@ import sqliteRecords from './sqlite-records.ts';
 import type { AgentRows, InstallationRows } from './workflow-records.ts';
 import { intakeRecords, intakeState } from './schema.ts';
 import { managedRepositories } from './installation-schema.ts';
-import type { BoundStorage, StorageSchema } from './storage-lifecycle.ts';
+import type { BoundStorage, SqliteInstallation, StorageSchema } from './storage-lifecycle.ts';
 import type { IntakeState } from '../../channels/github/intake/record-store.ts';
 import type { RepositoryRecord } from '../../tools/git/repository-service.ts';
 import nodeErrorCode from '../../utils/node-error-code.ts';
@@ -191,6 +192,16 @@ class SqliteAgentStore extends SqliteDatabase {
   readonly read = this.records.read;
   readonly write = this.records.write;
 
+  listIntakeScopes() {
+    return this.use(true, (db) =>
+      db
+        .select({ scope: intakeState.scope })
+        .from(intakeState)
+        .all()
+        .map((row) => row.scope),
+    );
+  }
+
   readIntake(scope: string) {
     return this.use(true, (db) =>
       db.transaction((tx) => {
@@ -210,6 +221,7 @@ class SqliteAgentStore extends SqliteDatabase {
   saveIntake({ records, ...state }: IntakeState) {
     return this.use(false, (db) =>
       db.transaction((tx) => {
+        assertPrivateStateLocksHeld();
         tx.insert(intakeState)
           .values({ scope: state.scope, value: state })
           .onConflictDoUpdate({ target: intakeState.scope, set: { value: state } })
@@ -269,7 +281,7 @@ class SqliteInstallationStore extends SqliteDatabase {
 }
 
 export function bindSqliteStorage(
-  installation: { agentRoot: string; installationRoot: string; schemaRoot: string },
+  installation: SqliteInstallation,
   agentId: string,
 ): BoundStorage & Record<keyof BoundStorage, StorageSchema> {
   if (!/^[a-z0-9][a-z0-9-]*$/u.test(agentId)) throw new Error('invalid agent database name');

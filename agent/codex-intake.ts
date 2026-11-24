@@ -1,3 +1,4 @@
+import { retainedIntakeCandidates } from './storage/codex-storage.ts';
 import { withDispatchTask } from './tasks/dispatch/dispatch-task-scope.ts';
 import IssuePickupFailure from './issue-pickup-failure.ts';
 import { omit } from 'lodash-es';
@@ -27,7 +28,7 @@ import acceptCodexIntakeOccurrence from './codex-intake-occurrence.ts';
 import CodexDispatchStore from './tasks/dispatch/codex-dispatch-state.ts';
 import { codexDispatchNative } from './tasks/dispatch/codex-dispatch-native.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
-import { readdir, realpath } from 'node:fs/promises';
+import { realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -38,7 +39,8 @@ import {
   inspectCodexPickupActivation,
 } from './automations/codex-automation-activation.ts';
 import { inspectCodexWorkspaceBinding } from './identity/codex-workspace-binding.ts';
-import IntakeRecordStore, {
+import {
+  type default as IntakeRecordStore,
   IntakeError,
   intakeLocation,
   intakeRemediation,
@@ -66,22 +68,15 @@ async function retainedStore(pluginData: string, deps: CodexIntakeDependencies) 
   );
   const namespace = await realpath(requestedHome).catch(() => requestedHome);
   const binding = await (deps.inspectBinding ?? inspectCodexWorkspaceBinding)(pluginData);
-  const names = await readdir(pluginData).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === 'ENOENT') return [] as string[];
-    throw error;
-  });
-  if (names.length > 2000) throw new IntakeError('intake-state-invalid');
   const matches: IntakeRecordStore[] = [];
-  for (const name of names.filter((name) => /^github-intake-[a-f0-9]{64}\.json$/u.test(name))) {
-    const scope = name.slice('github-intake-'.length, -'.json'.length);
-    const store = new IntakeRecordStore({
-      root: resolve(pluginData),
-      path: join(resolve(pluginData), name),
-      scope,
-    });
+  for await (const { store, agentId } of retainedIntakeCandidates(
+    pluginData,
+    deps.storageBackend,
+  )) {
     const state = await store.read();
     if (
       !state ||
+      (agentId !== undefined && state.agentId !== agentId) ||
       (binding.status === 'bound' && state.workspaceDir !== binding.binding.workspaceDir)
     )
       continue;
@@ -92,7 +87,7 @@ async function retainedStore(pluginData: string, deps: CodexIntakeDependencies) 
         namespace,
         workspaceDir: state.workspaceDir,
         agentId: state.agentId,
-      }).scope === scope
+      }).scope === store.location.scope
     )
       matches.push(store);
   }

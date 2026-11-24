@@ -1,6 +1,6 @@
-import { fileURLToPath } from 'node:url';
+import codexStorageLocation from '../storage/codex-storage.ts';
 import { sqliteStorageLifecycle } from '../storage/storage-lifecycle.ts';
-import { delimiter, join } from 'node:path';
+import { delimiter } from 'node:path';
 import { codexInstanceStore } from '../tasks/dispatch/codex-assignment-claims.ts';
 import instanceIdentity from '../identity/instance-identity.ts';
 
@@ -153,11 +153,7 @@ async function runtime(
       }
     },
   };
-  const storage = sqliteStorageLifecycle(() => ({
-    agentRoot: join(pluginData, 'agent-system-storage'),
-    installationRoot: codexInstanceStore(pluginData).root,
-    schemaRoot: fileURLToPath(new URL('../../agent/storage/', import.meta.url)),
-  }));
+  const storage = sqliteStorageLifecycle(() => codexStorageLocation(pluginData));
   return { context, lifecycle, selected, storage };
 }
 

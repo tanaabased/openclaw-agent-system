@@ -10,6 +10,7 @@ import { omit } from 'lodash-es';
 import IntakeRecordStore, {
   IntakeError,
   intakeLocation,
+  fileIntakePersistence,
   type IntakeObservation,
 } from '../channels/github/intake/record-store.ts';
 import scanAssignments from '../channels/github/intake/scan-assignments.ts';
@@ -35,9 +36,11 @@ describe('channels/github/intake/records', () => {
       workspaceDir: '/workspace',
       agentId: 'receiver',
     });
-    const store = new IntakeRecordStore(location);
+    const persistence = fileIntakePersistence(location);
+    const store = new IntakeRecordStore(location, persistence);
     return {
       ...fixture,
+      file: persistence.file,
       store,
       input: {
         store,
@@ -53,27 +56,27 @@ describe('channels/github/intake/records', () => {
   }
   for (const runtime of ['codex', 'openclaw'] as const) {
     it(`should preserve unused ${runtime} assignment fields without weakening source identity checks`, async () => {
-      const { input, store, events } = setup(runtime);
+      const { input, store, file, events } = setup(runtime);
       const assigned = events.splice(0);
       await scanAssignments({ ...input, activate: true });
       events.push(...assigned);
       await scanAssignments({ ...input, now: baseline + 120000 });
-      const raw = JSON.parse((await store.file.read())!);
+      const raw = JSON.parse((await file.read())!);
       raw.unusedNote = 'old';
       raw.records[0].routingNote = 'unused';
       raw.records[0].receiving.displayHint = 'unused';
-      await store.file.write(JSON.stringify(raw));
+      await file.write(JSON.stringify(raw));
       assert.deepEqual(await store.read(), raw);
       await store.exclusive(async (state, save) => {
         await save(state!);
       });
-      assert.deepEqual(JSON.parse((await store.file.read())!), raw);
+      assert.deepEqual(JSON.parse((await file.read())!), raw);
       raw.records[0].initiation = { kind: 'operator' };
-      await store.file.write(JSON.stringify(raw));
+      await file.write(JSON.stringify(raw));
       await assert.rejects(store.read(), /intake-state-invalid/);
       delete raw.records[0].initiation;
       raw.records[0].receiving.nodeId = 'another-account';
-      await store.file.write(JSON.stringify(raw));
+      await file.write(JSON.stringify(raw));
       await assert.rejects(store.read(), /intake-state-invalid/);
     });
 
@@ -444,12 +447,12 @@ describe('channels/github/intake/records', () => {
   });
 
   it('should preserve a filesystem denial during scan persistence without recording a provider failure', async () => {
-    const { input, store } = setup();
+    const { input, store, file } = setup();
     await scanAssignments({ ...input, activate: true });
     const before = await store.read();
     for (const code of ['EPERM', 'EACCES']) {
       const denial = Object.assign(new Error('denied'), { code });
-      store.file.write = async () => {
+      file.write = async () => {
         throw denial;
       };
       await assert.rejects(
@@ -567,12 +570,12 @@ describe('channels/github/intake/records', () => {
   });
 
   it('should propagate local save failures without inventing a provider outage', async () => {
-    const { input, store } = setup();
+    const { input, store, file } = setup();
     await scanAssignments({ ...input, activate: true });
     const before = await store.read();
     const failure = new Error('local persistence failed');
     let writes = 0;
-    store.file.write = async () => {
+    file.write = async () => {
       writes++;
       throw failure;
     };
