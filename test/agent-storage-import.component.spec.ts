@@ -1,3 +1,4 @@
+import AutomationThreads from '../agent/automations/automation-threads.ts';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, realpath, readFile, rm, writeFile } from 'node:fs/promises';
@@ -321,7 +322,20 @@ describe('legacy agent storage import', () => {
       assert.deepEqual(records.directEntries, [
         { scope: chat, id: receipt.digest, value: receipt, kind: 'native-retirement' },
       ]);
-      assert.equal(records.automationThreads[0]?.value.nativeId, 'native');
+      const unexpectedNativeCall = () =>
+        assert.fail('reading ownership must not contact the scheduler');
+      const threadStore = new AutomationThreads(
+        { root: automations, scope: autoScope, runtime },
+        {
+          lookup: unexpectedNativeCall,
+          create: unexpectedNativeCall,
+          rename: unexpectedNativeCall,
+        },
+        db.agent,
+      );
+      assert.deepEqual((await threadStore.read()).records, [
+        { key: 'job', phase: 'ready', nativeId: 'native' },
+      ]);
       assert.deepEqual(
         await db.installation.readRepository(options.repositories[0]!, 'repo'),
         repo,
@@ -333,6 +347,7 @@ describe('legacy agent storage import', () => {
         value: { ...records.automationThreads[0]!.value, nativeId: 'new' },
       };
       await db.agent.write([{ table: 'automationThreads', action: 'save', row: replacement }]);
+      assert.equal((await threadStore.read()).records[0]?.nativeId, 'new');
       await assert.rejects(importAgentStorage(options), /destination differs/);
       const remove = {
         table: 'automationThreads',

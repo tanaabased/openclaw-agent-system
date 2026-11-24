@@ -10,6 +10,8 @@ import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { AutomationError } from './automation-errors.ts';
+import type { BoundStorage } from '../storage/storage-lifecycle.ts';
+import nodeErrorCode from '../../utils/node-error-code.ts';
 import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
 import ensurePrivateStateDirectories from '../../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../../core/private-state-file.ts';
@@ -17,6 +19,7 @@ import acquirePrivateStateFileLock from '../../core/private-state-file-lock.ts';
 import { withPrivateStateLock } from '../../core/private-state-lock-context.ts';
 import type { AutomationRuntime, ResolvedAutomation } from '../../manifest/automation-schema.ts';
 
+const maximumBytes = 1024 * 1024;
 const settingsSchema = Type.Object(
   {
     model: Type.Optional(Type.String()),
@@ -125,6 +128,7 @@ export default class AutomationThreads {
   constructor(
     readonly options: { root: string; scope: string; runtime: AutomationRuntime },
     readonly adapter: AutomationThreadAdapter,
+    private readonly agentStorage?: BoundStorage['agent'],
   ) {
     this.path = join(options.root, `automation-threads-${options.scope}.json`);
     this.file = new PrivateStateFile({
@@ -132,16 +136,31 @@ export default class AutomationThreads {
       directories: [options.root],
       currentUid: process.getuid?.(),
       label: 'Automation conversations',
-      maximumBytes: 1024 * 1024,
+      maximumBytes,
     });
+  }
+  private async readLedger(): Promise<unknown> {
+    const { scope } = this.options;
+    if (!this.agentStorage) {
+      const contents = await this.file.read();
+      return contents === undefined ? { version: 1, scope, records: [] } : JSON.parse(contents);
+    }
+    const rows = await this.agentStorage
+      .read({ automationThreads: { scope } })
+      .catch((error: unknown) => {
+        // Read-only inspection also runs before Install creates the database.
+        if (nodeErrorCode(error) !== 'ENOENT') throw error;
+        return { automationThreads: [] };
+      });
+    const records = rows.automationThreads.map(({ id, value }) => {
+      if (value?.key !== id) throw new Error('invalid thread key');
+      return value;
+    });
+    return { version: 1, scope, records };
   }
   async read() {
     try {
-      const contents = await this.file.read();
-      const ledger: unknown =
-        contents === undefined
-          ? { version: 1, scope: this.options.scope, records: [] }
-          : JSON.parse(contents);
+      const ledger = await this.readLedger();
       if (
         !Value.Check(ledgerSchema, ledger) ||
         ledger.scope !== this.options.scope ||
@@ -175,7 +194,19 @@ export default class AutomationThreads {
     let automationId: string | undefined;
     const run = async () => {
       const ledger = await this.read();
-      const save = () => this.file.write(JSON.stringify(ledger));
+      const save = async (record: ThreadRecord) => {
+        const contents = JSON.stringify(ledger);
+        if (!this.agentStorage) return this.file.write(contents);
+        if (Buffer.byteLength(contents) > maximumBytes)
+          throw new Error('automation thread ownership exceeds its size limit');
+        await this.agentStorage.write([
+          {
+            table: 'automationThreads',
+            action: 'save',
+            row: { scope: ledger.scope, id: record.key, value: record },
+          },
+        ]);
+      };
       const names = automationThreadNames(jobs, this.options.runtime);
       const selected = jobs
         .filter((job) => job.runtimes.includes(this.options.runtime))
@@ -341,12 +372,12 @@ export default class AutomationThreads {
             delete record.nativeId;
             record.generation = randomUUID();
             record.phase = 'creating';
-            await save();
+            await save(record);
           }
           if (!record) {
             record = { key, phase: 'creating' };
             ledger.records.push(record);
-            await save();
+            await save(record);
           }
           const pending = record;
           const id = await this.adapter
@@ -355,7 +386,7 @@ export default class AutomationThreads {
               async (nativeId) => {
                 pending.nativeId = nativeId;
                 pending.phase = 'materializing';
-                await save();
+                await save(pending);
               },
               fresh,
               manageSettings ? settings : undefined,
@@ -377,7 +408,7 @@ export default class AutomationThreads {
             throw new AutomationError('automation-thread-readback-diverged');
           record.nativeId = native.id;
           record.phase = 'ready';
-          await save();
+          await save(record);
           outcome = 'created';
         }
         if (selection.managed && !record && (!apply || execution))
@@ -415,15 +446,15 @@ export default class AutomationThreads {
         const settingsError = (code: string) =>
           new AutomationThreadSettingsError(code, observation());
         const prepareSettingsTurn = async (native: AutomationThread) => {
-          const pending = record?.settingsUpdate;
           if (
             !apply ||
             this.options.runtime !== 'codex' ||
             !selection.managed ||
             !this.adapter.verifySettingsTurn ||
-            pending?.phase !== 'busy'
+            record?.settingsUpdate?.phase !== 'busy'
           )
             return;
+          const pending = record.settingsUpdate;
           if (native.model !== pending.baseline.model || native.effort !== pending.baseline.effort)
             throw settingsError('automation-thread-settings-conflict');
           const model = settings?.model ?? native.model;
@@ -433,7 +464,7 @@ export default class AutomationThreads {
           // retain the possible native send before handing it to the installer; never replay it.
           pending.desired = { model, effort };
           pending.phase = 'uncertain';
-          await save();
+          await save(record);
           throw new AutomationThreadSettingsHandoff(native.id, { model, effort });
         };
         let pendingSettings: AutomationThreadSettingsError | undefined;
@@ -468,7 +499,7 @@ export default class AutomationThreads {
             }
             if (apply) {
               delete record.settingsUpdate;
-              await save();
+              await save(record);
             }
           }
           if (manageSettings && !settingsMatch(native)) {
@@ -486,7 +517,7 @@ export default class AutomationThreads {
               baseline: { model: native.model, effort: native.effort },
               phase: 'uncertain',
             };
-            await save();
+            await save(record);
             let failure: unknown;
             try {
               await this.adapter.updateSettings(native, settings!);
@@ -505,7 +536,7 @@ export default class AutomationThreads {
               settingsMatch(observed)
             ) {
               delete record.settingsUpdate;
-              await save();
+              await save(record);
               native = observed;
             } else {
               if (failure instanceof AutomationError) {
@@ -524,7 +555,7 @@ export default class AutomationThreads {
                   record.settingsUpdate.phase = 'busy';
                 else if (failure.code === 'automation-thread-settings-unsupported')
                   record.settingsUpdate.phase = 'unsupported';
-                await save();
+                await save(record);
                 if (observed && observed.incarnation === native.incarnation)
                   await prepareSettingsTurn(observed);
                 throw settingsError(failure.code);
@@ -558,7 +589,7 @@ export default class AutomationThreads {
           }
           record.nativeId = native.id;
           record.phase = 'ready';
-          await save();
+          await save(record);
         }
         reconciledNative.set(native.id, native);
         resolved.set(key, {

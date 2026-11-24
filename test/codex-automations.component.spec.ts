@@ -1569,7 +1569,8 @@ describe('agent/codex-automations', () => {
         throw new AutomationError('automation-thread-settings-busy');
       },
     };
-    const dependencies = { ...deps(), threadAdapter: adapter };
+    const { agent, storageBackend } = await sqliteAgentFixture(pluginData, 'fixture');
+    const dependencies = { ...deps(), storageBackend, threadAdapter: adapter };
     await syncThreads(dependencies);
     await syncOne(dependencies);
     await manifest(declaration('desired'));
@@ -1606,6 +1607,9 @@ describe('agent/codex-automations', () => {
       nativeInput('idle'),
       dependencies,
     );
+    const readThread = async () =>
+      (await agent.read({ automationThreads: {} })).automationThreads[0]?.value;
+    assert.equal((await readThread())?.settingsUpdate?.phase, 'uncertain');
     assert.equal(effect.status, 'native-action');
     assert.ok('request' in effect && effect.request.tool === 'send_message_to_thread');
     assert.equal(effect.request.arguments.threadId, 'thread-1');
@@ -1652,6 +1656,12 @@ describe('agent/codex-automations', () => {
     );
     assert.equal(writes, 1);
     assert.equal(creates, 1);
+    const ready = await readThread();
+    assert.equal(ready?.nativeId, 'thread-1');
+    assert.equal(ready?.settingsUpdate, undefined);
+    assert.ok(
+      !(await readdir(pluginData)).some((name) => /^automation-threads-.*\.json$/u.test(name)),
+    );
   });
 
   it('should identify settings and thread failures while retaining full read-only codex evidence', async () => {

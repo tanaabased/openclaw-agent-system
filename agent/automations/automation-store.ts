@@ -89,7 +89,7 @@ export default class AutomationStore {
   }
   constructor(
     readonly options: { root: string; profile: string; agentId: string; workspaceDir: string },
-    agent?: BoundStorage['agent'],
+    readonly agentStorage?: BoundStorage['agent'],
   ) {
     this.scope = automationHash({
       runtime: 'openclaw',
@@ -97,7 +97,7 @@ export default class AutomationStore {
       agentId: options.agentId,
       workspaceDir: options.workspaceDir,
     });
-    this.storage = automationLedgerStorage('openclaw', options.root, this.scope, agent);
+    this.storage = automationLedgerStorage('openclaw', options.root, this.scope, agentStorage);
   }
   marker(id: string): string {
     return `agent-system:${this.scope}:${id}`;

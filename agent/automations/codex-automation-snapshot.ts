@@ -299,6 +299,7 @@ export async function readCodexAutomationSnapshot(
     workspace,
     codexHome,
     scope,
+    agentStorage: agent,
     writeLedger: storage.write,
     ledger,
     root,

@@ -160,6 +160,7 @@ async function resolveThreads(
           pendingGroups.delete(group);
         },
       },
+      selected.agentStorage,
     );
     const bindings = apply
       ? await threads.resolve(jobs, true)

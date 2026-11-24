@@ -182,6 +182,7 @@ export default class AutomationService {
     return new AutomationThreads(
       { root: this.dependencies.root, scope: store.scope, runtime: 'openclaw' },
       automationThreadGateway(request, { ...context, scope: store.scope }),
+      store.agentStorage,
     );
   }
 

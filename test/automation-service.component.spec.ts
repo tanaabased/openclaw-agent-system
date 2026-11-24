@@ -1924,6 +1924,15 @@ describe('agent/automation-service', () => {
   });
 
   it('should share a native session, preserve history across routing changes, and recover a lost create response', async () => {
+    const { agent, sqliteInstallation, storageBackend } = await sqliteAgentFixture(
+      root,
+      manifest.agent.id,
+    );
+    service = new AutomationService({
+      ...service.dependencies,
+      sqliteInstallation,
+      storageBackend,
+    });
     const sessions = new Map<string, Record<string, unknown>>();
     const original = service.dependencies.request!;
     let loseResponse = true;
@@ -1968,7 +1977,21 @@ describe('agent/automation-service', () => {
     );
     await assert.rejects(service.reconcile(manifest, root));
     assert.equal(native.length, 0);
+    const { store } = await service.scope(manifest, root);
+    const readThreads = async () =>
+      (await agent.read({ automationThreads: { scope: store.scope } })).automationThreads;
+    const [pending] = await readThreads();
+    assert.equal(pending?.value.phase, 'materializing');
+    assert.ok(sessions.has(pending.value.nativeId!));
+    service = new AutomationService(service.dependencies);
     await service.reconcile(manifest, root);
+    const [ready] = await readThreads();
+    assert.equal(ready?.value.nativeId, pending.value.nativeId);
+    assert.equal(ready?.value.phase, 'ready');
+    await assert.rejects(
+      stat(join(store.options.root, 'automation-threads-' + store.scope + '.json')),
+      { code: 'ENOENT' },
+    );
     assert.equal(sessions.size, 1);
     assert.equal(calls.filter((call) => call.method === 'sessions.create').length, 1);
     assert.equal(native.length, 2);
