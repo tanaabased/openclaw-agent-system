@@ -41,7 +41,9 @@ describe('aimock fixture error diagnostics', () => {
     };
     const wrapped = {
       tool: { source: 'openclaw', name: 'agent_system_dispatch' },
-      result: { content: [{ type: 'text', text: JSON.stringify(result) }] },
+      result: {
+        content: [{ type: 'text', text: JSON.stringify({ ...result, status: 'uncertain' }) }],
+      },
     };
     const request = {
       model: 'fixture',
@@ -63,13 +65,14 @@ describe('aimock fixture error diagnostics', () => {
     );
     const results = captured.errors[0]!.toolResults;
     for (const observed of results.slice(0, 2)) {
-      assert.equal(observed.status, 'blocked');
       assert.equal(observed.code, 'material-native-response-unavailable');
       assert.equal(observed.providerDiagnostic?.httpStatus, 403);
       assert.equal(observed.providerDiagnostic?.classification, 'rate-limit');
       assert.equal(observed.providerDiagnostic?.retryAfterMs, 12000);
       assert.match(observed.providerDiagnostic?.providerMessage ?? '', /API rate limit exceeded/u);
     }
+    assert.equal(results[0]!.status, 'blocked');
+    assert.equal(results[1]!.status, 'uncertain');
     assert.equal(results[2]!.exitCode, 1);
     assert.equal(results[2]!.httpStatus, 401);
     assert.equal(results[2]!.code, undefined);

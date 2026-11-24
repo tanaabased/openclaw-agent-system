@@ -17,9 +17,15 @@ function resultDiagnostic(content: string): {
     // Tool Search wraps the same plugin result delivered by a direct call.
     if (value?.tool?.source === 'openclaw' && Array.isArray(value.result?.content))
       value = JSON.parse(getTextContent(value.result.content) ?? '');
-    const status = ['verified', 'material', 'blocked', 'failed', 'error', 'pending'].includes(
-      value?.status,
-    )
+    const status = [
+      'verified',
+      'material',
+      'blocked',
+      'uncertain',
+      'failed',
+      'error',
+      'pending',
+    ].includes(value?.status)
       ? value.status
       : undefined;
     const code =

@@ -2,7 +2,7 @@ import type { SessionStorage } from '../../storage/storage-lifecycle.ts';
 import { responseInstructions } from '../response/task-response.ts';
 import { responseBlocks } from '../../../channels/github/presentation/response-blocks.ts';
 import selectReplyDraft from './reply-selection.ts';
-import { workflowFailureStep } from '../workflow-failure.ts';
+import workflowFailure, { workflowFailureStep } from '../workflow-failure.ts';
 import { cardCopyInstructions } from '../../../channels/github/presentation/card.ts';
 
 import assessmentGuidance from '../assessment/assessment-guidance.ts';
@@ -669,17 +669,15 @@ async function runFeedbackReply(
       },
     }).catch((error: unknown) => {
       if (!purpose) throw error;
-      const diagnostic =
-        error && typeof error === 'object' && 'code' in error
-          ? error.code
-          : error instanceof Error
-            ? error.message
-            : undefined;
-      const code =
-        typeof diagnostic === 'string' && /^[a-z][a-z0-9-]+$/u.test(diagnostic)
-          ? diagnostic
-          : 'status-update-publication-failed';
-      return { status: record.attempted ? ('uncertain' as const) : ('blocked' as const), code };
+      const { code, providerDiagnostic } = workflowFailure(
+        error,
+        'status-update-publication-failed',
+      );
+      return {
+        status: record.attempted ? ('uncertain' as const) : ('blocked' as const),
+        code,
+        ...(providerDiagnostic && { providerDiagnostic }),
+      };
     });
     const publishedUrl =
       result.status === 'published'

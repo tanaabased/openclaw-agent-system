@@ -1,3 +1,5 @@
+import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
+import GitHubIssueCommentClient from '../channels/github/provider/issue-comment-client.ts';
 import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
@@ -437,6 +439,46 @@ describe('agent/feedback-reply', () => {
     });
     return selection(result);
   }
+
+  for (const httpStatus of [401, 503]) {
+    it(`should preserve the provider response and attempted write state after http ${httpStatus}`, async () => {
+      const { agent } = await sqliteAgentFixture(root, deps.binding.agentId);
+      deps.sessionStorage = agent;
+      const reply = await updateCandidate();
+      const api = new GitHubWorkEventApiClient({
+        identity: provider.identity,
+        async execute(argv) {
+          assert.ok(argv.includes('POST') && argv.includes('/repos/owner/repo/issues/3/comments'));
+          writes++;
+          return {
+            exitCode: 1,
+            stdout: `HTTP/2 ${httpStatus}\n\n{}`,
+            stderr: `gh: fixture failure (HTTP ${httpStatus})`,
+            timedOut: false,
+            truncated: false,
+          };
+        },
+      });
+      const comments = new GitHubIssueCommentClient(api, 1024);
+      provider.createIssueComment = comments.createIssueComment.bind(comments);
+      const result = await call('publish', reply);
+      const expectedStatus = httpStatus === 401 ? 'blocked' : 'uncertain';
+      assert.equal(result.status, expectedStatus);
+      assert.ok('code' in result && result.code === 'github-notification-request-failed');
+      const [draft] = await new ReplyStore(deps.root, deps.binding, agent).read();
+      assert.ok(draft);
+      assert.equal(draft.attempted, httpStatus !== 401);
+      assert.equal(draft.receipt, undefined);
+      assert.equal(writes, 1);
+      assert.ok('providerDiagnostic' in result && result.providerDiagnostic);
+      assert.equal(result.providerDiagnostic.httpStatus, httpStatus);
+      assert.equal(
+        result.providerDiagnostic.classification,
+        httpStatus === 401 ? 'authentication' : 'transport',
+      );
+    });
+  }
+
   function linkedPullRequest() {
     const pr = {
       ...intakeFixture().item,
