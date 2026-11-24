@@ -9,6 +9,7 @@ import { join } from 'node:path';
 
 import {
   acceptAssignmentClaim,
+  assignmentClaimKey,
   claimManualAssignment,
   selectAssignmentClaim,
   claimAssignment,
@@ -227,6 +228,46 @@ describe('agent/assignment-claim', () => {
     assert.ok(results.every((result) => result.winnerId === comments[0]!.databaseId));
   });
 
+  it('should reserve once and reject a stale checkpoint on independent connections to the same database', async () => {
+    const location = codexStorageLocation(root);
+    const first = bindSqliteInstallation(location);
+    const second = bindSqliteInstallation(location);
+    await first.install();
+    const openStore = () => bindInstanceStore(location, 'sqlite');
+    const identity = await openStore().identity();
+    const [left, right] = await Promise.all([openStore().read(), openStore().read()]);
+    assert.ok(left && right);
+    const key = 'a'.repeat(64);
+    const reserve = (pass: string) => ({
+      ...left,
+      claims: { [key]: { instanceId: identity.instanceId, firstPass: pass, attempted: true } },
+    });
+    const results = await Promise.allSettled([
+      first.saveAssignmentClaims(reserve('first'), left),
+      second.saveAssignmentClaims(reserve('second'), right),
+    ]);
+    assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
+    const loser = results.find((r) => r.status === 'rejected');
+    assert.match(loser?.reason.message, /claim-checkpoint-conflict/u);
+    const reserved = await openStore().read();
+    assert.ok(reserved);
+    assert.equal(
+      reserved.claims[key]!.firstPass,
+      results[0]!.status === 'fulfilled' ? 'first' : 'second',
+    );
+
+    const completed = structuredClone(reserved);
+    completed.claims[key]!.commentId = 42;
+    await first.saveAssignmentClaims(completed, reserved);
+    const stale = structuredClone(reserved);
+    stale.claims[key]!.commentId = 99;
+    await assert.rejects(
+      second.saveAssignmentClaims(stale, reserved),
+      /claim-checkpoint-conflict/u,
+    );
+    assert.deepEqual(await openStore().read(), completed);
+  });
+
   it('should retain one assignment winner across two sqlite installations and a restart', async () => {
     const locations = ['a', 'b'].map((name) => codexStorageLocation(join(root, name)));
     const reopen = () => locations.map((location) => bindInstanceStore(location, 'sqlite'));
@@ -386,23 +427,51 @@ describe('agent/assignment-claim', () => {
     assert.equal((await pass(1)).code, 'claim-winner-missing');
   });
 
-  it('should preserve uncertain publication across restart without posting again', async () => {
-    responseLost = true;
-    await assert.rejects(pass(0, 'first'), /lost-response/u);
-    stores[0] = new AssignmentClaimStore(join(root, 'a'));
-    assert.equal(
-      (
-        await pass(0, 'second', {
-          async list() {
-            return [];
-          },
-        })
-      ).code,
-      'claim-publication-unconfirmed',
+  for (const backend of ['file', 'sqlite'] as const) {
+    it(
+      'should recover an uncertain ' + backend + ' claim after restart without posting twice',
+      async () => {
+        const location = codexStorageLocation(join(root, 'a'));
+        const db = bindSqliteInstallation(location);
+        if (backend === 'sqlite') await db.install();
+        const reopen = () => bindInstanceStore(location, backend);
+        stores[0] = reopen();
+        responseLost = true;
+        await assert.rejects(
+          pass(0, 'first', {
+            async create(target, body) {
+              if (backend === 'sqlite') {
+                // a separate connection can take the writer lock during the provider call.
+                const snapshot = await reopen().read();
+                const claim = snapshot?.claims[assignmentClaimKey(source)];
+                assert.ok(snapshot && claim?.attempted);
+                const claims = {
+                  ...snapshot.claims,
+                  ['b'.repeat(64)]: { ...claim, firstPass: 'other' },
+                };
+                await db.saveAssignmentClaims({ ...snapshot, claims }, snapshot);
+              }
+              return client.create(target, body);
+            },
+          }),
+          /lost-response/u,
+        );
+        stores[0] = reopen();
+        assert.equal(
+          (
+            await pass(0, 'second', {
+              async list() {
+                return [];
+              },
+            })
+          ).code,
+          'claim-publication-unconfirmed',
+        );
+        assert.equal((await pass(0, 'third')).status, 'owned');
+        assert.equal(writes, 1);
+      },
     );
-    assert.equal((await pass(0, 'third')).status, 'owned');
-    assert.equal(writes, 1);
-  });
+  }
 
   it('should retry failed losing cleanup without blocking the winner', async () => {
     await race();

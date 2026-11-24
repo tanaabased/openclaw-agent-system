@@ -1,10 +1,8 @@
 import nodeErrorCode from '../../utils/node-error-code.ts';
-import { isDeepStrictEqual } from 'node:util';
 import IssuePickupEnrollmentStore from '../issue-pickup-enrollment.ts';
 import AssignmentClaimStore from '../tasks/dispatch/assignment-claim-store.ts';
 import { bindAgentStore, defaultStorageBackend } from './backend.ts';
 import type { SqliteInstallation } from './storage-lifecycle.ts';
-import type { InstallationRows, RecordChange } from './workflow-records.ts';
 
 export function bindInstanceStore(
   installation: SqliteInstallation,
@@ -36,18 +34,7 @@ export function bindInstanceStore(
     },
     async save(state, saved) {
       const db = await database();
-      const { claims, ...value } = state;
-      const changes: RecordChange<InstallationRows>[] = [];
-      if (saved && saved.instanceId !== value.instanceId)
-        changes.push({ table: 'instances', action: 'remove', key: { id: saved.instanceId } });
-      changes.push({ table: 'instances', action: 'save', row: { id: value.instanceId, value } });
-      for (const [id, claim] of Object.entries(claims))
-        if (!isDeepStrictEqual(saved?.claims[id], claim))
-          changes.push({ table: 'assignmentClaims', action: 'save', row: { id, value: claim } });
-      for (const id of Object.keys(saved?.claims ?? {}))
-        if (!Object.hasOwn(claims, id))
-          changes.push({ table: 'assignmentClaims', action: 'remove', key: { id } });
-      await db.write(changes);
+      await db.saveAssignmentClaims(state, saved);
     },
   });
 }

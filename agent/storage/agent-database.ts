@@ -2,9 +2,11 @@ import { assertPrivateStateLocksHeld } from '../../core/private-state-lock-conte
 import { constants } from 'node:fs';
 import { lstat, open, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { backup, DatabaseSync } from 'node:sqlite';
 
 import { and, eq, sql } from 'drizzle-orm';
+import { omit } from 'lodash-es';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import { drizzle } from 'drizzle-orm/node-sqlite';
 import { migrate } from 'drizzle-orm/node-sqlite/migrator';
@@ -26,7 +28,8 @@ import {
   intakeRecords,
   intakeState,
 } from './schema.ts';
-import { managedRepositories } from './installation-schema.ts';
+import { assignmentClaims, instances, managedRepositories } from './installation-schema.ts';
+import type { AssignmentClaimState } from '../tasks/dispatch/assignment-claim-store.ts';
 import type { BoundStorage, SqliteInstallation, StorageSchema } from './storage-lifecycle.ts';
 import type { IntakeState } from '../../channels/github/intake/record-store.ts';
 import type { RepositoryRecord } from '../../tools/git/repository-service.ts';
@@ -415,6 +418,62 @@ class SqliteInstallationStore extends SqliteDatabase {
   );
   readonly read = this.records.read;
   readonly write = this.records.write;
+
+  saveAssignmentClaims(state: AssignmentClaimState, previous?: AssignmentClaimState) {
+    const { claims, ...identity } = state;
+    return this.use(false, (db) =>
+      db.transaction(
+        (tx) => {
+          assertPrivateStateLocksHeld();
+          const identities = tx.select().from(instances).limit(2).all();
+          if (!previous) {
+            if (identities.length) throw new Error('claim-checkpoint-conflict');
+            tx.insert(instances).values({ id: identity.instanceId, value: identity }).run();
+          } else {
+            const expected = omit(previous, 'claims');
+            const current = identities[0];
+            if (
+              identities.length !== 1 ||
+              current?.id !== expected.instanceId ||
+              !isDeepStrictEqual(current.value, expected)
+            )
+              throw new Error('claim-checkpoint-conflict');
+            if (!isDeepStrictEqual(identity, expected))
+              tx.update(instances)
+                .set({ id: identity.instanceId, value: identity })
+                .where(eq(instances.id, expected.instanceId))
+                .run();
+          }
+
+          for (const id of new Set([
+            ...Object.keys(previous?.claims ?? {}),
+            ...Object.keys(claims),
+          ])) {
+            const before = previous?.claims[id];
+            const after = claims[id];
+            if (isDeepStrictEqual(before, after)) continue;
+            if (!before && after) {
+              const inserted = tx
+                .insert(assignmentClaims)
+                .values({ id, value: after })
+                .onConflictDoNothing()
+                .run();
+              if (!inserted.changes) throw new Error('claim-checkpoint-conflict');
+              continue;
+            }
+
+            const key = eq(assignmentClaims.id, id);
+            const current = tx.select().from(assignmentClaims).where(key).get();
+            if (!current || !isDeepStrictEqual(current.value, before))
+              throw new Error('claim-checkpoint-conflict');
+            if (after) tx.update(assignmentClaims).set({ value: after }).where(key).run();
+            else tx.delete(assignmentClaims).where(key).run();
+          }
+        },
+        { behavior: 'immediate' },
+      ),
+    );
+  }
 
   readRepository(root: string, id: string) {
     return this.use(
