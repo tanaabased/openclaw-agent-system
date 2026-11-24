@@ -18,12 +18,7 @@ export async function inspectCodexPickup(
     await codexPickupStore(pluginData, current.agentId, deps.storageBackend),
     current.policy?.policy,
     current.store.location.scope,
-    () =>
-      inspectCodexPickupActivation(pluginData, {
-        codexHome: current.codexHome,
-        inspectBinding: deps.inspectBinding,
-        storageBackend: deps.storageBackend,
-      }),
+    () => inspectCodexPickupActivation(pluginData, current.automationBinding),
   );
 }
 

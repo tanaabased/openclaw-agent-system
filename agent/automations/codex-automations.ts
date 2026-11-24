@@ -669,7 +669,7 @@ export async function replaceCodexNotificationCoordinator(
     }
     record.nativeId = actual.id;
     record.definition = definition;
-    await selected.file.write(JSON.stringify(selected.ledger));
+    await selected.writeLedger(selected.ledger);
     return {
       status: 'done' as const,
       automation: JSON.stringify({ ...before, id: actual.id, definition }),
@@ -797,7 +797,7 @@ export async function reconcileCodexAutomationRetirements(
     }
     if (!Value.Check(ledgerSchema, selected.ledger))
       throw new CodexAutomationError('automation-ownership-invalid');
-    await selected.file.write(JSON.stringify(selected.ledger));
+    await selected.writeLedger(selected.ledger);
   });
 }
 
@@ -869,7 +869,7 @@ export async function prepareCodexAutomation(
         },
       },
     };
-    await selected.file.write(JSON.stringify(ledger));
+    await selected.writeLedger(ledger);
     return {
       status: 'prepared',
       digest,
@@ -959,15 +959,13 @@ export async function acknowledgeCodexAutomation(
     const retired = [...(selected.ledger.retired ?? [])];
     if (action.retire) retired.push(completed);
     else records.push(completed);
-    await selected.file.write(
-      JSON.stringify({
-        version: 1,
-        scope: selected.scope,
-        binding: selected.ledger.binding,
-        records,
-        ...(retired.length ? { retired } : {}),
-      }),
-    );
+    await selected.writeLedger({
+      version: 1,
+      scope: selected.scope,
+      binding: selected.ledger.binding,
+      records,
+      ...(retired.length ? { retired } : {}),
+    });
     return { status: 'verified', manifestId: action.manifestId, nativeId: actual.id, digest };
   });
 }
@@ -999,7 +997,7 @@ export async function cancelCodexAutomation(
           saved.every((item) => before.nativeIds.includes(item.id)))
       : automationHash(saved) === pending.beforeHash;
     if (!unchanged) throw new CodexAutomationError('automation-cancel-recovery-required');
-    await selected.file.write(JSON.stringify({ ...selected.ledger, pending: undefined }));
+    await selected.writeLedger({ ...selected.ledger, pending: undefined });
     return { status: 'cancelled', digest };
   });
 }

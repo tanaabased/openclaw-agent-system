@@ -1,3 +1,5 @@
+import { bindAgentStore, type StorageBackend } from '../storage/backend.ts';
+import type { SqliteInstallation } from '../storage/storage-lifecycle.ts';
 import { realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -65,6 +67,8 @@ import type { DispatchRequest } from '../../credentials/session-dispatch.ts';
 import { assertPrivateStateLocksHeld } from '../../core/private-state-lock-context.ts';
 
 export interface AutomationServiceDependencies {
+  storageBackend?: StorageBackend;
+  sqliteInstallation?: SqliteInstallation;
   pickup?: {
     prepare(
       manifest: AgentManifest,
@@ -153,12 +157,20 @@ export default class AutomationService {
       environment: this.dependencies.environment,
       timezone: this.dependencies.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
     };
-    const store = new AutomationStore({
-      root: this.dependencies.root,
-      profile: await realpath(this.dependencies.profile),
-      agentId: manifest.agent.id,
-      workspaceDir: workspace,
-    });
+    const agent = await bindAgentStore(
+      manifest.agent.id,
+      this.dependencies.sqliteInstallation,
+      this.dependencies.storageBackend,
+    );
+    const store = new AutomationStore(
+      {
+        root: this.dependencies.root,
+        profile: await realpath(this.dependencies.profile),
+        agentId: manifest.agent.id,
+        workspaceDir: workspace,
+      },
+      agent,
+    );
     return { context, store };
   }
 

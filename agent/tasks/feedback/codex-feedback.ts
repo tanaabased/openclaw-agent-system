@@ -112,13 +112,7 @@ async function runCodexFeedbackScoped(
     );
   const activation = nativeContext
     ? undefined
-    : await activationFor(
-        pluginData,
-        { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
-        false,
-        true,
-        'feedback',
-      );
+    : await activationFor(pluginData, current.automationBinding, false, true, 'feedback');
   const schedule = activation?.schedule;
   const workflow =
     schedule?.current.workflow ??
@@ -182,7 +176,7 @@ async function runCodexFeedbackScoped(
     if (scans.length) {
       const fresh = await activationFor(
         pluginData,
-        { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+        current.automationBinding,
         false,
         true,
         'feedback',
@@ -417,7 +411,7 @@ async function runCodexFeedbackScoped(
               if (!nativeContext) {
                 const fresh = await activationFor(
                   pluginData,
-                  { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+                  current.automationBinding,
                   false,
                   true,
                   'feedback',

@@ -67,6 +67,11 @@ export async function selectCodexTaskContext(
     manifestPath: loaded.path,
     manifestSources: loaded.sources,
     codexHome: namespace,
+    automationBinding: {
+      codexHome: namespace,
+      inspectBinding: deps.inspectBinding,
+      storageBackend: deps.storageBackend,
+    },
   };
 }
 

@@ -222,10 +222,7 @@ async function runCodexDeliveryScoped(
     throw invalidDeliveryRequest(input.action, 'codex');
   if (input.title?.includes('\0') || input.body?.includes('\0'))
     throw invalidDeliveryRequest(input.action, 'codex');
-  const current = await selectCodexTaskContext(pluginData, {
-    codexHome: deps.codexHome,
-    inspectBinding: deps.inspectBinding,
-  });
+  const current = await selectCodexTaskContext(pluginData, deps);
   const store = current.journal;
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
   const git = deps.git ?? dispatchGit;
@@ -519,7 +516,7 @@ async function runCodexDeliveryScoped(
           try {
             const activation = await (deps.activation ?? inspectCodexDispatchActivation)(
               pluginData,
-              { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+              current.automationBinding,
               false,
               false,
               'feedback',

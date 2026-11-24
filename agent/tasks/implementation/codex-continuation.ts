@@ -66,7 +66,7 @@ async function runCodexContinuationScoped(
     ? { sourceThreadId: localOwner.sourceThreadId }
     : await (deps.activation ?? inspectCodexDispatchActivation)(
         pluginData,
-        { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+        current.automationBinding,
         false,
         true,
         input.action === 'delivery' ? 'publication' : 'implementation',
@@ -242,8 +242,7 @@ async function runCodexContinuationScoped(
       { ...input.delivery, id: input.id },
       {
         ...deps.deliveryDependencies,
-        codexHome: current.codexHome,
-        inspectBinding: deps.inspectBinding,
+        ...current.automationBinding,
         threadId: caller,
         schedule,
         authorizeSchedule: async () => {
@@ -264,7 +263,7 @@ async function runCodexContinuationScoped(
               ? { sourceThreadId: record.sourceThreadId }
               : await (deps.activation ?? inspectCodexDispatchActivation)(
                   pluginData,
-                  { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+                  current.automationBinding,
                   false,
                   true,
                   'publication',

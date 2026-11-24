@@ -64,7 +64,7 @@ export default async function reconcileCodexLifecycle(
     ? { sourceThreadId: manualTarget.sourceThreadId }
     : await (deps.activation ?? inspectCodexDispatchActivation)(
         pluginData,
-        { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+        current.automationBinding,
         false,
         true,
       );
@@ -149,7 +149,7 @@ export default async function reconcileCodexLifecycle(
             ? { sourceThreadId: manualTarget.sourceThreadId }
             : await (deps.activation ?? inspectCodexDispatchActivation)(
                 pluginData,
-                { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+                current.automationBinding,
                 false,
                 true,
               );

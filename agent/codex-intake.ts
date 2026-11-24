@@ -137,11 +137,7 @@ async function assertCodexIntakeActive(
     else
       await inspectCodexDispatchActivation(
         pluginData,
-        {
-          codexHome: current.codexHome,
-          storageBackend: deps.storageBackend,
-          inspectBinding: deps.inspectBinding,
-        },
+        current.automationBinding,
         false,
         false,
         'intake',
@@ -168,11 +164,7 @@ export async function runCodexIntake(
         const caller = deps.threadId;
         const activation = await inspectCodexDispatchActivation(
           pluginData,
-          {
-            codexHome: current.codexHome,
-            storageBackend: deps.storageBackend,
-            inspectBinding: deps.inspectBinding,
-          },
+          current.automationBinding,
           false,
           true,
           'intake',
@@ -386,11 +378,7 @@ export async function runCodexIssuePickup(
           ? await deps.pickupActivation(acceptedOccurrence)
           : await inspectCodexPickupActivation(
               pluginData,
-              {
-                codexHome: current.codexHome,
-                inspectBinding: deps.inspectBinding,
-                storageBackend: deps.storageBackend,
-              },
+              current.automationBinding,
               acceptedOccurrence,
             );
         if (

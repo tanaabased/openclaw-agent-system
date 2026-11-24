@@ -1066,6 +1066,24 @@ describe('agent/codex-automations', () => {
       ),
       /issue-pickup-enrollment-missing/,
     );
+
+    const newWorkspace = join(root, 'replacement');
+    await mkdir(newWorkspace);
+    await writeFile(
+      join(newWorkspace, 'agent.yaml'),
+      'schema-version: 1\nagent: {id: replacement}\n',
+    );
+    await bindCodexWorkspace(pluginData, newWorkspace);
+    const cleanup = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    assert.ok(
+      cleanup.actions.some(
+        (action) =>
+          action.manifestId === 'github-issue-assignment' &&
+          action.mode === 'update' &&
+          action.expected.status === 'PAUSED',
+      ),
+      JSON.stringify(cleanup),
+    );
   });
 
   it('should preserve intake on coordinator repair and retarget a reset only while paused', async () => {
@@ -2047,24 +2065,39 @@ describe('agent/codex-automations', () => {
   });
 
   it('should reject a stale plan and serialize pending writes until exact recovery', async () => {
-    const plan = await inspect();
+    const { agent, storageBackend } = await sqliteAgentFixture(pluginData, 'fixture');
+    const dependencies = { ...deps(), storageBackend };
+    const inspectSelected = () => inspectCodexAutomations(pluginData, inputs(), dependencies);
+    const plan = await inspectSelected();
     await manifest(job().replace('Review this workspace.', 'Changed prompt.'));
     await assert.rejects(
-      prepareCodexAutomation(pluginData, plan.digest, inputs(), deps()),
+      prepareCodexAutomation(pluginData, plan.digest, inputs(), dependencies),
       rejectsCode('automation-plan-stale-or-blocked'),
     );
-    const fresh = await inspect();
-    await prepareCodexAutomation(pluginData, fresh.digest, inputs(), deps());
-    await assert.rejects(prepareCodexAutomation(pluginData, fresh.digest, inputs(), deps()));
+    const fresh = await inspectSelected();
+    await prepareCodexAutomation(pluginData, fresh.digest, inputs(), dependencies);
+    await assert.rejects(prepareCodexAutomation(pluginData, fresh.digest, inputs(), dependencies));
     await assert.rejects(
-      acknowledgeCodexAutomation(pluginData, fresh.digest, undefined, deps()),
+      acknowledgeCodexAutomation(pluginData, fresh.digest, undefined, dependencies),
       rejectsCode('automation-readback-diverged'),
     );
-    assert.equal((await inspect()).status, 'blocked');
+    assert.equal((await inspectSelected()).status, 'blocked');
+    const pending = await agent.read({ automationState: {}, automationRegistrations: {} });
+    assert.equal(pending.automationState[0]?.value.pending?.digest, fresh.digest);
+    assert.equal(pending.automationRegistrations.length, 0);
     await nativeWrite(fresh.actions[0]!.expected);
-    await assert.rejects(cancelCodexAutomation(pluginData, fresh.digest, deps()));
-    await acknowledgeCodexAutomation(pluginData, fresh.digest, undefined, deps());
-    assert.equal((await inspect()).status, 'aligned');
+    await assert.rejects(cancelCodexAutomation(pluginData, fresh.digest, dependencies));
+    await acknowledgeCodexAutomation(pluginData, fresh.digest, undefined, dependencies);
+    assert.equal((await inspectSelected()).status, 'aligned');
+    const verified = await agent.read({ automationState: {}, automationRegistrations: {} });
+    assert.equal(verified.automationState[0]?.value.pending, undefined);
+    assert.deepEqual(
+      verified.automationRegistrations.map(({ id, value }) => [id, value.nativeId]),
+      [['review', 'fixture-native']],
+    );
+    assert.ok(
+      !(await readdir(pluginData)).some((name) => /^codex-automations-.*\.json$/u.test(name)),
+    );
   });
 
   it('should cancel a failed native write only while its original saved state remains unchanged', async () => {

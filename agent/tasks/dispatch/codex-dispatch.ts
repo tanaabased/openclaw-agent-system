@@ -122,6 +122,7 @@ async function runCodexDispatchScoped(
         {
           codexHome: deps.codexHome,
           inspectBinding: deps.inspectBinding,
+          storageBackend: deps.storageBackend,
           threadId: deps.threadId,
           git: deps.git,
           connect: deps.deliveryConnect,
@@ -367,7 +368,7 @@ async function executeCodexDispatch(
     ? { sourceThreadId: manualOwner.sourceThreadId }
     : await (deps.activation ?? inspectCodexDispatchActivation)(
         pluginData,
-        { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+        current.automationBinding,
         operatorRecovery,
         true,
       );
@@ -390,7 +391,7 @@ async function executeCodexDispatch(
           () =>
             (deps.activation ?? inspectCodexDispatchActivation)(
               pluginData,
-              { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+              current.automationBinding,
               false,
               false,
               'intake',
@@ -412,7 +413,7 @@ async function executeCodexDispatch(
           ? { sourceThreadId: manualOwner.sourceThreadId }
           : await (deps.activation ?? inspectCodexDispatchActivation)(
               pluginData,
-              { codexHome: selected.codexHome, inspectBinding: deps.inspectBinding },
+              selected.automationBinding,
               operatorRecovery,
               true,
             );

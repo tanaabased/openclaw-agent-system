@@ -1,5 +1,3 @@
-import { join } from 'node:path';
-
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
@@ -7,7 +5,8 @@ import { withPrivateStateLock } from '../../core/private-state-lock-context.ts';
 import { automationHash } from '../automation-hash.ts';
 import { AutomationError } from './automation-errors.ts';
 import ensurePrivateStateDirectories from '../../core/ensure-private-state-directories.ts';
-import PrivateStateFile from '../../core/private-state-file.ts';
+import automationLedgerStorage from '../storage/automation-backend.ts';
+import type { BoundStorage } from '../storage/storage-lifecycle.ts';
 import acquirePrivateStateFileLock from '../../core/private-state-file-lock.ts';
 
 export { automationHash } from '../automation-hash.ts';
@@ -81,10 +80,16 @@ export type AutomationLedger = Static<typeof ledgerSchema>;
 /** non-secret ownership state, separate from native scheduler storage and repository content. */
 export default class AutomationStore {
   readonly scope: string;
-  readonly path: string;
-  readonly file: PrivateStateFile;
+  readonly storage: ReturnType<typeof automationLedgerStorage>;
+  get path() {
+    return this.storage.path;
+  }
+  get file() {
+    return this.storage.file;
+  }
   constructor(
     readonly options: { root: string; profile: string; agentId: string; workspaceDir: string },
+    agent?: BoundStorage['agent'],
   ) {
     this.scope = automationHash({
       runtime: 'openclaw',
@@ -92,23 +97,15 @@ export default class AutomationStore {
       agentId: options.agentId,
       workspaceDir: options.workspaceDir,
     });
-    this.path = join(options.root, `automations-${this.scope}.json`);
-    this.file = new PrivateStateFile({
-      currentUid: process.getuid?.(),
-      directories: [options.root],
-      label: 'automation ownership',
-      maximumBytes: 1024 * 1024,
-      path: this.path,
-    });
+    this.storage = automationLedgerStorage('openclaw', options.root, this.scope, agent);
   }
   marker(id: string): string {
     return `agent-system:${this.scope}:${id}`;
   }
   async read(): Promise<AutomationLedger> {
     try {
-      const contents = await this.file.read();
-      if (contents === undefined) return { version: 1, scope: this.scope, records: [] };
-      const parsed: unknown = JSON.parse(contents);
+      const parsed = await this.storage.read();
+      if (parsed === undefined) return { version: 1, scope: this.scope, records: [] };
       if (
         !Value.Check(ledgerSchema, parsed) ||
         parsed.scope !== this.scope ||
@@ -136,7 +133,7 @@ export default class AutomationStore {
     ) {
       throw new AutomationError('automation-ownership-invalid');
     }
-    await this.file.write(`${JSON.stringify(ledger)}\n`);
+    await this.storage.write(ledger);
   }
   async withLock<T>(run: () => Promise<T>): Promise<T> {
     await ensurePrivateStateDirectories({

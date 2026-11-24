@@ -4,6 +4,8 @@ import { mkdir, mkdtemp, realpath, readFile, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
+import automationLedgerStorage from '../agent/storage/automation-backend.ts';
+import { codexAutomationMarker } from '../agent/automations/codex-automation-plan.ts';
 import { automationHash } from '../agent/automation-hash.ts';
 import {
   pickupDispatchScope,
@@ -166,14 +168,53 @@ describe('legacy agent storage import', () => {
         retiredInstanceIds: [],
         claims: { [scope]: { instanceId: id, attempted: true, firstPass: 'first' } },
       });
+      const definition = {
+        kind: 'heartbeat',
+        destination: 'thread',
+        targetThreadId: 'native-thread',
+        name: 'job',
+        prompt: codexAutomationMarker(autoScope, 'job'),
+        status: 'ACTIVE',
+        rrule: 'FREQ=DAILY',
+        notificationPolicy: null,
+      };
+      const registration = { id: 'job', nativeId: 'native-job', removed: false };
+      const ledger = {
+        version: 1,
+        scope: autoScope,
+        records: [
+          codex
+            ? { ...registration, definition }
+            : {
+                ...registration,
+                marker: 'agent-system:' + autoScope + ':job',
+                hash: scope,
+                triggerHash: scope,
+                generation: 1,
+                anchorMs: 1,
+                pending: { kind: 'update', nativeHash: scope },
+              },
+        ],
+        ...(codex && {
+          binding: { agentId, workspace, codexHome: profile },
+          retired: [],
+          pending: {
+            digest: scope,
+            manifestDigest: scope,
+            beforeHash: scope,
+            action: {
+              manifestId: 'job',
+              id: 'native-job',
+              mode: 'update',
+              removed: false,
+              expected: definition,
+            },
+          },
+        }),
+      };
       await save(
         join(automations, (codex ? 'codex-automations-' : 'automations-') + autoScope + '.json'),
-        {
-          version: 1,
-          scope: autoScope,
-          records: [],
-          ...(codex && { retired: [], binding: { agentId, workspace, codexHome: profile } }),
-        },
+        ledger,
       );
       await save(join(automations, 'automation-threads-' + autoScope + '.json'), {
         version: 1,
@@ -202,6 +243,10 @@ describe('legacy agent storage import', () => {
       options.apply = true;
       await importAgentStorage(options);
       assert.deepEqual(await db.agent.readIntake(scope), checkpoint);
+      assert.deepEqual(
+        await automationLedgerStorage(runtime, automations, autoScope, db.agent).read(),
+        ledger,
+      );
       const records = await db.agent.read({
         dispatchRecords: { scope },
         directEntries: {},

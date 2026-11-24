@@ -360,6 +360,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     },
   });
   const automationDependencies = {
+    sqliteInstallation,
     pickup: {
       prepare: (manifest: AgentManifest, workspace: string) =>
         intakeV2.preparePickup(manifest, workspace),

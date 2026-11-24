@@ -2287,10 +2287,23 @@ describe('agent/automation-service', () => {
   });
 
   it('should recover a successful create with a lost acknowledgement without duplication', async () => {
+    const { sqliteInstallation, storageBackend } = await sqliteAgentFixture(
+      root,
+      manifest.agent.id,
+    );
+    service = new AutomationService({
+      ...service.dependencies,
+      sqliteInstallation,
+      storageBackend,
+    });
     afterWriteFailure = true;
     await assert.rejects(service.reconcile(manifest, root));
     assert.equal(native.length, 1);
     assert.equal(native[0]!.enabled, false);
+    const { store } = await service.scope(manifest, root);
+    assert.equal((await store.read()).records[0]?.pending?.kind, 'create');
+    await assert.rejects(stat(store.path), { code: 'ENOENT' });
+    service = new AutomationService(service.dependencies);
     calls = [];
     now += 5_000;
     await service.reconcile(manifest, root);
