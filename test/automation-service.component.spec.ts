@@ -2150,6 +2150,15 @@ describe('agent/automation-service', () => {
     assert.equal(calls.filter(({ method }) => method === 'cron.run').length, 2);
   });
   it('should keep job-wide report state separate from native history without exposing captured output', async () => {
+    const { sqliteInstallation, storageBackend } = await sqliteAgentFixture(
+      root,
+      manifest.agent.id,
+    );
+    service = new AutomationService({
+      ...service.dependencies,
+      sqliteInstallation,
+      storageBackend,
+    });
     await service.reconcile(manifest, root);
     const { store } = await service.scope(manifest, root);
     const ledger = await store.read();
@@ -2179,7 +2188,8 @@ describe('agent/automation-service', () => {
       }),
       state: 'pending' as const,
     };
-    await service.reports.withLock(executionId, () => service.reports.write(report));
+    const reports = await service.reportStore(manifest.agent.id);
+    await reports.withLock(executionId, () => reports.write(report));
     await service.assertReportCurrent(report);
     manifestDigest = 'unrelated-edit';
     await service.assertReportCurrent(report);

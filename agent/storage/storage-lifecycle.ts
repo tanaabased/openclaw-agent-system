@@ -35,6 +35,9 @@ export interface SessionStorage {
 export interface BoundStorage {
   agent: WorkflowRecords<AgentRows> &
     SessionStorage & {
+      listReportIds(
+        selection: 'all' | 'recoverable' | { completedBefore: string },
+      ): Promise<string[]>;
       listIntakeScopes(): Promise<string[]>;
       readIntake(scope: string): Promise<IntakeState | undefined>;
       saveIntake(state: IntakeState): Promise<void>;

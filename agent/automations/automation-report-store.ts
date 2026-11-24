@@ -8,6 +8,11 @@ import acquirePrivateStateFileLock from '../../core/private-state-file-lock.ts';
 import PrivateStateFile from '../../core/private-state-file.ts';
 import { withPrivateStateLock } from '../../core/private-state-lock-context.ts';
 
+import type { BoundStorage } from '../storage/storage-lifecycle.ts';
+import nodeErrorCode from '../../utils/node-error-code.ts';
+
+// two 16 kib streams can expand sixfold under json escaping; reserve metadata headroom.
+const maximumBytes = 256 * 1024;
 export const reportLifetimeMs = 30 * 24 * 60 * 60 * 1000;
 
 const text = Type.String();
@@ -100,19 +105,19 @@ function terminal(record: AutomationReportRecord) {
   return record.state === 'delivered' || record.state === 'failed';
 }
 
-/** one bounded occurrence per file; an oversized save cannot replace the committed record. */
+/** one bounded record per occurrence; an oversized save cannot replace the committed record. */
 export default class AutomationReportStore {
   constructor(
     readonly root: string,
     private readonly now = Date.now,
+    private readonly storage?: { agentId: string; agent: BoundStorage['agent'] },
   ) {}
   private stateFile(name: string, directory = this.root) {
     return new PrivateStateFile({
       path: join(directory, name),
       directories: directory === this.root ? [this.root] : [this.root, directory],
       currentUid: process.getuid?.(),
-      // two 16 kib streams can expand sixfold under json escaping; reserve metadata headroom.
-      maximumBytes: 256 * 1024,
+      maximumBytes,
       label: 'automation report',
     });
   }
@@ -120,13 +125,27 @@ export default class AutomationReportStore {
     if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error('automation-report-id-invalid');
     return this.stateFile(`${id}.json`, completed ? join(this.root, 'completed') : this.root);
   }
-  async read(id: string): Promise<AutomationReportRecord | undefined> {
+  private async readSaved(id: string): Promise<unknown> {
+    const file = this.file(id);
+    if (this.storage) {
+      const rows = await this.storage.agent
+        .read({ automationReports: { executionId: id } })
+        .catch((error: unknown) => {
+          if (nodeErrorCode(error) !== 'ENOENT') throw error;
+          return { automationReports: [] };
+        });
+      return rows.automationReports[0]?.value;
+    }
     // A terminal write commits before removing its active copy; terminal evidence wins a crash.
-    const data = (await this.file(id, true).read()) ?? (await this.file(id).read());
-    if (data === undefined) return;
-    const value: unknown = JSON.parse(data);
+    const data = (await this.file(id, true).read()) ?? (await file.read());
+    return data === undefined ? undefined : JSON.parse(data);
+  }
+  async read(id: string): Promise<AutomationReportRecord | undefined> {
+    const value = await this.readSaved(id);
+    if (value === undefined) return;
     if (
       !Value.Check(schema, value) ||
+      (this.storage && value.target.agentId !== this.storage.agentId) ||
       value.executionId !== id ||
       value.input.executionId !== id ||
       (value.completedAt !== undefined && !Number.isFinite(Date.parse(value.completedAt)))
@@ -138,7 +157,25 @@ export default class AutomationReportStore {
     if (!Value.Check(schema, record)) throw new Error('automation-report-record-invalid');
     const completed = terminal(record);
     if (completed) record.completedAt ??= new Date(this.now()).toISOString();
-    await this.file(record.executionId, completed).write(JSON.stringify(record));
+    const file = this.file(record.executionId, completed);
+    const contents = JSON.stringify(record);
+    if (this.storage) {
+      if (
+        record.target.agentId !== this.storage.agentId ||
+        record.input.executionId !== record.executionId
+      )
+        throw new Error('automation-report-record-invalid');
+      if (Buffer.byteLength(contents) > maximumBytes)
+        throw new Error('The automation report exceeds its size limit.');
+      return this.storage.agent.write([
+        {
+          table: 'automationReports',
+          action: 'save',
+          row: { executionId: record.executionId, value: record },
+        },
+      ]);
+    }
+    await file.write(contents);
     if (completed) await this.file(record.executionId).remove();
   }
   async withLock<T>(id: string, operation: () => Promise<T>): Promise<T> {
@@ -180,6 +217,7 @@ export default class AutomationReportStore {
       .map((name) => name.slice(0, -5));
   }
   async ids() {
+    if (this.storage) return this.storage.agent.listReportIds('all');
     return [
       ...new Set([
         ...(await this.directoryIds(this.root)),
@@ -193,9 +231,30 @@ export default class AutomationReportStore {
   }
   /** Terminal records live separately; legacy records move when recovery reconciles them. */
   async recoveryIds() {
+    if (this.storage) return this.storage.agent.listReportIds('recoverable');
     return this.directoryIds(this.root);
   }
+  private pruneOne(id: string) {
+    return this.withLock(id, async () => {
+      const record = await this.read(id);
+      if (!record || !terminal(record) || !record.completedAt || !this.expired(record.completedAt))
+        return;
+      if (this.storage)
+        return this.storage.agent.write([
+          { table: 'automationReports', action: 'remove', key: { executionId: id } },
+        ]);
+      // Finish an interrupted migration before removing its terminal copy.
+      await this.file(id).remove();
+      await this.file(id, true).remove();
+    });
+  }
   async prune() {
+    if (this.storage) {
+      const completedBefore = new Date(this.now() - reportLifetimeMs).toISOString();
+      for (const id of await this.storage.agent.listReportIds({ completedBefore }))
+        await this.pruneOne(id);
+      return;
+    }
     const checkpoint = this.stateFile('maintenance.json');
     const due = async () => {
       const saved = await checkpoint.read();
@@ -208,21 +267,8 @@ export default class AutomationReportStore {
     if (!(await due())) return;
     await this.locked('maintenance.json', async () => {
       if (!(await due())) return;
-      for (const id of await this.directoryIds(join(this.root, 'completed'))) {
-        await this.withLock(id, async () => {
-          const record = await this.read(id);
-          if (
-            record &&
-            terminal(record) &&
-            record.completedAt &&
-            this.expired(record.completedAt)
-          ) {
-            // Finish an interrupted migration before removing its terminal copy.
-            await this.file(id).remove();
-            await this.file(id, true).remove();
-          }
-        });
-      }
+      for (const id of await this.directoryIds(join(this.root, 'completed')))
+        await this.pruneOne(id);
       await checkpoint.write(JSON.stringify(this.now()));
     });
   }

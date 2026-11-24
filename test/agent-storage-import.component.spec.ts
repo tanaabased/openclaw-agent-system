@@ -1,3 +1,5 @@
+import AutomationReportStore from '../agent/automations/automation-report-store.ts';
+import { prepareAutomationReport } from '../agent/automations/automation-report.ts';
 import AutomationThreads from '../agent/automations/automation-threads.ts';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -251,6 +253,31 @@ describe('legacy agent storage import', () => {
           'native-action',
         );
       }
+      const reportId = randomUUID();
+      const reportDirectory = join(automations, 'reports');
+      if (!codex) {
+        const files = new AutomationReportStore(reportDirectory);
+        await files.write({
+          version: 1,
+          executionId: reportId,
+          hash: 'job',
+          manifestDigest: 'manifest',
+          target: {
+            agentId,
+            workspaceDir: workspace,
+            scope: autoScope,
+            sessionKey: 'report-session',
+          },
+          input: prepareAutomationReport({
+            id: 'job',
+            executionId: reportId,
+            startedAt: '2026-10-01T00:00:00Z',
+            cancelled: false,
+            result: { exitCode: 0, timedOut: false, truncated: false },
+          }),
+          state: 'uncertain',
+        });
+      }
       const preview = await importAgentStorage(options);
       assert.equal(preview.agentRows.pickupEnrollments?.insert, 1);
       assert.deepEqual(preview.unselectedSessionScopes, [orphan]);
@@ -264,6 +291,13 @@ describe('legacy agent storage import', () => {
           recovered.status === 'incomplete' &&
             recovered.code === 'automation-sidebar-create-unresolved',
         );
+      } else {
+        const reports = new AutomationReportStore(reportDirectory, Date.now, {
+          agentId,
+          agent: db.agent,
+        });
+        assert.deepEqual(await reports.recoveryIds(), [reportId]);
+        assert.equal((await reports.read(reportId))?.state, 'uncertain');
       }
       assert.deepEqual(await db.agent.readIntake(scope), checkpoint);
       assert.deepEqual(

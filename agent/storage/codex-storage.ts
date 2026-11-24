@@ -49,15 +49,8 @@ async function storageNames(directory: string) {
 }
 
 export async function* codexAgentDatabases(pluginData: string) {
-  const installation = codexStorageLocation(pluginData);
-  const { bindSqliteStorage } = await import('./agent-database.ts');
-  for (const name of await storageNames(installation.agentRoot)) {
-    const match = /^([a-z0-9][a-z0-9-]*)\.sqlite$/u.exec(name);
-    if (match) {
-      const agentId = match[1]!;
-      yield { agentId, agent: bindSqliteStorage(installation, agentId).agent };
-    }
-  }
+  const { sqliteAgentDatabases } = await import('./agent-database.ts');
+  yield* sqliteAgentDatabases(codexStorageLocation(pluginData));
 }
 
 export async function* retainedIntakeCandidates(

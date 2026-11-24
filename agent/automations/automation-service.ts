@@ -1,4 +1,4 @@
-import { bindAgentStore, type StorageBackend } from '../storage/backend.ts';
+import { bindAgentStore, defaultStorageBackend, type StorageBackend } from '../storage/backend.ts';
 import type { SqliteInstallation } from '../storage/storage-lifecycle.ts';
 import { realpath } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -143,9 +143,30 @@ function executionEvidence(state: NativeAutomation['state']): string {
 
 /** own explicit reconciliation; no timers, model calls, credentials or private scheduler access. */
 export default class AutomationService {
-  readonly reports: AutomationReportStore;
-  constructor(readonly dependencies: AutomationServiceDependencies) {
-    this.reports = new AutomationReportStore(join(dependencies.root, 'reports'), dependencies.now);
+  constructor(readonly dependencies: AutomationServiceDependencies) {}
+
+  async reportStore(agentId: string) {
+    const { root, now, sqliteInstallation, storageBackend } = this.dependencies;
+    const agent = await bindAgentStore(agentId, sqliteInstallation, storageBackend);
+    return new AutomationReportStore(join(root, 'reports'), now, agent && { agentId, agent });
+  }
+
+  async *reportStores() {
+    const {
+      root,
+      now,
+      sqliteInstallation,
+      storageBackend = defaultStorageBackend,
+    } = this.dependencies;
+    const directory = join(root, 'reports');
+    if (storageBackend === 'file') {
+      yield new AutomationReportStore(directory, now);
+      return;
+    }
+    if (!sqliteInstallation) throw new Error('SQLite requires runtime storage locations');
+    const { sqliteAgentDatabases } = await import('../storage/agent-database.ts');
+    for await (const storage of sqliteAgentDatabases(sqliteInstallation))
+      yield new AutomationReportStore(directory, now, storage);
   }
 
   async scope(manifest: AgentManifest, workspaceDir: string) {
@@ -561,8 +582,9 @@ export default class AutomationService {
     );
     const { store } = await this.scope(manifest, workspaceDir);
     const reports = [];
-    for (const executionId of await this.reports.ids()) {
-      const report = await this.reports.read(executionId);
+    const reportStore = await this.reportStore(manifest.agent.id);
+    for (const executionId of await reportStore.ids()) {
+      const report = await reportStore.read(executionId);
       if (report?.target.scope !== store.scope || report.input.id !== id) continue;
       reports.push({
         ...automationReportDelivery(report),

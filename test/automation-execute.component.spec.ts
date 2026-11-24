@@ -75,7 +75,7 @@ describe('cli/automation-execute', () => {
         automations: {
           assertReportCurrent: async () => {},
           selectReportSettings: async () => {},
-          reports: new AutomationReportStore(`${workspaceDir}/reports`),
+          reportStore: async () => new AutomationReportStore(`${workspaceDir}/reports`),
           admit: async () => ({
             command: { kind: 'exec', executable: 'true', args: [], timeoutSeconds: 10 },
             displayName: '⚙️ TEST JOB',
@@ -282,7 +282,7 @@ describe('cli/automation-execute', () => {
         automations: {
           assertReportCurrent: async () => {},
           selectReportSettings: async () => {},
-          reports: new AutomationReportStore(`${workspaceDir}/reports`),
+          reportStore: async () => new AutomationReportStore(`${workspaceDir}/reports`),
           admit: async () => ({
             command: { kind: 'exec', executable: 'true', args: [], timeoutSeconds: 10 },
             context: { agentId: 'a', workspaceDir },

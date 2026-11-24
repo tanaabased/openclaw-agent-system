@@ -385,27 +385,18 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     manifestService: lifecycleManifestService,
   };
   const automationService: AutomationService = new AutomationService(automationDependencies);
-  registerAutomationReportHooks(api, automationService.reports, async (id) => {
-    for (const executionId of id ? [id] : await automationService.reports.recoveryIds()) {
-      try {
-        await reconcileAutomationReport({
-          store: automationService.reports,
-          executionId,
-          credential: sessionDispatch,
-          assertCurrent: (record) => automationService.assertReportCurrent(record),
-          selectSettings: (record, request) =>
-            automationService.selectReportSettings(record, request),
-        });
-      } catch {
-        logger.warn('automation-report: recovery-unavailable');
-      }
-    }
-    if (!id) {
-      try {
-        await automationService.reports.prune();
-      } catch {
-        logger.warn('automation-report: cleanup-unavailable');
-      }
+  registerAutomationReportHooks(api, automationService, async (store, executionId) => {
+    try {
+      await reconcileAutomationReport({
+        store,
+        executionId,
+        credential: sessionDispatch,
+        assertCurrent: (record) => automationService.assertReportCurrent(record),
+        selectSettings: (record, request) =>
+          automationService.selectReportSettings(record, request),
+      });
+    } catch {
+      logger.warn('automation-report: recovery-unavailable');
     }
   });
   const dispatchRoot = join(

@@ -13,6 +13,7 @@ import {
 } from '../agent/automations/automation-report.ts';
 import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
 import { sessionDispatchRequest } from '../credentials/session-dispatch-client.ts';
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import registerAutomationReportHooks from '../core/automation-report-hook.ts';
 import { AutomationError } from '../agent/automations/automation-errors.ts';
 
@@ -61,6 +62,7 @@ describe('agent/automation-report-delivery', () => {
       correction?: 'valid' | 'duplicate' | 'multipart';
       legacy?: boolean;
     } = {},
+    store = new AutomationReportStore(`${workspaceDir}/reports`, () => Date.parse(input.startedAt)),
   ) {
     const calls: string[] = [];
     const messages: string[] = [];
@@ -69,9 +71,6 @@ describe('agent/automation-report-delivery', () => {
     const stages: { first: string; instruction: string; corrected: string; saved: string[] }[] = [];
     let selections = 0;
     let selected = false;
-    const store = new AutomationReportStore(`${workspaceDir}/reports`, () =>
-      Date.parse(input.startedAt),
-    );
     type HookResult =
       | {
           toolsAllow?: string[];
@@ -93,7 +92,12 @@ describe('agent/automation-report-delivery', () => {
           hooks.set(name, fn);
         },
       } as never,
-      store,
+      {
+        reportStore: async () => store,
+        async *reportStores() {
+          yield store;
+        },
+      },
       async () => {},
     );
     const target = {
@@ -477,12 +481,18 @@ describe('agent/automation-report-delivery', () => {
     assert.equal(f.messages.length, 1);
   });
   it('should preserve uncertain sends and reconcile the same durable identity after restart', async () => {
-    const f = fixture({ lostAck: true });
+    const { agent } = await sqliteAgentFixture(workspaceDir, 'a');
+    const reopen = () =>
+      new AutomationReportStore(`${workspaceDir}/reports`, () => Date.parse(input.startedAt), {
+        agentId: 'a',
+        agent,
+      });
+    const f = fixture({ lostAck: true }, reopen());
     assert.equal((await f.deliver()).status, 'uncertain');
-    assert.equal((await f.recover()).status, 'uncertain');
+    const restarted = fixture({}, reopen());
+    assert.equal((await restarted.recover()).status, 'uncertain');
     assert.equal(f.messages.length, 1);
-    const reopened = new AutomationReportStore(f.store.root);
-    assert.equal((await reopened.read(input.executionId))?.state, 'uncertain');
+    assert.equal(restarted.messages.length, 0);
   });
   it('should recover a final reply after a malformed acknowledgment without a second send', async () => {
     const f = fixture({ malformed: true });

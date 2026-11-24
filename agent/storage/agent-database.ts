@@ -1,6 +1,6 @@
 import { assertPrivateStateLocksHeld } from '../../core/private-state-lock-context.ts';
 import { constants } from 'node:fs';
-import { lstat, open } from 'node:fs/promises';
+import { lstat, open, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -17,7 +17,7 @@ import * as agentTables from './schema.ts';
 import * as installationTables from './installation-schema.ts';
 import sqliteRecords from './sqlite-records.ts';
 import type { AgentRows, InstallationRows } from './workflow-records.ts';
-import { directEntries, intakeRecords, intakeState } from './schema.ts';
+import { automationReports, directEntries, intakeRecords, intakeState } from './schema.ts';
 import { managedRepositories } from './installation-schema.ts';
 import type { BoundStorage, SqliteInstallation, StorageSchema } from './storage-lifecycle.ts';
 import type { IntakeState } from '../../channels/github/intake/record-store.ts';
@@ -192,6 +192,26 @@ class SqliteAgentStore extends SqliteDatabase {
   readonly read = this.records.read;
   readonly write = this.records.write;
 
+  listReportIds(selection: 'all' | 'recoverable' | { completedBefore: string }) {
+    const terminal = sql`json_extract(${automationReports.value}, '$.state') in ('delivered', 'failed')`;
+    const completedAt = sql`json_extract(${automationReports.value}, '$.completedAt')`;
+    // Legacy terminal reports get a completion date on first reconciliation.
+    const where =
+      selection === 'recoverable'
+        ? sql`not (${terminal}) or ${completedAt} is null`
+        : selection === 'all'
+          ? undefined
+          : sql`${terminal} and julianday(${completedAt}) <= julianday(${selection.completedBefore})`;
+    return this.use(true, (db) =>
+      db
+        .select({ id: automationReports.executionId })
+        .from(automationReports)
+        .where(where)
+        .all()
+        .map(({ id }) => id),
+    );
+  }
+
   async readReplies(scope: string) {
     const { replyDrafts } = await this.read({ replyDrafts: { scope } });
     return replyDrafts
@@ -356,4 +376,18 @@ export function bindSqliteStorage(
     ),
     installation: bindSqliteInstallation(installation),
   };
+}
+
+export async function* sqliteAgentDatabases(installation: SqliteInstallation) {
+  const names = await readdir(installation.agentRoot).catch((error: unknown) => {
+    if (nodeErrorCode(error) !== 'ENOENT') throw error;
+    return [];
+  });
+  for (const name of names) {
+    const match = /^([a-z0-9][a-z0-9-]*)\.sqlite$/u.exec(name);
+    if (match) {
+      const agentId = match[1]!;
+      yield { agentId, agent: bindSqliteStorage(installation, agentId).agent };
+    }
+  }
 }
