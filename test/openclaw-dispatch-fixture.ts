@@ -128,7 +128,7 @@ export default function openclawDispatchFixture(
       root: join(fixtureState.root, 'intake'),
       resetRoot: join(fixtureState.root, 'dispatch'),
       sqliteInstallation: installation,
-      storageBackend: options.storageBackend,
+      storageBackend: options.storageBackend ?? 'file',
       namespace: fixtureState.root,
       manifestService,
       now: () => now,

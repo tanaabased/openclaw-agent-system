@@ -67,6 +67,9 @@ describe('agent/codex-intake', () => {
     await mkdir(codexHome);
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
     await bindCodexWorkspace(pluginData, workspace);
+    const storage = bindSqliteStorage(codexStorageLocation(pluginData), manifest.agent.id);
+    await storage.agent.install();
+    await storage.installation.install();
   });
   afterEach(async () => {
     await rm(root, { force: true, recursive: true });
@@ -76,6 +79,7 @@ describe('agent/codex-intake', () => {
     const assigned = fixture.events.splice(0);
     let now = baseline;
     const deps = {
+      storageBackend: 'file' as const,
       codexHome,
       now: () => now,
       connect: async () => fixture.client,
@@ -135,6 +139,7 @@ describe('agent/codex-intake', () => {
     const assigned = provider.events.splice(0);
     let now = baseline;
     const deps = {
+      storageBackend: 'file' as const,
       codexHome,
       assertActive: async () => {},
       now: () => now,
@@ -527,6 +532,7 @@ describe('agent/codex-intake', () => {
     };
     let creates = 0;
     const deps = {
+      storageBackend: 'file' as const,
       codexHome,
       intake: { now: () => baseline, connect: async () => fixture.client },
       threadAdapter: {
@@ -668,12 +674,12 @@ describe('agent/codex-intake', () => {
         inspectCodexDispatchActivation(pluginData, deps, false, false, 'intake'),
         /intake-automation-update-required/,
       );
-      const inspection = await inspectCodexIntake(pluginData, { codexHome });
+      const inspection = await inspectCodexIntake(pluginData, deps);
       assert.equal(inspection.code, 'intake-automation-update-required');
       assert.match(inspection.remediation!, /apply the update/);
       assert.deepEqual(await selected.store.read(), before);
       const blocked = await runCodexIntake(pluginData, false, {
-        codexHome,
+        ...deps,
         now: () => baseline + 60000,
         connect: async () => assert.fail('an update must block before provider access'),
       });
@@ -688,7 +694,7 @@ describe('agent/codex-intake', () => {
       const repair = await prepareCodexAutomation(pluginData, update.digest, inputs, deps);
       await saveNative(repair.request);
       await acknowledgeCodexAutomation(pluginData, update.digest, undefined, deps);
-      assert.equal((await inspectCodexIntake(pluginData, { codexHome })).status, 'ready');
+      assert.equal((await inspectCodexIntake(pluginData, deps)).status, 'ready');
       assert.equal((await selected.store.read())!.baselineAt, before!.baselineAt);
       assert.equal(creates, 1);
     }
@@ -741,7 +747,7 @@ describe('agent/codex-intake', () => {
     assert.equal(conversations.get('intake-thread')!.name, 'ISSUE ASSIGNMENTS');
     assert.equal(conversations.get('intake-thread')!.model, 'gpt-6-luna');
     assert.equal(conversations.get('intake-thread')!.effort, 'medium');
-    const inspection = await inspectCodexIntake(pluginData, { codexHome });
+    const inspection = await inspectCodexIntake(pluginData, deps);
     assert.ok('baselineAt' in inspection);
     assert.equal(inspection.baselineAt, baseline);
     assert.equal(inspection.records!.length, 0);
@@ -776,14 +782,14 @@ describe('agent/codex-intake', () => {
       disable === 'manifest corruption' ? '{broken' : JSON.stringify(disabled),
     );
     assert.equal(
-      (await runCodexIntake(pluginData, false, { codexHome, now: () => baseline })).changed,
+      (await runCodexIntake(pluginData, false, { ...deps, now: () => baseline })).changed,
       true,
     );
     assert.equal(
-      (await runCodexIntake(pluginData, false, { codexHome, now: () => baseline })).changed,
+      (await runCodexIntake(pluginData, false, { ...deps, now: () => baseline })).changed,
       false,
     );
-    const retained = await inspectCodexIntake(pluginData, { codexHome });
+    const retained = await inspectCodexIntake(pluginData, deps);
     assert.equal(
       retained.code,
       disable === 'manifest corruption'
@@ -816,7 +822,7 @@ describe('agent/codex-intake', () => {
     }
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
     const stale = await runCodexIntake(pluginData, false, {
-      codexHome,
+      ...deps,
       now: () => baseline + 60000,
       connect: async () => {
         throw new Error('paused schedule must not authenticate');
@@ -830,7 +836,7 @@ describe('agent/codex-intake', () => {
     await saveNative(resume.request);
     await acknowledgeCodexAutomation(pluginData, reenable.digest, undefined, deps);
     assert.equal((await plan()).actions.length, 0);
-    assert.equal((await inspectCodexIntake(pluginData, { codexHome })).baselineAt, baseline);
+    assert.equal((await inspectCodexIntake(pluginData, deps)).baselineAt, baseline);
     assert.equal(creates, 1);
     // preserve cleanup after a native write whose policy disappeared before acknowledgment.
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(disabled));

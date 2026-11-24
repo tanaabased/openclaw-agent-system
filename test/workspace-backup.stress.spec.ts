@@ -1,3 +1,4 @@
+import fileBackupService from './file-backup-service.ts';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { link, mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises';
@@ -5,7 +6,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
-import WorkspaceBackupService from '../agent/backup/backup-service.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 
 const executeFile = promisify(execFile);
@@ -19,7 +19,7 @@ describe('workspace backup stress', () => {
   let root: string;
   let workspace: string;
   let cleanupTimeout: number;
-  const service = new WorkspaceBackupService();
+  const service = fileBackupService();
   beforeEach(async () => {
     cleanupTimeout = 10_000;
     root = await realpath(await mkdtemp(join(tmpdir(), 'workspace-backup-')));

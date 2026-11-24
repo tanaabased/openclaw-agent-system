@@ -39,6 +39,10 @@ export default function codexDispatchFixture() {
     projects: unknown[];
     gitCalls: string[][];
   };
+  const fileStorage = () => ({
+    codexHome: fixtureState.codexHome,
+    storageBackend: 'file' as const,
+  });
   const models = {
     default: { model: 'openai/gpt-6-astra', effort: 'high' },
     low: { model: 'openai/gpt-6-luna', effort: 'medium' },
@@ -225,13 +229,13 @@ export default function codexDispatchFixture() {
     fixtureState.fixture = intakeFixture();
     fixtureState.now = baseline;
     await runCodexIntake(fixtureState.pluginData, true, {
-      codexHome: fixtureState.codexHome,
+      ...fileStorage(),
       now: () => fixtureState.now,
       connect: async () => fixtureState.fixture.client,
     });
     fixtureState.now += 60000;
     await runCodexIntake(fixtureState.pluginData, false, {
-      codexHome: fixtureState.codexHome,
+      ...fileStorage(),
       assertActive: async () => {},
       now: () => fixtureState.now,
       connect: async () => fixtureState.fixture.client,
@@ -253,7 +257,7 @@ export default function codexDispatchFixture() {
         cleanupConfiguration({
           env: { OPENCLAW_CONFIG_PATH: join(fixtureState.root, 'openclaw.json') },
         }),
-      codexHome: fixtureState.codexHome,
+      ...fileStorage(),
       assertActive: async () => {},
       now: () => fixtureState.now,
       feedbackConnect: async () =>
@@ -409,7 +413,7 @@ export default function codexDispatchFixture() {
         );
       },
     };
-    const store = codexInstanceStore(fixtureState.pluginData);
+    const store = codexInstanceStore(fixtureState.pluginData, 'file');
     fixtureState.deps.claims = new CodexAssignmentClaims(store, () => client);
     return { store, client, comments };
   }
@@ -418,7 +422,7 @@ export default function codexDispatchFixture() {
     Object.assign(configured.github['issue-assignment'], { assessment });
     await writeFile(join(fixtureState.workspace, 'agent.yaml'), JSON.stringify(configured));
     await runCodexIntake(fixtureState.pluginData, true, {
-      codexHome: fixtureState.codexHome,
+      ...fileStorage(),
       now: () => fixtureState.now,
       connect: async () => fixtureState.fixture.client,
     });
@@ -439,7 +443,7 @@ export default function codexDispatchFixture() {
       createdAt: new Date(fixtureState.now).toISOString(),
     });
     await runCodexIntake(fixtureState.pluginData, false, {
-      codexHome: fixtureState.codexHome,
+      ...fileStorage(),
       assertActive: async () => {},
       now: () => fixtureState.now,
       connect: async () => fixtureState.fixture.client,
@@ -486,7 +490,7 @@ export default function codexDispatchFixture() {
     });
     await writeFile(join(fixtureState.workspace, 'agent.yaml'), JSON.stringify(configured));
     await runCodexIntake(fixtureState.pluginData, true, {
-      codexHome: fixtureState.codexHome,
+      ...fileStorage(),
       now: () => fixtureState.now,
       connect: async () => fixtureState.fixture.client,
     });

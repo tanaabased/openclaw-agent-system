@@ -26,7 +26,6 @@ Complete a scheduled prompt in its owning agent context, then preserve its job a
 ```bash
 # should prepare the packed plugin and strict scheduled-prompt fixture
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --yolo
-openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 openclaw-aimock prepare --scenario openclaw-automation-prompt
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-prompt"

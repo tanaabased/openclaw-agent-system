@@ -369,6 +369,7 @@ describe('agent/automation-service', () => {
     };
     service = new AutomationService({
       root: join(root, 'state'),
+      storageBackend: 'file',
       profile: root,
       command: ['/usr/bin/node', '/fixed/openclaw.mjs'],
       environment: { OPENCLAW_STATE_DIR: root },

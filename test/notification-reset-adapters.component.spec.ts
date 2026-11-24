@@ -125,7 +125,10 @@ describe('agent/notification reset runtime adapters', () => {
       );
       const binding = await bindCodexWorkspace(pluginData, workspace);
       assert.equal(binding.status, 'bound', JSON.stringify(binding));
-      const current = await selectCodexTaskContext(pluginData, { codexHome });
+      const current = await selectCodexTaskContext(pluginData, {
+        codexHome,
+        storageBackend: 'file',
+      });
       const saved: SavedAutomation = {
         id: 'job',
         definition: {
@@ -141,6 +144,7 @@ describe('agent/notification reset runtime adapters', () => {
       };
       const deps = {
         codexHome,
+        storageBackend: 'file' as const,
         caller: 'operator',
         connect: async () => client,
         automation: async () => saved,
@@ -582,7 +586,7 @@ describe('agent/notification reset runtime adapters', () => {
       JSON.stringify({ 'schema-version': 1, agent: { id: 'receiver' } }),
     );
     await bindCodexWorkspace(pluginData, workspace);
-    const current = await selectCodexTaskContext(pluginData, { codexHome });
+    const current = await selectCodexTaskContext(pluginData, { codexHome, storageBackend: 'file' });
     await seed(current.store, current.workspace);
     const make = (id: string, status: 'ACTIVE' | 'PAUSED'): SavedAutomation => ({
       id,
@@ -603,6 +607,7 @@ describe('agent/notification reset runtime adapters', () => {
     let active = true;
     const replaced: string[] = [];
     const deps = {
+      storageBackend: 'file' as const,
       codexHome,
       caller: 'operator',
       automation: async () => structuredClone(intake),

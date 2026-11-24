@@ -27,7 +27,6 @@ that repeat installation preserves the account.
 ```bash
 # should install gog before reconciling the declared google account
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE"
-openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 cd "$GITHUB_WORKSPACE/examples/openclaw-google"
 openclaw agent-system credentials set op --from-env --store file | grep -F file
 openclaw agent-system install --yes --json | jq -e '.outcomes | any(.code == "google-credentials-created") and ([.[] | .stepId // .component] | index("gog-cli") < index("google"))'

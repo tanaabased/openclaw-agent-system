@@ -451,6 +451,7 @@ describe('agent/native-assessment-entry', () => {
     const calls: string[] = [];
     const fixture = intakeFixture();
     const deps = {
+      storageBackend: 'file' as const,
       codexHome: home,
       threadId: 'chat',
       git,
@@ -556,6 +557,7 @@ describe('agent/native-assessment-entry', () => {
     };
     const calls: string[] = [];
     const intake = new OpenClawIntake({
+      storageBackend: 'file',
       root: join(root, 'intake'),
       namespace: root,
       connect: async () => provider,

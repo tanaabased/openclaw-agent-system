@@ -65,7 +65,6 @@ jobs:
       - name: Run Leia-backed example
         shell: bash
         env:
-          OPENCLAW_CONFIG_PATH: ${{ format('{0}/fixtures/sqlite-storage.json', github.workspace) }}
           AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
           CODEX_HOME: ${{ runner.temp }}/codex-home
           CODEX_TOOLS_CODEX_HOME: ${{ runner.temp }}/codex-home

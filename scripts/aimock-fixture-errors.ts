@@ -1,10 +1,13 @@
 import { getTextContent, type ChatCompletionRequest, type Fixture } from '@copilotkit/aimock';
 
+import { githubCliDiagnostic } from '../credentials/github-diagnostic.ts';
 import { providerDiagnostic, type ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 
 import type { OpenClawAIMockScenario } from './aimock-scenario.ts';
 
 function resultDiagnostic(content: string): {
+  exitCode?: number;
+  httpStatus?: number;
   status?: string;
   code?: string;
   providerDiagnostic?: ProviderDiagnostic;
@@ -23,7 +26,14 @@ function resultDiagnostic(content: string): {
       typeof value?.code === 'string' && /^[a-z]+(?:-[a-z]+)+$/u.test(value.code)
         ? value.code
         : undefined;
+    const exitCode = Number.isSafeInteger(value?.exitCode) ? value.exitCode : undefined;
+    const httpStatus =
+      exitCode && typeof value.stdout === 'string' && typeof value.stderr === 'string'
+        ? githubCliDiagnostic(value).httpStatus
+        : undefined;
     return {
+      ...(exitCode !== undefined ? { exitCode } : {}),
+      ...(httpStatus ? { httpStatus } : {}),
       ...(status ? { status } : {}),
       ...(code ? { code } : {}),
       ...(value?.providerDiagnostic?.provider === 'github'
@@ -52,6 +62,8 @@ export default function captureFixtureErrors(source: OpenClawAIMockScenario) {
       callId?: string;
       characters: number;
       truncated: boolean;
+      exitCode?: number;
+      httpStatus?: number;
       status?: string;
       code?: string;
       providerDiagnostic?: ProviderDiagnostic;

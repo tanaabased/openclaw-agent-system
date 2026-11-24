@@ -10,7 +10,7 @@ import codexDispatchHandoff from '../agent/tasks/dispatch/codex-dispatch-handoff
 import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
 
 describe('agent/codex-runtime', () => {
-  it('uses the configured backend for standalone install and subsequent instance commands', async () => {
+  it('defaults standalone install and instance commands to sqlite and honors an explicit file backend', async () => {
     const root = await mkdtemp(join(tmpdir(), 'codex-backend-'));
     try {
       const workspace = join(root, 'workspace');
@@ -29,12 +29,7 @@ describe('agent/codex-runtime', () => {
             env: { ...process.env, OPENCLAW_CONFIG_PATH: config, CODEX_HOME: root },
           },
         );
-      await writeFile(
-        config,
-        JSON.stringify({
-          plugins: { entries: { 'agent-system': { config: { storage: { backend: 'sqlite' } } } } },
-        }),
-      );
+      await writeFile(config, '{}');
       const installed = run(['setup', 'install']);
       assert.equal(installed.status, 0, installed.stderr);
       const renamed = run(['instance', 'rename'], { name: 'pilot' });
@@ -48,7 +43,12 @@ describe('agent/codex-runtime', () => {
       } finally {
         db.close();
       }
-      await writeFile(config, '{}');
+      await writeFile(
+        config,
+        JSON.stringify({
+          plugins: { entries: { 'agent-system': { config: { storage: { backend: 'file' } } } } },
+        }),
+      );
       const file = run(['instance', 'inspect']);
       assert.equal(file.status, 0, file.stderr);
       assert.deepEqual(JSON.parse(file.stdout), { status: 'missing' });

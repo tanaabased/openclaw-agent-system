@@ -7,16 +7,19 @@ import { join } from 'node:path';
 import PathProjectionStore, { type StoredPathProjection } from '../paths/projection-store.ts';
 
 describe('paths/projection-store', () => {
+  const fileStore = (rootDir?: string, currentUid?: number) =>
+    new PathProjectionStore({ storageBackend: 'file', rootDir, currentUid });
+
   it('should return no receipt when the store or agent receipt is absent', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agent-system-path-store-'));
 
-    assert.equal(await new PathProjectionStore({}).read('data'), undefined);
-    assert.equal(await new PathProjectionStore({ rootDir: root }).read('data'), undefined);
+    assert.equal(await fileStore().read('data'), undefined);
+    assert.equal(await fileStore(root).read('data'), undefined);
   });
 
   it('should persist and read an agent-owned receipt with private permissions', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agent-system-path-store-'));
-    const store = new PathProjectionStore({ currentUid: process.getuid?.(), rootDir: root });
+    const store = fileStore(root, process.getuid?.());
     const state: StoredPathProjection = {
       schemaVersion: 1,
       agentId: 'data',
@@ -65,11 +68,11 @@ describe('paths/projection-store', () => {
     };
 
     await assert.rejects(
-      new PathProjectionStore({ rootDir: root }).write(state),
+      fileStore(root).write(state),
       /does not have a usable configuration directory/u,
     );
     await assert.rejects(
-      new PathProjectionStore({}).write({ ...state, agentId: 'data' }),
+      fileStore().write({ ...state, agentId: 'data' }),
       /does not have a usable configuration directory/u,
     );
   });
@@ -89,10 +92,7 @@ describe('paths/projection-store', () => {
     );
     await chmod(join(agentDir, 'path-projection.json'), 0o600);
 
-    await assert.rejects(
-      new PathProjectionStore({ rootDir: root }).read('data'),
-      /path projection receipt is invalid/u,
-    );
+    await assert.rejects(fileStore(root).read('data'), /path projection receipt is invalid/u);
   });
 
   it('should reject non-regular receipt paths', async () => {
@@ -104,14 +104,14 @@ describe('paths/projection-store', () => {
     await symlink(target, join(agentDir, 'path-projection.json'));
 
     await assert.rejects(
-      new PathProjectionStore({ rootDir: root }).read('data'),
+      fileStore(root).read('data'),
       /path projection receipt may not be a symbolic link/u,
     );
   });
 
   it('should reject public or incorrectly owned receipt state', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agent-system-path-store-'));
-    const store = new PathProjectionStore({ currentUid: process.getuid?.(), rootDir: root });
+    const store = fileStore(root, process.getuid?.());
     const state: StoredPathProjection = {
       schemaVersion: 1,
       agentId: 'data',
@@ -128,7 +128,7 @@ describe('paths/projection-store', () => {
     if (currentUid === undefined) return;
     await chmod(receiptPath, 0o600);
     await assert.rejects(
-      new PathProjectionStore({ currentUid: currentUid + 1, rootDir: root }).read('data'),
+      fileStore(root, currentUid + 1).read('data'),
       /must be owned by the current user/u,
     );
   });
@@ -139,10 +139,7 @@ describe('paths/projection-store', () => {
     await mkdir(agentDir, { mode: 0o700 });
     await chmod(agentDir, 0o755);
 
-    await assert.rejects(
-      new PathProjectionStore({ rootDir: root }).read('data'),
-      /directories must be private/u,
-    );
+    await assert.rejects(fileStore(root).read('data'), /directories must be private/u);
   });
 
   it('should reject oversized and invalid utf8 receipt state', async () => {
@@ -153,10 +150,7 @@ describe('paths/projection-store', () => {
     await writeFile(oversizedPath, Buffer.alloc(64 * 1024 + 1));
     await chmod(oversizedPath, 0o600);
 
-    await assert.rejects(
-      new PathProjectionStore({ rootDir: oversizedRoot }).read('data'),
-      /exceeds its size limit/u,
-    );
+    await assert.rejects(fileStore(oversizedRoot).read('data'), /exceeds its size limit/u);
 
     const invalidRoot = await mkdtemp(join(tmpdir(), 'agent-system-path-store-'));
     const invalidAgentDir = join(invalidRoot, 'data');
@@ -166,7 +160,7 @@ describe('paths/projection-store', () => {
     await chmod(invalidPath, 0o600);
 
     await assert.rejects(
-      new PathProjectionStore({ rootDir: invalidRoot }).read('data'),
+      fileStore(invalidRoot).read('data'),
       /path projection receipt is invalid/u,
     );
   });

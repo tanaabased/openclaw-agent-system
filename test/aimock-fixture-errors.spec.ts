@@ -48,7 +48,13 @@ describe('aimock fixture error diagnostics', () => {
       messages: [
         result,
         wrapped,
-        { code: 'private prose with spaces', status: 'private status' },
+        {
+          code: 'private prose with spaces',
+          status: 'private status',
+          exitCode: 1,
+          stdout: 'private context',
+          stderr: 'gh: Bad credentials (HTTP 401)',
+        },
       ].map((value) => ({ role: 'tool', content: JSON.stringify(value) })),
     } as ChatCompletionRequest;
     assert.throws(
@@ -64,6 +70,8 @@ describe('aimock fixture error diagnostics', () => {
       assert.equal(observed.providerDiagnostic?.retryAfterMs, 12000);
       assert.match(observed.providerDiagnostic?.providerMessage ?? '', /API rate limit exceeded/u);
     }
+    assert.equal(results[2]!.exitCode, 1);
+    assert.equal(results[2]!.httpStatus, 401);
     assert.equal(results[2]!.code, undefined);
     assert.equal(results[2]!.status, undefined);
     assert.deepEqual(captured.errors[0]!.frames, ['    at fixture (/private/tmp/fixture.ts:1:1)']);

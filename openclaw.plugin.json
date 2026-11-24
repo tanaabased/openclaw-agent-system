@@ -81,7 +81,7 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "backend": { "type": "string", "enum": ["file", "sqlite"], "default": "file" }
+          "backend": { "type": "string", "enum": ["file", "sqlite"], "default": "sqlite" }
         }
       },
       "cleanup": {

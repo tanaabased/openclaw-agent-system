@@ -4,7 +4,7 @@ import IntakeRecordStore, {
 import type { BoundStorage, SqliteInstallation } from './storage-lifecycle.ts';
 
 export type StorageBackend = 'file' | 'sqlite';
-export const defaultStorageBackend: StorageBackend = 'file';
+export const defaultStorageBackend: StorageBackend = 'sqlite';
 
 export function configuredStorageBackend(storage: unknown): StorageBackend {
   if (storage === undefined) return defaultStorageBackend;

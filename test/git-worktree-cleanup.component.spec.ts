@@ -20,7 +20,7 @@ describe('tools/git/worktree cleanup repository boundary', () => {
   beforeEach(async () => {
     fixture = await repositoryFixture();
     await mkdir(fixture.layout.worktreeRoot, { recursive: true, mode: 0o700 });
-    const repositories = new GitRepositoryService();
+    const repositories = new GitRepositoryService({ storageBackend: 'file' });
     const lease = await repositories.acquire(fixture.context, fixture.layout, repositoryId, source);
     try {
       const repository = await withPrivateStateLock(lease, () =>
@@ -35,6 +35,7 @@ describe('tools/git/worktree cleanup repository boundary', () => {
       gitWorktreeRepositoryDirectoryName(repositoryId) + '.repository.json',
     );
     service = new GitWorktreeService({
+      storageBackend: 'file',
       layoutService: {
         async inspect() {
           return {

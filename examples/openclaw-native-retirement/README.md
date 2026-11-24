@@ -28,7 +28,6 @@ intake. Verify archival through the real tool, then restore native history.
 ```bash
 # should prepare an isolated gateway with the packed plugin and strict model
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --yolo
-openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 openclaw-aimock prepare --scenario openclaw-native-retirement
 openclaw config set skills.workshop.autonomous.mode off
 openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --strict-json

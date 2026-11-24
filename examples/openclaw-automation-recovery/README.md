@@ -29,7 +29,6 @@ preserving the unrelated prompt.
 ```bash
 # should prepare the packed plugin and strict scheduled-prompt fixture
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service
-openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 openclaw-aimock prepare --scenario openclaw-automation-recovery
 
 # should install the owning workspace before starting the gateway

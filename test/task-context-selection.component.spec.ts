@@ -55,12 +55,13 @@ describe('task context selection', () => {
   const codex = (options = {}) =>
     selectCodexTaskContext(
       data,
-      { codexHome: home, inspectBinding: async () => inspection },
+      { storageBackend: 'file', codexHome: home, inspectBinding: async () => inspection },
       options,
     );
   const openclaw = (options = {}) =>
     selectOpenClawTaskContext(
       {
+        storageBackend: 'file',
         root: data,
         namespace: home,
         manifestService: {

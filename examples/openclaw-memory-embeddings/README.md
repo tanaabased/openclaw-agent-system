@@ -22,7 +22,6 @@ Install an embedding credential reference, retrieve an indexed note through the 
 ```bash
 # should prepare the packed plugin for installed embedding retrieval
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE"
-openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 ```
 
 ## Testing

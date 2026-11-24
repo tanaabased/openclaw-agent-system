@@ -19,6 +19,7 @@ describe('OpenClaw command worktree ownership', () => {
       await mkdir(worktree);
       const dispatchRoot = join(root, 'dispatch');
       const taskContext = {
+        storageBackend: 'file' as const,
         root: join(root, 'intake'),
         namespace: root,
       };

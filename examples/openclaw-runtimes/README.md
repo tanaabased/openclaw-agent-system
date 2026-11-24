@@ -31,7 +31,6 @@ openclaw-setup \
   --agent-system "$AGENT_SYSTEM_PACKAGE" \
   --model openai/gpt-5.4-nano \
   --yolo
-openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 openclaw-aimock prepare --scenario openclaw-runtimes
 openclaw config set models.mode merge
 openclaw config set memory.search.enabled false --strict-json

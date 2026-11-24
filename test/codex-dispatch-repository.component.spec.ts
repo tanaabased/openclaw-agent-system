@@ -35,6 +35,7 @@ describe('agent/codex-dispatch-repository', () => {
       },
       {
         git: fixture.git.execute.bind(fixture.git),
+        storageBackend: 'file',
         authorize,
         retain: async (value) => {
           retained = structuredClone(value);

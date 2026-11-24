@@ -95,17 +95,19 @@ describe('agent/codex-feedback', () => {
     await bindCodexWorkspace(pluginData, workspace);
     const fixture = intakeFixture();
     await runCodexIntake(pluginData, true, {
+      storageBackend: 'file',
       codexHome,
       now: () => baseline,
       connect: async () => fixture.client,
     });
     await runCodexIntake(pluginData, false, {
+      storageBackend: 'file',
       codexHome,
       now: () => baseline + 60000,
       assertActive: async () => {},
       connect: async () => fixture.client,
     });
-    const current = await selectCodexTaskContext(pluginData, { codexHome });
+    const current = await selectCodexTaskContext(pluginData, { codexHome, storageBackend: 'file' });
     const admitted = (await current.store.read())!.records[0]!;
     store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     await store.exclusive(async (state, save) => {
@@ -163,6 +165,7 @@ describe('agent/codex-feedback', () => {
     };
     deps = {
       readCleanupConfiguration: async () => parseCleanupConfiguration(),
+      storageBackend: 'file',
       codexHome,
       now: () => baseline + 70000 + occurrence,
       activation: async () => ({
@@ -414,7 +417,7 @@ describe('agent/codex-feedback', () => {
         PR_other: { since: baseline, startedAt: baseline + 1, reads: {} },
       };
       const before = structuredClone(owner.feedback!);
-      const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
+      const current = await selectCodexTaskContext(pluginData, deps);
       const provider = await deps.feedbackConnect!(current.workspace, new AbortController().signal);
       provider.comments.reviews = {
         listReviews: async () => ({ values: [], nextPage: 1 }),
@@ -485,7 +488,7 @@ describe('agent/codex-feedback', () => {
   for (const association of ['relinked', 'unlinked'] as const) {
     it(`should discard ${association} pr scratch durably without querying the old source`, async () => {
       await prepare();
-      const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
+      const current = await selectCodexTaskContext(pluginData, deps);
       await store.exclusive(async (state, save) => {
         const owner = state.records[0]!;
         owner.pullRequestLink =
@@ -556,7 +559,7 @@ describe('agent/codex-feedback', () => {
       id: 'e'.repeat(64),
       sourceThreadId: 'changed-owner',
     });
-    const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
+    const current = await selectCodexTaskContext(pluginData, deps);
     const visits: string[] = [];
     const scans = await scanCodexFeedback({
       state,
@@ -591,7 +594,7 @@ describe('agent/codex-feedback', () => {
       await save();
     });
     occurrence++;
-    const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
+    const current = await selectCodexTaskContext(pluginData, deps);
     const scans = await scanCodexFeedback({
       state: await store.read(),
       current,
@@ -629,7 +632,7 @@ describe('agent/codex-feedback', () => {
       const first = state.records[0]!;
       const peer = { ...structuredClone(first), id: 'e'.repeat(64) };
       state.records.push(peer);
-      const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
+      const current = await selectCodexTaskContext(pluginData, deps);
       const provider = await deps.feedbackConnect!(current.workspace, new AbortController().signal);
       const raw = {
         nodeId: 'IC_human',
@@ -680,7 +683,7 @@ describe('agent/codex-feedback', () => {
   }
 
   async function feedbackReport(fresh = true) {
-    const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
+    const current = await selectCodexTaskContext(pluginData, deps);
     return store.exclusive(async (state, save) => {
       const input = {
         automationId: 'automation',
@@ -719,7 +722,7 @@ describe('agent/codex-feedback', () => {
     );
     assert.doesNotMatch(report.response, /DONT_NOTIFY|nothing new to report/);
     assert.deepEqual(await feedbackReport(false), report);
-    const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
+    const current = await selectCodexTaskContext(pluginData, deps);
     store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     const repeated = await feedbackReport();
     assert.ok('response' in repeated && typeof repeated.response === 'string');
@@ -1694,7 +1697,7 @@ describe('agent/codex-feedback', () => {
   it('should retain admitted feedback when discovery configuration is removed', async () => {
     await prepare();
     const manifestPath = join(root, 'workspace', 'agent.yaml');
-    const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
+    const current = await selectCodexTaskContext(pluginData, deps);
     await writeFile(
       manifestPath,
       JSON.stringify({

@@ -28,7 +28,6 @@ implementing changes, or publishing to GitHub.
 ```bash
 # should prepare the packed plugin and strict direct-operation fixture
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --needs-ssh-key --yolo
-openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 openclaw-aimock prepare --scenario openclaw-issue-assessment
 openclaw config set skills.workshop.autonomous.mode off
 # keep unrelated nightly memory turns out of the strict direct-operation fixture

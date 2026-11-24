@@ -398,6 +398,7 @@ export async function importAgentStorage(options: ImportOptions) {
         agent.add('automationReports', reportRow(value));
     }
     const projection = await new PathProjectionStore({
+      storageBackend: 'file',
       rootDir: privateRoot,
       currentUid: process.getuid?.(),
     }).read(agentId);

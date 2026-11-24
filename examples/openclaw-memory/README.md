@@ -23,7 +23,6 @@ Install manifest-managed keyword memory, index a known workspace note, retrieve 
 ```bash
 # should install manifest-managed keyword memory through the packed plugin
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE"
-openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 cd "$GITHUB_WORKSPACE/examples/openclaw-memory"
 openclaw agent-system install --yes --json | jq -e '.outcomes | any(.component == "memory" and .code == "set-agent-memory" and .status == "updated")'
 openclaw config get agents.entries.memory-tanaabot.memory.search --json | jq -e '.provider == "none" and .fallback == "none" and (has("remote") | not)'

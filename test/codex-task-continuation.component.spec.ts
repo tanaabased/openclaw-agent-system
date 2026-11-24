@@ -292,6 +292,7 @@ describe('agent/codex task-continuation', () => {
         { ...context.deliveryPrepareRequest, title: 'One poem', body: 'The completed poem.' },
         {
           codexHome: fixtureState.codexHome,
+          storageBackend: fixtureState.deps.storageBackend,
           threadId: fixtureState.native!.id,
           native: fixtureState.deps.native,
           git: (cwd, argv, signal) =>

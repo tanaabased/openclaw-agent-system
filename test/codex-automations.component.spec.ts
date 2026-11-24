@@ -213,7 +213,7 @@ describe('agent/codex-automations', () => {
   };
   const job = (extra = '') =>
     `  - id: review\n    schedule: every 1 hour\n    prompt: Review this workspace.\n${extra}`;
-  const deps = () => ({ codexHome });
+  const deps = () => ({ codexHome, storageBackend: 'file' as const });
   const inputs = () => ({ projects, nativeInventory });
   function applySidebar(effect: unknown) {
     const action = effect as {

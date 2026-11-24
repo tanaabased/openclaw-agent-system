@@ -1,3 +1,4 @@
+import fileBackupService from './file-backup-service.ts';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import {
@@ -21,7 +22,6 @@ import { gzipSync } from 'node:zlib';
 
 import BackupAttemptWriter from '../agent/backup/backup-attempt.ts';
 import cleanup, { BackupCleanupError, backupOwnerState } from '../agent/backup/backup-cleanup.ts';
-import WorkspaceBackupService from '../agent/backup/backup-service.ts';
 import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
 import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 
@@ -273,7 +273,7 @@ describe('agent/backup-cleanup', () => {
     await chmod(control, 0o755);
     await assert.rejects(run(), /unsafe/u);
     await chmod(control, 0o700);
-    const service = new WorkspaceBackupService();
+    const service = fileBackupService();
     const manifest = {
       schemaVersion: 1 as const,
       agent: { id: 'cleanup-bot' },
@@ -309,14 +309,14 @@ describe('agent/backup-cleanup', () => {
       agent: { id: 'cleanup-bot' },
       backup: { openclawState: 'off' as const },
     };
-    const service = new WorkspaceBackupService();
+    const service = fileBackupService();
     const created = await service.create(await service.plan({ manifest, workspaceDir }));
     assert.equal((await service.verify(created.archive)).agentId, 'cleanup-bot');
     assert.deepEqual(await readdir(control), []);
     const agentDir = join(root, 'agent');
     await mkdir(agentDir);
     await writeFile(join(agentDir, 'openclaw-agent.sqlite'), 'fixture');
-    const failing = new WorkspaceBackupService(
+    const failing = fileBackupService(
       async () => ({ paths: [], agentDir }),
       async () => {
         throw new Error('uncertain child');

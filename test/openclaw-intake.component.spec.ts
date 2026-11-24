@@ -1,3 +1,4 @@
+import type { RuntimeStorageOptions } from '../agent/storage/backend.ts';
 import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import { automationThreadSelection } from '../agent/automations/automation-thread-selection.ts';
 import assert from 'node:assert/strict';
@@ -57,7 +58,7 @@ describe('openclaw v2 intake slice', () => {
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
   });
-  function fixture() {
+  function fixture(storage: RuntimeStorageOptions = { storageBackend: 'file' }) {
     const value = manifest();
     const provider = intakeFixture();
     provider.events.length = 0;
@@ -81,6 +82,7 @@ describe('openclaw v2 intake slice', () => {
       },
     };
     const service = new OpenClawIntake({
+      ...storage,
       root: join(root, 'v2'),
       namespace: root,
       manifestService: manifests,
@@ -102,21 +104,16 @@ describe('openclaw v2 intake slice', () => {
       },
     };
   }
-  it('should commit sqlite intake and serialize competing assignment consumers', async () => {
-    const f = fixture();
+  it('should default to sqlite and serialize competing assignment consumers', async () => {
     const installation = {
       agentRoot: join(root, 'agent-system-storage'),
       installationRoot: join(root, 'agent-system-instance'),
       schemaRoot: join(import.meta.dirname, '../agent/storage'),
     };
+    const f = fixture({ sqliteInstallation: installation });
     const database = bindSqliteStorage(installation, f.value.agent.id).agent;
     await database.install();
-    const sqlite = () =>
-      new OpenClawIntake({
-        ...f.service.dependencies,
-        storageBackend: 'sqlite',
-        sqliteInstallation: installation,
-      });
+    const sqlite = () => new OpenClawIntake(f.service.dependencies);
     await sqlite().run(f.value, root, 'activate');
     f.provider.events.push(...intakeFixture().events);
     f.setNow(baseline + 120000);
@@ -136,7 +133,7 @@ describe('openclaw v2 intake slice', () => {
     );
     assert.deepEqual((await sqlite().inspect(f.value, root)).records, before!.records);
     await assert.rejects(readFile(first.location.path), { code: 'ENOENT' });
-    assert.equal(await (await f.service.select(f.value, root)).store.read(), undefined);
+    assert.equal(await (await fixture().service.select(f.value, root)).store.read(), undefined);
   });
   it('should inspect and admit assignments while an unrelated task payload needs repair', async () => {
     const f = fixture();

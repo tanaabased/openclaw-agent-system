@@ -598,7 +598,10 @@ describe('agent/codex dispatch', () => {
     }>;
     assert.ok(records[0]!.effective);
     assert.equal(records[0]!.claimId, undefined);
-    assert.equal(await codexInstanceStore(fixtureState.pluginData).inspect(), undefined);
+    assert.equal(
+      await codexInstanceStore(fixtureState.pluginData, fixtureState.deps.storageBackend).inspect(),
+      undefined,
+    );
     assert.equal(comments.length, 0);
   });
 
@@ -916,9 +919,9 @@ describe('agent/codex dispatch', () => {
     }
     fixtureState.deps.connect = async () => connection.client;
     fixtureState.deps.claims = new CodexAssignmentClaims(
-      codexInstanceStore(fixtureState.pluginData),
+      codexInstanceStore(fixtureState.pluginData, fixtureState.deps.storageBackend),
     );
-    await codexInstanceStore(fixtureState.pluginData).identity();
+    await codexInstanceStore(fixtureState.pluginData, fixtureState.deps.storageBackend).identity();
     const first = await fixtureState.next();
     assert.equal(first.status, 'claim-waiting', JSON.stringify(first));
     assert.equal((await fixtureState.next()).status, 'idle');
