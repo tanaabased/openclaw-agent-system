@@ -69,7 +69,9 @@ jobs:
           CODEX_HOME: ${{ runner.temp }}/codex-home
           CODEX_TOOLS_CODEX_HOME: ${{ runner.temp }}/codex-home
           XDG_CONFIG_HOME: ${{ runner.temp }}/agent-system-config
-        run: leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
+        run: |
+          unset OPENCLAW_CONFIG_PATH
+          leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
       - name: RUNNING A LEVEL THREE DIAGNOSTICS
         if: failure()
         shell: bash

@@ -74,6 +74,7 @@ jobs:
           XDG_CONFIG_HOME: ${{ runner.temp }}/agent-system-config
           GH_TOKEN_TANAABOT: ${{ matrix.example != 'codex-notifications' && secrets.GH_TOKEN_TANAABOT || '' }}
         run: |
+          if [[ "${{ matrix.example }}" == codex-notifications ]]; then unset OPENCLAW_CONFIG_PATH; fi
           leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
       - name: RUNNING A LEVEL THREE DIAGNOSTICS
         if: failure()
