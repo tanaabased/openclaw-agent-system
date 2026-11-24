@@ -11,6 +11,7 @@ export interface ReviewCI {
   state: 'running' | 'settled' | 'absent';
   passing: boolean;
   fingerprint?: string;
+  changeFingerprint?: string;
 }
 
 export default async function readReviewCI(
@@ -27,7 +28,7 @@ export default async function readReviewCI(
     [
       'graphql',
       '-f',
-      'query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid potentialMergeCommit{oid parents(first:2){nodes{oid} pageInfo{hasNextPage}}}}}}',
+      'query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid baseRefOid body potentialMergeCommit{oid parents(first:2){nodes{oid} pageInfo{hasNextPage}}}}}}',
       '-f',
       `owner=${owner}`,
       '-f',
@@ -43,6 +44,8 @@ export default async function readReviewCI(
   const repo = githubResponseRecord(data.repository, 'review repository');
   const pr = githubResponseRecord(repo.pullRequest, 'review pull request');
   if (pr.headRefOid !== expectedHead) throw new Error('review-head-changed');
+  if (typeof pr.body !== 'string') throw new Error('review-description-unavailable');
+  const base = githubResponseGitSha(pr.baseRefOid, 'review base');
   const revisions = [expectedHead];
   if (pr.potentialMergeCommit) {
     const merge = githubResponseRecord(pr.potentialMergeCommit, 'review merge commit');
@@ -141,5 +144,10 @@ export default async function readReviewCI(
     state: running ? 'running' : count ? 'settled' : 'absent',
     passing: count > 0 && passing,
     fingerprint: automationHash(evidence),
+    changeFingerprint: automationHash([
+      base,
+      pr.body,
+      evidence.map((entry) => automationHash(entry)).sort(),
+    ]),
   };
 }

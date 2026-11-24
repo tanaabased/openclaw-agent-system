@@ -25,7 +25,6 @@ export default class GitHubReviewRequestClient {
   constructor(private readonly api: Pick<GitHubWorkEventApiClient, 'request' | 'identity'>) {}
 
   async current(owner: string, name: string, number: number) {
-    const endpoint = githubWorkItemEndpoint(owner, name, number);
     let requested = false;
     for (let page = 1; ; page++) {
       const response = await this.api.request(
@@ -52,6 +51,16 @@ export default class GitHubReviewRequestClient {
       if (!response.hasNextPage) break;
     }
     if (!requested) return undefined;
+    const latest = await this.latest(owner, name, number);
+    if (!latest || latest.event !== 'review_requested')
+      throw new Error('review-request-origin-unavailable');
+    if (latest.requester.type !== 'User' || latest.reviewer.type !== 'User')
+      throw new Error('review-request-identity-unsupported');
+    return latest;
+  }
+
+  async latest(owner: string, name: string, number: number) {
+    const endpoint = githubWorkItemEndpoint(owner, name, number);
     let latest: GitHubReviewRequestEvent | undefined;
     // Pages are consumed to completion: an older request cannot authorize a later re-request.
     for (let page = 1; ; page++) {
@@ -65,7 +74,7 @@ export default class GitHubReviewRequestClient {
           '-F',
           `page=${page}`,
           '--jq',
-          '[.[]|select(.event=="review_requested" or .event=="review_request_removed")|{id,node_id,event,created_at,requested_reviewer,review_requester}]',
+          '[.[]|select(.event=="review_requested" or .event=="review_request_removed")|{id,node_id,event,created_at,requested_reviewer,review_requester,actor}]',
         ],
         'review request history',
       );
@@ -79,7 +88,12 @@ export default class GitHubReviewRequestClient {
           'requested reviewer',
         );
         if (!githubIdentityMatches(reviewer, this.api.identity)) continue;
-        const actor = githubResponseRecord(value.review_requester, 'review requester');
+        const actor = githubResponseRecord(
+          value.event === 'review_request_removed'
+            ? (value.actor ?? value.review_requester)
+            : value.review_requester,
+          'review requester',
+        );
         const requester = githubResponseIdentity(
           { ...actor, nodeId: actor.node_id },
           'review requester',
@@ -103,10 +117,6 @@ export default class GitHubReviewRequestClient {
       }
       if (!history.hasNextPage) break;
     }
-    if (!latest || latest.event !== 'review_requested')
-      throw new Error('review-request-origin-unavailable');
-    if (latest.requester.type !== 'User' || latest.reviewer.type !== 'User')
-      throw new Error('review-request-identity-unsupported');
     return latest;
   }
 }
