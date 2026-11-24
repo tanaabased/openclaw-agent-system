@@ -1,3 +1,4 @@
+import type { BoundStorage } from '../../storage/storage-lifecycle.ts';
 import dispatchOwnershipSchema from './dispatch-ownership-schema.ts';
 import { reviewAdmissionSchema, reviewKey } from '../review/review-admission.ts';
 import { reviewDraftSchema } from '../../../channels/github/provider/review-draft.ts';
@@ -255,6 +256,8 @@ function fileDispatchEnvelope<R extends SharedDispatchRecord>(state: DispatchSta
 }
 
 export interface DispatchPersistence<R extends SharedDispatchRecord> {
+  agentStorage?: BoundStorage['agent'];
+  resetRoot?: string;
   read(): Promise<unknown>;
   save(state: DispatchState<R>): Promise<void>;
 }
@@ -290,6 +293,14 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
       label: this.contract.runtime + ' issue dispatch',
       maximumBytes: dispatchStorageLimits.file,
     });
+  }
+  private assertManagement() {
+    const persistence = this.contract.persistence;
+    return assertNotificationManagement(
+      persistence?.resetRoot ?? this.root,
+      this.scope,
+      persistence?.agentStorage,
+    );
   }
   private validateEnvelope(state: unknown): asserts state is DispatchState<R> {
     if (!Value.Check(this.envelopeSchema, state) || state.scope !== this.scope)
@@ -679,7 +690,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
   ): Promise<T> {
     const signal = options.signal ?? new AbortController().signal;
     signal.throwIfAborted();
-    await assertNotificationManagement(this.root, this.scope);
+    await this.assertManagement();
     await this.reconcile(signal);
     const state = await this.read();
     let before = structuredClone(state);
@@ -812,13 +823,13 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     };
     try {
       return await withPrivateStateLock(guard, async () => {
-        await assertNotificationManagement(this.root, this.scope);
+        await this.assertManagement();
         let snapshot = await snapshotForOperation();
         const state = structuredClone(snapshot.state);
         let committed = structuredClone(state);
         const save = async () => {
           guard.assertHeld();
-          await assertNotificationManagement(this.root, this.scope);
+          await this.assertManagement();
           const freshSnapshot = await snapshotForOperation();
           const current = freshSnapshot.state;
           if (current.resetGeneration !== committed.resetGeneration)

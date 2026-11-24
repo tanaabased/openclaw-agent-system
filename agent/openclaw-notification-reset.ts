@@ -63,7 +63,7 @@ export default class OpenClawNotificationReset {
     } = await deps.intake.select(manifest, workspaceDir);
     const scope = intake.location.scope;
     const journal = dispatch(deps.root);
-    const store = new NotificationResetStore(deps.root, scope);
+    const store = new NotificationResetStore(deps.root, scope, intake.agentStorage);
     const inventory = (record: NotificationResetRecord) =>
       JSON.parse(record.inventory) as Omit<ResetInventory, 'records'> & {
         records: OpenClawDispatchRecord[];

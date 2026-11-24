@@ -62,11 +62,7 @@ export default async function retireOpenClawNative(input: {
         'Archive this exact unmanaged native session using normal OpenClaw cleanup. Native archival may stop its work and enqueue checkout/local-branch reclamation; local-only work may be lost. No issue, assignment or remote branch is changed. Existing explicit cleanup intent authorizes apply; do not ask for another conversational confirmation.',
       assertCurrent: async () => {
         await authority.assertCurrent?.();
-        await assertNotificationResetRetirement(
-          deps.root,
-          selected.store.location.scope,
-          input.native,
-        );
+        await assertNotificationResetRetirement(deps.root, selected.store, input.native);
         const fresh = await deps.taskContext.manifestService.loadForAgentId(
           manifest.agent.id,
           'service',
@@ -97,7 +93,7 @@ export default async function retireOpenClawNative(input: {
         const cwd = row.spawnedCwd ?? row.workspaceDir;
         await assertNotificationResetRetirement(
           deps.root,
-          selected.store.location.scope,
+          selected.store,
           input.native,
           typeof cwd === 'string' ? cwd : undefined,
         );

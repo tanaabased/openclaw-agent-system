@@ -49,7 +49,7 @@ export async function selectOpenClawTaskContext(
     return new OpenClawDispatchStore(
       root,
       scope,
-      sqliteDispatchPersistence(agent, pickup ? pickupDispatchScope(scope) : scope),
+      sqliteDispatchPersistence(agent, pickup ? pickupDispatchScope(scope) : scope, deps.resetRoot),
     );
   };
   return { selected, store, workspace, dispatch, ...(agent && { sessionStorage: agent }) };

@@ -22,19 +22,17 @@ import type { AgentManifest } from '../manifest/types.ts';
 import { dispatchParameters, dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 
 async function pendingReset(
-  root: string,
-  scope: string,
+  store: NotificationResetStore,
   runtime: 'codex' | 'openclaw',
   workspace: string,
   target: string,
 ) {
-  const store = new NotificationResetStore(root, scope);
   await store.exclusive(async (_record, save) =>
     save({
       version: 1,
       id: 'reset',
       runtime,
-      scope,
+      scope: store.scope,
       workspace,
       agentId: 'fixture',
       purge: true,
@@ -303,8 +301,11 @@ describe('agent/native retirement runtime entries', () => {
     const action = { action: 'retire', native: target.key };
     const resetScope = await intake.select(manifest, root, { resolvePolicy: false });
     const reset = await pendingReset(
-      join(root, 'dispatch'),
-      resetScope.store.location.scope,
+      new NotificationResetStore(
+        join(root, 'dispatch'),
+        resetScope.store.location.scope,
+        sqlite.agent,
+      ),
       'openclaw',
       root,
       'agent:fixture:reset-owned',
@@ -439,8 +440,7 @@ describe('agent/native retirement runtime entries', () => {
       (await runCodexDispatch(pluginData, 'retire', input, deps)) as Record<string, unknown>;
     const resetScope = await selectCodexTaskContext(pluginData, deps, { resolvePolicy: false });
     const reset = await pendingReset(
-      pluginData,
-      resetScope.store.location.scope,
+      new NotificationResetStore(pluginData, resetScope.store.location.scope, sqlite.agent),
       'codex',
       workspace,
       'reset-owned',

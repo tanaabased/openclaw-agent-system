@@ -193,7 +193,11 @@ export default class OpenClawDispatchContext {
     const current =
       selection ??
       (await selectOpenClawTaskContext(this.dependencies.taskContext, manifest, workspace));
-    await assertNotificationManagement(this.dependencies.root, current.store.location.scope);
+    await assertNotificationManagement(
+      this.dependencies.root,
+      current.store.location.scope,
+      current.store.agentStorage,
+    );
     const journal = current.dispatch(this.dependencies.root);
     const admitted = managedIssueState(await current.store.read(), (await journal.read()).records);
     if (!admitted) throw new Error('dispatch-intake-activation-required');

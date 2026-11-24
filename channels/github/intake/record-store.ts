@@ -333,6 +333,7 @@ export default class IntakeRecordStore {
       await assertNotificationManagement(
         this.location.resetRoot ?? this.location.root,
         this.location.scope,
+        this.agentStorage,
       );
       return await withPrivateStateLock(lock, async () =>
         operation(
@@ -342,6 +343,7 @@ export default class IntakeRecordStore {
             await assertNotificationManagement(
               this.location.resetRoot ?? this.location.root,
               this.location.scope,
+              this.agentStorage,
             );
             if (!Value.Check(storedStateSchema, state) || state.scope !== this.location.scope)
               throw new IntakeError('intake-state-invalid');

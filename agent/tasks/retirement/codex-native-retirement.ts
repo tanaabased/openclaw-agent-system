@@ -53,11 +53,7 @@ export default async function retireCodexNative(
           resolvePolicy: false,
           inspectionOnly: true,
         });
-        await assertNotificationResetRetirement(
-          pluginData,
-          current.store.location.scope,
-          input.native,
-        );
+        await assertNotificationResetRetirement(pluginData, current.store, input.native);
         const inputEvent = await codexDirectInput(connection.request, caller);
         if (
           fresh.workspace !== current.workspace ||
@@ -86,7 +82,7 @@ export default async function retireCodexNative(
           throw new Error('native-retirement-target-mismatch');
         await assertNotificationResetRetirement(
           pluginData,
-          current.store.location.scope,
+          current.store,
           input.native,
           thread.cwd,
         );

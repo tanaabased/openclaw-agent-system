@@ -85,7 +85,11 @@ export default async function runCodexNotificationReset(
   if (!input.all && (input.agent?.length !== 1 || input.agent[0] !== current.agentId))
     throw new Error('notification-reset-explicit-bound-agent-required');
   const journal = current.journal;
-  const store = new NotificationResetStore(pluginData, current.store.location.scope);
+  const store = new NotificationResetStore(
+    pluginData,
+    current.store.location.scope,
+    current.store.agentStorage,
+  );
   const retained = await store.read();
   const parse = (record: NotificationResetRecord) =>
     JSON.parse(record.inventory) as Omit<ResetInventory, 'records'> & { records: DispatchRecord[] };
