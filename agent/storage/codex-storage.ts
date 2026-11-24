@@ -1,5 +1,5 @@
 import { readdir } from 'node:fs/promises';
-import { defaultStorageBackend, sqliteIntakeStore, type StorageBackend } from './intake-backend.ts';
+import { defaultStorageBackend, bindIntakeStore, type StorageBackend } from './backend.ts';
 import IntakeRecordStore, {
   IntakeError,
   intakeScopeLocation,
@@ -43,7 +43,7 @@ export async function* retainedIntakeCandidates(
     const { agent } = bindSqliteStorage(installation, agentId);
     for (const scope of await agent.listIntakeScopes()) {
       if (!/^[a-f0-9]{64}$/u.test(scope)) throw new IntakeError('intake-state-invalid');
-      yield { agentId, store: sqliteIntakeStore(intakeScopeLocation(pluginData, scope), agent) };
+      yield { agentId, store: bindIntakeStore(intakeScopeLocation(pluginData, scope), agent) };
     }
   }
 }

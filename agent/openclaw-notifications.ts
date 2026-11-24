@@ -19,9 +19,7 @@ import { dispatchStorageNotice } from './tasks/dispatch/dispatch-storage.ts';
 import type { IssuePickupState } from './issue-pickup-state.ts';
 import type { ManagedIssueState as IntakeState } from './tasks/managed-issue.ts';
 import dispatchCapacity from './tasks/dispatch/openclaw-capacity.ts';
-import OpenClawDispatchStore, {
-  type OpenClawDispatchRecord,
-} from './tasks/dispatch/openclaw-dispatch-state.ts';
+import { type OpenClawDispatchRecord } from './tasks/dispatch/openclaw-dispatch-state.ts';
 import workflowStatus from './tasks/workflow-status.ts';
 export type NotificationRefreshResult = GitHubNotificationRefreshResult;
 interface Dependencies {
@@ -32,6 +30,9 @@ interface Dependencies {
       manifest: AgentManifest,
       workspace: string,
     ): Promise<{
+      dispatch(root: string): {
+        read(): Promise<{ records: OpenClawDispatchRecord[]; projectPickup?: IssuePickupState }>;
+      };
       selected: ReturnType<typeof assignmentIntakePolicy>;
       store: {
         location: {
@@ -67,10 +68,6 @@ interface Dependencies {
     runId: string,
     signal: AbortSignal,
   ): Promise<'pending' | 'completed' | 'failed'>;
-  readDispatch?(scope: string): Promise<{
-    records: OpenClawDispatchRecord[];
-    projectPickup?: IssuePickupState;
-  }>;
   now?(): number;
   sleep?: typeof abortableDelay;
 }
@@ -134,11 +131,13 @@ export default class OpenClawNotifications {
     if (selector?.itemType === 'pull-request')
       return blocked('github-notification-selector-unsupported');
     try {
-      const { selected, store } = await this.dependencies.intake.select(manifest, workspace);
+      const { selected, store, dispatch } = await this.dependencies.intake.select(
+        manifest,
+        workspace,
+      );
       const state = await store.read();
       if (!selected || !state) return blocked('intake-activation-required');
-      const journal = await (this.dependencies.readDispatch?.(store.location.scope) ??
-        new OpenClawDispatchStore(this.dependencies.root, store.location.scope).read());
+      const journal = await dispatch(this.dependencies.root).read();
       const capacity = dispatchCapacity(
         journal,
         selected.policy.maxConcurrentItems,

@@ -14,7 +14,6 @@ import { openclawIntakeAutomationId } from '../agent/automations/openclaw-intake
 import { readFile, realpath } from 'node:fs/promises';
 
 import OpenClawIntake from '../agent/openclaw-intake.ts';
-import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import resolveOpenClawCommandWorktree from '../agent/tasks/context/openclaw-command-worktree.ts';
 import isPathContained from '../utils/is-path-contained.ts';
 import createIntakeTool from '../tools/intake/tool.ts';
@@ -517,15 +516,14 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
               (await realpath(admitted.run.workspaceDir))
           )
             throw new AutomationError('automation-workspace-mismatch');
-          const { store } = await intakeV2.select(loaded.manifest, admitted.run.workspaceDir, {
-            resolvePolicy: false,
-          });
-          const pickup = (
-            await new OpenClawDispatchStore(
-              store.location.root,
-              store.location.scope,
-            ).inspectIntake()
-          ).projectPickup;
+          const { store, dispatch } = await intakeV2.select(
+            loaded.manifest,
+            admitted.run.workspaceDir,
+            {
+              resolvePolicy: false,
+            },
+          );
+          const pickup = (await dispatch(store.location.root).inspectIntake()).projectPickup;
           const acceptedOccurrence = Boolean(
             pickup?.operations.some((entry) => entry.runId === admitted.run.runId),
           );

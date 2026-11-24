@@ -19,9 +19,7 @@ import { nativeObject } from '../utils/native-object.ts';
 import { listNativeAutomations } from './automations/automation-gateway.ts';
 import { openclawIntakeAutomationId } from './automations/openclaw-intake-policy.ts';
 import observeRetirementSession from './tasks/retirement/openclaw-retirement-observation.ts';
-import OpenClawDispatchStore, {
-  type OpenClawDispatchRecord,
-} from './tasks/dispatch/openclaw-dispatch-state.ts';
+import { type OpenClawDispatchRecord } from './tasks/dispatch/openclaw-dispatch-state.ts';
 import NotificationResetStore, {
   type NotificationResetRecord,
 } from './notification-reset-state.ts';
@@ -57,9 +55,14 @@ export default class OpenClawNotificationReset {
 
   private async target(manifest: AgentManifest, workspaceDir: string, purge: boolean) {
     const deps = this.dependencies;
-    const { store: intake, workspace, selected } = await deps.intake.select(manifest, workspaceDir);
+    const {
+      store: intake,
+      workspace,
+      selected,
+      dispatch,
+    } = await deps.intake.select(manifest, workspaceDir);
     const scope = intake.location.scope;
-    const journal = new OpenClawDispatchStore(deps.root, scope);
+    const journal = dispatch(deps.root);
     const store = new NotificationResetStore(deps.root, scope);
     const inventory = (record: NotificationResetRecord) =>
       JSON.parse(record.inventory) as Omit<ResetInventory, 'records'> & {

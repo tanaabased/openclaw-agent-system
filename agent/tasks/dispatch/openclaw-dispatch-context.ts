@@ -58,7 +58,7 @@ import {
 import { assertNotificationManagement } from '../../notification-reset-state.ts';
 import type OpenClawAssignmentClaims from './openclaw-assignment-claims.ts';
 import { type OpenClawDeliveryConnection } from '../delivery/openclaw-delivery.ts';
-import OpenClawDispatchStore, {
+import {
   type OpenClawDispatchRecord,
   type OpenClawDispatchState,
 } from './openclaw-dispatch-state.ts';
@@ -195,7 +195,7 @@ export default class OpenClawDispatchContext {
       selection ??
       (await selectOpenClawTaskContext(this.dependencies.taskContext, manifest, workspace));
     await assertNotificationManagement(this.dependencies.root, current.store.location.scope);
-    const journal = new OpenClawDispatchStore(this.dependencies.root, current.store.location.scope);
+    const journal = current.dispatch(this.dependencies.root);
     const admitted = managedIssueState(await current.store.read(), (await journal.read()).records);
     if (!admitted) throw new Error('dispatch-intake-activation-required');
     const selected = current.selected ?? retainedIntakePolicy(manifest, admitted, 'openclaw');
@@ -406,7 +406,7 @@ export default class OpenClawDispatchContext {
         resolvePolicy: false,
       },
     );
-    const journal = new OpenClawDispatchStore(this.dependencies.root, current.store.location.scope);
+    const journal = current.dispatch(this.dependencies.root);
     const records = (await journal.read()).records.filter(
       (entry) =>
         entry.threadId === binding.sessionKey ||
@@ -517,7 +517,7 @@ export default class OpenClawDispatchContext {
       manifest,
       workspace,
     );
-    const journal = new OpenClawDispatchStore(this.dependencies.root, current.store.location.scope);
+    const journal = current.dispatch(this.dependencies.root);
     const dispatchState = await journal.read();
     const state = managedIssueState(await current.store.read(), dispatchState.records);
     if (!state) throw new Error('dispatch-intake-record-missing');

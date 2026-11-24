@@ -6,24 +6,24 @@ import type { BoundStorage, SqliteInstallation } from './storage-lifecycle.ts';
 export type StorageBackend = 'file' | 'sqlite';
 export const defaultStorageBackend: StorageBackend = 'file';
 
-export function sqliteIntakeStore(
+export function bindIntakeStore(
   location: ReturnType<typeof intakeLocation>,
-  agent: Pick<BoundStorage['agent'], 'readIntake' | 'saveIntake'>,
+  agent?: Pick<BoundStorage['agent'], 'readIntake' | 'saveIntake'>,
 ) {
+  if (!agent) return new IntakeRecordStore(location);
   return new IntakeRecordStore(location, {
     read: () => agent.readIntake(location.scope),
     save: (state) => agent.saveIntake(state),
   });
 }
 
-export async function bindIntakeStore(
-  location: ReturnType<typeof intakeLocation>,
+export async function bindAgentStore(
   agentId: string,
   installation: SqliteInstallation | undefined,
   backend = defaultStorageBackend,
 ) {
-  if (backend === 'file') return new IntakeRecordStore(location);
-  if (!installation) throw new Error('SQLite intake requires runtime storage locations');
+  if (backend === 'file') return;
+  if (!installation) throw new Error('SQLite requires runtime storage locations');
   const { bindSqliteStorage } = await import('./agent-database.ts');
-  return sqliteIntakeStore(location, bindSqliteStorage(installation, agentId).agent);
+  return bindSqliteStorage(installation, agentId).agent;
 }

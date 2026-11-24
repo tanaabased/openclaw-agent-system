@@ -1,3 +1,4 @@
+import { assertPrivateStateLocksHeld } from '../../core/private-state-lock-context.ts';
 import { and, eq, getTableColumns, sql } from 'drizzle-orm';
 import type { drizzle } from 'drizzle-orm/node-sqlite';
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core';
@@ -51,6 +52,7 @@ export default function sqliteRecords<Records>(
     write(changes: readonly RecordChange<Records>[]) {
       return use(false, (db) =>
         db.transaction((tx) => {
+          assertPrivateStateLocksHeld();
           for (const change of changes) {
             const table: SQLiteTable = tables[change.table];
             if (change.action === 'clearScope') {

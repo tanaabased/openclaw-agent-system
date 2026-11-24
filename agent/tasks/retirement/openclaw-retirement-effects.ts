@@ -1,7 +1,6 @@
 import { selectOpenClawTaskContext } from '../context/openclaw-task-context.ts';
 import type { AgentManifest } from '../../../manifest/types.ts';
 import type { OpenClawTaskDependencies } from '../dispatch/openclaw-dispatch-context.ts';
-import OpenClawDispatchStore from '../dispatch/openclaw-dispatch-state.ts';
 import reconcileRetirementEffects from './reconcile-retirement-effects.ts';
 
 /** recovery remains available to explicit invocations even without an intake schedule or task. */
@@ -13,7 +12,7 @@ export default async function reconcileOpenClawRetirementEffects(input: {
 }) {
   const { dependencies: deps, manifest, workspace } = input;
   const current = await selectOpenClawTaskContext(deps.taskContext, manifest, workspace);
-  const store = new OpenClawDispatchStore(deps.root, current.store.location.scope);
+  const store = current.dispatch(deps.root);
   if (!(await store.read()).retirementEffects?.length) return;
   const selection = { manifest, workspaceDir: workspace };
   const signal = input.signal ?? AbortSignal.timeout(20_000);

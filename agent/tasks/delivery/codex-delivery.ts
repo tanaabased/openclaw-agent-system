@@ -41,7 +41,6 @@ import {
   verifyDispatchWorktree,
   type DispatchGit,
 } from '../dispatch/codex-dispatch-project.ts';
-import CodexDispatchStore from '../dispatch/codex-dispatch-state.ts';
 import authorizeCodexFeedback from '../feedback/codex-feedback-authority.ts';
 import connectCodexFeedback from '../feedback/codex-feedback-client.ts';
 import connectCodexGitHubAccount from '../../codex-github-client.ts';
@@ -227,7 +226,7 @@ async function runCodexDeliveryScoped(
     codexHome: deps.codexHome,
     inspectBinding: deps.inspectBinding,
   });
-  const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+  const store = current.journal;
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
   const git = deps.git ?? dispatchGit;
   const connection = deps.native

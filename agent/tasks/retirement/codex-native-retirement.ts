@@ -2,7 +2,6 @@ import { nativeObject } from '../../../utils/native-object.ts';
 import { automationHash } from '../../automation-hash.ts';
 import codexDirectInput from '../../codex-direct-input.ts';
 import type { CodexDispatchDependencies } from '../dispatch/codex-dispatch-context.ts';
-import CodexDispatchStore from '../dispatch/codex-dispatch-state.ts';
 import { selectCodexTaskContext } from '../context/codex-task-context.ts';
 import nativeRetirement from './native-retirement.ts';
 import assertNotificationResetRetirement from '../../notification-reset-retirement.ts';
@@ -27,10 +26,7 @@ export default async function retireCodexNative(
   );
   try {
     const turn = await codexDirectInput(connection.request, caller);
-    const journal = new CodexDispatchStore(
-      current.store.location.root,
-      current.store.location.scope,
-    );
+    const journal = current.journal;
     const native = deps.retirementNative ?? codexRetirementNative(connection.request);
     return await nativeRetirement({
       root: pluginData,

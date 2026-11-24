@@ -239,6 +239,11 @@ export type DispatchState<R extends SharedDispatchRecord> = Static<
   // Read-time reservations only; saves retain the original records, never this projection.
   isolatedRecords?: Array<{ id: string; issueKey: string; intakeId?: string; code: string }>;
 };
+export interface DispatchPersistence<R extends SharedDispatchRecord> {
+  read(): Promise<unknown>;
+  save(state: DispatchState<R>): Promise<void>;
+}
+
 /** one journal bridges native actions; a persisted creation intent is never issued twice. */
 export default class DispatchStore<R extends SharedDispatchRecord> {
   readonly file: PrivateStateFile;
@@ -253,6 +258,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     readonly contract: {
       runtime: 'codex' | 'openclaw';
       recordSchema: TObject;
+      persistence?: DispatchPersistence<R>;
       validRecord(record: R): boolean;
     },
   ) {
@@ -566,16 +572,23 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     this.assertIndependent(record, restored.records);
     return restored;
   }
-  async readEnvelope() {
+  private async readFileEnvelope(): Promise<unknown> {
     const contents = await this.file.read();
-    let state: unknown = { version: 4, scope: this.scope, resetGeneration: 'initial', records: [] };
-    if (contents !== undefined) {
-      try {
-        state = JSON.parse(contents);
-      } catch {
-        throw new Error('dispatch-state-invalid');
-      }
+    if (contents === undefined) return;
+    try {
+      return JSON.parse(contents);
+    } catch {
+      throw new Error('dispatch-state-invalid');
     }
+  }
+  async readEnvelope() {
+    const saved = this.contract.persistence
+      ? await this.contract.persistence.read()
+      : await this.readFileEnvelope();
+    const state =
+      saved === undefined
+        ? { version: 4, scope: this.scope, resetGeneration: 'initial', records: [] }
+        : saved;
     if (state && typeof state === 'object' && 'version' in state && state.version !== 4)
       throw new Error(
         'dispatch-clean-start-required: stop writers and perform the reviewed clean start before using this runtime',
@@ -837,9 +850,10 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
             originalBytes - dispatchStorageBytes(restore(retained, snapshot)).contentBytes;
           if (!intake && reclaimed > 0) retained.storageReclaimedBytes = reclaimed;
           const contents = assertDispatchStorage(restore(retained, snapshot), admission);
-          await this.file.write(contents);
-          refreshStateSnapshot(state, retained);
           const raw = JSON.parse(contents) as DispatchState<R>;
+          if (this.contract.persistence) await this.contract.persistence.save(raw);
+          else await this.file.write(contents);
+          refreshStateSnapshot(state, retained);
           snapshot = { raw, state: intake ? raw : this.project(raw) };
           committed = structuredClone(snapshot.state);
         };

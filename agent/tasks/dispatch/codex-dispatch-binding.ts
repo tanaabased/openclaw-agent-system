@@ -1,6 +1,5 @@
 import nativeFeedbackPublication from '../feedback/native-feedback-publication.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
-import CodexDispatchStore from './codex-dispatch-state.ts';
 import { selectCodexTaskContext } from '../context/codex-task-context.ts';
 import { connectCodexThreads } from '../../codex-thread-client.ts';
 import { managedIssueState } from '../managed-issue.ts';
@@ -54,7 +53,7 @@ export default async function codexDispatchBinding(
       await connection.close();
     }
   }
-  const journal = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+  const journal = current.journal;
   const state = await journal.read();
   const admitted = managedIssueState(await current.store.read(), state.records);
   let invocation;
@@ -90,7 +89,7 @@ export async function codexDispatchResponse<T>(pluginData: string, value: T): Pr
     {},
     { resolvePolicy: false, inspectionOnly: true },
   );
-  const journal = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+  const journal = current.journal;
   const state = await journal.read();
   return nativeDispatchResponse(value, state.records, (await current.store.read())?.records ?? []);
 }
@@ -108,7 +107,7 @@ export async function codexFeedbackReconciliation(
     {},
     { resolvePolicy: false, inspectionOnly: true },
   );
-  const journal = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+  const journal = current.journal;
   const state = await journal.read();
   return {
     action: 'reconcile',
@@ -137,7 +136,7 @@ export async function codexFeedbackPublication(
   } finally {
     await connection.close();
   }
-  const journal = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+  const journal = current.journal;
   return nativeFeedbackPublication(
     input,
     (await journal.read()).records,

@@ -18,7 +18,7 @@ import type { CodexDispatchDependencies } from '../dispatch/codex-dispatch-conte
 import { codexDispatchNative } from '../dispatch/codex-dispatch-native.ts';
 import unsubmittedNativeRequest from '../dispatch/codex-dispatch-unsubmitted.ts';
 import { codexNativeHandoff } from '../dispatch/codex-dispatch-handoff.ts';
-import CodexDispatchStore, { type DispatchRecord } from '../dispatch/codex-dispatch-state.ts';
+import { type DispatchRecord } from '../dispatch/codex-dispatch-state.ts';
 import type { FeedbackEvent } from './codex-feedback-state.ts';
 import authorizeCodexFeedback from './codex-feedback-authority.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';
@@ -93,7 +93,7 @@ async function runCodexFeedbackScoped(
     reviewPolicy(current.manifest, 'codex') ??
     (admittedState ? retainedIntakePolicy(current.manifest, admittedState, 'codex') : undefined);
   const policy = selected?.policy;
-  const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+  const store = current.journal;
   if (!policy || !selected) return { status: 'disabled' };
   current.policy = selected;
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;

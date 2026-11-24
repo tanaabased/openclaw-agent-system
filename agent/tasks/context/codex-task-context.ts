@@ -1,5 +1,7 @@
+import CodexDispatchStore from '../dispatch/codex-dispatch-state.ts';
+import { sqliteDispatchPersistence } from '../../storage/dispatch-backend.ts';
 import codexStorageLocation from '../../storage/codex-storage.ts';
-import { bindIntakeStore, type StorageBackend } from '../../storage/intake-backend.ts';
+import { bindAgentStore, bindIntakeStore, type StorageBackend } from '../../storage/backend.ts';
 import { realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -32,7 +34,12 @@ export async function selectCodexTaskContext(
     deps.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex'),
   );
   const namespace = await realpath(requestedHome).catch(() => requestedHome);
-  const store = await bindIntakeStore(
+  const agent = await bindAgentStore(
+    loaded.manifest.agent.id,
+    codexStorageLocation(pluginData),
+    deps.storageBackend,
+  );
+  const store = bindIntakeStore(
     intakeLocation({
       runtime: 'codex',
       root: pluginData,
@@ -40,13 +47,16 @@ export async function selectCodexTaskContext(
       workspaceDir: workspace,
       agentId: loaded.manifest.agent.id,
     }),
-    loaded.manifest.agent.id,
-    codexStorageLocation(pluginData),
-    deps.storageBackend,
+    agent,
   );
   await new GitHubIdentityCache(store.location).hydrate(loaded.manifest.github?.notifications);
   if (!options.inspectionOnly) await assertNotificationManagement(pluginData, store.location.scope);
   return {
+    journal: new CodexDispatchStore(
+      pluginData,
+      store.location.scope,
+      sqliteDispatchPersistence(agent, store.location.scope),
+    ),
     policy,
     store,
     workspace,

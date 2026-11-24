@@ -37,7 +37,7 @@ import reconcileIntakeDenial from './codex-dispatch-denial.ts';
 import recoverDispatch from './codex-dispatch-recovery.ts';
 import reportDispatch, { failDispatch, notice } from './codex-dispatch-reporting.ts';
 import validateDispatchRequest from './codex-dispatch-request.ts';
-import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
+import { type DispatchRecord } from './codex-dispatch-state.ts';
 import runCodexFeedback from '../feedback/codex-feedback.ts';
 import codexImplementationEntry from '../implementation/codex-implementation-entry.ts';
 import acceptCodexIntakeOccurrence from '../../codex-intake-occurrence.ts';
@@ -195,10 +195,7 @@ async function runCodexDispatchScoped(
         { ...deps, inspectBinding: async () => binding },
         { resolvePolicy: false, inspectionOnly: true },
       );
-      const journal = new CodexDispatchStore(
-        current.store.location.root,
-        current.store.location.scope,
-      );
+      const journal = current.journal;
       let records = (
         await withDispatchTask('codex', deps.threadId ?? process.env.CODEX_THREAD_ID, () =>
           journal.read(),
@@ -294,7 +291,7 @@ async function executeCodexDispatch(
   const retainedAdmission = await current.store.read();
   if (retainedAdmission?.records.length)
     current.policy ??= retainedIntakePolicy(current.manifest, retainedAdmission, 'codex');
-  const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+  const store = current.journal;
   if (action === 'inspect') {
     const state = await store.read();
     const { records, summary, ...page } = dispatchInspection(

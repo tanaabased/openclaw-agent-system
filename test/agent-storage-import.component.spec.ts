@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
 import { automationHash } from '../agent/automation-hash.ts';
+import { selectOpenClawTaskContext } from '../agent/tasks/context/openclaw-task-context.ts';
 import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import { importAgentStorage, type ImportOptions } from '../scripts/import-agent-storage.ts';
 import { gitWorktreeRepositoryDirectoryName } from '../tools/git/worktree-names.ts';
@@ -17,7 +18,7 @@ async function save(path: string, data: unknown) {
 describe('legacy agent storage import', () => {
   let root: string;
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), 'storage-import-'));
+    root = await realpath(await mkdtemp(join(tmpdir(), 'storage-import-')));
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
@@ -55,14 +56,12 @@ describe('legacy agent storage import', () => {
         sessionScopes: [],
         apply: false,
       };
-      const db = bindSqliteStorage(
-        {
-          agentRoot: join(stateRoot, 'agent-system-storage'),
-          installationRoot: instance,
-          schemaRoot: resolve(import.meta.dirname, '../agent/storage'),
-        },
-        agentId,
-      );
+      const installation = {
+        agentRoot: join(stateRoot, 'agent-system-storage'),
+        installationRoot: instance,
+        schemaRoot: resolve(import.meta.dirname, '../agent/storage'),
+      };
+      const db = bindSqliteStorage(installation, agentId);
       await assert.rejects(importAgentStorage(options), /install/);
       await db.agent.install();
       await db.installation.install();
@@ -107,6 +106,13 @@ describe('legacy agent storage import', () => {
         resetGeneration: 'saved',
         records: [record],
       });
+      if (!codex)
+        await save(join(intake, runtime + '-dispatch-' + scope + '.json'), {
+          version: 4,
+          scope,
+          resetGeneration: 'pickup',
+          records: [],
+        });
       const receipt = {
         digest: 'retire',
         source: 'operator',
@@ -193,6 +199,27 @@ describe('legacy agent storage import', () => {
         automationThreads: {},
       });
       assert.deepEqual(records.dispatchRecords[0]?.value, record);
+      if (!codex) {
+        await mkdir(workspace);
+        const selected = await selectOpenClawTaskContext(
+          {
+            root: intake,
+            resetRoot: dispatch,
+            namespace: profile,
+            storageBackend: 'sqlite',
+            sqliteInstallation: installation,
+            manifestService: {
+              loadForAgentId: async () => assert.fail('unexpected manifest load'),
+            },
+          },
+          { schemaVersion: 1, agent: { id: agentId } },
+          workspace,
+        );
+        assert.deepEqual((await selected.dispatch(dispatch).readEnvelope()).records, [record]);
+        const pickup = await selected.dispatch(intake).read();
+        assert.equal(pickup.resetGeneration, 'pickup');
+        assert.deepEqual(pickup.records, []);
+      }
       assert.deepEqual(
         records.pickupEnrollments.map((row) => row.value),
         [enrollment],

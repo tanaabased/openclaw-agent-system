@@ -1,4 +1,5 @@
 // Temporary, operator-run importer for #792. Run from the source checkout with Node.
+import { pickupDispatchScope } from '../agent/storage/dispatch-backend.ts';
 import { readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -172,16 +173,25 @@ export async function importAgentStorage(options: ImportOptions) {
   }
   const sessions = new Set(options.sessionScopes);
   const dispatchFiles = await names(dispatchRoot);
-  if (dispatchFiles.includes(runtime + '-dispatch-' + scope + '.json')) {
+  const journalName = runtime + '-dispatch-' + scope + '.json';
+  const journals = [{ root: dispatchRoot, key: scope, files: dispatchFiles }];
+  if (!codex)
+    journals.push({
+      root: intakeRoot,
+      key: pickupDispatchScope(scope),
+      files: await names(intakeRoot),
+    });
+  for (const { root, key, files } of journals) {
+    if (!files.includes(journalName)) continue;
     const store = codex
-      ? new CodexDispatchStore(dispatchRoot, scope)
-      : new OpenClawDispatchStore(dispatchRoot, scope);
+      ? new CodexDispatchStore(root, scope)
+      : new OpenClawDispatchStore(root, scope);
     const { records, ...value } = await store.readEnvelope();
-    agent.add('dispatchState', { scope, value });
+    agent.add('dispatchState', { scope: key, value });
     for (const record of records) {
       if (!record || typeof record.id !== 'string' || !record.id)
         throw new Error('dispatch record missing id');
-      agent.add('dispatchRecords', { scope, id: record.id, value: record });
+      agent.add('dispatchRecords', { scope: key, id: record.id, value: record });
       const session = record.threadId;
       const incarnation = codex
         ? session

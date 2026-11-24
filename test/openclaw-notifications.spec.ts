@@ -67,6 +67,7 @@ function fixture() {
   let requests = 0;
   let readiness: string | undefined;
   let now = baseline;
+  let readDispatch = async () => ({ records });
   const service = new OpenClawNotifications({
     root: '/unused',
     intake: {
@@ -75,6 +76,7 @@ function fixture() {
       },
       async select(value) {
         return {
+          dispatch: () => ({ read: () => readDispatch() }),
           selected: assignmentIntakePolicy(value, 'openclaw'),
           store: {
             location: { scope: 'scope' },
@@ -84,9 +86,6 @@ function fixture() {
           },
         };
       },
-    },
-    async readDispatch() {
-      return { records };
     },
     async inspectRun() {
       return 'pending' as const;
@@ -109,6 +108,11 @@ function fixture() {
   return {
     manifest,
     service,
+    failDispatch() {
+      readDispatch = async () => {
+        throw Error('unreadable private data');
+      };
+    },
     records,
     set readiness(value: string | undefined) {
       readiness = value;
@@ -478,9 +482,7 @@ describe('agent/openclaw-notifications', () => {
     });
     assert.equal(blocked.status, 'failed');
     assert.equal(blocked.code, 'dispatch-native-session-diverged');
-    f.service.dependencies.readDispatch = async () => {
-      throw Error('unreadable private data');
-    };
+    f.failDispatch();
     assert.equal(
       (await f.service.inspect(f.manifest, '/workspace')).code,
       'github-notification-native-state-unavailable',

@@ -11,7 +11,7 @@ import {
   codexDispatchNative,
   type DispatchNativeThread,
 } from '../dispatch/codex-dispatch-native.ts';
-import CodexDispatchStore, { type DispatchRecord } from '../dispatch/codex-dispatch-state.ts';
+import { type DispatchRecord } from '../dispatch/codex-dispatch-state.ts';
 import connectCodexFeedback from '../feedback/codex-feedback-client.ts';
 import { selectCodexTaskContext } from './codex-task-context.ts';
 import { connectCodexThreads } from '../../codex-thread-client.ts';
@@ -163,7 +163,7 @@ async function readScopedTaskOwner(pluginData: string, turn: Turn) {
     {},
     { resolvePolicy: false, inspectionOnly: true },
   );
-  const journal = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+  const journal = current.journal;
   const records = (await journal.read()).records;
   if (
     !records.some(

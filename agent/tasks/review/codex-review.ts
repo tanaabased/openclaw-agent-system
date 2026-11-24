@@ -16,7 +16,6 @@ import {
 } from '../context/codex-task-context.ts';
 import { selectCodexTaskOwner } from '../context/codex-turn-task.ts';
 import { codexDispatchNative } from '../dispatch/codex-dispatch-native.ts';
-import CodexDispatchStore from '../dispatch/codex-dispatch-state.ts';
 import {
   resolveDispatchProject,
   verifyDispatchWorktree,
@@ -121,7 +120,7 @@ export default async function codexReview(
   const current = await selectCodexTaskContext(pluginData, deps, { resolvePolicy: false });
   const policy = current.manifest.github?.notifications;
   if (!policy || !policy.runtimes.includes('codex')) throw new Error('review-runtime-disabled');
-  const journal = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+  const journal = current.journal;
   const connection = deps.native
     ? undefined
     : await connectCodexThreads(current.workspace, current.codexHome);

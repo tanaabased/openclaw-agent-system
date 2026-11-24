@@ -21,6 +21,16 @@ import { account, intakeFixture } from './github-intake-fixture.ts';
 
 describe('agent/notification reset runtime adapters', () => {
   let root: string;
+  function resetIntake(store: IntakeRecordStore) {
+    return {
+      select: async () => ({
+        store,
+        workspace: root,
+        selected: undefined,
+        dispatch: (path: string) => new OpenClawDispatchStore(path, store.location.scope),
+      }),
+    };
+  }
   let originalEnv: NodeJS.ProcessEnv;
   beforeEach(async () => {
     originalEnv = process.env;
@@ -154,6 +164,7 @@ describe('agent/notification reset runtime adapters', () => {
         root: pluginData,
         intake: {
           select: async () => ({
+            dispatch: (root) => new OpenClawDispatchStore(root, current.store.location.scope),
             store: current.store,
             workspace: current.workspace,
             selected: assignmentIntakePolicy(manifest, 'openclaw'),
@@ -312,7 +323,7 @@ describe('agent/notification reset runtime adapters', () => {
     const manifest = { schemaVersion: 1 as const, agent: { id: 'receiver' } };
     const service = new OpenClawNotificationReset({
       root,
-      intake: { select: async () => ({ store: intake, selected: undefined, workspace: root }) },
+      intake: resetIntake(intake),
       automations: {
         notificationResetReplace: native.replace,
         notificationResetSnapshot: async () => ({
@@ -472,7 +483,7 @@ describe('agent/notification reset runtime adapters', () => {
       });
       const service = new OpenClawNotificationReset({
         root,
-        intake: { select: async () => ({ store: intake, selected: undefined, workspace: root }) },
+        intake: resetIntake(intake),
         automations: {
           notificationResetSnapshot: snapshot,
           notificationResetPickupSnapshot: async () => snapshot({}, root, 'github-issue-pickup'),
@@ -753,7 +764,7 @@ describe('agent/notification reset runtime adapters', () => {
     const manifest = { schemaVersion: 1 as const, agent: { id: 'receiver' } };
     const service = new OpenClawNotificationReset({
       root,
-      intake: { select: async () => ({ store: intake, selected: undefined, workspace: root }) },
+      intake: resetIntake(intake),
       automations: {
         notificationResetReplace: native.replace,
         notificationResetSnapshot: async () => ({
@@ -870,7 +881,7 @@ describe('agent/notification reset runtime adapters', () => {
     const manifest = { schemaVersion: 1 as const, agent: { id: 'receiver' } };
     const service = new OpenClawNotificationReset({
       root,
-      intake: { select: async () => ({ store: intake, selected: undefined, workspace: root }) },
+      intake: resetIntake(intake),
       automations: {
         notificationResetReplace: native.replace,
         notificationResetSnapshot: async () => ({
@@ -928,7 +939,7 @@ describe('agent/notification reset runtime adapters', () => {
     const manifest = { schemaVersion: 1 as const, agent: { id: 'receiver' } };
     const service = new OpenClawNotificationReset({
       root,
-      intake: { select: async () => ({ store: intake, selected: undefined, workspace: root }) },
+      intake: resetIntake(intake),
       automations: {
         notificationResetReplace: native.replace,
         notificationResetSnapshot: async () => ({
@@ -1344,7 +1355,7 @@ describe('agent/notification reset runtime adapters', () => {
     const manifest = { schemaVersion: 1 as const, agent: { id: 'receiver' } };
     const service = new OpenClawNotificationReset({
       root,
-      intake: { select: async () => ({ store: intake, selected: undefined, workspace: root }) },
+      intake: resetIntake(intake),
       automations: {
         notificationResetReplace: native.replace,
         notificationResetSnapshot: async () => ({

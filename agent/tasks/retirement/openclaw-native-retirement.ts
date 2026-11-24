@@ -3,7 +3,6 @@ import { automationHash } from '../../automation-hash.ts';
 import nativeRetirement from './native-retirement.ts';
 import assertNotificationResetRetirement from '../../notification-reset-retirement.ts';
 import type { OpenClawTaskDependencies } from '../dispatch/openclaw-dispatch-context.ts';
-import OpenClawDispatchStore from '../dispatch/openclaw-dispatch-state.ts';
 import { operatorInputEvent } from '../../openclaw-session-input.ts';
 import { sessionObject, type DispatchCaller } from '../../openclaw-session-create.ts';
 import type { DispatchAuthority } from '../../../credentials/session-dispatch.ts';
@@ -29,7 +28,7 @@ export default async function retireOpenClawNative(input: {
   const selected = await selectOpenClawTaskContext(deps.taskContext, manifest, input.workspace, {
     resolvePolicy: false,
   });
-  const journal = new OpenClawDispatchStore(deps.root, selected.store.location.scope);
+  const journal = selected.dispatch(deps.root);
   return deps.credential.use(authority, async (request) => {
     const nativeInput = () =>
       operatorInputEvent({

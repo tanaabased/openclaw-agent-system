@@ -12,7 +12,7 @@ import {
   codexNotificationResetPickupAutomation,
   replaceCodexNotificationCoordinator,
 } from './automations/codex-automations.ts';
-import CodexDispatchStore, { type DispatchRecord } from './tasks/dispatch/codex-dispatch-state.ts';
+import { type DispatchRecord } from './tasks/dispatch/codex-dispatch-state.ts';
 import { type CodexIntakeDependencies } from './codex-intake.ts';
 import { connectCodexGitHub } from './codex-github-client.ts';
 import { selectCodexTaskContext } from './tasks/context/codex-task-context.ts';
@@ -83,7 +83,7 @@ export default async function runCodexNotificationReset(
   const current = await selectCodexTaskContext(pluginData, deps, { inspectionOnly: true });
   if (!input.all && (input.agent?.length !== 1 || input.agent[0] !== current.agentId))
     throw new Error('notification-reset-explicit-bound-agent-required');
-  const journal = new CodexDispatchStore(pluginData, current.store.location.scope);
+  const journal = current.journal;
   const store = new NotificationResetStore(pluginData, current.store.location.scope);
   const retained = await store.read();
   const parse = (record: NotificationResetRecord) =>

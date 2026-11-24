@@ -1,5 +1,7 @@
+import OpenClawDispatchStore from '../dispatch/openclaw-dispatch-state.ts';
+import { sqliteDispatchPersistence, pickupDispatchScope } from '../../storage/dispatch-backend.ts';
 import type { SqliteInstallation } from '../../storage/storage-lifecycle.ts';
-import { bindIntakeStore, type StorageBackend } from '../../storage/intake-backend.ts';
+import { bindAgentStore, bindIntakeStore, type StorageBackend } from '../../storage/backend.ts';
 import { realpath } from 'node:fs/promises';
 import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
 import { intakeLocation } from '../../../channels/github/intake/record-store.ts';
@@ -25,7 +27,12 @@ export async function selectOpenClawTaskContext(
   const workspace = await realpath(workspaceDir);
   const selected =
     options.resolvePolicy === false ? undefined : assignmentIntakePolicy(manifest, 'openclaw');
-  const store = await bindIntakeStore(
+  const agent = await bindAgentStore(
+    manifest.agent.id,
+    deps.sqliteInstallation,
+    deps.storageBackend,
+  );
+  const store = bindIntakeStore(
     intakeLocation({
       runtime: 'openclaw',
       root: deps.root,
@@ -34,12 +41,19 @@ export async function selectOpenClawTaskContext(
       agentId: manifest.agent.id,
       resetRoot: deps.resetRoot,
     }),
-    manifest.agent.id,
-    deps.sqliteInstallation,
-    deps.storageBackend,
+    agent,
   );
   await new GitHubIdentityCache(store.location).hydrate(manifest.github?.notifications);
-  return { selected, store, workspace };
+  const dispatch = (root: string) => {
+    const scope = store.location.scope;
+    const pickup = root === deps.root && deps.resetRoot && deps.resetRoot !== root;
+    return new OpenClawDispatchStore(
+      root,
+      scope,
+      sqliteDispatchPersistence(agent, pickup ? pickupDispatchScope(scope) : scope),
+    );
+  };
+  return { selected, store, workspace, dispatch };
 }
 
 export type OpenClawTaskContext = Awaited<ReturnType<typeof selectOpenClawTaskContext>>;
