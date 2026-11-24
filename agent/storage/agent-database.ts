@@ -29,9 +29,19 @@ import {
   intakeRecords,
   intakeState,
 } from './schema.ts';
-import { assignmentClaims, instances, managedRepositories } from './installation-schema.ts';
+import {
+  assignmentClaims,
+  instances,
+  managedRepositories,
+  sidebarPlacements,
+} from './installation-schema.ts';
 import type { AssignmentClaimState } from '../tasks/dispatch/assignment-claim-store.ts';
-import type { BoundStorage, SqliteInstallation, StorageSchema } from './storage-lifecycle.ts';
+import type {
+  BoundStorage,
+  SidebarPlacementChange,
+  SqliteInstallation,
+  StorageSchema,
+} from './storage-lifecycle.ts';
 import type { IntakeState } from '../../channels/github/intake/record-store.ts';
 import type { RepositoryRecord } from '../../tools/git/repository-service.ts';
 import nodeErrorCode from '../../utils/node-error-code.ts';
@@ -476,6 +486,33 @@ class SqliteInstallationStore extends SqliteDatabase {
   );
   readonly read = this.records.read;
   readonly write = this.records.write;
+
+  changeSidebarPlacement(scope: string, change: SidebarPlacementChange) {
+    return this.use(false, (db) =>
+      db.transaction(
+        (tx) => {
+          assertPrivateStateLocksHeld();
+          const current = tx
+            .select()
+            .from(sidebarPlacements)
+            .where(eq(sidebarPlacements.scope, scope))
+            .get();
+          const { value, result } = change(current?.value);
+          if (value) {
+            tx.insert(sidebarPlacements)
+              .values({ scope, value })
+              .onConflictDoUpdate({
+                target: sidebarPlacements.scope,
+                set: { value },
+              })
+              .run();
+          }
+          return result;
+        },
+        { behavior: 'immediate' },
+      ),
+    );
+  }
 
   saveAssignmentClaims(state: AssignmentClaimState, previous?: AssignmentClaimState) {
     const { claims, ...identity } = state;

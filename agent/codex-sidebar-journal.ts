@@ -44,6 +44,10 @@ export const sidebarReceiptSchema = Type.Object(
   { additionalProperties: false },
 );
 export type SidebarReceipt = Static<typeof sidebarReceiptSchema>;
+export interface SidebarChange {
+  value?: SidebarState;
+  result: SidebarEffect | { error: unknown };
+}
 export type SidebarEffect =
   | { status: 'done'; sectionId: string }
   | { status: 'incomplete'; code: string; instruction: string }
@@ -85,21 +89,14 @@ export default class CodexSidebarJournal {
       });
     return rows.sidebarPlacements[0]?.value;
   }
-  private async write(state: SidebarState) {
-    const contents = JSON.stringify(state);
-    if (!this.storage) return this.file.write(contents);
-    if (Buffer.byteLength(contents) > maximumBytes)
-      throw new Error('The Codex sidebar placement exceeds its size limit.');
-    await this.storage.write([
-      { table: 'sidebarPlacements', action: 'save', row: { scope: this.scope, value: state } },
-    ]);
-  }
-  async read(): Promise<SidebarState> {
-    const saved = await this.readSaved();
+  private decode(saved: unknown): SidebarState {
     const state = saved === undefined ? { version: 1, name: this.name } : saved;
     if (!Value.Check(stateSchema, state) || state.name !== this.name)
       throw new Error('automation-sidebar-state-invalid');
     return state;
+  }
+  async read(): Promise<SidebarState> {
+    return this.decode(await this.readSaved());
   }
   async inspect(inventory: unknown, threadId: string, receipt?: SidebarReceipt) {
     const state = await this.read();
@@ -118,12 +115,28 @@ export default class CodexSidebarJournal {
     threadId: string,
     receipt?: SidebarReceipt,
   ): Promise<SidebarEffect> {
-    const incomplete = (code: string): SidebarEffect => ({
-      status: 'incomplete',
-      code,
-      instruction:
-        'Refresh native list_threads and reconcile this placement with its complete inventory. Do not repeat an uncertain native action.',
-    });
+    // A returned create receipt must survive even an unusable inventory on the same call.
+    const change = (saved: unknown): SidebarChange => {
+      const state = this.decode(saved);
+      let value: SidebarState | undefined;
+      const save = () => {
+        if (Buffer.byteLength(JSON.stringify(state)) > maximumBytes)
+          throw new Error('The Codex sidebar placement exceeds its size limit.');
+        value = structuredClone(state);
+      };
+      try {
+        const result = this.advance(state, save, owner, inventory, threadId, receipt);
+        return { result, value };
+      } catch (error) {
+        if (!value) throw error;
+        return { result: { error }, value };
+      }
+    };
+    if (this.storage) {
+      const result = await this.storage.changeSidebarPlacement(this.scope, change);
+      if ('error' in result) throw result.error;
+      return result;
+    }
     await ensurePrivateStateDirectories({
       directories: [this.root],
       currentUid: process.getuid?.(),
@@ -134,87 +147,105 @@ export default class CodexSidebarJournal {
       retries: { factor: 1, minTimeout: 25, maxTimeout: 25, retries: 40 },
     });
     try {
-      const state = await this.read();
-      const save = () => withPrivateStateLock(lock, () => this.write(state));
-      if (receipt) {
-        if (
-          !state.pending ||
-          state.pending.owner !== owner ||
-          state.pending.digest !== receipt.digest
-        )
-          throw new Error('automation-sidebar-receipt-mismatch');
-        if (state.pending.kind === 'create') {
-          if (state.pending.sectionId && state.pending.sectionId !== receipt.sectionId)
-            throw new Error('automation-sidebar-receipt-mismatch');
-          state.pending.sectionId = receipt.sectionId;
-          await save();
-        } else if (state.pending.sectionId !== receipt.sectionId)
-          throw new Error('automation-sidebar-receipt-mismatch');
-      }
-      const sections = sidebarSections(inventory);
-      const pending = state.pending;
-      if (pending) {
-        // a different workspace may observe success, but cannot replay the prepared mutation.
-        if (pending.kind === 'create') {
-          const matches = sections.filter(
-            (section) =>
-              section.name === this.name && !pending.beforeIds.includes(section.sectionId),
-          );
-          const created = pending.sectionId
-            ? matches.find((section) => section.sectionId === pending.sectionId)
-            : matches.length === 1
-              ? matches[0]
-              : undefined;
-          if (!created)
-            return incomplete(
-              matches.length > 1
-                ? 'automation-sidebar-ambiguous'
-                : 'automation-sidebar-create-unresolved',
-            );
-          state.sectionId = created.sectionId;
-        } else {
-          const placed = codexSidebarPlacement(
-            inventory,
-            pending.threadId,
-            this.name,
-            pending.sectionId,
-          );
-          if (placed.request || placed.sectionId !== pending.sectionId)
-            return incomplete('automation-sidebar-move-unresolved');
-          state.sectionId = placed.sectionId;
-        }
-        delete state.pending;
-        await save();
-      }
-      const placement = codexSidebarPlacement(inventory, threadId, this.name, state.sectionId);
-      if (!placement.request) {
-        state.sectionId = placement.sectionId;
-        await save();
-        return { status: 'done', sectionId: placement.sectionId! };
-      }
-      if (placement.request.tool === 'create_sidebar_section') delete state.sectionId;
-      const intent = {
-        owner,
-        threadId,
-        kind:
-          placement.request.tool === 'create_sidebar_section'
-            ? ('create' as const)
-            : ('move' as const),
-        beforeIds: sections.map((section) => section.sectionId),
-        ...(placement.sectionId ? { sectionId: placement.sectionId } : {}),
-      };
-      const digest = automationHash({ ...intent, name: this.name });
-      state.pending = { ...intent, digest };
-      await save();
-      return {
-        status: 'native-action',
-        digest,
-        request: placement.request,
-        instruction:
-          'Execute this native sidebar action once, refresh list_threads, and repeat the owning reconciliation with empty input. The runtime reads the native inventory and reconciles the retained placement. Do not retry a denial or uncertain action.',
-      };
+      return await withPrivateStateLock(lock, async () => {
+        const { value, result } = change(await this.readSaved());
+        if (value) await this.file.write(JSON.stringify(value));
+        if ('error' in result) throw result.error;
+        return result;
+      });
     } finally {
       await lock.release();
     }
+  }
+  private advance(
+    state: SidebarState,
+    save: () => void,
+    owner: string,
+    inventory: unknown,
+    threadId: string,
+    receipt?: SidebarReceipt,
+  ): SidebarEffect {
+    const incomplete = (code: string): SidebarEffect => ({
+      status: 'incomplete',
+      code,
+      instruction:
+        'Refresh native list_threads and reconcile this placement with its complete inventory. Do not repeat an uncertain native action.',
+    });
+    if (receipt) {
+      if (
+        !state.pending ||
+        state.pending.owner !== owner ||
+        state.pending.digest !== receipt.digest
+      )
+        throw new Error('automation-sidebar-receipt-mismatch');
+      if (state.pending.kind === 'create') {
+        if (state.pending.sectionId && state.pending.sectionId !== receipt.sectionId)
+          throw new Error('automation-sidebar-receipt-mismatch');
+        state.pending.sectionId = receipt.sectionId;
+        save();
+      } else if (state.pending.sectionId !== receipt.sectionId)
+        throw new Error('automation-sidebar-receipt-mismatch');
+    }
+    const sections = sidebarSections(inventory);
+    const pending = state.pending;
+    if (pending) {
+      // a different workspace may observe success, but cannot replay the prepared mutation.
+      if (pending.kind === 'create') {
+        const matches = sections.filter(
+          (section) => section.name === this.name && !pending.beforeIds.includes(section.sectionId),
+        );
+        const created = pending.sectionId
+          ? matches.find((section) => section.sectionId === pending.sectionId)
+          : matches.length === 1
+            ? matches[0]
+            : undefined;
+        if (!created)
+          return incomplete(
+            matches.length > 1
+              ? 'automation-sidebar-ambiguous'
+              : 'automation-sidebar-create-unresolved',
+          );
+        state.sectionId = created.sectionId;
+      } else {
+        const placed = codexSidebarPlacement(
+          inventory,
+          pending.threadId,
+          this.name,
+          pending.sectionId,
+        );
+        if (placed.request || placed.sectionId !== pending.sectionId)
+          return incomplete('automation-sidebar-move-unresolved');
+        state.sectionId = placed.sectionId;
+      }
+      delete state.pending;
+      save();
+    }
+    const placement = codexSidebarPlacement(inventory, threadId, this.name, state.sectionId);
+    if (!placement.request) {
+      state.sectionId = placement.sectionId;
+      save();
+      return { status: 'done', sectionId: placement.sectionId! };
+    }
+    if (placement.request.tool === 'create_sidebar_section') delete state.sectionId;
+    const intent = {
+      owner,
+      threadId,
+      kind:
+        placement.request.tool === 'create_sidebar_section'
+          ? ('create' as const)
+          : ('move' as const),
+      beforeIds: sections.map((section) => section.sectionId),
+      ...(placement.sectionId ? { sectionId: placement.sectionId } : {}),
+    };
+    const digest = automationHash({ ...intent, name: this.name });
+    state.pending = { ...intent, digest };
+    save();
+    return {
+      status: 'native-action',
+      digest,
+      request: placement.request,
+      instruction:
+        'Execute this native sidebar action once, refresh list_threads, and repeat the owning reconciliation with empty input. The runtime reads the native inventory and reconciles the retained placement. Do not retry a denial or uncertain action.',
+    };
   }
 }

@@ -1,3 +1,4 @@
+import type { SidebarChange, SidebarState } from '../codex-sidebar-journal.ts';
 import type { AgentRows, InstallationRows, WorkflowRecords } from './workflow-records.ts';
 import type {
   AgentSystemLifecycleContext,
@@ -31,6 +32,8 @@ export interface SessionStorage {
   ): Promise<void>;
 }
 
+export type SidebarPlacementChange = (current?: SidebarState) => SidebarChange;
+
 /** The runtime binds both handles before a workflow can read or change any records. */
 export interface BoundStorage {
   agent: WorkflowRecords<AgentRows> &
@@ -61,6 +64,10 @@ export interface BoundStorage {
       clearIntake(scope: string): Promise<void>;
     };
   installation: WorkflowRecords<InstallationRows> & {
+    changeSidebarPlacement(
+      scope: string,
+      change: SidebarPlacementChange,
+    ): Promise<SidebarChange['result']>;
     readRepository(root: string, id: string): Promise<RepositoryRecord | undefined>;
     saveRepository(root: string, record: RepositoryRecord): Promise<void>;
   };

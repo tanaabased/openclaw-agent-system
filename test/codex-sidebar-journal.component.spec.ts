@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
 
 import { bindSqliteInstallation } from '../agent/storage/agent-database.ts';
 import codexStorageLocation, { codexSidebarJournal } from '../agent/storage/codex-storage.ts';
@@ -65,6 +65,8 @@ describe('agent/codex-sidebar-journal', () => {
       if (backend === 'sqlite') await installation.install();
       const a = await codexSidebarJournal(root, 'profile', 'operations', backend);
       const b = await codexSidebarJournal(root, 'profile', 'OPERATIONS', backend);
+      // Independent SQLite handles must elect a caller even while the legacy lease is held.
+      if (backend === 'sqlite') await mkdir(a.path + '.lock');
       const results = await Promise.all([
         a.apply('a', inventory(), 'chat-a'),
         b.apply('b', inventory(), 'chat-b'),
@@ -83,8 +85,13 @@ describe('agent/codex-sidebar-journal', () => {
           undefined,
         );
       }
-      const recovered = await b.apply('b', inventory([section('created')]), 'chat-b');
-      assert.equal(recovered.status, 'native-action');
+      const observed = inventory([section('created')]);
+      const moves = await Promise.all([
+        a.apply('a', observed, 'chat-a'),
+        b.apply('b', observed, 'chat-b'),
+      ]);
+      assert.deepEqual(moves.map(({ status }) => status).sort(), ['incomplete', 'native-action']);
+      const recovered = moves.find(({ status }) => status === 'native-action')!;
       if (recovered.status !== 'native-action') return;
       assert.equal(recovered.request.tool, 'move_thread_to_sidebar_section');
       assert.equal((await a.read()).sectionId, 'created');
@@ -92,6 +99,27 @@ describe('agent/codex-sidebar-journal', () => {
       assert.equal((await a.apply('a', inventory(), 'chat-a')).status, 'incomplete');
     });
   }
+  it('should commit a matching create receipt when native inventory validation fails', async () => {
+    await bindSqliteInstallation(codexStorageLocation(root)).install();
+    const journal = await codexSidebarJournal(root, 'profile', 'operations', 'sqlite');
+    const create = await journal.apply('owner', inventory(), 'thread');
+    assert.equal(create.status, 'native-action');
+    if (create.status !== 'native-action') return;
+    const receipt = { digest: create.digest, sectionId: 'actual' };
+    await assert.rejects(journal.apply('owner', {}, 'thread', receipt), /inventory-required/);
+    const reopened = await codexSidebarJournal(root, 'profile', 'operations', 'sqlite');
+    assert.equal((await reopened.read()).pending?.sectionId, 'actual');
+    const move = await reopened.apply(
+      'owner',
+      inventory([section('other'), section('actual')]),
+      'thread',
+    );
+    assert.ok(
+      move.status === 'native-action' && move.request.tool === 'move_thread_to_sidebar_section',
+    );
+    assert.equal(move.request.arguments.sectionId, 'actual');
+  });
+
   for (const changed of ['deleted', 'renamed']) {
     it(`should reconcile a ${changed} confirmed group without replaying an unresolved creation`, async () => {
       const journal = new CodexSidebarJournal(root, 'profile', 'operations');
