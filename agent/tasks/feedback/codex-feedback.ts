@@ -3,7 +3,10 @@ import { resolve } from 'node:path';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import GitHubIdentityCache from '../../../channels/github/identity-cache.ts';
-import { type GitHubCanonicalFeedback } from '../../../channels/github/provider/review-feedback.ts';
+import {
+  isReviewFeedback,
+  type GitHubCanonicalFeedback,
+} from '../../../channels/github/provider/review-feedback.ts';
 import { implementationMaterialSchema } from '../../../tools/dispatch/implementation-material-schema.ts';
 import { automationHash } from '../../automation-hash.ts';
 import {
@@ -40,6 +43,7 @@ import { observeFeedbackPolicy } from './feedback-source.ts';
 import { retainedIssueProgression } from '../issue-progression.ts';
 import { WorkflowPolicyHeld } from '../live-workflow-policy.ts';
 import { taskAdmission } from '../task-admission.ts';
+import taskPullRequest from '../delivery/task-pull-request.ts';
 import reviewPolicy from '../review/review-policy.ts';
 import type { FeedbackProvider } from './feedback-provider.ts';
 import retainedIntakePolicy from '../retained-intake-policy.ts';
@@ -377,6 +381,36 @@ async function runCodexFeedbackScoped(
             if (input.action === 'context' && caller !== record.threadId)
               throw new Error('feedback-owner-caller-required');
             const source = JSON.parse(event.source) as GitHubCanonicalFeedback;
+            if (!event.attempt && event.itemType === 'pull-request') {
+              const competingRole = state.records.some((other) => {
+                if (
+                  other.reset ||
+                  other.retirement ||
+                  other.supersededBy ||
+                  !other.threadId ||
+                  Boolean(other.reviewAdmission) === Boolean(record.reviewAdmission)
+                )
+                  return false;
+                return (
+                  other.reviewAdmission?.issue.nodeId === event.nodeId ||
+                  taskPullRequest(other)?.pullRequestNodeId === event.nodeId ||
+                  taskAdmission(other, intake?.records ?? [])?.issue.nodeId === event.nodeId
+                );
+              });
+              if (competingRole) {
+                // A reply to our inline finding belongs to the reviewer. An external formal
+                // review belongs to the author. A shared top-level mention selects neither.
+                const role = isReviewFeedback(source)
+                  ? source.feedback.parent?.author?.nodeId === provider.comments.identity.nodeId
+                    ? 'review-request'
+                    : source.feedback.receipt.kind === 'review' &&
+                        source.author?.nodeId !== provider.comments.identity.nodeId
+                      ? 'issue-assignment'
+                      : undefined
+                  : undefined;
+                if (role !== workflow) throw new Error('feedback-source-owner-changed');
+              }
+            }
             sourcePresentation = feedbackPresentation(event, owner + '/' + name);
             const selfFeedback = source.author?.nodeId === provider.comments.identity.nodeId;
             const authorize = async () => {
