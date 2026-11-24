@@ -1,3 +1,6 @@
+import { bindSqliteInstallation } from '../agent/storage/agent-database.ts';
+import { bindPickupStore } from '../agent/storage/pickup-backend.ts';
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import { resolveAutomationPrompt } from '../agent/automations/automation-prompt.ts';
 import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
@@ -1505,9 +1508,17 @@ describe('agent/automation-service', () => {
     fixture.client.discoverProject = async () => {
       throw Error('install and inspection must not scan');
     };
-    const instanceRoot = join(root, 'instance');
-    await new AssignmentClaimStore(instanceRoot).identity();
-    const enrollments = new IssuePickupEnrollmentStore(instanceRoot);
+    const { sqliteInstallation, storageBackend } = await sqliteAgentFixture(
+      root,
+      manifest.agent.id,
+    );
+    await bindSqliteInstallation(sqliteInstallation).install();
+    const enrollments = await bindPickupStore(
+      sqliteInstallation,
+      manifest.agent.id,
+      storageBackend,
+    );
+    await enrollments.instance.identity();
     policy.issuePickup = {
       ...fixture.policy.issuePickup!,
       model: 'high',
@@ -1525,7 +1536,10 @@ describe('agent/automation-service', () => {
           timezone: 'UTC',
           now,
         }),
-      activate: (id, nativeId, previous) => enrollments.activate(id, nativeId, previous),
+      activate: async (selected, id, nativeId, previous) => {
+        const store = await bindPickupStore(sqliteInstallation, selected.agent.id, storageBackend);
+        await store.activate(id, nativeId, previous);
+      },
     };
     // seed the previous declaration through the existing installation owner.
     const pickupPolicy = policy.issuePickup;

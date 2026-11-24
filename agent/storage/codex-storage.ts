@@ -4,17 +4,25 @@ import IntakeRecordStore, {
   IntakeError,
   intakeScopeLocation,
 } from '../../channels/github/intake/record-store.ts';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { codexInstanceStore } from '../tasks/dispatch/codex-assignment-claims.ts';
+import { bindPickupStore } from './pickup-backend.ts';
 import type { SqliteInstallation } from './storage-lifecycle.ts';
 
 export default function codexStorageLocation(pluginData: string): SqliteInstallation {
   return {
     agentRoot: join(pluginData, 'agent-system-storage'),
-    installationRoot: codexInstanceStore(pluginData).root,
+    installationRoot: resolve(pluginData, 'instance'),
     schemaRoot: fileURLToPath(new URL('../../agent/storage/', import.meta.url)),
   };
+}
+
+export function codexPickupStore(
+  pluginData: string,
+  agentId: string,
+  backend = defaultStorageBackend,
+) {
+  return bindPickupStore(codexStorageLocation(pluginData), agentId, backend);
 }
 
 export async function* retainedIntakeCandidates(

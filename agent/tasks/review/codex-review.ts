@@ -586,7 +586,7 @@ export default async function codexReview(
               !pending.reviewPublication?.attempted
             ) {
               await acceptAssignmentClaim({
-                store: codexInstanceStore(pluginData),
+                store: codexInstanceStore(pluginData, deps.storageBackend),
                 client: claimClient(),
                 source: reviewClaimSource(admission),
                 nativeReceipt: found.id,
@@ -676,7 +676,7 @@ export default async function codexReview(
           if (admission.origin.kind === 'request') {
             const route = repositoryScope(policy, repository, 'review-request');
             const decision = await selectAssignmentClaim({
-              store: codexInstanceStore(pluginData),
+              store: codexInstanceStore(pluginData, deps.storageBackend),
               client: claimClient(),
               source: reviewClaimSource(admission),
               passId: automationHash({ caller, turnId }),

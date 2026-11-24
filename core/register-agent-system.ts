@@ -17,12 +17,11 @@ import OpenClawIntake from '../agent/openclaw-intake.ts';
 import resolveOpenClawCommandWorktree from '../agent/tasks/context/openclaw-command-worktree.ts';
 import isPathContained from '../utils/is-path-contained.ts';
 import createIntakeTool from '../tools/intake/tool.ts';
-import IssuePickupEnrollmentStore from '../agent/issue-pickup-enrollment.ts';
 import { sqliteStorageLifecycle } from '../agent/storage/storage-lifecycle.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { issuePickupAutomationId } from '../agent/automations/issue-pickup-jobs.ts';
 import createDispatchTool from '../tools/dispatch/tool.ts';
-import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
+import { bindInstanceStore, bindPickupStore } from '../agent/storage/pickup-backend.ts';
 import instanceIdentity from '../agent/identity/instance-identity.ts';
 import executeOpenClawDeliveryGit from './openclaw-delivery-git.ts';
 import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
@@ -300,16 +299,15 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     privateStateRoot,
   });
   let readScheduler: (() => NotificationScheduler | undefined) | undefined;
-  const instanceStore = new AssignmentClaimStore(
-    join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-instance'),
-  );
-
-  const pickupStore = new IssuePickupEnrollmentStore(instanceStore.root);
   const sqliteInstallation = {
     agentRoot: join(api.runtime.state.resolveStateDir(), 'agent-system-storage'),
-    installationRoot: instanceStore.root,
+    installationRoot: join(
+      privateStateRoot ?? api.runtime.state.resolveStateDir(),
+      'agent-system-instance',
+    ),
     schemaRoot: join(packageDir, 'agent', 'storage'),
   };
+  const instanceStore = bindInstanceStore(sqliteInstallation);
   const taskContext = {
     sqliteInstallation,
     root: join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-intake-v2'),
@@ -322,7 +320,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   };
   const intakeV2: OpenClawIntake = new OpenClawIntake({
     ...taskContext,
-    pickupStore,
     // tool registrations need not share the service-start closure; use enrolled read authority.
     readiness: (manifest, workspace, automationId, expectedNativeId, signal) =>
       sessionDispatch.use({ signal: signal ?? AbortSignal.timeout(25000) }, (request) =>
@@ -366,8 +363,15 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     pickup: {
       prepare: (manifest: AgentManifest, workspace: string) =>
         intakeV2.preparePickup(manifest, workspace),
-      activate: (id: string, nativeId: string, previousNativeId?: string) =>
-        pickupStore.activate(id, nativeId, previousNativeId),
+      activate: async (
+        manifest: AgentManifest,
+        id: string,
+        nativeId: string,
+        previousNativeId?: string,
+      ) => {
+        const store = await bindPickupStore(sqliteInstallation, manifest.agent.id);
+        await store.activate(id, nativeId, previousNativeId);
+      },
     },
     root: join(api.runtime.state.resolveStateDir(), 'agent-system-automations'),
     profile: api.runtime.state.resolveStateDir(),

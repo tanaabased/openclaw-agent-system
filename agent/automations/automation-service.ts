@@ -70,7 +70,12 @@ export interface AutomationServiceDependencies {
       manifest: AgentManifest,
       workspace: string,
     ): Promise<{ enrollment: { id: string }; nativeId?: string }>;
-    activate(id: string, nativeId: string, previousNativeId?: string): Promise<void>;
+    activate(
+      manifest: AgentManifest,
+      id: string,
+      nativeId: string,
+      previousNativeId?: string,
+    ): Promise<void>;
   };
   root: string;
   profile: string;
@@ -1279,6 +1284,7 @@ export default class AutomationService {
           if (changed || initialHash !== automationHash(ledger)) await store.write(ledger);
           if (pickup)
             await this.dependencies.pickup!.activate(
+              manifest,
               pickup.enrollment.id,
               native.id,
               pickup.nativeId,

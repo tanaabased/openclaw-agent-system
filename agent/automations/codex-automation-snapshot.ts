@@ -3,8 +3,7 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
-import { codexInstanceStore } from '../tasks/dispatch/codex-assignment-claims.ts';
-import IssuePickupEnrollmentStore from '../issue-pickup-enrollment.ts';
+import { codexPickupStore } from '../storage/codex-storage.ts';
 import {
   issuePickupAutomationId,
   issuePickupConfigurationCode,
@@ -81,12 +80,13 @@ const ownershipSchema = Type.Object(
 
 export type Ledger = Static<typeof ledgerSchema>;
 export interface CodexAutomationDependencies {
+  storageBackend?: CodexIntakeDependencies['storageBackend'];
   codexHome?: string;
   readAutomations?: typeof readCodexAutomations;
   now?: () => number;
   inspectBinding?: typeof inspectCodexWorkspaceBinding;
   threadAdapter?: AutomationThreadAdapter;
-  intake?: CodexIntakeDependencies;
+  intake?: Omit<CodexIntakeDependencies, 'storageBackend'>;
 }
 
 export async function readCodexAutomationSnapshot(
@@ -235,6 +235,8 @@ export async function readCodexAutomationSnapshot(
   } catch {
     throw new CodexAutomationError('automation-ownership-invalid');
   }
+  const pickupStore = () =>
+    codexPickupStore(pluginData, loaded.manifest.agent.id, dependencies.storageBackend);
   let jobs: ResolvedAutomation[] = [];
   let policyBlocker: string | undefined;
   let pickupBlocker: string | undefined;
@@ -249,7 +251,7 @@ export async function readCodexAutomationSnapshot(
         pickupBlocker = issuePickupConfigurationCode(policy);
         if (!pickupBlocker) {
           try {
-            await new IssuePickupEnrollmentStore(codexInstanceStore(pluginData).root).owner();
+            await (await pickupStore()).owner();
           } catch (error) {
             pickupBlocker = issuePickupErrorCode(error);
           }
@@ -278,6 +280,7 @@ export async function readCodexAutomationSnapshot(
     jobs,
     policyBlocker,
     pickupBlocker,
+    pickupStore,
   };
 }
 

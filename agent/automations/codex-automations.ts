@@ -5,8 +5,6 @@ import {
   type CodexAutomationDependencies,
 } from './codex-automation-snapshot.ts';
 import { mkdir, rmdir } from 'node:fs/promises';
-import { codexInstanceStore } from '../tasks/dispatch/codex-assignment-claims.ts';
-import IssuePickupEnrollmentStore from '../issue-pickup-enrollment.ts';
 import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
 import automationReportName from './automation-report-name.ts';
 
@@ -301,7 +299,7 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
     ledger.records.some((record) => record.id === issuePickupAutomationId)
   ) {
     const findings = await inspectSelectedCodexPickup(
-      selected.root,
+      await selected.pickupStore(),
       assignmentIntakePolicy(loaded.manifest, 'codex')?.policy,
       intakeLocation({
         runtime: 'codex',
@@ -651,7 +649,7 @@ export async function replaceCodexNotificationCoordinator(
       };
     }
     if (jobId === issuePickupAutomationId) {
-      const enrollments = new IssuePickupEnrollmentStore(codexInstanceStore(pluginData).root);
+      const enrollments = await selected.pickupStore();
       const matches = (await enrollments.read()).records.filter(
         (entry) =>
           entry.enrollment.workspaceDir === selected.workspace &&
@@ -835,12 +833,14 @@ export async function prepareCodexAutomation(
     if (action.manifestId === issuePickupAutomationId && action.expected.status === 'ACTIVE')
       await prepareCodexPickupEnrollment(pluginData, {
         ...dependencies.intake,
+        storageBackend: dependencies.storageBackend,
         codexHome: selected.codexHome,
         inspectBinding: dependencies.inspectBinding,
       });
     if (action.manifestId === intakeAutomationId && action.expected.status === 'ACTIVE') {
       const verified = await preflightCodexIntake(pluginData, {
         ...dependencies.intake,
+        storageBackend: dependencies.storageBackend,
         codexHome: selected.codexHome,
         inspectBinding: dependencies.inspectBinding,
       });
@@ -930,6 +930,7 @@ export async function acknowledgeCodexAutomation(
     ) {
       const intake = await runCodexIntake(pluginData, true, {
         ...dependencies.intake,
+        storageBackend: dependencies.storageBackend,
         codexHome: selected.codexHome,
         inspectBinding: dependencies.inspectBinding,
       });
@@ -940,14 +941,13 @@ export async function acknowledgeCodexAutomation(
         throw new CodexAutomationError('automation-plan-stale-or-blocked');
       const enrollment = await prepareCodexPickupEnrollment(pluginData, {
         ...dependencies.intake,
+        storageBackend: dependencies.storageBackend,
         codexHome: selected.codexHome,
         inspectBinding: dependencies.inspectBinding,
       });
-      await new IssuePickupEnrollmentStore(codexInstanceStore(pluginData).root).activate(
-        enrollment.enrollment.id,
-        actual.id,
-        enrollment.nativeId,
-      );
+      await (
+        await selected.pickupStore()
+      ).activate(enrollment.enrollment.id, actual.id, enrollment.nativeId);
     }
     const records = selected.ledger.records.filter((record) => record.id !== action.manifestId);
     const completed = {

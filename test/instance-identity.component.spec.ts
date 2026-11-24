@@ -49,10 +49,10 @@ describe('agent/instance-identity', () => {
     await mkdir(workspace);
     await writeFile(join(workspace, 'agent.yaml'), 'schema-version: 1\nagent: {id: receiver}\n');
     await bindCodexWorkspace(pluginData, workspace);
-    const deps = { codexHome: join(root, 'codex') };
+    const deps = { codexHome: join(root, 'codex'), storageBackend: 'sqlite' as const };
     const inspection = await inspectCodexSetup(pluginData, undefined, deps);
     assert.ok(inspection.findings.some((f) => f.code === 'instance-identity-missing'));
-    const store = codexInstanceStore(pluginData);
+    const store = codexInstanceStore(pluginData, deps.storageBackend);
     assert.equal(await store.inspect(), undefined);
     await installCodexSetup(pluginData, undefined, deps);
     const saved = await store.inspect();

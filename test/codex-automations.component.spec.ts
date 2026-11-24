@@ -1,5 +1,7 @@
 import { codexInstanceStore } from '../agent/tasks/dispatch/codex-assignment-claims.ts';
-import IssuePickupEnrollmentStore from '../agent/issue-pickup-enrollment.ts';
+import { bindSqliteInstallation } from '../agent/storage/agent-database.ts';
+import { codexPickupStore } from '../agent/storage/codex-storage.ts';
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import selectionFixture from './issue-pickup-selection-fixture.ts';
 import checkCodexActivationIsolation from './codex-activation-fixture.ts';
 import assert from 'node:assert/strict';
@@ -739,7 +741,12 @@ describe('agent/codex-automations', () => {
 
   it('should enroll one coordinator-free pickup job and preserve its window anchor across pause and repeated installs', async () => {
     const provider = selectionFixture();
-    await codexInstanceStore(pluginData).identity();
+    const { agent, sqliteInstallation, storageBackend } = await sqliteAgentFixture(
+      pluginData,
+      'fixture',
+    );
+    await bindSqliteInstallation(sqliteInstallation).install();
+    await codexInstanceStore(pluginData, storageBackend).identity();
     const source = {
       'schema-version': 1,
       agent: { id: 'fixture' },
@@ -780,6 +787,7 @@ describe('agent/codex-automations', () => {
     >();
     const dependencies = {
       ...deps(),
+      storageBackend,
       intake: { connect: async () => provider.client },
       threadAdapter: {
         async lookup(id: string) {
@@ -847,13 +855,14 @@ describe('agent/codex-automations', () => {
     const legacyChat = legacyPickup.definition.targetThreadId;
     const legacyHistory = structuredClone(conversations.get(legacyChat));
     await saveManifest();
-    const enrollments = new IssuePickupEnrollmentStore(codexInstanceStore(pluginData).root);
+    const enrollments = await codexPickupStore(pluginData, 'fixture', storageBackend);
     provider.milestone.state = 'closed';
     provider.client.discoverProject = async () => {
       throw Error('installation must not scan');
     };
     const priorEnrollment = await prepareCodexPickupEnrollment(pluginData, {
       ...dependencies.intake,
+      storageBackend,
       codexHome,
     });
     await enrollments.activate(priorEnrollment.enrollment.id, legacyPickup.id);
@@ -1037,7 +1046,13 @@ describe('agent/codex-automations', () => {
       (await codexNotificationResetPickupAutomation(pluginData, dependencies))?.definition.status,
       'PAUSED',
     );
-    await rm(enrollments.path);
+    await agent.write([
+      {
+        table: 'pickupEnrollments',
+        action: 'remove',
+        key: { runtime: 'codex', scope: first.enrollment.scope },
+      },
+    ]);
     assert.equal(
       (await replaceCoordinator(resetBefore, dependencies, 'github-issue-pickup')).status,
       'done',

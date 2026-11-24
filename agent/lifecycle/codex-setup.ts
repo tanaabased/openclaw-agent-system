@@ -1,3 +1,4 @@
+import type { StorageBackend } from '../storage/backend.ts';
 import codexStorageLocation from '../storage/codex-storage.ts';
 import { sqliteStorageLifecycle } from '../storage/storage-lifecycle.ts';
 import { delimiter } from 'node:path';
@@ -32,6 +33,7 @@ interface CodexSetupSnapshot {
 }
 
 export interface CodexSetupDependencies {
+  storageBackend?: StorageBackend;
   automationInputs?: CodexAutomationInputs;
   codexHome?: string;
   baseEnvironment?: Readonly<NodeJS.ProcessEnv>;
@@ -189,9 +191,10 @@ export async function inspectCodexSetup(
         : []),
       ...(await lifecycle.inspect(context)),
       ...(await Promise.all(storage.map((database) => database.inspect(context)))).flat(),
-      ...(await instanceIdentity(codexInstanceStore(pluginData)).inspect!(context)).map(
-        (finding) => ({ ...finding, component: 'instance-identity' }),
-      ),
+      ...(
+        await instanceIdentity(codexInstanceStore(pluginData, dependencies.storageBackend))
+          .inspect!(context)
+      ).map((finding) => ({ ...finding, component: 'instance-identity' })),
       ...notificationDiagnostics.map<AgentSystemLifecycleFinding>((diagnostic) => ({
         component: 'github-notifications',
         ...diagnostic,
@@ -221,7 +224,9 @@ export async function installCodexSetup(
     await context.assertCurrent();
     result.outcomes.push(...(await database.reconcile(context)).outcomes);
   }
-  const instance = await instanceIdentity(codexInstanceStore(pluginData)).reconcile!(context);
+  const instance = await instanceIdentity(
+    codexInstanceStore(pluginData, dependencies.storageBackend),
+  ).reconcile!(context);
   result.outcomes.push(
     ...instance.outcomes.map((outcome) => ({ ...outcome, component: 'instance-identity' })),
   );

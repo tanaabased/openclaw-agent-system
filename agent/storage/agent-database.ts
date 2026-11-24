@@ -333,6 +333,15 @@ class SqliteInstallationStore extends SqliteDatabase {
   }
 }
 
+export function bindSqliteInstallation(installation: SqliteInstallation) {
+  return new SqliteInstallationStore(
+    installation.installationRoot,
+    'agent-system.sqlite',
+    'agent-system-storage',
+    join(installation.schemaRoot, 'installation-migrations'),
+  );
+}
+
 export function bindSqliteStorage(
   installation: SqliteInstallation,
   agentId: string,
@@ -345,11 +354,6 @@ export function bindSqliteStorage(
       'agent-storage',
       join(installation.schemaRoot, 'migrations'),
     ),
-    installation: new SqliteInstallationStore(
-      installation.installationRoot,
-      'agent-system.sqlite',
-      'agent-system-storage',
-      join(installation.schemaRoot, 'installation-migrations'),
-    ),
+    installation: bindSqliteInstallation(installation),
   };
 }

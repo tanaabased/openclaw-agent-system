@@ -4,8 +4,8 @@ import {
   selectCodexTaskContext,
   type CodexTaskContextDependencies,
 } from '../tasks/context/codex-task-context.ts';
-import { codexInstanceStore } from '../tasks/dispatch/codex-assignment-claims.ts';
-import IssuePickupEnrollmentStore from '../issue-pickup-enrollment.ts';
+import { codexPickupStore } from '../storage/codex-storage.ts';
+import type IssuePickupEnrollmentStore from '../issue-pickup-enrollment.ts';
 import { issuePickupConfigurationCode, issuePickupErrorCode } from './issue-pickup-jobs.ts';
 import { inspectCodexPickupActivation } from './codex-automation-activation.ts';
 
@@ -15,20 +15,21 @@ export async function inspectCodexPickup(
 ) {
   const current = await selectCodexTaskContext(pluginData, deps, { inspectionOnly: true });
   return inspectSelectedCodexPickup(
-    pluginData,
+    await codexPickupStore(pluginData, current.agentId, deps.storageBackend),
     current.policy?.policy,
     current.store.location.scope,
     () =>
       inspectCodexPickupActivation(pluginData, {
         codexHome: current.codexHome,
         inspectBinding: deps.inspectBinding,
+        storageBackend: deps.storageBackend,
       }),
   );
 }
 
 /** planning may reuse selected ownership; standalone inspection selects fresh native evidence. */
 export async function inspectSelectedCodexPickup(
-  pluginData: string,
+  enrollments: IssuePickupEnrollmentStore,
   policy: GitHubNotificationPolicy | undefined,
   scope: string,
   activate: () => Promise<{ nativeId: string }>,
@@ -37,9 +38,7 @@ export async function inspectSelectedCodexPickup(
   let code: string | undefined = issuePickupConfigurationCode(policy);
   try {
     if (!code) {
-      const record = await new IssuePickupEnrollmentStore(
-        codexInstanceStore(pluginData).root,
-      ).inspect(policy, 'codex', scope);
+      const record = await enrollments.inspect(policy, 'codex', scope);
       const native = await activate();
       if (record.nativeId !== native.nativeId) code = 'issue-pickup-enrollment-changed';
     }

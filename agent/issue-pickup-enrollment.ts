@@ -14,6 +14,12 @@ import ensurePrivateStateDirectories from '../core/ensure-private-state-director
 import PrivateStateFile from '../core/private-state-file.ts';
 import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
 
+import type { BoundStorage } from './storage/storage-lifecycle.ts';
+import {
+  withPrivateStateLock,
+  type PrivateStateLockGuard,
+} from '../core/private-state-lock-context.ts';
+
 const maximumBytes = 4 * 1024 * 1024;
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const recordSchema = Type.Object(
@@ -35,7 +41,11 @@ export type PickupEnrollment = Static<typeof recordSchema>;
 export default class IssuePickupEnrollmentStore {
   readonly file: PrivateStateFile;
   readonly path: string;
-  constructor(readonly root: string) {
+  constructor(
+    readonly root: string,
+    readonly instance = new AssignmentClaimStore(root),
+    private readonly sqlite?: { agentId: string; agent: BoundStorage['agent'] },
+  ) {
     // retain existing enrollments; a terminology change must not create a new ledger.
     this.path = join(root, 'project-pickup-enrollments.json');
     // installation metadata only: no per-run history. Match the instance identity ledger
@@ -50,6 +60,21 @@ export default class IssuePickupEnrollmentStore {
   }
 
   async read() {
+    if (this.sqlite) {
+      const { agent, agentId } = this.sqlite;
+      const { pickupEnrollments } = await agent.read({ pickupEnrollments: {} });
+      const records = pickupEnrollments.map(({ runtime, scope, value }) => {
+        if (
+          !Value.Check(recordSchema, value) ||
+          value.enrollment.agentId !== agentId ||
+          value.enrollment.scope !== scope ||
+          value.enrollment.runtime !== runtime
+        )
+          throw new IntakeError('issue-pickup-enrollment-invalid');
+        return value;
+      });
+      return { version: 1 as const, records };
+    }
     const raw = await this.file.read();
     if (raw === undefined) return { version: 1 as const, records: [] as PickupEnrollment[] };
     const state: unknown = JSON.parse(raw);
@@ -57,8 +82,25 @@ export default class IssuePickupEnrollmentStore {
     return state;
   }
 
+  private async save(
+    state: Static<typeof schema>,
+    record: PickupEnrollment,
+    lock: PrivateStateLockGuard,
+  ) {
+    if (!Value.Check(schema, state)) throw new IntakeError('issue-pickup-enrollment-invalid');
+    await withPrivateStateLock(lock, async () => {
+      if (!this.sqlite) return this.file.write(JSON.stringify(state));
+      const { runtime, scope, agentId } = record.enrollment;
+      if (agentId !== this.sqlite.agentId)
+        throw new IntakeError('issue-pickup-enrollment-conflict');
+      await this.sqlite.agent.write([
+        { table: 'pickupEnrollments', action: 'save', row: { runtime, scope, value: record } },
+      ]);
+    });
+  }
+
   async owner() {
-    const identity = await new AssignmentClaimStore(this.root).inspect();
+    const identity = await this.instance.inspect();
     if (!identity) throw new IntakeError('instance-install-required');
     return identity;
   }
@@ -179,7 +221,6 @@ export default class IssuePickupEnrollmentStore {
         const commit = async () => {
           if (!changed) return;
           state.records[state.records.indexOf(existing)] = updated;
-          if (!Value.Check(schema, state)) throw new IntakeError('issue-pickup-enrollment-invalid');
           if (
             Buffer.byteLength(
               JSON.stringify({
@@ -189,8 +230,7 @@ export default class IssuePickupEnrollmentStore {
             ) > maximumBytes
           )
             throw new IntakeError('issue-pickup-enrollment-capacity');
-          lock.assertHeld();
-          await this.file.write(JSON.stringify(state));
+          await this.save(state, updated, lock);
         };
         if (input.reconcile) await input.reconcile(updated, commit);
         else await commit();
@@ -221,9 +261,7 @@ export default class IssuePickupEnrollmentStore {
       };
       if (Buffer.byteLength(JSON.stringify(reserved)) > maximumBytes)
         throw new IntakeError('issue-pickup-enrollment-capacity');
-      lock.assertHeld();
-      if (!Value.Check(schema, state)) throw new IntakeError('issue-pickup-enrollment-invalid');
-      await this.file.write(JSON.stringify(state));
+      await this.save(state, record, lock);
       return record;
     } finally {
       await lock.release();
@@ -241,9 +279,7 @@ export default class IssuePickupEnrollmentStore {
       if (!record || (record.nativeId && record.nativeId !== (previousNativeId ?? nativeId)))
         throw new IntakeError('issue-pickup-enrollment-changed');
       record.nativeId = nativeId;
-      lock.assertHeld();
-      if (!Value.Check(schema, state)) throw new IntakeError('issue-pickup-enrollment-invalid');
-      await this.file.write(JSON.stringify(state));
+      await this.save(state, record, lock);
     } finally {
       await lock.release();
     }

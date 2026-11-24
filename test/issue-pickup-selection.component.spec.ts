@@ -5,7 +5,10 @@ import type { RepositoryRoute } from '../channels/github/repository-scope.ts';
 import type { Static } from 'typebox';
 import type { issuePickupSchema } from '../channels/github/issue-pickup-schema.ts';
 import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
-import IssuePickupEnrollmentStore from '../agent/issue-pickup-enrollment.ts';
+import codexStorageLocation from '../agent/storage/codex-storage.ts';
+import { bindInstanceStore, bindPickupStore } from '../agent/storage/pickup-backend.ts';
+import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
+import type { StorageBackend } from '../agent/storage/backend.ts';
 import assert from 'node:assert/strict';
 import IssuePickupFailure from '../agent/issue-pickup-failure.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
@@ -14,7 +17,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import codexCapacity from '../agent/tasks/dispatch/codex-capacity.ts';
-import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
+import type CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import {
   prepareCodexPickupEnrollment,
   runCodexIntake,
@@ -24,7 +27,7 @@ import {
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
 import openClawCapacity from '../agent/tasks/dispatch/openclaw-capacity.ts';
-import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
+import type OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import { issuePickupPolicyDigest } from '../agent/issue-pickup-authority.ts';
 import type { PickupInput } from '../agent/issue-pickup.ts';
@@ -54,6 +57,7 @@ describe('issue pickup selection through native journals', () => {
     runtime: 'codex' | 'openclaw',
     coordinated = false,
     initialScope?: 'all' | 'multiple' | 'prefer' | 'namespace',
+    storageBackend: StorageBackend = 'file',
   ) {
     const f = selectionFixture(runtime);
     const workspace = join(root, 'workspace');
@@ -62,8 +66,14 @@ describe('issue pickup selection through native journals', () => {
     await mkdir(workspace);
     await mkdir(home);
     const instanceRoot = join(data, 'instance');
-    await new AssignmentClaimStore(instanceRoot).identity();
-    const enrollmentStore = new IssuePickupEnrollmentStore(instanceRoot);
+    const sqliteInstallation = codexStorageLocation(data);
+    if (storageBackend === 'sqlite') {
+      const db = bindSqliteStorage(sqliteInstallation, 'receiver');
+      await db.agent.install();
+      await db.installation.install();
+    }
+    await bindInstanceStore(sqliteInstallation, storageBackend).identity();
+    const enrollmentStore = await bindPickupStore(sqliteInstallation, 'receiver', storageBackend);
     const caller = { current: true };
     const connectionFailure: { error?: Error } = {};
     const connect = async () => {
@@ -153,6 +163,7 @@ describe('issue pickup selection through native journals', () => {
       await bindCodexWorkspace(data, workspace);
       const deps: CodexIntakeDependencies = {
         codexHome: home,
+        storageBackend,
         now: () => f.clock.now,
         assertActive: async () => {},
         connect,
@@ -176,7 +187,7 @@ describe('issue pickup selection through native journals', () => {
       await runCodexIntake(data, true, deps);
       const selected = await selectCodexTaskContext(data, deps);
       scope = selected.store.location.scope;
-      journal = new CodexDispatchStore(data, scope);
+      journal = selected.journal;
       const enrollment = await prepareCodexPickupEnrollment(data, deps);
       await enrollmentStore.activate(enrollment.enrollment.id, occurrence.nativeId);
       Object.assign(f.authority.enrollment, enrollment.enrollment);
@@ -185,15 +196,21 @@ describe('issue pickup selection through native journals', () => {
           runCodexIssuePickup(data, input, 'UTC', deps),
         );
       inspect = () =>
-        inspectSelectedCodexPickup(data, manifest.github!.notifications!, scope, async () => ({
-          nativeId: occurrence.nativeId,
-        }));
+        inspectSelectedCodexPickup(
+          enrollmentStore,
+          manifest.github!.notifications!,
+          scope,
+          async () => ({
+            nativeId: occurrence.nativeId,
+          }),
+        );
       scan = () => runCodexIntake(data, false, deps);
       read = async () => (await selected.store.read())!.records;
     } else {
       const intake = new OpenClawIntake({
         root: data,
-        pickupStore: enrollmentStore,
+        sqliteInstallation,
+        storageBackend,
         namespace: root,
         now: () => f.clock.now,
         readiness: async () => undefined,
@@ -213,7 +230,7 @@ describe('issue pickup selection through native journals', () => {
       await intake.run(manifest, workspace, 'activate');
       const selected = await intake.select(manifest, workspace);
       scope = selected.store.location.scope;
-      journal = new OpenClawDispatchStore(data, scope);
+      journal = selected.dispatch(data);
       const enrollment = await intake.preparePickup(manifest, workspace);
       await enrollmentStore.activate(enrollment.enrollment.id, occurrence.nativeId);
       Object.assign(f.authority.enrollment, enrollment.enrollment);
@@ -258,13 +275,55 @@ describe('issue pickup selection through native journals', () => {
       tick,
       claims,
       instanceRoot,
+      sqliteInstallation,
       configure,
       enrollmentStore,
       connectionFailure,
     };
   }
 
+  it('should keep two openclaw agents on separate schedules under one sqlite instance identity', async () => {
+    const f = await fixture('openclaw', false, undefined, 'sqlite');
+    const [first] = (await f.enrollmentStore.read()).records;
+    assert.ok(first);
+    await bindSqliteStorage(f.sqliteInstallation, 'second').agent.install();
+    const second = await bindPickupStore(f.sqliteInstallation, 'second', 'sqlite');
+    assert.deepEqual((await second.read()).records, []);
+    const enrollment = await second.prepare({
+      policy: f.policy,
+      runtime: 'openclaw',
+      agentId: 'second',
+      scope: 'second-agent-scope',
+      workspaceDir: join(root, 'second'),
+      client: f.client,
+      timezone: 'UTC',
+      now: f.clock.now,
+    });
+    await second.activate(enrollment.enrollment.id, 'second-job');
+    await assert.rejects(second.activate(first.enrollment.id, 'second-job'), /enrollment-changed/u);
+    assert.equal((await second.read()).records[0]?.instanceId, first.instanceId);
+    assert.equal((await second.read()).records[0]?.nativeId, 'second-job');
+    assert.deepEqual((await f.enrollmentStore.read()).records, [first]);
+  });
+
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should reopen the active sqlite enrollment and reuse its native schedule through ${runtime}`, async () => {
+      const f = await fixture(runtime, false, undefined, 'sqlite');
+      const reopened = await bindPickupStore(f.sqliteInstallation, 'receiver', 'sqlite');
+      const [record] = (await reopened.read()).records;
+      assert.equal(record?.nativeId, 'pickup-job');
+      assert.deepEqual(await reopened.owner(), await f.enrollmentStore.owner());
+      assert.ok((await f.inspect()).some((finding) => finding.code === 'issue-pickup-ready'));
+      assert.equal((await f.pickup()).status, 'selection-required');
+      assert.deepEqual((await reopened.read()).records, [record]);
+      await assert.rejects(readFile(join(f.instanceRoot, 'project-pickup-enrollments.json')), {
+        code: 'ENOENT',
+      });
+      await assert.rejects(readFile(join(f.instanceRoot, 'assignment-claims.json')), {
+        code: 'ENOENT',
+      });
+    });
+
     it(`should report closed scope and skipped repositories without losing activation through ${runtime}`, async () => {
       const f = await fixture(runtime);
       const before = (await f.enrollmentStore.read()).records;

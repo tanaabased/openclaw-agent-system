@@ -266,7 +266,7 @@ async function runCodexDispatchScoped(
     await reconcileCodexRetirementEffects(pluginData, deps, true);
   deps = {
     ...deps,
-    claimStore: deps.claimStore ?? codexInstanceStore(pluginData),
+    claimStore: deps.claimStore ?? codexInstanceStore(pluginData, deps.storageBackend),
   };
   if (action === 'next') {
     const observation = await executeCodexDispatch(pluginData, 'observe-denials', {}, deps);
