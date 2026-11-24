@@ -12,10 +12,9 @@ import ensurePrivateStateDirectories, {
   assertPrivateDirectory,
 } from '../../core/ensure-private-state-directories.ts';
 import packageMetadata from '../../package.json' with { type: 'json' };
-import { automationHash } from '../automation-hash.ts';
 import { intakeRecords, intakeState } from './schema.ts';
 import { managedRepositories } from './installation-schema.ts';
-import type { BoundStorage, StorageBinding, StorageSchema } from './storage-lifecycle.ts';
+import type { BoundStorage, StorageSchema } from './storage-lifecycle.ts';
 import type { IntakeState } from '../../channels/github/intake/record-store.ts';
 import type { RepositoryRecord } from '../../tools/git/repository-service.ts';
 import nodeErrorCode from '../../utils/node-error-code.ts';
@@ -46,12 +45,11 @@ class SqliteDatabase {
 
   constructor(
     private readonly root: string,
-    name: string,
-    private readonly component: 'agent-storage' | 'installation-storage',
+    private readonly filename: string,
+    private readonly component: 'agent-storage' | 'agent-system-storage',
     private readonly migrationsFolder: string,
   ) {
-    if (!/^[a-z0-9][a-z0-9-]*$/u.test(name)) throw new Error('invalid agent database name');
-    this.path = join(root, name + '.sqlite');
+    this.path = join(root, filename);
   }
 
   /** Normal clients open an installed database; only Install creates it. */
@@ -112,7 +110,7 @@ class SqliteDatabase {
           component,
           code: component + '-missing',
           status: 'drift',
-          message: 'database missing: ' + this.path,
+          message: '`' + this.filename + '` is missing',
           remediation,
         };
       }
@@ -125,7 +123,9 @@ class SqliteDatabase {
             code: component + '-migrations-pending',
             status: 'drift',
             message:
-              'pending migrations for Agent System ' +
+              '`' +
+              this.filename +
+              '` has pending migrations for Agent System ' +
               packageMetadata.version +
               ': ' +
               pending.map((m) => m.name).join(', '),
@@ -135,7 +135,7 @@ class SqliteDatabase {
           component,
           code: component + '-ready',
           status: 'healthy',
-          message: 'database: ' + this.path,
+          message: '`' + this.filename + '` is ready',
         };
       } finally {
         client.close();
@@ -146,8 +146,9 @@ class SqliteDatabase {
         code: component + '-inspection-failed',
         status: 'blocked',
         message:
-          'cannot inspect ' +
-          this.path +
+          'cannot inspect `' +
+          this.filename +
+          '`' +
           ': ' +
           (error instanceof Error ? error.message : String(error)),
       };
@@ -173,7 +174,7 @@ class SqliteDatabase {
         component: this.component,
         code: this.component + '-ready',
         status: changes ? (empty ? 'created' : 'updated') : 'unchanged',
-        message: `database: ${this.path}`,
+        message: '`' + this.filename + '` is ready',
       };
     } finally {
       db.$client.close();
@@ -254,23 +255,20 @@ class SqliteInstallationStore extends SqliteDatabase {
 
 export function bindSqliteStorage(
   installation: { agentRoot: string; installationRoot: string; schemaRoot: string },
-  binding: StorageBinding,
+  agentId: string,
 ): BoundStorage & Record<keyof BoundStorage, StorageSchema> {
-  const name =
-    binding.runtime === 'codex'
-      ? automationHash([binding.agentId, binding.workspaceDir])
-      : binding.agentId;
+  if (!/^[a-z0-9][a-z0-9-]*$/u.test(agentId)) throw new Error('invalid agent database name');
   return {
     agent: new SqliteAgentStore(
       installation.agentRoot,
-      name,
+      agentId + '.sqlite',
       'agent-storage',
       join(installation.schemaRoot, 'migrations'),
     ),
     installation: new SqliteInstallationStore(
       installation.installationRoot,
-      'installation',
-      'installation-storage',
+      'agent-system.sqlite',
+      'agent-system-storage',
       join(installation.schemaRoot, 'installation-migrations'),
     ),
   };

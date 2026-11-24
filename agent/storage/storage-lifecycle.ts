@@ -6,12 +6,6 @@ import type {
 import type { IntakeState } from '../../channels/github/intake/record-store.ts';
 import type { RepositoryRecord } from '../../tools/git/repository-service.ts';
 
-export interface StorageBinding {
-  runtime: 'openclaw' | 'codex';
-  agentId: string;
-  workspaceDir: string;
-}
-
 export interface StorageSchema {
   inspect(): Promise<AgentSystemLifecycleFinding>;
   install(): Promise<AgentSystemLifecycleOutcome>;
@@ -50,17 +44,15 @@ export function storageSchemaLifecycle(
 }
 
 export function sqliteStorageLifecycle(
-  runtime: StorageBinding['runtime'],
   installation: () => { agentRoot: string; installationRoot: string; schemaRoot: string },
 ) {
   return (['agent', 'installation'] as const).map((scope) =>
-    storageSchemaLifecycle(scope + '-storage', async ({ manifest, workspaceDir }) => {
-      const { bindSqliteStorage } = await import('./agent-database.ts');
-      return bindSqliteStorage(installation(), {
-        runtime,
-        agentId: manifest.agent.id,
-        workspaceDir,
-      })[scope];
-    }),
+    storageSchemaLifecycle(
+      scope === 'agent' ? 'agent-storage' : 'agent-system-storage',
+      async ({ manifest }) => {
+        const { bindSqliteStorage } = await import('./agent-database.ts');
+        return bindSqliteStorage(installation(), manifest.agent.id)[scope];
+      },
+    ),
   );
 }

@@ -6,25 +6,19 @@ import { fileURLToPath } from 'node:url';
 
 import { DatabaseSync } from 'node:sqlite';
 import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
-import type { StorageBinding } from '../agent/storage/storage-lifecycle.ts';
 import type { IntakeState } from '../channels/github/intake/record-store.ts';
 import { account, baseline, intakeFixture } from './github-intake-fixture.ts';
 
 const schemaRoot = fileURLToPath(new URL('../agent/storage/', import.meta.url));
 
-function bind(
-  root: string,
-  runtime: StorageBinding['runtime'],
-  agentId: string,
-  schemas = schemaRoot,
-) {
+function bind(root: string, agentId: string, schemas = schemaRoot) {
   return bindSqliteStorage(
     {
       agentRoot: join(root, 'agents'),
       installationRoot: join(root, 'instance'),
       schemaRoot: schemas,
     },
-    { runtime, agentId, workspaceDir: '/work/' + agentId },
+    agentId,
   );
 }
 
@@ -83,11 +77,13 @@ describe('agent database', () => {
   });
 
   it('should keep two codex installs independent even with the same agent, workspace and record ids', async () => {
-    const laptopA = bind(join(root, 'laptop-a'), 'codex', 'pirog');
-    const laptopB = bind(join(root, 'laptop-b'), 'codex', 'pirog');
+    const laptopA = bind(join(root, 'laptop-a'), 'pirog');
+    const laptopB = bind(join(root, 'laptop-b'), 'pirog');
     const a = sampleIntake('pirog', baseline + 1);
     const b = sampleIntake('pirog', baseline + 2);
     await assert.rejects(laptopA.agent.readIntake(a.scope), { code: 'ENOENT' });
+    assert.match((await laptopA.agent.inspect()).message, /`pirog\.sqlite`/);
+    assert.match((await laptopA.installation.inspect()).message, /`agent-system\.sqlite`/);
     await laptopA.agent.install();
     await laptopB.agent.install();
     await laptopA.agent.saveIntake(a);
@@ -110,8 +106,8 @@ describe('agent database', () => {
   });
 
   it('should share installation records between openclaw agents and keep their intake private', async () => {
-    const emori = bind(root, 'openclaw', 'emori');
-    const smutlord = bind(root, 'openclaw', 'smutlord');
+    const emori = bind(root, 'emori');
+    const smutlord = bind(root, 'smutlord');
     const state = sampleIntake('emori', baseline + 1);
     for (const store of [emori, smutlord]) await store.agent.install();
     assert.equal((await emori.installation.install()).status, 'created');
@@ -130,7 +126,7 @@ describe('agent database', () => {
   });
 
   it('should roll back the checkpoint and records together on a failed replacement', async () => {
-    const { agent } = bind(root, 'openclaw', 'emori');
+    const { agent } = bind(root, 'emori');
     await agent.install();
     const state = sampleIntake('emori', baseline + 1);
     await agent.saveIntake(state);
@@ -150,11 +146,11 @@ describe('agent database', () => {
     await cp(join(schemaRoot, 'migrations', initial), join(oldSchemas, 'migrations', initial), {
       recursive: true,
     });
-    const database = bind(root, 'openclaw', 'first').agent;
+    const database = bind(root, 'first').agent;
     const path = join(root, 'agents/first.sqlite');
     assert.equal((await database.inspect()).code, 'agent-storage-missing');
     await assert.rejects(stat(path), { code: 'ENOENT' });
-    await bind(root, 'openclaw', 'first', oldSchemas).agent.install();
+    await bind(root, 'first', oldSchemas).agent.install();
     const db = new DatabaseSync(path);
     try {
       db.prepare('INSERT INTO reply_drafts VALUES (?, ?, ?)').run(
@@ -195,8 +191,8 @@ describe('agent database', () => {
   });
 
   it('should refuse to initialize another agent through a linked database', async () => {
-    await bind(root, 'openclaw', 'first').agent.install();
+    await bind(root, 'first').agent.install();
     await symlink(join(root, 'agents/first.sqlite'), join(root, 'agents/second.sqlite'));
-    await assert.rejects(bind(root, 'openclaw', 'second').agent.install(), { code: 'ELOOP' });
+    await assert.rejects(bind(root, 'second').agent.install(), { code: 'ELOOP' });
   });
 });

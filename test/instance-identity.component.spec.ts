@@ -58,18 +58,15 @@ describe('agent/instance-identity', () => {
     const saved = await store.inspect();
     const replacement = join(root, 'replacement');
     await mkdir(replacement);
-    await writeFile(
-      join(replacement, 'agent.yaml'),
-      'schema-version: 1\nagent: {id: replacement}\n',
-    );
+    await writeFile(join(replacement, 'agent.yaml'), 'schema-version: 1\nagent: {id: receiver}\n');
     await bindCodexWorkspace(pluginData, replacement);
     const rebound = await installCodexSetup(pluginData, undefined, deps);
     assert.equal(
       rebound.outcomes.find((row) => row.component === 'agent-storage')?.status,
-      'created',
+      'unchanged',
     );
     assert.equal(
-      rebound.outcomes.find((row) => row.component === 'installation-storage')?.status,
+      rebound.outcomes.find((row) => row.component === 'agent-system-storage')?.status,
       'unchanged',
     );
     assert.deepEqual(await store.inspect(), saved);

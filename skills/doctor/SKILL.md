@@ -54,6 +54,8 @@ labeled and preserve existing identifier masking. Use the affected automation ID
 on thread/settings failures; use a generic
 threads finding only when the result supplies no affected automation.
 
+For agent and Agent System storage, show the database filename from each finding in backticks, followed by its condition.
+
 Keep healthy automation entries quiet: omit routine model/effort comparisons.
 Show settings only for drift, unsupported selections, or another actionable
 settings condition. For drift, report only explicitly requested settings that

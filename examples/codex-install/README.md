@@ -161,7 +161,7 @@ node "$runtime" setup install --plugin-data "$plugin_data" | jq -e 'any(.outcome
 original=$(jq -er .instanceId "$root/identity.json")
 node "$runtime" instance rename --plugin-data "$plugin_data" <<<'{"name":"CI Laptop"}' | jq -e --arg id "$original" '.status == "renamed" and .instanceId == $id and .displayName == "ci-laptop"'
 jq -nc --arg id "$original" '{expectedInstanceId:$id}' | node "$runtime" instance rotate --plugin-data "$plugin_data" | jq -e --arg id "$original" '.status == "rotated" and .instanceId != $id and .displayName == "ci-laptop"'
-node "$runtime" setup inspect --plugin-data "$plugin_data" | jq -e 'any(.findings[]; .code == "instance-identity-ready") and any(.findings[]; .code == "agent-storage-ready") and any(.findings[]; .code == "installation-storage-ready")'
+node "$runtime" setup inspect --plugin-data "$plugin_data" | jq -e 'any(.findings[]; .code == "instance-identity-ready") and any(.findings[]; .code == "agent-storage-ready") and any(.findings[]; .code == "agent-system-storage-ready")'
 
 # should report a blocked setup check when an exited parent leaves inherited pipes open
 root="$TMPDIR/agent-system-codex-install"

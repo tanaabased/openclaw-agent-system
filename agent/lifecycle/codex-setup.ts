@@ -153,7 +153,7 @@ async function runtime(
       }
     },
   };
-  const storage = sqliteStorageLifecycle('codex', () => ({
+  const storage = sqliteStorageLifecycle(() => ({
     agentRoot: join(pluginData, 'agent-system-storage'),
     installationRoot: codexInstanceStore(pluginData).root,
     schemaRoot: fileURLToPath(new URL('../../agent/storage/', import.meta.url)),

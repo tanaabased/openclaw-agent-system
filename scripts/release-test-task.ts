@@ -618,7 +618,7 @@ try {
         { code: 'setup-drift', stepId: 'shared' },
         { code: 'setup-not-applicable', stepId: 'openclaw-only' },
         { code: 'agent-storage-missing', stepId: undefined },
-        { code: 'installation-storage-missing', stepId: undefined },
+        { code: 'agent-system-storage-missing', stepId: undefined },
         { code: 'instance-identity-missing', stepId: undefined },
       ],
     );
@@ -631,14 +631,12 @@ try {
         { code: 'setup-applied', stepId: 'shared' },
         { code: 'setup-not-applicable', stepId: 'openclaw-only' },
         { code: 'agent-storage-ready', stepId: undefined },
-        { code: 'installation-storage-ready', stepId: undefined },
+        { code: 'agent-system-storage-ready', stepId: undefined },
         { code: 'instance-identity-ready', stepId: undefined },
       ],
     );
     const store = join(pluginData, 'agent-system-storage');
-    const [databaseFile] = await readdir(store);
-    assert.ok(databaseFile);
-    const database = new DatabaseSync(join(store, databaseFile), { readOnly: true });
+    const database = new DatabaseSync(join(store, 'package-test.sqlite'), { readOnly: true });
     try {
       assert.equal(
         database.prepare('SELECT count(*) AS count FROM dispatch_records').get()?.count,
@@ -647,7 +645,7 @@ try {
     } finally {
       database.close();
     }
-    const shared = new DatabaseSync(join(pluginData, 'instance', 'installation.sqlite'), {
+    const shared = new DatabaseSync(join(pluginData, 'instance', 'agent-system.sqlite'), {
       readOnly: true,
     });
     try {

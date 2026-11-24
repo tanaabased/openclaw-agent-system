@@ -766,7 +766,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...githubCapability.lifecycleContributions,
     ...googleCapability.lifecycleContributions,
     createSessionDispatchLifecycle(sessionDispatch),
-    ...sqliteStorageLifecycle('openclaw', () => ({
+    ...sqliteStorageLifecycle(() => ({
       agentRoot: join(api.runtime.state.resolveStateDir(), 'agent-system-storage'),
       installationRoot: instanceStore.root,
       schemaRoot: join(packageDir, 'agent', 'storage'),
