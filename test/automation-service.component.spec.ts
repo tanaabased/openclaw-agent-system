@@ -2198,7 +2198,7 @@ describe('agent/automation-service', () => {
       state: 'pending' as const,
     };
     const reports = await service.reportStore(manifest.agent.id);
-    await reports.withLock(executionId, () => reports.write(report));
+    await reports.retain(executionId, () => report);
     await service.assertReportCurrent(report);
     manifestDigest = 'unrelated-edit';
     await service.assertReportCurrent(report);

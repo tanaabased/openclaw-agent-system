@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
@@ -134,10 +135,11 @@ export default class GitHubIdentityCache {
         throw new Error('github-identity-resolution-unavailable');
       return;
     }
-    await ensurePrivateStateDirectories({
-      directories: [this.location.root],
-      label: 'GitHub identity cache',
-    });
+    if (!this.storage)
+      await ensurePrivateStateDirectories({
+        directories: [this.location.root],
+        label: 'GitHub identity cache',
+      });
     const refreshed =
       GitHubIdentityCache.#refreshed.get(client) ?? new Map<string, GitHubIdentity>();
     GitHubIdentityCache.#refreshed.set(client, refreshed);
@@ -199,13 +201,18 @@ export default class GitHubIdentityCache {
   }
 
   private async retain(reference: string, identity: GitHubIdentity) {
-    const unchanged = (retained: GitHubIdentity | undefined) => {
-      // Another consumer may have pinned this name while our lookup was in flight.
-      if (retained && retained.nodeId !== identity.nodeId)
-        throw new Error('github-identity-conflict');
-      return retained?.login === identity.login && retained?.type === identity.type;
-    };
-    if (unchanged((await this.read()).entries[reference])) return;
+    if (isDeepStrictEqual((await this.read()).entries[reference], identity)) return;
+    if (this.storage) {
+      return this.storage.retainIdentityPin(
+        { scope: this.location.scope, id: reference, value: identity },
+        (entries) => {
+          const state = { version: 1, entries };
+          if (!Value.Check(cacheSchema, state)) throw new Error('github-identity-cache-invalid');
+          if (Buffer.byteLength(JSON.stringify(state)) > maximumBytes)
+            throw new Error('The GitHub identity cache exceeds its size limit.');
+        },
+      );
+    }
     const lock = await acquirePrivateStateFileLock(this.path, {
       staleMs: 30_000,
       retries: { retries: 0, factor: 1, minTimeout: 25, maxTimeout: 25 },
@@ -213,19 +220,12 @@ export default class GitHubIdentityCache {
     try {
       await withPrivateStateLock(lock, async () => {
         const state = await this.read();
-        if (unchanged(state.entries[reference])) return;
+        const previous = state.entries[reference];
+        if (previous && previous.nodeId !== identity.nodeId)
+          throw new Error('github-identity-conflict');
+        if (isDeepStrictEqual(previous, identity)) return;
         state.entries[reference] = identity;
-        const contents = JSON.stringify(state);
-        if (!this.storage) return this.file.write(contents);
-        if (Buffer.byteLength(contents) > maximumBytes)
-          throw new Error('The GitHub identity cache exceeds its size limit.');
-        await this.storage.write([
-          {
-            table: 'githubIdentityPins',
-            action: 'save',
-            row: { scope: this.location.scope, id: reference, value: identity },
-          },
-        ]);
+        await this.file.write(JSON.stringify(state));
       });
     } finally {
       await lock.release();

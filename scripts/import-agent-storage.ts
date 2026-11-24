@@ -11,7 +11,7 @@ import { Value } from 'typebox/value';
 import type { Static, TSchema } from 'typebox';
 
 import { automationHash } from '../agent/automation-hash.ts';
-import AutomationReportStore from '../agent/automations/automation-report-store.ts';
+import AutomationReportStore, { reportRow } from '../agent/automations/automation-report-store.ts';
 import AutomationStore from '../agent/automations/automation-store.ts';
 import { ledgerSchema as threadsSchema } from '../agent/automations/automation-threads.ts';
 import { ledgerSchema as codexAutomations } from '../agent/automations/codex-automation-snapshot.ts';
@@ -75,6 +75,7 @@ function checked<S extends TSchema>(schema: S, value: unknown, path: string): St
 }
 
 function rowKey(row: object) {
+  if ('executionId' in row) return JSON.stringify(row.executionId);
   return JSON.stringify(
     Object.entries(row)
       .filter(([key]) => key !== 'value')
@@ -394,7 +395,7 @@ export async function importAgentStorage(options: ImportOptions) {
     for (const executionId of await reports.ids()) {
       const value = await reports.read(executionId);
       if (value?.target.agentId === agentId && value.target.workspaceDir === workspace)
-        agent.add('automationReports', { executionId, value });
+        agent.add('automationReports', reportRow(value));
     }
     const projection = await new PathProjectionStore({
       rootDir: privateRoot,

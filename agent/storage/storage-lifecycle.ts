@@ -35,6 +35,16 @@ export interface SessionStorage {
 export interface BoundStorage {
   agent: WorkflowRecords<AgentRows> &
     SessionStorage & {
+      changeReport(
+        id: string,
+        change: (
+          row?: AgentRows['automationReports'],
+        ) => AgentRows['automationReports'] | undefined,
+      ): Promise<void>;
+      retainIdentityPin(
+        row: AgentRows['githubIdentityPins'],
+        validate: (entries: Record<string, AgentRows['githubIdentityPins']['value']>) => void,
+      ): Promise<void>;
       replacePathProjection(value: AgentRows['pathProjections']['value']): Promise<void>;
       listReportIds(
         selection: 'all' | 'recoverable' | { completedBefore: string },

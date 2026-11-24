@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { GatewayClientRequestError } from '@openclaw/gateway-client';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, stat } from 'node:fs/promises';
 
 import deliverAutomationReport, {
   reconcileAutomationReport,
@@ -40,6 +40,7 @@ describe('agent/automation-report-delivery', () => {
   });
   function fixture(
     options: {
+      beforeSend?: () => Promise<void>;
       lostAck?: boolean;
       archived?: boolean;
       otherWorkspace?: boolean;
@@ -143,6 +144,7 @@ describe('agent/automation-report-delivery', () => {
           assert.equal(params.sessionId, 'incarnation');
           assert.equal(params.thinking, 'high');
           assert.equal(params.queueMode, 'followup');
+          await options.beforeSend?.();
           messages.push(String(params.message));
           if (options.lostAck) throw Error('lost acknowledgment');
           if (options.denied)
@@ -261,7 +263,7 @@ describe('agent/automation-report-delivery', () => {
           : { result: { ...input.result, output: { stdout: options.stdout, stderr: '' } } }),
       };
       if (options.legacy && !(await store.read(executionId)))
-        await store.write({
+        await store.retain(executionId, () => ({
           version: 1,
           executionId,
           hash: 'hash',
@@ -269,7 +271,7 @@ describe('agent/automation-report-delivery', () => {
           target,
           input: prepareLegacyAutomationReport(runInput),
           state: 'pending',
-        });
+        }));
       return deliverAutomationReport({
         target,
         input: runInput,
@@ -479,6 +481,42 @@ describe('agent/automation-report-delivery', () => {
     assert.equal(result.code, 'automation-report-hooks-not-observed');
     assert.equal((await f.recover()).status, 'failed');
     assert.equal(f.messages.length, 1);
+  });
+  it('should send once through two independent sqlite report stores with the file tree absent', async () => {
+    const open = async (beforeSend?: () => Promise<void>) => {
+      const { agent } = await sqliteAgentFixture(workspaceDir, 'a');
+      return fixture(
+        { pending: true, beforeSend },
+        new AutomationReportStore(workspaceDir + '/reports', () => Date.parse(input.startedAt), {
+          agentId: 'a',
+          agent,
+        }),
+      );
+    };
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const a = await open(async () => {
+      started.resolve();
+      await release.promise;
+    });
+    const b = await open();
+    const delivery = a.deliver();
+    try {
+      await Promise.race([started.promise, delivery.then(() => assert.fail('expected a send'))]);
+      assert.equal((await b.store.read(input.executionId))?.state, 'sending');
+      await b.deliver();
+      assert.equal(b.messages.length, 0);
+    } finally {
+      release.resolve();
+      await delivery;
+    }
+    assert.equal(a.messages.length, 1);
+    assert.equal(a.selections() + b.selections(), 1);
+    assert.equal((await b.store.read(input.executionId))?.state, 'submitted');
+    const restarted = await open();
+    await restarted.recover();
+    assert.equal(restarted.messages.length, 0);
+    await assert.rejects(stat(workspaceDir + '/reports'), { code: 'ENOENT' });
   });
   it('should preserve uncertain sends and reconcile the same durable identity after restart', async () => {
     const { agent } = await sqliteAgentFixture(workspaceDir, 'a');

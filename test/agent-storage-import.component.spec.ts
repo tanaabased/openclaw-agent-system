@@ -264,7 +264,7 @@ describe('legacy agent storage import', () => {
       const reportDirectory = join(automations, 'reports');
       if (!codex) {
         const files = new AutomationReportStore(reportDirectory);
-        await files.write({
+        await files.retain(reportId, () => ({
           version: 1,
           executionId: reportId,
           hash: 'job',
@@ -283,7 +283,7 @@ describe('legacy agent storage import', () => {
             result: { exitCode: 0, timedOut: false, truncated: false },
           }),
           state: 'uncertain',
-        });
+        }));
       }
       const foreignId = randomUUID();
       await db.installation.write([

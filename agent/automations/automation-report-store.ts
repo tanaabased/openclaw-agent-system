@@ -8,6 +8,7 @@ import acquirePrivateStateFileLock from '../../core/private-state-file-lock.ts';
 import PrivateStateFile from '../../core/private-state-file.ts';
 import { withPrivateStateLock } from '../../core/private-state-lock-context.ts';
 
+import type { AgentRows } from '../storage/workflow-records.ts';
 import type { BoundStorage } from '../storage/storage-lifecycle.ts';
 import nodeErrorCode from '../../utils/node-error-code.ts';
 
@@ -101,6 +102,19 @@ const schema = Type.Object(
 
 export type AutomationReportRecord = Static<typeof schema>;
 
+export function reportRow(record: AutomationReportRecord): AgentRows['automationReports'] {
+  const { state, completedAt, ...value } = record;
+  return { executionId: record.executionId, state, completedAt: completedAt ?? null, value };
+}
+
+function reportRecord(row: AgentRows['automationReports']) {
+  return {
+    ...row.value,
+    state: row.state,
+    ...(row.completedAt === null ? {} : { completedAt: row.completedAt }),
+  };
+}
+
 function terminal(record: AutomationReportRecord) {
   return record.state === 'delivered' || record.state === 'failed';
 }
@@ -134,14 +148,17 @@ export default class AutomationReportStore {
           if (nodeErrorCode(error) !== 'ENOENT') throw error;
           return { automationReports: [] };
         });
-      return rows.automationReports[0]?.value;
+      const row = rows.automationReports[0];
+      return row && reportRecord(row);
     }
     // A terminal write commits before removing its active copy; terminal evidence wins a crash.
     const data = (await this.file(id, true).read()) ?? (await file.read());
     return data === undefined ? undefined : JSON.parse(data);
   }
   async read(id: string): Promise<AutomationReportRecord | undefined> {
-    const value = await this.readSaved(id);
+    return this.validate(id, await this.readSaved(id));
+  }
+  private validate(id: string, value: unknown) {
     if (value === undefined) return;
     if (
       !Value.Check(schema, value) ||
@@ -153,35 +170,54 @@ export default class AutomationReportStore {
       throw new Error('automation-report-record-invalid');
     return value;
   }
-  async write(record: AutomationReportRecord) {
-    if (!Value.Check(schema, record)) throw new Error('automation-report-record-invalid');
-    const completed = terminal(record);
-    if (completed) record.completedAt ??= new Date(this.now()).toISOString();
-    const file = this.file(record.executionId, completed);
-    const contents = JSON.stringify(record);
-    if (this.storage) {
-      if (
-        record.target.agentId !== this.storage.agentId ||
-        record.input.executionId !== record.executionId
-      )
-        throw new Error('automation-report-record-invalid');
-      if (Buffer.byteLength(contents) > maximumBytes)
-        throw new Error('The automation report exceeds its size limit.');
-      return this.storage.agent.write([
-        {
-          table: 'automationReports',
-          action: 'save',
-          row: { executionId: record.executionId, value: record },
-        },
-      ]);
-    }
-    await file.write(contents);
-    if (completed) await this.file(record.executionId).remove();
-  }
-  async withLock<T>(id: string, operation: () => Promise<T>): Promise<T> {
+  private async change(
+    id: string,
+    operation: (current?: AutomationReportRecord) => AutomationReportRecord | 'keep' | undefined,
+  ) {
     this.file(id);
-    return this.locked(`${id}.json`, operation);
+    const prepare = (current?: AutomationReportRecord) => {
+      const next = operation(current);
+      if (next === 'keep' || !next) return next;
+      this.validate(id, next);
+      if (terminal(next)) next.completedAt ??= new Date(this.now()).toISOString();
+      if (Buffer.byteLength(JSON.stringify(next)) > maximumBytes)
+        throw new Error('The automation report exceeds its size limit.');
+      return next;
+    };
+    if (this.storage) {
+      let result: AutomationReportRecord | undefined;
+      await this.storage.agent.changeReport(id, (row) => {
+        const current = row && this.validate(id, reportRecord(row));
+        const next = prepare(current);
+        if (next === 'keep') {
+          result = current;
+          return row;
+        }
+        result = next;
+        return result && reportRow(result);
+      });
+      return result;
+    }
+    return this.locked(`${id}.json`, async () => {
+      const current = await this.read(id);
+      const result = prepare(current);
+      if (result === 'keep') return current;
+      if (result) {
+        const completed = terminal(result);
+        await this.file(id, completed).write(JSON.stringify(result));
+        if (completed) await this.file(id).remove();
+      } else if (current) {
+        await this.file(id).remove();
+        await this.file(id, true).remove();
+      }
+      return result;
+    });
   }
+
+  retain(id: string, create: () => AutomationReportRecord | undefined) {
+    return this.change(id, (current) => (current ? 'keep' : create()));
+  }
+
   private async locked<T>(name: string, operation: () => Promise<T>): Promise<T> {
     await ensurePrivateStateDirectories({
       directories: [this.root],
@@ -199,13 +235,12 @@ export default class AutomationReportStore {
     }
   }
   async update(id: string, operation: (record: AutomationReportRecord) => void) {
-    return this.withLock(id, async () => {
-      const record = await this.read(id);
-      if (!record) throw new Error('automation-report-record-missing');
-      operation(record);
-      await this.write(record);
-      return record;
+    const record = await this.change(id, (current) => {
+      if (!current) throw new Error('automation-report-record-missing');
+      operation(current);
+      return current;
     });
+    return record!;
   }
   private async directoryIds(directory: string) {
     const names = await readdir(directory).catch((error: NodeJS.ErrnoException) => {
@@ -235,18 +270,11 @@ export default class AutomationReportStore {
     return this.directoryIds(this.root);
   }
   private pruneOne(id: string) {
-    return this.withLock(id, async () => {
-      const record = await this.read(id);
-      if (!record || !terminal(record) || !record.completedAt || !this.expired(record.completedAt))
-        return;
-      if (this.storage)
-        return this.storage.agent.write([
-          { table: 'automationReports', action: 'remove', key: { executionId: id } },
-        ]);
-      // Finish an interrupted migration before removing its terminal copy.
-      await this.file(id).remove();
-      await this.file(id, true).remove();
-    });
+    return this.change(id, (record) =>
+      record && terminal(record) && record.completedAt && this.expired(record.completedAt)
+        ? undefined
+        : 'keep',
+    );
   }
   async prune() {
     if (this.storage) {

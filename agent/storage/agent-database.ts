@@ -21,6 +21,7 @@ import sqliteRecords from './sqlite-records.ts';
 import type { AgentRows, InstallationRows } from './workflow-records.ts';
 import {
   automationReports,
+  githubIdentityPins,
   pathProjections,
   directEntries,
   dispatchRecords,
@@ -266,9 +267,66 @@ class SqliteAgentStore extends SqliteDatabase {
     );
   }
 
+  changeReport(
+    id: string,
+    change: (row?: AgentRows['automationReports']) => AgentRows['automationReports'] | undefined,
+  ) {
+    return this.use(false, (db) =>
+      db.transaction(
+        (tx) => {
+          assertPrivateStateLocksHeld();
+          const key = eq(automationReports.executionId, id);
+          const current = tx.select().from(automationReports).where(key).get();
+          const next = change(current);
+          if (next === current) return;
+          if (!next) {
+            if (current) tx.delete(automationReports).where(key).run();
+          } else {
+            if (next.executionId !== id) throw new Error('automation-report-record-invalid');
+            if (current) tx.update(automationReports).set(next).where(key).run();
+            else tx.insert(automationReports).values(next).run();
+          }
+        },
+        { behavior: 'immediate' },
+      ),
+    );
+  }
+
+  retainIdentityPin(
+    row: AgentRows['githubIdentityPins'],
+    validate: (entries: Record<string, AgentRows['githubIdentityPins']['value']>) => void,
+  ) {
+    return this.use(false, (db) =>
+      db.transaction(
+        (tx) => {
+          assertPrivateStateLocksHeld();
+          const pins = tx
+            .select()
+            .from(githubIdentityPins)
+            .where(eq(githubIdentityPins.scope, row.scope))
+            .all();
+          const entries = Object.fromEntries(pins.map(({ id, value }) => [id, value]));
+          const current = entries[row.id];
+          if (current && current.nodeId !== row.value.nodeId)
+            throw new Error('github-identity-conflict');
+          if (isDeepStrictEqual(current, row.value)) return;
+          validate({ ...entries, [row.id]: row.value });
+          tx.insert(githubIdentityPins)
+            .values(row)
+            .onConflictDoUpdate({
+              target: [githubIdentityPins.scope, githubIdentityPins.id],
+              set: { value: row.value },
+            })
+            .run();
+        },
+        { behavior: 'immediate' },
+      ),
+    );
+  }
+
   listReportIds(selection: 'all' | 'recoverable' | { completedBefore: string }) {
-    const terminal = sql`json_extract(${automationReports.value}, '$.state') in ('delivered', 'failed')`;
-    const completedAt = sql`json_extract(${automationReports.value}, '$.completedAt')`;
+    const terminal = sql`${automationReports.state} in ('delivered', 'failed')`;
+    const completedAt = automationReports.completedAt;
     // Legacy terminal reports get a completion date on first reconciliation.
     // File reports accept all Date.parse timestamps. Let pruneOne check legacy formats
     // SQLite cannot parse, alongside records whose ISO completion time is already due.

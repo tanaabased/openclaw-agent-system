@@ -1,6 +1,7 @@
+import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -323,45 +324,47 @@ describe('channels/github/identity-cache', () => {
     assert.equal(fresh.issueAssignment!.allowed.length, 2);
   });
 
-  it('should allow concurrent lookups without transferring a name pinned during the lookup', async () => {
-    for (const conflict of [false, true]) {
-      const location = { root, scope: conflict ? 'conflict' : 'matching' };
-      const input = () =>
-        decode({
-          'schema-version': 3,
-          routing: ['owner/*'],
-          'issue-assignment': { allowed: ['@actor'] },
+  for (const backend of ['file', 'sqlite']) {
+    it('should retain the first identity across competing ' + backend + ' lookups', async () => {
+      const locationRoot = root + '/legacy';
+      const sqlite =
+        backend === 'sqlite' ? (await sqliteAgentFixture(root, 'a')).sqliteInstallation : undefined;
+      const cache = (location: { root: string; scope: string }) =>
+        new GitHubIdentityCache(location, sqlite && bindSqliteStorage(sqlite, 'a').agent);
+      for (const conflict of [false, true]) {
+        const location = { root: locationRoot, scope: conflict ? 'conflict' : 'matching' };
+        const input = () =>
+          decode({
+            'schema-version': 3,
+            routing: ['owner/*'],
+            'issue-assignment': { allowed: ['@actor'] },
+          });
+        const started = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const slow = cache(location).resolve(input(), {
+          resolveIdentity: async () => {
+            started.resolve();
+            await release.promise;
+            return conflict ? { ...actor, nodeId: 'U_replacement' } : actor;
+          },
         });
-      const started = Promise.withResolvers<void>();
-      const release = Promise.withResolvers<void>();
-      const slow = new GitHubIdentityCache(location).resolve(input(), {
-        resolveIdentity: async () => {
-          started.resolve();
-          await release.promise;
-          return conflict ? { ...actor, nodeId: 'U_replacement' } : actor;
-        },
-      });
-      const outcome = slow.then(
-        () => undefined,
-        (error: unknown) => error,
-      );
-      await started.promise;
-      try {
-        await new GitHubIdentityCache(location).resolve(input(), { resolveIdentity });
-        assert.equal(
-          (await new GitHubIdentityCache(location).read()).entries['@actor']?.nodeId,
-          actor.nodeId,
+        const outcome = slow.then(
+          () => undefined,
+          (error: unknown) => error,
         );
-      } finally {
-        release.resolve();
+        await started.promise;
+        try {
+          await cache(location).resolve(input(), { resolveIdentity });
+          assert.equal((await cache(location).read()).entries['@actor']?.nodeId, actor.nodeId);
+        } finally {
+          release.resolve();
+        }
+        const error = await outcome;
+        if (conflict) assert.match(String(error), /github-identity-conflict/);
+        else assert.equal(error, undefined);
+        assert.equal((await cache(location).read()).entries['@actor']?.nodeId, actor.nodeId);
       }
-      const error = await outcome;
-      if (conflict) assert.match(String(error), /github-identity-conflict/);
-      else assert.equal(error, undefined);
-      assert.equal(
-        (await new GitHubIdentityCache(location).read()).entries['@actor']?.nodeId,
-        actor.nodeId,
-      );
-    }
-  });
+      if (sqlite) await assert.rejects(stat(locationRoot), { code: 'ENOENT' });
+    });
+  }
 });

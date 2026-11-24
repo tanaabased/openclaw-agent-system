@@ -7,7 +7,7 @@ type Rows<Tables> = {
 export type AgentRows = Rows<typeof agent>;
 export type InstallationRows = Rows<typeof installation>;
 
-type Keys<Row> = Omit<Row, 'value'>;
+type Keys<Row> = Omit<Row, 'value' | 'state' | 'completedAt'>;
 export type Selection<Records> = {
   [Name in keyof Records]?: Partial<Keys<Records[Name]>>;
 };

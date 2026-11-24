@@ -233,11 +233,10 @@ export default async function deliverAutomationReport(options: {
   selectSettings(record: AutomationReportRecord, request: DispatchRequest): Promise<void>;
 }): Promise<AutomationReportDelivery> {
   const executionId = options.input.executionId;
-  const retained = await options.store.withLock(executionId, async () => {
-    if (await options.store.read(executionId)) return true;
+  const retained = await options.store.retain(executionId, () => {
     // An expired capture cannot recreate a pruned terminal occurrence and resend its report.
-    if (options.store.expired(options.input.startedAt)) return false;
-    await options.store.write({
+    if (options.store.expired(options.input.startedAt)) return;
+    return {
       version: 1,
       executionId,
       hash: options.hash,
@@ -245,8 +244,7 @@ export default async function deliverAutomationReport(options: {
       target: options.target,
       input: prepareAutomationReport(options.input),
       state: 'pending',
-    });
-    return true;
+    };
   });
   if (!retained) return { status: 'failed', executionId, code: 'automation-report-expired' };
   if (!options.credential)
