@@ -102,6 +102,29 @@ export interface RepositoryRecord {
   temporaryPath?: string;
 }
 
+export function parseRepositoryRecord(text: string): RepositoryRecord {
+  const value: unknown = JSON.parse(text);
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('repository-record-invalid');
+  const record = value as RepositoryRecord;
+  if (
+    record.version !== 1 ||
+    typeof record.repositoryId !== 'string' ||
+    typeof record.source !== 'string' ||
+    typeof record.path !== 'string' ||
+    (record.temporaryPath !== undefined &&
+      (typeof record.temporaryPath !== 'string' ||
+        !record.temporaryPath.startsWith(record.path + '.') ||
+        !/^[a-f0-9-]{36}\.tmp$/u.test(record.temporaryPath.slice(record.path.length + 1)))) ||
+    Object.keys(value).some(
+      (key) => !['version', 'repositoryId', 'source', 'path', 'temporaryPath'].includes(key),
+    )
+  )
+    throw new Error('repository-record-invalid');
+  normalizeGitWorktreeRemote(record.source);
+  return record;
+}
+
 export interface RepositorySelection {
   path: string;
   source: string;
@@ -253,25 +276,8 @@ export default class GitRepositoryService {
   ): Promise<RepositoryRecord | undefined> {
     const text = await this.#recordFile(layout, repositoryId).read();
     if (text === undefined) return;
-    const value: unknown = JSON.parse(text);
-    if (!value || typeof value !== 'object' || Array.isArray(value))
-      throw new Error('repository-record-invalid');
-    const record = value as RepositoryRecord;
-    if (
-      record.version !== 1 ||
-      record.repositoryId !== repositoryId ||
-      typeof record.source !== 'string' ||
-      typeof record.path !== 'string' ||
-      (record.temporaryPath !== undefined &&
-        (typeof record.temporaryPath !== 'string' ||
-          !record.temporaryPath.startsWith(record.path + '.') ||
-          !/^[a-f0-9-]{36}\.tmp$/u.test(record.temporaryPath.slice(record.path.length + 1)))) ||
-      Object.keys(value).some(
-        (key) => !['version', 'repositoryId', 'source', 'path', 'temporaryPath'].includes(key),
-      )
-    )
-      throw new Error('repository-record-invalid');
-    normalizeGitWorktreeRemote(record.source);
+    const record = parseRepositoryRecord(text);
+    if (record.repositoryId !== repositoryId) throw new Error('repository-record-invalid');
     return record;
   }
 

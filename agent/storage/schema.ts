@@ -4,6 +4,7 @@ import type { AutomationReportRecord } from '../automations/automation-report-st
 import type { AutomationRecord } from '../automations/automation-store.ts';
 import type { ThreadRecord } from '../automations/automation-threads.ts';
 import type { Ledger as CodexAutomationLedger } from '../automations/codex-automation-snapshot.ts';
+import type { PickupEnrollment } from '../issue-pickup-enrollment.ts';
 import type { NotificationResetRecord } from '../notification-reset-state.ts';
 import type { ImplementationEntry } from '../tasks/implementation/implementation-entry-state.ts';
 import type { NativeRetirementEntry } from '../tasks/retirement/native-retirement.ts';
@@ -66,6 +67,15 @@ export const directEntries = sqliteTable(
     kind: text({ enum: ['implementation', 'native-retirement'] }).notNull(),
   },
   (t) => [primaryKey({ columns: [t.scope, t.kind, t.id] })],
+);
+export const pickupEnrollments = sqliteTable(
+  'pickup_enrollments',
+  {
+    runtime: text({ enum: ['openclaw', 'codex'] }).notNull(),
+    scope: text().notNull(),
+    value: text({ mode: 'json' }).$type<PickupEnrollment>().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.runtime, t.scope] })],
 );
 export const automationRegistrations = scopedRecords<
   AutomationRecord | CodexAutomationLedger['records'][number]

@@ -190,6 +190,52 @@ describe('agent database', () => {
     }
   });
 
+  it('should upgrade pickup enrollment ownership without discarding shared data', async () => {
+    const oldSchemas = join(root, 'pilot');
+    for (const [chain, migration] of [
+      ['migrations', '20261123213730_agent_records'],
+      ['migrations', '20261123221501_workflow_state'],
+      ['installation-migrations', '20261123221502_installation_state'],
+    ] as const) {
+      await cp(join(schemaRoot, chain, migration), join(oldSchemas, chain, migration), {
+        recursive: true,
+      });
+    }
+    const pilot = bind(root, 'pirog', oldSchemas);
+    await pilot.agent.install();
+    await pilot.installation.install();
+    const current = bind(root, 'pirog');
+    assert.equal((await current.agent.inspect()).code, 'agent-storage-migrations-pending');
+    assert.equal(
+      (await current.installation.inspect()).code,
+      'agent-system-storage-migrations-pending',
+    );
+    assert.equal((await current.agent.install()).status, 'updated');
+    const path = join(root, 'instance/agent-system.sqlite');
+    const shared = new DatabaseSync(path);
+    try {
+      shared.prepare('INSERT INTO pickup_enrollments VALUES (?, ?, ?)').run('codex', 'test', '{}');
+      await assert.rejects(current.installation.install());
+      assert.equal(shared.prepare('SELECT scope FROM pickup_enrollments').get()?.scope, 'test');
+      shared.exec('DELETE FROM pickup_enrollments');
+      assert.equal((await current.installation.install()).status, 'updated');
+      assert.equal(
+        shared.prepare("SELECT name FROM sqlite_schema WHERE name = 'pickup_enrollments'").get(),
+        undefined,
+      );
+    } finally {
+      shared.close();
+    }
+    const agent = new DatabaseSync(join(root, 'agents/pirog.sqlite'), { readOnly: true });
+    try {
+      assert.equal(agent.prepare('SELECT count(*) AS n FROM pickup_enrollments').get()?.n, 0);
+    } finally {
+      agent.close();
+    }
+    assert.equal((await current.agent.install()).status, 'unchanged');
+    assert.equal((await current.installation.install()).status, 'unchanged');
+  });
+
   it('should refuse to initialize another agent through a linked database', async () => {
     await bind(root, 'first').agent.install();
     await symlink(join(root, 'agents/first.sqlite'), join(root, 'agents/second.sqlite'));

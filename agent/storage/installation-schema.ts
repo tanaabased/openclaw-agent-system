@@ -4,7 +4,6 @@ import type {
   AssignmentClaimRecord,
   AssignmentClaimState,
 } from '../tasks/dispatch/assignment-claim-store.ts';
-import type { PickupEnrollment } from '../issue-pickup-enrollment.ts';
 import type { SidebarState } from '../codex-sidebar-journal.ts';
 import type { RepositoryRecord } from '../../tools/git/repository-service.ts';
 
@@ -23,15 +22,6 @@ export const assignmentClaims = sqliteTable(
     value: text({ mode: 'json' }).$type<AssignmentClaimRecord>().notNull(),
   },
   (table) => [primaryKey({ columns: [table.id] })],
-);
-export const pickupEnrollments = sqliteTable(
-  'pickup_enrollments',
-  {
-    runtime: text({ enum: ['openclaw', 'codex'] }).notNull(),
-    scope: text().notNull(),
-    value: text({ mode: 'json' }).$type<PickupEnrollment>().notNull(),
-  },
-  (t) => [primaryKey({ columns: [t.runtime, t.scope] })],
 );
 export const sidebarPlacements = sqliteTable(
   'sidebar_placements',

@@ -1,3 +1,4 @@
+import type { AgentRows, InstallationRows, WorkflowRecords } from './workflow-records.ts';
 import type {
   AgentSystemLifecycleContext,
   AgentSystemLifecycleFinding,
@@ -13,12 +14,12 @@ export interface StorageSchema {
 
 /** The runtime binds both handles before a workflow can read or change any records. */
 export interface BoundStorage {
-  agent: {
+  agent: WorkflowRecords<AgentRows> & {
     readIntake(scope: string): Promise<IntakeState | undefined>;
     saveIntake(state: IntakeState): Promise<void>;
     clearIntake(scope: string): Promise<void>;
   };
-  installation: {
+  installation: WorkflowRecords<InstallationRows> & {
     readRepository(root: string, id: string): Promise<RepositoryRecord | undefined>;
     saveRepository(root: string, record: RepositoryRecord): Promise<void>;
   };

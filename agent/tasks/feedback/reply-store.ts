@@ -14,7 +14,7 @@ import { automationHash } from '../../automation-hash.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
-const draftSchema = Type.Object(
+export const draftSchema = Type.Object(
   {
     id: hash,
     turnId: text,

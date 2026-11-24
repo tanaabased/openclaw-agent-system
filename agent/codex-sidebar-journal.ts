@@ -13,7 +13,7 @@ import codexSidebarPlacement, {
 } from './codex-sidebar-placement.ts';
 
 const text = Type.String({ minLength: 1 });
-const stateSchema = Type.Object(
+export const stateSchema = Type.Object(
   {
     version: Type.Literal(1),
     name: text,

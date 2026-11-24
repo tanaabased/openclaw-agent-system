@@ -12,6 +12,10 @@ import ensurePrivateStateDirectories, {
   assertPrivateDirectory,
 } from '../../core/ensure-private-state-directories.ts';
 import packageMetadata from '../../package.json' with { type: 'json' };
+import * as agentTables from './schema.ts';
+import * as installationTables from './installation-schema.ts';
+import sqliteRecords from './sqlite-records.ts';
+import type { AgentRows, InstallationRows } from './workflow-records.ts';
 import { intakeRecords, intakeState } from './schema.ts';
 import { managedRepositories } from './installation-schema.ts';
 import type { BoundStorage, StorageSchema } from './storage-lifecycle.ts';
@@ -183,6 +187,10 @@ class SqliteDatabase {
 }
 
 class SqliteAgentStore extends SqliteDatabase {
+  private readonly records = sqliteRecords<AgentRows>(agentTables, this.use.bind(this));
+  readonly read = this.records.read;
+  readonly write = this.records.write;
+
   readIntake(scope: string) {
     return this.use(true, (db) =>
       db.transaction((tx) => {
@@ -228,6 +236,13 @@ class SqliteAgentStore extends SqliteDatabase {
 }
 
 class SqliteInstallationStore extends SqliteDatabase {
+  private readonly records = sqliteRecords<InstallationRows>(
+    installationTables,
+    this.use.bind(this),
+  );
+  readonly read = this.records.read;
+  readonly write = this.records.write;
+
   readRepository(root: string, id: string) {
     return this.use(
       true,

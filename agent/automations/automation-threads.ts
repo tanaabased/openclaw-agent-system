@@ -56,7 +56,7 @@ const recordSchema = Type.Object(
   { additionalProperties: false },
 );
 export type ThreadRecord = Static<typeof recordSchema>;
-const ledgerSchema = Type.Object(
+export const ledgerSchema = Type.Object(
   {
     version: Type.Literal(1),
     scope: Type.String(),

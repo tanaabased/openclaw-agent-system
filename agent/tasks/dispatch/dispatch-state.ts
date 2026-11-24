@@ -566,7 +566,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     this.assertIndependent(record, restored.records);
     return restored;
   }
-  private async readEnvelope() {
+  async readEnvelope() {
     const contents = await this.file.read();
     let state: unknown = { version: 4, scope: this.scope, resetGeneration: 'initial', records: [] };
     if (contents !== undefined) {

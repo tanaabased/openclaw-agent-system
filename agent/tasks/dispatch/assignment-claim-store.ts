@@ -192,7 +192,7 @@ export default class AssignmentClaimStore {
   }
 
   /** inspection must never create an identity or repair private state. */
-  private async read() {
+  async read() {
     const contents = await this.file.read();
     if (contents === undefined) return undefined;
     const state: unknown = JSON.parse(contents);

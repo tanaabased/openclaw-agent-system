@@ -5,7 +5,7 @@ import { DirectEntryStore, type DirectEntryBinding } from '../direct-entry-store
 import workflowFailure from '../workflow-failure.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
-const entriesSchema = Type.Array(
+export const entriesSchema = Type.Array(
   Type.Object(
     {
       digest: text,
