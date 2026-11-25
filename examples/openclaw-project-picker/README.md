@@ -65,7 +65,7 @@ pickup_failure() {
       if test -r "$gateway_log"; then
         tail -n 300 "$gateway_log" | grep -Ei 'reload|restart|drain|shut.?down|cron[./]|database resources|unavailable|baseline' | node "$redactor" | tail -n 40 | tail -c 8192 >&2
       fi
-      if ! openclaw gateway call cron.status --timeout 5000 --json 2> "$TMPDIR/pickup-cron-status.stderr" | jq -ce '{enabled, jobs, nextWakeAtMs}' >&2; then
+      if ! openclaw gateway call cron.status --timeout 5000 --json 2> "$TMPDIR/pickup-cron-status.stderr" | jq -ce 'if .ok == false then {type: .error.type, code: .error.code, kind: .error.kind, retryable: .error.retryable} | error("cron.status: " + tojson) else {enabled, jobs, nextWakeAtMs} end' >&2; then
         printf 'cron.status unavailable after Install failure\n' >&2
         node "$redactor" < "$TMPDIR/pickup-cron-status.stderr" | tail -c 2048 >&2
       fi
