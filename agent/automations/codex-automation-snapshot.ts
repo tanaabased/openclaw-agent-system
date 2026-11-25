@@ -225,7 +225,11 @@ export async function readCodexAutomationSnapshot(
     workspaceDir: workspace,
     agentId: loaded.manifest.agent.id,
   });
-  const agent = await bindAgentStore(loaded.manifest.agent.id, codexStorageLocation(root));
+  const agent = await bindAgentStore(
+    loaded.manifest.agent.id,
+    codexStorageLocation(root),
+    loaded.manifest.storage?.backend,
+  );
   const storage = automationLedgerStorage('codex', scope, agent);
   let ledger: Ledger;
   try {
@@ -247,7 +251,8 @@ export async function readCodexAutomationSnapshot(
     throw new CodexAutomationError('automation-ownership-invalid');
   }
   const expected = structuredClone(ledger);
-  const pickupStore = () => codexPickupStore(pluginData, loaded.manifest.agent.id);
+  const pickupStore = () =>
+    codexPickupStore(pluginData, loaded.manifest.agent.id, loaded.manifest.storage?.backend);
   let jobs: ResolvedAutomation[] = [];
   let policyBlocker: string | undefined;
   let pickupBlocker: string | undefined;

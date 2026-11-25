@@ -1,6 +1,8 @@
 import { resolve } from 'node:path';
 
+import { bindAgentStore } from '../agent/storage/backend.ts';
 import type { SqliteInstallation } from '../agent/storage/storage-lifecycle.ts';
+import type { StorageBackend } from '../manifest/storage-schema.ts';
 import nodeErrorCode from '../utils/node-error-code.ts';
 
 export interface StoredPathProjection {
@@ -30,13 +32,12 @@ function isStoredPathProjection(value: unknown): value is StoredPathProjection {
 export default class PathProjectionStore {
   constructor(private readonly installation: SqliteInstallation) {}
 
-  private async database(agentId: string) {
-    const { bindSqliteStorage } = await import('../agent/storage/agent-database.ts');
-    return bindSqliteStorage(this.installation, agentId).agent;
-  }
-
-  async read(agentId: string, workspaceDir?: string): Promise<StoredPathProjection | undefined> {
-    const db = await this.database(agentId);
+  async read(
+    agentId: string,
+    workspaceDir?: string,
+    backend?: StorageBackend,
+  ): Promise<StoredPathProjection | undefined> {
+    const db = await bindAgentStore(agentId, this.installation, backend);
     const rows = await db
       .read({ pathProjections: workspaceDir ? { scope: resolve(workspaceDir) } : {} })
       .catch((error: unknown) => {
@@ -54,8 +55,8 @@ export default class PathProjectionStore {
     return row.value;
   }
 
-  async write(state: StoredPathProjection): Promise<void> {
-    const db = await this.database(state.agentId);
+  async write(state: StoredPathProjection, backend?: StorageBackend): Promise<void> {
+    const db = await bindAgentStore(state.agentId, this.installation, backend);
     if (Buffer.byteLength(JSON.stringify(state, undefined, 2) + '\n') > maximumPathProjectionBytes)
       throw new Error('The path projection receipt exceeds its size limit.');
     await db.replacePathProjection(state);

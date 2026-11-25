@@ -1,41 +1,37 @@
-import readGlobalConfigurationSource, { pluginSetting } from '../global-configuration.ts';
-import { validateStorageConfig, bindIntakeStore } from './backend.ts';
+import { bindInstallationStore, bindIntakeStore, listAgentStores } from './backend.ts';
 import { IntakeError, intakeScopeLocation } from '../../channels/github/intake/record-store.ts';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import CodexSidebarJournal from '../codex-sidebar-journal.ts';
 import { bindPickupStore } from './pickup-backend.ts';
 import type { SqliteInstallation } from './storage-lifecycle.ts';
-
-export async function validateCodexStorageConfig() {
-  const source = await readGlobalConfigurationSource();
-  validateStorageConfig(pluginSetting(source, 'storage'));
-}
+import { parseStorageConfig, type StorageBackend } from '../../manifest/storage-schema.ts';
+import { readCodexConfiguration } from '../codex-configuration.ts';
 
 export default function codexStorageLocation(pluginData: string): SqliteInstallation {
   return {
     agentRoot: join(pluginData, 'agent-system-storage'),
     installationRoot: resolve(pluginData, 'instance'),
     schemaRoot: fileURLToPath(new URL('../../agent/storage/', import.meta.url)),
+    readInstallationBackend: async () =>
+      parseStorageConfig((await readCodexConfiguration(pluginData))?.storage),
   };
 }
 
 export async function codexSidebarJournal(pluginData: string, profile: string, name: string) {
-  const { bindSqliteInstallation } = await import('./agent-database.ts');
   return new CodexSidebarJournal(
     profile,
     name,
-    bindSqliteInstallation(codexStorageLocation(pluginData)),
+    await bindInstallationStore({ sqliteInstallation: codexStorageLocation(pluginData) }),
   );
 }
 
-export function codexPickupStore(pluginData: string, agentId: string) {
-  return bindPickupStore(codexStorageLocation(pluginData), agentId);
+export function codexPickupStore(pluginData: string, agentId: string, backend?: StorageBackend) {
+  return bindPickupStore(codexStorageLocation(pluginData), agentId, backend);
 }
 
-export async function* codexAgentDatabases(pluginData: string) {
-  const { sqliteAgentDatabases } = await import('./agent-database.ts');
-  yield* sqliteAgentDatabases(codexStorageLocation(pluginData));
+export function codexAgentDatabases(pluginData: string) {
+  return listAgentStores(codexStorageLocation(pluginData));
 }
 
 export async function* retainedIntakeCandidates(pluginData: string) {

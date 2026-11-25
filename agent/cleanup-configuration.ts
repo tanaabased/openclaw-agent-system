@@ -2,10 +2,8 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import readGlobalConfigurationSource, {
-  pluginSetting,
-  type GlobalConfigurationSource,
-} from './global-configuration.ts';
+import { readCodexConfiguration } from './codex-configuration.ts';
+import { pluginSetting } from './global-configuration.ts';
 
 export const defaultCleanupGraceMinutes = 60;
 
@@ -38,11 +36,9 @@ export function projectCleanupConfiguration(config: unknown): CleanupConfigurati
   }
 }
 
-export default async function cleanupConfiguration(
-  source: GlobalConfigurationSource = {},
-): Promise<CleanupConfiguration> {
+export async function codexCleanupConfiguration(pluginData: string): Promise<CleanupConfiguration> {
   try {
-    return projectCleanupConfiguration(await readGlobalConfigurationSource(source));
+    return parseCleanupConfiguration((await readCodexConfiguration(pluginData))?.cleanup);
   } catch (error) {
     return {
       status: 'blocked',
@@ -64,7 +60,12 @@ export async function openClawCleanupConfiguration(
   }
 }
 
-export function cleanupConfigurationDiagnostic(configuration: CleanupConfiguration): string {
-  if (configuration.status === 'ready') return 'plugins.entries.agent-system.config.cleanup';
-  return 'Inspect plugins.entries.agent-system.config.cleanup in OpenClaw configuration. Set graceMinutes to an integer from 0 through 43200, or omit cleanup to use 60 minutes. Standalone Codex requires this policy inline, without $include on its configuration path. Cleanup remains pending.';
+export function cleanupConfigurationDiagnostic(
+  setting = 'cleanup.graceMinutes in the Agent System installation configuration',
+) {
+  return `Check ${setting}. Set an integer from 0 through 43200 or omit it to use 60 minutes.`;
 }
+
+export const codexCleanupConfigurationDiagnostic = cleanupConfigurationDiagnostic(
+  'cleanup.graceMinutes in instance/config.json',
+);

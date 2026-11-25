@@ -1,4 +1,4 @@
-import { validateStorageConfig } from '../agent/storage/backend.ts';
+import { parseStorageConfig } from '../manifest/storage-schema.ts';
 import { retainOpenClawTurnInput } from '../agent/openclaw-turn-binding.ts';
 import OpenClawAssignmentClaims from '../agent/tasks/dispatch/openclaw-assignment-claims.ts';
 import GitHubAssignmentClaimClient from '../channels/github/provider/assignment-claim-client.ts';
@@ -17,7 +17,13 @@ import OpenClawIntake from '../agent/openclaw-intake.ts';
 import resolveOpenClawCommandWorktree from '../agent/tasks/context/openclaw-command-worktree.ts';
 import isPathContained from '../utils/is-path-contained.ts';
 import createIntakeTool from '../tools/intake/tool.ts';
-import { sqliteStorageLifecycle } from '../agent/storage/storage-lifecycle.ts';
+import { storageLifecycles } from '../agent/storage/storage-lifecycle.ts';
+import {
+  initializeOpenClawStorage,
+  openClawInstallationBackend,
+  openClawStorageLifecycle,
+  readOpenClawStorageConfig,
+} from '../agent/storage/openclaw-storage.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { issuePickupAutomationId } from '../agent/automations/issue-pickup-jobs.ts';
 import createDispatchTool from '../tools/dispatch/tool.ts';
@@ -135,6 +141,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     },
   });
   const privateStateRoot = resolveFileCredentialStoreRoot(process.env);
+  const readRuntimeConfig = () => api.runtime.config.current() as OpenClawConfig;
   const sqliteInstallation = {
     agentRoot: join(api.runtime.state.resolveStateDir(), 'agent-system-storage'),
     installationRoot: join(
@@ -142,11 +149,20 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       'agent-system-instance',
     ),
     schemaRoot: join(packageDir, 'agent', 'storage'),
+    readInstallationBackend: async () => openClawInstallationBackend(readRuntimeConfig()),
+    async readAgentBackend(agentId: string) {
+      const loaded = await manifestServiceRef.current?.loadForAgentId(agentId);
+      return loaded?.status === 'loaded' ? loaded.manifest.storage?.backend : undefined;
+    },
   };
-  validateStorageConfig(api.pluginConfig?.storage);
+  parseStorageConfig(api.pluginConfig?.storage);
   const storage = { sqliteInstallation };
   const readConfig = readLifecycleConfig;
-  const readRuntimeConfig = () => api.runtime.config.current() as OpenClawConfig;
+  const storageSettings: Parameters<typeof openClawStorageLifecycle>[0] = {
+    readConfig: readOpenClawStorageConfig,
+    readRuntimeConfig,
+    mutateConfigFile: (params) => api.runtime.config.mutateConfigFile(params),
+  };
   const sessionDispatch = createSessionDispatchCredential({
     logger: lifecycleLogger,
     stateDir: api.runtime.state.resolveStateDir(),
@@ -370,7 +386,11 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         nativeId: string,
         previousNativeId?: string,
       ) => {
-        const store = await bindPickupStore(sqliteInstallation, manifest.agent.id);
+        const store = await bindPickupStore(
+          sqliteInstallation,
+          manifest.agent.id,
+          manifest.storage?.backend,
+        );
         await store.activate(id, nativeId, previousNativeId);
       },
     },
@@ -759,7 +779,10 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         return createAgentToolAccessGrants(toolRegistry, manifest);
       },
     }),
-    ...sqliteStorageLifecycle(() => sqliteInstallation),
+    ...storageLifecycles(sqliteInstallation, (backend) =>
+      initializeOpenClawStorage(storageSettings, backend),
+    ),
+    openClawStorageLifecycle(storageSettings),
     createPathLifecycleContribution({ pathService }),
     ...gitCapability.lifecycleContributions,
     ...githubCapability.lifecycleContributions,

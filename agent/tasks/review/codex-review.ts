@@ -38,7 +38,10 @@ import workflowFailure from '../workflow-failure.ts';
 import reviewContext, { reviewerInstructions, reviewTarget } from './review-context.ts';
 import retireCodexReviews from './codex-review-retirement.ts';
 import codexRetirementNative from '../retirement/codex-retirement-native.ts';
-import type cleanupConfiguration from '../../cleanup-configuration.ts';
+import {
+  codexCleanupConfiguration,
+  type CleanupConfiguration,
+} from '../../cleanup-configuration.ts';
 import { resolve } from 'node:path';
 import codexContinuationNative from '../implementation/codex-continuation-native.ts';
 import deliverTaskInput from '../context/task-input-delivery.ts';
@@ -69,7 +72,7 @@ export interface CodexReviewDependencies extends CodexTaskContextDependencies {
   claimClient?: ClaimClient;
   activation?: typeof inspectCodexReviewActivation;
   git?: DispatchGit;
-  readCleanupConfiguration?: typeof cleanupConfiguration;
+  readCleanupConfiguration?: () => Promise<CleanupConfiguration>;
   retirementNative?: ReturnType<typeof codexRetirementNative>;
   continuationNative?: ReturnType<typeof codexContinuationNative>;
 }
@@ -339,7 +342,8 @@ export default async function codexReview(
           now,
           targetId: operator ? record?.id : undefined,
           git: deps.git,
-          readConfiguration: deps.readCleanupConfiguration,
+          readConfiguration:
+            deps.readCleanupConfiguration ?? (() => codexCleanupConfiguration(pluginData)),
           fresh,
           save,
         });

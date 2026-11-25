@@ -81,7 +81,17 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "backend": { "type": "string", "enum": ["sqlite"], "default": "sqlite" }
+          "backend": {
+            "anyOf": [
+              { "type": "string", "enum": ["sqlite"] },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["type"],
+                "properties": { "type": { "type": "string", "enum": ["sqlite"] } }
+              }
+            ]
+          }
         }
       },
       "cleanup": {

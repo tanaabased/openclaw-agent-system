@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { constants, type Stats } from 'node:fs';
-import { lstat, open, rename, unlink } from 'node:fs/promises';
+import { link, lstat, open, rename, unlink } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
 import { assertPrivateStateLocksHeld } from './private-state-lock-context.ts';
@@ -66,6 +66,15 @@ export default class PrivateStateFile {
   }
 
   async write(contents: string): Promise<void> {
+    await this.#publish(contents, false);
+  }
+
+  /** Atomically publish a complete file only if no file is already present. */
+  async create(contents: string): Promise<void> {
+    await this.#publish(contents, true);
+  }
+
+  async #publish(contents: string, exclusive: boolean): Promise<void> {
     assertPrivateStateLocksHeld();
     if (Buffer.byteLength(contents) > this.#maximumBytes) this.#sizeError();
     await ensurePrivateStateDirectories({
@@ -92,7 +101,8 @@ export default class PrivateStateFile {
       await handle.close();
       handle = undefined;
       assertPrivateStateLocksHeld();
-      await rename(temporaryPath, this.#path);
+      if (exclusive) await link(temporaryPath, this.#path);
+      else await rename(temporaryPath, this.#path);
     } finally {
       await handle?.close().catch(() => undefined);
       await unlink(temporaryPath).catch(() => undefined);

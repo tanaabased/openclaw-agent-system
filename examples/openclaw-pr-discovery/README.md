@@ -199,8 +199,9 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-pr-discovery/tanaabot"
 number=$(jq -er .delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
 worktree=$(jq -er .worktree "$TMPDIR/notification-delivery.json")
 node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; const p=process.env.TMPDIR+"/pr-provider/control.json"; const control=JSON.parse(readFileSync(p,"utf8")); control.paused=false; writeFileSync(p,JSON.stringify(control));'
-run_id=$(openclaw agent-system automations run github-issue-assignment --json | jq -er 'select(.status == "queued") | .runId')
-node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-assignment "$run_id"
+run_id=$(PATH="$TMPDIR/pr-provider:$PATH" OPENCLAW_PATH_BOOTSTRAPPED=1 node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
+jq -se 'any(.[]; .operation == "comments:1" and .paused == false)' "$TMPDIR/pr-provider/reads.jsonl"
 node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -es '[.[].records[] | {id,nativeInactive,blocker,feedbackCode:.feedback.code,discoveryPending:.feedback.discoveryPending,events:[.feedback.events[]? | {sourceId,phase,code,policyHeld,turnStatus:.turn.status}]}]'
 feedback_run=$(node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -ers --arg source "$(jq -er .node_id "$TMPDIR/notification-feedback-source.json")" '[.[].records[].feedback.events[] | select(.sourceId == $source and .turn != null)] | if length == 1 then .[0].turn.runId else error("one feedback turn required; inspect retained dispatch feedback state") end')
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$feedback_run" 600000
