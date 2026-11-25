@@ -1,3 +1,4 @@
+import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
@@ -588,6 +589,10 @@ describe('agent/implementation-entry', () => {
   });
   for (const base of [undefined, 'release'])
     it(`should recover lost publication responses on the ${base ? 'explicit' : 'default'} base without repeated effects`, async () => {
+      const sqlite = base ? await sqliteAgentFixture(root, 'receiver') : undefined;
+      deps.sessionStorage = sqlite?.agent;
+      const entered = Promise.withResolvers<void>();
+      const resume = Promise.withResolvers<void>();
       const context = await call('context', { scope: 'pull-request' });
       assert.ok('id' in context && typeof context.id === 'string');
       const result = await call('result', { result: ready });
@@ -623,6 +628,10 @@ describe('agent/implementation-entry', () => {
                 ? `${remote} refs/heads/task`
                 : '';
           if (argv[0] === 'push') {
+            if (sqlite && lostPush) {
+              entered.resolve();
+              await resume.promise;
+            }
             pushes++;
             remote = head;
             if (lostPush) {
@@ -640,6 +649,7 @@ describe('agent/implementation-entry', () => {
           deps.binding,
           implementationEntriesSchema,
           'implementation',
+          sqlite && bindSqliteStorage(sqlite.sqliteInstallation, 'receiver').agent,
         );
       const provider = {
         inspect: async () => receipt,
@@ -711,7 +721,17 @@ describe('agent/implementation-entry', () => {
             provider,
           }),
         );
-      await assert.rejects(publishPrepared(), /lost-push-response/);
+      const firstPush = assert.rejects(publishPrepared(), /lost-push-response/);
+      try {
+        if (sqlite) {
+          await entered.promise;
+          assert.ok((await store().inspect())[0]!.delivery?.pendingPush);
+          await assert.rejects(publishPrepared(), { code: 'private-state-file-lock-busy' });
+        }
+      } finally {
+        resume.resolve();
+        await firstPush;
+      }
       await assert.rejects(publishPrepared(), /lost-create-response/);
       const delivered = await perform('reconcile');
       assert.equal(delivered.status, 'delivered');
