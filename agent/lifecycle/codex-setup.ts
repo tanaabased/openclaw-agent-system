@@ -1,4 +1,5 @@
-import codexStorageLocation, { initializeCodexStorage } from '../storage/codex-storage.ts';
+import codexStorageLocation from '../storage/codex-storage.ts';
+import { initializeCodexStorage } from '../codex-configuration.ts';
 import { storageLifecycles } from '../storage/storage-lifecycle.ts';
 import { delimiter } from 'node:path';
 import { codexInstanceStore } from '../tasks/dispatch/codex-assignment-claims.ts';

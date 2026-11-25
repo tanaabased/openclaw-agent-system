@@ -4,7 +4,6 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { automationHash } from '../agent/automation-hash.ts';
-import cleanupConfiguration from '../agent/cleanup-configuration.ts';
 import { runCodexIntake } from '../agent/codex-intake.ts';
 import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
@@ -97,14 +96,9 @@ export default function codexDispatchFixture() {
   const next = () => request('next', { projects: fixtureState.projects });
   const writeCleanup = (graceMinutes: number) =>
     writeFile(
-      join(fixtureState.root, 'openclaw.json'),
-      JSON.stringify({
-        plugins: {
-          entries: {
-            'agent-system': { config: { cleanup: { graceMinutes } } },
-          },
-        },
-      }),
+      join(fixtureState.pluginData, 'instance', 'config.json'),
+      JSON.stringify({ cleanup: { graceMinutes } }),
+      { mode: 0o600 },
     );
   const report = () =>
     request('report', {
@@ -222,7 +216,6 @@ export default function codexDispatchFixture() {
       fixtureState.commonDir,
     ])
       await mkdir(path);
-    await writeFile(join(fixtureState.root, 'openclaw.json'), '{}');
     await writeFile(join(fixtureState.workspace, 'agent.yaml'), JSON.stringify(manifest));
     await bindCodexWorkspace(fixtureState.pluginData, fixtureState.workspace);
     await sqliteAgentFixture(fixtureState.pluginData, 'receiver');
@@ -253,10 +246,6 @@ export default function codexDispatchFixture() {
     fixtureState.gitCalls = [];
     const branches = new Map<string, string>();
     fixtureState.deps = {
-      readCleanupConfiguration: () =>
-        cleanupConfiguration({
-          env: { OPENCLAW_CONFIG_PATH: join(fixtureState.root, 'openclaw.json') },
-        }),
       ...storage(),
       assertActive: async () => {},
       now: () => fixtureState.now,

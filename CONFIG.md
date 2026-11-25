@@ -1,18 +1,18 @@
 # Global Configuration
 
-Global settings belong in OpenClaw's plugin configuration. Workspace declarations
-belong in the [manifest](./MANIFEST.md).
+Each installation owns its global settings. Workspace declarations belong in the
+[manifest](./MANIFEST.md).
 
 - [OpenClaw plugin configuration](#openclaw-plugin-configuration)
   - [`cleanup`](#cleanup)
   - [`collaboration`](#collaboration)
   - [`opCache`](#opcache)
   - [`storage`](#storage)
+- [Standalone Codex configuration](#standalone-codex-configuration)
 
 ## OpenClaw plugin configuration
 
 Set these options under `plugins.entries.agent-system.config` in OpenClaw.
-Standalone Codex reads the shared `cleanup` setting and keeps its own storage configuration.
 
 ### `cleanup`
 
@@ -23,12 +23,10 @@ standalone Codex.
 | -------------- | ------- | -------- | ------- | ---------------------------------------------------------- |
 | `graceMinutes` | integer | no       | `60`    | Minutes before eligible cleanup, from `0` through `43200`. |
 
-Codex reads this policy from `OPENCLAW_CONFIG_PATH` or the default OpenClaw
-configuration file without a running Gateway. Keep the cleanup setting inline.
-An invalid policy or an explicitly selected file that cannot be read holds cleanup.
+An invalid or unreadable policy holds automatic cleanup.
 
 ```sh
-# set the shared grace period for automatic cleanup.
+# set the openclaw grace period for automatic cleanup.
 openclaw config set plugins.entries.agent-system.config.cleanup.graceMinutes 30 --strict-json
 ```
 
@@ -137,11 +135,8 @@ System records. Use `sqlite` or `{ type: sqlite }`. Omitting it selects SQLite.
 The installation setting selects storage for shared Agent System records. The
 first Install fills it if absent. After that, edit it explicitly for your runtime.
 
-- **OpenClaw** — use `plugins.entries.agent-system.config.storage.backend` in
-  the selected OpenClaw config. `openclaw config file` shows which file is in use.
-- **Standalone Codex** — use `instance/storage.json` under the installation's
-  Agent System plugin data directory. Keep the file private (`0600`) and use
-  `{"backend":"sqlite"}` or `{"backend":{"type":"sqlite"}}`.
+Use `plugins.entries.agent-system.config.storage.backend` in OpenClaw.
+`openclaw config file` shows which file is in use.
 
 On OpenClaw, the installation setting also governs the native `state` and `agent`
 database families, including enabled built-in memory. Doctor reports engine drift.
@@ -153,6 +148,23 @@ the import before removing the `file` setting and upgrading.
 
 After the [SQLite cutover](https://github.com/tanaabased/openclaw-agent-system/pull/796),
 you can ask in chat, “Switch Agent System to SQLite on this laptop after the
-import, then show me the saved setting.” Identify the runtime's config above,
+import, then show me the saved setting.” Identify the runtime's config,
 update its installation setting, read the value back from that same file, and
 run Doctor to verify access to the installed stores.
+
+## Standalone Codex configuration
+
+Set global options in `instance/config.json` under the Agent System plugin data
+directory. Keep the file private (`0600`). Install fills in `storage.backend`
+when it is absent. For example, to set a 30-minute cleanup grace period:
+
+```json
+{
+  "storage": { "backend": "sqlite" },
+  "cleanup": { "graceMinutes": 30 }
+}
+```
+
+Omitted settings default to SQLite and a 60-minute cleanup grace period.
+The [storage](#storage) and [cleanup](#cleanup) sections describe the supported
+values.

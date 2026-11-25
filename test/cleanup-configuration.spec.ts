@@ -2,18 +2,14 @@ import assert from 'node:assert/strict';
 
 import { buildJsonPluginConfigSchema } from 'openclaw/plugin-sdk/plugin-entry';
 
-import cleanupConfiguration, {
+import {
   openClawCleanupConfiguration,
   parseCleanupConfiguration,
+  projectCleanupConfiguration,
 } from '../agent/cleanup-configuration.ts';
 import pluginManifest from '../openclaw.plugin.json' with { type: 'json' };
 
 const nativeSchema = buildJsonPluginConfigSchema(pluginManifest.configSchema);
-const codexConfiguration = (config: unknown) =>
-  cleanupConfiguration({
-    env: { OPENCLAW_CONFIG_PATH: '/fixture/openclaw.json' },
-    read: async () => JSON.stringify(config),
-  });
 const configuration = (cleanup: unknown) => ({
   plugins: { entries: { 'agent-system': { config: { cleanup } } } },
 });
@@ -32,12 +28,8 @@ describe('agent/cleanup-configuration', () => {
         })),
         parseCleanupConfiguration(),
       );
-      assert.deepEqual(
-        await codexConfiguration(configuration(cleanup)),
-        parseCleanupConfiguration(),
-      );
     }
-    assert.deepEqual(await openClawCleanupConfiguration(() => ({})), await codexConfiguration({}));
+    assert.deepEqual(await openClawCleanupConfiguration(() => ({})), parseCleanupConfiguration());
   });
 
   it('should accept inclusive native grace boundaries and explicit values', async () => {
@@ -48,7 +40,6 @@ describe('agent/cleanup-configuration', () => {
         plugins: { entries: { 'agent-system': { config: { cleanup } } } },
       }));
       assert.equal(current.status === 'ready' && current.graceMinutes, graceMinutes);
-      assert.deepEqual(await codexConfiguration(configuration(cleanup)), current);
     }
   });
 
@@ -69,10 +60,6 @@ describe('agent/cleanup-configuration', () => {
         code: 'retirement-configuration-invalid',
       });
       assert.deepEqual(
-        await codexConfiguration(configuration(cleanup)),
-        parseCleanupConfiguration(cleanup),
-      );
-      assert.deepEqual(
         await openClawCleanupConfiguration(() => configuration(cleanup)),
         parseCleanupConfiguration(cleanup),
       );
@@ -89,7 +76,7 @@ describe('agent/cleanup-configuration', () => {
     );
   });
 
-  it('should reread changes and verify only the effective cleanup setting in both runtimes', async () => {
+  it('should reread changes and verify only the effective cleanup setting', async () => {
     const config = {
       plugins: {
         entries: {
@@ -103,18 +90,15 @@ describe('agent/cleanup-configuration', () => {
       },
     };
     const before = await openClawCleanupConfiguration(() => config);
-    assert.deepEqual(await codexConfiguration(config), before);
     config.plugins.entries['agent-system'].config.collaboration = true;
     assert.deepEqual(await openClawCleanupConfiguration(() => config), before);
-    assert.deepEqual(await codexConfiguration(config), before);
     config.plugins.entries['agent-system'].config.cleanup.graceMinutes = 0;
     const changed = await openClawCleanupConfiguration(() => config);
     assert.ok(before.status === 'ready' && changed.status === 'ready');
     assert.notEqual(changed.digest, before.digest);
-    assert.deepEqual(await codexConfiguration(config), changed);
   });
 
-  it('should hold malformed applicable ancestors and unresolved includes instead of defaulting', async () => {
+  it('should hold malformed applicable ancestors and unresolved includes instead of defaulting', () => {
     for (const config of [
       null,
       [],
@@ -127,49 +111,10 @@ describe('agent/cleanup-configuration', () => {
       { plugins: { $include: './plugins.json' } },
       { plugins: { entries: { 'agent-system': { config: { $include: './policy.json' } } } } },
     ]) {
-      assert.deepEqual(await codexConfiguration(config), {
+      assert.deepEqual(projectCleanupConfiguration(config), {
         status: 'blocked',
         code: 'retirement-configuration-invalid',
       });
     }
-  });
-
-  it('should read native source syntax without resolving unrelated environment, secrets or includes', async () => {
-    const current = await cleanupConfiguration({
-      env: { OPENCLAW_CONFIG_PATH: '/fixture/policy.json5' },
-      read: async (path) => {
-        assert.equal(path, '/fixture/policy.json5');
-        return `// native json5 source
-        {env: {SENTINEL: 'not-loaded'}, secrets: {$include: './never-read.json'},
-         plugins: {entries: {'agent-system': {config: {cleanup: {graceMinutes: 17,},},},},},}`;
-      },
-    });
-    assert.deepEqual(current, parseCleanupConfiguration({ graceMinutes: 17 }));
-    assert.equal(process.env.SENTINEL, undefined);
-  });
-
-  it('should distinguish absent default configuration from unreadable or malformed selected configuration', async () => {
-    const missing = async () => {
-      throw Object.assign(new Error('missing'), { code: 'ENOENT' });
-    };
-    assert.deepEqual(
-      await cleanupConfiguration({ env: { OPENCLAW_STATE_DIR: '/fixture' }, read: missing }),
-      parseCleanupConfiguration(),
-    );
-    for (const code of ['ENOENT', 'EACCES', 'EISDIR']) {
-      assert.deepEqual(
-        await cleanupConfiguration({
-          env: { OPENCLAW_CONFIG_PATH: '/fixture/selected.json' },
-          read: async () => {
-            throw Object.assign(new Error('unavailable'), { code });
-          },
-        }),
-        { status: 'blocked', code: 'retirement-configuration-unavailable' },
-      );
-    }
-    assert.deepEqual(await cleanupConfiguration({ env: {}, read: async () => '{broken' }), {
-      status: 'blocked',
-      code: 'retirement-configuration-invalid',
-    });
   });
 });

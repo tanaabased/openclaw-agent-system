@@ -15,7 +15,7 @@ describe('agent/codex-runtime', () => {
       const workspace = join(root, 'workspace');
       const pluginData = join(root, 'data');
       const config = join(root, 'openclaw.json');
-      const saved = join(pluginData, 'instance', 'storage.json');
+      const saved = join(pluginData, 'instance', 'config.json');
       await mkdir(workspace);
       await writeFile(join(workspace, 'agent.yaml'), 'schema-version: 1\nagent: {id: emori}\n');
       await bindCodexWorkspace(pluginData, workspace);
@@ -33,15 +33,20 @@ describe('agent/codex-runtime', () => {
         config,
         '{"plugins":{"entries":{"agent-system":{"config":{"storage":{"backend":"file"}}}}}}',
       );
+      await mkdir(dirname(saved), { recursive: true, mode: 0o700 });
+      await writeFile(join(dirname(saved), 'storage.json'), '{"backend":"file"}', { mode: 0o600 });
       const before = run(['setup', 'inspect']);
       assert.equal(before.status, 0, before.stderr);
       await assert.rejects(access(saved), { code: 'ENOENT' });
       const installed = run(['setup', 'install']);
       assert.equal(installed.status, 0, installed.stderr);
-      assert.deepEqual(JSON.parse(await readFile(saved, 'utf8')), { backend: { type: 'sqlite' } });
+      assert.deepEqual(JSON.parse(await readFile(saved, 'utf8')), {
+        storage: { backend: { type: 'sqlite' } },
+        cleanup: {},
+      });
       const renamed = run(['instance', 'rename'], { name: 'pilot' });
       assert.equal(renamed.status, 0, renamed.stderr);
-      const operatorSettings = '{"backend":"sqlite"}\n';
+      const operatorSettings = '{"storage":{"backend":"sqlite"},"cleanup":{"graceMinutes":17}}\n';
       await writeFile(saved, operatorSettings);
       const second = join(root, 'second');
       await mkdir(second);
@@ -57,11 +62,11 @@ describe('agent/codex-runtime', () => {
       assert.equal(current.status, 0, current.stderr);
       assert.equal(JSON.parse(current.stdout).displayName, 'pilot');
 
-      await writeFile(saved, '{"backend":"file"}');
+      await writeFile(saved, '{"storage":{"backend":"file"}}');
       const file = run(['instance', 'rename'], { name: 'other' });
       assert.equal(file.status, 1);
       assert.match(file.stderr, /file workflow storage has been retired/i);
-      await writeFile(saved, '{"backend":"sqltie"}');
+      await writeFile(saved, '{"storage":{"backend":"sqltie"}}');
       const invalid = run(['instance', 'rename'], { name: 'other' });
       assert.equal(invalid.status, 1);
       assert.match(invalid.stderr, /storage.backend/u);

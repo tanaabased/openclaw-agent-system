@@ -139,11 +139,11 @@ plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/plugin-data"
 inspection=$(node "$runtime" setup inspect --plugin-data "$plugin_data")
-test ! -e "$plugin_data/instance/storage.json"
+test ! -e "$plugin_data/instance/config.json"
 printf '%s\n' "$inspection" \
   | jq -e '.status == "inspected" and [.findings[] | select(.component == "setup") | [.stepId, .code]] == [["codex-tools-debug", "setup-healthy"], ["shared", "setup-drift"], ["codex-only", "setup-manual"], ["openclaw-only", "setup-not-applicable"]]'
 installed=$(node "$runtime" setup install --plugin-data "$plugin_data")
-jq -e '.backend.type == "sqlite"' "$plugin_data/instance/storage.json"
+jq -e '.storage.backend.type == "sqlite"' "$plugin_data/instance/config.json"
 printf '%s\n' "$installed" \
   | jq -e '.status == "requires-native-app-sync" and any(.outcomes[]; .component == "agent-storage" and .status == "created") and .automations.status == "requires-fresh-inspection" and [.outcomes[] | select(.component == "setup") | [.stepId, .code]] == [["codex-tools-debug", "setup-unchanged"], ["shared", "setup-applied"], ["codex-only", "setup-applied"], ["openclaw-only", "setup-not-applicable"]]'
 # a fresh invocation loads the installed runtime before inspecting automation state.

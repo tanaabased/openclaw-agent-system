@@ -39,6 +39,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
   budget?: DiscoveryBudget;
   now: number;
   configuration: CleanupConfiguration;
+  configurationDiagnostic?: string;
   readConfiguration(): Promise<CleanupConfiguration>;
   pendingStartup?(record: R): boolean;
   observe(record: R, issueClosed?: boolean): Promise<RetirementNativeObservation | undefined>;
@@ -56,7 +57,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
   fresh(): Promise<void>;
   save(): Promise<void>;
 }) {
-  const { now, client, policy } = input;
+  const { now, client, policy, configurationDiagnostic = cleanupConfigurationDiagnostic() } = input;
   const read = <T>(operation: string, run: () => Promise<T>) =>
     input.budget ? input.budget.read(operation, run) : run();
   const configuration = input.configuration;
@@ -332,7 +333,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
       }
       if (configuration.status === 'blocked' && !record.retirement.operatorRequest) {
         record.retirement.code = configuration.code;
-        record.retirement.diagnostic = cleanupConfigurationDiagnostic(configuration);
+        record.retirement.diagnostic = configurationDiagnostic;
         continue;
       }
       delete record.retirement.diagnostic;
@@ -354,7 +355,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         await input.fresh();
         const current = await input.readConfiguration();
         if (current.status === 'blocked' && !record.retirement!.operatorRequest) {
-          record.retirement!.diagnostic = cleanupConfigurationDiagnostic(current);
+          record.retirement!.diagnostic = configurationDiagnostic;
           throw new Error(current.code);
         }
         if (

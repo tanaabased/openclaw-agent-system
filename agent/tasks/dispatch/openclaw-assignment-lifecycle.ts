@@ -3,7 +3,10 @@ import type { DispatchAuthority, DispatchRequest } from '../../../credentials/se
 import type { AgentManifest } from '../../../manifest/types.ts';
 import reactivateAssignmentFeedback from '../feedback/assignment-feedback-reactivation.ts';
 import { listNativeAutomations } from '../../automations/automation-gateway.ts';
-import { openClawCleanupConfiguration } from '../../cleanup-configuration.ts';
+import {
+  cleanupConfigurationDiagnostic,
+  openClawCleanupConfiguration,
+} from '../../cleanup-configuration.ts';
 import DiscoveryBudget from '../../discovery-budget.ts';
 import { managedPullRequest } from '../managed-issue.ts';
 import type OpenClawDispatchContext from './openclaw-dispatch-context.ts';
@@ -127,6 +130,9 @@ export default async function reconcileOpenClawLifecycle(input: {
       throw new Error('dispatch-retire-target-mismatch');
     await reconcileAssignmentLifecycle({
       configuration,
+      configurationDiagnostic: cleanupConfigurationDiagnostic(
+        'plugins.entries.agent-system.config.cleanup.graceMinutes in OpenClaw configuration',
+      ),
       readConfiguration,
       records: state.records,
       admitted: current.admitted.records,

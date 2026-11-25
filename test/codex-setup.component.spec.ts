@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -10,7 +10,11 @@ import {
   installCodexSetup,
 } from '../agent/lifecycle/codex-setup.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
-import { initializeCodexStorage } from '../agent/storage/codex-storage.ts';
+import {
+  codexCleanupConfiguration,
+  parseCleanupConfiguration,
+} from '../agent/cleanup-configuration.ts';
+import { initializeCodexStorage } from '../agent/codex-configuration.ts';
 
 describe('agent/codex-setup', () => {
   let root: string;
@@ -43,14 +47,17 @@ describe('agent/codex-setup', () => {
 
   it('publishes one complete storage selection when first installs overlap', async () => {
     const backend = { type: 'sqlite' } as const;
-    const settings = join(pluginData, 'instance', 'storage.json');
+    const settings = join(pluginData, 'instance', 'config.json');
     const selected = await Promise.all([
       initializeCodexStorage(pluginData, backend),
       initializeCodexStorage(pluginData, backend),
       initializeCodexStorage(pluginData, backend),
     ]);
     assert.deepEqual(selected, [backend, backend, backend]);
-    assert.deepEqual(JSON.parse(await readFile(settings, 'utf8')), { backend });
+    assert.deepEqual(JSON.parse(await readFile(settings, 'utf8')), {
+      storage: { backend },
+      cleanup: {},
+    });
     // A retry after saving the selection can still initialize both databases.
     await manifest('');
     const installed = await installCodexSetup(pluginData, undefined, dependencies);
@@ -59,6 +66,37 @@ describe('agent/codex-setup', () => {
         ({ code, status }) => code === 'agent-system-storage-ready' && status === 'created',
       ),
     );
+  });
+
+  it('defaults omitted codex cleanup and preserves configured cleanup when install fills storage', async () => {
+    assert.deepEqual(await codexCleanupConfiguration(pluginData), parseCleanupConfiguration());
+    await manifest('');
+    const instance = join(pluginData, 'instance');
+    const settings = join(instance, 'config.json');
+    await mkdir(instance, { recursive: true, mode: 0o700 });
+    await writeFile(settings, '{}', { mode: 0o600 });
+    assert.deepEqual(await codexCleanupConfiguration(pluginData), parseCleanupConfiguration());
+    const cleanup = { graceMinutes: 17 };
+    await writeFile(settings, JSON.stringify({ cleanup }));
+    await installCodexSetup(pluginData, undefined, dependencies);
+    assert.deepEqual(JSON.parse(await readFile(settings, 'utf8')), {
+      storage: { backend: { type: 'sqlite' } },
+      cleanup,
+    });
+    assert.deepEqual(
+      await codexCleanupConfiguration(pluginData),
+      parseCleanupConfiguration(cleanup),
+    );
+    await writeFile(settings, '{broken');
+    assert.deepEqual(await codexCleanupConfiguration(pluginData), {
+      status: 'blocked',
+      code: 'retirement-configuration-invalid',
+    });
+    await chmod(settings, 0o644);
+    assert.deepEqual(await codexCleanupConfiguration(pluginData), {
+      status: 'blocked',
+      code: 'retirement-configuration-unavailable',
+    });
   });
 
   it('should plan paused assignment and review workflows without github access', async () => {

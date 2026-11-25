@@ -44,7 +44,6 @@ describe('agent/tasks/review native first review', () => {
       threadId: 'review-coordinator',
       native: f.deps.native,
       git: f.deps.git,
-      readCleanupConfiguration: f.deps.readCleanupConfiguration,
       activation: async () => ({ threadId: 'review-coordinator', nativeId: 'native-intake' }),
       claimClient: {
         verify: async () => {},
