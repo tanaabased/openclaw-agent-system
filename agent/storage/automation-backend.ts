@@ -1,4 +1,6 @@
-import { join } from 'node:path';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { join, resolve } from 'node:path';
+import withWorkflowLock from './workflow-lock.ts';
 
 import PrivateStateFile from '../../core/private-state-file.ts';
 import nodeErrorCode from '../../utils/node-error-code.ts';
@@ -52,4 +54,27 @@ export default function automationLedgerStorage(
       await agent.saveAutomationLedger(runtime, ledger, expected);
     },
   };
+}
+
+const registrationThread = new AsyncLocalStorage<string>();
+
+export function automationThreadPath(root: string, scope: string) {
+  return join(root, `automation-threads-${scope}.json`);
+}
+
+function lockThreads<T>(path: string, run: () => Promise<T>) {
+  return withWorkflowLock(path, 'Automation conversations', run, {
+    retries: { factor: 1, minTimeout: 25, maxTimeout: 25, retries: 40 },
+  });
+}
+
+// A registration selecting a native thread holds its binding stable through the handoff.
+export function withRegistrationThread<T>(root: string, scope: string, run: () => Promise<T>) {
+  const path = automationThreadPath(root, scope);
+  return lockThreads(path, () => registrationThread.run(resolve(path), run));
+}
+
+export function withAutomationThreadLock<T>(path: string, run: () => Promise<T>) {
+  if (registrationThread.getStore() === resolve(path)) return registrationThread.exit(run);
+  return lockThreads(path, run);
 }

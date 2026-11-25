@@ -1,11 +1,10 @@
+import { automationThreadPath, withAutomationThreadLock } from '../storage/automation-backend.ts';
 import {
   automationThreadNames,
   automationThreadSelection,
   type AutomationThreadSelection,
 } from './automation-thread-selection.ts';
-import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
-import { join, resolve as resolvePath } from 'node:path';
 
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
@@ -14,10 +13,7 @@ import { AutomationError } from './automation-errors.ts';
 import type { BoundStorage } from '../storage/storage-lifecycle.ts';
 import nodeErrorCode from '../../utils/node-error-code.ts';
 import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
-import ensurePrivateStateDirectories from '../../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../../core/private-state-file.ts';
-import acquirePrivateStateFileLock from '../../core/private-state-file-lock.ts';
-import { withPrivateStateLock } from '../../core/private-state-lock-context.ts';
 import type { AutomationRuntime, ResolvedAutomation } from '../../manifest/automation-schema.ts';
 
 const maximumBytes = 1024 * 1024;
@@ -122,36 +118,6 @@ export interface AutomationThreadAdapter {
   rename(id: string, name: string): Promise<void>;
   setGroup?(id: string, group: string): Promise<void>;
 }
-function threadPath(root: string, scope: string) {
-  return join(root, `automation-threads-${scope}.json`);
-}
-
-async function withAutomationThreadLock<T>(root: string, scope: string, run: () => Promise<T>) {
-  await ensurePrivateStateDirectories({
-    directories: [root],
-    currentUid: process.getuid?.(),
-    label: 'Automation conversations',
-  });
-  const lock = await acquirePrivateStateFileLock(threadPath(root, scope), {
-    retries: { factor: 1, minTimeout: 25, maxTimeout: 25, retries: 40 },
-    staleMs: 30000,
-  });
-  try {
-    return await withPrivateStateLock(lock, run);
-  } finally {
-    await lock.release();
-  }
-}
-
-const registrationThread = new AsyncLocalStorage<string>();
-
-// A registration selecting a native thread holds its binding stable through the handoff.
-export function withRegistrationThread<T>(root: string, scope: string, run: () => Promise<T>) {
-  return withAutomationThreadLock(root, scope, () =>
-    registrationThread.run(resolvePath(threadPath(root, scope)), run),
-  );
-}
-
 /** private binding journal; readers never create files or take mutation locks. */
 export default class AutomationThreads {
   readonly file: PrivateStateFile;
@@ -161,7 +127,7 @@ export default class AutomationThreads {
     readonly adapter: AutomationThreadAdapter,
     private readonly agentStorage?: BoundStorage['agent'],
   ) {
-    this.path = threadPath(options.root, options.scope);
+    this.path = automationThreadPath(options.root, options.scope);
     this.file = new PrivateStateFile({
       path: this.path,
       directories: [options.root],
@@ -223,6 +189,12 @@ export default class AutomationThreads {
   ) {
     const manageSettings = this.options.runtime === 'codex' || execution;
     let automationId: string | undefined;
+    const selected = jobs
+      .filter((job) => job.runtimes.includes(this.options.runtime))
+      .flatMap((job) => {
+        const selection = automationThreadSelection(job, this.options.runtime);
+        return selection ? [{ job, selection }] : [];
+      });
     const run = async () => {
       const ledger = await this.read();
       const save = async (record: ThreadRecord) => {
@@ -239,12 +211,6 @@ export default class AutomationThreads {
         ]);
       };
       const names = automationThreadNames(jobs, this.options.runtime);
-      const selected = jobs
-        .filter((job) => job.runtimes.includes(this.options.runtime))
-        .flatMap((job) => {
-          const selection = automationThreadSelection(job, this.options.runtime);
-          return selection ? [{ job, selection }] : [];
-        });
       const prepared = new Map<
         string,
         {
@@ -649,9 +615,7 @@ export default class AutomationThreads {
         throw error;
       }
     };
-    if (!apply) return resolve();
-    if (registrationThread.getStore() === resolvePath(this.path))
-      return registrationThread.exit(resolve);
-    return withAutomationThreadLock(this.options.root, this.options.scope, resolve);
+    if (!apply || (this.agentStorage && !selected.length)) return resolve();
+    return withAutomationThreadLock(this.path, resolve);
   }
 }

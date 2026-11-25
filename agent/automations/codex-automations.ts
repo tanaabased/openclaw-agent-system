@@ -1,3 +1,4 @@
+import { withRegistrationThread } from '../storage/automation-backend.ts';
 import {
   readCodexAutomationSnapshot as snapshot,
   ledgerSchema,
@@ -20,7 +21,6 @@ import { automationHash } from '../automation-hash.ts';
 import AutomationThreads, {
   AutomationThreadSettingsError,
   AutomationThreadSettingsHandoff,
-  withRegistrationThread,
   type AutomationThreadModelObservation,
 } from './automation-threads.ts';
 import { automationThreadSelection } from './automation-thread-selection.ts';

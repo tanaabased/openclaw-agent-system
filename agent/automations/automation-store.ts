@@ -3,10 +3,9 @@ import { Value } from 'typebox/value';
 
 import { withPrivateStateLock } from '../../core/private-state-lock-context.ts';
 import { automationHash } from '../automation-hash.ts';
-import { withRegistrationThread } from './automation-threads.ts';
 import { AutomationError } from './automation-errors.ts';
 import ensurePrivateStateDirectories from '../../core/ensure-private-state-directories.ts';
-import automationLedgerStorage from '../storage/automation-backend.ts';
+import automationLedgerStorage, { withRegistrationThread } from '../storage/automation-backend.ts';
 import type { BoundStorage } from '../storage/storage-lifecycle.ts';
 import acquirePrivateStateFileLock from '../../core/private-state-file-lock.ts';
 

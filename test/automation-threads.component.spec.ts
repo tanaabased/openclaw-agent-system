@@ -1,3 +1,5 @@
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
+import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 
@@ -741,6 +743,42 @@ describe('agent/automation-threads', () => {
     assert.equal(f.creates(), 1);
     assert.equal((await f.store.read()).records[0]?.phase, 'ready');
   });
+  it('should keep one native create in flight across sqlite connections while independent jobs proceed', async () => {
+    const f = fixture('openclaw');
+    const sqlite = await sqliteAgentFixture(root, 'tester');
+    const open = () =>
+      new AutomationThreads(
+        f.store.options,
+        f.adapter,
+        bindSqliteStorage(sqlite.sqliteInstallation, 'tester').agent,
+      );
+    const declarations = jobs({ id: 'activity' });
+    const entered = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    const create = f.adapter.create;
+    let attempts = 0;
+    f.adapter.create = async (...args) => {
+      attempts++;
+      entered.resolve();
+      await resume.promise;
+      return create(...args);
+    };
+    const first = open().resolve(declarations, true);
+    await entered.promise;
+    const peer = open();
+    const competing = peer.resolve(declarations, true);
+    try {
+      const independent = jobs(undefined);
+      assert.equal((await peer.resolve(independent, true)).size, 0);
+      assert.equal((await peer.read()).records[0]?.phase, 'creating');
+    } finally {
+      resume.resolve();
+      await Promise.all([first, competing]);
+    }
+    assert.equal(attempts, 1);
+    assert.equal((await open().read()).records[0]?.phase, 'ready');
+  });
+
   it('should leave inspection read-only and stop on failed lookups', async () => {
     const f = fixture('openclaw');
     await assert.rejects(
