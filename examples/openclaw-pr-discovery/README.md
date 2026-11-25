@@ -59,7 +59,7 @@ NODE
 cp "$GITHUB_WORKSPACE/examples/openclaw-pr-discovery/provider-fixture.mjs" "$TMPDIR/pr-provider/gh"
 chmod 755 "$TMPDIR/pr-provider/gh"
 # preserve the fixture ahead of system gh when openclaw bootstraps its cli path
-PATH="$TMPDIR/pr-provider:$PATH" OPENCLAW_PATH_BOOTSTRAPPED=1 OPENCLAW_LOG_LEVEL=info openclaw-gateway start
+PATH="$TMPDIR/pr-provider:$PATH" OPENCLAW_PATH_BOOTSTRAPPED=1 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 
 # should install emori in its fixture workspace
 set -o pipefail
@@ -194,6 +194,7 @@ node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -es --sl
 cmp "$TMPDIR/pr-provider/reads.jsonl" "$TMPDIR/notification-inspection-reads.jsonl"
 
 # should resume feedback discovery after restoring the provider
+trap 'status=$?; if test "$status" -ne 0; then tail -n 12 "$TMPDIR/pr-provider/reads.jsonl" >&2 || true; fi; exit "$status"' EXIT
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-discovery/tanaabot"
 number=$(jq -er .delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
 worktree=$(jq -er .worktree "$TMPDIR/notification-delivery.json")
