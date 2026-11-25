@@ -62,6 +62,41 @@ export function notificationCli(
   return JSON.parse(String(result.stdout));
 }
 
+/** A prior timer failure survives schedule sync in OpenClaw's run history. */
+export function notificationCoordinatorId(timeoutMs: number, run = spawnSync): string {
+  const installed = notificationCli(
+    ['agent-system', 'automations', 'list', '--json'],
+    timeoutMs,
+    true,
+    run,
+  );
+  const id = 'github-issue-assignment';
+  if (installed.status !== 'aligned') {
+    assert.equal(installed.status, 'attention', JSON.stringify(installed));
+    const problems = installed.findings.filter(
+      (finding: { status: string }) => !['healthy', 'skipped'].includes(finding.status),
+    );
+    assert.ok(
+      problems.length === 1 &&
+        problems[0].stepId === id &&
+        problems[0].status === 'warning' &&
+        problems[0].code === 'automation-execution-failed',
+      JSON.stringify(installed.findings),
+    );
+    process.stderr.write(JSON.stringify(problems[0]) + '\n');
+  }
+  const jobs = installed.jobs.filter((job: { id: string }) => job.id === id);
+  assert.equal(jobs.length, 1);
+  const [job] = jobs;
+  assert.equal(job.nativeEnabled, true);
+  assert.ok(
+    job.findings.some((finding: { code: string }) => finding.code === 'automation-healthy'),
+    JSON.stringify(job.findings),
+  );
+  assert.ok(typeof job.nativeId === 'string' && job.nativeId.trim());
+  return job.nativeId;
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   assert.equal(process.env.GITHUB_ACTIONS, 'true', 'GitHub Actions only.');
   const { values } = parseArgs({
@@ -117,16 +152,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         );
         return milliseconds;
       };
-      const installed = notificationCli(
-        ['agent-system', 'automations', 'list', '--json'],
-        remaining(),
-      );
-      assert.equal(installed.status, 'aligned');
-      const jobs = installed.jobs.filter(
-        (job: { id: string }) => job.id === 'github-issue-assignment',
-      );
-      assert.equal(jobs.length, 1);
-      assert.equal(jobs[0].nativeEnabled, true);
+      const nativeId = notificationCoordinatorId(remaining());
       const read = {
         scopes: ['operator.read' as const],
         progress: false,
@@ -135,7 +161,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       const job = await callGatewayFromCli(
         'cron.get',
         { json: true, timeout: String(Math.min(DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS, remaining())) },
-        { id: jobs[0].nativeId },
+        { id: nativeId },
         read,
       );
       assert.ok(
