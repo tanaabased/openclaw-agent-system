@@ -12,8 +12,7 @@ belong in the [manifest](./MANIFEST.md).
 ## OpenClaw plugin configuration
 
 Set these options under `plugins.entries.agent-system.config` in OpenClaw.
-Standalone Codex reads the shared `cleanup` and `storage` settings; it does not manage
-OpenClaw configuration.
+Standalone Codex reads the shared `cleanup` setting and keeps its own storage configuration.
 
 ### `cleanup`
 
@@ -132,9 +131,28 @@ duration. Flushing the cache does not reset provider backoff or quota limits.
 
 ### `storage`
 
-OpenClaw and standalone Codex use SQLite. An existing `storage.backend: sqlite`
-setting can be left in place or removed.
+Set `storage.backend` in `agent.yaml` to select storage for the agent's Agent
+System records. Use `sqlite` or `{ type: sqlite }`. Omitting it selects SQLite.
+
+The installation setting selects storage for shared Agent System records. The
+first Install fills it if absent. After that, edit it explicitly for your runtime.
+
+- **OpenClaw** — use `plugins.entries.agent-system.config.storage.backend` in
+  the selected OpenClaw config. `openclaw config file` shows which file is in use.
+- **Standalone Codex** — use `instance/storage.json` under the installation's
+  Agent System plugin data directory. Keep the file private (`0600`) and use
+  `{"backend":"sqlite"}` or `{"backend":{"type":"sqlite"}}`.
+
+On OpenClaw, the installation setting also governs the native `state` and `agent`
+database families, including enabled built-in memory. Doctor reports engine drift.
+Use OpenClaw's database port when switching an existing native database.
 
 If an installation still uses `file`, pause its writers and run
 `scripts/import-agent-storage.ts` from the pre-upgrade source checkout. Verify
 the import before removing the `file` setting and upgrading.
+
+After the [SQLite cutover](https://github.com/tanaabased/openclaw-agent-system/pull/796),
+you can ask in chat, “Switch Agent System to SQLite on this laptop after the
+import, then show me the saved setting.” Identify the runtime's config above,
+update its installation setting, read the value back from that same file, and
+run Doctor to verify access to the installed stores.

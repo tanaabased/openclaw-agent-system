@@ -963,17 +963,20 @@ export function bindSqliteInstallation(installation: SqliteInstallation) {
 export function bindSqliteStorage(
   installation: SqliteInstallation,
   agentId: string,
+  shared = bindSqliteInstallation(installation),
 ): BoundStorage &
   Record<keyof BoundStorage, StorageSchema & Pick<SqliteDatabase, 'exportSnapshot'>> {
   if (!/^[a-z0-9][a-z0-9-]*$/u.test(agentId)) throw new Error('invalid agent database name');
-  const shared = bindSqliteInstallation(installation);
   return {
     agent: new SqliteAgentStore(installation, agentId, shared),
     installation: shared,
   };
 }
 
-export async function* sqliteAgentDatabases(installation: SqliteInstallation) {
+export async function* sqliteAgentDatabases(
+  installation: SqliteInstallation,
+  shared = bindSqliteInstallation(installation),
+) {
   const names = await readdir(installation.agentRoot).catch((error: unknown) => {
     if (nodeErrorCode(error) !== 'ENOENT') throw error;
     return [];
@@ -984,7 +987,7 @@ export async function* sqliteAgentDatabases(installation: SqliteInstallation) {
       const agentId = match[1]!;
       yield {
         agentId,
-        agent: new SqliteAgentStore(installation, agentId, bindSqliteInstallation(installation)),
+        agent: new SqliteAgentStore(installation, agentId, shared),
       };
     }
   }

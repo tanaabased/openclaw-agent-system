@@ -57,9 +57,12 @@ export default class OpenClawIntake {
   select(manifest: AgentManifest, workspaceDir: string, options: { resolvePolicy?: boolean } = {}) {
     return selectOpenClawTaskContext(this.dependencies, manifest, workspaceDir, options);
   }
-  pickupStore(agentId: string) {
+  pickupStore(manifest: AgentManifest) {
     const { sqliteInstallation } = this.dependencies;
-    return sqliteInstallation && bindPickupStore(sqliteInstallation, agentId);
+    return (
+      sqliteInstallation &&
+      bindPickupStore(sqliteInstallation, manifest.agent.id, manifest.storage?.backend)
+    );
   }
   async readiness(
     manifest: AgentManifest,
@@ -92,7 +95,7 @@ export default class OpenClawIntake {
   ) {
     try {
       const { store, workspace, dispatch } = await this.select(manifest, workspaceDir);
-      const pickupStore = await this.pickupStore(manifest.agent.id);
+      const pickupStore = await this.pickupStore(manifest);
       let authority = this.dependencies.issuePickup;
       if (!authority) {
         if (!pickupStore || !manifest.github?.notifications || !occurrence)
@@ -199,7 +202,7 @@ export default class OpenClawIntake {
   }
   async preparePickup(manifest: AgentManifest, workspaceDir: string) {
     const { selected, store, workspace, dispatch } = await this.select(manifest, workspaceDir);
-    const pickupStore = await this.pickupStore(manifest.agent.id);
+    const pickupStore = await this.pickupStore(manifest);
     if (!selected || !pickupStore) throw new IntakeError('issue-pickup-activation-required');
     const code = issuePickupConfigurationCode(selected.policy);
     if (code) throw new IntakeError(code);
@@ -232,7 +235,7 @@ export default class OpenClawIntake {
     try {
       if (!code) {
         const { store, workspace } = await this.select(manifest, workspaceDir);
-        const pickupStore = await this.pickupStore(manifest.agent.id);
+        const pickupStore = await this.pickupStore(manifest);
         if (!pickupStore) throw new Error('issue-pickup-activation-required');
         const enrollment = await pickupStore.inspect(policy, 'openclaw', store.location.scope);
         if (!enrollment.nativeId) throw new Error('issue-pickup-activation-required');

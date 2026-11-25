@@ -59,6 +59,7 @@ grep -F 'code=github-routing-project-pickup-removed' "$TMPDIR/retired-pickup.std
 cd "$GITHUB_WORKSPACE/examples/openclaw-workspace"
 export AGENT_SYSTEM_WORKSPACE_HOST_NAME=Workspace
 openclaw agent-system install --yes --json | jq -e '(.outcomes | any(.code == "codex-plugin-installed" and .status == "created") and any(.stepId == "host-ready" and .status == "updated") and any(.stepId == "agent-ready" and .status == "updated") and any(.code == "set-agent-models" and .status == "updated"))'
+openclaw config get plugins.entries.agent-system.config.storage.backend --json | jq -e '.type == "sqlite"'
 printf 'host\nagent\n' | diff - setup-runs
 openclaw config get agents.entries.workspace-tanaabot --json | jq -e '.identity.name == "Workspace Agent" and .model.primary == "openai/gpt-5.4-nano" and .thinkingDefault == "medium" and .models["openai/gpt-5.4-nano"].agentRuntime.id == "codex"'
 codex_version=$(node -p 'require(process.argv[1]).openclaw.agentSystem.codexPlugin.split("@").pop()' "$GITHUB_WORKSPACE/package.json")

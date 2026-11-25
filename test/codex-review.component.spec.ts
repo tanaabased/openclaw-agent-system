@@ -2,8 +2,6 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import codexStorageLocation from '../agent/storage/codex-storage.ts';
-import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import codexReview, { type CodexReviewDependencies } from '../agent/tasks/review/codex-review.ts';
 import type { GitHubPullRequestReview } from '../channels/github/provider/review-types.ts';
 import { reviewEventState } from '../channels/github/provider/review-draft.ts';
@@ -135,7 +133,6 @@ describe('agent/tasks/review native first review', () => {
     codexReview(f.pluginData, { action: 'review', operation, ...input }, { ...deps, threadId });
 
   it('should resume an old review request through running ci and publish once', async () => {
-    const db = bindSqliteStorage(codexStorageLocation(f.pluginData), f.manifest.agent.id).agent;
     const scan = await call('scan');
     assert.equal(scan.status, 'observed');
     assert.equal((await call('scan')).status, 'observed');
@@ -170,10 +167,10 @@ describe('agent/tasks/review native first review', () => {
     assert.equal((await call('reconcile', {}, 'issue-thread')).status, 'reconciled');
     assert.equal(writes, 1);
     const { journal } = await selectCodexTaskContext(f.pluginData, deps);
-    const { dispatchRecords } = await db.read({ dispatchRecords: { scope: journal.scope } });
-    assert.equal(dispatchRecords.length, 1);
-    assert.equal(dispatchRecords[0]?.value.threadId, 'issue-thread');
-    assert.equal(dispatchRecords[0]?.value.reviewPublication?.receipt?.databaseId, 81);
+    const { records } = await journal.read();
+    assert.equal(records.length, 1);
+    assert.equal(records[0]?.threadId, 'issue-thread');
+    assert.equal(records[0]?.reviewPublication?.receipt?.databaseId, 81);
   });
 
   it('should retain a removed request without launching or publishing', async () => {

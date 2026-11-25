@@ -10,6 +10,7 @@ import {
   installCodexSetup,
 } from '../agent/lifecycle/codex-setup.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
+import { initializeCodexStorage } from '../agent/storage/codex-storage.ts';
 
 describe('agent/codex-setup', () => {
   let root: string;
@@ -39,6 +40,26 @@ describe('agent/codex-setup', () => {
   const dependencies = {
     baseEnvironment: { HOME: '/tmp', PATH: '/bin:/usr/bin' },
   };
+
+  it('publishes one complete storage selection when first installs overlap', async () => {
+    const backend = { type: 'sqlite' } as const;
+    const settings = join(pluginData, 'instance', 'storage.json');
+    const selected = await Promise.all([
+      initializeCodexStorage(pluginData, backend),
+      initializeCodexStorage(pluginData, backend),
+      initializeCodexStorage(pluginData, backend),
+    ]);
+    assert.deepEqual(selected, [backend, backend, backend]);
+    assert.deepEqual(JSON.parse(await readFile(settings, 'utf8')), { backend });
+    // A retry after saving the selection can still initialize both databases.
+    await manifest('');
+    const installed = await installCodexSetup(pluginData, undefined, dependencies);
+    assert.ok(
+      installed.outcomes.some(
+        ({ code, status }) => code === 'agent-system-storage-ready' && status === 'created',
+      ),
+    );
+  });
 
   it('should plan paused assignment and review workflows without github access', async () => {
     await manifest(`models:

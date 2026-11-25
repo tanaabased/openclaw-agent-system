@@ -6,6 +6,8 @@ agent:
     from-environment: WORKSPACE_NAME
   runtime: codex
 
+storage: { backend: { type: sqlite } }
+
 environment:
   dotenv:
     - base.env

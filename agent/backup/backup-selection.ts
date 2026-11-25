@@ -414,6 +414,7 @@ export async function planWorkspaceBackup(options: {
   const files = backupPayloadPaths(selected);
   return {
     agentId: options.manifest.agent.id,
+    ...(options.manifest.storage ? { storage: options.manifest.storage } : {}),
     workspaceDir,
     settings,
     ...(agentDir ? { agentDir } : {}),

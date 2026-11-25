@@ -1,4 +1,4 @@
-import { bindAgentStore } from '../storage/backend.ts';
+import { bindAgentStore, listAgentStores } from '../storage/backend.ts';
 import type { SqliteInstallation } from '../storage/storage-lifecycle.ts';
 import { realpath } from 'node:fs/promises';
 
@@ -150,9 +150,7 @@ export default class AutomationService {
 
   async *reportStores() {
     const { now, sqliteInstallation } = this.dependencies;
-    if (!sqliteInstallation) throw new Error('SQLite requires runtime storage locations');
-    const { sqliteAgentDatabases } = await import('../storage/agent-database.ts');
-    for await (const storage of sqliteAgentDatabases(sqliteInstallation))
+    for await (const storage of listAgentStores(sqliteInstallation))
       yield new AutomationReportStore(storage, now);
   }
 
@@ -165,7 +163,11 @@ export default class AutomationService {
       environment: this.dependencies.environment,
       timezone: this.dependencies.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
     };
-    const agent = await bindAgentStore(manifest.agent.id, this.dependencies.sqliteInstallation);
+    const agent = await bindAgentStore(
+      manifest.agent.id,
+      this.dependencies.sqliteInstallation,
+      manifest.storage?.backend,
+    );
     const store = new AutomationStore(
       {
         profile: await realpath(this.dependencies.profile),

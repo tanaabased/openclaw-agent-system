@@ -8,6 +8,26 @@ function diagnosticCodes(source: string): Set<string> {
 }
 
 describe('manifest/parse', () => {
+  it('normalizes explicit sqlite and lets an omitted backend inherit the default', () => {
+    for (const [source, expected] of [
+      ['', undefined],
+      ['storage: { backend: sqlite }', { backend: { type: 'sqlite' } }],
+      ['storage: { backend: { type: sqlite } }', { backend: { type: 'sqlite' } }],
+    ] as const) {
+      const parsed = parseAgentManifest(`schema-version: 1\nagent: { id: test }\n${source}`);
+      assert.equal(parsed.status, 'valid');
+      assert.deepEqual(parsed.manifest.storage, expected);
+    }
+    for (const backend of ['file', '{ type: postgres }', '{ type: sqlite, path: elsewhere }']) {
+      assert.equal(
+        parseAgentManifest(
+          `schema-version: 1\nagent: { id: test }\nstorage: { backend: ${backend} }`,
+        ).status,
+        'invalid',
+      );
+    }
+  });
+
   it('should strictly decode backup keys without changing literal patterns', () => {
     const parsed = parseAgentManifest(
       'schema-version: 1\nagent: { id: tanaabot }\nbackup:\n  git-ignore: true\n  include: [MEMORY.md, memory/**]\n  exclude: []\n',

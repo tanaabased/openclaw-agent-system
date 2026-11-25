@@ -13,6 +13,23 @@ const restrictedBuiltinImports = builtinModules
     message: `Use node:${name} instead of bare builtin imports.`,
   }));
 
+const moduleSyntaxRestrictions = [
+  {
+    selector: "CallExpression[callee.type='Identifier'][callee.name='require']",
+    message: 'Use ESM imports instead of require() in module files.',
+  },
+  {
+    selector:
+      "AssignmentExpression[left.type='MemberExpression'][left.object.type='Identifier'][left.object.name='module'][left.property.type='Identifier'][left.property.name='exports']",
+    message: 'Use ESM exports instead of module.exports in module files.',
+  },
+  {
+    selector:
+      "AssignmentExpression[left.type='MemberExpression'][left.object.type='Identifier'][left.object.name='exports']",
+    message: 'Use ESM named exports instead of exports.* assignments in module files.',
+  },
+];
+
 export default defineConfig([
   globalIgnores([
     '**/node_modules/**',
@@ -44,21 +61,25 @@ export default defineConfig([
           paths: restrictedBuiltinImports,
         },
       ],
+      'no-restricted-syntax': ['error', ...moduleSyntaxRestrictions],
+    },
+  },
+  {
+    files: [
+      'index.ts',
+      '{agent,api,channels,cli,core,credentials,environment,hooks,manifest,paths,tools,utils}/**/*.ts',
+    ],
+    ignores: [
+      'agent/storage/{backend,sqlite-backend,agent-database,sqlite-records,reply-publication,schema,installation-schema}.ts',
+    ],
+    rules: {
       'no-restricted-syntax': [
         'error',
+        ...moduleSyntaxRestrictions,
         {
-          selector: "CallExpression[callee.type='Identifier'][callee.name='require']",
-          message: 'Use ESM imports instead of require() in module files.',
-        },
-        {
-          selector:
-            "AssignmentExpression[left.type='MemberExpression'][left.object.type='Identifier'][left.object.name='module'][left.property.type='Identifier'][left.property.name='exports']",
-          message: 'Use ESM exports instead of module.exports in module files.',
-        },
-        {
-          selector:
-            "AssignmentExpression[left.type='MemberExpression'][left.object.type='Identifier'][left.object.name='exports']",
-          message: 'Use ESM named exports instead of exports.* assignments in module files.',
+          selector: String.raw`:matches(ImportDeclaration, ExportNamedDeclaration, ExportAllDeclaration, ImportExpression)[source.value=/(?:^node:sqlite$|^bun:sqlite$|^drizzle-orm\/(?:node-sqlite|sqlite-core)(?:\/|$)|\/(?:agent-database|sqlite-backend)(?:\.ts)?$)/u]`,
+          message:
+            'Bind Agent System storage through its factory instead of opening SQLite directly.',
         },
       ],
     },

@@ -94,7 +94,11 @@ export default class AgentPathService {
     }
     const { projection } = resolution;
     const agentId = input.manifest.agent.id;
-    const previous = await this.#dependencies.projectionStore.read(agentId, workspaceDir);
+    const previous = await this.#dependencies.projectionStore.read(
+      agentId,
+      workspaceDir,
+      input.manifest.storage?.backend,
+    );
     const previousOwned =
       previous && resolve(previous.workspaceDir) === workspaceDir ? previous.openClawPaths : [];
     const desiredPaths = projection.entries.map(({ path }) => path);
@@ -144,12 +148,15 @@ export default class AgentPathService {
         );
       }
     }
-    await this.#dependencies.projectionStore.write({
-      schemaVersion: 1,
-      agentId,
-      workspaceDir,
-      openClawPaths: desiredPaths,
-    });
+    await this.#dependencies.projectionStore.write(
+      {
+        schemaVersion: 1,
+        agentId,
+        workspaceDir,
+        openClawPaths: desiredPaths,
+      },
+      input.manifest.storage?.backend,
+    );
 
     const actions: AgentPathInstallAction[] = [];
     if (createdWorkspaceBin) actions.push('create-workspace-bin');
@@ -196,6 +203,7 @@ export default class AgentPathService {
     const previous = await this.#dependencies.projectionStore.read(
       input.manifest.agent.id,
       input.workspaceDir,
+      input.manifest.storage?.backend,
     );
     const previousManagedPaths =
       previous && resolve(previous.workspaceDir) === resolve(input.workspaceDir)
