@@ -710,10 +710,24 @@ describe('agent/automation-threads', () => {
       }
   }
 
-  it('should never replace an archived unrelated job or explicit native target', async () => {
-    const f = fixture('codex');
+  it('should preserve archived openclaw jobs outside assignment and pickup recovery', async () => {
+    const f = fixture('openclaw');
     const declarations = jobs('Other', ['other']);
     const id = (await f.store.resolve(declarations, true)).get('other')!.id;
+    f.native.get(id)!.archived = true;
+    await assert.rejects(
+      f.store.resolve(declarations, true),
+      rejects('automation-thread-unavailable'),
+    );
+    assert.equal(f.creates(), 1);
+  });
+
+  it('should preserve an archived codex chat adopted by exact id or explicitly pinned', async () => {
+    const f = fixture('codex');
+    const id = 'existing-chat';
+    f.native.set(id, { id });
+    const declarations = jobs({ id, name: 'Other' }, ['other']);
+    assert.equal((await f.store.resolve(declarations, true)).get('other')!.id, id);
     f.native.get(id)!.archived = true;
     await assert.rejects(
       f.store.resolve(declarations, true),
@@ -725,6 +739,21 @@ describe('agent/automation-threads', () => {
       f.store.resolve(declarations, true),
       rejects('automation-thread-unavailable'),
     );
+    assert.equal(f.creates(), 0);
+  });
+
+  it('should not replace a codex chat when native lookup fails', async () => {
+    const f = fixture('codex');
+    const declarations = jobs('Other', ['other']);
+    const id = (await f.store.resolve(declarations, true)).get('other')!.id;
+    const lookup = f.adapter.lookup;
+    f.adapter.lookup = async (target) => {
+      if (target === id) throw new Error('transport failed');
+      return lookup(target);
+    };
+    const before = await f.store.read();
+    await assert.rejects(f.store.resolve(declarations, true), /transport failed/u);
+    assert.deepEqual(await f.store.read(), before);
     assert.equal(f.creates(), 1);
   });
 

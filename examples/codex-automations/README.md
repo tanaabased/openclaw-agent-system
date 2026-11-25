@@ -10,6 +10,7 @@ those same conversations.
 - Packaged removal, verified-deletion retirement, and replacement of missing current jobs, with explicit saved-state fixtures rather than desktop scheduler execution.
 - Real app-server conversation creation, selected model/permission readback, and attributed setup history without model generation.
 - Fresh-process resumption and shared profile changes preserving conversation identity, permissions, and durable model/effort settings.
+- Recovery after native chat archive: inspect replacement need without writing, replace only affected chat, and plan its paused schedule.
 
 ## What Does Not Belong Here
 
@@ -121,6 +122,21 @@ node "$GITHUB_WORKSPACE/scripts/codex-sidebar-fixture.mjs" "$runtime" "$root/thr
 jq -S '.threads' "$root/threads-updated.json" > "$root/threads-settings.json"
 jq -S '.threads' "$root/threads-cold.json" | diff - "$root/threads-settings.json"
 test ! -d "$CODEX_HOME/automations"
+
+# should replace only confirmed archived managed chat and keep its schedule paused
+root="$TMPDIR/agent-system-codex-automations"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+workspace=$(cd "$GITHUB_WORKSPACE/examples/codex-automations/threads" && pwd -P)
+archived=$(jq -er '.threads["check-builds"].id' "$root/threads-cold.json")
+bun "$GITHUB_WORKSPACE/examples/codex-automations/archive-thread.mjs" "$workspace" "$archived" archive
+node "$runtime" automations inspect --plugin-data "$root/threads-data" < "$root/sidebar-input.json" | jq -e '.status == "requires-native-app-sync" and any(.findings[]; .id == "check-builds" and .code == "automation-thread-replacement-required")'
+node "$GITHUB_WORKSPACE/scripts/codex-sidebar-fixture.mjs" "$runtime" "$root/threads-data" "$root/sidebar-input.json" > "$root/threads-replacement.json"
+replacement=$(jq -er --arg archived "$archived" '.threads["check-builds"].id | select(. != $archived)' "$root/threads-replacement.json")
+node "$runtime" automations plan --plugin-data "$root/threads-data" < "$root/sidebar-input.json" | jq -e --arg replacement "$replacement" '[.actions[] | select(.manifestId == "check-builds") | .expected | {status, targetThreadId}] == [{status: "PAUSED", targetThreadId: $replacement}]'
+node "$GITHUB_WORKSPACE/scripts/codex-sidebar-fixture.mjs" "$runtime" "$root/threads-data" "$root/sidebar-input.json" > "$root/threads-after-recovery.json"
+jq -e --arg replacement "$replacement" --arg peer "$(jq -er '.threads["review-prs"].id' "$root/threads-cold.json")" '.threads["check-builds"].id == $replacement and .threads["review-prs"].id == $peer' "$root/threads-after-recovery.json"
+bun "$GITHUB_WORKSPACE/examples/codex-automations/archive-thread.mjs" "$workspace" "$archived" verify
 
 # should retain the saved finite rule across fresh process synchronization
 root="$TMPDIR/agent-system-codex-automations"

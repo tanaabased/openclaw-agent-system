@@ -265,7 +265,8 @@ export default class AutomationThreads {
           record?.phase === 'ready' &&
           (!native || native.archived) &&
           selection.managed &&
-          ['github-issue-assignment', issuePickupAutomationId].includes(job.id),
+          (['github-issue-assignment', issuePickupAutomationId].includes(job.id) ||
+            (this.options.runtime === 'codex' && record.nativeId !== selection.exact)),
         );
         if (replace && !apply) throw new AutomationError('automation-thread-replacement-required');
         if (record && record.phase === 'ready' && !native && !replace)
@@ -301,12 +302,15 @@ export default class AutomationThreads {
       }
       // Reject unavailable selections before journaling a potentially ambiguous native create.
       if (manageSettings && this.adapter.validateSettings) {
-        for (const { settings, native, record, automationId: id } of prepared.values()) {
+        for (const { settings, native, record, replace, automationId: id } of prepared.values()) {
           automationId = id;
           if (!settings || (!settings.model && !settings.effort) || record?.settingsUpdate)
             continue;
           try {
-            await this.adapter.validateSettings(settings, native ?? undefined);
+            await this.adapter.validateSettings(
+              settings,
+              replace ? undefined : (native ?? undefined),
+            );
           } catch (error) {
             if (error instanceof AutomationError)
               throw new AutomationThreadSettingsError(error.code, {
