@@ -89,12 +89,7 @@ async function resolveThreads(
     const selection = automationThreadSelection(job, 'codex')!;
     const group = selection.group!;
     if (journals.has(group)) continue;
-    const journal = await codexSidebarJournal(
-      selected.root,
-      selected.codexHome,
-      group,
-      selected.dependencies.storageBackend,
-    );
+    const journal = await codexSidebarJournal(selected.root, selected.codexHome, group);
     const { placement, state } = await journal.inspect(
       inputs.nativeInventory,
       selection.exact ?? 'pending',

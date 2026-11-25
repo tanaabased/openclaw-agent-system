@@ -1,8 +1,9 @@
-import { importAgentStorage } from '../scripts/import-agent-storage.ts';
+import { automationHash } from '../agent/automation-hash.ts';
+import { readCodexAutomationSnapshot } from '../agent/automations/codex-automation-snapshot.ts';
 import codexStorageLocation from '../agent/storage/codex-storage.ts';
 import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -30,7 +31,7 @@ import { inspectCodexIntake, runCodexIntake } from '../agent/codex-intake.ts';
 import { connectCodexGitHub } from '../agent/codex-github-client.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
-import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
+import type { DispatchRecord } from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import checkCodexActivationIsolation from './codex-activation-fixture.ts';
 import { baseline, intakeFixture } from './github-intake-fixture.ts';
 
@@ -74,92 +75,95 @@ describe('agent/codex-intake', () => {
   afterEach(async () => {
     await rm(root, { force: true, recursive: true });
   });
-  it('should scan and recover from sqlite while preserving the file backend', async () => {
+  it('should recover the original intake job owner after rebinding to another agent', async () => {
+    const agentId = 'previous';
+    const previousWorkspace = join(root, 'previous');
+    const profile = await realpath(codexHome);
+    const scope = automationHash({
+      runtime: 'codex',
+      agentId,
+      profile,
+      workspaceDir: previousWorkspace,
+    });
+    const { agent } = bindSqliteStorage(codexStorageLocation(pluginData), agentId);
+    await agent.install();
+    const binding = { agentId, workspace: previousWorkspace, codexHome: profile };
+    const registration = {
+      id: intakeAutomationId,
+      nativeId: 'previous-job',
+      removed: false,
+      definition: {
+        kind: 'heartbeat' as const,
+        destination: 'thread' as const,
+        targetThreadId: 'previous-thread',
+        name: 'intake',
+        prompt: codexAutomationMarker(scope, intakeAutomationId),
+        status: 'ACTIVE' as const,
+        rrule: 'FREQ=DAILY',
+        notificationPolicy: null,
+      },
+    };
+    await agent.saveAutomationLedger(
+      'codex',
+      { version: 1, scope, binding, records: [registration] },
+      { version: 1, scope, records: [] },
+    );
+    const recovered = await readCodexAutomationSnapshot(pluginData, { codexHome });
+    assert.equal(recovered.cleanupOnly, true);
+    assert.equal(recovered.workspace, previousWorkspace);
+    assert.equal(recovered.loaded.manifest.agent.id, agentId);
+    assert.deepEqual(recovered.ledger.records, [registration]);
+  });
+  it('should retain the sqlite checkpoint across repeated scans and a damaged manifest', async () => {
     const fixture = intakeFixture();
     const assigned = fixture.events.splice(0);
     let now = baseline;
     const deps = {
-      storageBackend: 'file' as const,
       codexHome,
       now: () => now,
       connect: async () => fixture.client,
       assertActive: async () => {},
     };
     await runCodexIntake(pluginData, true, deps);
-    const {
-      store: legacy,
-      workspace: boundWorkspace,
-      codexHome: profile,
-    } = await selectCodexTaskContext(pluginData, deps);
-    const originalFile = await readFile(legacy.location.path);
-    const { agent: database, installation } = bindSqliteStorage(
-      codexStorageLocation(pluginData),
-      manifest.agent.id,
-    );
-    await database.install();
-    await installation.install();
-    const sqlite = { ...deps, storageBackend: 'sqlite' as const };
-    assert.equal((await inspectCodexIntake(pluginData, sqlite)).baselineAt, null);
-    await importAgentStorage({
-      runtime: 'codex',
-      agentId: manifest.agent.id,
-      workspace: boundWorkspace,
-      profile,
-      stateRoot: pluginData,
-      privateRoot: pluginData,
-      repositories: [],
-      sessionScopes: [],
-      apply: true,
-    });
-    assert.equal((await inspectCodexIntake(pluginData, sqlite)).baselineAt, baseline);
+    const { store } = await selectCodexTaskContext(pluginData, deps);
+    assert.equal((await inspectCodexIntake(pluginData, deps)).baselineAt, baseline);
     fixture.events.push(...assigned);
     now += 120000;
-    await runCodexIntake(pluginData, false, sqlite);
-    const inspected = await inspectCodexIntake(pluginData, sqlite);
+    await runCodexIntake(pluginData, false, deps);
+    const inspected = await inspectCodexIntake(pluginData, deps);
     assert.equal(inspected.records.length, 1);
-    assert.deepEqual(
-      (await database.readIntake(legacy.location.scope))?.records,
-      inspected.records,
-    );
-    const repeated = await runCodexIntake(pluginData, false, sqlite);
+    assert.deepEqual((await store.read())?.records, inspected.records);
+    const repeated = await runCodexIntake(pluginData, false, deps);
     assert.ok('admitted' in repeated);
     assert.equal(repeated.admitted, 0);
     await writeFile(join(workspace, 'agent.yaml'), '[');
-    const blocked = await runCodexIntake(pluginData, false, sqlite);
+    const blocked = await runCodexIntake(pluginData, false, deps);
     assert.equal(blocked.status, 'blocked');
-    assert.equal(
-      (await database.readIntake(legacy.location.scope))?.blocker?.code,
-      'intake-manifest-unavailable',
-    );
-    assert.equal((await inspectCodexIntake(pluginData, sqlite)).records.length, 1);
-    assert.deepEqual(await readFile(legacy.location.path), originalFile);
+    assert.equal((await store.read())?.blocker?.code, 'intake-manifest-unavailable');
+    assert.equal((await inspectCodexIntake(pluginData, deps)).records.length, 1);
   });
   it('should inspect and admit assignments while an unrelated task payload needs repair', async () => {
     const provider = intakeFixture();
     const assigned = provider.events.splice(0);
     let now = baseline;
     const deps = {
-      storageBackend: 'file' as const,
       codexHome,
       assertActive: async () => {},
       now: () => now,
       connect: async () => provider.client,
     };
     await runCodexIntake(pluginData, true, deps);
-    const { store } = await selectCodexTaskContext(pluginData, deps);
-    const journal = new CodexDispatchStore(store.location.root, store.location.scope);
-    const contents = JSON.stringify({
-      version: 4,
-      scope: store.location.scope,
-      records: [{ id: 'a'.repeat(64), createdAt: 'damaged', feedback: { attempted: true } }],
-    });
-    await journal.file.write(contents);
+    const { store, journal } = await selectCodexTaskContext(pluginData, deps);
+    const previous = await journal.readEnvelope();
+    const record = { id: 'a'.repeat(64), createdAt: 'damaged', feedback: { attempted: true } };
+    const damaged = { ...previous, records: [record as unknown as DispatchRecord] };
+    await store.agentStorage!.saveDispatch(journal.scope, damaged, previous);
     assert.equal((await inspectCodexIntake(pluginData, deps)).status, 'ready');
     provider.events.push(...assigned);
     now += 120000;
     assert.equal((await runCodexIntake(pluginData, false, deps)).status, 'ready');
     assert.ok((await store.read())!.records.length > 0);
-    assert.equal(await journal.file.read(), contents);
+    assert.deepEqual(await journal.readEnvelope(), damaged);
     await assert.rejects(journal.read(), /dispatch-task-ownership-unresolved/);
   });
   it('should reject retired repository scope before codex intake connects', async () => {
@@ -532,7 +536,6 @@ describe('agent/codex-intake', () => {
     };
     let creates = 0;
     const deps = {
-      storageBackend: 'file' as const,
       codexHome,
       intake: { now: () => baseline, connect: async () => fixture.client },
       threadAdapter: {
@@ -616,13 +619,10 @@ describe('agent/codex-intake', () => {
       );
       const selected = await selectCodexTaskContext(pluginData, deps);
       const before = await selected.store.read();
-      const file = (await readdir(pluginData)).find(
-        (name) => name.startsWith('codex-automations-') && name.endsWith('.json'),
-      )!;
-      const path = join(pluginData, file);
-      const original = await readFile(path, 'utf8');
+      const snapshot = () => readCodexAutomationSnapshot(pluginData, deps);
+      const { ledger: original } = await snapshot();
       for (const mode of ['create', 'update'] as const) {
-        const pendingLedger = JSON.parse(original);
+        const pendingLedger = structuredClone(original);
         pendingLedger.pending = {
           digest: 'a'.repeat(64),
           manifestDigest: 'pending-manifest',
@@ -631,20 +631,20 @@ describe('agent/codex-intake', () => {
             mode,
             ...(mode === 'update' ? { id: 'nightly-refresh-job' } : {}),
             expected: {
-              ...pendingLedger.records[0].definition,
+              ...pendingLedger.records[0]!.definition,
               name: '🌙 NIGHTLY REFRESH',
             },
             removed: false,
           },
           targetBefore: { hash: 'b'.repeat(64), nativeIds: [] },
         };
-        await writeFile(path, JSON.stringify(pendingLedger));
+        await (await snapshot()).writeLedger(pendingLedger);
         assert.deepEqual(
           await inspectCodexDispatchActivation(pluginData, deps, false, false, 'intake'),
           { sourceThreadId: 'intake-thread' },
         );
       }
-      const pendingIntakeLedger = JSON.parse(original);
+      const pendingIntakeLedger = structuredClone(original);
       pendingIntakeLedger.pending = {
         digest: 'c'.repeat(64),
         manifestDigest: 'pending-manifest',
@@ -652,23 +652,23 @@ describe('agent/codex-intake', () => {
           manifestId: intakeAutomationId,
           mode: 'update',
           id: nativeId,
-          expected: pendingIntakeLedger.records[0].definition,
+          expected: pendingIntakeLedger.records[0]!.definition,
           removed: false,
         },
         targetBefore: { hash: 'd'.repeat(64), nativeIds: [nativeId] },
       };
-      await writeFile(path, JSON.stringify(pendingIntakeLedger));
+      await (await snapshot()).writeLedger(pendingIntakeLedger);
       await assert.rejects(
         inspectCodexDispatchActivation(pluginData, deps, false, false, 'intake'),
         /automation-recovery-required/,
       );
-      await writeFile(path, original);
-      const ledger = JSON.parse(original);
+      await (await snapshot()).writeLedger(original);
+      const ledger = structuredClone(original);
       const oldPrompt =
         'Previously reconciled automation instructions.\n\n' +
         codexAutomationMarker(ledger.scope, intakeAutomationId);
-      ledger.records[0].definition.prompt = oldPrompt;
-      await writeFile(path, JSON.stringify(ledger));
+      ledger.records[0]!.definition.prompt = oldPrompt;
+      await (await snapshot()).writeLedger(ledger);
       await saveNative({ ...prepared.request, prompt: oldPrompt });
       await assert.rejects(
         inspectCodexDispatchActivation(pluginData, deps, false, false, 'intake'),

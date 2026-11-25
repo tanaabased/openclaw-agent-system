@@ -7,6 +7,11 @@ import { fileURLToPath } from 'node:url';
 import { once } from 'node:events';
 import { Worker } from 'node:worker_threads';
 import { DatabaseSync } from 'node:sqlite';
+import {
+  pickupDispatchScope,
+  sqliteDispatchPersistence,
+} from '../agent/storage/dispatch-backend.ts';
+import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import type { IntakeState } from '../channels/github/intake/record-store.ts';
 import { account, baseline, intakeFixture } from './github-intake-fixture.ts';
@@ -154,6 +159,38 @@ describe('agent database', () => {
     } finally {
       await worker.terminate();
     }
+  });
+
+  it('should preserve an older sqlite pickup enrollment across the next checkpoint', async () => {
+    const { agent } = bind(root, 'receiver');
+    await agent.install();
+    const scope = 'a'.repeat(64);
+    const key = pickupDispatchScope(scope);
+    const pickup = {
+      enrollment: {
+        id: 'enrollment',
+        scope,
+        runtime: 'openclaw',
+        workspaceDir: root,
+        agentId: 'receiver',
+        account: { login: 'receiver', nodeId: 'U1' },
+        repositoryNodeId: 'R1',
+        policyDigest: 'policy',
+        startedAt: 1,
+      },
+      timezone: 'UTC',
+      operations: [],
+    };
+    const value = { version: 4 as const, scope, resetGeneration: 'saved', projectPickup: pickup };
+    await agent.write([{ table: 'dispatchState', action: 'insert', row: { scope: key, value } }]);
+    const journal = new OpenClawDispatchStore(root, scope, sqliteDispatchPersistence(agent, key));
+    assert.deepEqual((await journal.readEnvelope()).issuePickup, pickup);
+    await journal.observeIntake(async (_state, save) => save());
+    const reopened = bind(root, 'receiver').agent;
+    const saved = await reopened.readDispatch(key);
+    assert.deepEqual(saved?.issuePickup, pickup);
+    assert.ok(saved && !Object.hasOwn(saved, 'projectPickup'));
+    assert.equal(await reopened.readDispatch(scope), undefined);
   });
 
   it('should reject a competing dispatch checkpoint and fence an old generation after reopening', async () => {

@@ -1,8 +1,7 @@
-import { AsyncLocalStorage } from 'node:async_hooks';
 import readGlobalConfigurationSource, { pluginSetting } from '../global-configuration.ts';
 import { readdir } from 'node:fs/promises';
 import {
-  configuredStorageBackend,
+  validateStorageConfig,
   defaultStorageBackend,
   bindIntakeStore,
   type StorageBackend,
@@ -17,15 +16,9 @@ import CodexSidebarJournal from '../codex-sidebar-journal.ts';
 import { bindPickupStore } from './pickup-backend.ts';
 import type { SqliteInstallation } from './storage-lifecycle.ts';
 
-// A native command and its nested workflow calls must use the same backend.
-const selection = new AsyncLocalStorage<StorageBackend>();
-export function codexStorageBackend(): StorageBackend {
-  return selection.getStore() ?? defaultStorageBackend;
-}
-
-export async function withCodexStorageBackend<T>(run: () => Promise<T>): Promise<T> {
+export async function validateCodexStorageConfig() {
   const source = await readGlobalConfigurationSource();
-  return selection.run(configuredStorageBackend(pluginSetting(source, 'storage')), run);
+  validateStorageConfig(pluginSetting(source, 'storage'));
 }
 
 export default function codexStorageLocation(pluginData: string): SqliteInstallation {
@@ -36,25 +29,19 @@ export default function codexStorageLocation(pluginData: string): SqliteInstalla
   };
 }
 
-export async function codexSidebarJournal(
-  pluginData: string,
-  profile: string,
-  name: string,
-  backend = codexStorageBackend(),
-) {
-  const storage =
-    backend === 'sqlite'
-      ? (await import('./agent-database.ts')).bindSqliteInstallation(
-          codexStorageLocation(pluginData),
-        )
-      : undefined;
-  return new CodexSidebarJournal(pluginData, profile, name, storage);
+export async function codexSidebarJournal(pluginData: string, profile: string, name: string) {
+  const { bindSqliteInstallation } = await import('./agent-database.ts');
+  return new CodexSidebarJournal(
+    profile,
+    name,
+    bindSqliteInstallation(codexStorageLocation(pluginData)),
+  );
 }
 
 export function codexPickupStore(
   pluginData: string,
   agentId: string,
-  backend = codexStorageBackend(),
+  backend = defaultStorageBackend,
 ) {
   return bindPickupStore(codexStorageLocation(pluginData), agentId, backend);
 }
@@ -73,7 +60,7 @@ export async function* codexAgentDatabases(pluginData: string) {
 
 export async function* retainedIntakeCandidates(
   pluginData: string,
-  backend: StorageBackend = codexStorageBackend(),
+  backend: StorageBackend = defaultStorageBackend,
 ) {
   if (backend === 'file') {
     const names = await storageNames(pluginData);

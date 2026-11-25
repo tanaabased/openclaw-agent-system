@@ -4,12 +4,11 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 import codexStorageLocation, {
-  codexStorageBackend,
   codexAgentDatabases,
   codexPickupStore,
 } from '../storage/codex-storage.ts';
 import automationLedgerStorage from '../storage/automation-backend.ts';
-import { bindAgentStore, type StorageBackend } from '../storage/backend.ts';
+import { bindAgentStore, defaultStorageBackend, type StorageBackend } from '../storage/backend.ts';
 import {
   issuePickupAutomationId,
   issuePickupConfigurationCode,
@@ -163,7 +162,7 @@ export async function readCodexAutomationSnapshot(
     inspection.status === 'bound' &&
     inspection.preview.status === 'ready' &&
     inspection.preview.manifest.status === 'loaded';
-  const backend = dependencies.storageBackend ?? codexStorageBackend();
+  const backend = dependencies.storageBackend ?? defaultStorageBackend;
   const retained: Ledger[] = [];
   for await (const candidate of ownershipCandidates(root, backend)) {
     const { header } = candidate;

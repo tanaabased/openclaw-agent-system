@@ -1,4 +1,4 @@
-import { configuredStorageBackend } from '../agent/storage/backend.ts';
+import { validateStorageConfig } from '../agent/storage/backend.ts';
 import { retainOpenClawTurnInput } from '../agent/openclaw-turn-binding.ts';
 import OpenClawAssignmentClaims from '../agent/tasks/dispatch/openclaw-assignment-claims.ts';
 import GitHubAssignmentClaimClient from '../channels/github/provider/assignment-claim-client.ts';
@@ -143,8 +143,8 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ),
     schemaRoot: join(packageDir, 'agent', 'storage'),
   };
-  const storageBackend = configuredStorageBackend(api.pluginConfig?.storage);
-  const storage = { sqliteInstallation, storageBackend };
+  validateStorageConfig(api.pluginConfig?.storage);
+  const storage = { sqliteInstallation };
   const readConfig = readLifecycleConfig;
   const readRuntimeConfig = () => api.runtime.config.current() as OpenClawConfig;
   const sessionDispatch = createSessionDispatchCredential({
@@ -240,11 +240,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       return api.runtime.config.mutateConfigFile(params);
     },
     packageDir,
-    projectionStore: new PathProjectionStore({
-      ...storage,
-      ...(currentUid === undefined ? {} : { currentUid }),
-      ...(privateStateRoot === undefined ? {} : { rootDir: privateStateRoot }),
-    }),
+    projectionStore: new PathProjectionStore(sqliteInstallation),
     readConfig,
   });
 
@@ -311,7 +307,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     privateStateRoot,
   });
   let readScheduler: (() => NotificationScheduler | undefined) | undefined;
-  const instanceStore = bindInstanceStore(sqliteInstallation, storageBackend);
+  const instanceStore = bindInstanceStore(sqliteInstallation);
   const taskContext = {
     ...storage,
     root: join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-intake-v2'),
@@ -374,7 +370,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         nativeId: string,
         previousNativeId?: string,
       ) => {
-        const store = await bindPickupStore(sqliteInstallation, manifest.agent.id, storageBackend);
+        const store = await bindPickupStore(sqliteInstallation, manifest.agent.id);
         await store.activate(id, nativeId, previousNativeId);
       },
     },

@@ -367,6 +367,7 @@ describe('agent/codex-automations', () => {
     );
     await manifest();
     await bindCodexWorkspace(pluginData, workspace);
+    await sqliteAgentFixture(pluginData, 'fixture');
     projects = JSON.parse(
       (await capture('lookups')).replaceAll('/workspace/fixture', workspace),
     ).projects;

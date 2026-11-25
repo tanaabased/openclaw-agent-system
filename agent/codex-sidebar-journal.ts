@@ -1,11 +1,6 @@
-import { join } from 'node:path';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
-import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
-import PrivateStateFile from '../core/private-state-file.ts';
-import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 import nodeErrorCode from '../utils/node-error-code.ts';
 import type { BoundStorage } from './storage/storage-lifecycle.ts';
 import managedGroupName from '../utils/managed-group-name.ts';
@@ -17,7 +12,7 @@ import codexSidebarPlacement, {
 
 const maximumBytes = 1024 * 1024;
 const text = Type.String({ minLength: 1 });
-export const stateSchema = Type.Object(
+const stateSchema = Type.Object(
   {
     version: Type.Literal(1),
     name: text,
@@ -57,30 +52,15 @@ export type SidebarEffect =
 export default class CodexSidebarJournal {
   readonly scope: string;
   readonly name: string;
-  readonly path: string;
-  readonly file: PrivateStateFile;
   constructor(
-    readonly root: string,
     profile: string,
     name: string,
-    private readonly storage?: BoundStorage['installation'],
+    private readonly storage: BoundStorage['installation'],
   ) {
     this.name = managedGroupName(name);
     this.scope = automationHash({ profile, host: 'local', name: this.name });
-    this.path = join(root, `codex-sidebar-${this.scope}.json`);
-    this.file = new PrivateStateFile({
-      path: this.path,
-      directories: [root],
-      currentUid: process.getuid?.(),
-      label: 'Codex sidebar placement',
-      maximumBytes,
-    });
   }
   private async readSaved(): Promise<unknown> {
-    if (!this.storage) {
-      const saved = await this.file.read();
-      return saved ? JSON.parse(saved) : undefined;
-    }
     const rows = await this.storage
       .read({ sidebarPlacements: { scope: this.scope } })
       .catch((error: unknown) => {
@@ -132,30 +112,9 @@ export default class CodexSidebarJournal {
         return { result: { error }, value };
       }
     };
-    if (this.storage) {
-      const result = await this.storage.changeSidebarPlacement(this.scope, change);
-      if ('error' in result) throw result.error;
-      return result;
-    }
-    await ensurePrivateStateDirectories({
-      directories: [this.root],
-      currentUid: process.getuid?.(),
-      label: 'Codex sidebar placement',
-    });
-    const lock = await acquirePrivateStateFileLock(this.path, {
-      staleMs: 30000,
-      retries: { factor: 1, minTimeout: 25, maxTimeout: 25, retries: 40 },
-    });
-    try {
-      return await withPrivateStateLock(lock, async () => {
-        const { value, result } = change(await this.readSaved());
-        if (value) await this.file.write(JSON.stringify(value));
-        if ('error' in result) throw result.error;
-        return result;
-      });
-    } finally {
-      await lock.release();
-    }
+    const result = await this.storage.changeSidebarPlacement(this.scope, change);
+    if ('error' in result) throw result.error;
+    return result;
   }
   private advance(
     state: SidebarState,

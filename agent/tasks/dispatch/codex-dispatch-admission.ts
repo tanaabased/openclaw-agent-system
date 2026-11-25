@@ -1,4 +1,4 @@
-import codexStorageLocation, { codexStorageBackend } from '../../storage/codex-storage.ts';
+import codexStorageLocation from '../../storage/codex-storage.ts';
 import dispatchCreationStatus from './dispatch-creation-status.ts';
 import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
@@ -665,7 +665,7 @@ export async function prepareIssueProject(
         },
         {
           sqliteInstallation: codexStorageLocation(tx.pluginData),
-          storageBackend: deps.storageBackend ?? codexStorageBackend(),
+          storageBackend: deps.storageBackend,
           git: deps.git,
           signal,
           authorize: fresh,

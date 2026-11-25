@@ -6,8 +6,8 @@ import type { BoundStorage, SqliteInstallation } from './storage-lifecycle.ts';
 export type StorageBackend = 'file' | 'sqlite';
 export const defaultStorageBackend: StorageBackend = 'sqlite';
 
-export function configuredStorageBackend(storage: unknown): StorageBackend {
-  if (storage === undefined) return defaultStorageBackend;
+export function validateStorageConfig(storage: unknown): void {
+  if (storage === undefined) return;
   if (
     storage &&
     typeof storage === 'object' &&
@@ -15,10 +15,15 @@ export function configuredStorageBackend(storage: unknown): StorageBackend {
     Object.keys(storage).every((key) => key === 'backend')
   ) {
     const backend = (storage as { backend?: unknown }).backend;
-    if (backend === undefined) return defaultStorageBackend;
-    if (backend === 'file' || backend === 'sqlite') return backend;
+    if (backend === undefined || backend === 'sqlite') return;
+    if (backend === 'file')
+      throw new Error(
+        'File workflow storage has been retired. Import existing records with the previous version before removing the storage.backend setting.',
+      );
   }
-  throw new Error('Set plugins.entries.agent-system.config.storage.backend to file or sqlite.');
+  throw new Error(
+    'Remove plugins.entries.agent-system.config.storage.backend or set it to sqlite.',
+  );
 }
 
 export function bindIntakeStore(

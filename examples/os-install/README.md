@@ -46,6 +46,9 @@ NO_COLOR=1 openclaw agent-system install | grep -F 'agent' | grep -F 'created' |
 
 # should report every foundational component as unchanged in json on repeated install
 cd "$GITHUB_WORKSPACE/examples/os-install/data"
+openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
+if openclaw config set plugins.entries.agent-system.config.storage.backend file; then exit 1; fi
+test "$(openclaw config get plugins.entries.agent-system.config.storage.backend)" = sqlite
 output=$(openclaw agent-system install --json)
 printf '%s\n' "$output" | jq -e '.outcomes | (any(.component == "agent" and .status == "unchanged") and any(.component == "path" and .status == "unchanged") and any(.component == "agent-storage" and .status == "unchanged"))'
 openclaw agent-system doctor --json | jq -e '.status == "healthy" and any(.findings[]; .code == "agent-storage-ready") and any(.findings[]; .code == "agent-system-storage-ready")'
