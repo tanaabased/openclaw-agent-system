@@ -1,3 +1,4 @@
+import { bindInstanceStore } from '../agent/storage/pickup-backend.ts';
 import { GatewayClientRequestError } from '@openclaw/gateway-client';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
@@ -5,12 +6,10 @@ import { join } from 'node:path';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import { automationHash } from '../agent/automation-hash.ts';
 import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
-import type { StorageBackend } from '../agent/storage/backend.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import { nativeTurnFor } from '../agent/openclaw-native-turns.ts';
 import type { DispatchCaller } from '../agent/openclaw-session-create.ts';
 import { type AssessmentSubmission } from '../agent/tasks/assessment/assessment-result.ts';
-import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
 import type { ClaimClient } from '../agent/tasks/dispatch/assignment-claim.ts';
 import OpenClawAssignmentClaims from '../agent/tasks/dispatch/openclaw-assignment-claims.ts';
 import OpenClawDispatch from '../agent/tasks/dispatch/openclaw-dispatch.ts';
@@ -19,9 +18,7 @@ import { sessionDispatchRequest } from '../credentials/session-dispatch-client.t
 import type { AgentManifest } from '../manifest/types.ts';
 import { baseline, intakeFixture, originalIntakeDigest } from './github-intake-fixture.ts';
 
-export default function openclawDispatchFixture(
-  options: { discover?: boolean; storageBackend?: StorageBackend } = {},
-) {
+export default function openclawDispatchFixture(options: { discover?: boolean } = {}) {
   const fixtureState = {} as {
     fixtureIntake: OpenClawIntake;
     root: string;
@@ -122,13 +119,13 @@ export default function openclawDispatchFixture(
       installationRoot: join(fixtureState.root, 'instance'),
       schemaRoot: join(import.meta.dirname, '../agent/storage'),
     };
-    if (options.storageBackend === 'sqlite')
-      await bindSqliteStorage(installation, fixtureState.manifest.agent.id).agent.install();
+    const db = bindSqliteStorage(installation, fixtureState.manifest.agent.id);
+    await db.agent.install();
+    await db.installation.install();
     const intake = (fixtureState.fixtureIntake = new OpenClawIntake({
       root: join(fixtureState.root, 'intake'),
       resetRoot: join(fixtureState.root, 'dispatch'),
       sqliteInstallation: installation,
-      storageBackend: options.storageBackend ?? 'file',
       namespace: fixtureState.root,
       manifestService,
       now: () => now,
@@ -616,8 +613,8 @@ export default function openclawDispatchFixture(
         throw new Error('unexpected-own-claim-removal');
       },
     };
-    fixtureState.service.dependencies.claimStore = new AssignmentClaimStore(
-      join(fixtureState.root, 'instance'),
+    fixtureState.service.dependencies.claimStore = bindInstanceStore(
+      fixtureState.fixtureIntake.dependencies.sqliteInstallation!,
     );
     fixtureState.service.dependencies.claims = new OpenClawAssignmentClaims(
       fixtureState.service.dependencies.claimStore,

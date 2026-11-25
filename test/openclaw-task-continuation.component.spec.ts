@@ -1,7 +1,7 @@
 import composeResponseBlocks from '../channels/github/presentation/response-blocks.ts';
 import { taskResponseOutput } from '../agent/tasks/response/task-response.ts';
 import assert from 'node:assert/strict';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Value } from 'typebox/value';
 import {
@@ -1261,10 +1261,13 @@ describe('agent/openclaw task-continuation', () => {
       createdAt: 'invalid',
       routingNote: 'unused',
     };
-    await store.file.write(JSON.stringify({ ...raw, records: [...raw.records, damaged] }));
+    await store.contract.persistence!.save(
+      { ...raw, records: [...raw.records, damaged] as unknown as typeof raw.records },
+      raw,
+    );
     const prepared = await fixtureState.prepare(selected);
     assert.equal(fixtureState.creates().length, 1, JSON.stringify(prepared));
-    const saved = JSON.parse(await readFile(store.path, 'utf8'));
+    const saved = await store.readEnvelope();
     assert.deepEqual(saved.records[1], damaged);
     assert.equal(saved.isolatedRecords, undefined);
   });
@@ -1311,11 +1314,14 @@ describe('agent/openclaw task-continuation', () => {
       createdAt: 1,
       manifestDigest: 'other',
     };
-    await journal.file.write(JSON.stringify({ ...raw, records: [...raw.records, damaged, third] }));
+    await journal.contract.persistence!.save(
+      { ...raw, records: [...raw.records, damaged, third] as unknown as typeof raw.records },
+      raw,
+    );
     const result = await fixtureState.context(input.id);
     assert.equal(result.status, 'verified');
-    const saved = JSON.parse(await readFile(journal.path, 'utf8'));
-    assert.ok(saved.records[0].assessmentCaller);
+    const saved = await journal.readEnvelope();
+    assert.ok(saved.records[0]?.assessmentCaller);
     assert.deepEqual(saved.records.slice(1), [damaged, third]);
     const prompt = await fixtureState.service.promptContext(
       fixtureState.manifest,

@@ -1,5 +1,4 @@
 import sqliteAgentFixture from './sqlite-agent-fixture.ts';
-import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -24,7 +23,7 @@ import runCodexContinuation, {
 import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
 import { baseline, intakeFixture } from './github-intake-fixture.ts';
 
-export default function codexDispatchFixture(storageBackend: 'file' | 'sqlite' = 'file') {
+export default function codexDispatchFixture() {
   const fixtureState = {} as {
     root: string;
     workspace: string;
@@ -42,7 +41,6 @@ export default function codexDispatchFixture(storageBackend: 'file' | 'sqlite' =
   };
   const storage = () => ({
     codexHome: fixtureState.codexHome,
-    storageBackend,
   });
   const models = {
     default: { model: 'openai/gpt-6-astra', effort: 'high' },
@@ -227,10 +225,7 @@ export default function codexDispatchFixture(storageBackend: 'file' | 'sqlite' =
     await writeFile(join(fixtureState.root, 'openclaw.json'), '{}');
     await writeFile(join(fixtureState.workspace, 'agent.yaml'), JSON.stringify(manifest));
     await bindCodexWorkspace(fixtureState.pluginData, fixtureState.workspace);
-    if (storageBackend === 'sqlite') {
-      const { sqliteInstallation } = await sqliteAgentFixture(fixtureState.pluginData, 'receiver');
-      await bindSqliteStorage(sqliteInstallation, 'receiver').installation.install();
-    }
+    await sqliteAgentFixture(fixtureState.pluginData, 'receiver');
     fixtureState.fixture = intakeFixture();
     fixtureState.now = baseline;
     await runCodexIntake(fixtureState.pluginData, true, {
@@ -418,7 +413,7 @@ export default function codexDispatchFixture(storageBackend: 'file' | 'sqlite' =
         );
       },
     };
-    const store = codexInstanceStore(fixtureState.pluginData, 'file');
+    const store = codexInstanceStore(fixtureState.pluginData);
     fixtureState.deps.claims = new CodexAssignmentClaims(store, () => client);
     return { store, client, comments };
   }

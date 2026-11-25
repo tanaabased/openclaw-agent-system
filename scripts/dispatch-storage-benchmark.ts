@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
+import { sqliteDispatchPersistence } from '../agent/storage/dispatch-backend.ts';
 import prepareDispatchReport from '../agent/tasks/dispatch/codex-dispatch-report.ts';
 import CodexDispatchStore, {
   type DispatchRecord,
@@ -39,12 +41,22 @@ if (!size) {
   const runtime = process.argv[3];
   const scope = 'a'.repeat(64);
   const root = await mkdtemp(join(tmpdir(), 'dispatch-storage-measure-'));
-  const store = (
-    runtime === 'codex'
-      ? new CodexDispatchStore(root, scope)
-      : new OpenClawDispatchStore(root, scope)
-  ) as DispatchStore<SharedDispatchRecord>;
   try {
+    const { agent } = bindSqliteStorage(
+      {
+        agentRoot: join(root, 'agents'),
+        installationRoot: join(root, 'instance'),
+        schemaRoot: fileURLToPath(new URL('../agent/storage/', import.meta.url)),
+      },
+      'synthetic',
+    );
+    await agent.install();
+    const persistence = sqliteDispatchPersistence(agent, scope);
+    const store = (
+      runtime === 'codex'
+        ? new CodexDispatchStore(root, scope, persistence)
+        : new OpenClawDispatchStore(root, scope, persistence)
+    ) as DispatchStore<SharedDispatchRecord>;
     const state: DispatchState = { version: 4, scope, resetGeneration: 'initial', records: [] };
     const make = (index: number, length: number): DispatchRecord => ({
       id: index.toString(16).padStart(64, '0'),
@@ -69,7 +81,7 @@ if (!size) {
     const start = performance.now();
     const serialized = dispatchStorageBytes(state);
     const serializationMs = performance.now() - start;
-    await writeFile(store.path, serialized.contents, { mode: 0o600 });
+    await agent.saveDispatch(scope, state, { ...state, records: [] });
     const writeStart = performance.now();
     await store.exclusive(async (current, save) => {
       current.records[0]!.blocker = 'storage-benchmark-save';
@@ -77,7 +89,7 @@ if (!size) {
     });
     const rewriteMs = performance.now() - writeStart;
     const rewriteRssMiB = Math.round(process.memoryUsage().rss / mib);
-    const committed = await readFile(store.path, 'utf8');
+    const committed = await store.readEnvelope();
     if (size >= 32) {
       await assert.rejects(
         store.exclusive(async (current, save) => {
@@ -86,7 +98,7 @@ if (!size) {
         }),
         /dispatch-storage-admission-paused/,
       );
-      assert.equal(await readFile(store.path, 'utf8'), committed);
+      assert.deepEqual(await store.readEnvelope(), committed);
     }
     if (size === 64) {
       await assert.rejects(
@@ -96,7 +108,7 @@ if (!size) {
         }),
         /dispatch-state-capacity/,
       );
-      assert.equal(await readFile(store.path, 'utf8'), committed);
+      assert.deepEqual(await store.readEnvelope(), committed);
       await assert.rejects(
         store.exclusive(async (current, save) => {
           current.run = {
@@ -116,7 +128,7 @@ if (!size) {
         }),
         /dispatch-state-capacity/,
       );
-      assert.equal(await readFile(store.path, 'utf8'), committed);
+      assert.deepEqual(await store.readEnvelope(), committed);
     }
     if (size === 16) {
       const intake = {
@@ -161,9 +173,11 @@ if (!size) {
       assert.equal(openclawIntakeReport(openInput).changed, false);
     }
     if (size === 32) {
-      const concurrent = JSON.parse(committed) as DispatchState;
-      concurrent.records.at(-1)!.context = concurrent.records.at(-1)!.context!.slice(0, -8200);
-      await writeFile(store.path, JSON.stringify(concurrent), { mode: 0o600 });
+      await store.exclusive(async (current, save) => {
+        const record = current.records.at(-1)!;
+        record.context = record.context!.slice(0, -8200);
+        await save();
+      });
       await store.transaction(async (current, save) => {
         current.records.push(make(9998, 2500));
         await store.exclusive(async (fresh, commit) => {

@@ -4,9 +4,7 @@ import { join } from 'node:path';
 import { runCodexIntake } from '../agent/codex-intake.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import reconcileCodexLifecycle from '../agent/tasks/dispatch/codex-assignment-lifecycle.ts';
-import CodexDispatchStore, {
-  type DispatchRecord,
-} from '../agent/tasks/dispatch/codex-dispatch-state.ts';
+import { type DispatchRecord } from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import codexDispatchFixture from './codex-dispatch-fixture.ts';
 
@@ -21,10 +19,7 @@ describe('agent/codex task-retirement', () => {
       receipt: { threadId: fixtureState.native!.id },
     });
     const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const journal = new CodexDispatchStore(
-      current.store.location.root,
-      current.store.location.scope,
-    );
+    const journal = current.journal;
     const original = structuredClone((await journal.read()).records[0]!);
     const find = fixtureState.deps.native!.find;
     fixtureState.deps.native!.find = async (input) => {
@@ -92,10 +87,7 @@ describe('agent/codex task-retirement', () => {
       fixtureState.now += 60_000;
       await fixtureState.next();
       const selected = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-      const journal = new CodexDispatchStore(
-        selected.store.location.root,
-        selected.store.location.scope,
-      );
+      const journal = selected.journal;
       const automatic = (await journal.read()).records[0]!;
       assert.equal(automatic.retirement!.eligibleAt, fixtureState.now + 17 * 60_000);
       assert.ok(automatic);
@@ -134,10 +126,7 @@ describe('agent/codex task-retirement', () => {
     fixtureState.native!.turnEnded = true;
     fixtureState.fixture.item.state = 'closed';
     const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const journal = new CodexDispatchStore(
-      current.store.location.root,
-      current.store.location.scope,
-    );
+    const journal = current.journal;
     const record = async () => (await journal.read()).records[0]!;
     await fixtureState.writeCleanup(-1);
     fixtureState.now += 60_000;
@@ -176,10 +165,7 @@ describe('agent/codex task-retirement', () => {
     fixtureState.now += 60_000;
     await fixtureState.next();
     const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const journal = new CodexDispatchStore(
-      current.store.location.root,
-      current.store.location.scope,
-    );
+    const journal = current.journal;
     const record = async () => (await journal.read()).records[0]!;
     const eligibleAt = fixtureState.now;
     assert.equal((await record()).retirement?.eligibleAt, eligibleAt);
@@ -353,7 +339,7 @@ describe('agent/codex task-retirement', () => {
       activation: async () => ({ sourceThreadId: 'intake-thread' }),
     };
     const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const store = current.journal;
     await store.exclusive(async (state, save) => {
       state.records.push({
         ...structuredClone(state.records[0]!),
@@ -739,7 +725,7 @@ describe('agent/codex task-retirement', () => {
   it('should not guess missing native anchors for a routing attempt', async () => {
     const first = await fixtureState.next();
     const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const store = current.journal;
     await store.exclusive(async (state, save) => {
       delete state.records[0]!.preparationObservation;
       await save();

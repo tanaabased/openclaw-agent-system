@@ -5,7 +5,6 @@ import composeResponseBlocks from '../channels/github/presentation/response-bloc
 import { taskResponseOutput } from '../agent/tasks/response/task-response.ts';
 import { runCodexIntake } from '../agent/codex-intake.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
-import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import codexDispatchFixture from './codex-dispatch-fixture.ts';
 
 describe('agent/codex task-handoff', () => {
@@ -26,10 +25,7 @@ describe('agent/codex task-handoff', () => {
     fixtureState.native!.turnId = 'authorized-follow-up';
     fixtureState.native!.followUpUserTurn = true;
     const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const branchStore = new CodexDispatchStore(
-      current.store.location.root,
-      current.store.location.scope,
-    );
+    const branchStore = current.journal;
     await branchStore.exclusive(async (state, save) => {
       const record = state.records[0]!;
       record.issueBranch = { attemptId: record.id, name: 'existing-work', phase: 'ready' };
@@ -258,7 +254,7 @@ describe('agent/codex task-handoff', () => {
     });
     await fixtureState.next();
     const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const store = current.journal;
     await fixtureState.next();
     const first = await fixtureState.report();
     assert.equal(first.status, 'report');
@@ -293,10 +289,7 @@ describe('agent/codex task-handoff', () => {
     fixtureState.native!.turnId = 'authorized-follow-up';
     const preview = await fixtureState.request('handoff', { id: prepared.id }, child);
     const selected = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const store = new CodexDispatchStore(
-      selected.store.location.root,
-      selected.store.location.scope,
-    );
+    const store = selected.journal;
     const feedback = {
       startedAt: fixtureState.now,
       baseline: {},

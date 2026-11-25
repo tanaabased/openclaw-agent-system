@@ -863,7 +863,7 @@ describe('agent/openclaw dispatch', () => {
       { action: 'next' },
     );
     const store = fixtureState.service.dependencies.claimStore!;
-    const before = await store.file.read();
+    const before = await store.read();
     delete fixtureState.service.dependencies.claims;
     fixtureState.coordinator.runId = 'second-native-occurrence';
     const held = await fixtureState.service.run(
@@ -875,7 +875,7 @@ describe('agent/openclaw dispatch', () => {
     assert.ok('code' in held && held.code === 'claim-disabled-pending');
     assert.equal(fixtureState.preparedWorktrees, 0);
     assert.equal(fixtureState.creates().length, 0);
-    assert.equal(await store.file.read(), before);
+    assert.deepEqual(await store.read(), before);
     assert.equal(comments.length, 1);
   });
 
@@ -909,7 +909,7 @@ describe('agent/openclaw dispatch', () => {
     fixtureState.lost = true;
     assert.equal((await fixtureState.prepare(selected)).status, 'waiting');
     const store = fixtureState.service.dependencies.claimStore!;
-    const before = await store.file.read();
+    const before = await store.read();
     delete fixtureState.service.dependencies.claims;
     const recovered = await fixtureState.service.run(
       fixtureState.manifest,
@@ -923,7 +923,7 @@ describe('agent/openclaw dispatch', () => {
     assert.equal(recovered.status, 'session-created');
     assert.equal(fixtureState.creates().length, 1);
     assert.equal((await fixtureState.record()).claimAccepted, undefined);
-    assert.equal(await store.file.read(), before);
+    assert.deepEqual(await store.read(), before);
     assert.doesNotMatch(comments[0]!.body, /Assignment accepted/u);
   });
 
@@ -2618,7 +2618,7 @@ describe('agent/openclaw dispatch', () => {
 });
 
 describe('openclaw sqlite dispatch', () => {
-  const f = openclawDispatchFixture({ storageBackend: 'sqlite' });
+  const f = openclawDispatchFixture();
   it('should create one native session for competing preparations of one assignment', async () => {
     const routed = await f.next();
     const results = await Promise.all([f.prepare(routed), f.prepare(routed)]);

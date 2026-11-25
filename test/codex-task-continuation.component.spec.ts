@@ -12,7 +12,6 @@ import runCodexDelivery from '../agent/tasks/delivery/codex-delivery.ts';
 import reconcileCodexLifecycle from '../agent/tasks/dispatch/codex-assignment-lifecycle.ts';
 import { codexItemOccupied } from '../agent/tasks/dispatch/codex-capacity.ts';
 import { codexWorkObservationHandoff } from '../agent/tasks/dispatch/codex-dispatch-handoff.ts';
-import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import runCodexFeedback from '../agent/tasks/feedback/codex-feedback.ts';
 import { feedbackRevision } from '../agent/tasks/feedback/feedback-source.ts';
 import codexContinuationNative from '../agent/tasks/implementation/codex-continuation-native.ts';
@@ -113,7 +112,7 @@ describe('agent/codex task-continuation', () => {
       'plan',
     );
     const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const store = current.journal;
     assert.equal((await work.run('next')).status, 'reconciled');
     const source = {
       nodeId: 'C_answer',
@@ -539,7 +538,10 @@ describe('agent/codex task-continuation', () => {
       createdAt: 'invalid',
       routingNote: 'unused',
     };
-    await store.file.write(JSON.stringify({ ...raw, records: [...raw.records, damaged] }));
+    await store.contract.persistence!.save(
+      { ...raw, records: [...raw.records, damaged] as unknown as typeof raw.records },
+      raw,
+    );
     const prepared = await fixtureState.request('prepare', {
       id: selected.id,
       digest: selected.digest,
@@ -547,7 +549,7 @@ describe('agent/codex task-continuation', () => {
       assessment: { complexity: 'medium', reason: 'bounded work' },
     });
     assert.equal(prepared.status, 'prepared', JSON.stringify(prepared));
-    const saved = JSON.parse(await readFile(store.path, 'utf8'));
+    const saved = await store.readEnvelope();
     assert.deepEqual(saved.records[1], damaged);
     assert.equal(saved.isolatedRecords, undefined);
   });
@@ -592,10 +594,13 @@ describe('agent/codex task-continuation', () => {
       createdAt: 1,
       manifestDigest: 'other',
     };
-    await store.file.write(JSON.stringify({ ...raw, records: [...raw.records, damaged, third] }));
+    await store.contract.persistence!.save(
+      { ...raw, records: [...raw.records, damaged, third] as unknown as typeof raw.records },
+      raw,
+    );
     assert.equal((await work.run('context', {}, true)).status, 'verified');
-    const saved = JSON.parse(await readFile(store.path, 'utf8'));
-    assert.ok(saved.records[0].progression);
+    const saved = await store.readEnvelope();
+    assert.ok(saved.records[0]?.progression);
     assert.deepEqual(saved.records.slice(1), [damaged, third]);
     await assert.rejects(store.read(), /dispatch-state-invalid/);
   });
@@ -708,10 +713,7 @@ describe('agent/codex task-continuation', () => {
     it(`should route ${scope} input to its issue instead of a historical feedback owner`, async () => {
       await fixtureState.workIssue();
       const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-      const store = new CodexDispatchStore(
-        current.store.location.root,
-        current.store.location.scope,
-      );
+      const store = current.journal;
       await store.exclusive(async (state, save) => {
         state.records[0]!.progression = {
           stage: 'implementation',
@@ -852,10 +854,7 @@ describe('agent/codex task-continuation', () => {
         );
         assert.equal((await work.run('next')).status, 'reconciled');
         const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-        const state = await new CodexDispatchStore(
-          current.store.location.root,
-          current.store.location.scope,
-        ).read();
+        const state = await current.journal.read();
         assert.notEqual(state.records[0]!.progression?.stage, 'implementation');
         const handoff = codexWorkObservationHandoff(pending, {
           argv: [
@@ -914,10 +913,7 @@ describe('agent/codex task-continuation', () => {
         'company:implement',
       );
       const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-      const store = new CodexDispatchStore(
-        current.store.location.root,
-        current.store.location.scope,
-      );
+      const store = current.journal;
       const started = (await store.read()).records[0]!;
       assert.equal(started.progression!.via, mode);
       assert.equal(
@@ -966,10 +962,7 @@ describe('agent/codex task-continuation', () => {
         receipt: { threadId: fixtureState.native!.id },
       });
       const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-      const store = new CodexDispatchStore(
-        current.store.location.root,
-        current.store.location.scope,
-      );
+      const store = current.journal;
       const before = await store.read();
       const owner = before.records[0]!;
       const escape = (value: string) =>
@@ -1123,7 +1116,7 @@ describe('agent/codex task-continuation', () => {
       'plan',
     );
     const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const store = current.journal;
     const before = await store.read();
     const provider = {
       ...(await fixtureState.deps.connect!(fixtureState.workspace, AbortSignal.timeout(1000))),
@@ -1230,7 +1223,7 @@ describe('agent/codex task-continuation', () => {
       'plan',
     );
     const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const store = current.journal;
     await store.exclusive(async (state, save) => {
       state.records[0]!.feedback = {
         baseline: {},
@@ -1268,10 +1261,7 @@ describe('agent/codex task-continuation', () => {
       const before = await work.run('context', {}, true);
       assert.ok('issueStage' in before);
       const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-      const store = new CodexDispatchStore(
-        current.store.location.root,
-        current.store.location.scope,
-      );
+      const store = current.journal;
       const original = (await store.read()).records[0]!;
       const event = removeFixtureAssignment(fixtureState.fixture);
       if (scenario === 'unapproved' || scenario === 'reassignment')
@@ -1377,12 +1367,7 @@ describe('agent/codex task-continuation', () => {
       assert.ok('publicationAuthorized' in context);
       assert.equal(context.publicationAuthorized, false);
       const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-      const record = (
-        await new CodexDispatchStore(
-          current.store.location.root,
-          current.store.location.scope,
-        ).read()
-      ).records[0]!;
+      const record = (await current.journal.read()).records[0]!;
       assert.equal(record.progression?.via, 'operator');
       const saved = await work.run(
         'result',
@@ -1447,7 +1432,7 @@ describe('agent/codex task-continuation', () => {
     it(`should launch unassigned manual ${kind} work through existing native owners`, async () => {
       if (kind === 'pull-request') fixturePullRequest(fixtureState.fixture);
       const selected = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-      await rm(selected.store.location.path);
+      await selected.store.agentStorage!.clearIntake(selected.store.location.scope);
       await writeFile(
         join(fixtureState.workspace, 'agent.yaml'),
         JSON.stringify({ ...fixtureState.manifest, github: { username: 'receiver' } }),
@@ -1496,7 +1481,7 @@ describe('agent/codex task-continuation', () => {
         projects: fixtureState.projects,
       });
       assert.equal(project.status, 'routing-required', JSON.stringify(project));
-      const store = new CodexDispatchStore(fixtureState.pluginData, selected.store.location.scope);
+      const store = selected.journal;
       assert.equal((await store.read()).run, undefined);
       const scheduled = {
         threadId: 'intake-thread',
@@ -1554,10 +1539,7 @@ describe('agent/codex task-continuation', () => {
       fixtureState.created();
       const recovered = await fixtureState.request('launch', { target, operation: 'reconcile' });
       assert.equal(recovered.status, 'existing', JSON.stringify(recovered));
-      const state = await new CodexDispatchStore(
-        fixtureState.pluginData,
-        selected.store.location.scope,
-      ).read();
+      const state = await selected.journal.read();
       assert.equal(state.records.length, 1);
       assert.equal(state.records[0]!.intakeId, undefined);
       assert.equal(state.records[0]!.issueMode, 'work');
@@ -1632,14 +1614,6 @@ describe('agent/codex task-continuation', () => {
         operator,
       );
       assert.equal(finished.status, 'retired', JSON.stringify(finished));
-      assert.deepEqual(
-        (
-          await new CodexDispatchStore(
-            fixtureState.pluginData,
-            selected.store.location.scope,
-          ).read()
-        ).records,
-        [],
-      );
+      assert.deepEqual((await selected.journal.read()).records, []);
     });
 });

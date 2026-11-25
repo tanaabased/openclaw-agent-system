@@ -19,9 +19,7 @@ import CodexAssignmentClaims, {
 } from '../agent/tasks/dispatch/codex-assignment-claims.ts';
 import { codexItemOccupied } from '../agent/tasks/dispatch/codex-capacity.ts';
 import type { DispatchNativeThread } from '../agent/tasks/dispatch/codex-dispatch-native.ts';
-import CodexDispatchStore, {
-  type DispatchRecord,
-} from '../agent/tasks/dispatch/codex-dispatch-state.ts';
+import { type DispatchRecord } from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import OpenClawAssignmentClaims from '../agent/tasks/dispatch/openclaw-assignment-claims.ts';
 import { selectWorkflowStage } from '../agent/tasks/workflow-stage.ts';
 import workflowStatus from '../agent/tasks/workflow-status.ts';
@@ -119,9 +117,7 @@ describe('agent/codex dispatch', () => {
     };
     assert.equal(creation.target.environment.startingState.branchName, fixtureState.commit);
     const selected = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const records = (
-      await new CodexDispatchStore(fixtureState.pluginData, selected.store.location.scope).read()
-    ).records;
+    const records = (await selected.journal.read()).records;
     assert.equal(records.length, 2);
     assert.equal(records[0]!.supersededBy, undefined);
     assert.equal(records[1]!.adoptedPullRequest?.branch, 'collaborator-work');
@@ -158,11 +154,7 @@ describe('agent/codex dispatch', () => {
       { threadId: 'intake-thread' },
     );
     assert.ok(!['prepared', 'routing-required'].includes(String(intake.status)));
-    assert.equal(
-      (await new CodexDispatchStore(fixtureState.pluginData, selected.store.location.scope).read())
-        .records.length,
-      2,
-    );
+    assert.equal((await selected.journal.read()).records.length, 2);
   });
 
   it('should preview replacement preserve predecessor evidence and converge on one fenced successor', async () => {
@@ -177,7 +169,7 @@ describe('agent/codex dispatch', () => {
     await fixtureState.renderAssessment(fixtureState.result, { threadId: fixtureState.native!.id });
     const observed = fixtureState.selectedPullRequest();
     const selected = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const store = new CodexDispatchStore(fixtureState.pluginData, selected.store.location.scope);
+    const store = selected.journal;
     const input = { id: prepared.id, pullRequest: 'https://github.com/owner/repo/pull/7' };
     await assert.rejects(
       fixtureState.request('recover', input, { threadId: 'operator' }),
@@ -275,7 +267,7 @@ describe('agent/codex dispatch', () => {
   it('should inspect a selected saved owner without scanning or modifying state', async () => {
     const prepared = await fixtureState.prepare();
     const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const store = new CodexDispatchStore(fixtureState.pluginData, current.store.location.scope);
+    const store = current.journal;
     const before = await store.read();
     fixtureState.deps.connect = async () => {
       throw new Error('unexpected provider read');
@@ -313,7 +305,7 @@ describe('agent/codex dispatch', () => {
       let selected = await fixtureState.next();
       if (waiting) {
         const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-        const store = new CodexDispatchStore(fixtureState.pluginData, current.store.location.scope);
+        const store = current.journal;
         await store.exclusive(async (state, save) => {
           state.records[0]!.blocker = 'dispatch-routing-unresolved';
           await save();
@@ -724,13 +716,13 @@ describe('agent/codex dispatch', () => {
   it('should hold a saved pilot claim without preparing work or changing its receipt', async () => {
     const { store, comments } = await fixtureState.claiming();
     assert.equal((await fixtureState.next()).status, 'claim-waiting');
-    const before = await store.file.read();
+    const before = await store.read();
     delete fixtureState.deps.claims;
     fixtureState.now += 300000;
     const held = await fixtureState.next();
     assert.equal(held.code, 'claim-disabled-pending');
     assert.deepEqual(fixtureState.gitCalls, []);
-    assert.equal(await store.file.read(), before);
+    assert.deepEqual(await store.read(), before);
     assert.equal(comments.length, 1);
     assert.doesNotMatch(comments[0]!.body, /Assignment accepted/u);
   });
@@ -740,7 +732,7 @@ describe('agent/codex dispatch', () => {
     await fixtureState.next();
     fixtureState.now += 300000;
     const selected = await fixtureState.next();
-    const before = await store.file.read();
+    const before = await store.read();
     delete fixtureState.deps.claims;
     const held = await fixtureState.request('prepare', {
       id: selected.id,
@@ -749,7 +741,7 @@ describe('agent/codex dispatch', () => {
       assessment: { complexity: 'medium', reason: 'Verified native complexity.' },
     });
     assert.equal(held.code, 'claim-disabled-pending');
-    assert.equal(await store.file.read(), before);
+    assert.deepEqual(await store.read(), before);
     const records = (await fixtureState.readDispatchState()).records as Array<{
       request?: unknown;
     }>;
@@ -762,7 +754,7 @@ describe('agent/codex dispatch', () => {
     fixtureState.now += 300000;
     const prepared = await fixtureState.prepare();
     fixtureState.created();
-    const before = await store.file.read();
+    const before = await store.read();
     delete fixtureState.deps.claims;
     await fixtureState.request('reconcile', {
       id: prepared.id,
@@ -774,7 +766,7 @@ describe('agent/codex dispatch', () => {
     }>;
     assert.ok(records[0]!.effective);
     assert.equal(records[0]!.claimAccepted, undefined);
-    assert.equal(await store.file.read(), before);
+    assert.deepEqual(await store.read(), before);
     assert.doesNotMatch(comments[0]!.body, /Assignment accepted/u);
   });
 
@@ -1031,7 +1023,7 @@ describe('agent/codex dispatch', () => {
       receipt: { threadId: fixtureState.native!.id },
     });
     const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const store = current.journal;
     fixtureState.native!.status = 'notLoaded';
     fixtureState.native!.turnStatus = 'interrupted';
     await fixtureState.next();
@@ -1057,10 +1049,7 @@ describe('agent/codex dispatch', () => {
     const failure = await fixtureState.next();
     assert.equal(failure.code, 'dispatch-host-unavailable');
     const selected = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const store = new CodexDispatchStore(
-      selected.store.location.root,
-      selected.store.location.scope,
-    );
+    const store = selected.journal;
     const retained = (await store.read()).records[0]!;
     assert.equal(retained.retry?.attempts, 1);
     assert.equal((await fixtureState.next()).status, 'idle');
@@ -1220,7 +1209,7 @@ describe('agent/codex dispatch', () => {
   it('should allow verified operator recovery from an unrelated managed task chat', async () => {
     const first = await fixtureState.prepare();
     const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const store = current.journal;
     await store.exclusive(async (state, save) => {
       state.records.push({
         ...structuredClone(state.records[0]!),
@@ -1257,7 +1246,7 @@ describe('agent/codex dispatch', () => {
   it('should recover an explicitly approved denied request after reassignment without retaining its waiting continuation', async () => {
     const first = await fixtureState.prepare();
     const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const store = current.journal;
     await store.exclusive(async (state, save) => {
       const record = state.records[0]!;
       record.nativeWork = {
@@ -1395,7 +1384,7 @@ describe('agent/codex dispatch', () => {
   it('should recover a retained inventory error with valid input and preserve its identity', async () => {
     const selected = await fixtureState.next();
     const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const store = current.journal;
     await store.exclusive(async (state, save) => {
       const record = state.records[0]!;
       delete record.project;
@@ -1873,7 +1862,7 @@ describe('agent/codex dispatch', () => {
   it('should preserve native denials during automatic creation recovery', async () => {
     const prepared = await fixtureState.prepare();
     const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const store = current.journal;
     await store.exclusive(async (state, save) => {
       state.records[0]!.denial = {
         sourceThreadId: 'intake-thread',
@@ -1969,7 +1958,7 @@ describe('agent/codex dispatch', () => {
       assert.equal(prepared.status, 'prepared');
     }
     const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const store = current.journal;
     assert.equal((await store.read()).records[0]!.creationRecovery?.attempts, 9);
   });
 
@@ -2149,10 +2138,7 @@ describe('agent/codex dispatch', () => {
         await fixtureState.next();
       }
       const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-      const store = new CodexDispatchStore(
-        current.store.location.root,
-        current.store.location.scope,
-      );
+      const store = current.journal;
       if (reason !== 'operator request')
         fixtureState.now = (await store.read()).records[0]!.retirement!.eligibleAt;
       const git = fixtureState.deps.git!;
@@ -2224,7 +2210,7 @@ describe('agent/codex dispatch', () => {
     fixtureState.now += 60_000;
     await fixtureState.next();
     const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const store = current.journal;
     const pending = (await store.read()).records[0]!;
     assert.equal(pending.retirement?.reason, 'assignment-removed');
     assert.equal(codexItemOccupied(pending), false);
@@ -2307,7 +2293,7 @@ describe('agent/codex dispatch', () => {
     const blocked = await fixtureState.request('reconcile', { id: prepared.id });
     assert.equal(blocked.code, 'dispatch-native-model-diverged');
     const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const store = current.journal;
     assert.equal((await store.read()).records[0]!.effective, undefined);
     fixtureState.native!.effort = 'high';
     assert.equal((await fixtureState.request('reconcile', { id: prepared.id })).status, 'created');
@@ -2343,7 +2329,7 @@ describe('agent/codex dispatch', () => {
     });
     await fixtureState.next();
     const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const store = current.journal;
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
     const writer = store.exclusive(async (state, save) => {
@@ -2378,9 +2364,11 @@ describe('agent/codex dispatch', () => {
     });
     await fixtureState.next();
     const before = await fixtureState.readDispatchState();
+    const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
+    const lockPath = current.journal.contract.persistence!.lockPath;
     const lock = properLockfile.lock;
     properLockfile.lock = async (path, options) => {
-      if (String(path).includes('codex-dispatch-'))
+      if (String(path) === lockPath)
         throw Object.assign(new Error('The journal remains busy.'), {
           code: 'private-state-file-lock-busy',
         });
@@ -2401,10 +2389,12 @@ describe('agent/codex dispatch', () => {
   it('should wait for the journal lease for context and leave it untouched when formatting', async () => {
     const prepared = await fixtureState.prepare();
     fixtureState.created();
+    const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
+    const lockPath = current.journal.contract.persistence!.lockPath;
     const lock = properLockfile.lock;
     let refuse = true;
     properLockfile.lock = async (path, options) => {
-      if (String(path).includes('codex-dispatch-')) {
+      if (String(path) === lockPath) {
         if (refuse) {
           refuse = false;
           throw Object.assign(new Error('The intake journal lease is held.'), { code: 'ELOCKED' });
@@ -2507,11 +2497,11 @@ describe('agent/codex dispatch', () => {
   it('should defer pre-transaction continuation contention without consuming work or action counters', async () => {
     const work = await fixtureState.workIssue();
     const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const store = current.journal;
     const before = await store.read();
     const lock = properLockfile.lock;
     properLockfile.lock = async (path, options) => {
-      if (String(path) === store.path)
+      if (String(path) === store.contract.persistence!.lockPath)
         throw Object.assign(new Error('acquisition exhausted'), {
           code: 'private-state-file-lock-busy',
         });
@@ -2599,7 +2589,7 @@ describe('agent/codex dispatch', () => {
     assert.equal(rejected.length, 1);
     assert.match(String(rejected[0]!.reason), /private-state-snapshot-conflict/);
     const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const store = current.journal;
     assert.equal((await store.read()).continuationRun?.actions, 1);
   });
 
@@ -2620,10 +2610,7 @@ describe('agent/codex dispatch', () => {
     await entered.promise;
     try {
       const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-      const other = new CodexDispatchStore(
-        current.store.location.root,
-        current.store.location.scope,
-      );
+      const other = current.journal;
       await other.exclusive(async (state, save) => {
         state.discoveryCheckedAt = baseline;
         await save();
@@ -2642,10 +2629,7 @@ describe('agent/codex dispatch', () => {
       const child = { threadId: fixtureState.native!.id };
       await fixtureState.request('context', { id: prepared.id }, child);
       const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-      const store = new CodexDispatchStore(
-        current.store.location.root,
-        current.store.location.scope,
-      );
+      const store = current.journal;
       const before = (await store.read()).records[0]!;
       fixtureState.native![setting] = setting === 'model' ? 'gpt-6-luna' : 'low';
       const context = await fixtureState.request('context', { id: prepared.id }, child);
@@ -2785,7 +2769,7 @@ describe('agent/codex dispatch', () => {
 });
 
 describe('codex sqlite dispatch', () => {
-  const f = codexDispatchFixture('sqlite');
+  const f = codexDispatchFixture();
   it('should return one native create request to competing preparations of an assignment', async () => {
     const selected = await f.next();
     assert.equal(selected.status, 'routing-required');
