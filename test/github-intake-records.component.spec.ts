@@ -1,3 +1,6 @@
+import { bindIntakeStore } from '../agent/storage/backend.ts';
+import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import DiscoveryBudget from '../agent/discovery-budget.ts';
@@ -55,6 +58,100 @@ describe('channels/github/intake/records', () => {
     };
   }
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should preserve competing ${runtime} consumption while a sqlite scan waits on github`, async () => {
+      const f = setup(runtime);
+      const { agent, sqliteInstallation } = await sqliteAgentFixture(root, 'receiver');
+      const open = () =>
+        bindIntakeStore(f.store.location, bindSqliteStorage(sqliteInstallation, 'receiver').agent);
+      const store = bindIntakeStore(f.store.location, agent);
+      const input = { ...f.input, store };
+      await scanAssignments({ ...input, activate: true });
+      await scanAssignments({ ...input, now: baseline + 120000 });
+      const admitted = (await store.read())!.records[0]!;
+      const scan = await scanAssignments({
+        ...input,
+        now: baseline + 180000,
+        connect: async () => {
+          const winners = await Promise.all([
+            store.consume(admitted, 'a'.repeat(64)),
+            open().consume(admitted, 'b'.repeat(64)),
+          ]);
+          assert.equal(winners[0], winners[1]);
+          assert.match(winners[0]!, /^[ab]{64}$/);
+          return f.client;
+        },
+      });
+      assert.equal(scan.status, 'ready');
+      const retained = (await open().read())!;
+      assert.equal(retained.records.length, 1);
+      assert.equal(retained.checkpoint, baseline + 180000);
+      assert.match(
+        retained.observedAssignments!.find((r) => r.id === admitted.id)!.consumedBy!,
+        /^[ab]{64}$/,
+      );
+    });
+
+    it(`should reject a ${runtime} admission consumed during its final github revalidation`, async () => {
+      const f = setup(runtime);
+      const { agent, sqliteInstallation } = await sqliteAgentFixture(root, 'receiver');
+      const peer = bindIntakeStore(
+        f.store.location,
+        bindSqliteStorage(sqliteInstallation, 'receiver').agent,
+      );
+      const store = bindIntakeStore(f.store.location, agent);
+      const input = { ...f.input, store };
+      await scanAssignments({
+        ...input,
+        activate: true,
+        policy: {
+          ...input.policy,
+          issueAssignment: { ...input.policy.issueAssignment!, allowed: [] },
+        },
+      });
+      const before = (await peer.read())!;
+      assert.equal(before.records.length, 0);
+      const observed = before.observedAssignments![0]!;
+      const owner = 'b'.repeat(64);
+      await assert.rejects(
+        scanAssignments({
+          ...input,
+          now: baseline + 180000,
+          readIssuePickup: async () => {
+            assert.equal(await peer.consume(observed, owner), owner);
+            return undefined;
+          },
+        }),
+        /private-state-snapshot-conflict/,
+      );
+      const saved = (await store.read())!;
+      assert.deepEqual(saved.records, []);
+      assert.equal(saved.observedAssignments![0]!.consumedBy, owner);
+    });
+
+    it(`should reject a ${runtime} scan that outlives a sqlite reset to the same baseline`, async () => {
+      const f = setup(runtime);
+      const { agent, sqliteInstallation } = await sqliteAgentFixture(root, 'receiver');
+      const open = () =>
+        bindIntakeStore(f.store.location, bindSqliteStorage(sqliteInstallation, 'receiver').agent);
+      const input = { ...f.input, store: bindIntakeStore(f.store.location, agent) };
+      await scanAssignments({ ...input, activate: true });
+      await assert.rejects(
+        scanAssignments({
+          ...input,
+          now: baseline + 120000,
+          connect: async () => {
+            await open().reset(baseline);
+            return f.client;
+          },
+        }),
+        /notification-reset-stale-operation/,
+      );
+      const reopened = (await open().read())!;
+      assert.deepEqual(reopened.records, []);
+      assert.equal(reopened.checkpoint, undefined);
+      assert.equal(reopened.baselineAt, baseline);
+    });
+
     it(`should preserve unused ${runtime} assignment fields without weakening source identity checks`, async () => {
       const { input, store, file, events } = setup(runtime);
       const assigned = events.splice(0);

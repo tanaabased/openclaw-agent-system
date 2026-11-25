@@ -2783,3 +2783,33 @@ describe('agent/codex dispatch', () => {
     assert.equal(((await fixtureState.readDispatchState()).records as unknown[]).length, 1);
   });
 });
+
+describe('codex sqlite dispatch', () => {
+  const f = codexDispatchFixture('sqlite');
+  it('should return one native create request to competing preparations of an assignment', async () => {
+    const selected = await f.next();
+    assert.equal(selected.status, 'routing-required');
+    const prepare = () =>
+      f.request('prepare', {
+        id: selected.id,
+        digest: selected.digest,
+        title: 'repair contained behavior',
+        assessment: { complexity: 'medium', reason: 'verified routing' },
+      });
+    const results = await Promise.all([prepare(), prepare()]);
+    assert.equal(results.filter((r) => r.status === 'prepared' && r.request).length, 1);
+    assert.equal(
+      results.filter(
+        (r) => (r.status === 'busy' || r.status === 'reconcile-required') && !r.request,
+      ).length,
+      1,
+    );
+    assert.deepEqual(
+      (await (await f.workStore()).read()).records.map((record) => record.id),
+      [selected.id],
+    );
+    const replay = await prepare();
+    assert.equal(replay.status, 'reconcile-required');
+    assert.equal(replay.request, undefined);
+  });
+});

@@ -90,6 +90,7 @@ export default async function resetNotifications(input: {
   const { store, adapter, preview } = input;
   return store.exclusive(async (retained, save, remove) => {
     const record = await adapter.fence(async () => {
+      const checkpoint = retained ? undefined : await store.intakeCheckpoint();
       const snapshot = retained ?? (await adapter.snapshot());
       if (
         automationHash([snapshot, preview.fresh === true]) !== preview.fingerprint ||
@@ -118,7 +119,7 @@ export default async function resetNotifications(input: {
                   : 'pause',
             };
       if (restart && record.phase === 'pause') delete record.baselineAt;
-      await save(record);
+      await save(record, checkpoint);
       return record;
     });
     const step = <T>(

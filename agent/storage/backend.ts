@@ -26,14 +26,7 @@ export function bindIntakeStore(
   agent?: BoundStorage['agent'],
 ) {
   if (!agent) return new IntakeRecordStore(location);
-  return new IntakeRecordStore(
-    location,
-    {
-      read: () => agent.readIntake(location.scope),
-      save: (state) => agent.saveIntake(state),
-    },
-    agent,
-  );
+  return new IntakeRecordStore(location, undefined, agent);
 }
 
 export async function bindAgentStore(

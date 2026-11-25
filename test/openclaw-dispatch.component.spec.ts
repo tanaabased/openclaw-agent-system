@@ -2619,6 +2619,21 @@ describe('agent/openclaw dispatch', () => {
 
 describe('openclaw sqlite dispatch', () => {
   const f = openclawDispatchFixture({ storageBackend: 'sqlite' });
+  it('should create one native session for competing preparations of one assignment', async () => {
+    const routed = await f.next();
+    const results = await Promise.all([f.prepare(routed), f.prepare(routed)]);
+    assert.equal(results.filter((r) => r.status === 'session-created').length, 1);
+    assert.equal(
+      results.filter((r) => r.status === 'busy' || r.status === 'reconcile-required').length,
+      1,
+    );
+    const { journal } = await f.service.scope(f.manifest, f.root);
+    assert.deepEqual(
+      (await journal.read()).records.map((r) => [r.id, r.threadId]),
+      [[routed.id, f.session?.key]],
+    );
+    assert.equal(f.creates().length, 1);
+  });
   it('should recover the same issue session after restarting dispatch', async () => {
     const routed = await f.next();
     f.lost = true;

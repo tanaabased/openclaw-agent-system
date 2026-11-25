@@ -1,7 +1,7 @@
 import type { BoundStorage } from './storage-lifecycle.ts';
 import type { AgentRows } from './workflow-records.ts';
 
-type DispatchEnvelope = AgentRows['dispatchState']['value'] & {
+export type DispatchEnvelope = AgentRows['dispatchState']['value'] & {
   records: AgentRows['dispatchRecords']['value'][];
 };
 
@@ -17,19 +17,9 @@ export function sqliteDispatchPersistence(
   return {
     agentStorage: agent,
     resetRoot,
-    async read() {
-      const { dispatchState, dispatchRecords } = await agent.read({
-        dispatchState: { scope },
-        dispatchRecords: { scope },
-      });
-      const header = dispatchState[0];
-      if (!header && !dispatchRecords.length) return;
-      if (!header || dispatchRecords.some(({ id, value }) => value?.id !== id))
-        throw new Error('dispatch-state-invalid');
-      return { ...header.value, records: dispatchRecords.map(({ value }) => value) };
-    },
-    save(state: DispatchEnvelope) {
-      return agent.saveDispatch(scope, state);
+    read: () => agent.readDispatch(scope),
+    save(state: DispatchEnvelope, expected: DispatchEnvelope) {
+      return agent.saveDispatch(scope, state, expected);
     },
   };
 }

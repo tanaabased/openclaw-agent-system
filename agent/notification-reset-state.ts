@@ -83,6 +83,10 @@ export type NotificationResetResource = Static<typeof resource>;
 
 const access = new AsyncLocalStorage<string>();
 
+export function ownsNotificationReset(root: string, scope: string) {
+  return access.getStore() === join(root, `notification-reset-${scope}.json`);
+}
+
 /** only the reset owner may write managed state while its recovery record exists. */
 export async function assertNotificationManagement(
   root: string,
@@ -90,7 +94,7 @@ export async function assertNotificationManagement(
   storage?: BoundStorage['agent'],
 ): Promise<void> {
   const store = new NotificationResetStore(root, scope, storage);
-  if (access.getStore() !== store.path && (await store.read()))
+  if (!ownsNotificationReset(root, scope) && (await store.read()))
     throw Object.assign(new Error('notification-reset-in-progress'), {
       code: 'notification-reset-in-progress',
     });
@@ -133,10 +137,16 @@ export default class NotificationResetStore {
       throw new Error('notification-reset-state-invalid');
     return record;
   }
+  async intakeCheckpoint() {
+    if (this.storage) return { expected: await this.storage.readIntake(this.scope) };
+  }
   async exclusive<T>(
     run: (
       record: NotificationResetRecord | undefined,
-      save: (record: NotificationResetRecord) => Promise<void>,
+      save: (
+        record: NotificationResetRecord,
+        checkpoint?: Awaited<ReturnType<NotificationResetStore['intakeCheckpoint']>>,
+      ) => Promise<void>,
       remove: () => Promise<void>,
     ) => Promise<T>,
   ): Promise<T> {
@@ -154,7 +164,7 @@ export default class NotificationResetStore {
         access.run(this.path, async () =>
           run(
             await this.read(),
-            async (record) => {
+            async (record, checkpoint) => {
               lock.assertHeld();
               if (!Value.Check(schema, record) || record.scope !== this.scope)
                 throw new Error('notification-reset-state-invalid');
@@ -162,6 +172,8 @@ export default class NotificationResetStore {
               if (!this.storage) return this.file.write(contents);
               if (Buffer.byteLength(contents) > maximumBytes)
                 throw new Error('The notification reset exceeds its size limit.');
+              if (checkpoint)
+                return this.storage.beginNotificationReset(record, checkpoint.expected);
               await this.storage.write([
                 {
                   table: 'notificationResets',

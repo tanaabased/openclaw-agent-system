@@ -1,3 +1,4 @@
+import type { DispatchEnvelope } from './dispatch-backend.ts';
 import type { SidebarChange, SidebarState } from '../codex-sidebar-journal.ts';
 import type { AgentRows, InstallationRows, WorkflowRecords } from './workflow-records.ts';
 import type {
@@ -68,13 +69,21 @@ export interface BoundStorage {
       ): Promise<string[]>;
       listIntakeScopes(): Promise<string[]>;
       readIntake(scope: string): Promise<IntakeState | undefined>;
+      readDispatch(scope: string): Promise<DispatchEnvelope | undefined>;
       saveDispatch(
         scope: string,
-        state: AgentRows['dispatchState']['value'] & {
-          records: AgentRows['dispatchRecords']['value'][];
-        },
+        state: DispatchEnvelope,
+        expected: DispatchEnvelope,
       ): Promise<void>;
-      saveIntake(state: IntakeState): Promise<void>;
+      changeIntake<T>(
+        scope: string,
+        resetOwner: boolean,
+        change: (current?: IntakeState) => { state?: IntakeState; result: T },
+      ): Promise<T>;
+      beginNotificationReset(
+        record: AgentRows['notificationResets']['value'],
+        expected: IntakeState | undefined,
+      ): Promise<void>;
       clearIntake(scope: string): Promise<void>;
     };
   installation: WorkflowRecords<InstallationRows> & {

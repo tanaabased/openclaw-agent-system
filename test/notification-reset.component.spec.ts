@@ -1,3 +1,6 @@
+import { bindIntakeStore } from '../agent/storage/backend.ts';
+import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import notificationResetPickup from '../agent/notification-reset-pickup.ts';
 import selectionFixture from './issue-pickup-selection-fixture.ts';
 import { notificationResetDiagnostic } from '../agent/notification-reset-diagnostic.ts';
@@ -75,6 +78,71 @@ describe('agent/notification reset recovery', () => {
       preview: await previewNotificationReset(store, adapter, purge),
       now: () => 100,
     });
+
+  it('should stop an in-flight sqlite intake write once reset has committed its inventory', async () => {
+    const { agent, sqliteInstallation } = await sqliteAgentFixture(root, 'tester');
+    store = new NotificationResetStore(root, scope, agent);
+    const peer = bindIntakeStore(
+      { root, scope, path: join(root, 'intake.json') },
+      bindSqliteStorage(sqliteInstallation, 'tester').agent,
+    );
+    await peer.reset(100, {
+      scope,
+      agentId: 'tester',
+      workspaceDir: root,
+      account: { login: 'receiver', nodeId: 'U_receiver' },
+      policyDigest: 'policy',
+    });
+    const started = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    const writer = assert.rejects(
+      peer.exclusive(async (state, save) => {
+        started.resolve();
+        await resume.promise;
+        await save({ ...state!, checkpoint: 101 });
+      }),
+      /notification-reset-in-progress/,
+    );
+    await started.promise;
+    adapter.pause = async () => {
+      resume.resolve();
+      await writer;
+      return { status: 'done' };
+    };
+    try {
+      assert.equal((await run()).status, 'complete');
+    } finally {
+      resume.resolve();
+    }
+    assert.equal((await peer.read())!.checkpoint, undefined);
+  });
+
+  it('should require a new reset preview when intake changes while recording sqlite inventory', async () => {
+    const { agent, sqliteInstallation } = await sqliteAgentFixture(root, 'tester');
+    store = new NotificationResetStore(root, scope, agent);
+    const peer = bindIntakeStore(
+      { root, scope, path: join(root, 'intake.json') },
+      bindSqliteStorage(sqliteInstallation, 'tester').agent,
+    );
+    const preview = await previewNotificationReset(store, adapter, false);
+    adapter.snapshot = async () => {
+      await peer.reset(100, {
+        scope,
+        agentId: 'tester',
+        workspaceDir: root,
+        account: { login: 'receiver', nodeId: 'U_receiver' },
+        policyDigest: 'policy',
+      });
+      return structuredClone(snapshot);
+    };
+    await assert.rejects(
+      resetNotifications({ store, adapter, preview }),
+      /notification-reset-preview-changed/,
+    );
+    assert.equal(await store.read(), undefined);
+    assert.deepEqual(events, []);
+    assert.equal((await peer.read())!.baselineAt, 100);
+  });
 
   it('should preserve independent pickup receipts across a lost pause and partial coordinator replacement', async () => {
     let paused = false;

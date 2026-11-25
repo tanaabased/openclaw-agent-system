@@ -67,6 +67,10 @@ function sampleIntake(agentId: string, checkpoint: number): IntakeState {
   };
 }
 
+function saveIntake(agent: ReturnType<typeof bind>['agent'], state: IntakeState) {
+  return agent.changeIntake(state.scope, false, () => ({ state, result: undefined }));
+}
+
 describe('agent database', () => {
   let root: string;
 
@@ -88,8 +92,8 @@ describe('agent database', () => {
     assert.match((await laptopA.installation.inspect()).message, /`agent-system\.sqlite`/);
     await laptopA.agent.install();
     await laptopB.agent.install();
-    await laptopA.agent.saveIntake(a);
-    await laptopB.agent.saveIntake(b);
+    await saveIntake(laptopA.agent, a);
+    await saveIntake(laptopB.agent, b);
     assert.deepEqual(await laptopA.agent.readIntake(a.scope), a);
     await laptopA.agent.clearIntake(a.scope);
     assert.equal(await laptopA.agent.readIntake(a.scope), undefined);
@@ -115,7 +119,7 @@ describe('agent database', () => {
     assert.equal((await emori.installation.install()).status, 'created');
     assert.equal((await smutlord.installation.install()).status, 'unchanged');
     assert.equal((await stat(join(root, 'agents/emori.sqlite'))).mode & 0o777, 0o600);
-    await emori.agent.saveIntake(state);
+    await saveIntake(emori.agent, state);
     assert.equal(await smutlord.agent.readIntake(state.scope), undefined);
     const repo = {
       version: 1 as const,
@@ -145,11 +149,33 @@ describe('agent database', () => {
       await once(worker, 'message');
       worker.postMessage('release');
       const state = sampleIntake('emori', baseline);
-      await agent.saveIntake(state);
+      await saveIntake(agent, state);
       assert.deepEqual(await agent.readIntake(state.scope), state);
     } finally {
       await worker.terminate();
     }
+  });
+
+  it('should reject a competing dispatch checkpoint and fence an old generation after reopening', async () => {
+    const { agent } = bind(root, 'emori');
+    await agent.install();
+    const peer = bind(root, 'emori').agent;
+    const scope = 'one';
+    const initial = { version: 4 as const, scope, resetGeneration: 'initial', records: [] };
+    const first = { ...initial, discoveryCheckedAt: 1 };
+    await agent.saveDispatch(scope, first, initial);
+    await assert.rejects(
+      peer.saveDispatch(scope, { ...initial, discoveryCheckedAt: 2 }, initial),
+      /private-state-snapshot-conflict/,
+    );
+    const reset = { ...initial, resetGeneration: 'reset' };
+    await peer.saveDispatch(scope, reset, first);
+    await assert.rejects(
+      agent.saveDispatch(scope, first, first),
+      /notification-reset-stale-operation/,
+    );
+    const rows = await bind(root, 'emori').agent.read({ dispatchState: { scope } });
+    assert.deepEqual(rows.dispatchState[0]!.value, { version: 4, scope, resetGeneration: 'reset' });
   });
 
   it('should preserve untouched journal rows and return records in workflow order', async () => {
@@ -159,19 +185,19 @@ describe('agent database', () => {
     const [first] = state.records;
     const second = { ...first!, id: 'later' };
     state.records.push(second);
-    await agent.saveIntake(state);
+    await saveIntake(agent, state);
     const db = new DatabaseSync(join(root, 'agents/emori.sqlite'));
     try {
       db.exec(`CREATE TRIGGER keep_first BEFORE DELETE ON intake_records WHEN old.id = 'same-record'
         BEGIN SELECT RAISE(ABORT, 'unrelated delete'); END`);
       second.admittedAt++;
-      await agent.saveIntake(state);
+      await saveIntake(agent, state);
       db.exec('DROP TRIGGER keep_first');
     } finally {
       db.close();
     }
     state.records.reverse();
-    await agent.saveIntake(state);
+    await saveIntake(agent, state);
     assert.deepEqual(await agent.readIntake(state.scope), state);
   });
 
@@ -179,9 +205,9 @@ describe('agent database', () => {
     const { agent } = bind(root, 'emori');
     await agent.install();
     const state = sampleIntake('emori', baseline + 1);
-    await agent.saveIntake(state);
+    await saveIntake(agent, state);
     await assert.rejects(
-      agent.saveIntake({
+      saveIntake(agent, {
         ...state,
         checkpoint: baseline + 2,
         records: [...state.records, ...state.records],

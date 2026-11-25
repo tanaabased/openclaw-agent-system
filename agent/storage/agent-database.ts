@@ -1,3 +1,6 @@
+import type { DispatchEnvelope } from './dispatch-backend.ts';
+import { normalizeDispatchPickup } from '../tasks/dispatch/dispatch-state.ts';
+import { stateSnapshotConflictCode } from '../../core/merge-state-snapshot.ts';
 import { assertPrivateStateLocksHeld } from '../../core/private-state-lock-context.ts';
 import { constants } from 'node:fs';
 import { lstat, open, readdir } from 'node:fs/promises';
@@ -30,6 +33,7 @@ import {
   dispatchState,
   intakeRecords,
   intakeState,
+  notificationResets,
 } from './schema.ts';
 import {
   assignmentClaims,
@@ -225,6 +229,31 @@ class SqliteDatabase {
 type JournalTable = typeof intakeRecords | typeof dispatchRecords;
 type JournalRecord = IntakeState['records'][number] | AgentRows['dispatchRecords']['value'];
 type Transaction = Parameters<Parameters<ReturnType<typeof drizzle>['transaction']>[0]>[0];
+
+function readDispatch(tx: Transaction, scope: string) {
+  const header = tx.select().from(dispatchState).where(eq(dispatchState.scope, scope)).get();
+  const rows = tx
+    .select()
+    .from(dispatchRecords)
+    .where(eq(dispatchRecords.scope, scope))
+    .orderBy(sql`rowid`)
+    .all();
+  if ((!header && rows.length) || rows.some(({ id, value }) => value?.id !== id))
+    throw new Error('dispatch-state-invalid');
+  return header && { ...header.value, records: rows.map(({ value }) => value) };
+}
+
+function readIntake(tx: Transaction, scope: string) {
+  const state = tx.select().from(intakeState).where(eq(intakeState.scope, scope)).get();
+  if (!state) return undefined;
+  const records = tx
+    .select({ value: intakeRecords.value })
+    .from(intakeRecords)
+    .where(eq(intakeRecords.scope, scope))
+    .orderBy(sql`rowid`)
+    .all();
+  return { ...state.value, records: records.map((row) => row.value) };
+}
 
 // Readers return rowid order. Keep the longest surviving prefix in place, then append
 // the rest in requested order (including a deliberate reorder or insertion in the middle).
@@ -526,52 +555,93 @@ class SqliteAgentStore extends SqliteDatabase {
   }
 
   readIntake(scope: string) {
-    return this.use(true, (db) =>
-      db.transaction((tx) => {
-        const state = tx.select().from(intakeState).where(eq(intakeState.scope, scope)).get();
-        if (!state) return undefined;
-        const records = tx
-          .select({ value: intakeRecords.value })
-          .from(intakeRecords)
-          .where(eq(intakeRecords.scope, scope))
-          .orderBy(sql`rowid`)
-          .all();
-        return { ...state.value, records: records.map((row) => row.value) };
-      }),
-    );
+    return this.use(true, (db) => db.transaction((tx) => readIntake(tx, scope)));
   }
 
-  saveIntake({ records, ...state }: IntakeState) {
-    return this.use(false, (db) =>
-      db.transaction((tx) => {
-        assertPrivateStateLocksHeld();
-        tx.insert(intakeState)
-          .values({ scope: state.scope, value: state })
-          .onConflictDoUpdate({ target: intakeState.scope, set: { value: state } })
-          .run();
-        if (records.some((record) => record.scope !== state.scope))
-          throw new Error('intake record scope mismatch');
-        saveJournalRows(tx, intakeRecords, state.scope, records);
-      }),
-    );
-  }
-
-  saveDispatch(
+  changeIntake<T>(
     scope: string,
-    {
-      records,
-      ...value
-    }: AgentRows['dispatchState']['value'] & { records: AgentRows['dispatchRecords']['value'][] },
+    resetOwner: boolean,
+    change: (current?: IntakeState) => { state?: IntakeState; result: T },
+  ) {
+    return this.use(
+      false,
+      (db) =>
+        db.transaction(
+          (tx) => {
+            assertPrivateStateLocksHeld();
+            if (
+              !resetOwner &&
+              tx
+                .select({ scope: notificationResets.scope })
+                .from(notificationResets)
+                .where(eq(notificationResets.scope, scope))
+                .get()
+            )
+              throw Object.assign(new Error('notification-reset-in-progress'), {
+                code: 'notification-reset-in-progress',
+              });
+            const { state, result } = change(readIntake(tx, scope));
+            if (state) {
+              const { records, ...header } = state;
+              if (header.scope !== scope || records.some((record) => record.scope !== scope))
+                throw new Error('intake record scope mismatch');
+              tx.insert(intakeState)
+                .values({ scope, value: header })
+                .onConflictDoUpdate({ target: intakeState.scope, set: { value: header } })
+                .run();
+              saveJournalRows(tx, intakeRecords, scope, records);
+            }
+            return { result };
+          },
+          { behavior: 'immediate' },
+        ).result,
+    );
+  }
+
+  beginNotificationReset(
+    record: AgentRows['notificationResets']['value'],
+    expected: IntakeState | undefined,
   ) {
     return this.use(false, (db) =>
-      db.transaction((tx) => {
-        assertPrivateStateLocksHeld();
-        tx.insert(dispatchState)
-          .values({ scope, value })
-          .onConflictDoUpdate({ target: dispatchState.scope, set: { value } })
-          .run();
-        saveJournalRows(tx, dispatchRecords, scope, records);
-      }),
+      db.transaction(
+        (tx) => {
+          assertPrivateStateLocksHeld();
+          if (!isDeepStrictEqual(readIntake(tx, record.scope), expected))
+            throw new Error('notification-reset-preview-changed');
+          tx.insert(notificationResets).values({ scope: record.scope, value: record }).run();
+        },
+        { behavior: 'immediate' },
+      ),
+    );
+  }
+
+  readDispatch(scope: string) {
+    return this.use(true, (db) => db.transaction((tx) => readDispatch(tx, scope)));
+  }
+
+  saveDispatch(scope: string, { records, ...value }: DispatchEnvelope, expected: DispatchEnvelope) {
+    return this.use(false, (db) =>
+      db.transaction(
+        (tx) => {
+          assertPrivateStateLocksHeld();
+          const current = readDispatch(tx, scope) ?? {
+            version: 4,
+            scope: expected.scope,
+            resetGeneration: 'initial',
+            records: [],
+          };
+          if (current.resetGeneration !== expected.resetGeneration)
+            throw new Error('notification-reset-stale-operation');
+          if (!isDeepStrictEqual(normalizeDispatchPickup(current), expected))
+            throw new Error(stateSnapshotConflictCode);
+          tx.insert(dispatchState)
+            .values({ scope, value })
+            .onConflictDoUpdate({ target: dispatchState.scope, set: { value } })
+            .run();
+          saveJournalRows(tx, dispatchRecords, scope, records);
+        },
+        { behavior: 'immediate' },
+      ),
     );
   }
 

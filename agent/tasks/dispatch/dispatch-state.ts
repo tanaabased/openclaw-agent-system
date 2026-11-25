@@ -259,7 +259,7 @@ export interface DispatchPersistence<R extends SharedDispatchRecord> {
   agentStorage?: BoundStorage['agent'];
   resetRoot?: string;
   read(): Promise<unknown>;
-  save(state: DispatchState<R>): Promise<void>;
+  save(state: DispatchState<R>, expected: DispatchState<R>): Promise<void>;
 }
 
 /** one journal bridges native actions; a persisted creation intent is never issued twice. */
@@ -881,7 +881,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
             admission,
           );
           const raw = normalizeDispatchPickup(JSON.parse(contents)) as DispatchState<R>;
-          if (this.contract.persistence) await this.contract.persistence.save(raw);
+          if (this.contract.persistence) await this.contract.persistence.save(raw, snapshot.raw);
           else await this.file.write(contents);
           refreshStateSnapshot(state, retained);
           snapshot = { raw, state: intake ? raw : this.project(raw) };
