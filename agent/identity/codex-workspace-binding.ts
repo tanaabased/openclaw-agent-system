@@ -10,6 +10,7 @@ const maximumBindingBytes = 16 * 1024;
 
 export interface CodexWorkspaceBinding {
   schemaVersion: 1;
+  credentialScope?: string;
   workspaceDir: string;
 }
 
@@ -60,12 +61,30 @@ export function codexWorkspaceBindingPath(pluginData: string): string {
 
 function parseBinding(value: unknown): CodexWorkspaceBinding | undefined {
   if (!record(value)) return undefined;
-  if (Object.keys(value).sort().join(',') !== 'schemaVersion,workspaceDir') return undefined;
+  if (
+    Object.keys(value).some(
+      (key) => !['schemaVersion', 'workspaceDir', 'credentialScope'].includes(key),
+    )
+  )
+    return undefined;
+  const credentialScope = value.credentialScope;
+  if (
+    credentialScope !== undefined &&
+    (typeof credentialScope !== 'string' ||
+      !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(
+        credentialScope,
+      ))
+  )
+    return undefined;
   if (value.schemaVersion !== 1 || typeof value.workspaceDir !== 'string') return undefined;
   if (!isAbsolute(value.workspaceDir) || normalize(value.workspaceDir) !== value.workspaceDir) {
     return undefined;
   }
-  return { schemaVersion: 1, workspaceDir: value.workspaceDir };
+  return {
+    schemaVersion: 1,
+    workspaceDir: value.workspaceDir,
+    ...(credentialScope ? { credentialScope } : {}),
+  };
 }
 
 /** Resolve a selected directory and report its current manifest state. */
@@ -203,10 +222,15 @@ export async function bindCodexWorkspace(
     return { status: 'confirmation-required', path, preview };
   }
 
-  const binding: CodexWorkspaceBinding = {
-    schemaVersion: 1,
-    workspaceDir: preview.workspaceDir,
-  };
+  const existing = await inspectCodexWorkspaceBinding(pluginData);
+  const binding: CodexWorkspaceBinding =
+    existing.status === 'bound' && existing.binding.workspaceDir === preview.workspaceDir
+      ? existing.binding
+      : {
+          credentialScope: randomUUID(),
+          schemaVersion: 1,
+          workspaceDir: preview.workspaceDir,
+        };
   const temporaryPath = join(dirname(path), `.${codexWorkspaceBindingFileName}.${randomUUID()}`);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   try {

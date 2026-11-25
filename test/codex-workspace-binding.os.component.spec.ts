@@ -45,6 +45,7 @@ describe('agent/codex-workspace-binding', () => {
     assert.equal(bound.binding.workspaceDir, workspace);
     assert.deepEqual(JSON.parse(await readFile(bound.path, 'utf8')), {
       schemaVersion: 1,
+      credentialScope: bound.binding.credentialScope,
       workspaceDir: workspace,
     });
     const inspected = await inspectCodexWorkspaceBinding(pluginData);

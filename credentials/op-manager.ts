@@ -2,6 +2,7 @@ import { withProviderDiagnostic, type ProviderDiagnostic } from '../utils/provid
 import type { AgentManifest } from '../manifest/types.ts';
 import collectOpEnvironmentRequirements, {
   hasOpEnvironmentRequirements,
+  type OpEnvironmentRequirements,
 } from '../environment/op-requirements.ts';
 import type OpCredentialService from './op-service.ts';
 import type OpEnvironmentService from '../environment/op-service.ts';
@@ -88,13 +89,27 @@ export default class OpCredentialManager {
     token: string,
     storeId?: string,
   ): Promise<CredentialSetResult> {
-    const requirements = collectOpEnvironmentRequirements(manifest);
-    const validation = await this.#environmentService.validateToken(token, requirements);
-    if (validation.status === 'invalid')
-      return this.#validationFailure(manifest.agent.id, validation);
+    return this.setForOwner(
+      manifest.agent.id,
+      collectOpEnvironmentRequirements(manifest),
+      token,
+      storeId,
+    );
+  }
 
-    const { result: stored, gatewayInvalidation } = await this.#mutate(manifest.agent.id, () =>
-      this.#credentialService.storeServiceAccountToken(manifest.agent.id, storeId, token),
+  async setForOwner(
+    agentId: string,
+    requirements: OpEnvironmentRequirements,
+    token: string,
+    storeId?: string,
+    assertCurrent?: () => Promise<void>,
+  ): Promise<CredentialSetResult> {
+    const validation = await this.#environmentService.validateToken(token, requirements);
+    if (validation.status === 'invalid') return this.#validationFailure(agentId, validation);
+
+    await assertCurrent?.();
+    const { result: stored, gatewayInvalidation } = await this.#mutate(agentId, () =>
+      this.#credentialService.storeServiceAccountToken(agentId, storeId, token),
     );
     if ('code' in stored) {
       return {
@@ -106,7 +121,7 @@ export default class OpCredentialManager {
     }
     return {
       status: stored.status,
-      agentId: manifest.agent.id,
+      agentId,
       storeId: stored.storeId,
       ...gatewayInvalidation,
     };

@@ -2,3 +2,6 @@ schema-version: 1
 agent:
   id: codex-example-rebound
   name: Codex Example Rebound
+environment:
+  set:
+    EXAMPLE_VALUE: { from-op: 'op://example/item/value' }

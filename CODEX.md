@@ -81,6 +81,12 @@ In the new chat, use the workspace's absolute path:
 Use $agent-system-codex-binding to bind this plugin to /absolute/path/to/tanaab/me.
 ```
 
+If your manifest declares a 1Password Environment or a `from-op` value, Binding
+checks access. For a missing or rejected service-account token, run the enrollment
+command it supplies in your own terminal and enter the token at the masked prompt.
+Codex uses macOS login Keychain or Linux Secret Service. Doctor checks the saved
+credential, and Install reuses it. Keep the token out of chat.
+
 Confirm the binding, then open a new chat and run:
 
 ```text

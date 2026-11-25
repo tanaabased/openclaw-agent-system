@@ -49,7 +49,10 @@ export default class OpCredentialInput {
     this.#prompt = dependencies.prompt ?? password;
   }
 
-  async read(source: OpCredentialInputSource): Promise<OpCredentialInputResult> {
+  async read(
+    source: OpCredentialInputSource,
+    promptMessage = 'Enter OP service account token',
+  ): Promise<OpCredentialInputResult> {
     if (source === 'environment') {
       const token = this.#hostEnvironment[opServiceAccountTokenEnvironmentVariable];
       if (token === undefined || token.trim() === '') {
@@ -95,7 +98,7 @@ export default class OpCredentialInput {
     try {
       token = await this.#prompt({
         input: this.#input,
-        message: 'Enter OP service account token',
+        message: promptMessage,
         output: this.#output,
         validate: invalidInput,
       });

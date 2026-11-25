@@ -44,15 +44,18 @@ export type OpCredentialStoreRemoveResult =
 export interface OpCredentialServiceDependencies {
   hostEnvironment: Readonly<Record<string, string | undefined>>;
   stores?: readonly CredentialStore[];
+  credentialId?: string;
 }
 
 /** Resolve and mutate agent-scoped OP credentials without exposing their values as metadata. */
 export default class OpCredentialService {
   readonly #hostEnvironment: Readonly<Record<string, string | undefined>>;
+  readonly #credentialId: string;
   readonly #stores: readonly CredentialStore[];
 
   constructor(dependencies: OpCredentialServiceDependencies) {
     this.#hostEnvironment = Object.freeze({ ...dependencies.hostEnvironment });
+    this.#credentialId = dependencies.credentialId ?? opCredentialId;
     this.#stores = [...(dependencies.stores ?? [])];
   }
 
@@ -80,7 +83,7 @@ export default class OpCredentialService {
     const evidence = () => (attempts.length ? { attempts } : {});
     let unavailable: CredentialStoreProblem | undefined;
     for (const store of stores) {
-      const result = await store.read({ agentId, credentialId: opCredentialId });
+      const result = await store.read({ agentId, credentialId: this.#credentialId });
       attempts.push({
         storeId: store.id,
         status: result.status,
@@ -137,7 +140,7 @@ export default class OpCredentialService {
 
     let unavailable: CredentialStoreProblem | undefined;
     for (const store of stores) {
-      const result = await store.write({ agentId, credentialId: opCredentialId }, token);
+      const result = await store.write({ agentId, credentialId: this.#credentialId }, token);
       if (result.status === 'stored' || result.status === 'unchanged') {
         return { ...result, storeId: store.id };
       }
@@ -180,7 +183,7 @@ export default class OpCredentialService {
     const unavailableStoreIds: string[] = [];
     let unavailable: CredentialStoreProblem | undefined;
     for (const store of stores) {
-      const result = await store.remove({ agentId, credentialId: opCredentialId });
+      const result = await store.remove({ agentId, credentialId: this.#credentialId });
       if (result.status === 'unsafe') return result;
       if (result.status === 'unavailable') {
         unavailable ??= result;

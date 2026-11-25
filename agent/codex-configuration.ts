@@ -1,3 +1,4 @@
+import { opServiceAccountTokenName } from '../environment/resolve.ts';
 import { dirname, resolve } from 'node:path';
 
 import PrivateStateFile from '../core/private-state-file.ts';
@@ -5,7 +6,13 @@ import { parseStorageConfig, type StorageBackend } from '../manifest/storage-sch
 import nodeErrorCode from '../utils/node-error-code.ts';
 import withWorkflowLock from './storage/workflow-lock.ts';
 
+export interface InstallationOpReference {
+  environmentId: string;
+  variable: string;
+}
+
 interface CodexConfiguration {
+  onePassword?: InstallationOpReference;
   storage?: unknown;
   cleanup?: unknown;
 }
@@ -37,9 +44,29 @@ async function readConfiguration(file: PrivateStateFile): Promise<CodexConfigura
     !config ||
     typeof config !== 'object' ||
     Array.isArray(config) ||
-    Object.keys(config).some((key) => key !== 'storage' && key !== 'cleanup')
+    Object.keys(config).some(
+      (key) => key !== 'storage' && key !== 'cleanup' && key !== 'onePassword',
+    )
   )
-    throw new SyntaxError('Expected storage and cleanup settings in instance/config.json.');
+    throw new SyntaxError('Unrecognized setting in instance/config.json.');
+  if ('onePassword' in config) {
+    const ref = config.onePassword;
+    if (
+      !ref ||
+      typeof ref !== 'object' ||
+      Object.keys(ref).length !== 2 ||
+      !('environmentId' in ref) ||
+      typeof ref.environmentId !== 'string' ||
+      !ref.environmentId.trim() ||
+      !('variable' in ref) ||
+      typeof ref.variable !== 'string' ||
+      ref.variable === opServiceAccountTokenName ||
+      !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(ref.variable)
+    )
+      throw new SyntaxError(
+        'Expected onePassword.environmentId and onePassword.variable in instance/config.json.',
+      );
+  }
   return config;
 }
 

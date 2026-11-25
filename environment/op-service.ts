@@ -417,6 +417,13 @@ export default class OpEnvironmentService {
         values.set(variable.name, variable.value);
         if (variable.masked) sensitiveNames.push(variable.name);
       }
+      const required = requirements.requiredVariable;
+      if (required?.environmentId === environmentId && !values.has(required.name)) {
+        return invalid(
+          'op-variable-missing',
+          'The declared 1Password Environment variable is missing.',
+        );
+      }
       sources.push({
         source: `environment.op[${index}]`,
         sensitiveNames,
