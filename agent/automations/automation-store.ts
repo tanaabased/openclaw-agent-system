@@ -141,7 +141,7 @@ export default class AutomationStore {
   }
   async withLock<T>(bindsThread: boolean, run: () => Promise<T>): Promise<T> {
     if (this.agentStorage)
-      return bindsThread ? withRegistrationThread(this.options.root, this.scope, run) : run();
+      return bindsThread ? withRegistrationThread(this.agentStorage, this.scope, run) : run();
     await ensurePrivateStateDirectories({
       directories: [this.options.root],
       currentUid: process.getuid?.(),

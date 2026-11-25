@@ -725,6 +725,7 @@ describe('agent/implementation-entry', () => {
       try {
         if (sqlite) {
           await entered.promise;
+          await assert.rejects(readdir(deps.root), { code: 'ENOENT' });
           assert.ok((await store().inspect())[0]!.delivery?.pendingPush);
           await assert.rejects(publishPrepared(), { code: 'private-state-file-lock-busy' });
         }
@@ -1043,8 +1044,6 @@ describe('agent/native-implementation-entry', () => {
     );
     assert.deepEqual('handoff' in result && result.handoff, { next: 'complete' });
     assert.equal(calls.filter((name) => name === 'skills.status').length, 1);
-    assert.ok(
-      !(await readdir(join(root, 'dispatch'))).some((name) => name.includes('openclaw-dispatch')),
-    );
+    await assert.rejects(readdir(join(root, 'dispatch')), { code: 'ENOENT' });
   });
 });

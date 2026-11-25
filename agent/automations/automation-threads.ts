@@ -616,6 +616,8 @@ export default class AutomationThreads {
       }
     };
     if (!apply || (this.agentStorage && !selected.length)) return resolve();
-    return withAutomationThreadLock(this.path, resolve);
+    const path =
+      this.agentStorage?.workflowLockPath('automation-threads', this.options.scope) ?? this.path;
+    return withAutomationThreadLock(path, resolve);
   }
 }

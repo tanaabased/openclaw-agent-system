@@ -127,6 +127,7 @@ export default class AssignmentClaimStore {
   constructor(
     root: string,
     private readonly persistence?: {
+      lockPath: string;
       read(): Promise<AssignmentClaimState | undefined>;
       save(state: AssignmentClaimState, previous?: AssignmentClaimState): Promise<void>;
     },
@@ -150,7 +151,7 @@ export default class AssignmentClaimStore {
     initialize = true,
   ): Promise<T> {
     return withWorkflowLock(
-      join(this.root, 'assignment-claims.json'),
+      this.persistence?.lockPath ?? join(this.root, 'assignment-claims.json'),
       'assignment claims',
       async (lock) => {
         const previous = await this.read();

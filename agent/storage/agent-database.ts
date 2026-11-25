@@ -1,3 +1,4 @@
+import { agentWorkflowLockPath, type AgentLockFamily } from './workflow-lock.ts';
 import { maximumLedgerBytes, type RegistrationLedger } from './automation-backend.ts';
 import { AutomationError, CodexAutomationError } from '../automations/automation-errors.ts';
 import type { DispatchEnvelope } from './dispatch-backend.ts';
@@ -332,6 +333,10 @@ class SqliteAgentStore extends SqliteDatabase {
       'agent-storage',
       join(location.schemaRoot, 'migrations'),
     );
+  }
+
+  workflowLockPath(family: AgentLockFamily, scope: string) {
+    return agentWorkflowLockPath(this.path, family, scope);
   }
 
   async stageReplyMigration(shared: DatabaseSync) {

@@ -18,6 +18,7 @@ export function sqliteDispatchPersistence(
 ) {
   if (!agent) return;
   return {
+    lockPath: agent.workflowLockPath('dispatch', scope),
     agentStorage: agent,
     resetRoot,
     read: () => agent.readDispatch(scope),

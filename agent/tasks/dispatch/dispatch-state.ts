@@ -252,6 +252,7 @@ function fileDispatchEnvelope<R extends SharedDispatchRecord>(state: DispatchSta
 }
 
 export interface DispatchPersistence<R extends SharedDispatchRecord> {
+  lockPath?: string;
   agentStorage?: BoundStorage['agent'];
   resetRoot?: string;
   read(): Promise<unknown>;
@@ -790,7 +791,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
       return proposed;
     };
     return withDispatchLock(
-      this.path,
+      this.contract.persistence?.lockPath ?? this.path,
       this.contract.runtime,
       intake ? 'occurrence-registration' : operation,
       waitForLock,

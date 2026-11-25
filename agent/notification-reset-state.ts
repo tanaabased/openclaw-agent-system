@@ -81,8 +81,19 @@ export type NotificationResetResource = Static<typeof resource>;
 
 const access = new AsyncLocalStorage<string>();
 
-export function ownsNotificationReset(root: string, scope: string) {
-  return access.getStore() === join(root, `notification-reset-${scope}.json`);
+function resetLockPath(root: string, scope: string, storage?: BoundStorage['agent']) {
+  return (
+    storage?.workflowLockPath('notification-reset', scope) ??
+    join(root, `notification-reset-${scope}.json`)
+  );
+}
+
+export function ownsNotificationReset(
+  root: string,
+  scope: string,
+  storage?: BoundStorage['agent'],
+) {
+  return access.getStore() === resetLockPath(root, scope, storage);
 }
 
 /** only the reset owner may write managed state while its recovery record exists. */
@@ -92,7 +103,7 @@ export async function assertNotificationManagement(
   storage?: BoundStorage['agent'],
 ): Promise<void> {
   const store = new NotificationResetStore(root, scope, storage);
-  if (!ownsNotificationReset(root, scope) && (await store.read()))
+  if (!ownsNotificationReset(root, scope, storage) && (await store.read()))
     throw Object.assign(new Error('notification-reset-in-progress'), {
       code: 'notification-reset-in-progress',
     });
@@ -152,8 +163,9 @@ export default class NotificationResetStore {
       remove: () => Promise<void>,
     ) => Promise<T>,
   ): Promise<T> {
-    return withWorkflowLock(this.path, 'notification reset', (lock) =>
-      access.run(this.path, async () =>
+    const path = resetLockPath(this.root, this.scope, this.storage);
+    return withWorkflowLock(path, 'notification reset', (lock) =>
+      access.run(path, async () =>
         run(
           await this.read(),
           async (record, checkpoint) => {

@@ -69,8 +69,12 @@ function lockThreads<T>(path: string, run: () => Promise<T>) {
 }
 
 // A registration selecting a native thread holds its binding stable through the handoff.
-export function withRegistrationThread<T>(root: string, scope: string, run: () => Promise<T>) {
-  const path = automationThreadPath(root, scope);
+export function withRegistrationThread<T>(
+  agent: BoundStorage['agent'],
+  scope: string,
+  run: () => Promise<T>,
+) {
+  const path = agent.workflowLockPath('automation-threads', scope);
   return lockThreads(path, () => registrationThread.run(resolve(path), run));
 }
 

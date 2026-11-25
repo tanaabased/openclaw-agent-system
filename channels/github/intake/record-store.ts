@@ -368,6 +368,7 @@ export default class IntakeRecordStore {
     return ownsNotificationReset(
       this.location.resetRoot ?? this.location.root,
       this.location.scope,
+      this.agentStorage,
     );
   }
 

@@ -1,3 +1,4 @@
+import { assignmentClaimLockPath } from './workflow-lock.ts';
 import nodeErrorCode from '../../utils/node-error-code.ts';
 import IssuePickupEnrollmentStore from '../issue-pickup-enrollment.ts';
 import AssignmentClaimStore from '../tasks/dispatch/assignment-claim-store.ts';
@@ -13,6 +14,7 @@ export function bindInstanceStore(
   const database = async () =>
     (await import('./agent-database.ts')).bindSqliteInstallation(installation);
   return new AssignmentClaimStore(root, {
+    lockPath: assignmentClaimLockPath(root),
     async read() {
       const db = await database();
       const rows = await db

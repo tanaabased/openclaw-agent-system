@@ -1,3 +1,4 @@
+import { assignmentClaimLockPath } from '../agent/storage/workflow-lock.ts';
 import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
 import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 // Temporary, operator-run importer for #792. Run from the source checkout with Node.
@@ -458,13 +459,10 @@ export async function importAgentStorage(options: ImportOptions) {
   let sharedPlan = await shared.prepare(storage.installation);
   if (options.apply) {
     // Serialize the singleton identity check and insert with setup and other agent imports.
-    const lock = await acquirePrivateStateFileLock(
-      join(installationRoot, 'assignment-claims.json'),
-      {
-        staleMs: 30_000,
-        retries: { retries: 40, factor: 1, minTimeout: 25, maxTimeout: 25 },
-      },
-    );
+    const lock = await acquirePrivateStateFileLock(assignmentClaimLockPath(installationRoot), {
+      staleMs: 30_000,
+      retries: { retries: 40, factor: 1, minTimeout: 25, maxTimeout: 25 },
+    });
     try {
       await withPrivateStateLock(lock, async () => {
         sharedPlan = await shared.prepare(storage.installation);

@@ -6,7 +6,7 @@ import notificationResetPickup from '../agent/notification-reset-pickup.ts';
 import selectionFixture from './issue-pickup-selection-fixture.ts';
 import { notificationResetDiagnostic } from '../agent/notification-reset-diagnostic.ts';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import resetNotifications, {
@@ -120,9 +120,10 @@ describe('agent/notification reset recovery', () => {
 
   it('should preview an active sqlite reset without letting a second executor repeat its native pause', async () => {
     const { agent, sqliteInstallation } = await sqliteAgentFixture(root, 'tester');
-    store = new NotificationResetStore(root, scope, agent);
+    const legacy = join(root, 'legacy');
+    store = new NotificationResetStore(legacy, scope, agent);
     const peer = new NotificationResetStore(
-      root,
+      join(legacy, 'another-root'),
       scope,
       bindSqliteStorage(sqliteInstallation, 'tester').agent,
     );
@@ -140,6 +141,7 @@ describe('agent/notification reset recovery', () => {
       await entered.promise;
       const preview = await previewNotificationReset(peer, adapter, false);
       assert.equal(preview.continuing, true);
+      await assert.rejects(readdir(legacy), { code: 'ENOENT' });
       await assert.rejects(resetNotifications({ store: peer, adapter, preview }), {
         code: 'private-state-file-lock-busy',
       });

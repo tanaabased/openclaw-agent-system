@@ -86,6 +86,7 @@ export class DirectEntryStore<S extends typeof implementationEntriesSchema | typ
       });
     };
     if (this.storage && this.kind === 'native-retirement') return edit();
-    return withWorkflowLock(this.path, `direct ${this.kind} entries`, edit);
+    const path = this.storage?.workflowLockPath('implementation', this.scope) ?? this.path;
+    return withWorkflowLock(path, `direct ${this.kind} entries`, edit);
   }
 }

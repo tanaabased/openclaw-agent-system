@@ -1,9 +1,15 @@
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
+import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
+import {
+  sqliteDispatchPersistence,
+  pickupDispatchScope,
+} from '../agent/storage/dispatch-backend.ts';
 import codexCapacity from '../agent/tasks/dispatch/codex-capacity.ts';
 import openClawCapacity from '../agent/tasks/dispatch/openclaw-capacity.ts';
 import { issueKey } from '../agent/tasks/dispatch/dispatch-pending.ts';
 import { withDispatchTask } from '../agent/tasks/dispatch/dispatch-task-scope.ts';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import codexCommit from '../agent/codex-commit.ts';
@@ -73,6 +79,35 @@ describe('agent/shared dispatch state', () => {
     assert.deepEqual(await codex.read(), await openclaw.read());
     assert.equal((await new OpenClawDispatchStore(root, scope).read()).records.length, 1);
     assert.equal((await new OpenClawDispatchStore(root, 'c'.repeat(64)).read()).records.length, 0);
+  });
+
+  it('should fence the same sqlite dispatch journal across roots while pickup can proceed', async () => {
+    const { sqliteInstallation } = await sqliteAgentFixture(root, 'receiver');
+    const legacy = join(root, 'legacy');
+    const open = (directory: string, key: string) =>
+      new OpenClawDispatchStore(
+        directory,
+        scope,
+        sqliteDispatchPersistence(bindSqliteStorage(sqliteInstallation, 'receiver').agent, key),
+      );
+    const issue = open(join(legacy, 'dispatch'), scope);
+    const peer = open(join(legacy, 'another-root'), scope);
+    const pickup = open(join(legacy, 'intake'), pickupDispatchScope(scope));
+    await issue.exclusive(async (state, save) => {
+      await assert.rejects(
+        peer.exclusive(async () => {}, false),
+        { code: 'private-state-file-lock-busy' },
+      );
+      await pickup.exclusive(async (independent, commit) => {
+        independent.resetGeneration = 'pickup';
+        await commit();
+      }, false);
+      state.resetGeneration = 'issue';
+      await save();
+    });
+    assert.equal((await peer.read()).resetGeneration, 'issue');
+    assert.equal((await pickup.read()).resetGeneration, 'pickup');
+    await assert.rejects(readdir(legacy), { code: 'ENOENT' });
   });
 
   it('should retain valid native turn receipts across restart', async () => {

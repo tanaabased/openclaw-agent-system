@@ -1,8 +1,9 @@
 import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, realpath, rm } from 'node:fs/promises';
 
+import { join } from 'node:path';
 import { nativeObject } from '../utils/native-object.ts';
 import { AutomationError } from '../agent/automations/automation-errors.ts';
 import AutomationThreads, {
@@ -746,9 +747,10 @@ describe('agent/automation-threads', () => {
   it('should keep one native create in flight across sqlite connections while independent jobs proceed', async () => {
     const f = fixture('openclaw');
     const sqlite = await sqliteAgentFixture(root, 'tester');
-    const open = () =>
+    const legacy = join(root, 'legacy');
+    const open = (directory = legacy) =>
       new AutomationThreads(
-        f.store.options,
+        { ...f.store.options, root: directory },
         f.adapter,
         bindSqliteStorage(sqlite.sqliteInstallation, 'tester').agent,
       );
@@ -765,9 +767,10 @@ describe('agent/automation-threads', () => {
     };
     const first = open().resolve(declarations, true);
     await entered.promise;
-    const peer = open();
+    const peer = open(join(legacy, 'other'));
     const competing = peer.resolve(declarations, true);
     try {
+      await assert.rejects(readdir(legacy), { code: 'ENOENT' });
       const independent = jobs(undefined);
       assert.equal((await peer.resolve(independent, true)).size, 0);
       assert.equal((await peer.read()).records[0]?.phase, 'creating');

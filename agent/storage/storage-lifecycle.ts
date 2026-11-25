@@ -1,3 +1,4 @@
+import type { AgentLockFamily } from './workflow-lock.ts';
 import type { RegistrationLedger } from './automation-backend.ts';
 import type { DispatchEnvelope } from './dispatch-backend.ts';
 import type { SidebarChange, SidebarState } from '../codex-sidebar-journal.ts';
@@ -24,6 +25,7 @@ export interface StorageSchema {
 type DirectRow = AgentRows['directEntries'];
 type Draft = AgentRows['replyDrafts']['value'];
 export interface SessionStorage {
+  workflowLockPath(family: AgentLockFamily, scope: string): string;
   hasReplyPublication(draft: Pick<Draft, 'authorNodeId' | 'publication'>): Promise<boolean>;
   readReplies(scope: string): Promise<Draft[]>;
   saveReplies(

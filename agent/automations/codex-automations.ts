@@ -735,7 +735,7 @@ async function withJournal<T>(
     const bindsThread = selected.jobs.some(
       (job) => job.runtimes.includes('codex') && automationThreadSelection(job, 'codex'),
     );
-    return bindsThread ? withRegistrationThread(selected.root, selected.scope, run) : run();
+    return bindsThread ? withRegistrationThread(selected.agentStorage, selected.scope, run) : run();
   }
   await ensurePrivateStateDirectories({
     directories: [selected.root],

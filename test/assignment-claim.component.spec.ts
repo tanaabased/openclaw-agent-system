@@ -3,7 +3,7 @@ import { bindSqliteInstallation } from '../agent/storage/agent-database.ts';
 import { bindInstanceStore } from '../agent/storage/pickup-backend.ts';
 import recoverAssignmentClaim from '../agent/tasks/dispatch/assignment-claim-recovery.ts';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -285,6 +285,9 @@ describe('agent/assignment-claim', () => {
     const publishing = claimManualAssignment({ store: first, client, source, requestId: 'manual' });
     try {
       await entered.promise;
+      await assert.rejects(lstat(join(location.installationRoot, 'assignment-claims.json.lock')), {
+        code: 'ENOENT',
+      });
       assert.deepEqual(await peer.identity(), identity);
       await assert.rejects(peer.rotate(identity.instanceId), {
         code: 'private-state-file-lock-busy',
