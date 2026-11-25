@@ -268,6 +268,35 @@ describe('agent/assignment-claim', () => {
     assert.deepEqual(await openStore().read(), completed);
   });
 
+  it('should allow sqlite identity reads but exclude rotation while publishing a claim', async () => {
+    const location = codexStorageLocation(root);
+    await bindSqliteInstallation(location).install();
+    const first = bindInstanceStore(location, 'sqlite');
+    const peer = bindInstanceStore(location, 'sqlite');
+    const identity = await first.identity();
+    const entered = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    const create = client.create;
+    client.create = async (...args) => {
+      entered.resolve();
+      await resume.promise;
+      return create(...args);
+    };
+    const publishing = claimManualAssignment({ store: first, client, source, requestId: 'manual' });
+    try {
+      await entered.promise;
+      assert.deepEqual(await peer.identity(), identity);
+      await assert.rejects(peer.rotate(identity.instanceId), {
+        code: 'private-state-file-lock-busy',
+      });
+    } finally {
+      resume.resolve();
+      await publishing;
+    }
+    assert.equal(writes, 1);
+    assert.notEqual((await peer.rotate(identity.instanceId)).instanceId, identity.instanceId);
+  });
+
   it('should retain one assignment winner across two sqlite installations and a restart', async () => {
     const locations = ['a', 'b'].map((name) => codexStorageLocation(join(root, name)));
     const reopen = () => locations.map((location) => bindInstanceStore(location, 'sqlite'));

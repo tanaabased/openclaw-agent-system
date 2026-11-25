@@ -1,3 +1,4 @@
+import withWorkflowLock from '../../storage/workflow-lock.ts';
 import { randomInt, randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 
@@ -9,10 +10,7 @@ import {
   instanceNamePattern,
   normalizeInstanceName,
 } from '../../../channels/github/provider/assignment-claim.ts';
-import ensurePrivateStateDirectories from '../../../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../../../core/private-state-file.ts';
-import acquirePrivateStateFileLock from '../../../core/private-state-file-lock.ts';
-import { withPrivateStateLock } from '../../../core/private-state-lock-context.ts';
 
 const maximumBytes = 4 * 1024 * 1024;
 const words = [
@@ -151,17 +149,10 @@ export default class AssignmentClaimStore {
     ) => Promise<T>,
     initialize = true,
   ): Promise<T> {
-    await ensurePrivateStateDirectories({
-      directories: [this.root],
-      currentUid: process.getuid?.(),
-      label: 'assignment claims',
-    });
-    const lock = await acquirePrivateStateFileLock(join(this.root, 'assignment-claims.json'), {
-      staleMs: 30_000,
-      retries: { retries: 0, factor: 1, minTimeout: 25, maxTimeout: 25 },
-    });
-    try {
-      return await withPrivateStateLock(lock, async () => {
+    return withWorkflowLock(
+      join(this.root, 'assignment-claims.json'),
+      'assignment claims',
+      async (lock) => {
         const previous = await this.read();
         if (!previous && !initialize) throw new Error('instance-install-required');
         const state: AssignmentClaimState = previous ?? {
@@ -185,13 +176,15 @@ export default class AssignmentClaimStore {
         };
         if (!previous) await save();
         return operation(state, save, lock.signal);
-      });
-    } finally {
-      await lock.release();
-    }
+      },
+    );
   }
 
-  identity() {
+  async identity() {
+    if (this.persistence) {
+      const existing = await this.inspect();
+      if (existing) return existing;
+    }
     return this.exclusive(async (state) => ({
       instanceId: state.instanceId,
       displayName: state.displayName,
