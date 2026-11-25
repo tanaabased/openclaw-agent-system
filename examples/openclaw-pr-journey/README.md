@@ -222,7 +222,7 @@ openclaw agent-system tool gh -- api --method PUT "repos/tanaabased/big-test-buc
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
 openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/pulls/$number/requested_reviewers" -f 'reviewers[]=emoriwan' | jq -e 'any(.requested_reviewers[]; .login == "emoriwan")'
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/emori"
-node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/wait-review.ts" "$number" CHANGES_REQUESTED > "$TMPDIR/notification-feedback-source.json"
+node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/wait-review.mts" "$number" CHANGES_REQUESTED > "$TMPDIR/notification-feedback-source.json"
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
@@ -280,7 +280,7 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/review-journey-state.ts" dispatch |
 # should review the repaired revision in the original independent reviewer chat
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/emori"
 number=$(jq -er .delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
-node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/wait-review.ts" "$number" APPROVED > "$TMPDIR/notification-approval.json"
+node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/wait-review.mts" "$number" APPROVED > "$TMPDIR/notification-approval.json"
 jq -e --slurpfile first "$TMPDIR/notification-feedback-source.json" --slurpfile repair "$TMPDIR/notification-feedback.json" '.id != $first[0].id and .commit_id != $first[0].commit_id and .commit_id == $repair[0].delivery.pushedHead' "$TMPDIR/notification-approval.json"
 node --import tsx "$GITHUB_WORKSPACE/scripts/review-journey-state.ts" dispatch | jq -es --argjson pr "$number" --slurpfile first "$TMPDIR/notification-feedback-source.json" --slurpfile approval "$TMPDIR/notification-approval.json" --slurpfile author "$TMPDIR/notification-feedback.json" '[.[].records[] | select(.reviewAdmission.issue.number == $pr)] | length == 1 and .[0].sessionCreation.verified and .[0].threadId != $author[0].threadId and .[0].worktree == null and .[0].reviewPublication.receipt.nodeId == $approval[0].node_id'
 

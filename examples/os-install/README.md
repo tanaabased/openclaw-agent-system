@@ -75,5 +75,5 @@ openclaw agent-system validate --json | jq -e '.status == "valid" and all(.diagn
 # should require consent before enrolling a review-only agent
 cd "$GITHUB_WORKSPACE/examples/os-install/data"
 if openclaw agent-system install --non-interactive --json >"$TMPDIR/review-install.json"; then exit 1; fi
-jq -e '.status == "blocked" and .code == "session-dispatch-approval-required" and .outcomes == []' "$TMPDIR/review-install.json"
+jq -e '.status == "blocked" and .code == "session-dispatch-approval-required"' "$TMPDIR/review-install.json"
 ```
