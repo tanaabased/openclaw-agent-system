@@ -1,14 +1,13 @@
 # Install Example
 
 Install an agent on macOS and Ubuntu, repeat installation without changing its core
-configuration, and inspect it with Doctor. Verify that unsupported review declarations
-do not prevent checks of unrelated components.
+configuration, and inspect it with Doctor. Verify that a review-only agent requires dispatch consent.
 
 ## What Belongs Here
 
 - Real native installation, convergence, and read-only readiness on both operating systems.
 - Read-only instance inspection with a readable name and human-only identifier masking.
-- Unsupported review declarations remain warnings without activating issue intake or enrolling dispatch credentials.
+- Review-only declarations validate without warnings about runtime support and cannot enroll dispatch without approval.
 - Retired repository-owner configuration fails validation with direction to routing, even when routing is also present.
 
 ## What Does Not Belong Here
@@ -20,7 +19,6 @@ do not prevent checks of unrelated components.
 ## Notes
 
 - Direct checks use the packed plugin on both supported operating systems without a Gateway, model, or hosted secret.
-- Unsupported review validation, warning routing, and unrelated readiness remain one installed compatibility check; detailed parser variants retain source coverage.
 
 ## Setup
 
@@ -28,7 +26,7 @@ do not prevent checks of unrelated components.
 # should configure an unauthenticated local openclaw profile with the packed plugin
 openclaw-setup \
   --workspace "$TMPDIR/main" \
-  --agent-system "$AGENT_SYSTEM_PACKAGE"
+  --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service
 
 ```
 
@@ -69,31 +67,13 @@ fi
 ```
 
 ```bash
-# should validate an unavailable review adapter without rejecting the manifest
+# should accept an openclaw review declaration without an unsupported runtime warning
 cp "$GITHUB_WORKSPACE/examples/os-install/unsupported-notifications/agent.yaml" "$GITHUB_WORKSPACE/examples/os-install/data/agent.yaml"
 cd "$GITHUB_WORKSPACE/examples/os-install/data"
-openclaw agent-system validate --json | jq -e '.status == "valid" and any(.diagnostics[]; .code == "github-notification-runtime-unsupported" and .severity == "warning")'
+openclaw agent-system validate --json | jq -e '.status == "valid" and all(.diagnostics[]?; .code != "github-notification-runtime-unsupported")'
 
-# should skip dispatch enrollment for unavailable reviews without activating issue intake
-set -o pipefail
-install_diagnostics() {
-  status=$?
-  if [ "$status" -ne 0 ]; then
-    jq '{status, code, outcomes: [.outcomes[]? | {component, status, code}], warnings: [.warnings[]? | {component, code}]}' "$TMPDIR/review-install.json" >&2 || true
-    cat "$TMPDIR/review-install.stderr" >&2 || true
-  fi
-  exit "$status"
-}
-trap install_diagnostics EXIT
+# should require consent before enrolling a review-only agent
 cd "$GITHUB_WORKSPACE/examples/os-install/data"
-openclaw agent-system install --non-interactive --json >"$TMPDIR/review-install.json" 2>"$TMPDIR/review-install.stderr"
-jq -e 'any(.outcomes[]; .code == "session-dispatch-not-required") and any(.warnings[]; .code == "github-notification-runtime-unsupported") and any(.outcomes[]; .component == "github") and all(.outcomes[]; .code != "intake-activated")' "$TMPDIR/review-install.json"
-test "$(grep -Fc 'code=github-notification-runtime-unsupported' "$TMPDIR/review-install.stderr")" -eq 1
-grep -F 'field=/github/review-request' "$TMPDIR/review-install.stderr"
-openclaw agent-system tool git -- --version | grep -F 'git version'
-
-# should warn about unavailable reviews without blocking unrelated readiness
-cd "$GITHUB_WORKSPACE/examples/os-install/data"
-openclaw agent-system doctor --json 2>"$TMPDIR/review-doctor.stderr" | jq -e '.status == "healthy" and any(.findings[]; .component == "github-intake" and .code == "github-notification-runtime-unsupported" and .status == "warning") and any(.findings[]; .component == "github" and .status == "healthy")'
-test "$(grep -Fc 'code=github-notification-runtime-unsupported' "$TMPDIR/review-doctor.stderr")" -eq 1
+if openclaw agent-system install --non-interactive --json >"$TMPDIR/review-install.json"; then exit 1; fi
+jq -e '.status == "blocked" and .code == "session-dispatch-approval-required" and .outcomes == []' "$TMPDIR/review-install.json"
 ```

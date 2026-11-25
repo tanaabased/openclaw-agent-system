@@ -1,11 +1,9 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 
 import { listAgentStores } from '../agent/storage/backend.ts';
-import {
-  openClawInstallationBackend,
-  readOpenClawStorageConfig,
-} from '../agent/storage/openclaw-storage.ts';
+import { parseStorageConfig } from '../manifest/storage-schema.ts';
 import { resolveFileCredentialStoreRoot } from '../credentials/file-store.ts';
 
 const stateRoot = process.env.OPENCLAW_STATE_DIR;
@@ -21,8 +19,15 @@ const installation = {
     'agent-system-instance',
   ),
   schemaRoot: join(import.meta.dirname, '../agent/storage'),
-  readInstallationBackend: async () =>
-    openClawInstallationBackend(await readOpenClawStorageConfig()),
+  // Isolate CLI startup output from the JSON records consumed by jq.
+  readInstallationBackend: async () => {
+    const storage = execFileSync(
+      'openclaw',
+      ['config', 'get', 'plugins.entries.agent-system.config.storage', '--json'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] },
+    );
+    return parseStorageConfig(JSON.parse(storage));
+  },
 };
 
 for await (const { agent } of listAgentStores(installation)) {
