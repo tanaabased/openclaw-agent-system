@@ -1,3 +1,5 @@
+import { maximumLedgerBytes, type RegistrationLedger } from './automation-backend.ts';
+import { AutomationError, CodexAutomationError } from '../automations/automation-errors.ts';
 import type { DispatchEnvelope } from './dispatch-backend.ts';
 import { normalizeDispatchPickup } from '../tasks/dispatch/dispatch-state.ts';
 import { stateSnapshotConflictCode } from '../../core/merge-state-snapshot.ts';
@@ -24,6 +26,8 @@ import sqliteRecords from './sqlite-records.ts';
 import type { AgentRows, InstallationRows } from './workflow-records.ts';
 import {
   automationReports,
+  automationRegistrations,
+  automationState,
   githubIdentityPins,
   replyDrafts,
   pathProjections,
@@ -226,8 +230,11 @@ class SqliteDatabase {
   }
 }
 
-type JournalTable = typeof intakeRecords | typeof dispatchRecords;
-type JournalRecord = IntakeState['records'][number] | AgentRows['dispatchRecords']['value'];
+type JournalTable = typeof intakeRecords | typeof dispatchRecords | typeof automationRegistrations;
+type JournalRecord =
+  | IntakeState['records'][number]
+  | AgentRows['dispatchRecords']['value']
+  | AgentRows['automationRegistrations']['value'];
 type Transaction = Parameters<Parameters<ReturnType<typeof drizzle>['transaction']>[0]>[0];
 
 function readDispatch(tx: Transaction, scope: string) {
@@ -347,6 +354,72 @@ class SqliteAgentStore extends SqliteDatabase {
                 .map((row) => row.value),
             );
           return value;
+        },
+        { behavior: 'immediate' },
+      ),
+    );
+  }
+
+  saveAutomationLedger(
+    runtime: 'codex' | 'openclaw',
+    ledger: RegistrationLedger,
+    expected: RegistrationLedger,
+  ) {
+    const { records, ...header } = JSON.parse(JSON.stringify(ledger)) as RegistrationLedger;
+    const { records: before, ...expectedHeader } = expected;
+    const { scope } = header;
+    const ErrorType = runtime === 'codex' ? CodexAutomationError : AutomationError;
+    if (scope !== expected.scope || new Set(records.map((r) => r.id)).size !== records.length)
+      throw new ErrorType('automation-ownership-invalid');
+    return this.use(false, (db) =>
+      db.transaction(
+        (tx) => {
+          assertPrivateStateLocksHeld();
+          const current = tx
+            .select()
+            .from(automationState)
+            .where(eq(automationState.scope, scope))
+            .get();
+          const rows = tx
+            .select()
+            .from(automationRegistrations)
+            .where(eq(automationRegistrations.scope, scope))
+            .orderBy(sql`rowid`)
+            .all();
+          if ((!current && rows.length) || rows.some((r) => r.id !== r.value?.id))
+            throw new ErrorType('automation-ownership-invalid');
+          const conflict = () => new ErrorType('automation-journal-busy');
+          if (!isDeepStrictEqual(current?.value ?? { version: 1, scope }, expectedHeader))
+            throw conflict();
+          let merged: AgentRows['automationRegistrations']['value'][] = records;
+          const saved = rows.map((row) => row.value);
+          if (!isDeepStrictEqual(saved, before)) {
+            // A Codex handoff authorizes one action from a plan over the whole ledger.
+            if (runtime === 'codex') throw conflict();
+            // OpenClaw checkpoints one job at a time. Keep other reconcilers' edits,
+            // but never grant a second writer the same job reservation.
+            const latest = new Map(saved.map((r) => [r.id, r]));
+            const previous = new Map(before.map((r) => [r.id, r] as const));
+            const next = new Map(records.map((r) => [r.id, r] as const));
+            for (const id of new Set([...previous.keys(), ...next.keys()])) {
+              const old = previous.get(id);
+              const value = next.get(id);
+              if (isDeepStrictEqual(old, value)) continue;
+              if (!isDeepStrictEqual(latest.get(id), old)) throw conflict();
+              if (value) latest.set(id, value);
+              else latest.delete(id);
+            }
+            merged = [...latest.values()];
+          }
+          const contents = JSON.stringify({ ...header, records: merged });
+          if (Buffer.byteLength(contents) + (runtime === 'openclaw' ? 1 : 0) > maximumLedgerBytes)
+            throw new Error('automation ownership exceeds its size limit');
+          saveJournalRows(tx, automationRegistrations, scope, merged);
+          if (!current || !isDeepStrictEqual(current.value, header))
+            tx.insert(automationState)
+              .values({ scope, value: header })
+              .onConflictDoUpdate({ target: automationState.scope, set: { value: header } })
+              .run();
         },
         { behavior: 'immediate' },
       ),

@@ -367,7 +367,7 @@ export default class AutomationService {
     restore: boolean,
   ) {
     const { store } = await this.scope(manifest, workspace);
-    return store.withLock(async () => {
+    return store.withLock(Boolean(expected.sessionKey), async () => {
       const { native } = await this.resolveOwned(manifest, workspace, expected.id);
       if (
         native.id !== expected.nativeId ||
@@ -400,7 +400,7 @@ export default class AutomationService {
     beforeUpdate: () => Promise<void>,
   ) {
     const { context, store } = await this.scope(manifest, workspace);
-    return store.withLock(async () => {
+    return store.withLock(true, async () => {
       const { native } = await this.resolveOwned(manifest, workspace, expected.id);
       if (
         native.id !== expected.nativeId ||
@@ -944,7 +944,8 @@ export default class AutomationService {
     const outcomes: AgentSystemLifecycleOutcome[] = [];
     const warnings: AgentSystemLifecycleWarning[] = [];
     try {
-      return await store.withLock(async () => {
+      const bindsThread = declarations.some((job) => automationThreadSelection(job, 'openclaw'));
+      return await store.withLock(bindsThread, async () => {
         const ledger = await store.read();
         const initialHash = automationHash(ledger);
         const currentManifestHash = automationHash(openclawIntakeJobs(manifest));
@@ -972,14 +973,20 @@ export default class AutomationService {
             warnings: [deferred],
           };
         }
-        const blockedCommands = new Map<string, string>();
+        const blockedJobs = new Map<string, string>();
         for (const record of ledger.records) {
           const native = this.owned(record, observed, context.agentId);
           const declaration = declarations.find(({ id }) => id === record.id);
+          // Another SQLite connection may still be inside cron.add. Only its marker
+          // appearing in the native inventory proves that the create completed.
+          if (store.agentStorage && declaration && !native && record.pending?.kind === 'create') {
+            blockedJobs.set(record.id, 'automation-recovery-required');
+            continue;
+          }
           if (declaration?.origin !== 'builtin' && declaration?.payload.kind === 'command') {
             const blocker = this.commandReconcileBlocker(declaration, context, record, native);
             if (blocker) {
-              blockedCommands.set(record.id, blocker);
+              blockedJobs.set(record.id, blocker);
               continue;
             }
           }
@@ -1071,7 +1078,7 @@ export default class AutomationService {
             .map(({ id }) => id),
         );
         context.threads = await this.threads(context, store).resolve(
-          declarations.filter(({ id }) => !skipped.has(id) && !blockedCommands.has(id)),
+          declarations.filter(({ id }) => !skipped.has(id) && !blockedJobs.has(id)),
           true,
         );
         await assertCurrent();
@@ -1102,7 +1109,7 @@ export default class AutomationService {
           });
         }
         for (const job of declarations) {
-          const blocker = blockedCommands.get(job.id);
+          const blocker = blockedJobs.get(job.id);
           if (blocker) {
             const finding = {
               component: 'automations',
@@ -1231,6 +1238,19 @@ export default class AutomationService {
             try {
               result = await request('cron.add', disabled);
             } catch (error) {
+              // A transport receipt proving the request never left this process makes
+              // the job eligible for another create. An uncertain send keeps its marker.
+              if (
+                store.agentStorage &&
+                error instanceof AutomationError &&
+                error.diagnostic?.method === 'cron.add' &&
+                error.diagnostic.requestDispatched === false
+              ) {
+                if (newRecord) ledger.records = ledger.records.filter((entry) => entry !== record);
+                else delete record.pending;
+                await store.write(ledger);
+                throw error;
+              }
               if (
                 newRecord &&
                 job.payload.kind === 'prompt' &&

@@ -6,6 +6,9 @@ import type { Ledger as CodexAutomationLedger } from '../automations/codex-autom
 import type { AutomationLedger } from '../automations/automation-store.ts';
 import type { BoundStorage } from './storage-lifecycle.ts';
 
+export type RegistrationLedger = CodexAutomationLedger | AutomationLedger;
+export const maximumLedgerBytes = 1024 * 1024;
+
 export default function automationLedgerStorage(
   runtime: 'codex' | 'openclaw',
   root: string,
@@ -14,13 +17,12 @@ export default function automationLedgerStorage(
 ) {
   const codex = runtime === 'codex';
   const path = join(root, (codex ? 'codex-automations-' : 'automations-') + scope + '.json');
-  const maximumBytes = 1024 * 1024;
   const file = new PrivateStateFile({
     path,
     directories: [root],
     currentUid: process.getuid?.(),
     label: codex ? 'Codex automation ownership' : 'automation ownership',
-    maximumBytes,
+    maximumBytes: maximumLedgerBytes,
   });
   return {
     path,
@@ -45,21 +47,9 @@ export default function automationLedgerStorage(
         throw new Error('automation-ownership-invalid');
       return { ...header.value, records: records.map(({ value }) => value) };
     },
-    async write(ledger: CodexAutomationLedger | AutomationLedger) {
-      const contents = JSON.stringify(ledger) + (codex ? '' : '\n');
-      if (!agent) return file.write(contents);
-      if (Buffer.byteLength(contents) > maximumBytes)
-        throw new Error('automation ownership exceeds its size limit');
-      const { records, ...value } = ledger;
-      await agent.write([
-        { table: 'automationState', action: 'save', row: { scope, value } },
-        { table: 'automationRegistrations', action: 'clearScope', scope },
-        ...records.map((record) => ({
-          table: 'automationRegistrations' as const,
-          action: 'insert' as const,
-          row: { scope, id: record.id, value: record },
-        })),
-      ]);
+    async write(ledger: RegistrationLedger, expected: RegistrationLedger) {
+      if (!agent) return file.write(JSON.stringify(ledger) + (codex ? '' : '\n'));
+      await agent.saveAutomationLedger(runtime, ledger, expected);
     },
   };
 }

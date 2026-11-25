@@ -2093,7 +2093,26 @@ describe('agent/codex-automations', () => {
       rejectsCode('automation-plan-stale-or-blocked'),
     );
     const fresh = await inspectSelected();
-    await prepareCodexAutomation(pluginData, fresh.digest, inputs(), dependencies);
+    const ready = Promise.withResolvers<void>();
+    let readers = 0;
+    const contenders = await Promise.allSettled(
+      Array.from({ length: 6 }, () =>
+        prepareCodexAutomation(pluginData, fresh.digest, inputs(), {
+          ...dependencies,
+          readAutomations: async (...args) => {
+            // Release only after every caller has loaded the same ledger snapshot.
+            if (++readers === 6) ready.resolve();
+            await ready.promise;
+            return readCodexAutomations(...args);
+          },
+        }),
+      ),
+    );
+    const winners = contenders.filter((result) => result.status === 'fulfilled');
+    assert.equal(winners.length, 1);
+    assert.equal(winners[0]!.value.status, 'prepared');
+    for (const result of contenders)
+      if (result.status === 'rejected') assert.equal(result.reason.code, 'automation-journal-busy');
     await assert.rejects(prepareCodexAutomation(pluginData, fresh.digest, inputs(), dependencies));
     await assert.rejects(
       acknowledgeCodexAutomation(pluginData, fresh.digest, undefined, dependencies),

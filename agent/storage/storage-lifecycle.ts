@@ -1,3 +1,4 @@
+import type { RegistrationLedger } from './automation-backend.ts';
 import type { DispatchEnvelope } from './dispatch-backend.ts';
 import type { SidebarChange, SidebarState } from '../codex-sidebar-journal.ts';
 import type { AgentRows, InstallationRows, WorkflowRecords } from './workflow-records.ts';
@@ -46,6 +47,11 @@ export type SidebarPlacementChange = (current?: SidebarState) => SidebarChange;
 export interface BoundStorage {
   agent: WorkflowRecords<AgentRows> &
     SessionStorage & {
+      saveAutomationLedger(
+        runtime: 'codex' | 'openclaw',
+        ledger: RegistrationLedger,
+        expected: RegistrationLedger,
+      ): Promise<void>;
       changePickupEnrollment(
         key: Pick<AgentRows['pickupEnrollments'], 'runtime' | 'scope'>,
         change: (

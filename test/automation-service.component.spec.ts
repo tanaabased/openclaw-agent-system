@@ -2329,6 +2329,82 @@ describe('agent/automation-service', () => {
     assert.equal(native[0]!.deleteAfterRun, false);
   });
 
+  it('should retry a sqlite registration after a confirmed unsent create', async () => {
+    const { sqliteInstallation, storageBackend } = await sqliteAgentFixture(
+      root,
+      manifest.agent.id,
+    );
+    const deps = { ...service.dependencies, sqliteInstallation, storageBackend };
+    const offline = new AutomationService({
+      ...deps,
+      request: async (method, params) => {
+        if (method === 'cron.add')
+          throw new AutomationError('automation-gateway-unavailable', {
+            method,
+            category: 'closed',
+            requestDispatched: false,
+            closeCode: 1006,
+            gatewayCode: null,
+          });
+        return deps.request!(method, params);
+      },
+    });
+    await assert.rejects(offline.reconcile(manifest, root), /automation-gateway-unavailable/);
+    const reopened = new AutomationService(deps);
+    await reopened.reconcile(manifest, root);
+    assert.equal(native.length, 1);
+    assert.equal(calls.filter((c) => c.method === 'cron.add').length, 1);
+  });
+
+  it('should reserve one sqlite create while other connections commit independent registrations', async () => {
+    manifest.automations!.push(
+      ...jobs([{ id: 'other', schedule: 'every 2 hours', run: ['true'] }]),
+    );
+    const { sqliteInstallation, storageBackend } = await sqliteAgentFixture(
+      root,
+      manifest.agent.id,
+    );
+    const deps = { ...service.dependencies, sqliteInstallation, storageBackend };
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const primary = new AutomationService({
+      ...deps,
+      request: async (method, params) => {
+        if (method === 'cron.add') {
+          entered.resolve();
+          await release.promise;
+        }
+        return deps.request!(method, params);
+      },
+    });
+    const first = primary.reconcile(manifest, root);
+    await entered.promise;
+    try {
+      const peer = new AutomationService(deps);
+      const result = await peer.reconcile(manifest, root);
+      assert.ok(
+        result.warnings?.some(
+          (item) => item.stepId === 'check' && item.code === 'automation-recovery-required',
+        ),
+      );
+      assert.equal(result.outcomes.find((item) => item.stepId === 'other')?.status, 'created');
+      const { store } = await peer.scope(manifest, root);
+      const saved = await store.read();
+      assert.equal(saved.records.find((r) => r.id === 'check')?.pending?.kind, 'create');
+      assert.ok(saved.records.find((r) => r.id === 'other')?.nativeId);
+    } finally {
+      release.resolve();
+    }
+    // Its stale view of the second job cannot replace the peer's just-committed registration.
+    await assert.rejects(first, /automation-journal-busy/);
+    const reopened = new AutomationService(deps);
+    await reopened.reconcile(manifest, root);
+    const { store } = await reopened.scope(manifest, root);
+    assert.deepEqual((await store.read()).records.map((r) => r.id).sort(), ['check', 'other']);
+    assert.equal(calls.filter((c) => c.method === 'cron.add').length, 2);
+    assert.equal(new Set(native.map((job) => job.declarationKey)).size, 2);
+  });
+
   it('should recover a successful create with a lost acknowledgement without duplication', async () => {
     const { sqliteInstallation, storageBackend } = await sqliteAgentFixture(
       root,
@@ -2665,6 +2741,8 @@ describe('agent/automation-service', () => {
       );
       await assert.rejects(store.read(), /ownership-invalid/u);
     }
+    await store.file.write('null');
+    await assert.rejects(store.read(), /ownership-invalid/u);
   });
 
   it('should reject missing native jobs missing ownership and cross-agent marker collisions', async () => {

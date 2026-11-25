@@ -264,6 +264,7 @@ export async function readCodexAutomationSnapshot(
   } catch {
     throw new CodexAutomationError('automation-ownership-invalid');
   }
+  const expected = agent ? structuredClone(ledger) : ledger;
   const pickupStore = () =>
     codexPickupStore(pluginData, loaded.manifest.agent.id, dependencies.storageBackend);
   let jobs: ResolvedAutomation[] = [];
@@ -301,7 +302,7 @@ export async function readCodexAutomationSnapshot(
     codexHome,
     scope,
     agentStorage: agent,
-    writeLedger: storage.write,
+    writeLedger: (next: Ledger) => storage.write(next, expected),
     ledger,
     root,
     path: storage.path,

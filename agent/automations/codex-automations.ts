@@ -20,6 +20,7 @@ import { automationHash } from '../automation-hash.ts';
 import AutomationThreads, {
   AutomationThreadSettingsError,
   AutomationThreadSettingsHandoff,
+  withRegistrationThread,
   type AutomationThreadModelObservation,
 } from './automation-threads.ts';
 import { automationThreadSelection } from './automation-thread-selection.ts';
@@ -730,6 +731,12 @@ async function withJournal<T>(
   selected: Awaited<ReturnType<typeof snapshot>>,
   run: () => Promise<T>,
 ) {
+  if (selected.agentStorage) {
+    const bindsThread = selected.jobs.some(
+      (job) => job.runtimes.includes('codex') && automationThreadSelection(job, 'codex'),
+    );
+    return bindsThread ? withRegistrationThread(selected.root, selected.scope, run) : run();
+  }
   await ensurePrivateStateDirectories({
     directories: [selected.root],
     currentUid: process.getuid?.(),

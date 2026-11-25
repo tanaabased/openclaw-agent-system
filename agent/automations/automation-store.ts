@@ -3,6 +3,7 @@ import { Value } from 'typebox/value';
 
 import { withPrivateStateLock } from '../../core/private-state-lock-context.ts';
 import { automationHash } from '../automation-hash.ts';
+import { withRegistrationThread } from './automation-threads.ts';
 import { AutomationError } from './automation-errors.ts';
 import ensurePrivateStateDirectories from '../../core/ensure-private-state-directories.ts';
 import automationLedgerStorage from '../storage/automation-backend.ts';
@@ -79,6 +80,7 @@ export type AutomationLedger = Static<typeof ledgerSchema>;
 
 /** non-secret ownership state, separate from native scheduler storage and repository content. */
 export default class AutomationStore {
+  private readonly snapshots = new WeakMap<AutomationLedger, AutomationLedger>();
   readonly scope: string;
   readonly storage: ReturnType<typeof automationLedgerStorage>;
   get path() {
@@ -104,8 +106,8 @@ export default class AutomationStore {
   }
   async read(): Promise<AutomationLedger> {
     try {
-      const parsed = await this.storage.read();
-      if (parsed === undefined) return { version: 1, scope: this.scope, records: [] };
+      const stored = await this.storage.read();
+      const parsed = stored === undefined ? { version: 1, scope: this.scope, records: [] } : stored;
       if (
         !Value.Check(ledgerSchema, parsed) ||
         parsed.scope !== this.scope ||
@@ -118,6 +120,7 @@ export default class AutomationStore {
       ) {
         throw new Error('invalid ledger');
       }
+      if (this.agentStorage) this.snapshots.set(parsed, structuredClone(parsed));
       return parsed;
     } catch {
       throw new AutomationError('automation-ownership-invalid');
@@ -133,9 +136,13 @@ export default class AutomationStore {
     ) {
       throw new AutomationError('automation-ownership-invalid');
     }
-    await this.storage.write(ledger);
+    const expected = this.snapshots.get(ledger) ?? { version: 1, scope: this.scope, records: [] };
+    await this.storage.write(ledger, expected);
+    if (this.agentStorage) this.snapshots.set(ledger, JSON.parse(JSON.stringify(ledger)));
   }
-  async withLock<T>(run: () => Promise<T>): Promise<T> {
+  async withLock<T>(bindsThread: boolean, run: () => Promise<T>): Promise<T> {
+    if (this.agentStorage)
+      return bindsThread ? withRegistrationThread(this.options.root, this.scope, run) : run();
     await ensurePrivateStateDirectories({
       directories: [this.options.root],
       currentUid: process.getuid?.(),

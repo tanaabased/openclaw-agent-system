@@ -3,8 +3,9 @@ import {
   automationThreadSelection,
   type AutomationThreadSelection,
 } from './automation-thread-selection.ts';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
+import { join, resolve as resolvePath } from 'node:path';
 
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
@@ -121,6 +122,36 @@ export interface AutomationThreadAdapter {
   rename(id: string, name: string): Promise<void>;
   setGroup?(id: string, group: string): Promise<void>;
 }
+function threadPath(root: string, scope: string) {
+  return join(root, `automation-threads-${scope}.json`);
+}
+
+async function withAutomationThreadLock<T>(root: string, scope: string, run: () => Promise<T>) {
+  await ensurePrivateStateDirectories({
+    directories: [root],
+    currentUid: process.getuid?.(),
+    label: 'Automation conversations',
+  });
+  const lock = await acquirePrivateStateFileLock(threadPath(root, scope), {
+    retries: { factor: 1, minTimeout: 25, maxTimeout: 25, retries: 40 },
+    staleMs: 30000,
+  });
+  try {
+    return await withPrivateStateLock(lock, run);
+  } finally {
+    await lock.release();
+  }
+}
+
+const registrationThread = new AsyncLocalStorage<string>();
+
+// A registration selecting a native thread holds its binding stable through the handoff.
+export function withRegistrationThread<T>(root: string, scope: string, run: () => Promise<T>) {
+  return withAutomationThreadLock(root, scope, () =>
+    registrationThread.run(resolvePath(threadPath(root, scope)), run),
+  );
+}
+
 /** private binding journal; readers never create files or take mutation locks. */
 export default class AutomationThreads {
   readonly file: PrivateStateFile;
@@ -130,7 +161,7 @@ export default class AutomationThreads {
     readonly adapter: AutomationThreadAdapter,
     private readonly agentStorage?: BoundStorage['agent'],
   ) {
-    this.path = join(options.root, `automation-threads-${options.scope}.json`);
+    this.path = threadPath(options.root, options.scope);
     this.file = new PrivateStateFile({
       path: this.path,
       directories: [options.root],
@@ -619,19 +650,8 @@ export default class AutomationThreads {
       }
     };
     if (!apply) return resolve();
-    await ensurePrivateStateDirectories({
-      directories: [this.options.root],
-      currentUid: process.getuid?.(),
-      label: 'Automation conversations',
-    });
-    const lock = await acquirePrivateStateFileLock(this.path, {
-      retries: { factor: 1, minTimeout: 25, maxTimeout: 25, retries: 40 },
-      staleMs: 30000,
-    });
-    try {
-      return await withPrivateStateLock(lock, resolve);
-    } finally {
-      await lock.release();
-    }
+    if (registrationThread.getStore() === resolvePath(this.path))
+      return registrationThread.exit(resolve);
+    return withAutomationThreadLock(this.options.root, this.options.scope, resolve);
   }
 }
