@@ -440,7 +440,17 @@ describe('agent/feedback-reply', () => {
       });
       const remaining = peers.filter((peer) => peer !== winner);
       for (const peer of remaining) assert.equal((await run(peer, 'publish')).status, 'uncertain');
+      provider.getIssueComment = async () => {
+        throw new Error('source deleted after the original send');
+      };
       hidden = false;
+      assert.ok(posted);
+      const originalBody = posted.body;
+      posted.body += 'edited after publication';
+      await assert.rejects(run(remaining[0]!, 'reconcile'), {
+        code: 'github-notification-publication-reconciliation-conflict',
+      });
+      posted.body = originalBody;
       for (const peer of remaining)
         assert.equal((await run(peer, 'reconcile')).status, 'published');
       assert.equal(writes, 1);
