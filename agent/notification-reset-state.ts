@@ -1,13 +1,11 @@
+import withWorkflowLock from './storage/workflow-lock.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { join } from 'node:path';
 
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../core/private-state-file.ts';
-import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
-import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 
 import type { BoundStorage } from './storage/storage-lifecycle.ts';
 import nodeErrorCode from '../utils/node-error-code.ts';
@@ -137,6 +135,10 @@ export default class NotificationResetStore {
       throw new Error('notification-reset-state-invalid');
     return record;
   }
+  // Applying the preview verifies its fingerprint again under the reset and dispatch locks.
+  async inspect<T>(run: (record?: NotificationResetRecord) => Promise<T>) {
+    return this.storage ? run(await this.read()) : this.exclusive(run);
+  }
   async intakeCheckpoint() {
     if (this.storage) return { expected: await this.storage.readIntake(this.scope) };
   }
@@ -150,53 +152,39 @@ export default class NotificationResetStore {
       remove: () => Promise<void>,
     ) => Promise<T>,
   ): Promise<T> {
-    await ensurePrivateStateDirectories({
-      directories: [this.root],
-      currentUid: process.getuid?.(),
-      label: 'notification reset',
-    });
-    const lock = await acquirePrivateStateFileLock(this.path, {
-      staleMs: 30000,
-      retries: { retries: 0, factor: 1, minTimeout: 25, maxTimeout: 25 },
-    });
-    try {
-      return await withPrivateStateLock(lock, () =>
-        access.run(this.path, async () =>
-          run(
-            await this.read(),
-            async (record, checkpoint) => {
-              lock.assertHeld();
-              if (!Value.Check(schema, record) || record.scope !== this.scope)
-                throw new Error('notification-reset-state-invalid');
-              const contents = JSON.stringify(record);
-              if (!this.storage) return this.file.write(contents);
-              if (Buffer.byteLength(contents) > maximumBytes)
-                throw new Error('The notification reset exceeds its size limit.');
-              if (checkpoint)
-                return this.storage.beginNotificationReset(record, checkpoint.expected);
-              await this.storage.write([
-                {
-                  table: 'notificationResets',
-                  action: 'save',
-                  row: { scope: this.scope, value: record },
-                },
-              ]);
-            },
-            async () => {
-              lock.assertHeld();
-              if (!this.storage) {
-                await this.file.remove();
-                return;
-              }
-              await this.storage.write([
-                { table: 'notificationResets', action: 'remove', key: { scope: this.scope } },
-              ]);
-            },
-          ),
+    return withWorkflowLock(this.path, 'notification reset', (lock) =>
+      access.run(this.path, async () =>
+        run(
+          await this.read(),
+          async (record, checkpoint) => {
+            lock.assertHeld();
+            if (!Value.Check(schema, record) || record.scope !== this.scope)
+              throw new Error('notification-reset-state-invalid');
+            const contents = JSON.stringify(record);
+            if (!this.storage) return this.file.write(contents);
+            if (Buffer.byteLength(contents) > maximumBytes)
+              throw new Error('The notification reset exceeds its size limit.');
+            if (checkpoint) return this.storage.beginNotificationReset(record, checkpoint.expected);
+            await this.storage.write([
+              {
+                table: 'notificationResets',
+                action: 'save',
+                row: { scope: this.scope, value: record },
+              },
+            ]);
+          },
+          async () => {
+            lock.assertHeld();
+            if (!this.storage) {
+              await this.file.remove();
+              return;
+            }
+            await this.storage.write([
+              { table: 'notificationResets', action: 'remove', key: { scope: this.scope } },
+            ]);
+          },
         ),
-      );
-    } finally {
-      await lock.release();
-    }
+      ),
+    );
   }
 }

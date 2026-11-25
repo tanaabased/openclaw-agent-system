@@ -118,6 +118,39 @@ describe('agent/notification reset recovery', () => {
     assert.equal((await peer.read())!.checkpoint, undefined);
   });
 
+  it('should preview an active sqlite reset without letting a second executor repeat its native pause', async () => {
+    const { agent, sqliteInstallation } = await sqliteAgentFixture(root, 'tester');
+    store = new NotificationResetStore(root, scope, agent);
+    const peer = new NotificationResetStore(
+      root,
+      scope,
+      bindSqliteStorage(sqliteInstallation, 'tester').agent,
+    );
+    const entered = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    let pauses = 0;
+    adapter.pause = async () => {
+      pauses++;
+      entered.resolve();
+      await resume.promise;
+      return { status: 'done' };
+    };
+    const active = run();
+    try {
+      await entered.promise;
+      const preview = await previewNotificationReset(peer, adapter, false);
+      assert.equal(preview.continuing, true);
+      await assert.rejects(resetNotifications({ store: peer, adapter, preview }), {
+        code: 'private-state-file-lock-busy',
+      });
+    } finally {
+      resume.resolve();
+      await active;
+    }
+    assert.equal(pauses, 1);
+    assert.equal(await peer.read(), undefined);
+  });
+
   it('should require a new reset preview when intake changes while recording sqlite inventory', async () => {
     const { agent, sqliteInstallation } = await sqliteAgentFixture(root, 'tester');
     store = new NotificationResetStore(root, scope, agent);

@@ -65,7 +65,7 @@ export async function previewNotificationReset(
   purge: boolean,
   fresh = false,
 ): Promise<NotificationResetPreview> {
-  return store.exclusive(async (retained) => {
+  return store.inspect(async (retained) => {
     const snapshot = retained ?? (await adapter.snapshot());
     if (retained && retained.purge !== purge) throw new Error('notification-reset-mode-conflict');
     return {
