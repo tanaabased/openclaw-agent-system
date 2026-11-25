@@ -1,3 +1,4 @@
+import { sqliteDispatchPersistence } from '../agent/storage/dispatch-backend.ts';
 import { bindIntakeStore } from '../agent/storage/backend.ts';
 import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import sqliteAgentFixture from './sqlite-agent-fixture.ts';
@@ -526,31 +527,46 @@ describe('agent/notification reset recovery', () => {
     assert.equal((await run()).status, 'complete');
   });
 
-  it('should reject old transactions after the reset journal is removed', async () => {
-    const dispatch = new CodexDispatchStore(root, scope);
-    let release!: () => void;
-    let ready!: () => void;
-    const started = new Promise<void>((resolve) => {
-      ready = resolve;
+  for (const backend of ['file', 'sqlite'] as const)
+    it(`should reject old ${backend} dispatch transactions after the reset journal is removed`, async () => {
+      const sqlite = backend === 'sqlite' ? await sqliteAgentFixture(root, 'tester') : undefined;
+      const open = () =>
+        new CodexDispatchStore(
+          root,
+          scope,
+          sqlite &&
+            sqliteDispatchPersistence(
+              bindSqliteStorage(sqlite.sqliteInstallation, 'tester').agent,
+              scope,
+            ),
+        );
+      const dispatch = open();
+      const resetDispatch = open();
+      store = new NotificationResetStore(root, scope, sqlite?.agent);
+      adapter.fence = (run) => resetDispatch.exclusive(() => run());
+      let release!: () => void;
+      let ready!: () => void;
+      const started = new Promise<void>((resolve) => {
+        ready = resolve;
+      });
+      const blocked = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const stale = dispatch.transaction(async (state, save) => {
+        ready();
+        await blocked;
+        state.intakeHealth = 'stale';
+        await save();
+      });
+      await started;
+      adapter.clear = async (record) => {
+        await resetDispatch.reset(record.id);
+      };
+      await run();
+      release();
+      await assert.rejects(stale, /notification-reset-stale-operation/u);
+      assert.equal((await dispatch.read()).intakeHealth, undefined);
     });
-    const blocked = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const stale = dispatch.transaction(async (state, save) => {
-      ready();
-      await blocked;
-      state.intakeHealth = 'stale';
-      await save();
-    });
-    await started;
-    adapter.clear = async (record) => {
-      await dispatch.reset(record.id);
-    };
-    await run();
-    release();
-    await assert.rejects(stale, /notification-reset-stale-operation/u);
-    assert.equal((await dispatch.read()).intakeHealth, undefined);
-  });
 
   it('should block intake writes while retaining read-only inspection', async () => {
     const intake = new IntakeRecordStore({ root, path: join(root, 'intake.json'), scope });

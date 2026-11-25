@@ -10,17 +10,13 @@ import { isAbsolute, join, resolve, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { Type, type Static, type TObject, type TSchema } from 'typebox';
 import { Value } from 'typebox/value';
-import ensurePrivateStateDirectories from '../../../core/ensure-private-state-directories.ts';
+import { withDispatchLock } from '../../storage/dispatch-backend.ts';
 import mergeStateSnapshot, {
   refreshStateSnapshot,
   stateSnapshotConflictCode,
 } from '../../../core/merge-state-snapshot.ts';
-import acquirePrivateStateFileLock, {
-  type PrivateStateFileLockHandle,
-} from '../../../core/private-state-file-lock.ts';
 import PrivateStateFile from '../../../core/private-state-file.ts';
 import storedDataSchema from '../../../core/stored-data-schema.ts';
-import { withPrivateStateLock } from '../../../core/private-state-lock-context.ts';
 import { providerDiagnosticSchema } from '../../../utils/provider-diagnostic.ts';
 import { assessmentSelectionSchema } from '../assessment/assessment-selection.ts';
 import {
@@ -691,8 +687,12 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     const signal = options.signal ?? new AbortController().signal;
     signal.throwIfAborted();
     await this.assertManagement();
-    await this.reconcile(signal);
-    const state = await this.read();
+    const state = await this.exclusive(
+      async (current) => current,
+      true,
+      'dispatch-reconcile',
+      signal,
+    );
     let before = structuredClone(state);
     return run(
       state,
@@ -789,40 +789,13 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
         throw new Error('dispatch-intake-isolation-required');
       return proposed;
     };
-    await ensurePrivateStateDirectories({
-      directories: [this.root],
-      currentUid: process.getuid?.(),
-      label: this.contract.runtime + ' issue dispatch',
-    });
-    const acquire = (wait: boolean) =>
-      acquirePrivateStateFileLock(this.path, {
-        staleMs: 30000,
-        contention: {
-          category: 'dispatch',
-          operation: intake ? 'occurrence-registration' : operation,
-          // preserve the existing forty 250-ms retry envelope, including local queue time.
-          timeoutMs: wait ? 10000 : 0,
-          retryMs: 250,
-          signal,
-        },
-        retries: { retries: 0, factor: 1, minTimeout: 250, maxTimeout: 250 },
-      });
-    const lock: PrivateStateFileLockHandle = await acquire(waitForLock);
-    const controller = new AbortController();
-    const followLease = () => {
-      const signal = lock!.signal;
-      signal.addEventListener('abort', () => controller.abort(signal.reason), { once: true });
-    };
-    followLease();
-    const guard = {
-      path: lock.path,
-      signal: controller.signal,
-      assertHeld() {
-        lock.assertHeld();
-      },
-    };
-    try {
-      return await withPrivateStateLock(guard, async () => {
+    return withDispatchLock(
+      this.path,
+      this.contract.runtime,
+      intake ? 'occurrence-registration' : operation,
+      waitForLock,
+      signal,
+      async (guard) => {
         await this.assertManagement();
         let snapshot = await snapshotForOperation();
         const state = structuredClone(snapshot.state);
@@ -888,10 +861,8 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
           committed = structuredClone(snapshot.state);
         };
         return run(state, save, guard.signal);
-      });
-    } finally {
-      await lock?.release();
-    }
+      },
+    );
   }
   async reset(generation: string): Promise<void> {
     await this.exclusive(async (state, save) => {
