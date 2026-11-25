@@ -54,8 +54,11 @@ fi
 jq -e '[.findings[] | select(.stepId == "prompt" and .code == "automation-drift") | {code, status}] | if length == 0 then true else error("prompt drift after sync: " + tojson) end' "$TMPDIR/prompt-doctor-after-sync.json"
 native=$(jq -er '.jobs[] | select(.id == "prompt") | .nativeId' "$TMPDIR/automation-before.json")
 openclaw agent-system automations list --json | jq -e --arg native "$native" '([.jobs[] | select(.id == "prompt") | .nativeId]) as $ids | if $ids == [$native] then true else error("prompt native ID changed: " + ({expected: $native, observed: $ids} | tojson)) end'
-openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e '(.payload.message // "") as $message | {hasMarker: ($message | contains("\n\n> Run scheduled automation: 🔄 AUTOMATION STATUS.")), hasLegacyMarker: ($message | contains("Acknowledge the scheduled owning-agent context."))} | if .hasMarker and (.hasLegacyMarker | not) then true else error("native prompt payload: " + tojson) end'
-due=$(openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -er '.state.nextRunAtMs | numbers')
+openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json > "$TMPDIR/prompt-timer-job.json"
+jq -e '(.payload.message // "") as $message | {hasMarker: ($message | contains("\n\n> Run scheduled automation: 🔄 AUTOMATION STATUS.")), hasLegacyMarker: ($message | contains("Acknowledge the scheduled owning-agent context."))} | if .hasMarker and (.hasLegacyMarker | not) then true else error("native prompt payload: " + tojson) end' "$TMPDIR/prompt-timer-job.json"
+# use the saved one-shot time even if the timer already fired.
+scheduled_at=$(jq -er '.schedule | select(.kind == "at") | .at | strings | select(length > 0)' "$TMPDIR/prompt-timer-job.json")
+due=$(node -e 'const ms = Date.parse(process.argv[1]); if (!Number.isFinite(ms)) throw new Error("invalid one-shot time"); console.log(ms)' "$scheduled_at")
 deadline=$((SECONDS + 180))
 while test "$SECONDS" -lt "$deadline"; do
   remaining=$((deadline - SECONDS))

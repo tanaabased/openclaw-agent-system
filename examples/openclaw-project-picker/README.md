@@ -59,6 +59,17 @@ pickup_failure() {
     set +e
     printf 'pickup failure: runtime=%s stage=%s exit=%s\n' "$runtime" "$stage" "$status" >&2
     redactor="$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
+    if test "$stage" = install-pickup || test "$stage" = install-pickup-schedule; then
+      printf 'gateway at Install failure (%s UTC):\n' "$(date -u +%FT%T)" >&2
+      gateway_log=$(openclaw-gateway log-path)
+      if test -r "$gateway_log"; then
+        tail -n 300 "$gateway_log" | grep -Ei 'reload|restart|drain|shut.?down|cron[./]|database resources|unavailable|baseline' | node "$redactor" | tail -n 40 | tail -c 8192 >&2
+      fi
+      if ! openclaw gateway call cron.status --timeout 5000 --json 2> "$TMPDIR/pickup-cron-status.stderr" | jq -ce '{enabled, jobs, nextWakeAtMs}' >&2; then
+        printf 'cron.status unavailable after Install failure\n' >&2
+        node "$redactor" < "$TMPDIR/pickup-cron-status.stderr" | tail -c 2048 >&2
+      fi
+    fi
     printf 'pickup mock server errors:\n' >&2
     tail -n 120 "$TMPDIR/openclaw-aimock.log" | node "$redactor" | tail -c 16384 >&2
     printf '\npickup mock request diagnostics:\n' >&2
