@@ -81,12 +81,6 @@ In the new chat, use the workspace's absolute path:
 Use $agent-system-codex-binding to bind this plugin to /absolute/path/to/tanaab/me.
 ```
 
-If your manifest declares a 1Password Environment or a `from-op` value, Binding
-checks access. For a missing or rejected service-account token, run the enrollment
-command it supplies in your own terminal and enter the token at the masked prompt.
-Codex uses macOS login Keychain or Linux Secret Service. Doctor checks the saved
-credential, and Install reuses it. Keep the token out of chat.
-
 Confirm the binding, then open a new chat and run:
 
 ```text
@@ -96,6 +90,12 @@ Then use $agent-system-doctor to check readiness.
 
 Install runs [setup steps that select Codex](./MANIFEST.md#setup) and updates
 native automations. Doctor inspects readiness without changing settings or running jobs.
+
+If the bound manifest declares a 1Password Environment or a `from-op` value,
+Doctor checks access and Install reuses a valid token. For a missing or rejected
+token, run the enrollment command from Install in your own terminal. Enter the
+service-account token at the masked prompt, then rerun Install. Codex stores it
+in macOS login Keychain or Linux Secret Service.
 
 To add account-default setup, have your bound workspace's root `AGENTS.md` point to
 its setup guide. Codex Binding follows that guide after binding and when you request

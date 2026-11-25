@@ -315,7 +315,7 @@ workspace=$(cd "$GITHUB_WORKSPACE/examples/codex-install/rebound" && pwd -P)
 node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-install/rebound" \
   | jq -e --arg workspace "$workspace" '.status == "ready" and .workspaceDir == $workspace and .manifest.agentId == "codex-example-rebound"'
 node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$GITHUB_WORKSPACE/examples/codex-install/rebound" --confirm \
-  | jq -e --arg workspace "$workspace" '.status == "bound" and .binding.workspaceDir == $workspace and (.credential.code == "codex-op-binding-missing" or .credential.code == "codex-op-binding-inaccessible")'
+  | jq -e --arg workspace "$workspace" '.status == "bound" and .binding.workspaceDir == $workspace and (has("credential") | not)'
 node "$runtime" binding inspect --plugin-data "$plugin_data" \
   | jq -e --arg workspace "$workspace" '.status == "bound" and .binding.workspaceDir == $workspace and .preview.manifest.agentId == "codex-example-rebound"'
 

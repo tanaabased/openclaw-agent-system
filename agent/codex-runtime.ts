@@ -232,17 +232,7 @@ async function runBinding(args: string[]): Promise<void> {
     const result = await bindCodexWorkspace(options.pluginData, options.workspace, {
       allowInactive: options.allowInactive,
     });
-    const credential =
-      result.status === 'bound' &&
-      result.preview.status === 'ready' &&
-      result.preview.manifest.status === 'loaded'
-        ? await codexOpCredential(options.pluginData, 'binding')
-        : undefined;
-    writeJson({
-      ...result,
-      preview: summarizePreview(result.preview),
-      ...(credential ? { credential: await credential.inspect() } : {}),
-    });
+    writeJson({ ...result, preview: summarizePreview(result.preview) });
     return;
   }
   if (action === 'unbind') {
