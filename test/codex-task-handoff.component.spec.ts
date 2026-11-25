@@ -451,7 +451,7 @@ describe('agent/codex task-handoff', () => {
       fixtureState.deps.activation = activation;
       await runCodexIntake(fixtureState.pluginData, true, {
         codexHome: fixtureState.codexHome,
-        storageBackend: fixtureState.deps.storageBackend,
+
         now: () => fixtureState.now,
         connect: async () => fixtureState.fixture.client,
       });

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
+import type AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
 import GitHubAssignmentClaimClient from '../channels/github/provider/assignment-claim-client.ts';
 import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
 import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
@@ -10,7 +10,7 @@ import type selectionFixture from './issue-pickup-selection-fixture.ts';
 /** real provider verification and claim storage with an isolated comment transport. */
 export default function pickupClaims(
   f: ReturnType<typeof selectionFixture>,
-  root: string,
+  store: AssignmentClaimStore,
   comments: GitHubCanonicalIssueComment[] = [],
 ) {
   const provider = new GitHubWorkEventClient({
@@ -56,7 +56,6 @@ export default function pickupClaims(
     comments.splice(index, 1);
     effects.removes++;
   };
-  const store = new AssignmentClaimStore(root);
   f.tx.instance = store;
   return { client, comments, effects, provider, store };
 }

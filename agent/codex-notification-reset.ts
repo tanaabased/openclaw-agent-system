@@ -86,7 +86,6 @@ export default async function runCodexNotificationReset(
     throw new Error('notification-reset-explicit-bound-agent-required');
   const journal = current.journal;
   const store = new NotificationResetStore(
-    pluginData,
     current.store.location.scope,
     current.store.agentStorage,
   );

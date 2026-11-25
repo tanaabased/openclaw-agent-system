@@ -166,7 +166,7 @@ export default function createDispatchTool(input: {
         throw new Error('dispatch-read-only-ownership');
       };
       const threads = new AutomationThreads(
-        { root: input.automations.dependencies.root, scope: store.scope, runtime: 'openclaw' },
+        { scope: store.scope, runtime: 'openclaw' },
         { lookup: unsupported, create: unsupported, rename: unsupported },
         store.agentStorage,
       );

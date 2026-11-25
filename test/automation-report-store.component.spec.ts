@@ -6,9 +6,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { cp, mkdtemp, readdir, rm } from 'node:fs/promises';
 
-import deliverAutomationReport, {
-  reconcileAutomationReport,
-} from '../agent/automations/automation-report-delivery.ts';
+import deliverAutomationReport from '../agent/automations/automation-report-delivery.ts';
 import AutomationReportStore, {
   reportLifetimeMs,
   type AutomationReportRecord,
@@ -20,12 +18,14 @@ import { prepareAutomationReport } from '../agent/automations/automation-report.
 
 describe('agent/automation-report-store', () => {
   let root: string;
+  let storage: ConstructorParameters<typeof AutomationReportStore>[0];
   let now: number;
   let store: AutomationReportStore;
   beforeEach(async () => {
     root = await mkdtemp('/tmp/automation-report-store-');
+    storage = { agentId: 'a', ...(await sqliteAgentFixture(join(root, 'state'), 'a')) };
     now = Date.parse('2026-10-30T00:00:00Z');
-    store = new AutomationReportStore(root, () => now);
+    store = new AutomationReportStore(storage, () => now);
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
@@ -67,7 +67,7 @@ describe('agent/automation-report-store', () => {
       },
     );
     for (const record of records) await save(record);
-    const reopened = new AutomationReportStore(root, () => now);
+    const reopened = new AutomationReportStore(storage, () => now);
     for (const record of records) {
       const retained = await reopened.read(record.executionId);
       assert.equal(retained?.state, record.state);
@@ -99,7 +99,7 @@ describe('agent/automation-report-store', () => {
       new Set(active.map((record) => record.executionId)),
     );
     await store.prune();
-    store = new AutomationReportStore(root, () => now);
+    store = new AutomationReportStore(storage, () => now);
     const read = store.read.bind(store);
     store.read = async (id) => {
       assert.ok(
@@ -173,7 +173,7 @@ describe('agent/automation-report-store', () => {
       const { agent } = bindSqliteStorage(location, 'a');
       assert.equal((await agent.install()).status, 'updated');
       assert.equal((await agent.install()).status, 'unchanged');
-      const reopened = new AutomationReportStore(root, () => now, { agent, agentId: 'a' });
+      const reopened = new AutomationReportStore({ agent, agentId: 'a' }, () => now);
       for (const record of records) {
         assert.deepEqual(await reopened.read(record.executionId), record);
         const row = db
@@ -196,12 +196,10 @@ describe('agent/automation-report-store', () => {
   });
 
   it('should resume and prune reports in each sqlite agent database after restart', async () => {
-    const { sqliteInstallation, storageBackend } = await sqliteAgentFixture(root, 'a');
+    const { sqliteInstallation } = await sqliteAgentFixture(root, 'a');
     await sqliteAgentFixture(root, 'b');
     const service = new AutomationService({
       sqliteInstallation,
-      storageBackend,
-      root,
       profile: root,
       command: [],
       environment: {},
@@ -249,52 +247,5 @@ describe('agent/automation-report-store', () => {
     assert.deepEqual(new Set(await a.ids()), new Set([pending.executionId, recent.executionId]));
     assert.deepEqual(await b.ids(), [pending.executionId]);
     assert.equal(await a.read(old.executionId), undefined);
-    assert.equal(await a.file(pending.executionId, true).read(), undefined);
-  });
-
-  it('should migrate legacy terminal records and prefer committed terminal evidence after interruption', async () => {
-    const complete = report('delivered');
-    await store.file(complete.executionId).write(JSON.stringify(complete));
-    await reconcileAutomationReport({
-      store,
-      executionId: complete.executionId,
-      selectSettings: async () => {
-        throw new Error('terminal report must not select');
-      },
-      assertCurrent: async () => {
-        throw new Error('terminal report must not be sent');
-      },
-      credential: {
-        use: async () => {
-          throw new Error('terminal report must not authenticate');
-        },
-      },
-    });
-    assert.deepEqual(await store.recoveryIds(), []);
-    assert.equal(await store.file(complete.executionId).read(), undefined);
-    assert.equal((await store.read(complete.executionId))?.state, 'delivered');
-    await store.file(complete.executionId).write(JSON.stringify({ ...complete, state: 'pending' }));
-    assert.equal((await store.read(complete.executionId))?.state, 'delivered');
-    await reconcileAutomationReport({
-      store,
-      executionId: complete.executionId,
-      selectSettings: async () => {
-        throw new Error('terminal report must not select');
-      },
-      assertCurrent: async () => {
-        throw new Error('terminal report must not be sent');
-      },
-      credential: {
-        use: async () => {
-          throw new Error('terminal report must not authenticate');
-        },
-      },
-    });
-    assert.deepEqual(await store.recoveryIds(), []);
-    assert.equal(await store.file(complete.executionId).read(), undefined);
-    now += reportLifetimeMs + 1;
-    await store.prune();
-    assert.deepEqual(await store.recoveryIds(), []);
-    assert.deepEqual(await store.ids(), []);
   });
 });

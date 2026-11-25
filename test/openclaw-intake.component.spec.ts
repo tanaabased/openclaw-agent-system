@@ -1,5 +1,4 @@
-import type { RuntimeStorageOptions } from '../agent/storage/backend.ts';
-import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import { automationThreadSelection } from '../agent/automations/automation-thread-selection.ts';
 import assert from 'node:assert/strict';
 import IssuePickupFailure from '../agent/issue-pickup-failure.ts';
@@ -18,7 +17,6 @@ import notificationWait from '../channels/github/cli/wait.ts';
 import assignmentIntakePolicy from '../agent/automations/assignment-intake-policy.ts';
 import { codexIntakePolicy } from '../agent/automations/codex-intake-policy.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
-import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import AgentDoctorService from '../agent/lifecycle/doctor-service.ts';
 import doctorAgentSystem from '../cli/doctor.ts';
 import AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';
@@ -52,13 +50,15 @@ function manifest() {
 
 describe('openclaw v2 intake slice', () => {
   let root: string;
+  let storage: Awaited<ReturnType<typeof sqliteAgentFixture>>;
   beforeEach(async () => {
     root = await realpath(await mkdtemp('/tmp/openclaw-intake-'));
+    storage = await sqliteAgentFixture(root, 'receiver');
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
   });
-  function fixture(storage: RuntimeStorageOptions = { storageBackend: 'file' }) {
+  function fixture() {
     const value = manifest();
     const provider = intakeFixture();
     provider.events.length = 0;
@@ -105,14 +105,8 @@ describe('openclaw v2 intake slice', () => {
     };
   }
   it('should default to sqlite and serialize competing assignment consumers', async () => {
-    const installation = {
-      agentRoot: join(root, 'agent-system-storage'),
-      installationRoot: join(root, 'agent-system-instance'),
-      schemaRoot: join(import.meta.dirname, '../agent/storage'),
-    };
-    const f = fixture({ sqliteInstallation: installation });
-    const database = bindSqliteStorage(installation, f.value.agent.id).agent;
-    await database.install();
+    const f = fixture();
+    const database = storage.agent;
     const sqlite = () => new OpenClawIntake(f.service.dependencies);
     await sqlite().run(f.value, root, 'activate');
     f.provider.events.push(...intakeFixture().events);
@@ -132,21 +126,18 @@ describe('openclaw v2 intake slice', () => {
       one,
     );
     assert.deepEqual((await sqlite().inspect(f.value, root)).records, before!.records);
-    await assert.rejects(readFile(first.location.path), { code: 'ENOENT' });
-    assert.equal(await (await fixture().service.select(f.value, root)).store.read(), undefined);
   });
   it('should inspect and admit assignments while an unrelated task payload needs repair', async () => {
     const f = fixture();
     f.service.dependencies.resetRoot = join(root, 'v2');
     await f.service.run(f.value, root, 'activate');
-    const { store } = await f.service.select(f.value, root);
-    const journal = new OpenClawDispatchStore(store.location.root, store.location.scope);
-    const contents = JSON.stringify({
-      version: 4,
-      scope: store.location.scope,
-      records: [{ id: 'a'.repeat(64), createdAt: 'damaged', delivery: { attempted: true } }],
-    });
-    await journal.file.write(contents);
+    const selected = await f.service.select(f.value, root);
+    const { store } = selected;
+    const journal = selected.dispatch(store.location.root);
+    const before = await journal.readEnvelope();
+    const damaged = { id: 'a'.repeat(64), createdAt: 'damaged', delivery: { attempted: true } };
+    const state = { ...before, records: [damaged] } as unknown as typeof before;
+    await storage.agent.saveDispatch(store.location.scope, state, before);
     assert.equal((await f.service.inspect(f.value, root)).status, 'ready');
     const findings = await f.service.contribution().inspect!({
       manifest: f.value,
@@ -158,7 +149,7 @@ describe('openclaw v2 intake slice', () => {
     const scan = await f.service.run(f.value, root, 'scan');
     assert.equal(scan.status, 'ready');
     assert.ok((await store.read())!.records.length > 0);
-    assert.equal(await journal.file.read(), contents);
+    assert.deepEqual((await storage.agent.readDispatch(store.location.scope))?.records, [damaged]);
     await assert.rejects(journal.read(), /dispatch-task-ownership-unresolved/);
   });
   it('should reevaluate a changed policy fingerprint without replacing the intake baseline', async () => {
@@ -227,7 +218,10 @@ describe('openclaw v2 intake slice', () => {
   it('should restrict both native check and scan to each isolated fixtures selected issue', async () => {
     const f = fixture();
     const digest = assignmentIntakePolicy(f.value, 'openclaw')!.digest;
-    const second = new OpenClawIntake({ ...f.service.dependencies, root: join(root, 'second') });
+    const second = new OpenClawIntake({
+      ...f.service.dependencies,
+      namespace: join(root, 'second-profile'),
+    });
     await f.service.run(f.value, root, 'activate');
     await second.run(f.value, root, 'activate');
     f.provider.events.push(...intakeFixture().events);

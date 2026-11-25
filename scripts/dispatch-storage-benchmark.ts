@@ -54,8 +54,8 @@ if (!size) {
     const persistence = sqliteDispatchPersistence(agent, scope);
     const store = (
       runtime === 'codex'
-        ? new CodexDispatchStore(root, scope, persistence)
-        : new OpenClawDispatchStore(root, scope, persistence)
+        ? new CodexDispatchStore(scope, persistence)
+        : new OpenClawDispatchStore(scope, persistence)
     ) as DispatchStore<SharedDispatchRecord>;
     const state: DispatchState = { version: 4, scope, resetGeneration: 'initial', records: [] };
     const make = (index: number, length: number): DispatchRecord => ({

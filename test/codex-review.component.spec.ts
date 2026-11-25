@@ -42,7 +42,6 @@ describe('agent/tasks/review native first review', () => {
       }),
     );
     deps = {
-      storageBackend: f.deps.storageBackend,
       codexHome: f.codexHome,
       threadId: 'review-coordinator',
       native: f.deps.native,

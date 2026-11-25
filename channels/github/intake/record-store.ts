@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import GitHubIdentityCache from '../identity-cache.ts';
 import type { BoundStorage } from '../../../agent/storage/storage-lifecycle.ts';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { projectWorkMatches, projectWorkSchema } from '../../../agent/issue-pickup-authority.ts';
 import {
   assertNotificationManagement,
@@ -21,11 +21,7 @@ import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { automationHash } from '../../../agent/automation-hash.ts';
-import ensurePrivateStateDirectories from '../../../core/ensure-private-state-directories.ts';
-import acquirePrivateStateFileLock from '../../../core/private-state-file-lock.ts';
-import PrivateStateFile from '../../../core/private-state-file.ts';
 import storedDataSchema from '../../../core/stored-data-schema.ts';
-import { withPrivateStateLock } from '../../../core/private-state-lock-context.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const time = Type.Integer({ minimum: 0 });
@@ -205,18 +201,15 @@ export function intakeScopeLocation(root: string, scope: string) {
   return {
     root: resolve(root),
     scope,
-    path: join(resolve(root), 'github-intake-' + scope + '.json'),
   };
 }
 
-/** Both backends retain the same runtime/workspace scope. */
 export function intakeLocation(input: {
   runtime: 'codex' | 'openclaw';
   root: string;
   namespace: string;
   workspaceDir: string;
   agentId: string;
-  resetRoot?: string;
 }) {
   const scope = automationHash({
     runtime: input.runtime,
@@ -224,40 +217,7 @@ export function intakeLocation(input: {
     workspaceDir: input.workspaceDir,
     agentId: input.agentId,
   });
-  return {
-    ...intakeScopeLocation(input.root, scope),
-    ...(input.resetRoot ? { resetRoot: input.resetRoot } : {}),
-  };
-}
-
-export interface IntakePersistence {
-  read(): Promise<unknown>;
-  save(state: IntakeState): Promise<void>;
-}
-
-export function fileIntakePersistence(location: ReturnType<typeof intakeLocation>) {
-  const file = new PrivateStateFile({
-    path: location.path,
-    directories: [location.root],
-    currentUid: process.getuid?.(),
-    label: 'GitHub assignment intake',
-    maximumBytes: maximumIntakeBytes,
-  });
-  return {
-    file,
-    async read(): Promise<unknown> {
-      const contents = await file.read();
-      if (contents === undefined) return;
-      try {
-        return JSON.parse(contents);
-      } catch {
-        throw new IntakeError('intake-state-invalid');
-      }
-    },
-    save(state: IntakeState) {
-      return file.write(JSON.stringify(state));
-    },
-  };
+  return intakeScopeLocation(input.root, scope);
 }
 
 // Discovery can wait on GitHub while another connection consumes observations. A changed
@@ -293,17 +253,12 @@ export default class IntakeRecordStore {
   readonly identities: GitHubIdentityCache;
   constructor(
     readonly location: ReturnType<typeof intakeLocation>,
-    private readonly persistence: IntakePersistence = fileIntakePersistence(location),
-    readonly agentStorage?: BoundStorage['agent'],
+    readonly agentStorage: BoundStorage['agent'],
   ) {
     this.identities = new GitHubIdentityCache(location, agentStorage);
   }
   async read(): Promise<IntakeState | undefined> {
-    return this.validate(
-      this.agentStorage
-        ? await this.agentStorage.readIntake(this.location.scope)
-        : await this.persistence.read(),
-    );
+    return this.validate(await this.agentStorage.readIntake(this.location.scope));
   }
   private validate(value: unknown): IntakeState | undefined {
     if (value === undefined) return;
@@ -365,11 +320,7 @@ export default class IntakeRecordStore {
   }
 
   private get resetOwner() {
-    return ownsNotificationReset(
-      this.location.resetRoot ?? this.location.root,
-      this.location.scope,
-      this.agentStorage,
-    );
+    return ownsNotificationReset(this.location.scope, this.agentStorage);
   }
 
   async exclusive<T>(
@@ -381,79 +332,30 @@ export default class IntakeRecordStore {
     signal?: AbortSignal,
   ): Promise<T> {
     const storage = this.agentStorage;
-    if (storage) {
-      const active = signal ?? new AbortController().signal;
-      active.throwIfAborted();
-      await assertNotificationManagement(
-        this.location.resetRoot ?? this.location.root,
-        this.location.scope,
-        storage,
-      );
-      let expected = await this.read();
-      return operation(
-        structuredClone(expected),
-        async (state) => {
-          const retained = await storage.changeIntake(
-            this.location.scope,
-            this.resetOwner,
-            (saved) => {
-              active.throwIfAborted();
-              const current = this.validate(saved);
-              const result = this.prepare(reconcileIntakeCheckpoint(expected, state, current));
-              return { state: result, result };
-            },
-          );
-          // Match the persisted representation, including omission of undefined JSON fields.
-          expected = JSON.parse(JSON.stringify(retained)) as IntakeState;
-          refreshStateSnapshot(state, retained);
-        },
-        active,
-      );
-    }
-    await ensurePrivateStateDirectories({
-      directories: [this.location.root],
-      currentUid: process.getuid?.(),
-      label: 'GitHub assignment intake',
-    });
-    const lock = await acquirePrivateStateFileLock(this.location.path, {
-      staleMs: 30_000,
-      contention: {
-        category: 'intake',
-        operation: 'intake-commit',
-        signal,
-        timeoutMs: 10_000,
-        retryMs: 250,
-      },
-      retries: { retries: 0, factor: 1, minTimeout: 25, maxTimeout: 25 },
-    });
-    try {
-      await assertNotificationManagement(
-        this.location.resetRoot ?? this.location.root,
-        this.location.scope,
-        this.agentStorage,
-      );
-      return await withPrivateStateLock(lock, async () =>
-        operation(
-          await this.read(),
-          async (state) => {
-            lock.assertHeld();
-            await assertNotificationManagement(
-              this.location.resetRoot ?? this.location.root,
-              this.location.scope,
-              this.agentStorage,
-            );
-            const retained = this.prepare(state);
-            await this.persistence.save(retained);
-            refreshStateSnapshot(state, retained);
+    const active = signal ?? new AbortController().signal;
+    active.throwIfAborted();
+    await assertNotificationManagement(this.location.scope, storage);
+    let expected = await this.read();
+    return operation(
+      structuredClone(expected),
+      async (state) => {
+        const retained = await storage.changeIntake(
+          this.location.scope,
+          this.resetOwner,
+          (saved) => {
+            active.throwIfAborted();
+            const current = this.validate(saved);
+            const result = this.prepare(reconcileIntakeCheckpoint(expected, state, current));
+            return { state: result, result };
           },
-          lock.signal,
-        ),
-      );
-    } finally {
-      await lock.release();
-    }
+        );
+        // Match the persisted representation, including omission of undefined JSON fields.
+        expected = JSON.parse(JSON.stringify(retained)) as IntakeState;
+        refreshStateSnapshot(state, retained);
+      },
+      active,
+    );
   }
-
   async consume(
     observation: IntakeObservation,
     taskId: string,
@@ -518,15 +420,9 @@ export default class IntakeRecordStore {
         });
       return { state, result: taskId };
     };
-    if (this.agentStorage)
-      return this.agentStorage.changeIntake(this.location.scope, this.resetOwner, (current) => {
-        const { state, result } = consume(this.validate(current));
-        return state ? { state: this.prepare(state), result } : { result };
-      });
-    return this.exclusive(async (previous, save) => {
-      const { state, result } = consume(previous);
-      if (state) await save(state);
-      return result;
+    return this.agentStorage.changeIntake(this.location.scope, this.resetOwner, (current) => {
+      const { state, result } = consume(this.validate(current));
+      return state ? { state: this.prepare(state), result } : { result };
     });
   }
 
@@ -539,7 +435,7 @@ export default class IntakeRecordStore {
       if (!baseline) throw new IntakeError('intake-activation-required');
       await save({
         version: 1,
-        ...(this.agentStorage ? { resetGeneration: randomUUID() } : {}),
+        resetGeneration: randomUUID(),
         scope: baseline.scope,
         workspaceDir: baseline.workspaceDir,
         agentId: baseline.agentId,

@@ -51,8 +51,10 @@ async function pendingReset(
 
 describe('agent/native retirement receipts', () => {
   let root: string;
+  let storage: Awaited<ReturnType<typeof sqliteAgentFixture>>;
   beforeEach(async () => {
     root = await realpath(await mkdtemp('/tmp/native-retirement-'));
+    storage = await sqliteAgentFixture(root, 'fixture');
   });
   afterEach(async () => rm(root, { recursive: true, force: true }));
 
@@ -64,7 +66,7 @@ describe('agent/native retirement receipts', () => {
     };
     let archives = 0;
     const deps = {
-      root,
+      sessionStorage: storage.agent,
       binding: {
         runtime: 'openclaw' as const,
         agentId: 'fixture',
@@ -298,7 +300,7 @@ describe('agent/native retirement runtime entries', () => {
     const sqlite = await sqliteAgentFixture(root, manifest.agent.id);
     const intake = new OpenClawIntake({
       sqliteInstallation: sqlite.sqliteInstallation,
-      storageBackend: sqlite.storageBackend,
+
       root: join(root, 'intake'),
       namespace: root,
       connect: unsupported,
@@ -342,11 +344,7 @@ describe('agent/native retirement runtime entries', () => {
     const action = { action: 'retire', native: target.key };
     const resetScope = await intake.select(manifest, root, { resolvePolicy: false });
     const reset = await pendingReset(
-      new NotificationResetStore(
-        join(root, 'dispatch'),
-        resetScope.store.location.scope,
-        sqlite.agent,
-      ),
+      new NotificationResetStore(resetScope.store.location.scope, sqlite.agent),
       'openclaw',
       root,
       'agent:fixture:reset-owned',
@@ -444,7 +442,6 @@ describe('agent/native retirement runtime entries', () => {
     };
     const sqlite = await sqliteAgentFixture(pluginData, manifest.agent.id);
     const deps: CodexDispatchDependencies = {
-      storageBackend: sqlite.storageBackend,
       codexHome,
       threadId: 'operator',
       activation: unsupported,
@@ -481,7 +478,7 @@ describe('agent/native retirement runtime entries', () => {
       (await runCodexDispatch(pluginData, 'retire', input, deps)) as Record<string, unknown>;
     const resetScope = await selectCodexTaskContext(pluginData, deps, { resolvePolicy: false });
     const reset = await pendingReset(
-      new NotificationResetStore(pluginData, resetScope.store.location.scope, sqlite.agent),
+      new NotificationResetStore(resetScope.store.location.scope, sqlite.agent),
       'codex',
       workspace,
       'reset-owned',

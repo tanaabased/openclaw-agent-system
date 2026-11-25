@@ -1,7 +1,6 @@
-import { bindAgentStore, defaultStorageBackend, type StorageBackend } from '../storage/backend.ts';
+import { bindAgentStore } from '../storage/backend.ts';
 import type { SqliteInstallation } from '../storage/storage-lifecycle.ts';
 import { realpath } from 'node:fs/promises';
-import { join } from 'node:path';
 
 import automationCompatibilityDiagnostic from './automation-compatibility-diagnostic.ts';
 import automationModelAuth, {
@@ -67,7 +66,6 @@ import type { DispatchRequest } from '../../credentials/session-dispatch.ts';
 import { assertPrivateStateLocksHeld } from '../../core/private-state-lock-context.ts';
 
 export interface AutomationServiceDependencies {
-  storageBackend?: StorageBackend;
   sqliteInstallation?: SqliteInstallation;
   pickup?: {
     prepare(
@@ -81,7 +79,6 @@ export interface AutomationServiceDependencies {
       previousNativeId?: string,
     ): Promise<void>;
   };
-  root: string;
   profile: string;
   command: string[];
   environment: Record<string, string>;
@@ -146,27 +143,17 @@ export default class AutomationService {
   constructor(readonly dependencies: AutomationServiceDependencies) {}
 
   async reportStore(agentId: string) {
-    const { root, now, sqliteInstallation, storageBackend } = this.dependencies;
-    const agent = await bindAgentStore(agentId, sqliteInstallation, storageBackend);
-    return new AutomationReportStore(join(root, 'reports'), now, agent && { agentId, agent });
+    const { now, sqliteInstallation } = this.dependencies;
+    const agent = await bindAgentStore(agentId, sqliteInstallation);
+    return new AutomationReportStore({ agentId, agent }, now);
   }
 
   async *reportStores() {
-    const {
-      root,
-      now,
-      sqliteInstallation,
-      storageBackend = defaultStorageBackend,
-    } = this.dependencies;
-    const directory = join(root, 'reports');
-    if (storageBackend === 'file') {
-      yield new AutomationReportStore(directory, now);
-      return;
-    }
+    const { now, sqliteInstallation } = this.dependencies;
     if (!sqliteInstallation) throw new Error('SQLite requires runtime storage locations');
     const { sqliteAgentDatabases } = await import('../storage/agent-database.ts');
     for await (const storage of sqliteAgentDatabases(sqliteInstallation))
-      yield new AutomationReportStore(directory, now, storage);
+      yield new AutomationReportStore(storage, now);
   }
 
   async scope(manifest: AgentManifest, workspaceDir: string) {
@@ -178,14 +165,9 @@ export default class AutomationService {
       environment: this.dependencies.environment,
       timezone: this.dependencies.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
     };
-    const agent = await bindAgentStore(
-      manifest.agent.id,
-      this.dependencies.sqliteInstallation,
-      this.dependencies.storageBackend,
-    );
+    const agent = await bindAgentStore(manifest.agent.id, this.dependencies.sqliteInstallation);
     const store = new AutomationStore(
       {
-        root: this.dependencies.root,
         profile: await realpath(this.dependencies.profile),
         agentId: manifest.agent.id,
         workspaceDir: workspace,
@@ -201,7 +183,7 @@ export default class AutomationService {
     request = this.dependencies.request!,
   ) {
     return new AutomationThreads(
-      { root: this.dependencies.root, scope: store.scope, runtime: 'openclaw' },
+      { scope: store.scope, runtime: 'openclaw' },
       automationThreadGateway(request, { ...context, scope: store.scope }),
       store.agentStorage,
     );
@@ -979,7 +961,7 @@ export default class AutomationService {
           const declaration = declarations.find(({ id }) => id === record.id);
           // Another SQLite connection may still be inside cron.add. Only its marker
           // appearing in the native inventory proves that the create completed.
-          if (store.agentStorage && declaration && !native && record.pending?.kind === 'create') {
+          if (declaration && !native && record.pending?.kind === 'create') {
             blockedJobs.set(record.id, 'automation-recovery-required');
             continue;
           }
@@ -1241,7 +1223,6 @@ export default class AutomationService {
               // A transport receipt proving the request never left this process makes
               // the job eligible for another create. An uncertain send keeps its marker.
               if (
-                store.agentStorage &&
                 error instanceof AutomationError &&
                 error.diagnostic?.method === 'cron.add' &&
                 error.diagnostic.requestDispatched === false

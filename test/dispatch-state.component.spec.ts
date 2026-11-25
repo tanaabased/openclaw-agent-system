@@ -1,3 +1,4 @@
+import { seedDispatchRows, readDispatchRows } from './dispatch-record-fixture.ts';
 import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import {
@@ -9,7 +10,7 @@ import openClawCapacity from '../agent/tasks/dispatch/openclaw-capacity.ts';
 import { issueKey } from '../agent/tasks/dispatch/dispatch-pending.ts';
 import { withDispatchTask } from '../agent/tasks/dispatch/dispatch-task-scope.ts';
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import codexCommit from '../agent/codex-commit.ts';
@@ -58,41 +59,52 @@ function prepared(): OpenClawDispatchRecord {
 
 describe('agent/shared dispatch state', () => {
   let root: string;
+  let codexDb: Awaited<ReturnType<typeof sqliteAgentFixture>>['agent'];
+  let openclawDb: typeof codexDb;
+  const codexStore = (key: string) =>
+    new CodexDispatchStore(key, sqliteDispatchPersistence(codexDb, key));
+  const openclawStore = (key: string) =>
+    new OpenClawDispatchStore(key, sqliteDispatchPersistence(openclawDb, key));
+  const rawState = (store: CodexDispatchStore | OpenClawDispatchStore) =>
+    readDispatchRows(store.contract.persistence.agentStorage, store.scope);
+  const seedState = (
+    store: CodexDispatchStore | OpenClawDispatchStore,
+    value: { records: unknown[] },
+  ) => seedDispatchRows(store.contract.persistence.agentStorage, store.scope, value);
   const scope = 'b'.repeat(64);
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'shared-dispatch-'));
+    codexDb = (await sqliteAgentFixture(root, 'codex')).agent;
+    openclawDb = (await sqliteAgentFixture(root, 'openclaw')).agent;
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  it('should share journal semantics without sharing mutable runtime files', async () => {
-    const codex = new CodexDispatchStore(root, scope);
-    const openclaw = new OpenClawDispatchStore(root, scope);
+  it('should share journal semantics across isolated runtime databases', async () => {
+    const codex = codexStore(scope);
+    const openclaw = openclawStore(scope);
     for (const store of [codex, openclaw]) {
       await store.exclusive(async (state, save) => {
         state.records.push(pending());
         await save();
       });
     }
-    assert.notEqual(codex.path, openclaw.path);
     assert.deepEqual(await codex.read(), await openclaw.read());
-    assert.equal((await new OpenClawDispatchStore(root, scope).read()).records.length, 1);
-    assert.equal((await new OpenClawDispatchStore(root, 'c'.repeat(64)).read()).records.length, 0);
+    assert.equal((await openclawStore(scope).read()).records.length, 1);
+    assert.equal((await openclawStore('c'.repeat(64)).read()).records.length, 0);
   });
 
-  it('should fence the same sqlite dispatch journal across roots while pickup can proceed', async () => {
+  it('should fence the same sqlite dispatch journal across connections while pickup can proceed', async () => {
     const { sqliteInstallation } = await sqliteAgentFixture(root, 'receiver');
-    const legacy = join(root, 'legacy');
-    const open = (directory: string, key: string) =>
+    const open = (key: string) =>
       new OpenClawDispatchStore(
-        directory,
         scope,
         sqliteDispatchPersistence(bindSqliteStorage(sqliteInstallation, 'receiver').agent, key),
       );
-    const issue = open(join(legacy, 'dispatch'), scope);
-    const peer = open(join(legacy, 'another-root'), scope);
-    const pickup = open(join(legacy, 'intake'), pickupDispatchScope(scope));
+    const issue = open(scope);
+    const peer = open(scope);
+    const pickup = open(pickupDispatchScope(scope));
     await issue.exclusive(async (state, save) => {
       await assert.rejects(
         peer.exclusive(async () => {}, false),
@@ -107,11 +119,10 @@ describe('agent/shared dispatch state', () => {
     });
     assert.equal((await peer.read()).resetGeneration, 'issue');
     assert.equal((await pickup.read()).resetGeneration, 'pickup');
-    await assert.rejects(readdir(legacy), { code: 'ENOENT' });
   });
 
   it('should retain valid native turn receipts across restart', async () => {
-    const store = new OpenClawDispatchStore(root, scope);
+    const store = openclawStore(scope);
     const turns: NonNullable<OpenClawDispatchRecord['nativeTurns']> = [
       { role: 'assessment', turn: { runId: 'attempted', status: 'attempted', message: 'plan' } },
       { role: 'assessment', turn: { runId: 'accepted', status: 'accepted', message: 'plan' } },
@@ -143,19 +154,16 @@ describe('agent/shared dispatch state', () => {
       state.records.push({ ...pending(), nativeTurns: turns });
       await save();
     });
-    assert.deepEqual(
-      (await new OpenClawDispatchStore(root, scope).read()).records[0]!.nativeTurns,
-      turns,
-    );
+    assert.deepEqual((await openclawStore(scope).read()).records[0]!.nativeTurns, turns);
   });
 
   it('should reject inconsistent native turn receipts without replacing committed evidence', async () => {
-    const store = new OpenClawDispatchStore(root, scope);
+    const store = openclawStore(scope);
     await store.exclusive(async (state, save) => {
       state.records.push(pending());
       await save();
     });
-    const before = await readFile(store.path, 'utf8');
+    const before = await rawState(store);
     const accepted = { runId: 'run', status: 'accepted' as const, message: 'plan' };
     const completed = {
       runId: 'run',
@@ -187,12 +195,12 @@ describe('agent/shared dispatch state', () => {
         }),
         /dispatch-state-invalid/,
       );
-      assert.equal(await readFile(store.path, 'utf8'), before);
+      assert.deepEqual(await rawState(store), before);
     }
   });
 
   it('should preserve native-run bounds across restart and reject malformed passes', async () => {
-    const store = new OpenClawDispatchStore(root, scope);
+    const store = openclawStore(scope);
     const pass = {
       sessionKey: pending().sourceThreadId,
       sessionId: 'coordinator',
@@ -208,8 +216,8 @@ describe('agent/shared dispatch state', () => {
       state.openclawPasses = [pass];
       await save();
     });
-    assert.deepEqual((await new OpenClawDispatchStore(root, scope).read()).openclawPasses, [pass]);
-    const before = await readFile(store.path, 'utf8');
+    assert.deepEqual((await openclawStore(scope).read()).openclawPasses, [pass]);
+    const before = await rawState(store);
     for (const passes of [
       [pass, pass],
       [{ ...pass, allowance: 4 }],
@@ -225,26 +233,26 @@ describe('agent/shared dispatch state', () => {
         }),
         /dispatch-state-invalid/,
       );
-      assert.equal(await readFile(store.path, 'utf8'), before);
+      assert.deepEqual(await rawState(store), before);
     }
-    const codex = new CodexDispatchStore(root, scope);
-    await codex.file.write(before);
+    const codex = codexStore(scope);
+    await seedState(codex, before!);
     await assert.rejects(codex.read(), /dispatch-state-invalid/);
   });
 
   it('should retain an uncertain creation across restart', async () => {
-    const store = new OpenClawDispatchStore(root, scope);
+    const store = openclawStore(scope);
     await store.exclusive(async (state, save) => {
       state.records.push(prepared());
       await save();
     });
-    const restarted = new OpenClawDispatchStore(root, scope);
+    const restarted = openclawStore(scope);
     const state = await restarted.read();
     assert.deepEqual(state.records[0], prepared());
   });
 
   it('should preserve recorded blockers without repairing workflow state on read', async () => {
-    const store = new CodexDispatchStore(root, scope);
+    const store = codexStore(scope);
     const original = {
       ...pending(),
       threadId: 'native-chat',
@@ -279,28 +287,28 @@ describe('agent/shared dispatch state', () => {
       state.records.push(original);
       await save();
     });
-    const before = await readFile(store.path, 'utf8');
-    const restarted = new CodexDispatchStore(root, scope);
+    const before = await rawState(store);
+    const restarted = codexStore(scope);
     const recovered = (await restarted.read()).records[0]!;
 
     assert.deepEqual(recovered.request, original.request);
     assert.equal(recovered.threadId, original.threadId);
     assert.equal(recovered.worktree, original.worktree);
-    assert.equal(await readFile(store.path, 'utf8'), before);
+    assert.deepEqual(await rawState(store), before);
     await restarted.exclusive(async (_state, save) => {
       await save();
     });
-    assert.deepEqual((await new CodexDispatchStore(root, scope).read()).records[0], recovered);
-    assert.equal(await readFile(store.path, 'utf8'), before);
+    assert.deepEqual((await codexStore(scope).read()).records[0], recovered);
+    assert.deepEqual(await rawState(store), before);
   });
 
   it('should reject duplicate task identities and unverified creation bindings without replacing evidence', async () => {
-    const store = new OpenClawDispatchStore(root, scope);
+    const store = openclawStore(scope);
     await store.exclusive(async (state, save) => {
       state.records.push(pending());
       await save();
     });
-    const before = await readFile(store.path, 'utf8');
+    const before = await rawState(store);
     for (const mutate of [
       (records: OpenClawDispatchRecord[]) => {
         records.push(pending());
@@ -323,12 +331,12 @@ describe('agent/shared dispatch state', () => {
         }),
         /dispatch-state-invalid/,
       );
-      assert.equal(await readFile(store.path, 'utf8'), before);
+      assert.deepEqual(await rawState(store), before);
     }
   });
 
   it('should reject foreign scope and invalid native requests without resetting evidence', async () => {
-    const store = new OpenClawDispatchStore(root, scope);
+    const store = openclawStore(scope);
     for (const value of [
       {
         version: 4,
@@ -350,23 +358,19 @@ describe('agent/shared dispatch state', () => {
         ],
       },
     ]) {
-      const contents = JSON.stringify(value);
-      await store.file.write(contents);
+      await seedState(store, value);
       if (value.scope !== scope) await assert.rejects(store.read(), /dispatch-state-invalid/);
       else {
         const state = await store.read();
         assert.equal(state.records.length, 0);
         assert.equal(state.isolatedRecords?.[0]?.code, 'dispatch-task-record-invalid');
       }
-      assert.equal(await readFile(store.path, 'utf8'), contents);
+      assert.deepEqual(await rawState(store), value);
     }
   });
 
   for (const runtime of ['codex', 'openclaw'] as const) {
-    const makeStore = (root: string) =>
-      runtime === 'codex'
-        ? new CodexDispatchStore(root, scope)
-        : new OpenClawDispatchStore(root, scope);
+    const makeStore = () => (runtime === 'codex' ? codexStore(scope) : openclawStore(scope));
     const healthy = (): OpenClawDispatchRecord => ({
       ...pending(),
       threadId: 'healthy-chat',
@@ -381,13 +385,13 @@ describe('agent/shared dispatch state', () => {
     });
     const write = async (store: ReturnType<typeof makeStore>, records: unknown[], extra = {}) => {
       const raw = { version: 4, scope, resetGeneration: 'initial', records, ...extra };
-      await store.file.write(JSON.stringify(raw));
+      await seedState(store, raw);
       return raw;
     };
     const task = <T>(session: string, run: () => T) => withDispatchTask(runtime, session, run);
 
     it(`should preserve unused ${runtime} fields while reading and saving current task data`, async () => {
-      const store = makeStore(root);
+      const store = makeStore();
       const record = {
         ...healthy(),
         routingNote: { obsolete: true },
@@ -400,23 +404,23 @@ describe('agent/shared dispatch state', () => {
         state.records[0]!.context = 'current context';
         await save();
       });
-      const saved = JSON.parse(await readFile(store.path, 'utf8'));
+      const saved = (await rawState(store))!;
       assert.deepEqual(saved.records, [{ ...record, context: 'current context' }]);
-      assert.equal(saved.oldReport, 'unused');
+      assert.equal(Reflect.get(saved, 'oldReport'), 'unused');
       assert.equal((await store.inspectIntake()).storage.level, 'normal');
       await write(store, [{ ...record, reset: { at: 'not-a-time', by: 'operator' } }]);
       assert.equal((await store.read()).isolatedRecords?.length, 1);
     });
 
     it(`should inspect ${runtime} intake without interpreting another task's damaged effects`, async () => {
-      const store = makeStore(root);
+      const store = makeStore();
       await write(store, [healthy(), damaged()]);
-      const before = await readFile(store.path, 'utf8');
+      const before = await rawState(store);
       const result = await store.inspectIntake();
       assert.equal(result.storage.level, 'normal');
       assert.equal(result.storage.protectedRecords['active-workflow'], 2);
       assert.equal(result.issuePickup, undefined);
-      assert.equal(await readFile(store.path, 'utf8'), before);
+      assert.deepEqual(await rawState(store), before);
       await store.observeIntake(async (state, save) => {
         state.run = {
           id: 'scan',
@@ -426,10 +430,7 @@ describe('agent/shared dispatch state', () => {
         };
         await save();
       });
-      assert.deepEqual(JSON.parse(await readFile(store.path, 'utf8')).records, [
-        healthy(),
-        damaged(),
-      ]);
+      assert.deepEqual((await rawState(store))!.records, [healthy(), damaged()]);
       await assert.rejects(
         store.exclusive(
           async (state, save) => {
@@ -451,7 +452,7 @@ describe('agent/shared dispatch state', () => {
         task('damaged-chat', () => store.read()),
         /dispatch-task-record-invalid/,
       );
-      assert.deepEqual(JSON.parse(await readFile(store.path, 'utf8')).records[1], damaged());
+      assert.deepEqual((await rawState(store))!.records[1], damaged());
       for (const extra of [{ scope: 'e'.repeat(64) }, { issuePickup: { invalid: true } }]) {
         await write(store, [healthy(), damaged()], extra);
         await assert.rejects(store.inspectIntake(), /dispatch-state-invalid/);
@@ -459,7 +460,7 @@ describe('agent/shared dispatch state', () => {
     });
 
     it(`should keep independent ${runtime} coordinator work usable without rewriting damaged records`, async () => {
-      const store = makeStore(root);
+      const store = makeStore();
       const raw = await write(store, [damaged(), healthy()], { oldMetadata: 'retained' });
       await task(healthy().sourceThreadId, () =>
         store.transaction(async (state, save) => {
@@ -483,12 +484,12 @@ describe('agent/shared dispatch state', () => {
           await save();
         }),
       );
-      const saved = JSON.parse(await readFile(store.path, 'utf8'));
+      const saved = (await rawState(store))!;
       assert.deepEqual(saved.records[0], raw.records[0]);
-      assert.equal(saved.records[1].context, 'healthy progress');
-      assert.equal(saved.records[2].threadId, 'new-chat');
-      assert.equal(saved.oldMetadata, 'retained');
-      assert.equal(saved.isolatedRecords, undefined);
+      assert.equal(saved.records[1]!.context, 'healthy progress');
+      assert.equal(saved.records[2]!.threadId, 'new-chat');
+      assert.equal(Reflect.get(saved, 'oldMetadata'), 'retained');
+      assert.equal(Reflect.get(saved, 'isolatedRecords'), undefined);
       await assert.rejects(
         store.transaction(async (state, save) => {
           state.records.push({ ...pending('e'.repeat(64)), worktree: '/damaged' });
@@ -496,11 +497,11 @@ describe('agent/shared dispatch state', () => {
         }),
         /dispatch-task-ownership-unresolved/,
       );
-      assert.equal(JSON.parse(await readFile(store.path, 'utf8')).records.length, 3);
+      assert.equal((await rawState(store))!.records.length, 3);
     });
 
     it(`should isolate a healthy ${runtime} task and preserve damaged records and uncertain effects`, async () => {
-      const store = makeStore(root);
+      const store = makeStore();
       const raw = await write(store, [healthy(), damaged()]);
       assert.equal((await store.read()).isolatedRecords?.length, 1);
       await task('healthy-chat', async () => {
@@ -512,10 +513,10 @@ describe('agent/shared dispatch state', () => {
           await save();
         });
       });
-      const saved = JSON.parse(await readFile(store.path, 'utf8'));
+      const saved = (await rawState(store))!;
       assert.deepEqual(saved.records[1], raw.records[1]);
-      assert.equal(saved.records[0].context, 'verified progress');
-      assert.equal(saved.records[0].blocker, 'second checkpoint');
+      assert.equal(saved.records[0]!.context, 'verified progress');
+      assert.equal(saved.records[0]!.blocker, 'second checkpoint');
       await assert.rejects(
         task('damaged-chat', () => store.read()),
         /dispatch-task-record-invalid/,
@@ -545,7 +546,7 @@ describe('agent/shared dispatch state', () => {
     });
 
     it(`should preserve unrelated malformed ${runtime} delivery payloads during healthy progress`, async () => {
-      const store = makeStore(root);
+      const store = makeStore();
       for (const payload of [
         { ...delivery(), title: 42 },
         { ...delivery(), body: { damaged: true } },
@@ -570,8 +571,8 @@ describe('agent/shared dispatch state', () => {
             await save();
           });
         });
-        const saved = JSON.parse(await readFile(store.path, 'utf8'));
-        assert.equal(saved.records[0].blocker, 'healthy progress');
+        const saved = (await rawState(store))!;
+        assert.equal(saved.records[0]!.blocker, 'healthy progress');
         assert.deepEqual(saved.records.slice(1), raw.records.slice(1));
         await assert.rejects(
           task('damaged-chat', () => store.read()),
@@ -581,7 +582,7 @@ describe('agent/shared dispatch state', () => {
     });
 
     it(`should reject ${runtime} delivery ownership damage and overlaps without touching payloads`, async () => {
-      const store = makeStore(root);
+      const store = makeStore();
       for (const binding of [
         { ...delivery().binding, worktree: '/healthy' },
         { ...delivery().binding, threadId: 'healthy-chat' },
@@ -592,7 +593,7 @@ describe('agent/shared dispatch state', () => {
           healthy(),
           { ...damaged(), delivery: { ...delivery(), binding, title: 42 } },
         ]);
-        const before = await readFile(store.path, 'utf8');
+        const before = await rawState(store);
         await assert.rejects(
           task('healthy-chat', () =>
             store.transaction(async () => {
@@ -601,16 +602,31 @@ describe('agent/shared dispatch state', () => {
           ),
           /dispatch-task-ownership-unresolved/,
         );
-        assert.equal(await readFile(store.path, 'utf8'), before);
+        assert.deepEqual(await rawState(store), before);
       }
     });
 
+    it(`should reject ${runtime} task edits when a row key disagrees with the stored task id`, async () => {
+      const store = makeStore();
+      const raw = await write(store, [
+        healthy(),
+        damaged(),
+        { ...damaged(), threadId: 'third-chat' },
+      ]);
+      await assert.rejects(
+        task('healthy-chat', () =>
+          store.transaction(async () => assert.fail('unsafe edit entered')),
+        ),
+        /dispatch-state-invalid/,
+      );
+      assert.deepEqual(await rawState(store), raw);
+    });
+
     it(`should isolate ${runtime} progress from collisions and broken links between unrelated records`, async () => {
-      const store = makeStore(root);
+      const store = makeStore();
       const third = { ...pending('f'.repeat(64)), threadId: 'third-chat', worktree: '/third' };
       for (const pair of [
         [damaged(), { ...third, issueKey: damaged().issueKey }],
-        [damaged(), { ...third, id: damaged().id }],
         [{ ...damaged(), supersededBy: third.id }, third],
       ]) {
         const raw = await write(store, [healthy(), ...pair]);
@@ -626,10 +642,10 @@ describe('agent/shared dispatch state', () => {
             await save();
           }),
         );
-        const saved = JSON.parse(await readFile(store.path, 'utf8'));
-        assert.equal(saved.records[0].blocker, 'independent progress');
+        const saved = (await rawState(store))!;
+        assert.equal(saved.records[0]!.blocker, 'independent progress');
         assert.deepEqual(saved.records.slice(1), raw.records.slice(1));
-        const before = await readFile(store.path, 'utf8');
+        const before = await rawState(store);
         await assert.rejects(
           task('healthy-chat', () =>
             store.transaction(async (state, save) => {
@@ -648,12 +664,12 @@ describe('agent/shared dispatch state', () => {
           ),
           /dispatch-task-ownership-unresolved/,
         );
-        assert.equal(await readFile(store.path, 'utf8'), before);
+        assert.deepEqual(await rawState(store), before);
       }
     });
 
     it(`should recheck ${runtime} dependencies after a concurrent ownership change`, async () => {
-      const store = makeStore(root);
+      const store = makeStore();
       const raw = await write(store, [
         healthy(),
         damaged(),
@@ -663,24 +679,22 @@ describe('agent/shared dispatch state', () => {
           threadId: 'third-chat',
         },
       ]);
-      let concurrent = '';
       await assert.rejects(
         task('healthy-chat', () =>
           store.transaction(async (state, save) => {
             state.records[0]!.blocker = 'must not commit';
             raw.records[1] = { ...damaged(), worktree: '/healthy' };
-            concurrent = JSON.stringify(raw);
-            await store.file.write(concurrent);
+            await seedState(store, raw);
             await save();
           }),
         ),
         /dispatch-task-ownership-unresolved/,
       );
-      assert.equal(await readFile(store.path, 'utf8'), concurrent);
+      assert.deepEqual(await rawState(store), raw);
     });
 
     it(`should retain shared and unresolved ${runtime} ownership protections`, async () => {
-      const store = makeStore(root);
+      const store = makeStore();
       for (const other of [
         { ...damaged(), worktree: '/healthy' },
         { ...damaged(), worktree: '/unrelated/../healthy' },
@@ -693,19 +707,14 @@ describe('agent/shared dispatch state', () => {
         { ...damaged(), worktree: 12 },
       ]) {
         await write(store, [healthy(), other]);
-        const before = await readFile(store.path, 'utf8');
+        const before = await rawState(store);
         await assert.rejects(
           task('healthy-chat', () => store.transaction(async (_state, save) => save())),
           /dispatch-(?:state-invalid|task-ownership-unresolved)/,
         );
-        assert.equal(await readFile(store.path, 'utf8'), before);
+        assert.deepEqual(await rawState(store), before);
       }
       await write(store, [healthy(), damaged()], { scope: 'e'.repeat(64) });
-      await assert.rejects(
-        task('healthy-chat', () => store.read()),
-        /dispatch-state-invalid/,
-      );
-      await store.file.write('{unreadable');
       await assert.rejects(
         task('healthy-chat', () => store.read()),
         /dispatch-state-invalid/,
@@ -713,7 +722,7 @@ describe('agent/shared dispatch state', () => {
     });
 
     it(`should protect ${runtime} branch and pull request ownership before effects`, async () => {
-      const store = makeStore(root);
+      const store = makeStore();
       const issueBranch =
         runtime === 'codex'
           ? { issueBranch: { attemptId: healthy().id, name: 'shared-branch', phase: 'ready' } }
@@ -733,7 +742,7 @@ describe('agent/shared dispatch state', () => {
         ],
       ]) {
         await write(store, [owner, other]);
-        const before = await readFile(store.path, 'utf8');
+        const before = await rawState(store);
         await assert.rejects(
           task('healthy-chat', () =>
             store.transaction(async () => {
@@ -742,12 +751,12 @@ describe('agent/shared dispatch state', () => {
           ),
           /dispatch-task-ownership-unresolved/,
         );
-        assert.equal(await readFile(store.path, 'utf8'), before);
+        assert.deepEqual(await rawState(store), before);
       }
     });
 
     it(`should refuse ${runtime} ownership aliases even when the outer record names differ`, async () => {
-      const store = makeStore(root);
+      const store = makeStore();
       const manualIssue = {
         id: damaged().id,
         scope,
@@ -764,7 +773,7 @@ describe('agent/shared dispatch state', () => {
       };
       const owner = { ...healthy(), issueKey: issueKey(manualIssue) };
       await write(store, [owner, { ...damaged(), manualIssue }]);
-      const before = await readFile(store.path, 'utf8');
+      const before = await rawState(store);
       await assert.rejects(
         task('healthy-chat', () =>
           store.transaction(async () => {
@@ -773,13 +782,13 @@ describe('agent/shared dispatch state', () => {
         ),
         /dispatch-task-ownership-unresolved/,
       );
-      assert.equal(await readFile(store.path, 'utf8'), before);
+      assert.deepEqual(await rawState(store), before);
     });
 
     it(`should prohibit unrelated ${runtime} mutations through an isolated view`, async () => {
-      const store = makeStore(root);
+      const store = makeStore();
       await write(store, [healthy(), damaged()]);
-      const before = await readFile(store.path, 'utf8');
+      const before = await rawState(store);
       for (const change of [
         (state: { records: unknown[]; discoveryCheckedAt?: number }) => {
           state.records = [];
@@ -800,7 +809,7 @@ describe('agent/shared dispatch state', () => {
           ),
           /dispatch-task-isolation-required/,
         );
-        assert.equal(await readFile(store.path, 'utf8'), before);
+        assert.deepEqual(await rawState(store), before);
       }
       await assert.rejects(
         task('healthy-chat', () =>
@@ -811,11 +820,11 @@ describe('agent/shared dispatch state', () => {
         ),
         /dispatch-task-ownership-unresolved/,
       );
-      assert.equal(await readFile(store.path, 'utf8'), before);
+      assert.deepEqual(await rawState(store), before);
     });
 
     it(`should preserve concurrent ${runtime} opaque updates and reject stale owner writes`, async () => {
-      const store = makeStore(root);
+      const store = makeStore();
       const raw = await write(store, [healthy(), damaged()]);
       await task('healthy-chat', () =>
         store.transaction(async (state, save) => {
@@ -824,18 +833,18 @@ describe('agent/shared dispatch state', () => {
             ...damaged(),
             feedback: { unresolved: { destination: 'new evidence', attempted: true } },
           };
-          await store.file.write(JSON.stringify(raw));
+          await seedState(store, raw);
           await save();
         }),
       );
-      const saved = JSON.parse(await readFile(store.path, 'utf8'));
+      const saved = (await rawState(store))!;
       assert.deepEqual(saved.records[1], raw.records[1]);
       await assert.rejects(
         task('healthy-chat', () =>
           store.transaction(async (state, save) => {
             state.records[0]!.context = 'stale';
             await task('healthy-chat', () =>
-              makeStore(root).transaction(async (other, commit) => {
+              makeStore().transaction(async (other, commit) => {
                 other.records[0]!.context = 'fresh';
                 await commit();
               }),
@@ -845,19 +854,17 @@ describe('agent/shared dispatch state', () => {
         ),
         /private-state-snapshot-conflict/,
       );
-      assert.equal(JSON.parse(await readFile(store.path, 'utf8')).records[0].context, 'fresh');
+      assert.equal((await rawState(store))!.records[0]!.context, 'fresh');
     });
   }
 
   it('should serialize competing writers and preserve the first creation intent', async () => {
-    const store = new OpenClawDispatchStore(root, scope);
+    const store = openclawStore(scope);
     await store.exclusive(async (state, save) => {
       state.records.push(prepared());
       await save();
       await assert.rejects(
-        new OpenClawDispatchStore(root, scope).exclusive(async () =>
-          assert.fail('second writer entered'),
-        ),
+        openclawStore(scope).exclusive(async () => assert.fail('second writer entered')),
         { code: 'private-state-file-lock-busy' },
       );
     });
@@ -865,7 +872,7 @@ describe('agent/shared dispatch state', () => {
   });
 
   it('should merge independent writers without holding the journal during external work', async () => {
-    const store = new OpenClawDispatchStore(root, scope);
+    const store = openclawStore(scope);
     await store.exclusive(async (state, save) => {
       state.records.push(pending());
       await save();
@@ -873,7 +880,7 @@ describe('agent/shared dispatch state', () => {
     await store.transaction(async (state, save) => {
       const retained = state.records[0]!;
       retained.context = 'outer observation';
-      await new OpenClawDispatchStore(root, scope).transaction(async (other, commit) => {
+      await openclawStore(scope).transaction(async (other, commit) => {
         other.records[0]!.blocker = 'inner observation';
         other.records.push(pending('c'.repeat(64)));
         await commit();
@@ -887,7 +894,7 @@ describe('agent/shared dispatch state', () => {
   });
 
   it('should cancel transaction acquisition while an independent writer still holds its lease', async () => {
-    const store = new CodexDispatchStore(root, scope);
+    const store = codexStore(scope);
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
     const held = store.exclusive(async () => {
@@ -896,7 +903,7 @@ describe('agent/shared dispatch state', () => {
     });
     await entered.promise;
     const controller = new AbortController();
-    const other = new CodexDispatchStore(root, scope);
+    const other = codexStore(scope);
     const pending = other.transaction(async () => assert.fail('cancelled transaction entered'), {
       signal: controller.signal,
     });
@@ -911,7 +918,7 @@ describe('agent/shared dispatch state', () => {
   });
 
   it('should refresh durable checkpoints without treating omitted optional fields as competing edits', async () => {
-    const store = new CodexDispatchStore(root, scope);
+    const store = codexStore(scope);
     await store.exclusive(async (state, save) => {
       state.records.push(pending());
       await save();
@@ -933,7 +940,7 @@ describe('agent/shared dispatch state', () => {
   });
 
   it('should reject an identical concurrent reservation before either caller can duplicate its side effect', async () => {
-    const store = new OpenClawDispatchStore(root, scope);
+    const store = openclawStore(scope);
     await store.exclusive(async (state, save) => {
       state.records.push(pending());
       await save();
@@ -942,7 +949,7 @@ describe('agent/shared dispatch state', () => {
     await assert.rejects(
       store.transaction(async (state, save) => {
         Object.assign(state.records[0]!, prepared());
-        await new OpenClawDispatchStore(root, scope).transaction(async (other, commit) => {
+        await openclawStore(scope).transaction(async (other, commit) => {
           Object.assign(other.records[0]!, prepared());
           await commit();
           effects++;
@@ -957,7 +964,7 @@ describe('agent/shared dispatch state', () => {
   });
 
   it('should preserve changed authority and conflicting results instead of saving a stale snapshot', async () => {
-    const store = new OpenClawDispatchStore(root, scope);
+    const store = openclawStore(scope);
     await store.exclusive(async (state, save) => {
       state.records.push(pending());
       await save();

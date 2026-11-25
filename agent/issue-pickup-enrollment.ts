@@ -1,22 +1,17 @@
 import { IntakeError } from '../channels/github/intake/record-store.ts';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { join } from 'node:path';
 
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import AssignmentClaimStore from './tasks/dispatch/assignment-claim-store.ts';
+import type AssignmentClaimStore from './tasks/dispatch/assignment-claim-store.ts';
 import { issuePickupEnrollmentSchema, issuePickupPolicyDigest } from './issue-pickup-authority.ts';
 import { pickupMilestones } from '../channels/github/issue-pickup-projects.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import type { IssuePickupClient } from '../channels/github/provider/issue-pickup-client.ts';
-import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
-import PrivateStateFile from '../core/private-state-file.ts';
-import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
 
 import type { BoundStorage } from './storage/storage-lifecycle.ts';
-import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 
 const maximumBytes = 4 * 1024 * 1024;
 const text = Type.String({ minLength: 1, maxLength: 4096 });
@@ -44,47 +39,25 @@ function assertEnrollmentCapacity(records: PickupEnrollment[]) {
 
 /** installation enrollment owns native timing; repository routing owns work placement. */
 export default class IssuePickupEnrollmentStore {
-  readonly file: PrivateStateFile;
-  readonly path: string;
   constructor(
-    readonly root: string,
-    readonly instance = new AssignmentClaimStore(root),
-    private readonly sqlite?: { agentId: string; agent: BoundStorage['agent'] },
-  ) {
-    // retain existing enrollments; a terminology change must not create a new ledger.
-    this.path = join(root, 'project-pickup-enrollments.json');
-    // installation metadata only: no per-run history. Match the instance identity ledger
-    // emergency byte budget; oversized writes preserve the last committed registry.
-    this.file = new PrivateStateFile({
-      path: this.path,
-      directories: [root],
-      currentUid: process.getuid?.(),
-      label: 'issue pickup enrollment',
-      maximumBytes,
-    });
-  }
+    readonly instance: AssignmentClaimStore,
+    private readonly sqlite: { agentId: string; agent: BoundStorage['agent'] },
+  ) {}
 
   async read() {
-    if (this.sqlite) {
-      const { agent, agentId } = this.sqlite;
-      const { pickupEnrollments } = await agent.read({ pickupEnrollments: {} });
-      const records = pickupEnrollments.map(({ runtime, scope, value }) => {
-        if (
-          !Value.Check(recordSchema, value) ||
-          value.enrollment.agentId !== agentId ||
-          value.enrollment.scope !== scope ||
-          value.enrollment.runtime !== runtime
-        )
-          throw new IntakeError('issue-pickup-enrollment-invalid');
-        return value;
-      });
-      return { version: 1 as const, records };
-    }
-    const raw = await this.file.read();
-    if (raw === undefined) return { version: 1 as const, records: [] as PickupEnrollment[] };
-    const state: unknown = JSON.parse(raw);
-    if (!Value.Check(schema, state)) throw new IntakeError('issue-pickup-enrollment-invalid');
-    return state;
+    const { agent, agentId } = this.sqlite;
+    const { pickupEnrollments } = await agent.read({ pickupEnrollments: {} });
+    const records = pickupEnrollments.map(({ runtime, scope, value }) => {
+      if (
+        !Value.Check(recordSchema, value) ||
+        value.enrollment.agentId !== agentId ||
+        value.enrollment.scope !== scope ||
+        value.enrollment.runtime !== runtime
+      )
+        throw new IntakeError('issue-pickup-enrollment-invalid');
+      return value;
+    });
+    return { version: 1 as const, records };
   }
 
   private async save(
@@ -94,11 +67,6 @@ export default class IssuePickupEnrollmentStore {
     reserveCapacity: boolean,
   ) {
     if (!Value.Check(schema, state)) throw new IntakeError('issue-pickup-enrollment-invalid');
-    if (!this.sqlite) {
-      if (reserveCapacity) assertEnrollmentCapacity(state.records);
-      await this.file.write(JSON.stringify(state));
-      return record;
-    }
     const { runtime, scope, agentId } = record.enrollment;
     if (agentId !== this.sqlite.agentId) throw new IntakeError('issue-pickup-enrollment-conflict');
     return this.sqlite.agent.changePickupEnrollment(
@@ -124,24 +92,6 @@ export default class IssuePickupEnrollmentStore {
       },
       reserveCapacity ? assertEnrollmentCapacity : undefined,
     );
-  }
-
-  private async edit<T>(operation: () => Promise<T>) {
-    if (this.sqlite) return operation();
-    await ensurePrivateStateDirectories({
-      directories: [this.root],
-      currentUid: process.getuid?.(),
-      label: 'issue pickup enrollment',
-    });
-    const lock = await acquirePrivateStateFileLock(this.path, {
-      staleMs: 30_000,
-      retries: { retries: 0, factor: 1, minTimeout: 25, maxTimeout: 25 },
-    });
-    try {
-      return await withPrivateStateLock(lock, operation);
-    } finally {
-      await lock.release();
-    }
   }
 
   async owner() {
@@ -213,87 +163,83 @@ export default class IssuePickupEnrollmentStore {
       `selection:${pickup.projects[0]!.repository.toLowerCase()}`,
       undefined,
     ];
-    return this.edit(async () => {
-      const currentIdentity = await this.owner();
-      if (currentIdentity.instanceId !== identity.instanceId)
+    const currentIdentity = await this.owner();
+    if (currentIdentity.instanceId !== identity.instanceId)
+      throw new IntakeError('issue-pickup-enrollment-changed');
+    const state = await this.read();
+    const matches = state.records.filter(
+      (record) =>
+        record.enrollment.scope === input.scope && record.enrollment.runtime === input.runtime,
+    );
+    if (matches.length > 1) throw new IntakeError('issue-pickup-enrollment-conflict');
+    const existing = matches[0];
+    if (existing) {
+      if (
+        existing.enrollment.workspaceDir !== input.workspaceDir ||
+        existing.enrollment.agentId !== input.agentId
+      )
+        throw new IntakeError('issue-pickup-enrollment-conflict');
+      if (
+        existing.enrollment.account.nodeId !== input.client.identity.nodeId ||
+        existing.instanceId !== identity.instanceId
+      )
         throw new IntakeError('issue-pickup-enrollment-changed');
-      const state = await this.read();
-      const matches = state.records.filter(
-        (record) =>
-          record.enrollment.scope === input.scope && record.enrollment.runtime === input.runtime,
-      );
-      if (matches.length > 1) throw new IntakeError('issue-pickup-enrollment-conflict');
-      const existing = matches[0];
-      if (existing) {
-        if (
-          existing.enrollment.workspaceDir !== input.workspaceDir ||
-          existing.enrollment.agentId !== input.agentId
-        )
-          throw new IntakeError('issue-pickup-enrollment-conflict');
-        if (
-          existing.enrollment.account.nodeId !== input.client.identity.nodeId ||
-          existing.instanceId !== identity.instanceId
-        )
-          throw new IntakeError('issue-pickup-enrollment-changed');
-        const changed =
-          existing.enrollment.repositoryNodeId !== repositoryNodeId ||
-          existing.enrollment.milestoneNodeId !== milestoneNodeId ||
-          existing.enrollment.policyDigest !== issuePickupPolicyDigest(input.policy) ||
-          existing.timezone !== input.timezone;
-        if (changed && !input.reconcile) throw new IntakeError('issue-pickup-enrollment-changed');
-        let updated: PickupEnrollment = changed
-          ? {
-              ...existing,
-              timezone: input.timezone,
-              enrollment: {
-                ...existing.enrollment,
-                repositoryNodeId,
-                milestoneNodeId,
-                policyDigest: issuePickupPolicyDigest(input.policy),
-              },
-            }
-          : existing;
-        // Target and window edits do not change the native job or its activation.
-        const commit = async () => {
-          if (!changed) return;
-          state.records[state.records.indexOf(existing)] = updated;
-          updated = await this.save(state, updated, existing, true);
-        };
-        if (input.reconcile) await input.reconcile(updated, commit);
-        else await commit();
-        return updated;
-      }
-      const record: PickupEnrollment = {
-        instanceId: identity.instanceId,
-        timezone: input.timezone,
-        enrollment: {
-          id: randomUUID(),
-          runtime: input.runtime,
-          scope: input.scope,
-          workspaceDir: input.workspaceDir,
-          agentId: input.agentId,
-          account: { login: input.client.identity.login, nodeId: input.client.identity.nodeId },
-          repositoryNodeId,
-          milestoneNodeId,
-          policyDigest: issuePickupPolicyDigest(input.policy),
-          startedAt: input.now,
-        },
+      const changed =
+        existing.enrollment.repositoryNodeId !== repositoryNodeId ||
+        existing.enrollment.milestoneNodeId !== milestoneNodeId ||
+        existing.enrollment.policyDigest !== issuePickupPolicyDigest(input.policy) ||
+        existing.timezone !== input.timezone;
+      if (changed && !input.reconcile) throw new IntakeError('issue-pickup-enrollment-changed');
+      let updated: PickupEnrollment = changed
+        ? {
+            ...existing,
+            timezone: input.timezone,
+            enrollment: {
+              ...existing.enrollment,
+              repositoryNodeId,
+              milestoneNodeId,
+              policyDigest: issuePickupPolicyDigest(input.policy),
+            },
+          }
+        : existing;
+      // Target and window edits do not change the native job or its activation.
+      const commit = async () => {
+        if (!changed) return;
+        state.records[state.records.indexOf(existing)] = updated;
+        updated = await this.save(state, updated, existing, true);
       };
-      state.records.push(record);
-      await this.save(state, record, undefined, true);
-      return record;
-    });
+      if (input.reconcile) await input.reconcile(updated, commit);
+      else await commit();
+      return updated;
+    }
+    const record: PickupEnrollment = {
+      instanceId: identity.instanceId,
+      timezone: input.timezone,
+      enrollment: {
+        id: randomUUID(),
+        runtime: input.runtime,
+        scope: input.scope,
+        workspaceDir: input.workspaceDir,
+        agentId: input.agentId,
+        account: { login: input.client.identity.login, nodeId: input.client.identity.nodeId },
+        repositoryNodeId,
+        milestoneNodeId,
+        policyDigest: issuePickupPolicyDigest(input.policy),
+        startedAt: input.now,
+      },
+    };
+    state.records.push(record);
+    await this.save(state, record, undefined, true);
+    return record;
   }
 
   async activate(id: string, nativeId: string, previousNativeId?: string) {
-    return this.edit(async () => {
-      const state = await this.read();
-      const record = state.records.find((entry) => entry.enrollment.id === id);
-      if (!record || (record.nativeId && record.nativeId !== (previousNativeId ?? nativeId)))
-        throw new IntakeError('issue-pickup-enrollment-changed');
-      const activated = { ...record, nativeId };
-      state.records[state.records.indexOf(record)] = activated;
-      await this.save(state, activated, record, false);
-    });
+    const state = await this.read();
+    const record = state.records.find((entry) => entry.enrollment.id === id);
+    if (!record || (record.nativeId && record.nativeId !== (previousNativeId ?? nativeId)))
+      throw new IntakeError('issue-pickup-enrollment-changed');
+    const activated = { ...record, nativeId };
+    state.records[state.records.indexOf(record)] = activated;
+    await this.save(state, activated, record, false);
   }
 }

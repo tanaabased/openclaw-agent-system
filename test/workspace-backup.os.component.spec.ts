@@ -1,4 +1,4 @@
-import fileBackupService from './file-backup-service.ts';
+import backupServiceFixture from './backup-service-fixture.ts';
 import { DatabaseSync } from 'node:sqlite';
 import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
@@ -55,8 +55,9 @@ const manifest: AgentManifest = {
 
 describe('workspace backup', () => {
   let root: string;
+  let storage: Awaited<ReturnType<typeof sqliteAgentFixture>>;
   let workspace: string;
-  const service = fileBackupService();
+  let service: ReturnType<typeof backupServiceFixture>;
   function commandManifestService() {
     return new AgentManifestService({
       getConfig: () => ({}),
@@ -67,6 +68,8 @@ describe('workspace backup', () => {
   }
   beforeEach(async () => {
     root = await realpath(await mkdtemp(join(tmpdir(), 'workspace-backup-')));
+    storage = await sqliteAgentFixture(root, manifest.agent.id);
+    service = backupServiceFixture(storage);
     workspace = join(root, 'workspace');
     await mkdir(workspace);
     await writeFile(join(workspace, 'agent.yaml'), 'schema-version: 1\nagent: { id: tanaabot }\n');
@@ -177,7 +180,7 @@ describe('workspace backup', () => {
   it('should distinguish absent, required, and explicitly omitted agent databases', async function () {
     this.timeout(10_000);
     const agentDir = join(root, 'custom-agent');
-    const selected = fileBackupService(async () => ({ paths: [agentDir], agentDir }));
+    const selected = backupServiceFixture(storage, async () => ({ paths: [agentDir], agentDir }));
     const auto = await selected.create(
       await selected.plan({
         manifest: { ...manifest, backup: { openclawState: 'auto' } },
@@ -324,7 +327,8 @@ describe('workspace backup', () => {
         stderr: '',
       };
     };
-    const selected = fileBackupService(
+    const selected = backupServiceFixture(
+      storage,
       async () => ({ paths: [agentDir], agentDir, openclawVersion: '2026.9.6' }),
       snapshotCommand,
     );
@@ -373,7 +377,13 @@ describe('workspace backup', () => {
       observer.mock.restore();
       syncBuiltinESMExports();
     });
-    assert.deepEqual(seen[0], ['manifest.json', 'openclaw-state', 'workspace']);
+    assert.deepEqual(seen[0], [
+      'agent-system-storage',
+      'instance',
+      'manifest.json',
+      'openclaw-state',
+      'workspace',
+    ]);
     assert.equal(recovery.manifest.agentId, 'tanaabot');
     assert.equal(
       await readFile(join(recovery.target, 'openclaw-state', 'openclaw-agent.sqlite'), 'utf8'),
@@ -384,7 +394,8 @@ describe('workspace backup', () => {
       'private memory\n',
     );
     assert.ok(calls.includes('restore'));
-    const failing = fileBackupService(
+    const failing = backupServiceFixture(
+      storage,
       async () => ({ paths: [agentDir], agentDir }),
       async (args) =>
         args[2] === 'restore'
@@ -402,7 +413,7 @@ describe('workspace backup', () => {
 
   it('should reject live and nonempty targets without changing them', async () => {
     const created = await service.create(await service.plan({ manifest, workspaceDir: workspace }));
-    const selected = fileBackupService(async () => ({
+    const selected = backupServiceFixture(storage, async () => ({
       paths: [],
       livePaths: [workspace, join(root, 'live-state')],
     }));
@@ -428,7 +439,8 @@ describe('workspace backup', () => {
     const agentDir = join(root, 'agent');
     await mkdir(agentDir);
     await writeFile(join(agentDir, 'openclaw-agent.sqlite'), 'unreadable fixture');
-    const selected = fileBackupService(
+    const selected = backupServiceFixture(
+      storage,
       async () => ({ paths: [agentDir], agentDir }),
       async () => ({ code: 1, stdout: '', stderr: 'database integrity failed' }),
     );
@@ -775,7 +787,7 @@ describe('workspace backup', () => {
     const database = join(workspace, 'custom-memory.sqlite');
     await writeFile(database, 'database');
     await writeFile(`${database}-wal`, 'wal');
-    const protectedService = fileBackupService(async () => ({
+    const protectedService = backupServiceFixture(storage, async () => ({
       paths: [database, `${database}-wal`],
     }));
     const result = await protectedService.plan({
@@ -827,7 +839,7 @@ describe('workspace backup', () => {
       stateDir,
       workspaceDir: hostWorkspace,
     };
-    const protectedService = fileBackupService(async () => protection);
+    const protectedService = backupServiceFixture(storage, async () => protection);
     const plan = await protectedService.plan({
       manifest,
       workspaceDir: hostWorkspace,
@@ -861,7 +873,7 @@ describe('workspace backup', () => {
     await assert.rejects(protectedService.plan({ manifest, workspaceDir: otherWorkspace }), {
       code: 'backup-workspace-is-runtime-state',
     });
-    const unsafeService = fileBackupService(async () => ({
+    const unsafeService = backupServiceFixture(storage, async () => ({
       ...protection,
       workspaceDir: agentDir,
     }));
@@ -926,7 +938,7 @@ describe('workspace backup', () => {
       );
       assert.equal((await lstat(join(restored, 'workspace', 'run.sh'))).mode & 0o777, 0o755, mask);
     }
-    assert.equal(result.manifest.coverage.stage, 'workspace-only');
+    assert.equal(result.manifest.coverage.stage, 'workspace-and-agent-state');
     const next = await service.create(await service.plan({ manifest, workspaceDir: workspace }));
     assert.notEqual(next.archive, result.archive);
     assert.ok(
@@ -1263,6 +1275,7 @@ describe('workspace backup', () => {
     });
 
     it('should reject another agent archive inside the own workspace', async () => {
+      await sqliteAgentFixture(root, 'other');
       const created = await service.create(
         await service.plan({
           manifest: { ...manifest, agent: { id: 'other' } },

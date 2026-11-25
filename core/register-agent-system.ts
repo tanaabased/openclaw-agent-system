@@ -374,7 +374,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         await store.activate(id, nativeId, previousNativeId);
       },
     },
-    root: join(api.runtime.state.resolveStateDir(), 'agent-system-automations'),
     profile: api.runtime.state.resolveStateDir(),
     command: openClawCommand,
     environment: Object.fromEntries(
@@ -935,7 +934,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       resolveOpenClawCommandWorktree(
         {
           taskContext,
-          dispatchRoot,
           readSession: (sessionKey) =>
             api.runtime.agent.session.getSessionEntryAsync({
               sessionKey,

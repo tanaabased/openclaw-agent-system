@@ -153,7 +153,6 @@ export default async function reconcileOpenClawLifecycle(input: {
         if (record.threadId && record.sessionCreation?.sessionId)
           await retirementLocalData({
             sessionStorage: current.sessionStorage,
-            root: service.dependencies.root,
             binding: {
               runtime: 'openclaw',
               agentId: manifest.agent.id,
@@ -204,7 +203,6 @@ export default async function reconcileOpenClawLifecycle(input: {
             if (!provider) throw new Error('feedback-provider-unavailable');
             return replyOwnPublications({
               sessionStorage: current.sessionStorage,
-              root: service.dependencies.root,
               binding: {
                 runtime: 'openclaw',
                 agentId: manifest.agent.id,

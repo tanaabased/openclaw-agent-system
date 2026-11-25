@@ -11,9 +11,11 @@ import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import type { GitHubIdentity } from '../channels/github/provider/work-item.ts';
 
 describe('channels/github/identity-cache', () => {
+  let storage: Awaited<ReturnType<typeof sqliteAgentFixture>>;
   let root: string;
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'github-identities-'));
+    storage = await sqliteAgentFixture(root, 'receiver');
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
@@ -54,14 +56,13 @@ describe('channels/github/identity-cache', () => {
     await new GitHubIdentityCache({ root, scope: 'test' }, agent).hydrate(fresh);
     assert.equal(fresh.issueAssignment!.allowed[0]!.nodeId, actor.nodeId);
     assert.equal(fresh.issueAssignment!.allowed[1]!.login, actor.login);
-    assert.equal(await cache.file.read(), undefined);
   });
 
   it('should resolve only workflow users for routed assignment', async () => {
     const input = policy();
     input.routing = ['owner/*'];
     const references: string[] = [];
-    await new GitHubIdentityCache({ root, scope: 'routing' }).resolve(
+    await new GitHubIdentityCache({ root, scope: 'routing' }, storage.agent).resolve(
       input,
       {
         resolveIdentity: async (reference) => {
@@ -81,7 +82,7 @@ describe('channels/github/identity-cache', () => {
       recipients: [{ login: 'recipient', nodeId: 'U_recipient', roles: ['reviewer'] }],
     };
     const references: string[] = [];
-    await new GitHubIdentityCache({ root, scope: 'feedback' }).resolve(
+    await new GitHubIdentityCache({ root, scope: 'feedback' }, storage.agent).resolve(
       input,
       {
         resolveIdentity: async (reference) => {
@@ -103,7 +104,7 @@ describe('channels/github/identity-cache', () => {
   it('should retain inherited author verification and reject required identity failures', async () => {
     const input = policy();
     const references: string[] = [];
-    await new GitHubIdentityCache({ root, scope: 'inherited' }).resolve(
+    await new GitHubIdentityCache({ root, scope: 'inherited' }, storage.agent).resolve(
       input,
       {
         resolveIdentity: async (reference) => {
@@ -116,7 +117,7 @@ describe('channels/github/identity-cache', () => {
     );
     assert.deepEqual(new Set(references), new Set(['@actor', 'U_actor', reviewer.nodeId]));
     await assert.rejects(
-      new GitHubIdentityCache({ root, scope: 'failed-author' }).resolve(
+      new GitHubIdentityCache({ root, scope: 'failed-author' }, storage.agent).resolve(
         policy(),
         {
           resolveIdentity: async () => {
@@ -128,7 +129,7 @@ describe('channels/github/identity-cache', () => {
       /author-unavailable/,
     );
     await assert.rejects(
-      new GitHubIdentityCache({ root, scope: 'changed-author' }).resolve(
+      new GitHubIdentityCache({ root, scope: 'changed-author' }, storage.agent).resolve(
         input,
         {
           resolveIdentity: async () => ({ ...reviewer, nodeId: 'U_wrong' }),
@@ -141,7 +142,7 @@ describe('channels/github/identity-cache', () => {
   });
 
   it('should batch retained immutable pins during scans while preserving rename and conflict checks', async () => {
-    const cache = new GitHubIdentityCache({ root, scope: 'batch' });
+    const cache = new GitHubIdentityCache({ root, scope: 'batch' }, storage.agent);
     await cache.resolve(policy(), { resolveIdentity });
     const batches: string[][] = [];
     const client = {
@@ -180,10 +181,12 @@ describe('channels/github/identity-cache', () => {
   });
 
   it('should follow a pinned immutable identity across rename without granting its old name to a new account', async () => {
-    await new GitHubIdentityCache({ root, scope: 'test' }).resolve(policy(), { resolveIdentity });
+    await new GitHubIdentityCache({ root, scope: 'test' }, storage.agent).resolve(policy(), {
+      resolveIdentity,
+    });
     const requests: string[] = [];
     const fresh = policy();
-    await new GitHubIdentityCache({ root, scope: 'test' }).resolve(
+    await new GitHubIdentityCache({ root, scope: 'test' }, storage.agent).resolve(
       fresh,
       {
         resolveIdentity: async (reference) => {
@@ -210,11 +213,11 @@ describe('channels/github/identity-cache', () => {
       },
     };
     const location = { root, scope: 'operation' };
-    await new GitHubIdentityCache(location).resolve(policy(), client);
+    await new GitHubIdentityCache(location, storage.agent).resolve(policy(), client);
     const first = requests.length;
-    await new GitHubIdentityCache(location).resolve(policy(), client);
+    await new GitHubIdentityCache(location, storage.agent).resolve(policy(), client);
     assert.equal(requests.length, first);
-    await new GitHubIdentityCache(location).resolve(policy(), {
+    await new GitHubIdentityCache(location, storage.agent).resolve(policy(), {
       resolveIdentity: async () => {
         throw new Error('task operations must reuse verified pins');
       },
@@ -225,11 +228,11 @@ describe('channels/github/identity-cache', () => {
       'issue-assignment': { allowed: ['@owner'] },
     });
     await assert.rejects(
-      new GitHubIdentityCache(location).resolve(changed, client),
+      new GitHubIdentityCache(location, storage.agent).resolve(changed, client),
       /github-identity-type-invalid/,
     );
     const next = policy();
-    await new GitHubIdentityCache(location).resolve(
+    await new GitHubIdentityCache(location, storage.agent).resolve(
       next,
       {
         resolveIdentity: async (reference) => {
@@ -244,12 +247,15 @@ describe('channels/github/identity-cache', () => {
     assert.ok(requests.length > first);
     assert.equal(next.issueAssignment!.allowed[0]!.login, 'renamed');
     const beforeOther = requests.length;
-    await new GitHubIdentityCache({ root, scope: 'other-workspace' }).resolve(policy(), client);
+    await new GitHubIdentityCache({ root, scope: 'other-workspace' }, storage.agent).resolve(
+      policy(),
+      client,
+    );
     assert.equal(requests.length, beforeOther + first);
   });
 
   it('should resolve newly configured identities without reviving removed policy entries', async () => {
-    const cache = new GitHubIdentityCache({ root, scope: 'policy' });
+    const cache = new GitHubIdentityCache({ root, scope: 'policy' }, storage.agent);
     await cache.resolve(policy(), { resolveIdentity }, 'assignment');
     const changed = decode({
       'schema-version': 3,
@@ -284,7 +290,7 @@ describe('channels/github/identity-cache', () => {
         'issue-assignment': { allowed: [{ login: 'actor', 'node-id': 'U_actor' }] },
       });
       await assert.rejects(
-        new GitHubIdentityCache({ root, scope: 'test' }).resolve(input, {
+        new GitHubIdentityCache({ root, scope: 'test' }, storage.agent).resolve(input, {
           resolveIdentity: async (reference) =>
             reference === '@owner' || reference === 'O_owner' ? owner : identity,
         }),
@@ -292,14 +298,14 @@ describe('channels/github/identity-cache', () => {
       );
     }
     await assert.rejects(
-      new GitHubIdentityCache({ root, scope: 'test' }).resolve(policy(), {}),
+      new GitHubIdentityCache({ root, scope: 'test' }, storage.agent).resolve(policy(), {}),
       /resolution-unavailable/,
     );
   });
 
   it('should retain verified pins through partial failure and avoid resolving reviewers for intake', async () => {
     const input = policy();
-    const cache = new GitHubIdentityCache({ root, scope: 'test' });
+    const cache = new GitHubIdentityCache({ root, scope: 'test' }, storage.agent);
     await cache.resolve(
       input,
       {
@@ -319,52 +325,49 @@ describe('channels/github/identity-cache', () => {
       /provider-offline/,
     );
     const fresh = policy();
-    await new GitHubIdentityCache({ root, scope: 'test' }).hydrate(fresh);
+    await new GitHubIdentityCache({ root, scope: 'test' }, storage.agent).hydrate(fresh);
     assert.equal(fresh.issueAssignment!.allowed[0]!.nodeId, 'U_actor');
     assert.equal(fresh.issueAssignment!.allowed.length, 2);
   });
 
-  for (const backend of ['file', 'sqlite']) {
-    it('should retain the first identity across competing ' + backend + ' lookups', async () => {
-      const locationRoot = root + '/legacy';
-      const sqlite =
-        backend === 'sqlite' ? (await sqliteAgentFixture(root, 'a')).sqliteInstallation : undefined;
-      const cache = (location: { root: string; scope: string }) =>
-        new GitHubIdentityCache(location, sqlite && bindSqliteStorage(sqlite, 'a').agent);
-      for (const conflict of [false, true]) {
-        const location = { root: locationRoot, scope: conflict ? 'conflict' : 'matching' };
-        const input = () =>
-          decode({
-            'schema-version': 3,
-            routing: ['owner/*'],
-            'issue-assignment': { allowed: ['@actor'] },
-          });
-        const started = Promise.withResolvers<void>();
-        const release = Promise.withResolvers<void>();
-        const slow = cache(location).resolve(input(), {
-          resolveIdentity: async () => {
-            started.resolve();
-            await release.promise;
-            return conflict ? { ...actor, nodeId: 'U_replacement' } : actor;
-          },
+  it('should retain the first identity across competing lookups', async () => {
+    const locationRoot = root + '/legacy';
+    const sqlite = (await sqliteAgentFixture(root, 'a')).sqliteInstallation;
+    const cache = (location: { root: string; scope: string }) =>
+      new GitHubIdentityCache(location, bindSqliteStorage(sqlite, 'a').agent);
+    for (const conflict of [false, true]) {
+      const location = { root: locationRoot, scope: conflict ? 'conflict' : 'matching' };
+      const input = () =>
+        decode({
+          'schema-version': 3,
+          routing: ['owner/*'],
+          'issue-assignment': { allowed: ['@actor'] },
         });
-        const outcome = slow.then(
-          () => undefined,
-          (error: unknown) => error,
-        );
-        await started.promise;
-        try {
-          await cache(location).resolve(input(), { resolveIdentity });
-          assert.equal((await cache(location).read()).entries['@actor']?.nodeId, actor.nodeId);
-        } finally {
-          release.resolve();
-        }
-        const error = await outcome;
-        if (conflict) assert.match(String(error), /github-identity-conflict/);
-        else assert.equal(error, undefined);
+      const started = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const slow = cache(location).resolve(input(), {
+        resolveIdentity: async () => {
+          started.resolve();
+          await release.promise;
+          return conflict ? { ...actor, nodeId: 'U_replacement' } : actor;
+        },
+      });
+      const outcome = slow.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      await started.promise;
+      try {
+        await cache(location).resolve(input(), { resolveIdentity });
         assert.equal((await cache(location).read()).entries['@actor']?.nodeId, actor.nodeId);
+      } finally {
+        release.resolve();
       }
-      if (sqlite) await assert.rejects(stat(locationRoot), { code: 'ENOENT' });
-    });
-  }
+      const error = await outcome;
+      if (conflict) assert.match(String(error), /github-identity-conflict/);
+      else assert.equal(error, undefined);
+      assert.equal((await cache(location).read()).entries['@actor']?.nodeId, actor.nodeId);
+    }
+    await assert.rejects(stat(locationRoot), { code: 'ENOENT' });
+  });
 });

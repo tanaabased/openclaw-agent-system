@@ -1,3 +1,4 @@
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 
@@ -75,7 +76,11 @@ describe('cli/automation-execute', () => {
         automations: {
           assertReportCurrent: async () => {},
           selectReportSettings: async () => {},
-          reportStore: async () => new AutomationReportStore(`${workspaceDir}/reports`),
+          reportStore: async () =>
+            new AutomationReportStore({
+              agentId: 'a',
+              ...(await sqliteAgentFixture(workspaceDir, 'a')),
+            }),
           admit: async () => ({
             command: { kind: 'exec', executable: 'true', args: [], timeoutSeconds: 10 },
             displayName: '⚙️ TEST JOB',
@@ -282,7 +287,11 @@ describe('cli/automation-execute', () => {
         automations: {
           assertReportCurrent: async () => {},
           selectReportSettings: async () => {},
-          reportStore: async () => new AutomationReportStore(`${workspaceDir}/reports`),
+          reportStore: async () =>
+            new AutomationReportStore({
+              agentId: 'a',
+              ...(await sqliteAgentFixture(workspaceDir, 'a')),
+            }),
           admit: async () => ({
             command: { kind: 'exec', executable: 'true', args: [], timeoutSeconds: 10 },
             context: { agentId: 'a', workspaceDir },

@@ -665,7 +665,7 @@ export async function prepareIssueProject(
         },
         {
           sqliteInstallation: codexStorageLocation(tx.pluginData),
-          storageBackend: deps.storageBackend,
+
           git: deps.git,
           signal,
           authorize: fresh,

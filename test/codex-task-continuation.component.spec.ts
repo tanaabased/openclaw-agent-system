@@ -291,7 +291,7 @@ describe('agent/codex task-continuation', () => {
         { ...context.deliveryPrepareRequest, title: 'One poem', body: 'The completed poem.' },
         {
           codexHome: fixtureState.codexHome,
-          storageBackend: fixtureState.deps.storageBackend,
+
           threadId: fixtureState.native!.id,
           native: fixtureState.deps.native,
           git: (cwd, argv, signal) =>
@@ -538,7 +538,7 @@ describe('agent/codex task-continuation', () => {
       createdAt: 'invalid',
       routingNote: 'unused',
     };
-    await store.contract.persistence!.save(
+    await store.contract.persistence.save(
       { ...raw, records: [...raw.records, damaged] as unknown as typeof raw.records },
       raw,
     );
@@ -594,7 +594,7 @@ describe('agent/codex task-continuation', () => {
       createdAt: 1,
       manifestDigest: 'other',
     };
-    await store.contract.persistence!.save(
+    await store.contract.persistence.save(
       { ...raw, records: [...raw.records, damaged, third] as unknown as typeof raw.records },
       raw,
     );
@@ -1432,7 +1432,7 @@ describe('agent/codex task-continuation', () => {
     it(`should launch unassigned manual ${kind} work through existing native owners`, async () => {
       if (kind === 'pull-request') fixturePullRequest(fixtureState.fixture);
       const selected = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-      await selected.store.agentStorage!.clearIntake(selected.store.location.scope);
+      await selected.store.agentStorage.clearIntake(selected.store.location.scope);
       await writeFile(
         join(fixtureState.workspace, 'agent.yaml'),
         JSON.stringify({ ...fixtureState.manifest, github: { username: 'receiver' } }),

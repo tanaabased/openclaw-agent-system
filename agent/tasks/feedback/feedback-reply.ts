@@ -44,9 +44,8 @@ import {
 } from '../../../channels/github/publication/publication-contract.ts';
 
 export interface FeedbackReplyDependencies {
-  sessionStorage?: SessionStorage;
+  sessionStorage: SessionStorage;
   defaultTarget?: string;
-  root: string;
   binding: ReplyBinding;
   turnId: string;
   inputId: string;
@@ -93,7 +92,7 @@ async function runFeedbackReply(
     update: undefined,
   };
   await deps.assertCurrent();
-  const store = new ReplyStore(deps.root, deps.binding, deps.sessionStorage);
+  const store = new ReplyStore(deps.binding, deps.sessionStorage);
   const result = await store.edit(async (drafts, save) => {
     const independent = !input.purpose && !deps.feedback;
     let draft =
@@ -599,7 +598,7 @@ async function runFeedbackReply(
         );
     let sharedAttempt = false;
     if (input.operation === 'reconcile' && !draft.attempted && !draft.receipt) {
-      sharedAttempt = Boolean(await deps.sessionStorage?.hasReplyPublication(draft));
+      sharedAttempt = Boolean(await deps.sessionStorage.hasReplyPublication(draft));
       if (!sharedAttempt) throw new Error('reply-publication-unattempted');
     }
     const record = draft;
@@ -670,7 +669,7 @@ async function runFeedbackReply(
               }
             : deps.provider,
         }),
-        exclusive: (key, run) => store.publication(key, run),
+        exclusive: (_key, run) => run(),
       },
     }).catch((error: unknown) => {
       if (

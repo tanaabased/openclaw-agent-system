@@ -1,15 +1,6 @@
 import readGlobalConfigurationSource, { pluginSetting } from '../global-configuration.ts';
-import { readdir } from 'node:fs/promises';
-import {
-  validateStorageConfig,
-  defaultStorageBackend,
-  bindIntakeStore,
-  type StorageBackend,
-} from './backend.ts';
-import IntakeRecordStore, {
-  IntakeError,
-  intakeScopeLocation,
-} from '../../channels/github/intake/record-store.ts';
+import { validateStorageConfig, bindIntakeStore } from './backend.ts';
+import { IntakeError, intakeScopeLocation } from '../../channels/github/intake/record-store.ts';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import CodexSidebarJournal from '../codex-sidebar-journal.ts';
@@ -38,19 +29,8 @@ export async function codexSidebarJournal(pluginData: string, profile: string, n
   );
 }
 
-export function codexPickupStore(
-  pluginData: string,
-  agentId: string,
-  backend = defaultStorageBackend,
-) {
-  return bindPickupStore(codexStorageLocation(pluginData), agentId, backend);
-}
-
-async function storageNames(directory: string) {
-  return readdir(directory).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === 'ENOENT') return [] as string[];
-    throw error;
-  });
+export function codexPickupStore(pluginData: string, agentId: string) {
+  return bindPickupStore(codexStorageLocation(pluginData), agentId);
 }
 
 export async function* codexAgentDatabases(pluginData: string) {
@@ -58,19 +38,7 @@ export async function* codexAgentDatabases(pluginData: string) {
   yield* sqliteAgentDatabases(codexStorageLocation(pluginData));
 }
 
-export async function* retainedIntakeCandidates(
-  pluginData: string,
-  backend: StorageBackend = defaultStorageBackend,
-) {
-  if (backend === 'file') {
-    const names = await storageNames(pluginData);
-    if (names.length > 2000) throw new IntakeError('intake-state-invalid');
-    for (const name of names) {
-      const match = /^github-intake-([a-f0-9]{64})\.json$/u.exec(name);
-      if (match) yield { store: new IntakeRecordStore(intakeScopeLocation(pluginData, match[1]!)) };
-    }
-    return;
-  }
+export async function* retainedIntakeCandidates(pluginData: string) {
   for await (const { agentId, agent } of codexAgentDatabases(pluginData)) {
     for (const scope of await agent.listIntakeScopes()) {
       if (!/^[a-f0-9]{64}$/u.test(scope)) throw new IntakeError('intake-state-invalid');

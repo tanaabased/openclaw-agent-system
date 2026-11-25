@@ -1,3 +1,4 @@
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -24,7 +25,7 @@ import runCodexDelivery, {
   CodexDeliveryFailure,
   type CodexDeliveryDependencies,
 } from '../agent/tasks/delivery/codex-delivery.ts';
-import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
+import type CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import { runCodexIntake } from '../agent/codex-intake.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
@@ -302,7 +303,7 @@ describe('agent/codex-delivery', () => {
     );
     await entered.promise;
     try {
-      const other = new CodexDispatchStore(store.root, store.scope);
+      const other = (await selectCodexTaskContext(pluginData, deps)).journal;
       await other.exclusive(async (state, save) => {
         state.discoveryCheckedAt = baseline;
         await save();
@@ -335,7 +336,7 @@ describe('agent/codex-delivery', () => {
     );
     await entered.promise;
     try {
-      const other = new CodexDispatchStore(store.root, store.scope);
+      const other = (await selectCodexTaskContext(pluginData, deps)).journal;
       await other.exclusive(async (state, save) => {
         state.discoveryCheckedAt = baseline;
         await save();
@@ -446,7 +447,7 @@ describe('agent/codex-delivery', () => {
         /delivery-link-operator-required/,
       );
     const current = await selectCodexTaskContext(pluginData, deps);
-    store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    store = current.journal;
     const saved = (await store.read()).records[0]!;
     assert.equal(saved.nativeWork, undefined);
     assert.equal(saved.handoff, undefined);
@@ -461,7 +462,7 @@ describe('agent/codex-delivery', () => {
       { action: 'assessment', operation: 'context' },
       {
         codexHome: deps.codexHome,
-        storageBackend: deps.storageBackend,
+
         threadId: deps.threadId,
         native: {
           ...codexDispatchNative(async () => assert.fail('unexpected native request')),
@@ -565,24 +566,23 @@ describe('agent/codex-delivery', () => {
       commonDir = join(root, 'common');
     for (const path of [workspace, codexHome, worktree, source, commonDir]) await mkdir(path);
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
+    await sqliteAgentFixture(pluginData, 'receiver');
     await bindCodexWorkspace(pluginData, workspace);
     fixture = intakeFixture();
     await runCodexIntake(pluginData, true, {
-      storageBackend: 'file',
       codexHome,
       now: () => baseline,
       connect: async () => fixture.client,
     });
     await runCodexIntake(pluginData, false, {
-      storageBackend: 'file',
       codexHome,
       now: () => baseline + 60000,
       assertActive: async () => {},
       connect: async () => fixture.client,
     });
-    const current = await selectCodexTaskContext(pluginData, { codexHome, storageBackend: 'file' });
+    const current = await selectCodexTaskContext(pluginData, { codexHome });
     const intake = (await current.store.read())!.records[0]!;
-    store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    store = current.journal;
     await store.exclusive(async (state, save) => {
       state.records.push({
         id,
@@ -643,7 +643,6 @@ describe('agent/codex-delivery', () => {
     failPatch = false;
     deps = {
       delay: async () => {},
-      storageBackend: 'file',
       codexHome,
       threadId: 'child',
       attachment: async () => attached,
@@ -1182,7 +1181,7 @@ describe('agent/codex-delivery', () => {
         record.issueKey = issueKey(record.manualIssue);
         await save();
       });
-      await rm(current.store.location.path);
+      await current.store.agentStorage.clearIntake(current.store.location.scope);
       fixture.item.assignees = [];
       fixture.client.listAssignmentEvents = async () => {
         throw new Error('operator delivery must not fabricate assignment history');

@@ -183,7 +183,7 @@ describe('agent database', () => {
     };
     const value = { version: 4 as const, scope, resetGeneration: 'saved', projectPickup: pickup };
     await agent.write([{ table: 'dispatchState', action: 'insert', row: { scope: key, value } }]);
-    const journal = new OpenClawDispatchStore(root, scope, sqliteDispatchPersistence(agent, key));
+    const journal = new OpenClawDispatchStore(scope, sqliteDispatchPersistence(agent, key));
     assert.deepEqual((await journal.readEnvelope()).issuePickup, pickup);
     await journal.observeIntake(async (_state, save) => save());
     const reopened = bind(root, 'receiver').agent;

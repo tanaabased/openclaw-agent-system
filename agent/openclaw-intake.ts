@@ -58,8 +58,8 @@ export default class OpenClawIntake {
     return selectOpenClawTaskContext(this.dependencies, manifest, workspaceDir, options);
   }
   pickupStore(agentId: string) {
-    const { sqliteInstallation, storageBackend } = this.dependencies;
-    return sqliteInstallation && bindPickupStore(sqliteInstallation, agentId, storageBackend);
+    const { sqliteInstallation } = this.dependencies;
+    return sqliteInstallation && bindPickupStore(sqliteInstallation, agentId);
   }
   async readiness(
     manifest: AgentManifest,

@@ -30,7 +30,6 @@ export default async function retireCodexNative(
     const native = deps.retirementNative ?? codexRetirementNative(connection.request);
     return await nativeRetirement({
       sessionStorage: current.sessionStorage,
-      root: pluginData,
       binding: {
         runtime: 'codex',
         agentId: current.agentId,
@@ -53,7 +52,7 @@ export default async function retireCodexNative(
           resolvePolicy: false,
           inspectionOnly: true,
         });
-        await assertNotificationResetRetirement(pluginData, current.store, input.native);
+        await assertNotificationResetRetirement(current.store, input.native);
         const inputEvent = await codexDirectInput(connection.request, caller);
         if (
           fresh.workspace !== current.workspace ||
@@ -80,12 +79,7 @@ export default async function retireCodexNative(
           thread.ephemeral === true
         )
           throw new Error('native-retirement-target-mismatch');
-        await assertNotificationResetRetirement(
-          pluginData,
-          current.store,
-          input.native,
-          thread.cwd,
-        );
+        await assertNotificationResetRetirement(current.store, input.native, thread.cwd);
         return {
           id: input.native,
           incarnation: input.native,

@@ -1,3 +1,5 @@
+import codexStorageLocation from '../agent/storage/codex-storage.ts';
+import { bindSqliteInstallation } from '../agent/storage/agent-database.ts';
 import assert from 'node:assert/strict';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import workflowFailure from '../agent/tasks/workflow-failure.ts';
@@ -16,6 +18,9 @@ describe('agent/codex-dispatch-repository', () => {
   let retained: DispatchRepositoryPreparation | undefined;
   beforeEach(async () => {
     fixture = await repositoryFixture();
+    const location = codexStorageLocation(fixture.workspaceDir);
+    const db = bindSqliteInstallation(location);
+    await db.install();
     retained = undefined;
   });
   afterEach(async () => {
@@ -35,7 +40,7 @@ describe('agent/codex-dispatch-repository', () => {
       },
       {
         git: fixture.git.execute.bind(fixture.git),
-        storageBackend: 'file',
+        sqliteInstallation: codexStorageLocation(fixture.workspaceDir),
         authorize,
         retain: async (value) => {
           retained = structuredClone(value);

@@ -1,3 +1,6 @@
+import { bindSqliteInstallation } from '../agent/storage/agent-database.ts';
+import codexStorageLocation from '../agent/storage/codex-storage.ts';
+import { bindInstanceStore } from '../agent/storage/pickup-backend.ts';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -13,7 +16,6 @@ import {
   bindNativeMaterial,
   nativeMaterialResponse,
 } from '../agent/tasks/context/native-material.ts';
-import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
 import CodexAssignmentClaims, {
   codexInstanceStore,
 } from '../agent/tasks/dispatch/codex-assignment-claims.ts';
@@ -590,10 +592,7 @@ describe('agent/codex dispatch', () => {
     }>;
     assert.ok(records[0]!.effective);
     assert.equal(records[0]!.claimId, undefined);
-    assert.equal(
-      await codexInstanceStore(fixtureState.pluginData, fixtureState.deps.storageBackend).inspect(),
-      undefined,
-    );
+    assert.equal(await codexInstanceStore(fixtureState.pluginData).inspect(), undefined);
     assert.equal(comments.length, 0);
   });
 
@@ -911,9 +910,9 @@ describe('agent/codex dispatch', () => {
     }
     fixtureState.deps.connect = async () => connection.client;
     fixtureState.deps.claims = new CodexAssignmentClaims(
-      codexInstanceStore(fixtureState.pluginData, fixtureState.deps.storageBackend),
+      codexInstanceStore(fixtureState.pluginData),
     );
-    await codexInstanceStore(fixtureState.pluginData, fixtureState.deps.storageBackend).identity();
+    await codexInstanceStore(fixtureState.pluginData).identity();
     const first = await fixtureState.next();
     assert.equal(first.status, 'claim-waiting', JSON.stringify(first));
     assert.equal((await fixtureState.next()).status, 'idle');
@@ -942,10 +941,9 @@ describe('agent/codex dispatch', () => {
     const { store, client, comments } = await fixtureState.claiming();
     const selected = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
     const intake = (await selected.store.read())!.records[0]!;
-    const other = new OpenClawAssignmentClaims(
-      new AssignmentClaimStore(join(fixtureState.root, 'openclaw-instance')),
-      () => client,
-    );
+    const installation = codexStorageLocation(join(fixtureState.root, 'openclaw-instance'));
+    await bindSqliteInstallation(installation).install();
+    const other = new OpenClawAssignmentClaims(bindInstanceStore(installation), () => client);
     const eligibleInstanceIds = [
       (await store.identity()).instanceId,
       (await other.store.identity()).instanceId,
@@ -2365,7 +2363,7 @@ describe('agent/codex dispatch', () => {
     await fixtureState.next();
     const before = await fixtureState.readDispatchState();
     const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const lockPath = current.journal.contract.persistence!.lockPath;
+    const lockPath = current.journal.contract.persistence.lockPath;
     const lock = properLockfile.lock;
     properLockfile.lock = async (path, options) => {
       if (String(path) === lockPath)
@@ -2390,7 +2388,7 @@ describe('agent/codex dispatch', () => {
     const prepared = await fixtureState.prepare();
     fixtureState.created();
     const current = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
-    const lockPath = current.journal.contract.persistence!.lockPath;
+    const lockPath = current.journal.contract.persistence.lockPath;
     const lock = properLockfile.lock;
     let refuse = true;
     properLockfile.lock = async (path, options) => {
@@ -2501,7 +2499,7 @@ describe('agent/codex dispatch', () => {
     const before = await store.read();
     const lock = properLockfile.lock;
     properLockfile.lock = async (path, options) => {
-      if (String(path) === store.contract.persistence!.lockPath)
+      if (String(path) === store.contract.persistence.lockPath)
         throw Object.assign(new Error('acquisition exhausted'), {
           code: 'private-state-file-lock-busy',
         });

@@ -29,7 +29,6 @@ export default async function implementationEntry(
   const input = parseDirectImplementationRequest(request);
   await deps.assertCurrent();
   const store = new DirectEntryStore(
-    deps.root,
     deps.binding,
     implementationEntriesSchema,
     'implementation',

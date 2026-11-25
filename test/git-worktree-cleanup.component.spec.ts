@@ -1,11 +1,13 @@
+import codexStorageLocation from '../agent/storage/codex-storage.ts';
+import { bindSqliteInstallation } from '../agent/storage/agent-database.ts';
 import assert from 'node:assert/strict';
-import { lstat, mkdir, readFile, rm, utimes } from 'node:fs/promises';
+import { lstat, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 import GitRepositoryService from '../tools/git/repository-service.ts';
 import GitWorktreeService from '../tools/git/worktree-service.ts';
-import { gitWorktreeRepositoryDirectoryName } from '../tools/git/worktree-names.ts';
+import { DatabaseSync } from 'node:sqlite';
 import { repositoryFixture } from './git-repository-fixture.ts';
 
 const repositoryId = 'github-10';
@@ -15,12 +17,15 @@ describe('tools/git/worktree cleanup repository boundary', () => {
   let fixture: Awaited<ReturnType<typeof repositoryFixture>>;
   let service: GitWorktreeService;
   let repositoryPath: string;
-  let recordPath: string;
+  let db: ReturnType<typeof bindSqliteInstallation>;
 
   beforeEach(async () => {
     fixture = await repositoryFixture();
+    const location = codexStorageLocation(fixture.workspaceDir);
+    db = bindSqliteInstallation(location);
+    await db.install();
     await mkdir(fixture.layout.worktreeRoot, { recursive: true, mode: 0o700 });
-    const repositories = new GitRepositoryService({ storageBackend: 'file' });
+    const repositories = new GitRepositoryService({ sqliteInstallation: location });
     const lease = await repositories.acquire(fixture.context, fixture.layout, repositoryId, source);
     try {
       const repository = await withPrivateStateLock(lease, () =>
@@ -30,12 +35,8 @@ describe('tools/git/worktree cleanup repository boundary', () => {
     } finally {
       await lease.release();
     }
-    recordPath = join(
-      fixture.layout.repositoryRoot,
-      gitWorktreeRepositoryDirectoryName(repositoryId) + '.repository.json',
-    );
     service = new GitWorktreeService({
-      storageBackend: 'file',
+      sqliteInstallation: location,
       layoutService: {
         async inspect() {
           return {
@@ -72,7 +73,7 @@ describe('tools/git/worktree cleanup repository boundary', () => {
     };
 
     it(`should not recreate a missing source checkout during ${operation}`, async () => {
-      const record = await readFile(recordPath, 'utf8');
+      const record = await db.readRepository(fixture.layout.repositoryRoot, repositoryId);
       await rm(repositoryPath, { recursive: true });
       fixture.git.calls.length = 0;
       await invoke();
@@ -81,15 +82,22 @@ describe('tools/git/worktree cleanup repository boundary', () => {
         false,
       );
       await assert.rejects(lstat(repositoryPath), { code: 'ENOENT' });
-      assert.equal(await readFile(recordPath, 'utf8'), record);
+      assert.deepEqual(
+        await db.readRepository(fixture.layout.repositoryRoot, repositoryId),
+        record,
+      );
     });
 
     it(`should not rewrite repository preparation state during ${operation}`, async () => {
-      await utimes(recordPath, new Date(0), new Date(0));
-      const before = await lstat(recordPath);
+      using observer = new DatabaseSync(
+        join(codexStorageLocation(fixture.workspaceDir).installationRoot, 'agent-system.sqlite'),
+        { readOnly: true },
+      );
+      const version = observer.prepare('PRAGMA data_version');
+      const before = version.get();
       fixture.git.calls.length = 0;
       await invoke();
-      assert.equal((await lstat(recordPath)).mtimeMs, before.mtimeMs);
+      assert.deepEqual(version.get(), before);
       assert.equal(
         fixture.git.calls.some(({ argv }) => ['clone', 'fetch'].includes(argv[0]!)),
         false,

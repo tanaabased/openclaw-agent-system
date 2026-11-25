@@ -6,5 +6,5 @@ export default async function sqliteAgentFixture(root: string, agentId: string) 
   const { agent, installation } = bindSqliteStorage(sqliteInstallation, agentId);
   await agent.install();
   await installation.install();
-  return { agent, sqliteInstallation, storageBackend: 'sqlite' as const };
+  return { agent, sqliteInstallation };
 }

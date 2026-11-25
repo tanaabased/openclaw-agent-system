@@ -1,6 +1,5 @@
 import withWorkflowLock from '../../storage/workflow-lock.ts';
 import { randomInt, randomUUID } from 'node:crypto';
-import { join, resolve } from 'node:path';
 
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
@@ -10,7 +9,6 @@ import {
   instanceNamePattern,
   normalizeInstanceName,
 } from '../../../channels/github/provider/assignment-claim.ts';
-import PrivateStateFile from '../../../core/private-state-file.ts';
 
 const maximumBytes = 4 * 1024 * 1024;
 const words = [
@@ -121,26 +119,13 @@ export type AssignmentClaimRecord = Static<typeof recordSchema>;
 
 /** callers supply the runtime-owned private installation directory, never a manifest path. */
 export default class AssignmentClaimStore {
-  readonly root: string;
-  readonly file: PrivateStateFile;
-
   constructor(
-    root: string,
-    private readonly persistence?: {
+    private readonly persistence: {
       lockPath: string;
       read(): Promise<AssignmentClaimState | undefined>;
       save(state: AssignmentClaimState, previous?: AssignmentClaimState): Promise<void>;
     },
-  ) {
-    this.root = resolve(root);
-    this.file = new PrivateStateFile({
-      directories: [this.root],
-      path: join(this.root, 'assignment-claims.json'),
-      label: 'assignment claims',
-      maximumBytes,
-      currentUid: process.getuid?.(),
-    });
-  }
+  ) {}
 
   async exclusive<T>(
     operation: (
@@ -150,42 +135,34 @@ export default class AssignmentClaimStore {
     ) => Promise<T>,
     initialize = true,
   ): Promise<T> {
-    return withWorkflowLock(
-      this.persistence?.lockPath ?? join(this.root, 'assignment-claims.json'),
-      'assignment claims',
-      async (lock) => {
-        const previous = await this.read();
-        if (!previous && !initialize) throw new Error('instance-install-required');
-        const state: AssignmentClaimState = previous ?? {
-          version: 1,
-          instanceId: randomUUID(),
-          displayName: words.map((list) => list[randomInt(list.length)]).join('-'),
-          retiredInstanceIds: [],
-          claims: {},
-        };
-        let saved = this.persistence && previous ? structuredClone(previous) : undefined;
-        const save = async () => {
-          lock.assertHeld();
-          if (!Value.Check(schema, state) || state.retiredInstanceIds.includes(state.instanceId))
-            throw new Error('assignment-claim-state-invalid');
-          if (this.persistence) {
-            if (Buffer.byteLength(JSON.stringify(state)) > maximumBytes)
-              throw new Error('assignment claims exceed their size limit');
-            await this.persistence.save(state, saved);
-            saved = structuredClone(state);
-          } else await this.file.write(JSON.stringify(state));
-        };
-        if (!previous) await save();
-        return operation(state, save, lock.signal);
-      },
-    );
+    return withWorkflowLock(this.persistence.lockPath, 'assignment claims', async (lock) => {
+      const previous = await this.read();
+      if (!previous && !initialize) throw new Error('instance-install-required');
+      const state: AssignmentClaimState = previous ?? {
+        version: 1,
+        instanceId: randomUUID(),
+        displayName: words.map((list) => list[randomInt(list.length)]).join('-'),
+        retiredInstanceIds: [],
+        claims: {},
+      };
+      let saved = previous ? structuredClone(previous) : undefined;
+      const save = async () => {
+        lock.assertHeld();
+        if (!Value.Check(schema, state) || state.retiredInstanceIds.includes(state.instanceId))
+          throw new Error('assignment-claim-state-invalid');
+        if (Buffer.byteLength(JSON.stringify(state)) > maximumBytes)
+          throw new Error('assignment claims exceed their size limit');
+        await this.persistence.save(state, saved);
+        saved = structuredClone(state);
+      };
+      if (!previous) await save();
+      return operation(state, save, lock.signal);
+    });
   }
 
   async identity() {
-    if (this.persistence) {
-      const existing = await this.inspect();
-      if (existing) return existing;
-    }
+    const existing = await this.inspect();
+    if (existing) return existing;
     return this.exclusive(async (state) => ({
       instanceId: state.instanceId,
       displayName: state.displayName,
@@ -194,15 +171,8 @@ export default class AssignmentClaimStore {
 
   /** inspection must never create an identity or repair private state. */
   async read() {
-    let state: unknown;
-    if (this.persistence) {
-      state = await this.persistence.read();
-      if (state === undefined) return undefined;
-    } else {
-      const contents = await this.file.read();
-      if (contents === undefined) return undefined;
-      state = JSON.parse(contents);
-    }
+    const state = await this.persistence.read();
+    if (state === undefined) return;
     if (!Value.Check(schema, state) || state.retiredInstanceIds.includes(state.instanceId))
       throw new Error('assignment-claim-state-invalid');
     return state;

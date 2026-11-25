@@ -1,4 +1,4 @@
-import { automationThreadPath, withAutomationThreadLock } from '../storage/automation-backend.ts';
+import { withAutomationThreadLock } from '../storage/automation-backend.ts';
 import {
   automationThreadNames,
   automationThreadSelection,
@@ -13,7 +13,6 @@ import { AutomationError } from './automation-errors.ts';
 import type { BoundStorage } from '../storage/storage-lifecycle.ts';
 import nodeErrorCode from '../../utils/node-error-code.ts';
 import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
-import PrivateStateFile from '../../core/private-state-file.ts';
 import type { AutomationRuntime, ResolvedAutomation } from '../../manifest/automation-schema.ts';
 
 const maximumBytes = 1024 * 1024;
@@ -120,28 +119,13 @@ export interface AutomationThreadAdapter {
 }
 /** private binding journal; readers never create files or take mutation locks. */
 export default class AutomationThreads {
-  readonly file: PrivateStateFile;
-  readonly path: string;
   constructor(
-    readonly options: { root: string; scope: string; runtime: AutomationRuntime },
+    readonly options: { scope: string; runtime: AutomationRuntime },
     readonly adapter: AutomationThreadAdapter,
-    private readonly agentStorage?: BoundStorage['agent'],
-  ) {
-    this.path = automationThreadPath(options.root, options.scope);
-    this.file = new PrivateStateFile({
-      path: this.path,
-      directories: [options.root],
-      currentUid: process.getuid?.(),
-      label: 'Automation conversations',
-      maximumBytes,
-    });
-  }
+    private readonly agentStorage: BoundStorage['agent'],
+  ) {}
   private async readLedger(): Promise<unknown> {
     const { scope } = this.options;
-    if (!this.agentStorage) {
-      const contents = await this.file.read();
-      return contents === undefined ? { version: 1, scope, records: [] } : JSON.parse(contents);
-    }
     const rows = await this.agentStorage
       .read({ automationThreads: { scope } })
       .catch((error: unknown) => {
@@ -199,7 +183,6 @@ export default class AutomationThreads {
       const ledger = await this.read();
       const save = async (record: ThreadRecord) => {
         const contents = JSON.stringify(ledger);
-        if (!this.agentStorage) return this.file.write(contents);
         if (Buffer.byteLength(contents) > maximumBytes)
           throw new Error('automation thread ownership exceeds its size limit');
         await this.agentStorage.write([
@@ -615,9 +598,8 @@ export default class AutomationThreads {
         throw error;
       }
     };
-    if (!apply || (this.agentStorage && !selected.length)) return resolve();
-    const path =
-      this.agentStorage?.workflowLockPath('automation-threads', this.options.scope) ?? this.path;
+    if (!apply || !selected.length) return resolve();
+    const path = this.agentStorage.workflowLockPath('automation-threads', this.options.scope);
     return withAutomationThreadLock(path, resolve);
   }
 }

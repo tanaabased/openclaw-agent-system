@@ -11,16 +11,10 @@ export type DispatchEnvelope = AgentRows['dispatchState']['value'] & {
 // OpenClaw keeps its pickup journal under the intake root, independently of issue dispatch.
 export const pickupDispatchScope = (scope: string) => 'pickup:' + scope;
 
-export function sqliteDispatchPersistence(
-  agent: BoundStorage['agent'] | undefined,
-  scope: string,
-  resetRoot?: string,
-) {
-  if (!agent) return;
+export function sqliteDispatchPersistence(agent: BoundStorage['agent'], scope: string) {
   return {
     lockPath: agent.workflowLockPath('dispatch', scope),
     agentStorage: agent,
-    resetRoot,
     read: () => agent.readDispatch(scope),
     save(state: DispatchEnvelope, expected: DispatchEnvelope) {
       return agent.saveDispatch(scope, state, expected);

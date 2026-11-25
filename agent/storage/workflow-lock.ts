@@ -21,7 +21,7 @@ export function assignmentClaimLockPath(installationRoot: string) {
   return join(installationRoot, 'assignment-claims');
 }
 
-/** Hold ownership through an external effect and its receipt, across either storage backend. */
+/** Hold ownership through an external effect and its receipt. */
 export default async function withWorkflowLock<T>(
   path: string,
   label: string,

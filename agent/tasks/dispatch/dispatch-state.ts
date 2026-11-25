@@ -6,7 +6,7 @@ import { dispatchTaskSession } from './dispatch-task-scope.ts';
 import { issueDeliveryStateSchema } from '../delivery/issue-delivery-state.ts';
 import { deliveryAnnouncementStateSchema } from '../delivery/delivery-announcement-state.ts';
 import { announcementRecoverySchema } from '../delivery/delivery-announcement-recovery.ts';
-import { isAbsolute, join, resolve, sep } from 'node:path';
+import { isAbsolute, resolve, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { Type, type Static, type TObject, type TSchema } from 'typebox';
 import { Value } from 'typebox/value';
@@ -15,7 +15,6 @@ import mergeStateSnapshot, {
   refreshStateSnapshot,
   stateSnapshotConflictCode,
 } from '../../../core/merge-state-snapshot.ts';
-import PrivateStateFile from '../../../core/private-state-file.ts';
 import storedDataSchema from '../../../core/stored-data-schema.ts';
 import { providerDiagnosticSchema } from '../../../utils/provider-diagnostic.ts';
 import { assessmentSelectionSchema } from '../assessment/assessment-selection.ts';
@@ -29,7 +28,6 @@ import {
   assertDispatchStorage,
   dispatchSoftBytes,
   dispatchStorageBytes,
-  dispatchStorageLimits,
   dispatchStorageNotice,
 } from './dispatch-storage.ts';
 import intakePassStarted from '../../intake-pass-started.ts';
@@ -245,35 +243,25 @@ export function normalizeDispatchPickup(state: unknown): unknown {
   return { ...rest, issuePickup: projectPickup };
 }
 
-function fileDispatchEnvelope<R extends SharedDispatchRecord>(state: DispatchState<R>) {
-  if (!state.issuePickup) return state;
-  const { issuePickup, ...rest } = state;
-  return { ...rest, projectPickup: issuePickup };
-}
-
 export interface DispatchPersistence<R extends SharedDispatchRecord> {
-  lockPath?: string;
-  agentStorage?: BoundStorage['agent'];
-  resetRoot?: string;
+  lockPath: string;
+  agentStorage: BoundStorage['agent'];
   read(): Promise<unknown>;
   save(state: DispatchState<R>, expected: DispatchState<R>): Promise<void>;
 }
 
 /** one journal bridges native actions; a persisted creation intent is never issued twice. */
 export default class DispatchStore<R extends SharedDispatchRecord> {
-  readonly file: PrivateStateFile;
   readonly schema: ReturnType<typeof dispatchStateSchema<R>>;
-  readonly path: string;
   readonly envelopeSchema: ReturnType<typeof dispatchStateSchema<R>>;
   readonly ownershipSchema: TObject;
   private readonly recordSchema: TObject;
   constructor(
-    readonly root: string,
     readonly scope: string,
     readonly contract: {
       runtime: 'codex' | 'openclaw';
       recordSchema: TObject;
-      persistence?: DispatchPersistence<R>;
+      persistence: DispatchPersistence<R>;
       validRecord(record: R): boolean;
     },
   ) {
@@ -281,23 +269,10 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     this.schema = storedDataSchema(dispatchStateSchema<R>(this.recordSchema), ['request']);
     this.envelopeSchema = storedDataSchema(dispatchStateSchema<R>(Type.Unknown()));
     this.ownershipSchema = dispatchOwnershipSchema(contract.recordSchema);
-
-    this.path = join(root, contract.runtime + '-dispatch-' + scope + '.json');
-    this.file = new PrivateStateFile({
-      path: this.path,
-      directories: [root],
-      currentUid: process.getuid?.(),
-      label: this.contract.runtime + ' issue dispatch',
-      maximumBytes: dispatchStorageLimits.file,
-    });
   }
   private assertManagement() {
     const persistence = this.contract.persistence;
-    return assertNotificationManagement(
-      persistence?.resetRoot ?? this.root,
-      this.scope,
-      persistence?.agentStorage,
-    );
+    return assertNotificationManagement(this.scope, persistence.agentStorage);
   }
   private validateEnvelope(state: unknown): asserts state is DispatchState<R> {
     if (!Value.Check(this.envelopeSchema, state) || state.scope !== this.scope)
@@ -595,19 +570,8 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     this.assertIndependent(record, restored.records);
     return restored;
   }
-  private async readFileEnvelope(): Promise<unknown> {
-    const contents = await this.file.read();
-    if (contents === undefined) return;
-    try {
-      return JSON.parse(contents);
-    } catch {
-      throw new Error('dispatch-state-invalid');
-    }
-  }
   async readEnvelope() {
-    const saved = this.contract.persistence
-      ? await this.contract.persistence.read()
-      : await this.readFileEnvelope();
+    const saved = await this.contract.persistence.read();
     const state =
       saved === undefined
         ? { version: 4, scope: this.scope, resetGeneration: 'initial', records: [] }
@@ -791,7 +755,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
       return proposed;
     };
     return withDispatchLock(
-      this.contract.persistence?.lockPath ?? this.path,
+      this.contract.persistence.lockPath,
       this.contract.runtime,
       intake ? 'occurrence-registration' : operation,
       waitForLock,
@@ -850,13 +814,9 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
             originalBytes - dispatchStorageBytes(restore(retained, snapshot)).contentBytes;
           if (!intake && reclaimed > 0) retained.storageReclaimedBytes = reclaimed;
           const restored = restore(retained, snapshot);
-          const contents = assertDispatchStorage(
-            this.contract.persistence ? restored : fileDispatchEnvelope(restored),
-            admission,
-          );
+          const contents = assertDispatchStorage(restored, admission);
           const raw = normalizeDispatchPickup(JSON.parse(contents)) as DispatchState<R>;
-          if (this.contract.persistence) await this.contract.persistence.save(raw, snapshot.raw);
-          else await this.file.write(contents);
+          await this.contract.persistence.save(raw, snapshot.raw);
           refreshStateSnapshot(state, retained);
           snapshot = { raw, state: intake ? raw : this.project(raw) };
           committed = structuredClone(snapshot.state);

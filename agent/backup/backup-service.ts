@@ -1,5 +1,5 @@
 import { captureStorageBackup } from '../storage/backup.ts';
-import { defaultStorageBackend, type RuntimeStorageOptions } from '../storage/backend.ts';
+import type { RuntimeStorageOptions } from '../storage/backend.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import {
@@ -502,8 +502,7 @@ export default class WorkspaceBackupService {
       ...options,
       runtimeProtection: await this.runtimeProtection(options.manifest.agent.id),
     });
-    if ((this.storage.storageBackend ?? defaultStorageBackend) === 'sqlite')
-      plan.coverage.agentSystemStorage = 'pending';
+    plan.coverage.agentSystemStorage = 'pending';
     return plan;
   }
 
@@ -554,18 +553,15 @@ export default class WorkspaceBackupService {
         );
         const coverage = {
           ...fresh.coverage,
-          stage:
-            snapshot.state === 'captured' || storage
-              ? ('workspace-and-agent-state' as const)
-              : ('workspace-only' as const),
+          stage: 'workspace-and-agent-state' as const,
           openclawState: snapshot.state,
-          ...(storage && { agentSystemStorage: 'captured' as const }),
+          agentSystemStorage: 'captured' as const,
           limitations: [
             ...fresh.coverage.limitations,
             ...(snapshot.state === 'absent'
               ? ['The selected OpenClaw agent database did not exist at capture time.']
               : []),
-            ...(snapshot.state === 'captured' || storage
+            ...(snapshot.state === 'captured'
               ? ['OpenClaw omits transient agent database lease rows from its snapshot.']
               : []),
           ],
@@ -580,7 +576,7 @@ export default class WorkspaceBackupService {
           coverage,
           diagnostics: fresh.diagnostics,
           inventory: captured.inventory,
-          ...(storage && { storage }),
+          storage,
           ...(snapshot.manifest
             ? {
                 snapshot: {

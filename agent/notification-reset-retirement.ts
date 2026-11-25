@@ -3,16 +3,11 @@ import NotificationResetStore from './notification-reset-state.ts';
 
 /** Unrelated native disposal remains available while reset retains its own resources. */
 export default async function assertNotificationResetRetirement(
-  root: string,
   intake: Pick<IntakeRecordStore, 'location' | 'agentStorage'>,
   target: string,
   cwd?: string,
 ) {
-  const reset = await new NotificationResetStore(
-    root,
-    intake.location.scope,
-    intake.agentStorage,
-  ).read();
+  const reset = await new NotificationResetStore(intake.location.scope, intake.agentStorage).read();
   if (!reset) return;
   const jobs = [reset.automation, ...(reset.pickup ? [reset.pickup.automation] : [])].map((saved) =>
     JSON.parse(saved),

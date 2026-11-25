@@ -122,7 +122,7 @@ async function runCodexDispatchScoped(
         {
           codexHome: deps.codexHome,
           inspectBinding: deps.inspectBinding,
-          storageBackend: deps.storageBackend,
+
           threadId: deps.threadId,
           git: deps.git,
           connect: deps.deliveryConnect,
@@ -267,7 +267,7 @@ async function runCodexDispatchScoped(
     await reconcileCodexRetirementEffects(pluginData, deps, true);
   deps = {
     ...deps,
-    claimStore: deps.claimStore ?? codexInstanceStore(pluginData, deps.storageBackend),
+    claimStore: deps.claimStore ?? codexInstanceStore(pluginData),
   };
   if (action === 'next') {
     const observation = await executeCodexDispatch(pluginData, 'observe-denials', {}, deps);

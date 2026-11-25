@@ -1,4 +1,5 @@
-import fileBackupService from './file-backup-service.ts';
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
+import backupServiceFixture from './backup-service-fixture.ts';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { link, mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises';
@@ -17,12 +18,15 @@ const manifest: AgentManifest = {
 
 describe('workspace backup stress', () => {
   let root: string;
+  let storage: Awaited<ReturnType<typeof sqliteAgentFixture>>;
   let workspace: string;
   let cleanupTimeout: number;
-  const service = fileBackupService();
+  let service: ReturnType<typeof backupServiceFixture>;
   beforeEach(async () => {
     cleanupTimeout = 10_000;
     root = await realpath(await mkdtemp(join(tmpdir(), 'workspace-backup-')));
+    storage = await sqliteAgentFixture(root, manifest.agent.id);
+    service = backupServiceFixture(storage);
     workspace = join(root, 'workspace');
     await mkdir(workspace);
     await writeFile(join(workspace, 'agent.yaml'), 'schema-version: 1\nagent: { id: tanaabot }\n');

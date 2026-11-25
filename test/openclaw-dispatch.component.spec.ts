@@ -7,7 +7,6 @@ import { taskResponseOutput } from '../agent/tasks/response/task-response.ts';
 import { automationHash } from '../agent/automation-hash.ts';
 import { issueKey } from '../agent/tasks/dispatch/dispatch-pending.ts';
 import openClawCapacity from '../agent/tasks/dispatch/openclaw-capacity.ts';
-import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import OpenClawDispatch from '../agent/tasks/dispatch/openclaw-dispatch.ts';
 import AgentSystemToolError from '../api/error.ts';
 import { claimBody } from '../channels/github/provider/assignment-claim.ts';
@@ -82,8 +81,8 @@ describe('agent/openclaw dispatch', () => {
       await release.promise;
       return readiness(...args);
     };
-    const current = await fixtureState.service.scope(fixtureState.manifest, fixtureState.root);
-    const other = new OpenClawDispatchStore(current.journal.root, current.journal.scope);
+    const other = (await fixtureState.service.scope(fixtureState.manifest, fixtureState.root))
+      .journal;
     const pending = fixtureState.next();
     await entered.promise;
     try {
@@ -2651,7 +2650,6 @@ describe('openclaw sqlite dispatch', () => {
       (await journal.read()).records.map((r) => [r.id, r.threadId]),
       [[routed.id, f.session?.key]],
     );
-    assert.equal(await journal.file.read(), undefined);
     assert.equal(f.creates().length, 1);
   });
 });

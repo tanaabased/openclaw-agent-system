@@ -120,7 +120,6 @@ export default async function reconcileCodexLifecycle(
           if (record.threadId)
             await retirementLocalData({
               sessionStorage: current.sessionStorage,
-              root: current.store.location.root,
               binding: {
                 runtime: 'codex',
                 agentId: current.agentId,
@@ -242,7 +241,6 @@ export default async function reconcileCodexLifecycle(
               );
               return replyOwnPublications({
                 sessionStorage: current.sessionStorage,
-                root: current.store.location.root,
                 binding: {
                   runtime: 'codex',
                   agentId: current.agentId,

@@ -44,7 +44,7 @@ describe('agent/implementation-entry', () => {
     selections = [];
     reads = 0;
     deps = {
-      root: join(root, 'private'),
+      sessionStorage: (await sqliteAgentFixture(root, 'receiver')).agent,
       binding: {
         runtime: 'openclaw',
         agentId: 'receiver',
@@ -115,10 +115,10 @@ describe('agent/implementation-entry', () => {
           /implementation-request-invalid/,
         );
       const store = new DirectEntryStore(
-        deps.root,
         deps.binding,
         implementationEntriesSchema,
         'implementation',
+        deps.sessionStorage,
       );
       await store.exclusive(async (entries, save) => {
         entries.push({
@@ -225,10 +225,10 @@ describe('agent/implementation-entry', () => {
       assert.equal('plan' in complete, false);
       assert.deepEqual(
         await new DirectEntryStore(
-          deps.root,
           deps.binding,
           implementationEntriesSchema,
           'implementation',
+          deps.sessionStorage,
         ).exclusive(async (entries) => entries),
         [],
       );
@@ -253,10 +253,10 @@ describe('agent/implementation-entry', () => {
     for (let number = 4; number <= 23; number++)
       await call('context', { target: `https://github.com/owner/repo/issues/${number}` });
     const entries = await new DirectEntryStore(
-      deps.root,
       deps.binding,
       implementationEntriesSchema,
       'implementation',
+      deps.sessionStorage,
     ).exclusive(async (entries) => entries);
     assert.equal(entries.length, 21);
     deps.connectProvider = async () => {
@@ -274,10 +274,10 @@ describe('agent/implementation-entry', () => {
       assert.equal(first.status, 'verified');
       assert.doesNotMatch(JSON.stringify(first), /NATIVE-PLAN-ONLY/);
       const store = new DirectEntryStore(
-        deps.root,
         deps.binding,
         implementationEntriesSchema,
         'implementation',
+        deps.sessionStorage,
       );
       const entries = await store.exclusive(async (entries) => structuredClone(entries));
       assert.equal('plan' in entries[0]!, false);
@@ -574,10 +574,10 @@ describe('agent/implementation-entry', () => {
     assert.equal('deliveryOnly' in resumed && resumed.deliveryOnly, false);
     assert.equal('publicationAuthorized' in resumed && resumed.publicationAuthorized, true);
     const store = new DirectEntryStore(
-      deps.root,
       deps.binding,
       implementationEntriesSchema,
       'implementation',
+      deps.sessionStorage,
     );
     await store.exclusive(async (entries) => {
       assert.deepEqual(entries[0]!.authorization, { turnId: 'turn', inputId: 'input' });
@@ -589,8 +589,8 @@ describe('agent/implementation-entry', () => {
   });
   for (const base of [undefined, 'release'])
     it(`should recover lost publication responses on the ${base ? 'explicit' : 'default'} base without repeated effects`, async () => {
-      const sqlite = base ? await sqliteAgentFixture(root, 'receiver') : undefined;
-      deps.sessionStorage = sqlite?.agent;
+      const sqlite = await sqliteAgentFixture(root, 'receiver');
+      deps.sessionStorage = sqlite.agent;
       const entered = Promise.withResolvers<void>();
       const resume = Promise.withResolvers<void>();
       const context = await call('context', { scope: 'pull-request' });
@@ -628,7 +628,7 @@ describe('agent/implementation-entry', () => {
                 ? `${remote} refs/heads/task`
                 : '';
           if (argv[0] === 'push') {
-            if (sqlite && lostPush) {
+            if (lostPush) {
               entered.resolve();
               await resume.promise;
             }
@@ -645,11 +645,10 @@ describe('agent/implementation-entry', () => {
       });
       const store = () =>
         new DirectEntryStore(
-          deps.root,
           deps.binding,
           implementationEntriesSchema,
           'implementation',
-          sqlite && bindSqliteStorage(sqlite.sqliteInstallation, 'receiver').agent,
+          bindSqliteStorage(sqlite.sqliteInstallation, 'receiver').agent,
         );
       const provider = {
         inspect: async () => receipt,
@@ -723,12 +722,9 @@ describe('agent/implementation-entry', () => {
         );
       const firstPush = assert.rejects(publishPrepared(), /lost-push-response/);
       try {
-        if (sqlite) {
-          await entered.promise;
-          await assert.rejects(readdir(deps.root), { code: 'ENOENT' });
-          assert.ok((await store().inspect())[0]!.delivery?.pendingPush);
-          await assert.rejects(publishPrepared(), { code: 'private-state-file-lock-busy' });
-        }
+        await entered.promise;
+        assert.ok((await store().inspect())[0]!.delivery?.pendingPush);
+        await assert.rejects(publishPrepared(), { code: 'private-state-file-lock-busy' });
       } finally {
         resume.resolve();
         await firstPush;
@@ -826,7 +822,6 @@ describe('agent/native-implementation-entry', () => {
     const fixture = intakeFixture();
     const sqlite = await sqliteAgentFixture(data, 'receiver');
     const deps = {
-      storageBackend: sqlite.storageBackend,
       codexHome: home,
       threadId: 'chat',
       git,
@@ -937,7 +932,7 @@ describe('agent/native-implementation-entry', () => {
     const sqlite = await sqliteAgentFixture(root, manifest.agent.id);
     const intake = new OpenClawIntake({
       sqliteInstallation: sqlite.sqliteInstallation,
-      storageBackend: sqlite.storageBackend,
+
       root: join(root, 'intake'),
       namespace: root,
       connect: async () => provider,

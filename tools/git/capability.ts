@@ -73,7 +73,6 @@ export default function createGitCapability(
   const worktreeService = new GitWorktreeService({
     layoutService: worktreeLayoutService,
     sqliteInstallation: dependencies.sqliteInstallation,
-    storageBackend: dependencies.storageBackend,
   });
   const worktreeDefinition = createGitWorktreeToolDefinition({
     runnerFactory,
