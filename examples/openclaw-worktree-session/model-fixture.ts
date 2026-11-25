@@ -52,7 +52,7 @@ const fixtures: Fixture[] = probes.flatMap(({ phase, id, resultMarker }) => {
             name: 'exec',
             arguments: JSON.stringify({
               command: `worktree-probe ${phase}`,
-              timeoutSeconds: 60,
+              timeoutSeconds: 90,
               yieldMs: 120000,
             }),
           },
