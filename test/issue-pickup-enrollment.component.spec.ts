@@ -1,3 +1,5 @@
+import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import reconcileIssuePickup from '../agent/issue-pickup-reconcile.ts';
 import type { IssuePickupState } from '../agent/issue-pickup-state.ts';
 import assert from 'node:assert/strict';
@@ -40,6 +42,53 @@ describe('issue pickup installation enrollment', () => {
       };
       return { ...f, store, identity, input };
     }
+
+    it(`should preserve a competing activation during pickup reconciliation in ${runtime}`, async () => {
+      const f = await fixture();
+      const { agent, sqliteInstallation } = await sqliteAgentFixture(root, f.input.agentId);
+      const other = bindSqliteStorage(sqliteInstallation, f.input.agentId).agent;
+      const legacy = join(root, 'absent');
+      const store = (db: typeof agent) =>
+        new IssuePickupEnrollmentStore(legacy, f.identity, { agent: db, agentId: f.input.agentId });
+      const first = store(agent);
+      const second = store(other);
+      const initial = await first.prepare(f.input);
+      const id = initial.enrollment.id;
+      const updated = await first.prepare({
+        ...f.input,
+        timezone: 'America/New_York',
+        reconcile: async (_updated, commit) => {
+          await second.activate(id, 'winning-job');
+          await commit();
+        },
+      });
+      assert.deepEqual(updated, {
+        ...initial,
+        nativeId: 'winning-job',
+        timezone: 'America/New_York',
+      });
+      await assert.rejects(first.activate(id, 'other-job'), /issue-pickup-enrollment-changed/);
+      await assert.rejects(
+        first.prepare({
+          ...f.input,
+          timezone: 'Europe/London',
+          reconcile: async (_updated, commit) => {
+            await second.prepare({
+              ...f.input,
+              timezone: 'America/Chicago',
+              reconcile: (_record, save) => save(),
+            });
+            await commit();
+          },
+        }),
+        /issue-pickup-enrollment-changed/,
+      );
+      assert.deepEqual(await first.inspect(f.policy, runtime, 'scope'), {
+        ...updated,
+        timezone: 'America/Chicago',
+      });
+      assert.ok(!(await readdir(root)).includes('absent'));
+    });
 
     it(`should enroll closed milestones and excluded repositories without scanning in ${runtime}`, async () => {
       const f = await fixture();

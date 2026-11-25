@@ -35,6 +35,7 @@ export interface SessionStorage {
     scope: string,
     kind: DirectRow['kind'],
     entries: DirectRow['value'][],
+    expected: DirectRow['value'][],
   ): Promise<void>;
 }
 
@@ -44,6 +45,13 @@ export type SidebarPlacementChange = (current?: SidebarState) => SidebarChange;
 export interface BoundStorage {
   agent: WorkflowRecords<AgentRows> &
     SessionStorage & {
+      changePickupEnrollment(
+        key: Pick<AgentRows['pickupEnrollments'], 'runtime' | 'scope'>,
+        change: (
+          current?: AgentRows['pickupEnrollments']['value'],
+        ) => AgentRows['pickupEnrollments']['value'],
+        validateCapacity?: (records: AgentRows['pickupEnrollments']['value'][]) => void,
+      ): Promise<AgentRows['pickupEnrollments']['value']>;
       changeReport(
         id: string,
         change: (

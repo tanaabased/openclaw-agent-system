@@ -1,6 +1,7 @@
+import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { Value } from 'typebox/value';
@@ -87,6 +88,46 @@ describe('agent/native retirement receipts', () => {
     };
     return { deps, target, archives: () => archives };
   }
+
+  it('should reserve one archive across competing sqlite connections and recover the receipt', async () => {
+    const { deps, archives } = fixture();
+    const { agent, sqliteInstallation } = await sqliteAgentFixture(root, deps.binding.agentId);
+    const other = bindSqliteStorage(sqliteInstallation, deps.binding.agentId).agent;
+    const operation = { ...deps, root: join(root, 'absent'), apply: true };
+    let observations = 0;
+    await assert.rejects(
+      nativeRetirement({
+        ...operation,
+        sessionStorage: agent,
+        observe: async () => {
+          const snapshot = await deps.observe();
+          if (++observations === 2) {
+            // Both callers saw an open target and no saved attempt. Let the other caller win.
+            const result = await nativeRetirement({
+              ...operation,
+              sessionStorage: other,
+              archive: async () => {
+                const pending = await nativeRetirement({ ...operation, sessionStorage: agent });
+                assert.equal(pending.status, 'pending');
+                await deps.archive();
+                const confirmed = await nativeRetirement({ ...operation, sessionStorage: agent });
+                assert.equal(confirmed.status, 'archived');
+              },
+            });
+            assert.equal(result.status, 'archived');
+          }
+          return snapshot;
+        },
+      }),
+      /native-retirement-entry-conflict/,
+    );
+    assert.equal(
+      (await nativeRetirement({ ...operation, sessionStorage: agent })).status,
+      'archived',
+    );
+    assert.equal(archives(), 1);
+    assert.ok(!(await readdir(root)).includes('absent'));
+  });
 
   it('should apply authorized cleanup without a copied fingerprint and reconcile without replay', async () => {
     const { deps, archives } = fixture();

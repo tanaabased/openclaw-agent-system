@@ -191,7 +191,7 @@ describe('agent/retirement disposal', () => {
       inputId: 'input',
       at: 1,
     };
-    await agent.saveDirectEntries(store.scope, 'native-retirement', [retirement]);
+    await agent.saveDirectEntries(store.scope, 'native-retirement', [retirement], []);
     await retirementLocalData({
       root,
       binding,

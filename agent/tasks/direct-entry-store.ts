@@ -55,6 +55,30 @@ export class DirectEntryStore<S extends typeof implementationEntriesSchema | typ
   async exclusive<T>(
     run: (entries: Static<S>, save: (removeEmpty?: boolean) => Promise<void>) => Promise<T>,
   ) {
+    const edit = async () => {
+      const schema = Type.Unsafe<{ scope: string; entries: Static<S> }>(
+        Type.Object(
+          { scope: Type.String(), entries: this.entriesSchema },
+          { additionalProperties: false },
+        ),
+      );
+      const state = await this.readState();
+      if (!Value.Check(schema, state) || state.scope !== this.scope)
+        throw new Error(`${this.kind}-state-invalid`);
+      let expected = this.storage ? structuredClone(state.entries) : [];
+      return run(state.entries, async (removeEmpty = false) => {
+        if (!Value.Check(schema, state)) throw new Error(`${this.kind}-state-invalid`);
+        if (this.storage) {
+          if (Buffer.byteLength(JSON.stringify(state)) > maximumEntryBytes)
+            throw new Error(`The direct ${this.kind} entries exceeds its size limit.`);
+          await this.storage.saveDirectEntries(this.scope, this.kind, state.entries, expected);
+          expected = structuredClone(state.entries);
+        } else if (removeEmpty && Array.isArray(state.entries) && state.entries.length === 0)
+          await this.file.remove();
+        else await this.file.write(JSON.stringify(state));
+      });
+    };
+    if (this.storage && this.kind === 'native-retirement') return edit();
     await ensurePrivateStateDirectories({
       directories: [this.root],
       currentUid: process.getuid?.(),
@@ -65,28 +89,7 @@ export class DirectEntryStore<S extends typeof implementationEntriesSchema | typ
       retries: { retries: 0, factor: 1, minTimeout: 25, maxTimeout: 25 },
     });
     try {
-      return await withPrivateStateLock(lock, async () => {
-        const schema = Type.Unsafe<{ scope: string; entries: Static<S> }>(
-          Type.Object(
-            { scope: Type.String(), entries: this.entriesSchema },
-            { additionalProperties: false },
-          ),
-        );
-        const state = await this.readState();
-        if (!Value.Check(schema, state) || state.scope !== this.scope)
-          throw new Error(`${this.kind}-state-invalid`);
-        return run(state.entries, async (removeEmpty = false) => {
-          lock.assertHeld();
-          if (!Value.Check(schema, state)) throw new Error(`${this.kind}-state-invalid`);
-          if (this.storage) {
-            if (Buffer.byteLength(JSON.stringify(state)) > maximumEntryBytes)
-              throw new Error(`The direct ${this.kind} entries exceeds its size limit.`);
-            await this.storage.saveDirectEntries(this.scope, this.kind, state.entries);
-          } else if (removeEmpty && Array.isArray(state.entries) && state.entries.length === 0)
-            await this.file.remove();
-          else await this.file.write(JSON.stringify(state));
-        });
-      });
+      return await withPrivateStateLock(lock, edit);
     } finally {
       await lock.release();
     }

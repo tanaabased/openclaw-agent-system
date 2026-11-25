@@ -24,6 +24,7 @@ import {
   githubIdentityPins,
   replyDrafts,
   pathProjections,
+  pickupEnrollments,
   directEntries,
   dispatchRecords,
   dispatchState,
@@ -278,6 +279,51 @@ class SqliteAgentStore extends SqliteDatabase {
     );
   }
 
+  changePickupEnrollment(
+    key: Pick<AgentRows['pickupEnrollments'], 'runtime' | 'scope'>,
+    change: (
+      current?: AgentRows['pickupEnrollments']['value'],
+    ) => AgentRows['pickupEnrollments']['value'],
+    validateCapacity?: (records: AgentRows['pickupEnrollments']['value'][]) => void,
+  ) {
+    return this.use(false, (db) =>
+      db.transaction(
+        (tx) => {
+          assertPrivateStateLocksHeld();
+          const saved = tx
+            .select()
+            .from(pickupEnrollments)
+            .where(
+              and(
+                eq(pickupEnrollments.runtime, key.runtime),
+                eq(pickupEnrollments.scope, key.scope),
+              ),
+            )
+            .get();
+          const value = change(saved?.value);
+          tx.insert(pickupEnrollments)
+            .values({ ...key, value })
+            .onConflictDoUpdate({
+              target: [pickupEnrollments.runtime, pickupEnrollments.scope],
+              set: { value },
+            })
+            .run();
+          // A failed reservation rolls back this row along with the capacity check.
+          if (validateCapacity)
+            validateCapacity(
+              tx
+                .select({ value: pickupEnrollments.value })
+                .from(pickupEnrollments)
+                .all()
+                .map((row) => row.value),
+            );
+          return value;
+        },
+        { behavior: 'immediate' },
+      ),
+    );
+  }
+
   changeReport(
     id: string,
     change: (row?: AgentRows['automationReports']) => AgentRows['automationReports'] | undefined,
@@ -426,18 +472,46 @@ class SqliteAgentStore extends SqliteDatabase {
     scope: string,
     kind: AgentRows['directEntries']['kind'],
     entries: AgentRows['directEntries']['value'][],
+    expected: AgentRows['directEntries']['value'][],
   ) {
     return this.use(false, (db) =>
-      db.transaction((tx) => {
-        assertPrivateStateLocksHeld();
-        tx.delete(directEntries)
-          .where(and(eq(directEntries.scope, scope), eq(directEntries.kind, kind)))
-          .run();
-        for (const value of entries)
-          tx.insert(directEntries)
-            .values({ scope, kind, id: 'id' in value ? value.id : value.digest, value })
-            .run();
-      }),
+      db.transaction(
+        (tx) => {
+          assertPrivateStateLocksHeld();
+          const key = and(eq(directEntries.scope, scope), eq(directEntries.kind, kind));
+          const saved = tx.select().from(directEntries).where(key).all();
+          // Another observer can confirm the very same archive while the native call returns.
+          const completed = entries[0];
+          if (
+            kind === 'native-retirement' &&
+            entries.length === 1 &&
+            completed &&
+            'archived' in completed &&
+            completed.archived &&
+            saved.length === 1 &&
+            saved[0]?.id === completed.digest &&
+            isDeepStrictEqual(saved[0].value, completed)
+          )
+            return;
+          const snapshot = new Map(
+            expected.map((value) => [
+              'id' in value ? value.id : value.digest,
+              JSON.stringify(value),
+            ]),
+          );
+          if (
+            saved.length !== snapshot.size ||
+            saved.some(({ id, value }) => JSON.stringify(value) !== snapshot.get(id))
+          )
+            throw new Error(kind + '-entry-conflict');
+          tx.delete(directEntries).where(key).run();
+          for (const value of entries)
+            tx.insert(directEntries)
+              .values({ scope, kind, id: 'id' in value ? value.id : value.digest, value })
+              .run();
+        },
+        { behavior: 'immediate' },
+      ),
     );
   }
 

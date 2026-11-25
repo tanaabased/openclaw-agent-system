@@ -1,5 +1,6 @@
 import { IntakeError } from '../channels/github/intake/record-store.ts';
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { join } from 'node:path';
 
 import { Type, type Static } from 'typebox';
@@ -15,10 +16,7 @@ import PrivateStateFile from '../core/private-state-file.ts';
 import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
 
 import type { BoundStorage } from './storage/storage-lifecycle.ts';
-import {
-  withPrivateStateLock,
-  type PrivateStateLockGuard,
-} from '../core/private-state-lock-context.ts';
+import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 
 const maximumBytes = 4 * 1024 * 1024;
 const text = Type.String({ minLength: 1, maxLength: 4096 });
@@ -36,6 +34,13 @@ const schema = Type.Object(
   { additionalProperties: false },
 );
 export type PickupEnrollment = Static<typeof recordSchema>;
+
+function assertEnrollmentCapacity(records: PickupEnrollment[]) {
+  // Reserve the full native ID before admission so activation and replacement still fit.
+  const reserved = records.map((entry) => ({ ...entry, nativeId: 'x'.repeat(4096) }));
+  if (Buffer.byteLength(JSON.stringify({ version: 1, records: reserved })) > maximumBytes)
+    throw new IntakeError('issue-pickup-enrollment-capacity');
+}
 
 /** installation enrollment owns native timing; repository routing owns work placement. */
 export default class IssuePickupEnrollmentStore {
@@ -85,18 +90,58 @@ export default class IssuePickupEnrollmentStore {
   private async save(
     state: Static<typeof schema>,
     record: PickupEnrollment,
-    lock: PrivateStateLockGuard,
+    previous: PickupEnrollment | undefined,
+    reserveCapacity: boolean,
   ) {
     if (!Value.Check(schema, state)) throw new IntakeError('issue-pickup-enrollment-invalid');
-    await withPrivateStateLock(lock, async () => {
-      if (!this.sqlite) return this.file.write(JSON.stringify(state));
-      const { runtime, scope, agentId } = record.enrollment;
-      if (agentId !== this.sqlite.agentId)
-        throw new IntakeError('issue-pickup-enrollment-conflict');
-      await this.sqlite.agent.write([
-        { table: 'pickupEnrollments', action: 'save', row: { runtime, scope, value: record } },
-      ]);
+    if (!this.sqlite) {
+      if (reserveCapacity) assertEnrollmentCapacity(state.records);
+      await this.file.write(JSON.stringify(state));
+      return record;
+    }
+    const { runtime, scope, agentId } = record.enrollment;
+    if (agentId !== this.sqlite.agentId) throw new IntakeError('issue-pickup-enrollment-conflict');
+    return this.sqlite.agent.changePickupEnrollment(
+      { runtime, scope },
+      (current) => {
+        if (!previous && !current) return record;
+        if (!current || !previous || current.enrollment.id !== previous.enrollment.id)
+          throw new IntakeError('issue-pickup-enrollment-changed');
+        // Activation owns the native job ID. Install owns the enrollment and its timezone.
+        if (!reserveCapacity) {
+          if (current.nativeId !== previous.nativeId && current.nativeId !== record.nativeId)
+            throw new IntakeError('issue-pickup-enrollment-changed');
+          return { ...current, nativeId: record.nativeId };
+        }
+        if (
+          !isDeepStrictEqual(
+            { ...current, nativeId: undefined },
+            { ...previous, nativeId: undefined },
+          )
+        )
+          throw new IntakeError('issue-pickup-enrollment-changed');
+        return { ...record, ...(current.nativeId && { nativeId: current.nativeId }) };
+      },
+      reserveCapacity ? assertEnrollmentCapacity : undefined,
+    );
+  }
+
+  private async edit<T>(operation: () => Promise<T>) {
+    if (this.sqlite) return operation();
+    await ensurePrivateStateDirectories({
+      directories: [this.root],
+      currentUid: process.getuid?.(),
+      label: 'issue pickup enrollment',
     });
+    const lock = await acquirePrivateStateFileLock(this.path, {
+      staleMs: 30_000,
+      retries: { retries: 0, factor: 1, minTimeout: 25, maxTimeout: 25 },
+    });
+    try {
+      return await withPrivateStateLock(lock, operation);
+    } finally {
+      await lock.release();
+    }
   }
 
   async owner() {
@@ -168,16 +213,7 @@ export default class IssuePickupEnrollmentStore {
       `selection:${pickup.projects[0]!.repository.toLowerCase()}`,
       undefined,
     ];
-    await ensurePrivateStateDirectories({
-      directories: [this.root],
-      currentUid: process.getuid?.(),
-      label: 'issue pickup enrollment',
-    });
-    const lock = await acquirePrivateStateFileLock(this.path, {
-      staleMs: 30_000,
-      retries: { retries: 0, factor: 1, minTimeout: 25, maxTimeout: 25 },
-    });
-    try {
+    return this.edit(async () => {
       const currentIdentity = await this.owner();
       if (currentIdentity.instanceId !== identity.instanceId)
         throw new IntakeError('issue-pickup-enrollment-changed');
@@ -205,7 +241,7 @@ export default class IssuePickupEnrollmentStore {
           existing.enrollment.policyDigest !== issuePickupPolicyDigest(input.policy) ||
           existing.timezone !== input.timezone;
         if (changed && !input.reconcile) throw new IntakeError('issue-pickup-enrollment-changed');
-        const updated: PickupEnrollment = changed
+        let updated: PickupEnrollment = changed
           ? {
               ...existing,
               timezone: input.timezone,
@@ -221,16 +257,7 @@ export default class IssuePickupEnrollmentStore {
         const commit = async () => {
           if (!changed) return;
           state.records[state.records.indexOf(existing)] = updated;
-          if (
-            Buffer.byteLength(
-              JSON.stringify({
-                ...state,
-                records: state.records.map((entry) => ({ ...entry, nativeId: 'x'.repeat(4096) })),
-              }),
-            ) > maximumBytes
-          )
-            throw new IntakeError('issue-pickup-enrollment-capacity');
-          await this.save(state, updated, lock);
+          updated = await this.save(state, updated, existing, true);
         };
         if (input.reconcile) await input.reconcile(updated, commit);
         else await commit();
@@ -253,35 +280,20 @@ export default class IssuePickupEnrollmentStore {
         },
       };
       state.records.push(record);
-      // reserve the schema's full native-id allowance before admitting new enrollment.
-      // completion and replacement must fit even when the provider returns a longer id.
-      const reserved = {
-        ...state,
-        records: state.records.map((entry) => ({ ...entry, nativeId: 'x'.repeat(4096) })),
-      };
-      if (Buffer.byteLength(JSON.stringify(reserved)) > maximumBytes)
-        throw new IntakeError('issue-pickup-enrollment-capacity');
-      await this.save(state, record, lock);
+      await this.save(state, record, undefined, true);
       return record;
-    } finally {
-      await lock.release();
-    }
+    });
   }
 
   async activate(id: string, nativeId: string, previousNativeId?: string) {
-    const lock = await acquirePrivateStateFileLock(this.path, {
-      staleMs: 30_000,
-      retries: { retries: 0, factor: 1, minTimeout: 25, maxTimeout: 25 },
-    });
-    try {
+    return this.edit(async () => {
       const state = await this.read();
       const record = state.records.find((entry) => entry.enrollment.id === id);
       if (!record || (record.nativeId && record.nativeId !== (previousNativeId ?? nativeId)))
         throw new IntakeError('issue-pickup-enrollment-changed');
-      record.nativeId = nativeId;
-      await this.save(state, record, lock);
-    } finally {
-      await lock.release();
-    }
+      const activated = { ...record, nativeId };
+      state.records[state.records.indexOf(record)] = activated;
+      await this.save(state, activated, record, false);
+    });
   }
 }
