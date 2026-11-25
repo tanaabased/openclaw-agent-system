@@ -1,3 +1,4 @@
+import { replyPublicationReserved } from '../../storage/reply-publication.ts';
 import type { SessionStorage } from '../../storage/storage-lifecycle.ts';
 import { responseInstructions } from '../response/task-response.ts';
 import { responseBlocks } from '../../../channels/github/presentation/response-blocks.ts';
@@ -596,8 +597,11 @@ async function runFeedbackReply(
           [{ text: draft.publicText }],
           redactFeedback,
         );
-    if (input.operation === 'reconcile' && !draft.attempted && !draft.receipt)
-      throw new Error('reply-publication-unattempted');
+    let sharedAttempt = false;
+    if (input.operation === 'reconcile' && !draft.attempted && !draft.receipt) {
+      sharedAttempt = Boolean(await deps.sessionStorage?.hasReplyPublication(draft));
+      if (!sharedAttempt) throw new Error('reply-publication-unattempted');
+    }
     const record = draft;
     const reauthorize = async () => {
       await validate(record);
@@ -645,6 +649,7 @@ async function runFeedbackReply(
     const result = await taskUpdate({
       request: { operation: input.operation, digest, expectedDigest: digest },
       draft: record,
+      sharedAttempt,
       publication: (text) => replyPublication(target, record, purpose, text),
       save,
       beforeCreate: reauthorize,
@@ -668,6 +673,13 @@ async function runFeedbackReply(
         exclusive: (key, run) => store.publication(key, run),
       },
     }).catch((error: unknown) => {
+      if (
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code === replyPublicationReserved
+      )
+        return { status: 'uncertain' as const };
       if (!purpose) throw error;
       const { code, providerDiagnostic } = workflowFailure(
         error,

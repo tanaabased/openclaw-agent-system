@@ -266,6 +266,78 @@ describe('agent database', () => {
     }
   });
 
+  it('should carry attempted, observed and retired replies into the shared installation on upgrade', async () => {
+    const oldSchemas = join(root, 'prior');
+    for (const migration of [
+      '20261123221502_installation_state',
+      '20261124015723_remove_shared_pickup_enrollments',
+    ]) {
+      await cp(
+        join(schemaRoot, 'installation-migrations', migration),
+        join(oldSchemas, 'installation-migrations', migration),
+        { recursive: true },
+      );
+    }
+    await bind(root, 'first', oldSchemas).installation.install();
+    const first = bind(root, 'first');
+    const second = bind(root, 'second');
+    await first.agent.install();
+    await second.agent.install();
+    const publication = (id: string) =>
+      JSON.stringify({
+        item: { lifecycleId: 'issue', repositoryNodeId: 'R_fixture', number: 1 },
+        intent: 'manual-response',
+        publicationId: id,
+        text: 'private fixture text',
+      });
+    const publisher = 'U_owner';
+    for (const name of ['first', 'second']) {
+      const db = new DatabaseSync(join(root, 'agents', name + '.sqlite'));
+      try {
+        const add = db.prepare('INSERT INTO reply_drafts VALUES (?, ?, ?)');
+        for (const [id, state] of Object.entries({
+          pending: { attempted: true },
+          observed: { receipt: { nodeId: 'C_one', databaseId: 1 } },
+          ready: {},
+          rejected: { attempted: false },
+        }))
+          add.run(
+            'scope',
+            id,
+            JSON.stringify({ ...state, authorNodeId: publisher, publication: publication(id) }),
+          );
+        db.prepare('INSERT INTO dispatch_state VALUES (?, ?)').run(
+          'scope',
+          JSON.stringify({
+            retirementEffects: [
+              { kind: 'comment', accountId: publisher, publication: publication('retired') },
+            ],
+          }),
+        );
+      } finally {
+        db.close();
+      }
+    }
+    assert.equal((await first.installation.install()).status, 'updated');
+    const read = async () =>
+      (await second.installation.read({ replyPublications: { publisher } })).replyPublications;
+    const rows = await read();
+    assert.equal(rows.length, 3);
+    const ids = ['pending', 'observed', 'retired'];
+    const draft = (id: string, authorNodeId = publisher) => ({
+      authorNodeId,
+      publication: publication(id),
+    });
+    for (const id of ids) {
+      assert.equal(await second.agent.hasReplyPublication(draft(id)), true);
+      assert.equal(await second.agent.hasReplyPublication(draft(id, 'U_other')), false);
+    }
+    for (const id of ['ready', 'rejected'])
+      assert.equal(await second.agent.hasReplyPublication(draft(id)), false);
+    assert.equal((await first.installation.install()).status, 'unchanged');
+    assert.deepEqual(await read(), rows);
+  });
+
   it('should upgrade pickup enrollment ownership without discarding shared data', async () => {
     const oldSchemas = join(root, 'pilot');
     for (const [chain, migration] of [

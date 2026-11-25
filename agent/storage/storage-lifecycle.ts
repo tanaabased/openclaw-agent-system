@@ -24,6 +24,7 @@ export interface StorageSchema {
 type DirectRow = AgentRows['directEntries'];
 type Draft = AgentRows['replyDrafts']['value'];
 export interface SessionStorage {
+  hasReplyPublication(draft: Pick<Draft, 'authorNodeId' | 'publication'>): Promise<boolean>;
   readReplies(scope: string): Promise<Draft[]>;
   saveReplies(
     scope: string,

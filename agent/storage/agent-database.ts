@@ -7,6 +7,12 @@ import { assertPrivateStateLocksHeld } from '../../core/private-state-lock-conte
 import { constants } from 'node:fs';
 import { lstat, open, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import {
+  replyPublicationKey,
+  replyPublicationReserved,
+  stageReplyPublications,
+} from './reply-publication.ts';
 import { isDeepStrictEqual } from 'node:util';
 import { backup, DatabaseSync } from 'node:sqlite';
 
@@ -85,29 +91,37 @@ class SqliteDatabase {
     private readonly filename: string,
     private readonly component: 'agent-storage' | 'agent-system-storage',
     private readonly migrationsFolder: string,
+    private readonly prepareMigration?: (pending: string[], client: DatabaseSync) => Promise<void>,
   ) {
     this.path = join(root, filename);
   }
 
   /** Normal clients open an installed database; only Install creates it. */
-  protected async use<T>(readOnly: boolean, operation: (db: ReturnType<typeof drizzle>) => T) {
+  protected async use<T>(
+    readOnly: boolean,
+    operation: (db: ReturnType<typeof drizzle>) => T | Promise<T>,
+  ) {
     await this.checkDirectory();
     const { db } = await this.connect(false, readOnly);
     try {
-      return operation(db);
+      return await operation(db);
     } finally {
       db.$client.close();
     }
   }
 
-  private async checkDirectory() {
+  protected async checkDirectory() {
     assertPrivateDirectory(await lstat(this.root), {
       currentUid: process.getuid?.(),
       label: 'agent storage',
     });
   }
 
-  private async connect(create: boolean, readOnly = false) {
+  protected async withCheckedFile<T>(
+    create: boolean,
+    readOnly: boolean,
+    run: (empty: boolean) => T,
+  ) {
     const flags =
       (readOnly ? constants.O_RDONLY : constants.O_RDWR) |
       constants.O_NOFOLLOW |
@@ -122,15 +136,17 @@ class SqliteDatabase {
         stat.uid !== process.getuid?.()
       )
         throw new Error('agent storage requires a private, owned database file');
-      return {
-        db: drizzle({
-          client: new DatabaseSync(this.path, { readOnly, timeout: 5000 }),
-        }),
-        empty: stat.size === 0,
-      };
+      return run(stat.size === 0);
     } finally {
       await file.close();
     }
+  }
+
+  private async connect(create: boolean, readOnly = false) {
+    return this.withCheckedFile(create, readOnly, (empty) => ({
+      db: drizzle({ client: new DatabaseSync(this.path, { readOnly, timeout: 5000 }) }),
+      empty,
+    }));
   }
 
   async exportSnapshot(destination: string) {
@@ -211,7 +227,12 @@ class SqliteDatabase {
     });
     const { db, empty } = await this.connect(true);
     try {
-      if (pendingMigrations(db.$client, this.migrationsFolder).length) {
+      const pending = pendingMigrations(db.$client, this.migrationsFolder);
+      if (pending.length) {
+        await this.prepareMigration?.(
+          pending.map((m) => m.name),
+          db.$client,
+        );
         // Hold SQLite's writer lock across Drizzle's journal read and its own transaction.
         // Two agents can install the same installation database at the same time.
         db.$client.exec('PRAGMA locking_mode = EXCLUSIVE; BEGIN EXCLUSIVE; COMMIT');
@@ -300,6 +321,31 @@ function saveJournalRows(
 }
 
 class SqliteAgentStore extends SqliteDatabase {
+  constructor(
+    location: SqliteInstallation,
+    agentId: string,
+    private readonly shared: SqliteInstallationStore,
+  ) {
+    super(
+      location.agentRoot,
+      agentId + '.sqlite',
+      'agent-storage',
+      join(location.schemaRoot, 'migrations'),
+    );
+  }
+
+  async stageReplyMigration(shared: DatabaseSync) {
+    return this.use(true, (db) => stageReplyPublications(shared, db.$client));
+  }
+
+  hasReplyPublication(
+    draft: Pick<AgentRows['replyDrafts']['value'], 'authorNodeId' | 'publication'>,
+  ) {
+    return this.shared.hasReplyPublication(
+      replyPublicationKey(draft.authorNodeId, draft.publication),
+    );
+  }
+
   private readonly records = sqliteRecords<AgentRows>(agentTables, this.use.bind(this));
   readonly read = this.records.read;
   readonly write = this.records.write;
@@ -522,7 +568,25 @@ class SqliteAgentStore extends SqliteDatabase {
     removed: string[],
     checkSelection: boolean,
   ) {
-    return this.use(false, (db) =>
+    // Attach only for a send, definite rejection or provider receipt. SQLite commits
+    // the draft and the installation-wide claim together before control returns to GitHub.
+    const publications = changed.flatMap((draft) => {
+      const prior = expected.get(draft.id);
+      const previous = prior ? (JSON.parse(prior) as typeof draft) : undefined;
+      const action =
+        draft.receipt && !previous?.receipt
+          ? 'observe'
+          : draft.attempted && !previous?.attempted
+            ? 'reserve'
+            : previous?.attempted && !draft.attempted && !draft.receipt
+              ? 'release'
+              : undefined;
+      return action
+        ? [{ action, ...replyPublicationKey(draft.authorNodeId, draft.publication) }]
+        : [];
+    });
+    return this.use(false, async (db) => {
+      if (publications.length) await this.shared.attachForReply(db.$client);
       db.transaction(
         (tx) => {
           assertPrivateStateLocksHeld();
@@ -542,6 +606,21 @@ class SqliteAgentStore extends SqliteDatabase {
             rows.some(({ id, value }) => expected.get(id) !== JSON.stringify(value))
           )
             throw new Error('reply-draft-conflict');
+          for (const { action, publisher, target } of publications) {
+            if (action === 'release') {
+              tx.run(
+                sql`DELETE FROM installation.reply_publications WHERE publisher = ${publisher} AND target = ${target}`,
+              );
+            } else {
+              const inserted =
+                tx.run(sql`INSERT INTO installation.reply_publications (publisher, target)
+                VALUES (${publisher}, ${target}) ON CONFLICT DO NOTHING`);
+              if (action === 'reserve' && !inserted.changes)
+                throw Object.assign(new Error(replyPublicationReserved), {
+                  code: replyPublicationReserved,
+                });
+            }
+          }
           for (const value of changed) {
             tx.insert(replyDrafts)
               .values({ scope, id: value.id, value })
@@ -557,8 +636,8 @@ class SqliteAgentStore extends SqliteDatabase {
               .run();
         },
         { behavior: 'immediate' },
-      ),
-    );
+      );
+    });
   }
 
   async readDirectEntries(scope: string, kind: AgentRows['directEntries']['kind']) {
@@ -736,6 +815,20 @@ class SqliteInstallationStore extends SqliteDatabase {
   readonly read = this.records.read;
   readonly write = this.records.write;
 
+  async attachForReply(client: DatabaseSync) {
+    await this.checkDirectory();
+    const url = pathToFileURL(this.path);
+    url.searchParams.set('mode', 'rw');
+    await this.withCheckedFile(false, false, () =>
+      client.prepare('ATTACH DATABASE ? AS installation').run(url.href),
+    );
+  }
+
+  async hasReplyPublication(key: InstallationRows['replyPublications']) {
+    const rows = await this.read({ replyPublications: key });
+    return rows.replyPublications.length > 0;
+  }
+
   changeSidebarPlacement(scope: string, change: SidebarPlacementChange) {
     return this.use(false, (db) =>
       db.transaction(
@@ -851,6 +944,14 @@ export function bindSqliteInstallation(installation: SqliteInstallation) {
     'agent-system.sqlite',
     'agent-system-storage',
     join(installation.schemaRoot, 'installation-migrations'),
+    async (pending, client) => {
+      if (!pending.includes('20261125030731_reserve-reply-publications')) return;
+      client.exec(
+        'CREATE TEMP TABLE prior_reply_publications (publisher TEXT, target TEXT, PRIMARY KEY (publisher, target))',
+      );
+      for await (const { agent } of sqliteAgentDatabases(installation))
+        await agent.stageReplyMigration(client);
+    },
   );
 }
 
@@ -860,14 +961,10 @@ export function bindSqliteStorage(
 ): BoundStorage &
   Record<keyof BoundStorage, StorageSchema & Pick<SqliteDatabase, 'exportSnapshot'>> {
   if (!/^[a-z0-9][a-z0-9-]*$/u.test(agentId)) throw new Error('invalid agent database name');
+  const shared = bindSqliteInstallation(installation);
   return {
-    agent: new SqliteAgentStore(
-      installation.agentRoot,
-      agentId + '.sqlite',
-      'agent-storage',
-      join(installation.schemaRoot, 'migrations'),
-    ),
-    installation: bindSqliteInstallation(installation),
+    agent: new SqliteAgentStore(installation, agentId, shared),
+    installation: shared,
   };
 }
 
@@ -880,7 +977,10 @@ export async function* sqliteAgentDatabases(installation: SqliteInstallation) {
     const match = /^([a-z0-9][a-z0-9-]*)\.sqlite$/u.exec(name);
     if (match) {
       const agentId = match[1]!;
-      yield { agentId, agent: bindSqliteStorage(installation, agentId).agent };
+      yield {
+        agentId,
+        agent: new SqliteAgentStore(installation, agentId, bindSqliteInstallation(installation)),
+      };
     }
   }
 }

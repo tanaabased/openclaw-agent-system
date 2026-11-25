@@ -90,6 +90,7 @@ export default class ReplyStore {
     });
   }
   async publication<T>(key: string, run: () => Promise<T>) {
+    if (this.storage) return run();
     await this.ensureRoot();
     const lock = await acquirePrivateStateFileLock(
       join(this.root, `github-reply-publication-${automationHash(key)}`),

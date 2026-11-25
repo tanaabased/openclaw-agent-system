@@ -22,6 +22,7 @@ import {
 } from '../agent/identity/codex-workspace-binding.ts';
 import IssuePickupEnrollmentStore from '../agent/issue-pickup-enrollment.ts';
 import NotificationResetStore from '../agent/notification-reset-state.ts';
+import { replyPublicationKey } from '../agent/storage/reply-publication.ts';
 import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import type {
   AgentRows,
@@ -89,6 +90,7 @@ class ImportPlan<Rows extends Record<string, object>> {
   add<Name extends keyof Rows>(table: Name, row: Rows[Name]) {
     const rows = this.tables.get(table) ?? new Map();
     const key = rowKey(row);
+    if (rows.has(key) && table === 'replyPublications') return;
     if (rows.has(key)) throw new Error('duplicate source record in ' + String(table));
     rows.set(key, row);
     this.tables.set(table, rows);
@@ -229,6 +231,13 @@ export async function importAgentStorage(options: ImportOptions) {
         ? new CodexDispatchStore(root, scope)
         : new OpenClawDispatchStore(root, scope);
       const { records, ...value } = await store.readEnvelope();
+      for (const effect of value.retirementEffects ?? []) {
+        if (effect.kind === 'comment')
+          shared.add(
+            'replyPublications',
+            replyPublicationKey(effect.accountId, effect.publication),
+          );
+      }
       agent.add('dispatchState', { scope: key, value });
       for (const record of records) {
         if (!record || typeof record.id !== 'string' || !record.id)
@@ -273,6 +282,11 @@ export async function importAgentStorage(options: ImportOptions) {
       if (kind === 'reply') {
         const draft = checked(draftSchema, raw, path);
         if (draft.id !== draftId) throw new Error('reply draft id mismatch: ' + path);
+        if (draft.attempted || draft.receipt)
+          shared.add(
+            'replyPublications',
+            replyPublicationKey(draft.authorNodeId, draft.publication),
+          );
         agent.add('replyDrafts', { scope: sessionScope!, id: draft.id, value: draft });
       } else {
         if (draftId || raw?.scope !== sessionScope)

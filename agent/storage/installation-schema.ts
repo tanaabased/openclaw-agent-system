@@ -40,3 +40,13 @@ export const managedRepositories = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.root, t.id] })],
 );
+
+// One logical GitHub comment for this publishing account, across all local agents.
+export const replyPublications = sqliteTable(
+  'reply_publications',
+  {
+    publisher: text().notNull(),
+    target: text().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.publisher, table.target] })],
+);

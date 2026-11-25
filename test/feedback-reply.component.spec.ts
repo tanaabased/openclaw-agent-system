@@ -384,6 +384,74 @@ describe('agent/feedback-reply', () => {
     assert.equal(writes, 1);
   });
 
+  for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should reserve one reply across competing sqlite chats and recover an uncertain send in ${runtime}`, async () => {
+      const target = url + '#issuecomment-42';
+      const args = { target, privateText: 'Detailed answer.' };
+      const publicText = 'Answer to the question.';
+      const peers: FeedbackReplyDependencies[] = [];
+      for (const [i, agentId] of ['receiver', 'receiver', 'other', 'other'].entries()) {
+        const { agent } = await sqliteAgentFixture(root, agentId);
+        peers.push({
+          ...deps,
+          sessionStorage: agent,
+          binding: { ...deps.binding, runtime, agentId, session: 'chat-' + i },
+        });
+      }
+      const run = (peer: FeedbackReplyDependencies, operation: string, extra = {}) =>
+        feedbackReply({ action: 'reply', operation, ...args, ...extra }, peer);
+      for (const peer of peers) {
+        await run(peer, 'compose');
+        await run(peer, 'candidate', { publicText });
+      }
+      const find = provider.findOwnIssueComment;
+      const start = Promise.withResolvers<void>();
+      let arrived = 0;
+      provider.findOwnIssueComment = async () => {
+        if (++arrived === peers.length) start.resolve();
+        await start.promise;
+        return undefined;
+      };
+      lost = hidden = true;
+      const results = await Promise.allSettled(peers.map((peer) => run(peer, 'publish')));
+      assert.equal(writes, 1);
+      assert.equal(
+        results.filter(
+          (result) => result.status === 'fulfilled' && result.value.status === 'uncertain',
+        ).length,
+        peers.length - 1,
+      );
+      assert.equal(
+        results.filter(
+          (result) => result.status === 'rejected' && /transport lost/.test(String(result.reason)),
+        ).length,
+        1,
+      );
+      provider.findOwnIssueComment = find;
+      lost = false;
+      // Reopen both databases. Every candidate can observe the original attempt, even
+      // after its originating chat retires the local draft.
+      for (const peer of peers) {
+        peer.sessionStorage = (await sqliteAgentFixture(root, peer.binding.agentId)).agent;
+        assert.equal((await run(peer, 'reconcile')).status, 'uncertain');
+      }
+      const winner = peers[results.findIndex((result) => result.status === 'rejected')]!;
+      await new ReplyStore(deps.root, winner.binding, winner.sessionStorage).edit(
+        async (drafts, save) => {
+          drafts.splice(0);
+          await save();
+        },
+      );
+      const remaining = peers.filter((peer) => peer !== winner);
+      for (const peer of remaining) assert.equal((await run(peer, 'publish')).status, 'uncertain');
+      hidden = false;
+      for (const peer of remaining)
+        assert.equal((await run(peer, 'reconcile')).status, 'published');
+      assert.equal(writes, 1);
+      await assert.rejects(readdir(deps.root), { code: 'ENOENT' });
+    });
+  }
+
   it('should reject an aggregate reply journal without migrating or changing it', async () => {
     await candidate();
     const store = new ReplyStore(deps.root, deps.binding);
@@ -469,6 +537,7 @@ describe('agent/feedback-reply', () => {
       assert.ok(draft);
       assert.equal(draft.attempted, httpStatus !== 401);
       assert.equal(draft.receipt, undefined);
+      assert.equal(await agent.hasReplyPublication(draft), httpStatus !== 401);
       assert.equal(writes, 1);
       assert.ok('providerDiagnostic' in result && result.providerDiagnostic);
       assert.equal(result.providerDiagnostic.httpStatus, httpStatus);
@@ -1821,6 +1890,11 @@ describe('agent/feedback-reply', () => {
         await save();
       });
     for (const kind of ['foreign', 'shared', 'superseded']) {
+      // Each ownership scenario answers a distinct source revision.
+      provider = {
+        ...provider,
+        reviews: reviewClientFixture(reviewFixture(), [{ ...comment, body: kind }, parent]),
+      };
       await seed(kind);
       const before = await journal.read();
       for (const target of [url, pr.url, pr.url + '#discussion_r' + comment.databaseId]) {
