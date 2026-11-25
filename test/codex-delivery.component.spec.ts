@@ -1,3 +1,4 @@
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -24,7 +25,7 @@ import runCodexDelivery, {
   CodexDeliveryFailure,
   type CodexDeliveryDependencies,
 } from '../agent/tasks/delivery/codex-delivery.ts';
-import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
+import type CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import { runCodexIntake } from '../agent/codex-intake.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
 import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
@@ -131,7 +132,7 @@ describe('agent/codex-delivery', () => {
     ];
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(declaration));
     if (!firstDelivery) await publish();
-    const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
+    const current = await selectCodexTaskContext(pluginData, deps);
     const policy = current.manifest.github!.notifications!;
     const source = {
       nodeId: 'C_feedback work',
@@ -302,7 +303,7 @@ describe('agent/codex-delivery', () => {
     );
     await entered.promise;
     try {
-      const other = new CodexDispatchStore(store.root, store.scope);
+      const other = (await selectCodexTaskContext(pluginData, deps)).journal;
       await other.exclusive(async (state, save) => {
         state.discoveryCheckedAt = baseline;
         await save();
@@ -335,7 +336,7 @@ describe('agent/codex-delivery', () => {
     );
     await entered.promise;
     try {
-      const other = new CodexDispatchStore(store.root, store.scope);
+      const other = (await selectCodexTaskContext(pluginData, deps)).journal;
       await other.exclusive(async (state, save) => {
         state.discoveryCheckedAt = baseline;
         await save();
@@ -445,8 +446,8 @@ describe('agent/codex-delivery', () => {
         request('link', { eventId, pullRequest }),
         /delivery-link-operator-required/,
       );
-    const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
-    store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const current = await selectCodexTaskContext(pluginData, deps);
+    store = current.journal;
     const saved = (await store.read()).records[0]!;
     assert.equal(saved.nativeWork, undefined);
     assert.equal(saved.handoff, undefined);
@@ -461,6 +462,7 @@ describe('agent/codex-delivery', () => {
       { action: 'assessment', operation: 'context' },
       {
         codexHome: deps.codexHome,
+
         threadId: deps.threadId,
         native: {
           ...codexDispatchNative(async () => assert.fail('unexpected native request')),
@@ -564,6 +566,7 @@ describe('agent/codex-delivery', () => {
       commonDir = join(root, 'common');
     for (const path of [workspace, codexHome, worktree, source, commonDir]) await mkdir(path);
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
+    await sqliteAgentFixture(pluginData, 'receiver');
     await bindCodexWorkspace(pluginData, workspace);
     fixture = intakeFixture();
     await runCodexIntake(pluginData, true, {
@@ -579,7 +582,7 @@ describe('agent/codex-delivery', () => {
     });
     const current = await selectCodexTaskContext(pluginData, { codexHome });
     const intake = (await current.store.read())!.records[0]!;
-    store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    store = current.journal;
     await store.exclusive(async (state, save) => {
       state.records.push({
         id,
@@ -818,7 +821,7 @@ describe('agent/codex-delivery', () => {
     await rm(root, { recursive: true, force: true });
   });
   async function adoptTarget() {
-    const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
+    const current = await selectCodexTaskContext(pluginData, deps);
     const { assignment, evidence, ...identity } = (await current.store.read())!.records[0]!;
     assert.ok(assignment);
     const source = fixturePullRequest(fixture, '8'.repeat(40));
@@ -1151,7 +1154,7 @@ describe('agent/codex-delivery', () => {
 
   for (const named of [false, true]) {
     it(`should publish operator-origin work with ${named ? 'explicit named recipients' : 'no fabricated assigner default'}`, async () => {
-      const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
+      const current = await selectCodexTaskContext(pluginData, deps);
       const { assignment, evidence, ...identity } = (await current.store.read())!.records[0]!;
       assert.ok(assignment);
       await store.exclusive(async (state, save) => {
@@ -1178,7 +1181,7 @@ describe('agent/codex-delivery', () => {
         record.issueKey = issueKey(record.manualIssue);
         await save();
       });
-      await rm(current.store.location.path);
+      await current.store.agentStorage.clearIntake(current.store.location.scope);
       fixture.item.assignees = [];
       fixture.client.listAssignmentEvents = async () => {
         throw new Error('operator delivery must not fabricate assignment history');
@@ -1338,7 +1341,7 @@ describe('agent/codex-delivery', () => {
     const configured = structuredClone(manifest);
     Object.assign(configured.github['issue-assignment'], { feedback: {} });
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
-    const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
+    const current = await selectCodexTaskContext(pluginData, deps);
     const authority = {
       workflow: 'issue-assignment' as const,
       automationId: 'automation',
@@ -1801,7 +1804,7 @@ describe('agent/codex-delivery', () => {
     const configured = structuredClone(manifest);
     configured.github['issue-assignment'].mode = 'work';
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
-    const selected = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
+    const selected = await selectCodexTaskContext(pluginData, deps);
     const current = {
       workflow: 'issue-assignment' as const,
       sourceThreadId: 'intake',

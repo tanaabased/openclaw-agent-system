@@ -1,13 +1,10 @@
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { withPrivateStateLock } from '../../core/private-state-lock-context.ts';
 import { automationHash } from '../automation-hash.ts';
 import { AutomationError } from './automation-errors.ts';
-import ensurePrivateStateDirectories from '../../core/ensure-private-state-directories.ts';
-import automationLedgerStorage from '../storage/automation-backend.ts';
+import automationLedgerStorage, { withRegistrationThread } from '../storage/automation-backend.ts';
 import type { BoundStorage } from '../storage/storage-lifecycle.ts';
-import acquirePrivateStateFileLock from '../../core/private-state-file-lock.ts';
 
 export { automationHash } from '../automation-hash.ts';
 
@@ -79,17 +76,12 @@ export type AutomationLedger = Static<typeof ledgerSchema>;
 
 /** non-secret ownership state, separate from native scheduler storage and repository content. */
 export default class AutomationStore {
+  private readonly snapshots = new WeakMap<AutomationLedger, AutomationLedger>();
   readonly scope: string;
   readonly storage: ReturnType<typeof automationLedgerStorage>;
-  get path() {
-    return this.storage.path;
-  }
-  get file() {
-    return this.storage.file;
-  }
   constructor(
-    readonly options: { root: string; profile: string; agentId: string; workspaceDir: string },
-    readonly agentStorage?: BoundStorage['agent'],
+    options: { profile: string; agentId: string; workspaceDir: string },
+    readonly agentStorage: BoundStorage['agent'],
   ) {
     this.scope = automationHash({
       runtime: 'openclaw',
@@ -97,15 +89,15 @@ export default class AutomationStore {
       agentId: options.agentId,
       workspaceDir: options.workspaceDir,
     });
-    this.storage = automationLedgerStorage('openclaw', options.root, this.scope, agentStorage);
+    this.storage = automationLedgerStorage('openclaw', this.scope, agentStorage);
   }
   marker(id: string): string {
     return `agent-system:${this.scope}:${id}`;
   }
   async read(): Promise<AutomationLedger> {
     try {
-      const parsed = await this.storage.read();
-      if (parsed === undefined) return { version: 1, scope: this.scope, records: [] };
+      const stored = await this.storage.read();
+      const parsed = stored === undefined ? { version: 1, scope: this.scope, records: [] } : stored;
       if (
         !Value.Check(ledgerSchema, parsed) ||
         parsed.scope !== this.scope ||
@@ -118,6 +110,7 @@ export default class AutomationStore {
       ) {
         throw new Error('invalid ledger');
       }
+      this.snapshots.set(parsed, structuredClone(parsed));
       return parsed;
     } catch {
       throw new AutomationError('automation-ownership-invalid');
@@ -133,22 +126,11 @@ export default class AutomationStore {
     ) {
       throw new AutomationError('automation-ownership-invalid');
     }
-    await this.storage.write(ledger);
+    const expected = this.snapshots.get(ledger) ?? { version: 1, scope: this.scope, records: [] };
+    await this.storage.write(ledger, expected);
+    this.snapshots.set(ledger, JSON.parse(JSON.stringify(ledger)));
   }
-  async withLock<T>(run: () => Promise<T>): Promise<T> {
-    await ensurePrivateStateDirectories({
-      directories: [this.options.root],
-      currentUid: process.getuid?.(),
-      label: 'Automation ownership',
-    });
-    const lock = await acquirePrivateStateFileLock(this.path, {
-      retries: { factor: 1, minTimeout: 25, maxTimeout: 25, retries: 40 },
-      staleMs: 30_000,
-    });
-    try {
-      return await withPrivateStateLock(lock, run);
-    } finally {
-      await lock.release();
-    }
+  async withLock<T>(bindsThread: boolean, run: () => Promise<T>): Promise<T> {
+    return bindsThread ? withRegistrationThread(this.agentStorage, this.scope, run) : run();
   }
 }

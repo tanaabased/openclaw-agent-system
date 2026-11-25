@@ -1,8 +1,7 @@
+import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
+import codexStorageLocation from '../agent/storage/codex-storage.ts';
 import assert from 'node:assert/strict';
-import IntakeRecordStore, {
-  fileIntakePersistence,
-  intakeLocation,
-} from '../channels/github/intake/record-store.ts';
+import IntakeRecordStore, { intakeLocation } from '../channels/github/intake/record-store.ts';
 import codexHostAccess from '../agent/codex-host-access.ts';
 
 describe('intake host access', () => {
@@ -14,11 +13,11 @@ describe('intake host access', () => {
       workspaceDir: '/unused',
       agentId: 'test',
     });
-    const persistence = fileIntakePersistence(location);
-    const store = new IntakeRecordStore(location, persistence);
+    const agent = bindSqliteStorage(codexStorageLocation('/unused'), 'test').agent;
+    const store = new IntakeRecordStore(location, agent);
     for (const code of ['EPERM', 'EACCES']) {
       const denial = Object.assign(new Error('denied'), { code });
-      persistence.file.read = async () => {
+      agent.readIntake = async () => {
         throw denial;
       };
       await assert.rejects(
@@ -26,7 +25,5 @@ describe('intake host access', () => {
         (error: unknown) => error === denial && codexHostAccess(error),
       );
     }
-    persistence.file.read = async () => '{';
-    await assert.rejects(store.read(), { code: 'intake-state-invalid' });
   });
 });

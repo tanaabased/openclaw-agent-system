@@ -29,21 +29,18 @@ export default async function implementationEntry(
   const input = parseDirectImplementationRequest(request);
   await deps.assertCurrent();
   const store = new DirectEntryStore(
-    deps.root,
     deps.binding,
     implementationEntriesSchema,
     'implementation',
     deps.sessionStorage,
   );
   const selectedTarget = input.target ?? deps.currentTarget;
-  const retained = await store.exclusive(async (entries) => {
-    const candidates = entries.filter((entry) =>
-      selectedTarget ? entry.target.toLowerCase() === selectedTarget.toLowerCase() : true,
-    );
-    if (candidates.length > 1)
-      throw new Error('implementation-target-selection-required: select the issue URL');
-    return candidates[0];
-  });
+  const candidates = (await store.inspect()).filter((entry) =>
+    selectedTarget ? entry.target.toLowerCase() === selectedTarget.toLowerCase() : true,
+  );
+  if (candidates.length > 1)
+    throw new Error('implementation-target-selection-required: select the issue URL');
+  const retained = candidates[0];
   const target = selectedTarget ?? retained?.target;
   if (!target)
     return {

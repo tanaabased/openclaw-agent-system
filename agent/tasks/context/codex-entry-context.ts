@@ -126,7 +126,6 @@ export default async function codexEntryContext<T>(
     const entry: AssessmentEntryDependencies = {
       sessionStorage: current.sessionStorage,
       operator: true,
-      root: pluginData,
       currentTarget,
       binding: {
         runtime: 'codex',

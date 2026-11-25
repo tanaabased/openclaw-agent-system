@@ -1,11 +1,12 @@
+import codexStorageLocation from '../agent/storage/codex-storage.ts';
+import { bindSqliteInstallation } from '../agent/storage/agent-database.ts';
 import assert from 'node:assert/strict';
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import ansis from 'ansis';
 import stringWidth from 'fast-string-width';
 
-import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
 import instanceIdentity, { operateInstanceIdentity } from '../agent/identity/instance-identity.ts';
 import { inspectCodexSetup, installCodexSetup } from '../agent/lifecycle/codex-setup.ts';
 import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
@@ -24,7 +25,9 @@ describe('agent/instance-identity', () => {
   });
 
   it('should keep doctor read-only and preserve identity through repeated openclaw install', async () => {
-    const store = new AssignmentClaimStore(join(root, 'instance'));
+    const db = bindSqliteInstallation(codexStorageLocation(root));
+    await db.install();
+    const store = codexInstanceStore(root);
     const registry = new AgentSystemLifecycleRegistry([instanceIdentity(store)]);
     const context = {
       manifest: { schemaVersion: 1 as const, agent: { id: 'receiver' } },
@@ -32,15 +35,15 @@ describe('agent/instance-identity', () => {
       runtime: 'openclaw' as const,
     };
     assert.equal((await registry.inspect(context))[0]!.code, 'instance-identity-missing');
-    await assert.rejects(access(store.root), { code: 'ENOENT' });
+    assert.deepEqual((await db.read({ instances: {} })).instances, []);
     assert.equal((await registry.reconcile(context)).outcomes[0]!.status, 'created');
     const identity = await store.inspect();
     assert.match(identity!.instanceId, /^[a-f0-9-]{36}$/u);
     assert.match(identity!.displayName, /^[a-z]+-[a-z]+$/u);
-    const before = await readFile(join(store.root, 'assignment-claims.json'), 'utf8');
+    const before = await store.read();
     assert.equal((await registry.inspect(context))[0]!.status, 'healthy');
     assert.equal((await registry.reconcile(context)).outcomes[0]!.status, 'unchanged');
-    assert.equal(await readFile(join(store.root, 'assignment-claims.json'), 'utf8'), before);
+    assert.deepEqual(await store.read(), before);
   });
 
   it('should initialize standalone identity only through install and preserve it across workspace rebinding', async () => {
@@ -49,10 +52,10 @@ describe('agent/instance-identity', () => {
     await mkdir(workspace);
     await writeFile(join(workspace, 'agent.yaml'), 'schema-version: 1\nagent: {id: receiver}\n');
     await bindCodexWorkspace(pluginData, workspace);
-    const deps = { codexHome: join(root, 'codex'), storageBackend: 'sqlite' as const };
+    const deps = { codexHome: join(root, 'codex') };
     const inspection = await inspectCodexSetup(pluginData, undefined, deps);
     assert.ok(inspection.findings.some((f) => f.code === 'instance-identity-missing'));
-    const store = codexInstanceStore(pluginData, deps.storageBackend);
+    const store = codexInstanceStore(pluginData);
     assert.equal(await store.inspect(), undefined);
     await installCodexSetup(pluginData, undefined, deps);
     const saved = await store.inspect();
@@ -73,7 +76,9 @@ describe('agent/instance-identity', () => {
   });
 
   it('should rename without rotating and reject repeated rotation using a stale id', async () => {
-    const store = new AssignmentClaimStore(join(root, 'instance'));
+    const db = bindSqliteInstallation(codexStorageLocation(root));
+    await db.install();
+    const store = codexInstanceStore(root);
     await assert.rejects(
       operateInstanceIdentity(store, 'rename', { name: 'My Laptop' }),
       /instance-install-required/u,
@@ -101,10 +106,15 @@ describe('agent/instance-identity', () => {
   });
 
   it('should report corrupt identity without replacing it during install', async () => {
-    const store = new AssignmentClaimStore(join(root, 'instance'));
+    const db = bindSqliteInstallation(codexStorageLocation(root));
+    await db.install();
+    const store = codexInstanceStore(root);
     await store.identity();
-    const path = join(store.root, 'assignment-claims.json');
-    await writeFile(path, '{broken');
+    const {
+      instances: [row],
+    } = await db.read({ instances: {} });
+    const damaged = { ...row!, value: { ...row!.value, instanceId: 'invalid' } };
+    await db.write([{ table: 'instances', action: 'save', row: damaged }]);
     const lifecycle = instanceIdentity(store);
     const context = {
       manifest: { schemaVersion: 1 as const, agent: { id: 'receiver' } },
@@ -112,11 +122,13 @@ describe('agent/instance-identity', () => {
     };
     assert.equal((await lifecycle.inspect!(context))[0]!.code, 'instance-identity-invalid');
     await assert.rejects(lifecycle.reconcile!(context));
-    assert.equal(await readFile(path, 'utf8'), '{broken');
+    assert.deepEqual((await db.read({ instances: {} })).instances, [damaged]);
   });
 
   it('should mask human identity output while preserving the full json receipt', async () => {
-    const store = new AssignmentClaimStore(join(root, 'instance'));
+    const db = bindSqliteInstallation(codexStorageLocation(root));
+    await db.install();
+    const store = codexInstanceStore(root);
     const identity = await store.identity();
     let stdout = '',
       stderr = '';
@@ -148,7 +160,9 @@ describe('agent/instance-identity', () => {
   });
 
   it('should preserve identity actions, missing recovery and json while wrapping human summaries', async () => {
-    const store = new AssignmentClaimStore(join(root, 'instance'));
+    const db = bindSqliteInstallation(codexStorageLocation(root));
+    await db.install();
+    const store = codexInstanceStore(root);
     async function capture(action: string, input = {}, json = false, columns = 32, color = false) {
       const events: Array<{ stream: string; text: string }> = [];
       let exitCode = 0;

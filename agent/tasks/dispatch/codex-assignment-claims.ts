@@ -1,7 +1,6 @@
 import recoverAssignmentClaim from './assignment-claim-recovery.ts';
-import codexStorageLocation, { codexStorageBackend } from '../../storage/codex-storage.ts';
+import codexStorageLocation from '../../storage/codex-storage.ts';
 import { bindInstanceStore } from '../../storage/pickup-backend.ts';
-import type { StorageBackend } from '../../storage/backend.ts';
 
 import type { IntakeRecord } from '../../../channels/github/intake/record-store.ts';
 import GitHubAssignmentClaimClient from '../../../channels/github/provider/assignment-claim-client.ts';
@@ -92,6 +91,6 @@ export default class CodexAssignmentClaims {
   }
 }
 
-export function codexInstanceStore(pluginData: string, backend?: StorageBackend) {
-  return bindInstanceStore(codexStorageLocation(pluginData), backend ?? codexStorageBackend());
+export function codexInstanceStore(pluginData: string) {
+  return bindInstanceStore(codexStorageLocation(pluginData));
 }

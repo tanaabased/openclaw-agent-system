@@ -3,19 +3,20 @@ import { bindSqliteInstallation } from '../agent/storage/agent-database.ts';
 import { bindInstanceStore } from '../agent/storage/pickup-backend.ts';
 import recoverAssignmentClaim from '../agent/tasks/dispatch/assignment-claim-recovery.ts';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
   acceptAssignmentClaim,
+  assignmentClaimKey,
   claimManualAssignment,
   selectAssignmentClaim,
   claimAssignment,
   type ClaimClient,
   type ClaimSource,
 } from '../agent/tasks/dispatch/assignment-claim.ts';
-import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
+import type AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
 import { claimBody, parseAssignmentClaim } from '../channels/github/provider/assignment-claim.ts';
 import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
 
@@ -40,7 +41,13 @@ describe('agent/assignment-claim', () => {
   let client: ClaimClient;
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'assignment-claim-'));
-    stores = ['a', 'b'].map((name) => new AssignmentClaimStore(join(root, name)));
+    stores = await Promise.all(
+      ['a', 'b'].map(async (name) => {
+        const location = codexStorageLocation(join(root, name));
+        await bindSqliteInstallation(location).install();
+        return bindInstanceStore(location);
+      }),
+    );
     comments = [];
     writes = 0;
     deletionFails = false;
@@ -227,9 +234,81 @@ describe('agent/assignment-claim', () => {
     assert.ok(results.every((result) => result.winnerId === comments[0]!.databaseId));
   });
 
+  it('should reserve once and reject a stale checkpoint on independent connections to the same database', async () => {
+    const location = codexStorageLocation(root);
+    const first = bindSqliteInstallation(location);
+    const second = bindSqliteInstallation(location);
+    await first.install();
+    const openStore = () => bindInstanceStore(location);
+    const identity = await openStore().identity();
+    const [left, right] = await Promise.all([openStore().read(), openStore().read()]);
+    assert.ok(left && right);
+    const key = 'a'.repeat(64);
+    const reserve = (pass: string) => ({
+      ...left,
+      claims: { [key]: { instanceId: identity.instanceId, firstPass: pass, attempted: true } },
+    });
+    const results = await Promise.allSettled([
+      first.saveAssignmentClaims(reserve('first'), left),
+      second.saveAssignmentClaims(reserve('second'), right),
+    ]);
+    assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
+    const loser = results.find((r) => r.status === 'rejected');
+    assert.match(loser?.reason.message, /claim-checkpoint-conflict/u);
+    const reserved = await openStore().read();
+    assert.ok(reserved);
+    assert.equal(
+      reserved.claims[key]!.firstPass,
+      results[0]!.status === 'fulfilled' ? 'first' : 'second',
+    );
+
+    const completed = structuredClone(reserved);
+    completed.claims[key]!.commentId = 42;
+    await first.saveAssignmentClaims(completed, reserved);
+    const stale = structuredClone(reserved);
+    stale.claims[key]!.commentId = 99;
+    await assert.rejects(
+      second.saveAssignmentClaims(stale, reserved),
+      /claim-checkpoint-conflict/u,
+    );
+    assert.deepEqual(await openStore().read(), completed);
+  });
+
+  it('should allow sqlite identity reads but exclude rotation while publishing a claim', async () => {
+    const location = codexStorageLocation(root);
+    await bindSqliteInstallation(location).install();
+    const first = bindInstanceStore(location);
+    const peer = bindInstanceStore(location);
+    const identity = await first.identity();
+    const entered = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    const create = client.create;
+    client.create = async (...args) => {
+      entered.resolve();
+      await resume.promise;
+      return create(...args);
+    };
+    const publishing = claimManualAssignment({ store: first, client, source, requestId: 'manual' });
+    try {
+      await entered.promise;
+      await assert.rejects(lstat(join(location.installationRoot, 'assignment-claims.json.lock')), {
+        code: 'ENOENT',
+      });
+      assert.deepEqual(await peer.identity(), identity);
+      await assert.rejects(peer.rotate(identity.instanceId), {
+        code: 'private-state-file-lock-busy',
+      });
+    } finally {
+      resume.resolve();
+      await publishing;
+    }
+    assert.equal(writes, 1);
+    assert.notEqual((await peer.rotate(identity.instanceId)).instanceId, identity.instanceId);
+  });
+
   it('should retain one assignment winner across two sqlite installations and a restart', async () => {
     const locations = ['a', 'b'].map((name) => codexStorageLocation(join(root, name)));
-    const reopen = () => locations.map((location) => bindInstanceStore(location, 'sqlite'));
+    const reopen = () => locations.map((location) => bindInstanceStore(location));
     await Promise.all(locations.map((location) => bindSqliteInstallation(location).install()));
     stores = reopen();
     const pool = await Promise.all(
@@ -386,10 +465,30 @@ describe('agent/assignment-claim', () => {
     assert.equal((await pass(1)).code, 'claim-winner-missing');
   });
 
-  it('should preserve uncertain publication across restart without posting again', async () => {
+  it('should recover an uncertain claim after restart without posting twice', async () => {
+    const location = codexStorageLocation(join(root, 'a'));
+    const db = bindSqliteInstallation(location);
+    const reopen = () => bindInstanceStore(location);
+    stores[0] = reopen();
     responseLost = true;
-    await assert.rejects(pass(0, 'first'), /lost-response/u);
-    stores[0] = new AssignmentClaimStore(join(root, 'a'));
+    await assert.rejects(
+      pass(0, 'first', {
+        async create(target, body) {
+          // a separate connection can take the writer lock during the provider call.
+          const snapshot = await reopen().read();
+          const claim = snapshot?.claims[assignmentClaimKey(source)];
+          assert.ok(snapshot && claim?.attempted);
+          const claims = {
+            ...snapshot.claims,
+            ['b'.repeat(64)]: { ...claim, firstPass: 'other' },
+          };
+          await db.saveAssignmentClaims({ ...snapshot, claims }, snapshot);
+          return client.create(target, body);
+        },
+      }),
+      /lost-response/u,
+    );
+    stores[0] = reopen();
     assert.equal(
       (
         await pass(0, 'second', {
@@ -424,7 +523,7 @@ describe('agent/assignment-claim', () => {
       instanceId: original.instanceId,
       displayName: 'office-laptop',
     });
-    stores[0] = new AssignmentClaimStore(join(root, 'a'));
+    stores[0] = bindInstanceStore(codexStorageLocation(join(root, 'a')));
     assert.equal((await pass(0)).status, 'owned');
     await acceptAssignmentClaim({
       store: stores[0]!,
@@ -440,12 +539,21 @@ describe('agent/assignment-claim', () => {
   it('should detach copied work on explicit rotation and reject a stale rotation', async () => {
     const original = await stores[0]!.identity();
     await pass(0, 'first');
-    await stores[1]!.identity();
-    await writeFile(
-      join(root, 'b', 'assignment-claims.json'),
-      await readFile(join(root, 'a', 'assignment-claims.json')),
-      { mode: 0o600 },
-    );
+    const sourceDb = bindSqliteInstallation(codexStorageLocation(join(root, 'a')));
+    const targetDb = bindSqliteInstallation(codexStorageLocation(join(root, 'b')));
+    const rows = await sourceDb.read({ instances: {}, assignmentClaims: {} });
+    await targetDb.write([
+      ...rows.instances.map((row) => ({
+        table: 'instances' as const,
+        action: 'insert' as const,
+        row,
+      })),
+      ...rows.assignmentClaims.map((row) => ({
+        table: 'assignmentClaims' as const,
+        action: 'insert' as const,
+        row,
+      })),
+    ]);
     const rotated = await stores[1]!.rotate(original.instanceId);
     assert.notEqual(rotated.instanceId, original.instanceId);
     assert.equal(rotated.displayName, original.displayName);

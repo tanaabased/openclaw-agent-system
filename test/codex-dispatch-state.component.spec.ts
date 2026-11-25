@@ -1,5 +1,8 @@
+import { seedDispatchRows, readDispatchRows } from './dispatch-record-fixture.ts';
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
+import { sqliteDispatchPersistence } from '../agent/storage/dispatch-backend.ts';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -10,7 +13,9 @@ describe('agent/codex-dispatch-state', () => {
   let store: CodexDispatchStore;
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'dispatch-state-'));
-    store = new CodexDispatchStore(root, 'a'.repeat(64));
+    const { agent } = await sqliteAgentFixture(root, 'receiver');
+    const scope = 'a'.repeat(64);
+    store = new CodexDispatchStore(scope, sqliteDispatchPersistence(agent, scope));
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
@@ -23,39 +28,39 @@ describe('agent/codex-dispatch-state', () => {
       resetGeneration: 'initial',
       records: [],
     });
-    for (const contents of [
-      '{"version":',
-      '',
-      'null',
-      JSON.stringify({
-        version: 4,
-        scope: 'b'.repeat(64),
-        records: [],
-      }),
-    ]) {
-      await store.file.write(contents);
-      await assert.rejects(store.read(), { message: 'dispatch-state-invalid' });
-      await assert.rejects(
-        store.exclusive(async () => assert.fail('corrupt evidence reached a writer')),
-        { message: 'dispatch-state-invalid' },
-      );
-      assert.equal(await readFile(store.path, 'utf8'), contents);
-    }
+    const value = { version: 4, scope: 'b'.repeat(64), records: [] };
+    await seedDispatchRows(store.contract.persistence.agentStorage, store.scope, value);
+    await assert.rejects(store.read(), { message: 'dispatch-state-invalid' });
+    await assert.rejects(
+      store.exclusive(async () => assert.fail('corrupt evidence reached a writer')),
+      { message: 'dispatch-state-invalid' },
+    );
+    assert.deepEqual(
+      await readDispatchRows(store.contract.persistence.agentStorage, store.scope),
+      value,
+    );
   });
 
   it('should reject restored pre-reset workflows before interpreting their historical payload', async () => {
     const contents = JSON.stringify({
       version: 1,
       scope: store.scope,
-      records: [{ retired: { at: 1, by: 'old-owner' } }],
+      records: [{ id: 'historical', retired: { at: 1, by: 'old-owner' } }],
     });
-    await store.file.write(contents);
+    await seedDispatchRows(
+      store.contract.persistence.agentStorage,
+      store.scope,
+      JSON.parse(contents),
+    );
     await assert.rejects(store.read(), /dispatch-clean-start-required/);
     await assert.rejects(
       store.exclusive(async () => assert.fail('old workflows reached execution')),
       /dispatch-clean-start-required/,
     );
-    assert.equal(await readFile(store.path, 'utf8'), contents);
+    assert.deepEqual(
+      await readDispatchRows(store.contract.persistence.agentStorage, store.scope),
+      JSON.parse(contents),
+    );
   });
 
   it('should leave unused workflow fields inert instead of repairing or replaying them', async () => {
@@ -79,16 +84,23 @@ describe('agent/codex-dispatch-state', () => {
           },
         ],
       });
-      await store.file.write(contents);
+      await seedDispatchRows(
+        store.contract.persistence.agentStorage,
+        store.scope,
+        JSON.parse(contents),
+      );
       assert.deepEqual(await store.read(), JSON.parse(contents));
-      assert.equal(await readFile(store.path, 'utf8'), contents);
+      assert.deepEqual(
+        await readDispatchRows(store.contract.persistence.agentStorage, store.scope),
+        JSON.parse(contents),
+      );
     }
   });
 
   it('should preserve filesystem denials instead of classifying them as malformed state', async () => {
     for (const code of ['EPERM', 'EACCES']) {
       const denied = Object.assign(new Error('denied'), { code });
-      store.file.read = async () => {
+      store.contract.persistence.read = async () => {
         throw denied;
       };
       await assert.rejects(store.read(), (error: unknown) => error === denied);

@@ -1,3 +1,5 @@
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
+import { bindInstanceStore } from '../agent/storage/pickup-backend.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -27,7 +29,12 @@ describe('issue pickup handoff to ordinary assignment claims', () => {
   });
   afterEach(async () => rm(root, { recursive: true, force: true }));
 
+  async function claimsStore(name: string) {
+    const { sqliteInstallation } = await sqliteAgentFixture(join(root, name), 'receiver');
+    return bindInstanceStore(sqliteInstallation);
+  }
   async function intake(f: Fixture, name: string) {
+    const { agent } = await sqliteAgentFixture(join(root, name), f.tx.agentId);
     const store = new IntakeRecordStore(
       intakeLocation({
         runtime: f.tx.runtime,
@@ -36,6 +43,7 @@ describe('issue pickup handoff to ordinary assignment claims', () => {
         workspaceDir: f.tx.workspaceDir,
         agentId: f.tx.agentId,
       }),
+      agent,
     );
     f.tx.scope = f.tx.enrollment.scope = store.location.scope;
     const options = {
@@ -124,8 +132,8 @@ describe('issue pickup handoff to ordinary assignment claims', () => {
       const a = fixture(runtime),
         b = fixture(runtime === 'codex' ? 'openclaw' : 'codex');
       shared(a, b);
-      const ca = claimFixture(a, join(root, 'excluded'));
-      const cb = claimFixture(b, join(root, 'eligible'), ca.comments);
+      const ca = claimFixture(a, await claimsStore('excluded'));
+      const cb = claimFixture(b, await claimsStore('eligible'), ca.comments);
       await ca.store.identity();
       const identity = await cb.store.identity();
       a.policy.routing = b.policy.routing = [
@@ -157,7 +165,7 @@ describe('issue pickup handoff to ordinary assignment claims', () => {
     it(`should self-assign without publishing a claim and use ordinary routing in ${runtime}`, async () => {
       const f = fixture(runtime);
       f.policy.routing = [{ 'owner/*': 'swarm' }];
-      const c = claimFixture(f, join(root, 'claims'));
+      const c = claimFixture(f, await claimsStore('claims'));
       const admit = await intake(f, 'intake');
       assert.equal((await f.run({ selection: await f.select() })).status, 'assigned');
       assert.equal(c.effects.creates, 0);
@@ -179,8 +187,8 @@ describe('issue pickup handoff to ordinary assignment claims', () => {
       b = fixture('openclaw');
     a.policy.routing = b.policy.routing = [{ 'owner/*': 'swarm' }];
     const second = shared(a, b);
-    const ca = claimFixture(a, join(root, 'a')),
-      cb = claimFixture(b, join(root, 'b'), ca.comments);
+    const ca = claimFixture(a, await claimsStore('a')),
+      cb = claimFixture(b, await claimsStore('b'), ca.comments);
     const admitA = await intake(a, 'intake-a'),
       admitB = await intake(b, 'intake-b');
     const selections = await Promise.all([a.select(), b.select()]);
@@ -258,8 +266,8 @@ describe('issue pickup handoff to ordinary assignment claims', () => {
       b = fixture('openclaw');
     a.policy.routing = b.policy.routing = [{ 'owner/*': 'swarm' }];
     const second = shared(a, b);
-    const ca = claimFixture(a, join(root, 'a')),
-      cb = claimFixture(b, join(root, 'b'), ca.comments);
+    const ca = claimFixture(a, await claimsStore('a')),
+      cb = claimFixture(b, await claimsStore('b'), ca.comments);
     const admitA = await intake(a, 'intake-a'),
       admitB = await intake(b, 'intake-b');
     assert.equal((await a.run({ selection: await a.select() })).status, 'assigned');

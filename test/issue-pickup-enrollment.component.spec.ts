@@ -1,3 +1,7 @@
+import codexStorageLocation from '../agent/storage/codex-storage.ts';
+import { bindPickupStore } from '../agent/storage/pickup-backend.ts';
+import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import reconcileIssuePickup from '../agent/issue-pickup-reconcile.ts';
 import type { IssuePickupState } from '../agent/issue-pickup-state.ts';
 import assert from 'node:assert/strict';
@@ -5,7 +9,6 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
 import IssuePickupEnrollmentStore from '../agent/issue-pickup-enrollment.ts';
 import issuePickupJobs, {
   issuePickupConfigurationCode,
@@ -25,9 +28,10 @@ describe('issue pickup installation enrollment', () => {
   for (const runtime of ['codex', 'openclaw'] as const) {
     async function fixture() {
       const f = selectionFixture(runtime);
-      const identity = new AssignmentClaimStore(root);
+      const storage = await sqliteAgentFixture(root, 'receiver');
+      const store = await bindPickupStore(storage.sqliteInstallation, 'receiver');
+      const identity = store.instance;
       await identity.identity();
-      const store = new IssuePickupEnrollmentStore(root);
       const input = {
         policy: f.policy,
         runtime,
@@ -40,6 +44,52 @@ describe('issue pickup installation enrollment', () => {
       };
       return { ...f, store, identity, input };
     }
+
+    it(`should preserve a competing activation during pickup reconciliation in ${runtime}`, async () => {
+      const f = await fixture();
+      const { agent, sqliteInstallation } = await sqliteAgentFixture(root, f.input.agentId);
+      const other = bindSqliteStorage(sqliteInstallation, f.input.agentId).agent;
+      const store = (db: typeof agent) =>
+        new IssuePickupEnrollmentStore(f.identity, { agent: db, agentId: f.input.agentId });
+      const first = store(agent);
+      const second = store(other);
+      const initial = await first.prepare(f.input);
+      const id = initial.enrollment.id;
+      const updated = await first.prepare({
+        ...f.input,
+        timezone: 'America/New_York',
+        reconcile: async (_updated, commit) => {
+          await second.activate(id, 'winning-job');
+          await commit();
+        },
+      });
+      assert.deepEqual(updated, {
+        ...initial,
+        nativeId: 'winning-job',
+        timezone: 'America/New_York',
+      });
+      await assert.rejects(first.activate(id, 'other-job'), /issue-pickup-enrollment-changed/);
+      await assert.rejects(
+        first.prepare({
+          ...f.input,
+          timezone: 'Europe/London',
+          reconcile: async (_updated, commit) => {
+            await second.prepare({
+              ...f.input,
+              timezone: 'America/Chicago',
+              reconcile: (_record, save) => save(),
+            });
+            await commit();
+          },
+        }),
+        /issue-pickup-enrollment-changed/,
+      );
+      assert.deepEqual(await first.inspect(f.policy, runtime, 'scope'), {
+        ...updated,
+        timezone: 'America/Chicago',
+      });
+      assert.ok(!(await readdir(root)).includes('absent'));
+    });
 
     it(`should enroll closed milestones and excluded repositories without scanning in ${runtime}`, async () => {
       const f = await fixture();
@@ -209,8 +259,10 @@ describe('issue pickup installation enrollment', () => {
       const f = await fixture();
       const first = await f.store.prepare(f.input);
       const otherRoot = join(root, 'other');
-      await new AssignmentClaimStore(otherRoot).identity();
-      const other = await new IssuePickupEnrollmentStore(otherRoot).prepare(f.input);
+      const storage = await sqliteAgentFixture(otherRoot, f.input.agentId);
+      const otherStore = await bindPickupStore(storage.sqliteInstallation, f.input.agentId);
+      await otherStore.instance.identity();
+      const other = await otherStore.prepare(f.input);
       assert.notEqual(other.instanceId, first.instanceId);
       assert.notEqual(other.enrollment.id, first.enrollment.id);
       await f.identity.rotate(first.instanceId);
@@ -221,7 +273,7 @@ describe('issue pickup installation enrollment', () => {
   }
 
   it('should inspect missing installation state without creating files', async () => {
-    const store = new IssuePickupEnrollmentStore(root);
+    const store = await bindPickupStore(codexStorageLocation(root), 'receiver');
     await assert.rejects(store.owner(), /instance-install-required/);
     assert.deepEqual(await readdir(root), []);
   });

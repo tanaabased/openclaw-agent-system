@@ -60,7 +60,7 @@ export default async function openClawReview(
   if (!selected) throw new Error('review-runtime-disabled');
   const { policy } = selected;
   const journal = current.dispatch(deps.root);
-  await assertNotificationManagement(deps.root, journal.scope, current.store.agentStorage);
+  await assertNotificationManagement(journal.scope, current.store.agentStorage);
   const operatorInput =
     operator &&
     ['launch', 'retire', 'next', 'prepare', 'reconcile'].includes(input.operation) &&
@@ -268,7 +268,13 @@ export default async function openClawReview(
         }
         if (record.sessionCreation?.verified) {
           await current.store.identities.resolve(policy, client, 'review-feedback', true);
-          const event = await scanReviewFeedback(record, deps, client, policy);
+          const event = await scanReviewFeedback(
+            record,
+            deps,
+            client,
+            policy,
+            current.sessionStorage,
+          );
           if (record.feedback) await save();
           if (event && record.reviewObservation === observed.fingerprint) {
             const authorizeInput = async () => {

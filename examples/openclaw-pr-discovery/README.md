@@ -32,7 +32,6 @@ the pending queue unchanged. Restore provider reads, push the approved change on
 ```bash
 # should prepare the packed plugin and strict notification fixture
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --needs-ssh-key --yolo
-openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 openclaw-aimock prepare --scenario openclaw-pr-discovery
 openclaw config set skills.workshop.autonomous.mode off
 # keep unrelated nightly memory turns out of the strict notification fixture
@@ -60,7 +59,7 @@ NODE
 cp "$GITHUB_WORKSPACE/examples/openclaw-pr-discovery/provider-fixture.mjs" "$TMPDIR/pr-provider/gh"
 chmod 755 "$TMPDIR/pr-provider/gh"
 # preserve the fixture ahead of system gh when openclaw bootstraps its cli path
-PATH="$TMPDIR/pr-provider:$PATH" OPENCLAW_PATH_BOOTSTRAPPED=1 OPENCLAW_LOG_LEVEL=info openclaw-gateway start
+PATH="$TMPDIR/pr-provider:$PATH" OPENCLAW_PATH_BOOTSTRAPPED=1 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 
 # should install emori in its fixture workspace
 set -o pipefail
@@ -97,7 +96,7 @@ openclaw agent-system notifications wait --for baseline-ready --timeout 30 --jso
 
 # should create an issue as emori and assign it as tanaabot after the safe intake baseline
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-discovery/emori"
-node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" create --title "agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT- Agent System pr flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --body-file "$GITHUB_WORKSPACE/examples/openclaw-pr-discovery/issue.md" | tee "$TMPDIR/notification-issue.json" | jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0'
+node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" create --title "agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT- Agent System openclaw-pr-discovery $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --body-file "$GITHUB_WORKSPACE/examples/openclaw-pr-discovery/issue.md" | tee "$TMPDIR/notification-issue.json" | jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0'
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-discovery/tanaabot"
 node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" assign --number "$number" | jq -e 'any(.assignees[]; .login == "tanaabot")'
@@ -195,6 +194,7 @@ node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -es --sl
 cmp "$TMPDIR/pr-provider/reads.jsonl" "$TMPDIR/notification-inspection-reads.jsonl"
 
 # should resume feedback discovery after restoring the provider
+trap 'status=$?; if test "$status" -ne 0; then tail -n 12 "$TMPDIR/pr-provider/reads.jsonl" >&2 || true; fi; exit "$status"' EXIT
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-discovery/tanaabot"
 number=$(jq -er .delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
 worktree=$(jq -er .worktree "$TMPDIR/notification-delivery.json")

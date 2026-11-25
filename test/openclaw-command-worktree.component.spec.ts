@@ -1,3 +1,5 @@
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
+import { sqliteDispatchPersistence } from '../agent/storage/dispatch-backend.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -17,18 +19,23 @@ describe('OpenClaw command worktree ownership', () => {
       const worktree = join(root, 'checkout');
       await mkdir(agent.workspaceDir);
       await mkdir(worktree);
-      const dispatchRoot = join(root, 'dispatch');
+      const storage = await sqliteAgentFixture(root, agent.agentId);
+      await sqliteAgentFixture(root, 'peer');
       const taskContext = {
+        sqliteInstallation: storage.sqliteInstallation,
         root: join(root, 'intake'),
         namespace: root,
       };
       const binding = { sessionKey: 'agent:receiver:issue:one', sessionId: 'incarnation' };
       const session = { sessionId: binding.sessionId, spawnedCwd: worktree };
       let observed: typeof session & { archivedAt?: number; execHost?: string } = session;
-      const dependencies = { taskContext, dispatchRoot, readSession: async () => observed };
+      const dependencies = { taskContext, readSession: async () => observed };
       const verify = () => resolveOpenClawCommandWorktree(dependencies, agent, binding);
       const { scope } = intakeLocation({ runtime: 'openclaw', ...taskContext, ...agent });
-      const store = new OpenClawDispatchStore(dispatchRoot, scope);
+      const store = new OpenClawDispatchStore(
+        scope,
+        sqliteDispatchPersistence(storage.agent, scope),
+      );
       const record: OpenClawDispatchRecord = {
         id: 'a'.repeat(64),
         intakeId: 'b'.repeat(64),

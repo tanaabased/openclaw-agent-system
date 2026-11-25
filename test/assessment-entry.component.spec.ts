@@ -1,3 +1,4 @@
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import composeResponseBlocks from '../channels/github/presentation/response-blocks.ts';
 import { matchFixture, type ChatCompletionRequest } from '@copilotkit/aimock';
 import assert from 'node:assert/strict';
@@ -39,8 +40,10 @@ describe('agent/assessment-entry', () => {
     dirty = false;
     revision = 'a'.repeat(40);
     const fixture = intakeFixture();
+    const { agent } = await sqliteAgentFixture(root, 'receiver');
+    agent.saveDirectEntries = async () => assert.fail('assessment persisted a workflow entry');
     deps = {
-      root: join(root, 'private'),
+      sessionStorage: agent,
       binding: {
         runtime: 'openclaw',
         agentId: 'receiver',
@@ -102,7 +105,6 @@ describe('agent/assessment-entry', () => {
         assert.equal(typeof complete.instructions, 'string');
       };
       verify(await hydrateImplementation(await run(request), run));
-      await assert.rejects(readdir(deps.root), { code: 'ENOENT' });
     });
 
   for (const runtime of ['codex', 'openclaw'] as const) {
@@ -281,13 +283,6 @@ describe('agent/assessment-entry', () => {
         assert.equal('resultSubmission' in response, false);
       }
       assert.ok(selections.length > 0);
-      assert.deepEqual(
-        await readdir(deps.root).catch((error) => {
-          if (error.code === 'ENOENT') return [];
-          throw error;
-        }),
-        [],
-      );
     });
   it('should fail explicitly on invalid managed context without selecting a manual method', async () => {
     deps.managed = async () => {
@@ -340,6 +335,8 @@ describe('agent/assessment-entry', () => {
     for (const [index, configuration] of variants.entries()) {
       deps.binding.session = `configuration-${index}`;
       const fixture = intakeFixture();
+      const { agent } = await sqliteAgentFixture(root, 'receiver');
+      agent.saveDirectEntries = async () => assert.fail('assessment persisted a workflow entry');
       deps.manifest = {
         schemaVersion: 1,
         agent: { id: 'receiver' },
@@ -451,6 +448,7 @@ describe('agent/native-assessment-entry', () => {
     const calls: string[] = [];
     const fixture = intakeFixture();
     const deps = {
+      ...(await sqliteAgentFixture(data, 'receiver')),
       codexHome: home,
       threadId: 'chat',
       git,
@@ -556,6 +554,7 @@ describe('agent/native-assessment-entry', () => {
     };
     const calls: string[] = [];
     const intake = new OpenClawIntake({
+      ...(await sqliteAgentFixture(root, 'receiver')),
       root: join(root, 'intake'),
       namespace: root,
       connect: async () => provider,

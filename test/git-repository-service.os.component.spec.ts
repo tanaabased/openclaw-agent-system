@@ -1,6 +1,5 @@
 import { bindSqliteInstallation } from '../agent/storage/agent-database.ts';
 import codexStorageLocation from '../agent/storage/codex-storage.ts';
-import type { RuntimeStorageOptions } from '../agent/storage/backend.ts';
 import assert from 'node:assert/strict';
 import { chmod, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -19,16 +18,17 @@ describe('tools/git/repository-service', () => {
   let fixture: Awaited<ReturnType<typeof repositoryFixture>>;
   beforeEach(async () => {
     fixture = await repositoryFixture();
+    const location = codexStorageLocation(fixture.workspaceDir);
+    const db = bindSqliteInstallation(location);
+    await db.install();
   });
   afterEach(async () => {
     await rm(fixture.workspaceDir, { recursive: true, force: true });
   });
-  const prepare = async (
-    repositoryId = id,
-    remote = source,
-    storage: RuntimeStorageOptions = {},
-  ) => {
-    const service = new GitRepositoryService(storage);
+  const prepare = async (repositoryId = id, remote = source) => {
+    const service = new GitRepositoryService({
+      sqliteInstallation: codexStorageLocation(fixture.workspaceDir),
+    });
     const lease = await service.acquire(fixture.context, fixture.layout, repositoryId, remote);
     try {
       return await withPrivateStateLock(lease, () =>
@@ -42,12 +42,11 @@ describe('tools/git/repository-service', () => {
   it('should clone once at the configured name and recover through a new service', async () => {
     const location = codexStorageLocation(fixture.workspaceDir);
     const db = bindSqliteInstallation(location);
-    await db.install();
-    const storage = { sqliteInstallation: location, storageBackend: 'sqlite' as const };
-    const first = await prepare(id, source, storage);
+    const storage = { sqliteInstallation: location };
+    const first = await prepare();
     assert.equal((await db.readRepository(fixture.layout.repositoryRoot, id))?.path, first.path);
     assert.equal(first.path, join(fixture.layout.workingDirectory!, 'repo'));
-    const again = await prepare(id, source, storage);
+    const again = await prepare();
     assert.equal(again.path, first.path);
     assert.equal(fixture.git.calls.filter(({ argv }) => argv[0] === 'clone').length, 1);
     assert.equal(
@@ -147,16 +146,15 @@ describe('tools/git/repository-service', () => {
   it('should retain a partial clone after interruption and resume a verified temporary clone without recloning', async () => {
     const path = join(fixture.layout.workingDirectory!, 'repo');
     const temporaryPath = path + '.12345678-1234-1234-1234-123456789012.tmp';
-    const record = join(
-      fixture.layout.repositoryRoot,
-      gitWorktreeRepositoryDirectoryName(id) + '.repository.json',
-    );
+    const db = bindSqliteInstallation(codexStorageLocation(fixture.workspaceDir));
     await mkdir(temporaryPath, { recursive: true, mode: 0o700 });
-    await writeFile(
-      record,
-      JSON.stringify({ version: 1, repositoryId: id, source, path, temporaryPath }),
-      { mode: 0o600 },
-    );
+    await db.saveRepository(fixture.layout.repositoryRoot, {
+      version: 1,
+      repositoryId: id,
+      source,
+      path,
+      temporaryPath,
+    });
     await assert.rejects(prepare(), /repository-clone-interrupted/u);
     const originalWorkingDirectory = fixture.layout.workingDirectory;
     fixture.layout.workingDirectory = join(fixture.workspaceDir, 'changed');
@@ -168,7 +166,10 @@ describe('tools/git/repository-service', () => {
       fixture.git.calls.some(({ argv }) => argv[0] === 'clone'),
       false,
     );
-    assert.equal(JSON.parse(await readFile(record, 'utf8')).temporaryPath, undefined);
+    assert.equal(
+      (await db.readRepository(fixture.layout.repositoryRoot, id))!.temporaryPath,
+      undefined,
+    );
   });
 
   it('should retain the managed bare fallback and verify its remote before reuse', async () => {

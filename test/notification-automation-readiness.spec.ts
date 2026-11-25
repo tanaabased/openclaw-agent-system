@@ -1,3 +1,5 @@
+import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
+import codexStorageLocation from '../agent/storage/codex-storage.ts';
 import assert from 'node:assert/strict';
 
 import type { AutomationGateway } from '../agent/automations/automation-gateway.ts';
@@ -31,12 +33,14 @@ function fixture() {
     environment: {},
     timezone: 'UTC',
   };
-  const store = new AutomationStore({
-    root: '/unused',
-    profile: '/profile',
-    agentId: 'receiver',
-    workspaceDir: '/workspace',
-  });
+  const store = new AutomationStore(
+    {
+      profile: '/profile',
+      agentId: 'receiver',
+      workspaceDir: '/workspace',
+    },
+    bindSqliteStorage(codexStorageLocation('/unused'), 'receiver').agent,
+  );
   const job = openclawIntakeJobs(manifest)[0]!;
   const record: AutomationRecord = {
     id: job.id,

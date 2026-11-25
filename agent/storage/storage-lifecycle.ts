@@ -1,3 +1,7 @@
+import type { AgentLockFamily } from './workflow-lock.ts';
+import type { RegistrationLedger } from './automation-backend.ts';
+import type { DispatchEnvelope } from './dispatch-backend.ts';
+import type { SidebarChange, SidebarState } from '../codex-sidebar-journal.ts';
 import type { AgentRows, InstallationRows, WorkflowRecords } from './workflow-records.ts';
 import type {
   AgentSystemLifecycleContext,
@@ -21,36 +25,81 @@ export interface StorageSchema {
 type DirectRow = AgentRows['directEntries'];
 type Draft = AgentRows['replyDrafts']['value'];
 export interface SessionStorage {
+  workflowLockPath(family: AgentLockFamily, scope: string): string;
+  hasReplyPublication(draft: Pick<Draft, 'authorNodeId' | 'publication'>): Promise<boolean>;
   readReplies(scope: string): Promise<Draft[]>;
-  saveReplies(scope: string, changed: Draft[], removed: string[]): Promise<void>;
+  saveReplies(
+    scope: string,
+    expected: ReadonlyMap<string, string>,
+    changed: Draft[],
+    removed: string[],
+    checkSelection: boolean,
+  ): Promise<void>;
   readDirectEntries(scope: string, kind: DirectRow['kind']): Promise<DirectRow['value'][]>;
   saveDirectEntries(
     scope: string,
     kind: DirectRow['kind'],
     entries: DirectRow['value'][],
+    expected: DirectRow['value'][],
   ): Promise<void>;
 }
+
+export type SidebarPlacementChange = (current?: SidebarState) => SidebarChange;
 
 /** The runtime binds both handles before a workflow can read or change any records. */
 export interface BoundStorage {
   agent: WorkflowRecords<AgentRows> &
     SessionStorage & {
+      saveAutomationLedger(
+        runtime: 'codex' | 'openclaw',
+        ledger: RegistrationLedger,
+        expected: RegistrationLedger,
+      ): Promise<void>;
+      changePickupEnrollment(
+        key: Pick<AgentRows['pickupEnrollments'], 'runtime' | 'scope'>,
+        change: (
+          current?: AgentRows['pickupEnrollments']['value'],
+        ) => AgentRows['pickupEnrollments']['value'],
+        validateCapacity?: (records: AgentRows['pickupEnrollments']['value'][]) => void,
+      ): Promise<AgentRows['pickupEnrollments']['value']>;
+      changeReport(
+        id: string,
+        change: (
+          row?: AgentRows['automationReports'],
+        ) => AgentRows['automationReports'] | undefined,
+      ): Promise<void>;
+      retainIdentityPin(
+        row: AgentRows['githubIdentityPins'],
+        validate: (entries: Record<string, AgentRows['githubIdentityPins']['value']>) => void,
+      ): Promise<void>;
       replacePathProjection(value: AgentRows['pathProjections']['value']): Promise<void>;
       listReportIds(
         selection: 'all' | 'recoverable' | { completedBefore: string },
       ): Promise<string[]>;
       listIntakeScopes(): Promise<string[]>;
       readIntake(scope: string): Promise<IntakeState | undefined>;
+      readDispatch(scope: string): Promise<DispatchEnvelope | undefined>;
       saveDispatch(
         scope: string,
-        state: AgentRows['dispatchState']['value'] & {
-          records: AgentRows['dispatchRecords']['value'][];
-        },
+        state: DispatchEnvelope,
+        expected: DispatchEnvelope,
       ): Promise<void>;
-      saveIntake(state: IntakeState): Promise<void>;
+      changeIntake<T>(
+        scope: string,
+        resetOwner: boolean,
+        change: (current?: IntakeState) => { state?: IntakeState; result: T },
+      ): Promise<T>;
+      beginNotificationReset(
+        record: AgentRows['notificationResets']['value'],
+        expected: IntakeState | undefined,
+      ): Promise<void>;
       clearIntake(scope: string): Promise<void>;
     };
   installation: WorkflowRecords<InstallationRows> & {
+    changeSidebarPlacement(
+      scope: string,
+      change: SidebarPlacementChange,
+    ): Promise<SidebarChange['result']>;
     readRepository(root: string, id: string): Promise<RepositoryRecord | undefined>;
     saveRepository(root: string, record: RepositoryRecord): Promise<void>;
   };

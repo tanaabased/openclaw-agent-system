@@ -86,7 +86,6 @@ export default async function runCodexNotificationReset(
     throw new Error('notification-reset-explicit-bound-agent-required');
   const journal = current.journal;
   const store = new NotificationResetStore(
-    pluginData,
     current.store.location.scope,
     current.store.agentStorage,
   );
@@ -343,12 +342,7 @@ export default async function runCodexNotificationReset(
       const saved = JSON.parse(replacement.automation) as SavedAutomation;
       if (saved.definition.kind !== 'heartbeat')
         throw new Error('notification-reset-coordinator-missing');
-      const journal = await codexSidebarJournal(
-        pluginData,
-        current.codexHome,
-        defaultManagedGroup,
-        deps.storageBackend,
-      );
+      const journal = await codexSidebarJournal(pluginData, current.codexHome, defaultManagedGroup);
       const pending = (await journal.read()).pending;
       const receipt =
         pending?.digest === input.placementReceipt?.digest ? input.placementReceipt : undefined;

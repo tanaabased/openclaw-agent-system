@@ -1,3 +1,7 @@
+import { sqliteDispatchPersistence } from '../agent/storage/dispatch-backend.ts';
+import { bindIntakeStore } from '../agent/storage/backend.ts';
+import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import notificationResetPickup from '../agent/notification-reset-pickup.ts';
 import selectionFixture from './issue-pickup-selection-fixture.ts';
 import { notificationResetDiagnostic } from '../agent/notification-reset-diagnostic.ts';
@@ -18,6 +22,7 @@ import waitForCodexWorktreeRemoval from '../agent/tasks/retirement/codex-worktre
 import IntakeRecordStore from '../channels/github/intake/record-store.ts';
 
 describe('agent/notification reset recovery', () => {
+  let sqlite: Awaited<ReturnType<typeof sqliteAgentFixture>>;
   let root: string;
   let store: NotificationResetStore;
   let events: string[];
@@ -26,7 +31,8 @@ describe('agent/notification reset recovery', () => {
   const scope = 'a'.repeat(64);
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'notification-reset-'));
-    store = new NotificationResetStore(root, scope);
+    sqlite = await sqliteAgentFixture(root, 'tester');
+    store = new NotificationResetStore(scope, sqlite.agent);
     events = [];
     snapshot = {
       runtime: 'codex',
@@ -75,6 +81,103 @@ describe('agent/notification reset recovery', () => {
       preview: await previewNotificationReset(store, adapter, purge),
       now: () => 100,
     });
+
+  it('should stop an in-flight sqlite intake write once reset has committed its inventory', async () => {
+    const { agent, sqliteInstallation } = await sqliteAgentFixture(root, 'tester');
+    store = new NotificationResetStore(scope, agent);
+    const peer = bindIntakeStore(
+      { root, scope },
+      bindSqliteStorage(sqliteInstallation, 'tester').agent,
+    );
+    await peer.reset(100, {
+      scope,
+      agentId: 'tester',
+      workspaceDir: root,
+      account: { login: 'receiver', nodeId: 'U_receiver' },
+      policyDigest: 'policy',
+    });
+    const started = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    const writer = assert.rejects(
+      peer.exclusive(async (state, save) => {
+        started.resolve();
+        await resume.promise;
+        await save({ ...state!, checkpoint: 101 });
+      }),
+      /notification-reset-in-progress/,
+    );
+    await started.promise;
+    adapter.pause = async () => {
+      resume.resolve();
+      await writer;
+      return { status: 'done' };
+    };
+    try {
+      assert.equal((await run()).status, 'complete');
+    } finally {
+      resume.resolve();
+    }
+    assert.equal((await peer.read())!.checkpoint, undefined);
+  });
+
+  it('should preview an active sqlite reset without letting a second executor repeat its native pause', async () => {
+    const { agent, sqliteInstallation } = await sqliteAgentFixture(root, 'tester');
+    store = new NotificationResetStore(scope, agent);
+    const peer = new NotificationResetStore(
+      scope,
+      bindSqliteStorage(sqliteInstallation, 'tester').agent,
+    );
+    const entered = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    let pauses = 0;
+    adapter.pause = async () => {
+      pauses++;
+      entered.resolve();
+      await resume.promise;
+      return { status: 'done' };
+    };
+    const active = run();
+    try {
+      await entered.promise;
+      const preview = await previewNotificationReset(peer, adapter, false);
+      assert.equal(preview.continuing, true);
+      await assert.rejects(resetNotifications({ store: peer, adapter, preview }), {
+        code: 'private-state-file-lock-busy',
+      });
+    } finally {
+      resume.resolve();
+      await active;
+    }
+    assert.equal(pauses, 1);
+    assert.equal(await peer.read(), undefined);
+  });
+
+  it('should require a new reset preview when intake changes while recording sqlite inventory', async () => {
+    const { agent, sqliteInstallation } = await sqliteAgentFixture(root, 'tester');
+    store = new NotificationResetStore(scope, agent);
+    const peer = bindIntakeStore(
+      { root, scope },
+      bindSqliteStorage(sqliteInstallation, 'tester').agent,
+    );
+    const preview = await previewNotificationReset(store, adapter, false);
+    adapter.snapshot = async () => {
+      await peer.reset(100, {
+        scope,
+        agentId: 'tester',
+        workspaceDir: root,
+        account: { login: 'receiver', nodeId: 'U_receiver' },
+        policyDigest: 'policy',
+      });
+      return structuredClone(snapshot);
+    };
+    await assert.rejects(
+      resetNotifications({ store, adapter, preview }),
+      /notification-reset-preview-changed/,
+    );
+    assert.equal(await store.read(), undefined);
+    assert.deepEqual(events, []);
+    assert.equal((await peer.read())!.baselineAt, 100);
+  });
 
   it('should preserve independent pickup receipts across a lost pause and partial coordinator replacement', async () => {
     let paused = false;
@@ -151,14 +254,11 @@ describe('agent/notification reset recovery', () => {
   it('should atomically keep the latest pickup evidence and retain it when clear is replayed', async () => {
     const f = selectionFixture();
     await f.run({ selection: await f.select() });
-    const journal = new CodexDispatchStore(root, scope);
+    const journal = new CodexDispatchStore(scope, sqliteDispatchPersistence(sqlite.agent, scope));
     await journal.exclusive(async (state, save) => {
       state.issuePickup = structuredClone(f.state.issuePickup);
       await save();
     });
-    const legacy = JSON.parse((await journal.file.read())!);
-    assert.deepEqual(legacy.projectPickup, f.state.issuePickup);
-    assert.ok(!Object.hasOwn(legacy, 'issuePickup'));
     await journal.reset('reset-generation');
     assert.deepEqual((await journal.read()).issuePickup?.charges, f.state.issuePickup!.charges);
     assert.equal((await journal.read()).issuePickup?.operations.length, 1);
@@ -189,7 +289,7 @@ describe('agent/notification reset recovery', () => {
     assert.equal((await run()).status, 'waiting');
     assert.deepEqual(events, ['pause']);
     await assert.rejects(
-      assertNotificationManagement(root, scope),
+      assertNotificationManagement(scope, sqlite.agent),
       /notification-reset-in-progress/u,
     );
     const operation = (await store.read())!.id;
@@ -200,7 +300,7 @@ describe('agent/notification reset recovery', () => {
     };
     assert.equal((await run()).status, 'complete');
     assert.equal(events.filter((event) => event === 'pause').length, 2);
-    await assertNotificationManagement(root, scope);
+    await assertNotificationManagement(scope, sqlite.agent);
   });
 
   it('should reject confirmation drift before writing a recovery record', async () => {
@@ -458,8 +558,19 @@ describe('agent/notification reset recovery', () => {
     assert.equal((await run()).status, 'complete');
   });
 
-  it('should reject old transactions after the reset journal is removed', async () => {
-    const dispatch = new CodexDispatchStore(root, scope);
+  it(`should reject old dispatch transactions after the reset journal is removed`, async () => {
+    const open = () =>
+      new CodexDispatchStore(
+        scope,
+        sqliteDispatchPersistence(
+          bindSqliteStorage(sqlite.sqliteInstallation, 'tester').agent,
+          scope,
+        ),
+      );
+    const dispatch = open();
+    const resetDispatch = open();
+    store = new NotificationResetStore(scope, sqlite.agent);
+    adapter.fence = (run) => resetDispatch.exclusive(() => run());
     let release!: () => void;
     let ready!: () => void;
     const started = new Promise<void>((resolve) => {
@@ -476,7 +587,7 @@ describe('agent/notification reset recovery', () => {
     });
     await started;
     adapter.clear = async (record) => {
-      await dispatch.reset(record.id);
+      await resetDispatch.reset(record.id);
     };
     await run();
     release();
@@ -485,7 +596,7 @@ describe('agent/notification reset recovery', () => {
   });
 
   it('should block intake writes while retaining read-only inspection', async () => {
-    const intake = new IntakeRecordStore({ root, path: join(root, 'intake.json'), scope });
+    const intake = new IntakeRecordStore({ root, scope }, sqlite.agent);
     await intake.exclusive(async (_state, save) =>
       save({
         version: 1,

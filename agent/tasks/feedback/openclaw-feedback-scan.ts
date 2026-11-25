@@ -56,8 +56,12 @@ export async function scanOpenClawFeedback(input: {
   const budget = input.budget ?? new DiscoveryBudget(20000, input.authority.signal);
   const scans: OpenClawFeedbackScan[] = [];
   const records = openClawFeedbackRecords(input.state);
-  let sessionStorage: SessionStorage | undefined;
-  let connection: Awaited<ReturnType<typeof service.dependencies.connect>> | undefined;
+  let connectedScope:
+    | {
+        connection: Awaited<ReturnType<typeof service.dependencies.connect>>;
+        sessionStorage: SessionStorage;
+      }
+    | undefined;
   let provider:
     Awaited<ReturnType<NonNullable<typeof service.dependencies.feedbackConnect>>> | undefined;
   for (const record of records) {
@@ -120,7 +124,7 @@ export async function scanOpenClawFeedback(input: {
             throw new Error('feedback-workspace-binding-changed');
         };
         await budget.read('workspace-binding', validateLocal);
-        if (!connection) {
+        if (!connectedScope) {
           const connected = await budget.read('github-connection', () =>
             service.dependencies.connect(
               { manifest, workspaceDir: input.workspace },
@@ -136,9 +140,9 @@ export async function scanOpenClawFeedback(input: {
               true,
             ),
           );
-          connection = connected;
-          sessionStorage = selected.sessionStorage;
+          connectedScope = { connection: connected, sessionStorage: selected.sessionStorage };
         }
+        const { connection, sessionStorage } = connectedScope;
         const { intake } = await budget.read('assignment-validation', () =>
           service.validate(
             manifest,
@@ -170,7 +174,6 @@ export async function scanOpenClawFeedback(input: {
                 replies: () =>
                   replyOwnPublications({
                     sessionStorage,
-                    root: service.dependencies.root,
                     binding: {
                       runtime: 'openclaw',
                       agentId: manifest.agent.id,

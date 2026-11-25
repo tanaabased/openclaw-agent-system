@@ -41,14 +41,22 @@ describe('aimock fixture error diagnostics', () => {
     };
     const wrapped = {
       tool: { source: 'openclaw', name: 'agent_system_dispatch' },
-      result: { content: [{ type: 'text', text: JSON.stringify(result) }] },
+      result: {
+        content: [{ type: 'text', text: JSON.stringify({ ...result, status: 'uncertain' }) }],
+      },
     };
     const request = {
       model: 'fixture',
       messages: [
         result,
         wrapped,
-        { code: 'private prose with spaces', status: 'private status' },
+        {
+          code: 'private prose with spaces',
+          status: 'private status',
+          exitCode: 1,
+          stdout: 'private context',
+          stderr: 'gh: Bad credentials (HTTP 401)',
+        },
       ].map((value) => ({ role: 'tool', content: JSON.stringify(value) })),
     } as ChatCompletionRequest;
     assert.throws(
@@ -57,13 +65,16 @@ describe('aimock fixture error diagnostics', () => {
     );
     const results = captured.errors[0]!.toolResults;
     for (const observed of results.slice(0, 2)) {
-      assert.equal(observed.status, 'blocked');
       assert.equal(observed.code, 'material-native-response-unavailable');
       assert.equal(observed.providerDiagnostic?.httpStatus, 403);
       assert.equal(observed.providerDiagnostic?.classification, 'rate-limit');
       assert.equal(observed.providerDiagnostic?.retryAfterMs, 12000);
       assert.match(observed.providerDiagnostic?.providerMessage ?? '', /API rate limit exceeded/u);
     }
+    assert.equal(results[0]!.status, 'blocked');
+    assert.equal(results[1]!.status, 'uncertain');
+    assert.equal(results[2]!.exitCode, 1);
+    assert.equal(results[2]!.httpStatus, 401);
     assert.equal(results[2]!.code, undefined);
     assert.equal(results[2]!.status, undefined);
     assert.deepEqual(captured.errors[0]!.frames, ['    at fixture (/private/tmp/fixture.ts:1:1)']);

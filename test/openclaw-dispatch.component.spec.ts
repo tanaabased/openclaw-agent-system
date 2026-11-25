@@ -7,7 +7,6 @@ import { taskResponseOutput } from '../agent/tasks/response/task-response.ts';
 import { automationHash } from '../agent/automation-hash.ts';
 import { issueKey } from '../agent/tasks/dispatch/dispatch-pending.ts';
 import openClawCapacity from '../agent/tasks/dispatch/openclaw-capacity.ts';
-import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import OpenClawDispatch from '../agent/tasks/dispatch/openclaw-dispatch.ts';
 import AgentSystemToolError from '../api/error.ts';
 import { claimBody } from '../channels/github/provider/assignment-claim.ts';
@@ -82,8 +81,8 @@ describe('agent/openclaw dispatch', () => {
       await release.promise;
       return readiness(...args);
     };
-    const current = await fixtureState.service.scope(fixtureState.manifest, fixtureState.root);
-    const other = new OpenClawDispatchStore(current.journal.root, current.journal.scope);
+    const other = (await fixtureState.service.scope(fixtureState.manifest, fixtureState.root))
+      .journal;
     const pending = fixtureState.next();
     await entered.promise;
     try {
@@ -863,7 +862,7 @@ describe('agent/openclaw dispatch', () => {
       { action: 'next' },
     );
     const store = fixtureState.service.dependencies.claimStore!;
-    const before = await store.file.read();
+    const before = await store.read();
     delete fixtureState.service.dependencies.claims;
     fixtureState.coordinator.runId = 'second-native-occurrence';
     const held = await fixtureState.service.run(
@@ -875,7 +874,7 @@ describe('agent/openclaw dispatch', () => {
     assert.ok('code' in held && held.code === 'claim-disabled-pending');
     assert.equal(fixtureState.preparedWorktrees, 0);
     assert.equal(fixtureState.creates().length, 0);
-    assert.equal(await store.file.read(), before);
+    assert.deepEqual(await store.read(), before);
     assert.equal(comments.length, 1);
   });
 
@@ -909,7 +908,7 @@ describe('agent/openclaw dispatch', () => {
     fixtureState.lost = true;
     assert.equal((await fixtureState.prepare(selected)).status, 'waiting');
     const store = fixtureState.service.dependencies.claimStore!;
-    const before = await store.file.read();
+    const before = await store.read();
     delete fixtureState.service.dependencies.claims;
     const recovered = await fixtureState.service.run(
       fixtureState.manifest,
@@ -923,7 +922,7 @@ describe('agent/openclaw dispatch', () => {
     assert.equal(recovered.status, 'session-created');
     assert.equal(fixtureState.creates().length, 1);
     assert.equal((await fixtureState.record()).claimAccepted, undefined);
-    assert.equal(await store.file.read(), before);
+    assert.deepEqual(await store.read(), before);
     assert.doesNotMatch(comments[0]!.body, /Assignment accepted/u);
   });
 
@@ -2618,7 +2617,22 @@ describe('agent/openclaw dispatch', () => {
 });
 
 describe('openclaw sqlite dispatch', () => {
-  const f = openclawDispatchFixture({ storageBackend: 'sqlite' });
+  const f = openclawDispatchFixture();
+  it('should create one native session for competing preparations of one assignment', async () => {
+    const routed = await f.next();
+    const results = await Promise.all([f.prepare(routed), f.prepare(routed)]);
+    assert.equal(results.filter((r) => r.status === 'session-created').length, 1);
+    assert.equal(
+      results.filter((r) => r.status === 'busy' || r.status === 'reconcile-required').length,
+      1,
+    );
+    const { journal } = await f.service.scope(f.manifest, f.root);
+    assert.deepEqual(
+      (await journal.read()).records.map((r) => [r.id, r.threadId]),
+      [[routed.id, f.session?.key]],
+    );
+    assert.equal(f.creates().length, 1);
+  });
   it('should recover the same issue session after restarting dispatch', async () => {
     const routed = await f.next();
     f.lost = true;
@@ -2636,7 +2650,6 @@ describe('openclaw sqlite dispatch', () => {
       (await journal.read()).records.map((r) => [r.id, r.threadId]),
       [[routed.id, f.session?.key]],
     );
-    assert.equal(await journal.file.read(), undefined);
     assert.equal(f.creates().length, 1);
   });
 });

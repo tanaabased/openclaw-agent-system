@@ -22,7 +22,6 @@ Install agent-bound setup, run one native command automation, and verify that bo
 ```bash
 # should install agent-bound setup through the packed plugin
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE"
-openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 cd "$GITHUB_WORKSPACE/examples/openclaw-tool-descendants"
 openclaw agent-system install --yes --json | jq -e '.outcomes | any(.stepId == "tool-identity" and .status == "updated")'
 ```

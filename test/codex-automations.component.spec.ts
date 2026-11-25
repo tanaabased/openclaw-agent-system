@@ -1,3 +1,8 @@
+import {
+  readCodexAutomationSnapshot,
+  type CodexAutomationDependencies,
+} from '../agent/automations/codex-automation-snapshot.ts';
+import type { AgentRows } from '../agent/storage/workflow-records.ts';
 import { codexInstanceStore } from '../agent/tasks/dispatch/codex-assignment-claims.ts';
 import { bindSqliteInstallation } from '../agent/storage/agent-database.ts';
 import { codexPickupStore } from '../agent/storage/codex-storage.ts';
@@ -39,7 +44,6 @@ import {
   reconcileCodexAutomationRetirements,
   syncCodexAutomationThreads,
 } from '../agent/automations/codex-automations.ts';
-import { type CodexAutomationDependencies } from '../agent/automations/codex-automation-snapshot.ts';
 import { inspectCodexPickupActivation } from '../agent/automations/codex-automation-activation.ts';
 import codexAutomationSchedule from '../agent/automations/codex-automation-schedule.ts';
 import {
@@ -203,6 +207,7 @@ describe('agent/codex-automation-native-contract', () => {
 });
 
 describe('agent/codex-automations', () => {
+  let storage: Awaited<ReturnType<typeof sqliteAgentFixture>>;
   let root: string, workspace: string, pluginData: string, codexHome: string;
   let projects: object;
   let nativeInventory: {
@@ -276,12 +281,17 @@ describe('agent/codex-automations', () => {
   }
   const inspect = () => inspectCodexAutomations(pluginData, inputs(), deps());
   async function ownership() {
-    const name = (await readdir(pluginData)).find((entry) =>
-      /^codex-automations-.*\.json$/u.test(entry),
-    )!;
-    const path = join(pluginData, name);
-    const bytes = await readFile(path, 'utf8');
-    return { path, bytes, ledger: JSON.parse(bytes) };
+    const { ledger, writeLedger } = await readCodexAutomationSnapshot(pluginData, deps());
+    return { ledger, bytes: JSON.stringify(ledger), writeLedger };
+  }
+  async function seedHeader(scope: string, value: unknown, agent = storage.agent) {
+    await agent.write([
+      {
+        table: 'automationState',
+        action: 'save',
+        row: { scope, value: value as AgentRows['automationState']['value'] },
+      },
+    ]);
   }
   async function unrelatedDamagedLedger() {
     const binding = { workspace, codexHome: join(root, 'other-codex'), agentId: 'fixture' };
@@ -291,16 +301,9 @@ describe('agent/codex-automations', () => {
       workspaceDir: workspace,
       agentId: binding.agentId,
     });
-    const path = join(pluginData, `codex-automations-${scope}.json`);
-    const contents = JSON.stringify({
-      version: 1,
-      scope,
-      binding,
-      records: 'damaged',
-      pending: { broken: true },
-    });
-    await writeFile(path, contents, { mode: 0o600 });
-    return { path, contents };
+    const header = { version: 1, scope, binding, pending: { broken: true } };
+    await seedHeader(scope, header);
+    return { scope, header };
   }
   async function manifest(declaration = job()) {
     await writeFile(
@@ -367,6 +370,7 @@ describe('agent/codex-automations', () => {
     );
     await manifest();
     await bindCodexWorkspace(pluginData, workspace);
+    storage = await sqliteAgentFixture(pluginData, 'fixture');
     projects = JSON.parse(
       (await capture('lookups')).replaceAll('/workspace/fixture', workspace),
     ).projects;
@@ -509,9 +513,12 @@ describe('agent/codex-automations', () => {
 
   it('should isolate damaged payloads belonging to another codex installation', async () => {
     const expected = await inspect();
-    const { path, contents } = await unrelatedDamagedLedger();
+    const { scope, header } = await unrelatedDamagedLedger();
     assert.deepEqual(await inspect(), expected);
-    assert.equal(await readFile(path, 'utf8'), contents);
+    assert.deepEqual(
+      (await storage.agent.read({ automationState: { scope } })).automationState[0]?.value,
+      header,
+    );
   });
 
   it('should reject damaged current, retained and ambiguous automation ownership', async () => {
@@ -528,12 +535,10 @@ describe('agent/codex-automations', () => {
             agentId: binding.agentId,
           })
         : 'a'.repeat(64);
-      const path = join(pluginData, `codex-automations-${scope}.json`);
-      await writeFile(path, JSON.stringify({ version: 1, scope, binding, records: 'damaged' }), {
-        mode: 0o600,
-      });
+      const { agent } = await sqliteAgentFixture(pluginData, binding?.agentId ?? 'fixture');
+      await seedHeader(scope, { version: 1, scope, binding, pending: { broken: true } }, agent);
       await assert.rejects(inspect(), rejectsCode('automation-ownership-invalid'));
-      await rm(path);
+      await agent.write([{ table: 'automationState', action: 'clearScope', scope }]);
     }
     const alias = join(root, 'home-alias');
     await symlink(codexHome, alias);
@@ -544,10 +549,7 @@ describe('agent/codex-automations', () => {
       workspaceDir: workspace,
       agentId: binding.agentId,
     });
-    const path = join(pluginData, `codex-automations-${scope}.json`);
-    await writeFile(path, JSON.stringify({ version: 1, scope, binding, records: 'damaged' }), {
-      mode: 0o600,
-    });
+    await seedHeader(scope, { version: 1, scope, binding, pending: { broken: true } });
     await assert.rejects(inspect(), rejectsCode('automation-ownership-invalid'));
   });
 
@@ -559,14 +561,13 @@ describe('agent/codex-automations', () => {
       workspaceDir: workspace,
       agentId: binding.agentId,
     });
-    const path = join(pluginData, `codex-automations-${scope}.json`);
     for (const damaged of [
       { version: 999, scope, binding, records: [] },
       { version: 1, scope: 'a'.repeat(64), binding, records: [] },
       { version: 1, scope, binding: { ...binding, agentId: 'wrong-agent' }, records: [] },
       { version: 1, scope, binding: { codexHome: binding.codexHome }, records: [] },
     ]) {
-      await writeFile(path, JSON.stringify(damaged), { mode: 0o600 });
+      await seedHeader(scope, damaged);
       await assert.rejects(inspect(), rejectsCode('automation-ownership-invalid'));
     }
   });
@@ -741,12 +742,9 @@ describe('agent/codex-automations', () => {
 
   it('should enroll one coordinator-free pickup job and preserve its window anchor across pause and repeated installs', async () => {
     const provider = selectionFixture();
-    const { agent, sqliteInstallation, storageBackend } = await sqliteAgentFixture(
-      pluginData,
-      'fixture',
-    );
+    const { agent, sqliteInstallation } = await sqliteAgentFixture(pluginData, 'fixture');
     await bindSqliteInstallation(sqliteInstallation).install();
-    await codexInstanceStore(pluginData, storageBackend).identity();
+    await codexInstanceStore(pluginData).identity();
     const source = {
       'schema-version': 1,
       agent: { id: 'fixture' },
@@ -787,7 +785,7 @@ describe('agent/codex-automations', () => {
     >();
     const dependencies = {
       ...deps(),
-      storageBackend,
+
       intake: { connect: async () => provider.client },
       threadAdapter: {
         async lookup(id: string) {
@@ -855,14 +853,14 @@ describe('agent/codex-automations', () => {
     const legacyChat = legacyPickup.definition.targetThreadId;
     const legacyHistory = structuredClone(conversations.get(legacyChat));
     await saveManifest();
-    const enrollments = await codexPickupStore(pluginData, 'fixture', storageBackend);
+    const enrollments = await codexPickupStore(pluginData, 'fixture');
     provider.milestone.state = 'closed';
     provider.client.discoverProject = async () => {
       throw Error('installation must not scan');
     };
     const priorEnrollment = await prepareCodexPickupEnrollment(pluginData, {
       ...dependencies.intake,
-      storageBackend,
+
       codexHome,
     });
     await enrollments.activate(priorEnrollment.enrollment.id, legacyPickup.id);
@@ -1422,7 +1420,7 @@ describe('agent/codex-automations', () => {
     await syncOne(dependencies, 'peer-native');
     const confirmed = await ownership();
     assert.deepEqual(
-      confirmed.ledger.retired.map(({ retired }: { retired: unknown }) => retired),
+      confirmed.ledger.retired!.map(({ retired }) => retired),
       Array(2).fill({ atMs: 1234, reason: 'native-job-absent' }),
     );
     now += 24 * 60 * 60 * 1000 - 1;
@@ -1569,13 +1567,10 @@ describe('agent/codex-automations', () => {
         throw new AutomationError('automation-thread-settings-busy');
       },
     };
-    const { agent, sqliteInstallation, storageBackend } = await sqliteAgentFixture(
-      pluginData,
-      'fixture',
-    );
+    const { agent, sqliteInstallation } = await sqliteAgentFixture(pluginData, 'fixture');
     const installation = bindSqliteInstallation(sqliteInstallation);
     await installation.install();
-    const dependencies = { ...deps(), storageBackend, threadAdapter: adapter };
+    const dependencies = { ...deps(), threadAdapter: adapter };
     await syncThreads(dependencies);
     assert.ok(
       (await installation.read({ sidebarPlacements: {} })).sidebarPlacements[0]?.value.sectionId,
@@ -1667,9 +1662,6 @@ describe('agent/codex-automations', () => {
     const ready = await readThread();
     assert.equal(ready?.nativeId, 'thread-1');
     assert.equal(ready?.settingsUpdate, undefined);
-    assert.ok(
-      !(await readdir(pluginData)).some((name) => /^automation-threads-.*\.json$/u.test(name)),
-    );
   });
 
   it('should identify settings and thread failures while retaining full read-only codex evidence', async () => {
@@ -1925,16 +1917,16 @@ describe('agent/codex-automations', () => {
             if (reads === 2 && obstruction === 'reappeared') await nativeWrite(old!.definition);
             if (reads === 2 && obstruction === 'manifest-changed') await manifest();
             if (reads === 2 && obstruction === 'ownership-changed') {
-              before.ledger.records[0].removed = true;
+              before.ledger.records[0]!.removed = true;
               concurrentBytes = JSON.stringify(before.ledger);
-              await writeFile(before.path, concurrentBytes);
+              await before.writeLedger(before.ledger);
             }
             return readCodexAutomations(home, options);
           },
         }),
       );
       assert.equal((await ownership()).bytes, concurrentBytes);
-      assert.equal((await ownership()).ledger.records[0].retired, undefined);
+      assert.equal((await ownership()).ledger.records[0]!.retired, undefined);
     });
   }
 
@@ -1990,7 +1982,7 @@ describe('agent/codex-automations', () => {
     await nativeWrite(plan.actions[0]!.expected, 'restored');
     const result = await acknowledgeCodexAutomation(pluginData, plan.digest, undefined, deps());
     assert.equal(result.nativeId, 'restored');
-    assert.equal((await ownership()).ledger.records[0].nativeId, 'restored');
+    assert.equal((await ownership()).ledger.records[0]!.nativeId, 'restored');
     await reconcileCodexAutomationRetirements(pluginData, deps());
     assert.equal((await inspect()).status, 'aligned');
     assert.deepEqual(
@@ -2083,8 +2075,8 @@ describe('agent/codex-automations', () => {
   });
 
   it('should reject a stale plan and serialize pending writes until exact recovery', async () => {
-    const { agent, storageBackend } = await sqliteAgentFixture(pluginData, 'fixture');
-    const dependencies = { ...deps(), storageBackend };
+    const { agent } = await sqliteAgentFixture(pluginData, 'fixture');
+    const dependencies = { ...deps() };
     const inspectSelected = () => inspectCodexAutomations(pluginData, inputs(), dependencies);
     const plan = await inspectSelected();
     await manifest(job().replace('Review this workspace.', 'Changed prompt.'));
@@ -2093,7 +2085,26 @@ describe('agent/codex-automations', () => {
       rejectsCode('automation-plan-stale-or-blocked'),
     );
     const fresh = await inspectSelected();
-    await prepareCodexAutomation(pluginData, fresh.digest, inputs(), dependencies);
+    const ready = Promise.withResolvers<void>();
+    let readers = 0;
+    const contenders = await Promise.allSettled(
+      Array.from({ length: 6 }, () =>
+        prepareCodexAutomation(pluginData, fresh.digest, inputs(), {
+          ...dependencies,
+          readAutomations: async (...args) => {
+            // Release only after every caller has loaded the same ledger snapshot.
+            if (++readers === 6) ready.resolve();
+            await ready.promise;
+            return readCodexAutomations(...args);
+          },
+        }),
+      ),
+    );
+    const winners = contenders.filter((result) => result.status === 'fulfilled');
+    assert.equal(winners.length, 1);
+    assert.equal(winners[0]!.value.status, 'prepared');
+    for (const result of contenders)
+      if (result.status === 'rejected') assert.equal(result.reason.code, 'automation-journal-busy');
     await assert.rejects(prepareCodexAutomation(pluginData, fresh.digest, inputs(), dependencies));
     await assert.rejects(
       acknowledgeCodexAutomation(pluginData, fresh.digest, undefined, dependencies),
@@ -2112,9 +2123,6 @@ describe('agent/codex-automations', () => {
     assert.deepEqual(
       verified.automationRegistrations.map(({ id, value }) => [id, value.nativeId]),
       [['review', 'fixture-native']],
-    );
-    assert.ok(
-      !(await readdir(pluginData)).some((name) => /^codex-automations-.*\.json$/u.test(name)),
     );
   });
 
@@ -2135,10 +2143,7 @@ describe('agent/codex-automations', () => {
       acknowledgeCodexAutomation(pluginData, plan.digest, undefined, deps()),
       rejectsCode('automation-readback-diverged'),
     );
-    const ledgerPath = (await readdir(pluginData)).find((name) =>
-      name.startsWith('codex-automations-'),
-    )!;
-    const ledger = JSON.parse(await readFile(join(pluginData, ledgerPath), 'utf8'));
+    const { ledger } = await ownership();
     assert.equal(ledger.records.length, 1);
     assert.ok(ledger.pending);
   });
@@ -2368,15 +2373,11 @@ describe('agent/codex-automations', () => {
       const plan = await inspect();
       const before = await readCodexAutomations(codexHome);
       await prepareCodexAutomation(pluginData, plan.digest, inputs(), deps());
-      const name = (await readdir(pluginData)).find((name) =>
-        name.startsWith('codex-automations-'),
-      )!;
-      const path = join(pluginData, name);
-      const ledger = JSON.parse(await readFile(path, 'utf8'));
-      delete ledger.pending.targetBefore;
-      ledger.pending.beforeHash = automationHash(before);
-      ledger.pending.othersHash = automationHash(before);
-      await writeFile(path, JSON.stringify(ledger));
+      const { ledger, writeLedger } = await ownership();
+      delete ledger.pending!.targetBefore;
+      ledger.pending!.beforeHash = automationHash(before);
+      ledger.pending!.othersHash = automationHash(before);
+      await writeLedger(ledger);
       if (completed) {
         await nativeWrite(plan.actions[0]!.expected);
         await manifest(job().replace('Review this workspace.', 'Updated review.'));

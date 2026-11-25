@@ -1,3 +1,4 @@
+import type { SessionStorage } from '../../storage/storage-lifecycle.ts';
 import { workflowFeedbackAvailable } from '../../../channels/github/feedback-policy.ts';
 import type GitHubWorkEventClient from '../../../channels/github/provider/work-event-client.ts';
 import type { GitHubNotificationPolicy } from '../../../channels/github/workflow-policy.ts';
@@ -12,6 +13,7 @@ export async function scanReviewFeedback(
   deps: OpenClawTaskDependencies,
   client: GitHubWorkEventClient,
   policy: GitHubNotificationPolicy,
+  sessionStorage: SessionStorage,
 ) {
   const admission = record.reviewAdmission!;
   if (
@@ -34,7 +36,7 @@ export async function scanReviewFeedback(
       ownCommentIds: async () => [
         ...(record.reviewPublication?.receipt ? [record.reviewPublication.receipt.nodeId] : []),
         ...(await replyOwnPublications({
-          root: deps.root,
+          sessionStorage,
           binding: {
             runtime: 'openclaw',
             agentId: admission.agentId,

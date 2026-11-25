@@ -96,11 +96,14 @@ describe('scripts/wait-for-automation-run', () => {
       },
       run: ((_command: string, args: string[], _input: unknown, timeout: number) => {
         calls.push(args);
-        assert.equal(timeout, 30_000);
-        if (calls.length === 1) {
+        // Cold CLI startup takes 40 seconds on this runner. Repeating a 30-second
+        // watchdog cannot observe a run that has already completed.
+        if (calls.length <= 2 && timeout < 40_000) {
           elapsed += timeout;
           return { status: null, error: { code: 'ETIMEDOUT' } };
         }
+        assert.equal(timeout, calls.length === 2 ? 60_000 : 30_000);
+        if (calls.length === 2) elapsed += 40_000;
         return {
           status: 0,
           stdout: JSON.stringify({

@@ -7,6 +7,11 @@ import { fileURLToPath } from 'node:url';
 import { once } from 'node:events';
 import { Worker } from 'node:worker_threads';
 import { DatabaseSync } from 'node:sqlite';
+import {
+  pickupDispatchScope,
+  sqliteDispatchPersistence,
+} from '../agent/storage/dispatch-backend.ts';
+import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import type { IntakeState } from '../channels/github/intake/record-store.ts';
 import { account, baseline, intakeFixture } from './github-intake-fixture.ts';
@@ -67,6 +72,10 @@ function sampleIntake(agentId: string, checkpoint: number): IntakeState {
   };
 }
 
+function saveIntake(agent: ReturnType<typeof bind>['agent'], state: IntakeState) {
+  return agent.changeIntake(state.scope, false, () => ({ state, result: undefined }));
+}
+
 describe('agent database', () => {
   let root: string;
 
@@ -88,8 +97,8 @@ describe('agent database', () => {
     assert.match((await laptopA.installation.inspect()).message, /`agent-system\.sqlite`/);
     await laptopA.agent.install();
     await laptopB.agent.install();
-    await laptopA.agent.saveIntake(a);
-    await laptopB.agent.saveIntake(b);
+    await saveIntake(laptopA.agent, a);
+    await saveIntake(laptopB.agent, b);
     assert.deepEqual(await laptopA.agent.readIntake(a.scope), a);
     await laptopA.agent.clearIntake(a.scope);
     assert.equal(await laptopA.agent.readIntake(a.scope), undefined);
@@ -115,7 +124,7 @@ describe('agent database', () => {
     assert.equal((await emori.installation.install()).status, 'created');
     assert.equal((await smutlord.installation.install()).status, 'unchanged');
     assert.equal((await stat(join(root, 'agents/emori.sqlite'))).mode & 0o777, 0o600);
-    await emori.agent.saveIntake(state);
+    await saveIntake(emori.agent, state);
     assert.equal(await smutlord.agent.readIntake(state.scope), undefined);
     const repo = {
       version: 1 as const,
@@ -145,11 +154,65 @@ describe('agent database', () => {
       await once(worker, 'message');
       worker.postMessage('release');
       const state = sampleIntake('emori', baseline);
-      await agent.saveIntake(state);
+      await saveIntake(agent, state);
       assert.deepEqual(await agent.readIntake(state.scope), state);
     } finally {
       await worker.terminate();
     }
+  });
+
+  it('should preserve an older sqlite pickup enrollment across the next checkpoint', async () => {
+    const { agent } = bind(root, 'receiver');
+    await agent.install();
+    const scope = 'a'.repeat(64);
+    const key = pickupDispatchScope(scope);
+    const pickup = {
+      enrollment: {
+        id: 'enrollment',
+        scope,
+        runtime: 'openclaw',
+        workspaceDir: root,
+        agentId: 'receiver',
+        account: { login: 'receiver', nodeId: 'U1' },
+        repositoryNodeId: 'R1',
+        policyDigest: 'policy',
+        startedAt: 1,
+      },
+      timezone: 'UTC',
+      operations: [],
+    };
+    const value = { version: 4 as const, scope, resetGeneration: 'saved', projectPickup: pickup };
+    await agent.write([{ table: 'dispatchState', action: 'insert', row: { scope: key, value } }]);
+    const journal = new OpenClawDispatchStore(scope, sqliteDispatchPersistence(agent, key));
+    assert.deepEqual((await journal.readEnvelope()).issuePickup, pickup);
+    await journal.observeIntake(async (_state, save) => save());
+    const reopened = bind(root, 'receiver').agent;
+    const saved = await reopened.readDispatch(key);
+    assert.deepEqual(saved?.issuePickup, pickup);
+    assert.ok(saved && !Object.hasOwn(saved, 'projectPickup'));
+    assert.equal(await reopened.readDispatch(scope), undefined);
+  });
+
+  it('should reject a competing dispatch checkpoint and fence an old generation after reopening', async () => {
+    const { agent } = bind(root, 'emori');
+    await agent.install();
+    const peer = bind(root, 'emori').agent;
+    const scope = 'one';
+    const initial = { version: 4 as const, scope, resetGeneration: 'initial', records: [] };
+    const first = { ...initial, discoveryCheckedAt: 1 };
+    await agent.saveDispatch(scope, first, initial);
+    await assert.rejects(
+      peer.saveDispatch(scope, { ...initial, discoveryCheckedAt: 2 }, initial),
+      /private-state-snapshot-conflict/,
+    );
+    const reset = { ...initial, resetGeneration: 'reset' };
+    await peer.saveDispatch(scope, reset, first);
+    await assert.rejects(
+      agent.saveDispatch(scope, first, first),
+      /notification-reset-stale-operation/,
+    );
+    const rows = await bind(root, 'emori').agent.read({ dispatchState: { scope } });
+    assert.deepEqual(rows.dispatchState[0]!.value, { version: 4, scope, resetGeneration: 'reset' });
   });
 
   it('should preserve untouched journal rows and return records in workflow order', async () => {
@@ -159,19 +222,19 @@ describe('agent database', () => {
     const [first] = state.records;
     const second = { ...first!, id: 'later' };
     state.records.push(second);
-    await agent.saveIntake(state);
+    await saveIntake(agent, state);
     const db = new DatabaseSync(join(root, 'agents/emori.sqlite'));
     try {
       db.exec(`CREATE TRIGGER keep_first BEFORE DELETE ON intake_records WHEN old.id = 'same-record'
         BEGIN SELECT RAISE(ABORT, 'unrelated delete'); END`);
       second.admittedAt++;
-      await agent.saveIntake(state);
+      await saveIntake(agent, state);
       db.exec('DROP TRIGGER keep_first');
     } finally {
       db.close();
     }
     state.records.reverse();
-    await agent.saveIntake(state);
+    await saveIntake(agent, state);
     assert.deepEqual(await agent.readIntake(state.scope), state);
   });
 
@@ -179,9 +242,9 @@ describe('agent database', () => {
     const { agent } = bind(root, 'emori');
     await agent.install();
     const state = sampleIntake('emori', baseline + 1);
-    await agent.saveIntake(state);
+    await saveIntake(agent, state);
     await assert.rejects(
-      agent.saveIntake({
+      saveIntake(agent, {
         ...state,
         checkpoint: baseline + 2,
         records: [...state.records, ...state.records],
@@ -238,6 +301,78 @@ describe('agent database', () => {
     } finally {
       upgraded.close();
     }
+  });
+
+  it('should carry attempted, observed and retired replies into the shared installation on upgrade', async () => {
+    const oldSchemas = join(root, 'prior');
+    for (const migration of [
+      '20261123221502_installation_state',
+      '20261124015723_remove_shared_pickup_enrollments',
+    ]) {
+      await cp(
+        join(schemaRoot, 'installation-migrations', migration),
+        join(oldSchemas, 'installation-migrations', migration),
+        { recursive: true },
+      );
+    }
+    await bind(root, 'first', oldSchemas).installation.install();
+    const first = bind(root, 'first');
+    const second = bind(root, 'second');
+    await first.agent.install();
+    await second.agent.install();
+    const publication = (id: string) =>
+      JSON.stringify({
+        item: { lifecycleId: 'issue', repositoryNodeId: 'R_fixture', number: 1 },
+        intent: 'manual-response',
+        publicationId: id,
+        text: 'private fixture text',
+      });
+    const publisher = 'U_owner';
+    for (const name of ['first', 'second']) {
+      const db = new DatabaseSync(join(root, 'agents', name + '.sqlite'));
+      try {
+        const add = db.prepare('INSERT INTO reply_drafts VALUES (?, ?, ?)');
+        for (const [id, state] of Object.entries({
+          pending: { attempted: true },
+          observed: { receipt: { nodeId: 'C_one', databaseId: 1 } },
+          ready: {},
+          rejected: { attempted: false },
+        }))
+          add.run(
+            'scope',
+            id,
+            JSON.stringify({ ...state, authorNodeId: publisher, publication: publication(id) }),
+          );
+        db.prepare('INSERT INTO dispatch_state VALUES (?, ?)').run(
+          'scope',
+          JSON.stringify({
+            retirementEffects: [
+              { kind: 'comment', accountId: publisher, publication: publication('retired') },
+            ],
+          }),
+        );
+      } finally {
+        db.close();
+      }
+    }
+    assert.equal((await first.installation.install()).status, 'updated');
+    const read = async () =>
+      (await second.installation.read({ replyPublications: { publisher } })).replyPublications;
+    const rows = await read();
+    assert.equal(rows.length, 3);
+    const ids = ['pending', 'observed', 'retired'];
+    const draft = (id: string, authorNodeId = publisher) => ({
+      authorNodeId,
+      publication: publication(id),
+    });
+    for (const id of ids) {
+      assert.equal(await second.agent.hasReplyPublication(draft(id)), true);
+      assert.equal(await second.agent.hasReplyPublication(draft(id, 'U_other')), false);
+    }
+    for (const id of ['ready', 'rejected'])
+      assert.equal(await second.agent.hasReplyPublication(draft(id)), false);
+    assert.equal((await first.installation.install()).status, 'unchanged');
+    assert.deepEqual(await read(), rows);
   });
 
   it('should upgrade pickup enrollment ownership without discarding shared data', async () => {

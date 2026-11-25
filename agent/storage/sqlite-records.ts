@@ -1,14 +1,24 @@
 import { assertPrivateStateLocksHeld } from '../../core/private-state-lock-context.ts';
 import { and, eq, getTableColumns, sql } from 'drizzle-orm';
 import type { drizzle } from 'drizzle-orm/node-sqlite';
-import type { SQLiteTable } from 'drizzle-orm/sqlite-core';
+import { getTableConfig, type SQLiteColumn, type SQLiteTable } from 'drizzle-orm/sqlite-core';
 import type { RecordChange, WorkflowRecords } from './workflow-records.ts';
 
 type Database = ReturnType<typeof drizzle>;
 type Use = <T>(readOnly: boolean, operation: (db: Database) => T) => Promise<T>;
 
+const primaryKeys = new WeakMap<SQLiteTable, [string, SQLiteColumn][]>();
 function keys(table: SQLiteTable) {
-  return Object.entries(getTableColumns(table)).filter(([name]) => name !== 'value');
+  let keys = primaryKeys.get(table);
+  if (!keys) {
+    const composite = getTableConfig(table).primaryKeys.flatMap((key) => key.columns);
+    keys = Object.entries(getTableColumns(table)).filter(
+      ([, column]) => column.primary || composite.includes(column),
+    );
+    if (!keys.length) throw new Error('missing storage key');
+    primaryKeys.set(table, keys);
+  }
+  return keys;
 }
 
 function match(table: SQLiteTable, filter: object, exact: boolean) {
@@ -65,7 +75,7 @@ export default function sqliteRecords<Records>(
                 .run();
             } else {
               const row = change.row as Record<string, unknown>;
-              const { value, ...key } = row;
+              const key = Object.fromEntries(keys(table).map(([name]) => [name, row[name]]));
               match(table, key, true);
               const insert = tx.insert(table).values(row);
               if (change.action === 'insert') insert.run();
@@ -73,7 +83,9 @@ export default function sqliteRecords<Records>(
                 insert
                   .onConflictDoUpdate({
                     target: keys(table).map(([, column]) => column),
-                    set: { value },
+                    set: Object.fromEntries(
+                      Object.entries(row).filter(([name]) => !Object.hasOwn(key, name)),
+                    ),
                   })
                   .run();
             }

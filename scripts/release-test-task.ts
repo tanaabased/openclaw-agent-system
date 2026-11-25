@@ -608,9 +608,11 @@ try {
       workspace,
       '--confirm',
     ]);
+    const config = join(temporaryRoot, 'codex-setup-config.json');
+    await writeFile(config, '{}');
     const setup = (...args: string[]) =>
       run(process.execPath, [runtime, 'setup', ...args], {
-        env: { ...process.env, OPENCLAW_CONFIG_PATH: resolve('fixtures/sqlite-storage.json') },
+        env: { ...process.env, OPENCLAW_CONFIG_PATH: config },
       });
     const setupInspection = JSON.parse(
       (await setup('inspect', '--plugin-data', pluginData)).output,

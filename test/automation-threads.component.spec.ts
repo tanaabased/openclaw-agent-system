@@ -1,5 +1,7 @@
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
+import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, rm } from 'node:fs/promises';
 
 import { nativeObject } from '../utils/native-object.ts';
 import { AutomationError } from '../agent/automations/automation-errors.ts';
@@ -26,9 +28,11 @@ const rejects = (code: string) => (error: unknown) =>
   error instanceof Error && 'code' in error && error.code === code;
 
 describe('agent/automation-threads', () => {
+  let storage: Awaited<ReturnType<typeof sqliteAgentFixture>>;
   let root: string;
   beforeEach(async () => {
     root = await mkdtemp('/tmp/automation-threads-');
+    storage = await sqliteAgentFixture(root, 'tester');
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
@@ -62,7 +66,7 @@ describe('agent/automation-threads', () => {
         native.set(id, { ...native.get(id), id, name });
       },
     };
-    const store = new AutomationThreads({ root, scope: runtime, runtime }, adapter);
+    const store = new AutomationThreads({ scope: runtime, runtime }, adapter, storage.agent);
     return { store, adapter, native, creates: () => creates };
   }
   it('should share and reuse one chat for commands and prompts with the same explicit id', async () => {
@@ -96,7 +100,7 @@ describe('agent/automation-threads', () => {
         job.overrides[runtime] = { model: 'selected', effort: 'high' };
       const bindings = await f.store.resolve(declarations, true);
       const id = bindings.get('affected')!.id;
-      const before = await readFile(f.store.path, 'utf8');
+      const before = await f.store.read();
       assert.deepEqual((await f.store.resolve(declarations)).get('affected')!.settings, {
         requested: { model: 'selected', effort: 'high' },
         observed: { model: 'selected', effort: 'high' },
@@ -146,7 +150,7 @@ describe('agent/automation-threads', () => {
         assert.equal(error.message.includes('private provider'), false);
         return true;
       });
-      assert.equal(await readFile(f.store.path, 'utf8'), before);
+      assert.deepEqual(await f.store.read(), before);
       assert.equal(f.creates(), 2);
     });
   for (const runtime of ['openclaw', 'codex'] as const)
@@ -273,12 +277,12 @@ describe('agent/automation-threads', () => {
           f.store.resolve(declarations, true),
           rejects(`automation-thread-settings-${pending}`),
         );
-        const saved = await readFile(f.store.path, 'utf8');
+        const saved = await f.store.read();
         await assert.rejects(
           f.store.resolve(declarations),
           rejects(`automation-thread-settings-${pending}`),
         );
-        assert.equal(await readFile(f.store.path, 'utf8'), saved);
+        assert.deepEqual(await f.store.read(), saved);
         f.adapter.updateSettings = async (current, settings) => {
           writes++;
           f.native.set(current.id, { ...current, ...settings });
@@ -306,12 +310,12 @@ describe('agent/automation-threads', () => {
           f.store.resolve(declarations, true),
           rejects(`automation-thread-settings-${state}`),
         );
-        const before = await readFile(f.store.path, 'utf8');
+        const before = await f.store.read();
         await assert.rejects(
           f.store.resolve(declarations),
           rejects(`automation-thread-settings-${state}`),
         );
-        assert.equal(await readFile(f.store.path, 'utf8'), before);
+        assert.deepEqual(await f.store.read(), before);
         await assert.rejects(
           f.store.resolve(declarations, true),
           rejects(`automation-thread-settings-${state}`),
@@ -332,7 +336,7 @@ describe('agent/automation-threads', () => {
             f.store.resolve(changed, true),
             rejects('automation-thread-settings-uncertain'),
           );
-          assert.equal(await readFile(f.store.path, 'utf8'), before);
+          assert.deepEqual(await f.store.read(), before);
           assert.equal(writes, 1);
         }
         f.native.get(id)!.effort = 'high';
@@ -356,19 +360,19 @@ describe('agent/automation-threads', () => {
         f.store.resolve(declarations, true),
         rejects('automation-thread-settings-denied'),
       );
-      const saved = await readFile(f.store.path, 'utf8');
+      const saved = await f.store.read();
       declarations[0]!.overrides[runtime] = { model: 'original', effort: 'medium' };
       await assert.rejects(
         f.store.resolve(declarations),
         rejects('automation-thread-sync-required'),
       );
-      assert.equal(await readFile(f.store.path, 'utf8'), saved);
+      assert.deepEqual(await f.store.read(), saved);
       f.native.get(id)!.incarnation = 'replacement-session';
       await assert.rejects(
         f.store.resolve(declarations, true),
         rejects('automation-thread-settings-conflict'),
       );
-      assert.equal(await readFile(f.store.path, 'utf8'), saved);
+      assert.deepEqual(await f.store.read(), saved);
       f.native.get(id)!.incarnation = 'original-session';
       const before = structuredClone(f.native.get(id));
       assert.equal((await f.store.resolve(declarations, true)).get('activity')!.id, id);
@@ -376,10 +380,7 @@ describe('agent/automation-threads', () => {
       assert.deepEqual(f.native.get(id), before);
       assert.equal(writes, 1);
       assert.equal(f.creates(), 1);
-      assert.equal(
-        JSON.parse(await readFile(f.store.path, 'utf8')).records[0].settingsUpdate,
-        undefined,
-      );
+      assert.equal((await f.store.read()).records[0]!.settingsUpdate, undefined);
     });
   }
   it('should reject incompatible settings for a shared chat before creating it', async () => {
@@ -461,7 +462,11 @@ describe('agent/automation-threads', () => {
       },
       { agentId: 'a', workspaceDir, scope: 'native' },
     );
-    const store = new AutomationThreads({ root, scope: 'native', runtime: 'openclaw' }, adapter);
+    const store = new AutomationThreads(
+      { scope: 'native', runtime: 'openclaw' },
+      adapter,
+      storage.agent,
+    );
     const declarations = jobs('Reports', ['report']);
     declarations[0]!.overrides.openclaw = { model: 'test/requested', effort: 'high' };
     const id = (await store.resolve(declarations, true)).get('report')!.id;
@@ -497,10 +502,10 @@ describe('agent/automation-threads', () => {
         throw new AutomationError(code);
       };
       await assert.rejects(f.store.selectSettings(declarations), rejects(code));
-      const saved = await readFile(f.store.path, 'utf8');
+      const saved = await f.store.read();
       assert.equal((await f.store.resolve(declarations)).get('report')!.settings, undefined);
       await f.store.resolve(declarations, true);
-      assert.equal(await readFile(f.store.path, 'utf8'), saved);
+      assert.deepEqual(await f.store.read(), saved);
       if (phase === 'denied' || phase === 'uncertain') {
         await assert.rejects(f.store.selectSettings(declarations), rejects(code));
         assert.equal(writes, 1);
@@ -622,7 +627,7 @@ describe('agent/automation-threads', () => {
       rejects('automation-model-unsupported'),
     );
     assert.equal(f.creates(), 0);
-    await assert.rejects(readFile(f.store.path), { code: 'ENOENT' });
+    assert.deepEqual((await f.store.read()).records, []);
     declarations[1]!.overrides.codex!.model = 'selected';
     assert.equal((await f.store.resolve(declarations, true)).size, 2);
     assert.equal(f.creates(), 2);
@@ -690,12 +695,12 @@ describe('agent/automation-threads', () => {
           const old = (await f.store.resolve(declarations, true)).get(jobId)!.id;
           if (unavailable === 'archived') f.native.get(old)!.archived = true;
           else f.native.delete(old);
-          const before = await readFile(f.store.path, 'utf8');
+          const before = await f.store.read();
           await assert.rejects(
             f.store.resolve(declarations),
             rejects('automation-thread-replacement-required'),
           );
-          assert.equal(await readFile(f.store.path, 'utf8'), before);
+          assert.deepEqual(await f.store.read(), before);
           const current = (await f.store.resolve(declarations, true)).get(jobId)!.id;
           assert.notEqual(current, old);
           assert.equal((await f.store.resolve(declarations, true)).get(jobId)!.id, current);
@@ -741,13 +746,49 @@ describe('agent/automation-threads', () => {
     assert.equal(f.creates(), 1);
     assert.equal((await f.store.read()).records[0]?.phase, 'ready');
   });
+  it('should keep one native create in flight across sqlite connections while independent jobs proceed', async () => {
+    const f = fixture('openclaw');
+    const sqlite = await sqliteAgentFixture(root, 'tester');
+    const open = () =>
+      new AutomationThreads(
+        f.store.options,
+        f.adapter,
+        bindSqliteStorage(sqlite.sqliteInstallation, 'tester').agent,
+      );
+    const declarations = jobs({ id: 'activity' });
+    const entered = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    const create = f.adapter.create;
+    let attempts = 0;
+    f.adapter.create = async (...args) => {
+      attempts++;
+      entered.resolve();
+      await resume.promise;
+      return create(...args);
+    };
+    const first = open().resolve(declarations, true);
+    await entered.promise;
+    const peer = open();
+    const competing = peer.resolve(declarations, true);
+    try {
+      const independent = jobs(undefined);
+      assert.equal((await peer.resolve(independent, true)).size, 0);
+      assert.equal((await peer.read()).records[0]?.phase, 'creating');
+    } finally {
+      resume.resolve();
+      await Promise.all([first, competing]);
+    }
+    assert.equal(attempts, 1);
+    assert.equal((await open().read()).records[0]?.phase, 'ready');
+  });
+
   it('should leave inspection read-only and stop on failed lookups', async () => {
     const f = fixture('openclaw');
     await assert.rejects(
       f.store.resolve(jobs({ id: 'activity' })),
       rejects('automation-thread-sync-required'),
     );
-    await assert.rejects(readFile(f.store.path), { code: 'ENOENT' });
+    assert.deepEqual((await f.store.read()).records, []);
     f.adapter.lookup = async () => {
       throw new Error('permission denied');
     };

@@ -47,8 +47,7 @@ export interface NativeRetirementResult {
 
 /** explicit disposal receipts are separate from assignment custody and preservation policy. */
 export default async function nativeRetirement(input: {
-  sessionStorage?: SessionStorage;
-  root: string;
+  sessionStorage: SessionStorage;
   binding: DirectEntryBinding;
   target: string;
   digest?: string;
@@ -77,7 +76,6 @@ export default async function nativeRetirement(input: {
     incarnation: target.incarnation,
   };
   const store = new DirectEntryStore(
-    input.root,
     binding,
     entriesSchema,
     'native-retirement',

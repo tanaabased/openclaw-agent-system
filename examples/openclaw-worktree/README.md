@@ -24,7 +24,6 @@ Prepare a managed worktree from a declared local repository, reuse it without lo
 ```bash
 # should install a disposable agent with a declared local repository
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE"
-openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 cd "$GITHUB_WORKSPACE/examples/openclaw-worktree"
 git init --initial-branch=main source
 printf '%s\n' 'tracked source content' > source/tracked.txt

@@ -37,6 +37,23 @@ export type GitHubNotificationCommentPublicationInput = {
     }
 );
 
+export function commentPublicationTarget(input: GitHubNotificationCommentPublicationInput) {
+  const conversation = input.conversationId
+    ? ({ conversationId: input.conversationId } as const)
+    : ({ item: input.item } as const);
+  return input.intent === 'github-reply'
+    ? githubNotificationPublicationTarget({
+        ...conversation,
+        intent: input.intent,
+        source: input.source,
+      })
+    : githubNotificationPublicationTarget({
+        ...conversation,
+        intent: input.intent,
+        publicationId: input.publicationId,
+      });
+}
+
 export interface GitHubNotificationCommentPublicationAuthorization {
   authorized: boolean;
   reasonCode?: string;
@@ -129,21 +146,7 @@ export default class GitHubNotificationCommentPublisher {
       [{ text: input.text }],
       this.#dependencies.redactText,
     );
-    const conversation = input.conversationId
-      ? ({ conversationId: input.conversationId } as const)
-      : ({ item: input.item } as const);
-    const target =
-      input.intent === 'github-reply'
-        ? githubNotificationPublicationTarget({
-            ...conversation,
-            intent: input.intent,
-            source: input.source,
-          })
-        : githubNotificationPublicationTarget({
-            ...conversation,
-            intent: input.intent,
-            publicationId: input.publicationId,
-          });
+    const target = commentPublicationTarget(input);
     const marker = githubNotificationPublicationMarker(target);
     return this.#dependencies.exclusive(target, async () => {
       const authorization = await this.#dependencies.authorize(

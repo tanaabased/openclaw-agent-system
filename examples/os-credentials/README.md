@@ -29,7 +29,6 @@ refused without exposing credentials or changing another agent's or external fil
 openclaw-setup \
   --workspace "$TMPDIR/main" \
   --agent-system "$AGENT_SYSTEM_PACKAGE"
-openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 
 # should install isolated agents with a local ssh key and synthetic file credentials
 umask 077

@@ -15,7 +15,7 @@ export async function inspectCodexPickup(
 ) {
   const current = await selectCodexTaskContext(pluginData, deps, { inspectionOnly: true });
   return inspectSelectedCodexPickup(
-    await codexPickupStore(pluginData, current.agentId, deps.storageBackend),
+    await codexPickupStore(pluginData, current.agentId),
     current.policy?.policy,
     current.store.location.scope,
     () => inspectCodexPickupActivation(pluginData, current.automationBinding),

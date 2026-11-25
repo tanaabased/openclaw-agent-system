@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -7,7 +7,8 @@ import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-contex
 import { selectOpenClawTaskContext } from '../agent/tasks/context/openclaw-task-context.ts';
 import type { CodexWorkspaceBindingInspection } from '../agent/identity/codex-workspace-binding.ts';
 import NotificationResetStore from '../agent/notification-reset-state.ts';
-import GitHubIdentityCache from '../channels/github/identity-cache.ts';
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
+import codexStorageLocation from '../agent/storage/codex-storage.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
@@ -61,6 +62,7 @@ describe('task context selection', () => {
   const openclaw = (options = {}) =>
     selectOpenClawTaskContext(
       {
+        sqliteInstallation: codexStorageLocation(data),
         root: data,
         namespace: home,
         manifestService: {
@@ -79,6 +81,8 @@ describe('task context selection', () => {
     ['openclaw', openclaw],
   ] as const) {
     it(`should select ${runtime} task context without an intake enrollment or scheduler`, async () => {
+      await sqliteAgentFixture(data, 'receiver');
+      const files = await readdir(data);
       const current = await select();
       assert.equal(current.workspace, workspace);
       assert.equal(await current.store.read(), undefined);
@@ -88,7 +92,7 @@ describe('task context selection', () => {
         policy?.policy.issueAssignment?.mode,
         manifest.github?.notifications?.issueAssignment?.mode,
       );
-      assert.deepEqual(await readdir(data), []);
+      assert.deepEqual(await readdir(data), files);
     });
 
     it(`should allow ${runtime} explicit task selection without assignment policy`, async () => {
@@ -102,15 +106,14 @@ describe('task context selection', () => {
     it(`should hydrate ${runtime} identity pins from the existing scope without rewriting them`, async () => {
       const current = await select();
       const pin = manifest.github!.notifications!.issueAssignment!.allowed[0]!;
-      const cache = new GitHubIdentityCache(current.store.location);
-      const contents = JSON.stringify({
-        version: 1,
-        entries: { [pin.nodeId]: { login: pin.login, nodeId: 'U_cached', type: 'User' } },
-      });
-      await cache.file.write(contents);
+      const { agent } = await sqliteAgentFixture(data, 'receiver');
+      const scope = current.store.location.scope;
+      const value = { login: pin.login, nodeId: 'U_cached', type: 'User' as const };
+      await agent.retainIdentityPin({ scope, id: pin.nodeId, value }, () => {});
+      const before = await current.store.identities.read();
       await select();
       assert.equal(pin.nodeId, 'U_cached');
-      assert.equal(await readFile(cache.path, 'utf8'), contents);
+      assert.deepEqual(await current.store.identities.read(), before);
     });
   }
 
@@ -144,7 +147,8 @@ describe('task context selection', () => {
 
   it('should preserve the codex reset barrier and explicit inspection recovery', async () => {
     const current = await codex();
-    const reset = new NotificationResetStore(data, current.store.location.scope);
+    const { agent } = await sqliteAgentFixture(data, 'receiver');
+    const reset = new NotificationResetStore(current.store.location.scope, agent);
     await reset.exclusive(async (_previous, save) => {
       await save({
         version: 1,
@@ -161,12 +165,12 @@ describe('task context selection', () => {
         resources: [],
       });
     });
-    const before = await reset.file.read();
+    const before = await reset.read();
     await assert.rejects(codex(), { code: 'notification-reset-in-progress' });
     assert.equal(
       (await codex({ inspectionOnly: true })).store.location.scope,
       current.store.location.scope,
     );
-    assert.equal(await reset.file.read(), before);
+    assert.deepEqual(await reset.read(), before);
   });
 });

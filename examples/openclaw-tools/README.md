@@ -25,7 +25,6 @@ and assignment protections.
 ```bash
 # should install the packed plugin and disposable managed tool workspace
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE"
-openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 cd "$GITHUB_WORKSPACE/examples/openclaw-tools"
 openclaw agent-system install --yes --json | jq -e '.outcomes | any(.component == "agent" and .status == "created")'
 ```

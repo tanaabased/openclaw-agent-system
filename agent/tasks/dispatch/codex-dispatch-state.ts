@@ -185,8 +185,8 @@ export type DispatchRecord = Static<typeof dispatchRecordSchema>;
 export type DispatchState = SharedDispatchState<DispatchRecord>;
 
 export default class CodexDispatchStore extends DispatchStore<DispatchRecord> {
-  constructor(root: string, scope: string, persistence?: DispatchPersistence<DispatchRecord>) {
-    super(root, scope, {
+  constructor(scope: string, persistence: DispatchPersistence<DispatchRecord>) {
+    super(scope, {
       persistence,
       runtime: 'codex',
       recordSchema: dispatchRecordSchema,

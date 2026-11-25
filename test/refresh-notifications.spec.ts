@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import type { spawnSync } from 'node:child_process';
 
-import refreshNotifications, { notificationCli } from '../scripts/refresh-notifications.ts';
+import refreshNotifications, {
+  notificationCli,
+  notificationCoordinatorId,
+} from '../scripts/refresh-notifications.ts';
 
 const completed = { status: 'completed', code: 'github-notification-intake-completed' };
 function fixture(receipts: unknown[], readiness: boolean[] = [true], timeoutMs = 5000) {
@@ -35,6 +38,26 @@ function fixture(receipts: unknown[], readiness: boolean[] = [true], timeoutMs =
 }
 
 describe('scripts/refresh-notifications', () => {
+  it('should dispatch to the synchronized coordinator after a prior timer error and reject current drift', () => {
+    const id = 'github-issue-assignment';
+    const healthy = { stepId: id, status: 'healthy', code: 'automation-healthy' };
+    const history = { stepId: id, status: 'warning', code: 'automation-execution-failed' };
+    const job = {
+      id,
+      nativeId: 'native-intake',
+      nativeEnabled: true,
+      findings: [healthy, history],
+    };
+    const listed = (() => ({
+      status: 1,
+      stdout: JSON.stringify({ status: 'attention', jobs: [job], findings: job.findings }),
+      stderr: '',
+    })) as unknown as typeof spawnSync;
+    assert.equal(notificationCoordinatorId(5000, listed), job.nativeId);
+    job.findings[0] = { stepId: id, status: 'drift', code: 'automation-drift' };
+    assert.throws(() => notificationCoordinatorId(5000, listed), /automation-drift/);
+  });
+
   it('should advance retained work once only after the selected fixture is admitted', async () => {
     const f = fixture([completed, completed], [false, true]);
     assert.equal(await f.run(), 'native-run');

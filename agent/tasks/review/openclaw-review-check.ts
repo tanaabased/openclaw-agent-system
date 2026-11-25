@@ -28,7 +28,7 @@ export default async function openClawReviewCheck(
     resolvePolicy: false,
   });
   const scope = current.store.location.scope;
-  await assertNotificationManagement(deps.root, scope, current.store.agentStorage);
+  await assertNotificationManagement(scope, current.store.agentStorage);
   const journal = current.dispatch(deps.root);
   const state = await journal.read();
   const records = state.records.filter((r) => r.reviewAdmission && !r.reset && !r.supersededBy);
@@ -82,7 +82,7 @@ export default async function openClawReviewCheck(
         return { status: 'ready', changed: true, obstacles };
       if (observed.status === 'ready' && r?.sessionCreation?.verified) {
         await current.store.identities.resolve(policy, client, 'review-feedback', true);
-        if (await scanReviewFeedback(r, deps, client, policy))
+        if (await scanReviewFeedback(r, deps, client, policy, current.sessionStorage))
           return { status: 'ready', changed: true, obstacles };
       }
       if (

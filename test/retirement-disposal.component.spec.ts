@@ -1,3 +1,4 @@
+import { sqliteDispatchPersistence } from '../agent/storage/dispatch-backend.ts';
 import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -59,9 +60,11 @@ const pending: RetirementEffect = {
 };
 
 describe('agent/retirement disposal', () => {
+  let storage: Awaited<ReturnType<typeof sqliteAgentFixture>>;
   let root: string;
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'retirement-disposal-'));
+    storage = await sqliteAgentFixture(root, 'receiver');
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
@@ -71,8 +74,8 @@ describe('agent/retirement disposal', () => {
     it(`should preserve replacement fences after disposing either attempt in ${Store.name.toLowerCase()}`, async () => {
       for (const remove of [0, 1]) {
         const store: DispatchStore<SharedDispatchRecord> = new Store(
-          root,
           String(remove + 1).repeat(64),
+          sqliteDispatchPersistence(storage.agent, String(remove + 1).repeat(64)),
         );
         const predecessor = task('a'),
           successor = task('c');
@@ -92,7 +95,10 @@ describe('agent/retirement disposal', () => {
     });
 
     it(`should remove exact task records while preserving a sibling in ${Store.name.toLowerCase()}`, async () => {
-      const store: DispatchStore<SharedDispatchRecord> = new Store(root, 'b'.repeat(64));
+      const store: DispatchStore<SharedDispatchRecord> = new Store(
+        'b'.repeat(64),
+        sqliteDispatchPersistence(storage.agent, 'b'.repeat(64)),
+      );
       const original = task('a'),
         sibling = task('c');
       await store.exclusive(async (state, save) => {
@@ -104,7 +110,10 @@ describe('agent/retirement disposal', () => {
         pendingRetirement(state.records[0]!);
         await save();
       });
-      const restarted: DispatchStore<SharedDispatchRecord> = new Store(root, store.scope);
+      const restarted: DispatchStore<SharedDispatchRecord> = new Store(
+        store.scope,
+        sqliteDispatchPersistence(storage.agent, store.scope),
+      );
       const before = await restarted.read();
       assert.equal(before.records[0]!.context, undefined);
       assert.equal(before.records[0]!.cleanupPending, true);
@@ -124,7 +133,10 @@ describe('agent/retirement disposal', () => {
     });
 
     it(`should reject an in-flight task write after disposal in ${Store.name.toLowerCase()}`, async () => {
-      const store: DispatchStore<SharedDispatchRecord> = new Store(root, 'b'.repeat(64));
+      const store: DispatchStore<SharedDispatchRecord> = new Store(
+        'b'.repeat(64),
+        sqliteDispatchPersistence(storage.agent, 'b'.repeat(64)),
+      );
       await store.exclusive(async (state, save) => {
         state.records.push(task('a'));
         await save();
@@ -161,7 +173,6 @@ describe('agent/retirement disposal', () => {
     } as unknown as ManagedIssue;
     const { agent } = await sqliteAgentFixture(root, binding.agentId);
     const store = new DirectEntryStore(
-      root,
       binding,
       implementationEntriesSchema,
       'implementation',
@@ -191,9 +202,8 @@ describe('agent/retirement disposal', () => {
       inputId: 'input',
       at: 1,
     };
-    await agent.saveDirectEntries(store.scope, 'native-retirement', [retirement]);
+    await agent.saveDirectEntries(store.scope, 'native-retirement', [retirement], []);
     await retirementLocalData({
-      root,
       binding,
       intake,
       sessionStorage: agent,
@@ -251,7 +261,7 @@ describe('agent/retirement disposal', () => {
       incarnation: 'task',
     };
     const { agent } = await sqliteAgentFixture(root, binding.agentId);
-    const store = new ReplyStore(root, binding, agent);
+    const store = new ReplyStore(binding, agent);
     const draft: ReplyDraft = {
       id: 'a'.repeat(64),
       turnId: 'turn',
@@ -272,7 +282,7 @@ describe('agent/retirement disposal', () => {
       publication,
       attempted: true,
     };
-    await store.exclusive(async (drafts, save) => {
+    await store.edit(async (drafts, save) => {
       drafts.push(
         draft,
         { ...draft, id: 'b'.repeat(64), attempted: false },
@@ -290,7 +300,6 @@ describe('agent/retirement disposal', () => {
     await assert.rejects(
       retirementLocalData({
         sessionStorage: agent,
-        root,
         binding,
         intake,
         retain: async () => {
@@ -302,7 +311,6 @@ describe('agent/retirement disposal', () => {
     assert.equal((await store.read()).length, 3);
     await retirementLocalData({
       sessionStorage: agent,
-      root,
       binding,
       intake,
       retain: async (entries) => {

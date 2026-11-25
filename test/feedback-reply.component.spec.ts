@@ -1,3 +1,5 @@
+import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
+import GitHubIssueCommentClient from '../channels/github/provider/issue-comment-client.ts';
 import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
@@ -85,7 +87,7 @@ describe('agent/feedback-reply', () => {
       },
     };
     deps = {
-      root: join(root, 'private'),
+      sessionStorage: (await sqliteAgentFixture(root, 'receiver')).agent,
       binding: {
         runtime: 'openclaw',
         agentId: 'receiver',
@@ -141,7 +143,7 @@ describe('agent/feedback-reply', () => {
     assert.ok('materialPage' in result && result.materialPage);
     assert.ok(result.materialPage.text.includes('first response'));
     assert.ok(!result.materialPage.text.includes('second response'));
-    assert.equal((await new ReplyStore(deps.root, deps.binding).read()).length, 2);
+    assert.equal((await new ReplyStore(deps.binding, deps.sessionStorage).read()).length, 2);
     assert.equal(writes, 0);
   });
 
@@ -206,7 +208,7 @@ describe('agent/feedback-reply', () => {
         ),
         /reply-request-invalid/,
       );
-      assert.deepEqual(await new ReplyStore(deps.root, deps.binding).read(), []);
+      assert.deepEqual(await new ReplyStore(deps.binding, deps.sessionStorage).read(), []);
       const result = await feedbackReply(compose, deps);
       assert.equal(result.status, 'composition-ready');
       assert.ok('source' in result && result.source && 'facts' in result.source);
@@ -225,7 +227,7 @@ describe('agent/feedback-reply', () => {
       const verify = (complete: Record<string, unknown>) =>
         assert.equal(complete.privateResponse, privateText);
       verify(await hydrateImplementation(await run(request), run));
-      const drafts = await new ReplyStore(deps.root, deps.binding).read();
+      const drafts = await new ReplyStore(deps.binding, deps.sessionStorage).read();
       assert.equal(drafts.length, 1);
       assert.equal(drafts[0]!.privateText, privateText);
       assert.equal(drafts[0]!.publicText, undefined);
@@ -236,9 +238,9 @@ describe('agent/feedback-reply', () => {
       await assert.rejects(run({ ...page, operation: 'publish' }), /reply-request-invalid/);
       await assert.rejects(run({ ...page, digest: '0'.repeat(64) }), /reply-request-invalid/);
       await call('candidate', { target: url, privateText, publicText: 'Verified progress.' });
-      const saved = await new ReplyStore(deps.root, deps.binding).read();
+      const saved = await new ReplyStore(deps.binding, deps.sessionStorage).read();
       assert.equal((await run(page)).status, 'material');
-      assert.deepEqual(await new ReplyStore(deps.root, deps.binding).read(), saved);
+      assert.deepEqual(await new ReplyStore(deps.binding, deps.sessionStorage).read(), saved);
       assert.equal(writes, 0);
     });
 
@@ -261,7 +263,7 @@ describe('agent/feedback-reply', () => {
         assert.equal('contextMaterials' in complete, false);
       };
       verify(await run(request));
-      assert.deepEqual(await new ReplyStore(deps.root, deps.binding).read(), []);
+      assert.deepEqual(await new ReplyStore(deps.binding, deps.sessionStorage).read(), []);
       assert.equal(writes, 0);
     });
   }
@@ -278,7 +280,7 @@ describe('agent/feedback-reply', () => {
     );
   }
   async function stored(choice: Selection) {
-    const draft = (await new ReplyStore(deps.root, deps.binding).read()).find((entry) =>
+    const draft = (await new ReplyStore(deps.binding, deps.sessionStorage).read()).find((entry) =>
       matches(entry, choice),
     );
     assert.ok(draft);
@@ -346,19 +348,115 @@ describe('agent/feedback-reply', () => {
       assert.equal(writes, 1);
     });
   }
-  it('should reject an aggregate reply journal without migrating or changing it', async () => {
-    await candidate();
-    const store = new ReplyStore(deps.root, deps.binding);
-    const drafts = await store.read();
-    const firstPath = join(deps.root, `github-reply-${store.scope}-${drafts[0]!.id}.json`);
-    const aggregate = JSON.stringify({ scope: store.scope, drafts });
-    await writeFile(store.path, aggregate, { mode: 0o600 });
-    const before = await readFile(firstPath, 'utf8');
-    await assert.rejects(store.read(), /reply-clean-start-required/);
-    assert.equal(await readFile(store.path, 'utf8'), aggregate);
-    assert.equal(await readFile(firstPath, 'utf8'), before);
-    assert.equal(writes, 0);
+  it('should reject a stale draft edit while a second connection publishes and records the receipt', async () => {
+    const first = await sqliteAgentFixture(root, deps.binding.agentId);
+    const second = await sqliteAgentFixture(root, deps.binding.agentId);
+    deps.sessionStorage = first.agent;
+    const draft = new ReplyStore(deps.binding, first.agent);
+    await call('compose', { target: url, privateText: 'Original draft.' });
+    const peer = (operation: string, extra: object) =>
+      feedbackReply(
+        { action: 'reply', operation, target: url, ...extra },
+        { ...deps, sessionStorage: second.agent },
+      );
+    const create = provider.createIssueComment.bind(provider);
+    provider.createIssueComment = async (...args) => {
+      // A different draft can commit while the send is in progress.
+      await peer('compose', { privateText: 'Other draft.' });
+      return create(...args);
+    };
+    await draft.edit(async (drafts, save) => {
+      const selected = drafts[0]!;
+      await peer('candidate', { privateText: selected.privateText, publicText: 'Winning text.' });
+      selected.publicText = 'Stale text.';
+      await assert.rejects(save(), /reply-draft-conflict/);
+      assert.equal((await peer('publish', { publicText: 'Winning text.' })).status, 'published');
+      await assert.rejects(save(), /reply-draft-conflict/);
+    });
+    const current = await draft.read();
+    assert.equal(current.length, 2);
+    const winner = current.find((entry) => entry.privateText === 'Original draft.')!;
+    assert.equal(winner.publicText, 'Winning text.');
+    assert.equal(winner.receipt?.nodeId, 'C_published');
+    assert.equal((await peer('reconcile', { publicText: 'Winning text.' })).status, 'published');
+    assert.equal(writes, 1);
   });
+
+  for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should reserve one reply across competing sqlite chats and recover an uncertain send in ${runtime}`, async () => {
+      const target = url + '#issuecomment-42';
+      const args = { target, privateText: 'Detailed answer.' };
+      const publicText = 'Answer to the question.';
+      const peers: FeedbackReplyDependencies[] = [];
+      for (const [i, agentId] of ['receiver', 'receiver', 'other', 'other'].entries()) {
+        const { agent } = await sqliteAgentFixture(root, agentId);
+        peers.push({
+          ...deps,
+          sessionStorage: agent,
+          binding: { ...deps.binding, runtime, agentId, session: 'chat-' + i },
+        });
+      }
+      const run = (peer: FeedbackReplyDependencies, operation: string, extra = {}) =>
+        feedbackReply({ action: 'reply', operation, ...args, ...extra }, peer);
+      for (const peer of peers) {
+        await run(peer, 'compose');
+        await run(peer, 'candidate', { publicText });
+      }
+      const find = provider.findOwnIssueComment;
+      const start = Promise.withResolvers<void>();
+      let arrived = 0;
+      provider.findOwnIssueComment = async () => {
+        if (++arrived === peers.length) start.resolve();
+        await start.promise;
+        return undefined;
+      };
+      lost = hidden = true;
+      const results = await Promise.allSettled(peers.map((peer) => run(peer, 'publish')));
+      assert.equal(writes, 1);
+      assert.equal(
+        results.filter(
+          (result) => result.status === 'fulfilled' && result.value.status === 'uncertain',
+        ).length,
+        peers.length - 1,
+      );
+      assert.equal(
+        results.filter(
+          (result) => result.status === 'rejected' && /transport lost/.test(String(result.reason)),
+        ).length,
+        1,
+      );
+      provider.findOwnIssueComment = find;
+      lost = false;
+      // Reopen both databases. Every candidate can observe the original attempt, even
+      // after its originating chat retires the local draft.
+      for (const peer of peers) {
+        peer.sessionStorage = (await sqliteAgentFixture(root, peer.binding.agentId)).agent;
+        assert.equal((await run(peer, 'reconcile')).status, 'uncertain');
+      }
+      const winner = peers[results.findIndex((result) => result.status === 'rejected')]!;
+      await new ReplyStore(winner.binding, winner.sessionStorage).edit(async (drafts, save) => {
+        drafts.splice(0);
+        await save();
+      });
+      const remaining = peers.filter((peer) => peer !== winner);
+      for (const peer of remaining) assert.equal((await run(peer, 'publish')).status, 'uncertain');
+      provider.getIssueComment = async () => {
+        throw new Error('source deleted after the original send');
+      };
+      hidden = false;
+      assert.ok(posted);
+      const originalBody = posted.body;
+      posted.body += 'edited after publication';
+      await assert.rejects(run(remaining[0]!, 'reconcile'), {
+        code: 'github-notification-publication-reconciliation-conflict',
+      });
+      posted.body = originalBody;
+      for (const peer of remaining)
+        assert.equal((await run(peer, 'reconcile')).status, 'published');
+      assert.equal(writes, 1);
+    });
+  }
+
   it('should reconcile a sent reply after its source comment disappears', async () => {
     const reply = await candidate(`${url}#issuecomment-4`);
     lost = hidden = true;
@@ -401,6 +499,47 @@ describe('agent/feedback-reply', () => {
     });
     return selection(result);
   }
+
+  for (const httpStatus of [401, 503]) {
+    it(`should preserve the provider response and attempted write state after http ${httpStatus}`, async () => {
+      const { agent } = await sqliteAgentFixture(root, deps.binding.agentId);
+      deps.sessionStorage = agent;
+      const reply = await updateCandidate();
+      const api = new GitHubWorkEventApiClient({
+        identity: provider.identity,
+        async execute(argv) {
+          assert.ok(argv.includes('POST') && argv.includes('/repos/owner/repo/issues/3/comments'));
+          writes++;
+          return {
+            exitCode: 1,
+            stdout: `HTTP/2 ${httpStatus}\n\n{}`,
+            stderr: `gh: fixture failure (HTTP ${httpStatus})`,
+            timedOut: false,
+            truncated: false,
+          };
+        },
+      });
+      const comments = new GitHubIssueCommentClient(api, 1024);
+      provider.createIssueComment = comments.createIssueComment.bind(comments);
+      const result = await call('publish', reply);
+      const expectedStatus = httpStatus === 401 ? 'blocked' : 'uncertain';
+      assert.equal(result.status, expectedStatus);
+      assert.ok('code' in result && result.code === 'github-notification-request-failed');
+      const [draft] = await new ReplyStore(deps.binding, agent).read();
+      assert.ok(draft);
+      assert.equal(draft.attempted, httpStatus !== 401);
+      assert.equal(draft.receipt, undefined);
+      assert.equal(await agent.hasReplyPublication(draft), httpStatus !== 401);
+      assert.equal(writes, 1);
+      assert.ok('providerDiagnostic' in result && result.providerDiagnostic);
+      assert.equal(result.providerDiagnostic.httpStatus, httpStatus);
+      assert.equal(
+        result.providerDiagnostic.classification,
+        httpStatus === 401 ? 'authentication' : 'transport',
+      );
+    });
+  }
+
   function linkedPullRequest() {
     const pr = {
       ...intakeFixture().item,
@@ -620,7 +759,7 @@ describe('agent/feedback-reply', () => {
     assert.equal(result.status, 'already-current');
     assert.equal(selections, 0);
     assert.equal(writes, 0);
-    assert.deepEqual(await readdir(deps.root), []);
+    assert.deepEqual(await new ReplyStore(deps.binding, deps.sessionStorage).read(), []);
   });
   for (const runtime of ['codex', 'openclaw'] as const) {
     it(`should recover a revised status candidate and publish only the selected draft in ${runtime}`, async () => {
@@ -857,10 +996,10 @@ describe('agent/feedback-reply', () => {
       },
     ];
     const reply = await updateCandidate();
-    const store = new ReplyStore(deps.root, deps.binding);
-    const stored = () => store.exclusive(async (drafts) => structuredClone(drafts[0]!));
+    const store = new ReplyStore(deps.binding, deps.sessionStorage);
+    const stored = () => store.edit(async (drafts) => structuredClone(drafts[0]!));
     assert.equal((await stored()).ownerId, owners[0]!.id);
-    await store.exclusive(async (drafts, save) => {
+    await store.edit(async (drafts, save) => {
       drafts[0]!.update!.observation = 'f'.repeat(64);
       await save();
     });
@@ -1168,7 +1307,6 @@ describe('agent/feedback-reply', () => {
     assert.deepEqual(
       await replyOwnPublications({
         sessionStorage: deps.sessionStorage,
-        root: deps.root,
         binding: deps.binding,
         client: provider,
         replies: provider.replies,
@@ -1743,6 +1881,11 @@ describe('agent/feedback-reply', () => {
         await save();
       });
     for (const kind of ['foreign', 'shared', 'superseded']) {
+      // Each ownership scenario answers a distinct source revision.
+      provider = {
+        ...provider,
+        reviews: reviewClientFixture(reviewFixture(), [{ ...comment, body: kind }, parent]),
+      };
       await seed(kind);
       const before = await journal.read();
       for (const target of [url, pr.url, pr.url + '#discussion_r' + comment.databaseId]) {
@@ -1784,7 +1927,6 @@ describe('agent/feedback-reply', () => {
     let operatorInput = 'input';
     const sqlite = await sqliteAgentFixture(pluginData, deps.binding.agentId);
     const nativeDeps = {
-      storageBackend: sqlite.storageBackend,
       codexHome,
       threadId: 'native-chat',
       replyConnection: async () => ({
@@ -1884,7 +2026,7 @@ describe('agent/feedback-reply', () => {
     const sqlite = await sqliteAgentFixture(root, manifest.agent.id);
     const intake = new OpenClawIntake({
       sqliteInstallation: sqlite.sqliteInstallation,
-      storageBackend: sqlite.storageBackend,
+
       root: join(root, 'intake'),
       namespace: root,
       manifestService: {
@@ -1902,7 +2044,7 @@ describe('agent/feedback-reply', () => {
     });
     const calls: string[] = [];
     const service = new OpenClawDispatch({
-      root: deps.root,
+      root: join(root, 'private'),
       config: () => ({}),
       intake,
       taskContext: intake.dependencies,
@@ -2011,6 +2153,6 @@ describe('agent/feedback-reply', () => {
     assert.equal(postedNumber, 4);
     assert.ok(posted?.body.includes(':status-update:'));
     const selected = await intake.select(manifest, workspace, { resolvePolicy: false });
-    await independentAdapterComments(direct, selected.dispatch(deps.root));
+    await independentAdapterComments(direct, selected.dispatch(service.dependencies.root));
   });
 });

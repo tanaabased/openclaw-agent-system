@@ -9,10 +9,7 @@ import { openClawCleanupConfiguration } from '../../cleanup-configuration.ts';
 import DiscoveryBudget from '../../discovery-budget.ts';
 import { managedPullRequest } from '../managed-issue.ts';
 import type OpenClawDispatchContext from './openclaw-dispatch-context.ts';
-import OpenClawDispatchStore, {
-  type OpenClawDispatchRecord,
-  type OpenClawDispatchState,
-} from './openclaw-dispatch-state.ts';
+import type { OpenClawDispatchRecord, OpenClawDispatchState } from './openclaw-dispatch-state.ts';
 import reconcileOpenClawRetirementEffects from '../retirement/openclaw-retirement-effects.ts';
 import observeRetirementSession, {
   observeRetiringResource,
@@ -60,7 +57,7 @@ export default async function reconcileOpenClawLifecycle(input: {
     return {
       ...current,
       policy,
-      journal: new OpenClawDispatchStore(service.dependencies.root, current.store.location.scope),
+      journal: current.dispatch(service.dependencies.root),
       admitted: { records: [] },
     };
   };
@@ -183,7 +180,6 @@ export default async function reconcileOpenClawLifecycle(input: {
         if (record.threadId && record.sessionCreation?.sessionId)
           await retirementLocalData({
             sessionStorage: current.sessionStorage,
-            root: service.dependencies.root,
             binding: {
               runtime: 'openclaw',
               agentId: manifest.agent.id,
@@ -234,7 +230,6 @@ export default async function reconcileOpenClawLifecycle(input: {
             if (!provider) throw new Error('feedback-provider-unavailable');
             return replyOwnPublications({
               sessionStorage: current.sessionStorage,
-              root: service.dependencies.root,
               binding: {
                 runtime: 'openclaw',
                 agentId: manifest.agent.id,

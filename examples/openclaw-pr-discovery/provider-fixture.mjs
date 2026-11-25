@@ -10,19 +10,20 @@ const control = JSON.parse(readFileSync(new URL('control.json', directory), 'utf
 assert.equal(control.ci, true, 'GitHub Actions fixture only.');
 const args = process.argv.slice(2);
 const endpoint = args.find((arg) => arg.replace(/^\//u, '') === control.endpoint);
-if (
-  control.paused &&
-  endpoint &&
-  args.includes('GET') &&
-  args.some((arg) => arg.startsWith('since='))
-) {
+if (endpoint && args.includes('GET') && args.some((arg) => arg.startsWith('since='))) {
   appendFileSync(
     new URL('reads.jsonl', directory),
-    JSON.stringify({ endpoint: control.endpoint, operation: 'comments:1', paused: true }) + '\n',
+    JSON.stringify({
+      endpoint: control.endpoint,
+      operation: 'comments:1',
+      paused: control.paused,
+    }) + '\n',
   );
   // the real installed discovery deadline must cancel this read, not a model-authored result.
-  await setTimeout(60_000);
-  throw new Error('installed discovery did not cancel the controlled read');
+  if (control.paused) {
+    await setTimeout(60_000);
+    throw new Error('installed discovery did not cancel the controlled read');
+  }
 }
 assert.notEqual(control.executable, fileURLToPath(import.meta.url));
 const child = spawn(control.executable, args, { stdio: 'inherit' });

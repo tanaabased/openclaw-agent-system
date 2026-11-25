@@ -78,7 +78,13 @@ jobs:
           XDG_CONFIG_HOME: ${{ runner.temp }}/agent-system-config
           GH_TOKEN_TANAABOT: ${{ secrets.GH_TOKEN_TANAABOT }}
         run: |
-          leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
+          leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0 || {
+            status=$?
+            if [[ "${{ matrix.example }}" == openclaw-issue-assessment-recovery || "${{ matrix.example }}" == openclaw-issue-intake ]]; then
+              bash scripts/check-fixture-receiver.sh || true
+            fi
+            exit "$status"
+          }
       - name: RUNNING A LEVEL THREE DIAGNOSTICS
         if: failure()
         shell: bash

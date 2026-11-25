@@ -1,3 +1,6 @@
+import { seedDispatchRows, readDispatchRows } from './dispatch-record-fixture.ts';
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
+import { sqliteDispatchPersistence } from '../agent/storage/dispatch-backend.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import IntakeRecordStore, {
@@ -28,12 +31,14 @@ describe('agent/issue-launch', () => {
   beforeEach(async () => {
     root = await mkdtemp('/tmp/issue-launch-');
     fixture = intakeFixture();
-    journal = new OpenClawDispatchStore(root, 'a'.repeat(64));
-    store = new IntakeRecordStore({ root, scope: journal.scope, path: root + '/intake.json' });
+    const { agent } = await sqliteAgentFixture(root, 'receiver');
+    const scope = 'a'.repeat(64);
+    journal = new OpenClawDispatchStore(scope, sqliteDispatchPersistence(agent, scope));
+    store = new IntakeRecordStore({ root, scope: journal.scope }, agent);
     claim = undefined;
     context = {
+      sessionStorage: agent,
       operator: true,
-      root,
       binding: {
         runtime: 'openclaw',
         agentId: 'receiver',
@@ -374,10 +379,9 @@ describe('agent/issue-launch', () => {
 
   it('should isolate assignment data added to an operator-origin record', async () => {
     await launch();
-    const raw = JSON.parse((await journal.file.read())!);
+    const raw = JSON.parse(JSON.stringify(await journal.readEnvelope()));
     raw.records[0].manualIssue.assignment = fixture.events[0];
-    const contents = JSON.stringify(raw);
-    await journal.file.write(contents);
+    await seedDispatchRows(store.agentStorage, journal.scope, raw);
     const isolated = await journal.read();
     assert.deepEqual(isolated.records, []);
     assert.deepEqual(
@@ -385,7 +389,7 @@ describe('agent/issue-launch', () => {
       [{ id: raw.records[0].id, code: 'dispatch-task-record-invalid' }],
     );
     await assert.rejects(launch(), /dispatch-task-ownership-unresolved/);
-    assert.equal(await journal.file.read(), contents);
+    assert.deepEqual(await readDispatchRows(store.agentStorage, journal.scope), raw);
   });
 
   it('should reserve unassigned work once without creating an assignment receipt', async () => {

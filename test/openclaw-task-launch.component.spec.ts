@@ -274,7 +274,7 @@ describe('agent/openclaw task-launch', () => {
       fixtureState.manifest,
       fixtureState.root,
     );
-    await rm(selected.store.location.path);
+    await selected.store.agentStorage!.clearIntake(selected.store.location.scope);
     delete fixtureState.manifest.github!.notifications;
     fixtureState.multiple = true;
     const who = {
@@ -360,7 +360,7 @@ describe('agent/openclaw task-launch', () => {
         fixtureState.manifest,
         fixtureState.root,
       );
-      await rm(selected.store.location.path);
+      await selected.store.agentStorage!.clearIntake(selected.store.location.scope);
       delete fixtureState.manifest.github!.notifications;
       fixtureState.multiple = true;
       const who = {
@@ -551,7 +551,7 @@ describe('agent/openclaw task-launch', () => {
           fixtureState.manifest,
           fixtureState.root,
         );
-        await rm(selected.store.location.path);
+        await selected.store.agentStorage!.clearIntake(selected.store.location.scope);
         delete fixtureState.manifest.github!.notifications;
         fixtureState.multiple = true;
         const who = {

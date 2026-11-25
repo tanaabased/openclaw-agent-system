@@ -1,10 +1,10 @@
+import { withRegistrationThread } from '../storage/automation-backend.ts';
 import {
   readCodexAutomationSnapshot as snapshot,
   ledgerSchema,
   type Ledger,
   type CodexAutomationDependencies,
 } from './codex-automation-snapshot.ts';
-import { mkdir, rmdir } from 'node:fs/promises';
 import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
 import automationReportName from './automation-report-name.ts';
 
@@ -14,7 +14,6 @@ import { intakeLocation } from '../../channels/github/intake/record-store.ts';
 import { inspectSelectedCodexPickup } from './codex-pickup-readiness.ts';
 import { inspectSelectedCodexPickupActivation } from './codex-automation-activation.ts';
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
-import ensurePrivateStateDirectories from '../../core/ensure-private-state-directories.ts';
 import { AutomationError, CodexAutomationError } from './automation-errors.ts';
 import { automationHash } from '../automation-hash.ts';
 import AutomationThreads, {
@@ -88,12 +87,7 @@ async function resolveThreads(
     const selection = automationThreadSelection(job, 'codex')!;
     const group = selection.group!;
     if (journals.has(group)) continue;
-    const journal = await codexSidebarJournal(
-      selected.root,
-      selected.codexHome,
-      group,
-      selected.dependencies.storageBackend,
-    );
+    const journal = await codexSidebarJournal(selected.root, selected.codexHome, group);
     const { placement, state } = await journal.inspect(
       inputs.nativeInventory,
       selection.exact ?? 'pending',
@@ -141,7 +135,7 @@ async function resolveThreads(
       };
     };
     const threads = new AutomationThreads(
-      { root: selected.root, scope: selected.scope, runtime: 'codex' },
+      { scope: selected.scope, runtime: 'codex' },
       {
         ...adapter,
         lookup,
@@ -730,22 +724,10 @@ async function withJournal<T>(
   selected: Awaited<ReturnType<typeof snapshot>>,
   run: () => Promise<T>,
 ) {
-  await ensurePrivateStateDirectories({
-    directories: [selected.root],
-    currentUid: process.getuid?.(),
-    label: 'Codex automation ownership',
-  });
-  const lock = `${selected.path}.lock`;
-  try {
-    await mkdir(lock, { mode: 0o700 });
-  } catch {
-    throw new CodexAutomationError('automation-journal-busy');
-  }
-  try {
-    return await run();
-  } finally {
-    await rmdir(lock);
-  }
+  const bindsThread = selected.jobs.some(
+    (job) => job.runtimes.includes('codex') && automationThreadSelection(job, 'codex'),
+  );
+  return bindsThread ? withRegistrationThread(selected.agentStorage, selected.scope, run) : run();
 }
 
 /** explicit install/sync records verified deletion of undeclared jobs and completed migration copies. */
@@ -843,14 +825,14 @@ export async function prepareCodexAutomation(
     if (action.manifestId === issuePickupAutomationId && action.expected.status === 'ACTIVE')
       await prepareCodexPickupEnrollment(pluginData, {
         ...dependencies.intake,
-        storageBackend: dependencies.storageBackend,
+
         codexHome: selected.codexHome,
         inspectBinding: dependencies.inspectBinding,
       });
     if (action.manifestId === intakeAutomationId && action.expected.status === 'ACTIVE') {
       const verified = await preflightCodexIntake(pluginData, {
         ...dependencies.intake,
-        storageBackend: dependencies.storageBackend,
+
         codexHome: selected.codexHome,
         inspectBinding: dependencies.inspectBinding,
       });
@@ -940,7 +922,7 @@ export async function acknowledgeCodexAutomation(
     ) {
       const intake = await runCodexIntake(pluginData, true, {
         ...dependencies.intake,
-        storageBackend: dependencies.storageBackend,
+
         codexHome: selected.codexHome,
         inspectBinding: dependencies.inspectBinding,
       });
@@ -951,7 +933,7 @@ export async function acknowledgeCodexAutomation(
         throw new CodexAutomationError('automation-plan-stale-or-blocked');
       const enrollment = await prepareCodexPickupEnrollment(pluginData, {
         ...dependencies.intake,
-        storageBackend: dependencies.storageBackend,
+
         codexHome: selected.codexHome,
         inspectBinding: dependencies.inspectBinding,
       });
