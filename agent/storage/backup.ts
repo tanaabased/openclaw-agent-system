@@ -3,19 +3,19 @@ import { createReadStream } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import type { RuntimeStorageOptions } from './backend.ts';
+import { bindStorage, type RuntimeStorageOptions } from './backend.ts';
+import type { StorageBackend } from '../../manifest/storage-schema.ts';
 import { storageArchivePaths, type BackupStorage } from '../backup/backup-types.ts';
 
-/** Export each database independently using SQLite's snapshot operation. */
+/** Export the independently selected agent and installation stores. */
 export async function captureStorageBackup(
   { sqliteInstallation }: RuntimeStorageOptions,
   agentId: string,
   stage: string,
   created: (path: string) => Promise<void>,
+  backend?: StorageBackend,
 ): Promise<BackupStorage> {
-  if (!sqliteInstallation) throw new Error('SQLite requires runtime storage locations');
-  const { bindSqliteStorage } = await import('./agent-database.ts');
-  const db = bindSqliteStorage(sqliteInstallation, agentId);
+  const db = await bindStorage(agentId, sqliteInstallation, backend);
   const paths = storageArchivePaths(agentId);
   async function capture(role: keyof BackupStorage) {
     const target = join(stage, paths[role]);

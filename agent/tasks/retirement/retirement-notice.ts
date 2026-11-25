@@ -1,3 +1,5 @@
+import { cleanupConfigurationDiagnostic } from '../../cleanup-configuration.ts';
+
 export default function retirementNotice(code: string, diagnostic?: string) {
   if (
     code === 'retirement-configuration-invalid' ||
@@ -5,18 +7,17 @@ export default function retirementNotice(code: string, diagnostic?: string) {
   )
     return {
       severity: 'warning' as const,
-      title: 'OpenClaw cleanup configuration unavailable',
-      summary: 'Cleanup remains pending; no default is substituted for broken configuration.',
-      next:
-        diagnostic ??
-        'Inspect `plugins.entries.agent-system.config.cleanup` in OpenClaw configuration. Set `graceMinutes` to an integer from 0 through 43200, or omit cleanup to use the 60-minute default.',
+      title: 'Cleanup configuration needs attention',
+      summary:
+        'Cleanup remains pending until the installation configuration can be read and validated.',
+      next: diagnostic ?? cleanupConfigurationDiagnostic(),
     };
   if (code === 'retirement-configuration-changed')
     return {
       severity: 'info' as const,
       title: 'Cleanup settings changed during verification',
       summary: 'The pending resource effect was deferred.',
-      next: 'Intake will reread the OpenClaw settings on its next pass. Existing deadlines and uncertain effect receipts remain intact.',
+      next: 'Intake will reread the cleanup settings on its next pass. Existing deadlines and uncertain effect receipts remain intact.',
     };
   if (code === 'retirement-native-archive-unverified')
     return {

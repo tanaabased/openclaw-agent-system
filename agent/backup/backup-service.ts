@@ -1,5 +1,5 @@
 import { captureStorageBackup } from '../storage/backup.ts';
-import type { RuntimeStorageOptions } from '../storage/backend.ts';
+import { storageProtectedPaths, type RuntimeStorageOptions } from '../storage/backend.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import {
@@ -27,6 +27,7 @@ import acquirePrivateStateFileLock from '../../core/private-state-file-lock.ts';
 import isPathContained from '../../utils/is-path-contained.ts';
 import nodeErrorCode from '../../utils/node-error-code.ts';
 import type { AgentManifest } from '../../manifest/types.ts';
+import type { StorageBackend } from '../../manifest/storage-schema.ts';
 import type { BackupConfiguration } from '../../manifest/backup-schema.ts';
 import {
   captureAgentSnapshot,
@@ -301,12 +302,12 @@ export default class WorkspaceBackupService {
     private readonly storage: RuntimeStorageOptions = {},
   ) {}
 
-  private async runtimeProtection(agentId: string) {
+  private async runtimeProtection(agentId: string, backend?: StorageBackend) {
     const runtime = await this.runtimeLocations(agentId);
-    const dirs = this.storage.sqliteInstallation;
-    return dirs
-      ? { ...runtime, paths: [...runtime.paths, dirs.agentRoot, dirs.installationRoot] }
-      : runtime;
+    return {
+      ...runtime,
+      paths: [...runtime.paths, ...(await storageProtectedPaths(this.storage, backend))],
+    };
   }
 
   async prune(options: {
@@ -488,7 +489,10 @@ export default class WorkspaceBackupService {
   }) {
     return resolveBackupLocations({
       ...options,
-      runtimeProtection: await this.runtimeProtection(options.manifest.agent.id),
+      runtimeProtection: await this.runtimeProtection(
+        options.manifest.agent.id,
+        options.manifest.storage?.backend,
+      ),
     });
   }
 
@@ -500,7 +504,10 @@ export default class WorkspaceBackupService {
   }): Promise<BackupPlan> {
     const plan = await planWorkspaceBackup({
       ...options,
-      runtimeProtection: await this.runtimeProtection(options.manifest.agent.id),
+      runtimeProtection: await this.runtimeProtection(
+        options.manifest.agent.id,
+        options.manifest.storage?.backend,
+      ),
     });
     plan.coverage.agentSystemStorage = 'pending';
     return plan;
@@ -524,7 +531,12 @@ export default class WorkspaceBackupService {
         signal?.throwIfAborted();
         // refresh selection under the lease after concurrent creation and ignore changes.
         const fresh = await this.plan({
-          manifest: { schemaVersion: 1, agent: { id: plan.agentId }, backup: plan.settings },
+          manifest: {
+            schemaVersion: 1,
+            agent: { id: plan.agentId },
+            backup: plan.settings,
+            ...(plan.storage ? { storage: plan.storage } : {}),
+          },
           workspaceDir: plan.workspaceDir,
           overrides: plan.settings,
         });
@@ -544,12 +556,21 @@ export default class WorkspaceBackupService {
         // a failed or interrupted subprocess may outlive its parent; keep that uncertainty durable.
         attempt.record.snapshotWriter = fresh.settings.openclawState !== 'off';
         await attempt.save();
-        const snapshot = await captureAgentSnapshot(fresh, stage, this.snapshotCommand);
+        const snapshot = await captureAgentSnapshot(
+          fresh,
+          stage,
+          this.snapshotCommand,
+          this.storage,
+        );
         attempt.record.snapshotWriter = false;
         await attempt.save();
         // snapshot-owned files remain unregistered and therefore preserved after interruption.
-        const storage = await captureStorageBackup(this.storage, fresh.agentId, stage!, (path) =>
-          attempt!.add(path),
+        const storage = await captureStorageBackup(
+          this.storage,
+          fresh.agentId,
+          stage!,
+          (path) => attempt!.add(path),
+          fresh.storage?.backend,
         );
         const coverage = {
           ...fresh.coverage,

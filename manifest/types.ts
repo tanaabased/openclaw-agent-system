@@ -8,6 +8,7 @@ import type { AgentSetupConfiguration } from './setup-schema.ts';
 import type { AgentModelsConfiguration } from './models-schema.ts';
 import type { AgentMemoryConfiguration } from './memory-schema.ts';
 import type { BackupConfiguration } from './backup-schema.ts';
+import type { StorageBackend } from './storage-schema.ts';
 
 export interface AgentManifest {
   schemaVersion: 1;
@@ -38,6 +39,7 @@ export interface AgentManifest {
   setupHost?: AgentSetupConfiguration;
   setup?: AgentSetupConfiguration;
   backup?: BackupConfiguration;
+  storage?: { backend: StorageBackend };
 }
 
 export interface ManifestDiagnostic {

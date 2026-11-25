@@ -1084,6 +1084,79 @@ describe('agent/codex-automations', () => {
     );
   });
 
+  for (const unavailable of ['archived', 'missing'] as const)
+    it(`should recover ${unavailable} managed codex chat and converge on one paused schedule`, async () => {
+      await manifest(
+        job('    enabled: false\n    thread: { id: activity, name: Activity }\n').replace(
+          'id: review',
+          'id: smoke-test',
+        ) + job('    enabled: false\n').replace('id: review', 'id: peer'),
+      );
+      const chats = new Map<string, AutomationThread>();
+      let creates = 0;
+      const dependencies = {
+        ...deps(),
+        threadAdapter: {
+          async lookup(id: string) {
+            return chats.get(id) ?? null;
+          },
+          async create(_record: unknown, save: (id: string) => Promise<void>) {
+            const id = `chat-${++creates}`;
+            await save(id);
+            chats.set(id, { id });
+            return id;
+          },
+          async rename(id: string, name: string) {
+            chats.get(id)!.name = name;
+          },
+        },
+      };
+      const before = (await syncThreads(dependencies)).threads['smoke-test']!.id;
+      await syncOne(dependencies, 'smoke-schedule');
+      await syncOne(dependencies, 'peer-schedule');
+      if (unavailable === 'archived') chats.get(before)!.archived = true;
+      else {
+        chats.delete(before);
+        await rm(join(codexHome, 'automations', 'smoke-schedule', 'automation.toml'));
+      }
+
+      const doctor = await inspectCodexSetup(pluginData, undefined, {
+        ...dependencies,
+        automationInputs: inputs(),
+      });
+      assert.ok(
+        doctor.automations.findings.some(
+          ({ id, code }) =>
+            id === 'smoke-test' && code === 'automation-thread-replacement-required',
+        ),
+        JSON.stringify(doctor.automations),
+      );
+      assert.equal(creates, 1);
+      const replacement = (await syncThreads(dependencies)).threads['smoke-test']!.id;
+      assert.notEqual(replacement, before);
+      const plan = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+      assert.deepEqual(
+        plan.actions.map(({ manifestId, mode, expected }) => [
+          manifestId,
+          mode,
+          expected.status,
+          expected.kind === 'heartbeat' && expected.targetThreadId,
+        ]),
+        [['smoke-test', unavailable === 'archived' ? 'update' : 'create', 'PAUSED', replacement]],
+      );
+      await syncOne(dependencies, 'replacement-schedule');
+      assert.equal((await syncThreads(dependencies)).threads['smoke-test']!.id, replacement);
+      assert.equal(
+        (await inspectCodexAutomations(pluginData, inputs(), dependencies)).status,
+        'aligned',
+      );
+      assert.equal(creates, 2);
+      if (unavailable === 'archived') assert.equal(chats.get(before)?.archived, true);
+      const saved = await readCodexAutomations(codexHome);
+      assert.equal(saved.length, 2);
+      assert.equal(saved.find(({ id }) => id === 'peer-schedule')?.definition.status, 'PAUSED');
+    });
+
   it('should preserve intake on coordinator repair and retarget a reset only while paused', async () => {
     await writeFile(
       join(workspace, 'agent.yaml'),

@@ -104,7 +104,8 @@ const queueHold: Fixture = {
     const root = process.env.TMPDIR;
     assert.ok(root);
     await writeFile(join(root, 'retirement-queue-ready'), 'ready');
-    const signal = AbortSignal.timeout(120_000);
+    // Allow the ten-minute retirement scan and the GitHub and Gateway calls before it.
+    const signal = AbortSignal.timeout(12 * 60_000);
     while (
       !(await access(join(root, 'retirement-queue-release')).then(
         () => true,
@@ -113,6 +114,7 @@ const queueHold: Fixture = {
     ) {
       await setTimeout(100, undefined, { signal });
     }
+    await writeFile(join(root, 'retirement-queue-released'), 'released');
     return { content: 'Retirement queue hold released.' };
   },
 };

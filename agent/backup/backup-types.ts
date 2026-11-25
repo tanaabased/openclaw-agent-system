@@ -1,4 +1,5 @@
 import type { BackupConfiguration } from '../../manifest/backup-schema.ts';
+import type { AgentManifest } from '../../manifest/types.ts';
 
 export const backupDefaultOutput = '.agent-system/backups';
 export const backupControlDirectory = '.agent-system/backup-staging';
@@ -56,6 +57,7 @@ export interface BackupSelectionSummary {
 
 export interface BackupPlan {
   agentId: string;
+  storage?: AgentManifest['storage'];
   workspaceDir: string;
   settings: BackupSettings;
   coverage: BackupCoverage;

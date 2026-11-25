@@ -1,4 +1,7 @@
-import cleanupConfiguration from '../../cleanup-configuration.ts';
+import {
+  codexCleanupConfigurationDiagnostic,
+  type CleanupConfiguration,
+} from '../../cleanup-configuration.ts';
 import reconcileAssignmentLifecycle from '../dispatch/reconcile-assignment-lifecycle.ts';
 import codexRetirementCleanup from '../retirement/codex-retirement-cleanup.ts';
 import type codexRetirementNative from '../retirement/codex-retirement-native.ts';
@@ -28,11 +31,10 @@ export default async function retireCodexReviews(input: {
   targetId?: string;
   now: number;
   git?: DispatchGit;
-  readConfiguration?: typeof cleanupConfiguration;
+  readConfiguration(): Promise<CleanupConfiguration>;
   fresh(): Promise<void>;
   save(): Promise<void>;
 }) {
-  const readConfiguration = input.readConfiguration ?? cleanupConfiguration;
   const policy = reviewPolicy(input.current.manifest, 'codex', true);
   if (!policy) return;
   let prepared:
@@ -45,8 +47,9 @@ export default async function retireCodexReviews(input: {
     client: input.client,
     targetId: input.targetId,
     now: input.now,
-    configuration: await readConfiguration(),
-    readConfiguration,
+    configuration: await input.readConfiguration(),
+    configurationDiagnostic: codexCleanupConfigurationDiagnostic,
+    readConfiguration: input.readConfiguration,
     fresh: input.fresh,
     save: input.save,
     observe: async (record) => {

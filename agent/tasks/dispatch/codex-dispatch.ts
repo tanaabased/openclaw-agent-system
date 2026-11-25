@@ -11,7 +11,7 @@ import { parseDirectImplementationRequest } from '../../../tools/dispatch/implem
 import renderNativeAssessment, { renderBoundAssessment } from '../assessment/assessment-render.ts';
 import { nativeObject } from '../../../utils/native-object.ts';
 import { automationHash } from '../../automation-hash.ts';
-import cleanupConfiguration from '../../cleanup-configuration.ts';
+import { codexCleanupConfiguration } from '../../cleanup-configuration.ts';
 import codexAssessmentEntry from '../assessment/codex-assessment-entry.ts';
 import { codexInstanceStore } from './codex-assignment-claims.ts';
 import reconcileCodexLifecycle from './codex-assignment-lifecycle.ts';
@@ -502,7 +502,8 @@ async function executeCodexDispatch(
           issueUrl: issueUrl(intake),
           caller,
           now,
-          readConfiguration: deps.readCleanupConfiguration ?? cleanupConfiguration,
+          readConfiguration:
+            deps.readCleanupConfiguration ?? (() => codexCleanupConfiguration(pluginData)),
           save,
           fresh: async () => {
             await fresh();

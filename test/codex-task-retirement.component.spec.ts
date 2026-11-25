@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runCodexIntake } from '../agent/codex-intake.ts';
 import { selectCodexTaskContext } from '../agent/tasks/context/codex-task-context.ts';
@@ -58,17 +58,15 @@ describe('agent/codex task-retirement', () => {
     assert.equal((await journal.read()).records[0]!.sourceThreadId, original.sourceThreadId);
   });
 
-  it('should use configured automatic grace and ignore obsolete settings during operator retirement', async () => {
-    const originalXdg = process.env.XDG_CONFIG_HOME;
+  it('should use codex grace alongside openclaw and allow immediate operator retirement', async () => {
     const originalOpenClaw = process.env.OPENCLAW_CONFIG_PATH;
-    process.env.XDG_CONFIG_HOME = fixtureState.root;
     process.env.OPENCLAW_CONFIG_PATH = join(fixtureState.root, 'openclaw.json');
-    delete fixtureState.deps.readCleanupConfiguration;
     try {
+      await fixtureState.writeCleanup(17);
       await writeFile(
         process.env.OPENCLAW_CONFIG_PATH,
         JSON.stringify({
-          plugins: { entries: { 'agent-system': { config: { cleanup: { graceMinutes: 17 } } } } },
+          plugins: { entries: { 'agent-system': { config: { cleanup: { graceMinutes: 0 } } } } },
         }),
       );
       const prepared = await fixtureState.prepare();
@@ -79,10 +77,6 @@ describe('agent/codex task-retirement', () => {
       });
       fixtureState.native!.status = 'idle';
       fixtureState.native!.turnEnded = true;
-      const directory = join(fixtureState.root, 'tanaab', 'agent-system');
-      const path = join(directory, 'config.yaml');
-      await mkdir(directory, { recursive: true, mode: 0o700 });
-      await writeFile(path, 'schema-version: 1\ncleanup: {grace-minutes: 0}', { mode: 0o600 });
       fixtureState.fixture.item.state = 'closed';
       fixtureState.now += 60_000;
       await fixtureState.next();
@@ -91,7 +85,6 @@ describe('agent/codex task-retirement', () => {
       const automatic = (await journal.read()).records[0]!;
       assert.equal(automatic.retirement!.eligibleAt, fixtureState.now + 17 * 60_000);
       assert.ok(automatic);
-      await writeFile(path, 'invalid obsolete settings');
       const operator = { threadId: 'operator' };
       const preview = await fixtureState.request('retire', { id: prepared.id }, operator);
       const queued = await fixtureState.request(
@@ -108,8 +101,6 @@ describe('agent/codex task-retirement', () => {
       assert.notEqual(manual.retirement?.code, 'retirement-configuration-invalid');
       assert.ok(manual);
     } finally {
-      if (originalXdg === undefined) delete process.env.XDG_CONFIG_HOME;
-      else process.env.XDG_CONFIG_HOME = originalXdg;
       if (originalOpenClaw === undefined) delete process.env.OPENCLAW_CONFIG_PATH;
       else process.env.OPENCLAW_CONFIG_PATH = originalOpenClaw;
     }
@@ -132,12 +123,8 @@ describe('agent/codex task-retirement', () => {
     fixtureState.now += 60_000;
     await fixtureState.next();
     assert.equal((await record()).retirement?.code, 'retirement-configuration-invalid');
+    assert.match((await record()).retirement?.diagnostic ?? '', /instance\/config\.json/u);
     assert.equal((await record()).retirement?.deadlinePending, true);
-    await rm(join(fixtureState.root, 'openclaw.json'));
-    fixtureState.now += 60_000;
-    await fixtureState.next();
-    assert.equal((await record()).retirement?.code, 'retirement-configuration-unavailable');
-    assert.ok(await record());
     await fixtureState.writeCleanup(17);
     fixtureState.now += 60_000;
     await fixtureState.next();

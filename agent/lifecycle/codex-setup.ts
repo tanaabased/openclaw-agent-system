@@ -1,5 +1,6 @@
 import codexStorageLocation from '../storage/codex-storage.ts';
-import { sqliteStorageLifecycle } from '../storage/storage-lifecycle.ts';
+import { initializeCodexStorage } from '../codex-configuration.ts';
+import { storageLifecycles } from '../storage/storage-lifecycle.ts';
 import { delimiter } from 'node:path';
 import { codexInstanceStore } from '../tasks/dispatch/codex-assignment-claims.ts';
 import instanceIdentity from '../identity/instance-identity.ts';
@@ -153,7 +154,9 @@ async function runtime(
       }
     },
   };
-  const storage = sqliteStorageLifecycle(() => codexStorageLocation(pluginData));
+  const storage = storageLifecycles(codexStorageLocation(pluginData), (backend) =>
+    initializeCodexStorage(pluginData, backend),
+  );
   return { context, lifecycle, selected, storage };
 }
 

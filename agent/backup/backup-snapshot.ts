@@ -3,6 +3,7 @@ import { lstat, readFile, readdir } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 
 import nodeErrorCode from '../../utils/node-error-code.ts';
+import { openClawSnapshot, type RuntimeStorageOptions } from '../storage/backend.ts';
 import { BackupError, type BackupPlan, type OpenClawSnapshotManifest } from './backup-types.ts';
 
 export interface BackupSnapshotCommand {
@@ -84,7 +85,7 @@ export async function verifyAgentSnapshot(
 ): Promise<void> {
   const result = await runSnapshotCommand(
     command,
-    ['backup', 'sqlite', 'verify', directory, '--json'],
+    (await openClawSnapshot()).verify(directory),
     dirname(directory),
   );
   if (resolve(result.snapshotPath) !== resolve(directory))
@@ -115,7 +116,7 @@ export async function restoreAgentSnapshot(
   let result: Awaited<ReturnType<BackupSnapshotCommand>>;
   try {
     result = await command(
-      ['backup', 'sqlite', 'restore', directory, '--target', target, '--json'],
+      (await openClawSnapshot()).restore(directory, target),
       dirname(directory),
     );
   } catch {
@@ -176,6 +177,7 @@ export async function captureAgentSnapshot(
   plan: BackupPlan,
   stage: string,
   command: BackupSnapshotCommand | undefined,
+  storage: RuntimeStorageOptions,
 ): Promise<{
   directory?: string;
   manifest?: OpenClawSnapshotManifest;
@@ -187,7 +189,8 @@ export async function captureAgentSnapshot(
       'backup-snapshot-unavailable',
       'The selected agent database location could not be resolved from OpenClaw.',
     );
-  const database = join(plan.agentDir, 'openclaw-agent.sqlite');
+  const snapshot = await openClawSnapshot(storage);
+  const database = join(plan.agentDir, snapshot.databaseFilename);
   try {
     await lstat(database);
   } catch (error) {
@@ -199,7 +202,7 @@ export async function captureAgentSnapshot(
   const repository = join(stage, 'openclaw-repository');
   const result = await runSnapshotCommand(
     command,
-    ['backup', 'sqlite', 'create', '--agent', plan.agentId, '--repository', repository, '--json'],
+    snapshot.create(plan.agentId, repository),
     plan.workspaceDir,
   );
   const manifest = snapshotManifest(result.manifest, plan.agentId);

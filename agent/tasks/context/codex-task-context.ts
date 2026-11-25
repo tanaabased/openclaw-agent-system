@@ -32,7 +32,11 @@ export async function selectCodexTaskContext(
     deps.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex'),
   );
   const namespace = await realpath(requestedHome).catch(() => requestedHome);
-  const agent = await bindAgentStore(loaded.manifest.agent.id, codexStorageLocation(pluginData));
+  const agent = await bindAgentStore(
+    loaded.manifest.agent.id,
+    codexStorageLocation(pluginData),
+    loaded.manifest.storage?.backend,
+  );
   const store = bindIntakeStore(
     intakeLocation({
       runtime: 'codex',

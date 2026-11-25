@@ -10,16 +10,25 @@ import type {
 } from '../../core/lifecycle-registry.ts';
 import type { IntakeState } from '../../channels/github/intake/record-store.ts';
 import type { RepositoryRecord } from '../../tools/git/repository-service.ts';
+import type { StorageBackend } from '../../manifest/storage-schema.ts';
+import type { AssignmentClaimState } from '../tasks/dispatch/assignment-claim-store.ts';
+import { bindAgentStore, bindInstallationStore, defaultStorageBackend } from './backend.ts';
 
 export interface SqliteInstallation {
   agentRoot: string;
   installationRoot: string;
   schemaRoot: string;
+  readInstallationBackend?(): Promise<StorageBackend | undefined>;
+  readAgentBackend?(agentId: string): Promise<StorageBackend | undefined>;
 }
 
 export interface StorageSchema {
   inspect(): Promise<AgentSystemLifecycleFinding>;
   install(): Promise<AgentSystemLifecycleOutcome>;
+}
+
+export interface StorageDatabase extends StorageSchema {
+  exportSnapshot(destination: string): Promise<void>;
 }
 
 type DirectRow = AgentRows['directEntries'];
@@ -48,7 +57,8 @@ export type SidebarPlacementChange = (current?: SidebarState) => SidebarChange;
 
 /** The runtime binds both handles before a workflow can read or change any records. */
 export interface BoundStorage {
-  agent: WorkflowRecords<AgentRows> &
+  agent: StorageDatabase &
+    WorkflowRecords<AgentRows> &
     SessionStorage & {
       saveAutomationLedger(
         runtime: 'codex' | 'openclaw',
@@ -95,14 +105,19 @@ export interface BoundStorage {
       ): Promise<void>;
       clearIntake(scope: string): Promise<void>;
     };
-  installation: WorkflowRecords<InstallationRows> & {
-    changeSidebarPlacement(
-      scope: string,
-      change: SidebarPlacementChange,
-    ): Promise<SidebarChange['result']>;
-    readRepository(root: string, id: string): Promise<RepositoryRecord | undefined>;
-    saveRepository(root: string, record: RepositoryRecord): Promise<void>;
-  };
+  installation: StorageDatabase &
+    WorkflowRecords<InstallationRows> & {
+      saveAssignmentClaims(
+        state: AssignmentClaimState,
+        previous?: AssignmentClaimState,
+      ): Promise<void>;
+      changeSidebarPlacement(
+        scope: string,
+        change: SidebarPlacementChange,
+      ): Promise<SidebarChange['result']>;
+      readRepository(root: string, id: string): Promise<RepositoryRecord | undefined>;
+      saveRepository(root: string, record: RepositoryRecord): Promise<void>;
+    };
 }
 
 /** Register one migration target per physical database or shared schema. */
@@ -124,14 +139,26 @@ export function storageSchemaLifecycle(
   };
 }
 
-export function sqliteStorageLifecycle(installation: () => SqliteInstallation) {
-  return (['agent', 'installation'] as const).map((scope) =>
-    storageSchemaLifecycle(
-      scope === 'agent' ? 'agent-storage' : 'agent-system-storage',
-      async ({ manifest }) => {
-        const { bindSqliteStorage } = await import('./agent-database.ts');
-        return bindSqliteStorage(installation(), manifest.agent.id)[scope];
-      },
-    ),
+export function storageLifecycles(
+  location: SqliteInstallation,
+  initialize: (backend: StorageBackend) => Promise<StorageBackend>,
+) {
+  const installation = storageSchemaLifecycle('agent-system-storage', () =>
+    bindInstallationStore({ sqliteInstallation: location }),
   );
+  return [
+    storageSchemaLifecycle('agent-storage', ({ manifest }) =>
+      bindAgentStore(manifest.agent.id, location, manifest.storage?.backend),
+    ),
+    {
+      ...installation,
+      async reconcile(context: AgentSystemLifecycleContext) {
+        const backend = await initialize(
+          context.manifest.storage?.backend ?? defaultStorageBackend,
+        );
+        const store = await bindInstallationStore({ sqliteInstallation: location }, backend);
+        return { outcomes: [await store.install()] };
+      },
+    },
+  ];
 }

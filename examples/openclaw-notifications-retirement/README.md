@@ -154,6 +154,7 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 60
 node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -es --slurpfile before "$TMPDIR/notification-dispatch-before.json" '[.[].records[] | select(.id == $before[0].id)] | length == 1 and .[0].retirement.code == "retirement-native-work-unresolved"'
 touch "$TMPDIR/retirement-queue-release"
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" retirement-queue-hold 600000
+test -f "$TMPDIR/retirement-queue-released"
 sleep 61
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000

@@ -1,5 +1,8 @@
 import reactivateAssignmentFeedback from '../feedback/assignment-feedback-reactivation.ts';
-import cleanupConfiguration from '../../cleanup-configuration.ts';
+import {
+  codexCleanupConfiguration,
+  codexCleanupConfigurationDiagnostic,
+} from '../../cleanup-configuration.ts';
 import { inspectCodexDispatchActivation } from '../../automations/codex-automation-activation.ts';
 import type { CodexDispatchDependencies } from './codex-dispatch-context.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
@@ -34,7 +37,8 @@ export default async function reconcileCodexLifecycle(
   },
 ) {
   const current = await selectCodexTaskContext(pluginData, deps);
-  const readConfiguration = deps.readCleanupConfiguration ?? cleanupConfiguration;
+  const readConfiguration =
+    deps.readCleanupConfiguration ?? (() => codexCleanupConfiguration(pluginData));
   const configuration = await readConfiguration();
   const store = current.journal;
   const retained = managedIssueState(await current.store.read(), (await store.read()).records);
@@ -96,6 +100,7 @@ export default async function reconcileCodexLifecycle(
       const client = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
       await reconcileAssignmentLifecycle({
         configuration,
+        configurationDiagnostic: codexCleanupConfigurationDiagnostic,
         readConfiguration,
         records: state.records,
         admitted: admitted.records,

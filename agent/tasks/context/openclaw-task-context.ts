@@ -25,7 +25,11 @@ export async function selectOpenClawTaskContext(
   const workspace = await realpath(workspaceDir);
   const selected =
     options.resolvePolicy === false ? undefined : assignmentIntakePolicy(manifest, 'openclaw');
-  const agent = await bindAgentStore(manifest.agent.id, deps.sqliteInstallation);
+  const agent = await bindAgentStore(
+    manifest.agent.id,
+    deps.sqliteInstallation,
+    manifest.storage?.backend,
+  );
   const store = bindIntakeStore(
     intakeLocation({
       runtime: 'openclaw',

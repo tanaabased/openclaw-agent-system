@@ -2,13 +2,13 @@ import { assignmentClaimLockPath } from './workflow-lock.ts';
 import nodeErrorCode from '../../utils/node-error-code.ts';
 import IssuePickupEnrollmentStore from '../issue-pickup-enrollment.ts';
 import AssignmentClaimStore from '../tasks/dispatch/assignment-claim-store.ts';
-import { bindAgentStore } from './backend.ts';
+import { bindAgentStore, bindInstallationStore } from './backend.ts';
+import type { StorageBackend } from '../../manifest/storage-schema.ts';
 import type { SqliteInstallation } from './storage-lifecycle.ts';
 
 export function bindInstanceStore(installation: SqliteInstallation) {
   const root = installation.installationRoot;
-  const database = async () =>
-    (await import('./agent-database.ts')).bindSqliteInstallation(installation);
+  const database = () => bindInstallationStore({ sqliteInstallation: installation });
   return new AssignmentClaimStore({
     lockPath: assignmentClaimLockPath(root),
     async read() {
@@ -37,7 +37,11 @@ export function bindInstanceStore(installation: SqliteInstallation) {
   });
 }
 
-export async function bindPickupStore(installation: SqliteInstallation, agentId: string) {
-  const agent = await bindAgentStore(agentId, installation);
+export async function bindPickupStore(
+  installation: SqliteInstallation,
+  agentId: string,
+  backend?: StorageBackend,
+) {
+  const agent = await bindAgentStore(agentId, installation, backend);
   return new IssuePickupEnrollmentStore(bindInstanceStore(installation), { agent, agentId });
 }
