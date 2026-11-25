@@ -153,7 +153,6 @@ export default async function openClawEntryContext<T>(
     const entry: AssessmentEntryDependencies = {
       sessionStorage: current.sessionStorage,
       operator: input.operator,
-      root: deps.root,
       currentTarget,
       binding: {
         runtime: 'openclaw',

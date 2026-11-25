@@ -1,3 +1,4 @@
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -33,6 +34,7 @@ describe('issue pickup native intake adapters', () => {
     const home = join(root, 'codex');
     await mkdir(workspace);
     await mkdir(home);
+    const { sqliteInstallation } = await sqliteAgentFixture(data, 'receiver');
     const declaration = {
       'schema-version': 1,
       agent: { id: 'receiver' },
@@ -77,6 +79,7 @@ describe('issue pickup native intake adapters', () => {
       };
     } else {
       const service = new OpenClawIntake({
+        sqliteInstallation,
         root: data,
         namespace: root,
         now: () => now,

@@ -1,3 +1,0 @@
-{
-  "plugins": { "entries": { "agent-system": { "config": { "storage": { "backend": "sqlite" } } } } }
-}

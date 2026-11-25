@@ -24,7 +24,6 @@ Run a deterministic script and inspect its actual process outcome without a mode
 ```bash
 # should install the command workspace without applying maintenance
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE"
-openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 openclaw-gateway start
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-command"
 openclaw agent-system install --skip-setup --yes --json

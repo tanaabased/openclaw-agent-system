@@ -1,6 +1,7 @@
+import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { Value } from 'typebox/value';
@@ -50,8 +51,10 @@ async function pendingReset(
 
 describe('agent/native retirement receipts', () => {
   let root: string;
+  let storage: Awaited<ReturnType<typeof sqliteAgentFixture>>;
   beforeEach(async () => {
     root = await realpath(await mkdtemp('/tmp/native-retirement-'));
+    storage = await sqliteAgentFixture(root, 'fixture');
   });
   afterEach(async () => rm(root, { recursive: true, force: true }));
 
@@ -63,7 +66,7 @@ describe('agent/native retirement receipts', () => {
     };
     let archives = 0;
     const deps = {
-      root,
+      sessionStorage: storage.agent,
       binding: {
         runtime: 'openclaw' as const,
         agentId: 'fixture',
@@ -87,6 +90,46 @@ describe('agent/native retirement receipts', () => {
     };
     return { deps, target, archives: () => archives };
   }
+
+  it('should reserve one archive across competing sqlite connections and recover the receipt', async () => {
+    const { deps, archives } = fixture();
+    const { agent, sqliteInstallation } = await sqliteAgentFixture(root, deps.binding.agentId);
+    const other = bindSqliteStorage(sqliteInstallation, deps.binding.agentId).agent;
+    const operation = { ...deps, root: join(root, 'absent'), apply: true };
+    let observations = 0;
+    await assert.rejects(
+      nativeRetirement({
+        ...operation,
+        sessionStorage: agent,
+        observe: async () => {
+          const snapshot = await deps.observe();
+          if (++observations === 2) {
+            // Both callers saw an open target and no saved attempt. Let the other caller win.
+            const result = await nativeRetirement({
+              ...operation,
+              sessionStorage: other,
+              archive: async () => {
+                const pending = await nativeRetirement({ ...operation, sessionStorage: agent });
+                assert.equal(pending.status, 'pending');
+                await deps.archive();
+                const confirmed = await nativeRetirement({ ...operation, sessionStorage: agent });
+                assert.equal(confirmed.status, 'archived');
+              },
+            });
+            assert.equal(result.status, 'archived');
+          }
+          return snapshot;
+        },
+      }),
+      /native-retirement-entry-conflict/,
+    );
+    assert.equal(
+      (await nativeRetirement({ ...operation, sessionStorage: agent })).status,
+      'archived',
+    );
+    assert.equal(archives(), 1);
+    assert.ok(!(await readdir(root)).includes('absent'));
+  });
 
   it('should apply authorized cleanup without a copied fingerprint and reconcile without replay', async () => {
     const { deps, archives } = fixture();
@@ -257,7 +300,7 @@ describe('agent/native retirement runtime entries', () => {
     const sqlite = await sqliteAgentFixture(root, manifest.agent.id);
     const intake = new OpenClawIntake({
       sqliteInstallation: sqlite.sqliteInstallation,
-      storageBackend: sqlite.storageBackend,
+
       root: join(root, 'intake'),
       namespace: root,
       connect: unsupported,
@@ -301,11 +344,7 @@ describe('agent/native retirement runtime entries', () => {
     const action = { action: 'retire', native: target.key };
     const resetScope = await intake.select(manifest, root, { resolvePolicy: false });
     const reset = await pendingReset(
-      new NotificationResetStore(
-        join(root, 'dispatch'),
-        resetScope.store.location.scope,
-        sqlite.agent,
-      ),
+      new NotificationResetStore(resetScope.store.location.scope, sqlite.agent),
       'openclaw',
       root,
       'agent:fixture:reset-owned',
@@ -403,7 +442,6 @@ describe('agent/native retirement runtime entries', () => {
     };
     const sqlite = await sqliteAgentFixture(pluginData, manifest.agent.id);
     const deps: CodexDispatchDependencies = {
-      storageBackend: sqlite.storageBackend,
       codexHome,
       threadId: 'operator',
       activation: unsupported,
@@ -440,7 +478,7 @@ describe('agent/native retirement runtime entries', () => {
       (await runCodexDispatch(pluginData, 'retire', input, deps)) as Record<string, unknown>;
     const resetScope = await selectCodexTaskContext(pluginData, deps, { resolvePolicy: false });
     const reset = await pendingReset(
-      new NotificationResetStore(pluginData, resetScope.store.location.scope, sqlite.agent),
+      new NotificationResetStore(resetScope.store.location.scope, sqlite.agent),
       'codex',
       workspace,
       'reset-owned',

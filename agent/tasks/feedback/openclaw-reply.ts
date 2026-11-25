@@ -44,7 +44,7 @@ export default async function openClawReply(input: {
     session: caller.sessionKey,
     incarnation: caller.sessionId,
   };
-  const replyStore = new ReplyStore(deps.root, binding, current.sessionStorage);
+  const replyStore = new ReplyStore(binding, current.sessionStorage);
   return deps.credential.use(authority, async (request) => {
     let feedback: ReplyDraft['feedback'];
     let defaultTarget: string | undefined;
@@ -166,7 +166,6 @@ export default async function openClawReply(input: {
     return feedbackReply(input.action, {
       defaultTarget,
       sessionStorage: current.sessionStorage,
-      root: deps.root,
       binding,
       turnId: caller.runId,
       inputId: turn.inputEventId,

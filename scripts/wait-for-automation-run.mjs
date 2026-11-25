@@ -195,9 +195,11 @@ export async function waitForAutomationRun(
   const deadline = now() + maxWaitMs;
   let nativeId;
   let timedOutReads = 0;
+  // The watchdog includes CLI startup. Give a slow read time to finish on its next attempt.
+  let readAllowance = 30_000;
   try {
     while (true) {
-      const readBudget = Math.min(30_000, deadline - now());
+      const readBudget = Math.min(readAllowance, deadline - now());
       if (readBudget <= 0) break;
       const result = run(
         'openclaw',
@@ -207,17 +209,19 @@ export async function waitForAutomationRun(
       );
       if (result.error?.code === 'ETIMEDOUT') {
         timedOutReads++;
+        readAllowance *= 2;
       } else {
         assert.equal(result.status, 0, result.error?.message ?? result.stderr);
         const page = JSON.parse(result.stdout);
         nativeId = page.nativeId;
+        readAllowance = 30_000;
         if (assertAutomationRun(page, runId, id, () => {}, expected)) return;
       }
       const remaining = deadline - now();
       if (remaining > 0) await sleep(Math.min(2000, remaining));
     }
     throw new Error(
-      `${id}: the exact native run did not finish within ${maxWaitMs}ms (${timedOutReads} status reads timed out)`,
+      `${id}: could not verify completion of the exact native run within ${maxWaitMs}ms (${timedOutReads} status reads timed out)`,
     );
   } catch (error) {
     report(nativeId, runId);

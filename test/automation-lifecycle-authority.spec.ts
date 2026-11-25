@@ -1,3 +1,5 @@
+import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
+import codexStorageLocation from '../agent/storage/codex-storage.ts';
 import assert from 'node:assert/strict';
 
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
@@ -105,12 +107,14 @@ describe('agent/automation-lifecycle-authority', () => {
       environment: {},
       timezone: 'UTC',
     };
-    const store = new AutomationStore({
-      root: '/unused',
-      profile: '/profile',
-      agentId: 'agent',
-      workspaceDir: '/workspace',
-    });
+    const store = new AutomationStore(
+      {
+        profile: '/profile',
+        agentId: 'agent',
+        workspaceDir: '/workspace',
+      },
+      bindSqliteStorage(codexStorageLocation('/unused'), 'agent').agent,
+    );
     const declared = automations[0]!;
     const record: AutomationRecord = {
       id: declared.id,

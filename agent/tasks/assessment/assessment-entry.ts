@@ -22,8 +22,7 @@ import { replyLocator } from '../feedback/reply-target.ts';
 import { selectWorkflowStage } from '../workflow-stage.ts';
 
 export interface AssessmentEntryDependencies {
-  sessionStorage?: SessionStorage;
-  root: string;
+  sessionStorage: SessionStorage;
   binding: DirectEntryBinding;
   turnId: string;
   inputId: string;

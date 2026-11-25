@@ -132,12 +132,9 @@ duration. Flushing the cache does not reset provider backoff or quota limits.
 
 ### `storage`
 
-Set `plugins.entries.agent-system.config.storage.backend` to `file` (default) or
-`sqlite`. OpenClaw uses this setting for every managed agent in its installation.
-Standalone Codex reads it inline from `OPENCLAW_CONFIG_PATH` or the default
-OpenClaw config file. Each machine can switch independently.
+OpenClaw and standalone Codex use SQLite. An existing `storage.backend: sqlite`
+setting can be left in place or removed.
 
-For an existing installation, keep `file` selected while you install the schema
-and import existing records with writers paused. Then select `sqlite`, restart
-the Gateway if running, and resume work. Changing the setting selects the store
-for subsequent reads and writes. It does not copy records between backends.
+If an installation still uses `file`, pause its writers and run
+`scripts/import-agent-storage.ts` from the pre-upgrade source checkout. Verify
+the import before removing the `file` setting and upgrading.

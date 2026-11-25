@@ -1,3 +1,4 @@
+import sqliteAgentFixture from './sqlite-agent-fixture.ts';
 import assert from 'node:assert/strict';
 import { pendingRecoveryFeedback } from '../agent/tasks/dispatch/issue-task-recovery.ts';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
@@ -20,7 +21,7 @@ import hydrateImplementation, { type Field } from './implementation-material-fix
 import { attemptedAnnouncement } from './delivery-announcement-fixture.ts';
 
 import { automationHash } from '../agent/automation-hash.ts';
-import CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
+import type CodexDispatchStore from '../agent/tasks/dispatch/codex-dispatch-state.ts';
 import runCodexFeedback, {
   type CodexFeedbackDependencies,
 } from '../agent/tasks/feedback/codex-feedback.ts';
@@ -92,6 +93,7 @@ describe('agent/codex-feedback', () => {
         },
       }),
     );
+    await sqliteAgentFixture(pluginData, 'receiver');
     await bindCodexWorkspace(pluginData, workspace);
     const fixture = intakeFixture();
     await runCodexIntake(pluginData, true, {
@@ -107,7 +109,7 @@ describe('agent/codex-feedback', () => {
     });
     const current = await selectCodexTaskContext(pluginData, { codexHome });
     const admitted = (await current.store.read())!.records[0]!;
-    store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    store = current.journal;
     await store.exclusive(async (state, save) => {
       state.records.push({
         context: JSON.stringify({ source: 'https://github.com/owner/repo/issues/3' }),
@@ -414,7 +416,7 @@ describe('agent/codex-feedback', () => {
         PR_other: { since: baseline, startedAt: baseline + 1, reads: {} },
       };
       const before = structuredClone(owner.feedback!);
-      const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
+      const current = await selectCodexTaskContext(pluginData, deps);
       const provider = await deps.feedbackConnect!(current.workspace, new AbortController().signal);
       provider.comments.reviews = {
         listReviews: async () => ({ values: [], nextPage: 1 }),
@@ -485,7 +487,7 @@ describe('agent/codex-feedback', () => {
   for (const association of ['relinked', 'unlinked'] as const) {
     it(`should discard ${association} pr scratch durably without querying the old source`, async () => {
       await prepare();
-      const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
+      const current = await selectCodexTaskContext(pluginData, deps);
       await store.exclusive(async (state, save) => {
         const owner = state.records[0]!;
         owner.pullRequestLink =
@@ -529,7 +531,7 @@ describe('agent/codex-feedback', () => {
           : item;
       };
       for (let pass = 0; pass < 2; pass++) {
-        store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+        store = current.journal;
         await scanCodexFeedback({
           state: await store.read(),
           current,
@@ -556,7 +558,7 @@ describe('agent/codex-feedback', () => {
       id: 'e'.repeat(64),
       sourceThreadId: 'changed-owner',
     });
-    const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
+    const current = await selectCodexTaskContext(pluginData, deps);
     const visits: string[] = [];
     const scans = await scanCodexFeedback({
       state,
@@ -591,7 +593,7 @@ describe('agent/codex-feedback', () => {
       await save();
     });
     occurrence++;
-    const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
+    const current = await selectCodexTaskContext(pluginData, deps);
     const scans = await scanCodexFeedback({
       state: await store.read(),
       current,
@@ -629,7 +631,7 @@ describe('agent/codex-feedback', () => {
       const first = state.records[0]!;
       const peer = { ...structuredClone(first), id: 'e'.repeat(64) };
       state.records.push(peer);
-      const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
+      const current = await selectCodexTaskContext(pluginData, deps);
       const provider = await deps.feedbackConnect!(current.workspace, new AbortController().signal);
       const raw = {
         nodeId: 'IC_human',
@@ -680,7 +682,7 @@ describe('agent/codex-feedback', () => {
   }
 
   async function feedbackReport(fresh = true) {
-    const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
+    const current = await selectCodexTaskContext(pluginData, deps);
     return store.exclusive(async (state, save) => {
       const input = {
         automationId: 'automation',
@@ -719,8 +721,8 @@ describe('agent/codex-feedback', () => {
     );
     assert.doesNotMatch(report.response, /DONT_NOTIFY|nothing new to report/);
     assert.deepEqual(await feedbackReport(false), report);
-    const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
-    store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const current = await selectCodexTaskContext(pluginData, deps);
+    store = current.journal;
     const repeated = await feedbackReport();
     assert.ok('response' in repeated && typeof repeated.response === 'string');
     assert.doesNotMatch(repeated.response, /Feedback delivered to chat/);
@@ -778,10 +780,11 @@ describe('agent/codex-feedback', () => {
   }
 
   it('should recover preparation lost before send and deliver the exact retained comment once', async () => {
-    const raw = JSON.parse((await store.file.read())!);
-    raw.records[0].routingNote = 'unused';
-    raw.records[0].reservationVersion = 1;
-    await store.file.write(JSON.stringify(raw));
+    const current = await selectCodexTaskContext(pluginData, deps);
+    await current.journal.exclusive(async (state, save) => {
+      Object.assign(state.records[0]!, { routingNote: 'unused', reservationVersion: 1 });
+      await save();
+    });
     const ref = await prepare(
       commenter,
       '@receiver implement option 1.\nKeep `quoted` text and $variables.',
@@ -819,7 +822,7 @@ describe('agent/codex-feedback', () => {
     occurrence++;
     assert.equal((await call('next')).status, 'idle');
     assert.equal(deliveries.length, 1);
-    const saved = JSON.parse((await store.file.read())!).records[0];
+    const saved = (await store.readEnvelope()).records[0] as unknown as Record<string, unknown>;
     assert.equal(saved.routingNote, 'unused');
     assert.equal(saved.reservationVersion, 1);
   });
@@ -1694,7 +1697,7 @@ describe('agent/codex-feedback', () => {
   it('should retain admitted feedback when discovery configuration is removed', async () => {
     await prepare();
     const manifestPath = join(root, 'workspace', 'agent.yaml');
-    const current = await selectCodexTaskContext(pluginData, { codexHome: deps.codexHome });
+    const current = await selectCodexTaskContext(pluginData, deps);
     await writeFile(
       manifestPath,
       JSON.stringify({

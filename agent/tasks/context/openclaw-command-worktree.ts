@@ -13,11 +13,7 @@ interface CommandSessionBinding {
 }
 
 interface CommandWorktreeDependencies {
-  taskContext: Pick<
-    OpenClawTaskContextDependencies,
-    'root' | 'namespace' | 'storageBackend' | 'sqliteInstallation'
-  >;
-  dispatchRoot: string;
+  taskContext: Pick<OpenClawTaskContextDependencies, 'root' | 'namespace' | 'sqliteInstallation'>;
   readSession(
     sessionKey: string,
   ): Promise<
@@ -26,7 +22,7 @@ interface CommandWorktreeDependencies {
 }
 
 export default async function resolveOpenClawCommandWorktree(
-  { taskContext, dispatchRoot, readSession }: CommandWorktreeDependencies,
+  { taskContext, readSession }: CommandWorktreeDependencies,
   agent: AgentManifestScope & { agentId: string },
   { sessionKey, sessionId }: CommandSessionBinding,
 ): Promise<string | undefined> {
@@ -39,13 +35,8 @@ export default async function resolveOpenClawCommandWorktree(
     agentId: agent.agentId,
     workspaceDir,
   });
-  const storage = await bindAgentStore(
-    agent.agentId,
-    taskContext.sqliteInstallation,
-    taskContext.storageBackend,
-  );
+  const storage = await bindAgentStore(agent.agentId, taskContext.sqliteInstallation);
   const journal = new OpenClawDispatchStore(
-    dispatchRoot,
     location.scope,
     sqliteDispatchPersistence(storage, location.scope),
   );

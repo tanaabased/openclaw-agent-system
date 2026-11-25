@@ -1,4 +1,4 @@
-import { withCodexStorageBackend } from './storage/codex-storage.ts';
+import { validateCodexStorageConfig } from './storage/codex-storage.ts';
 import { withDispatchTask } from './tasks/dispatch/dispatch-task-scope.ts';
 import process from 'node:process';
 import { Value } from 'typebox/value';
@@ -347,12 +347,13 @@ async function readWorkflowCommand(route: string, args: string[]) {
   return { ...result, modelSource };
 }
 
-export function runCodexRuntime(args = process.argv.slice(2)): Promise<void> {
+export async function runCodexRuntime(args = process.argv.slice(2)): Promise<void> {
   const run = () =>
     withDispatchTask('codex', process.env.CODEX_THREAD_ID, () => runScopedCodexRuntime(args));
   if (['binding', 'permission-request', 'session-start', 'model-routing'].includes(args[0] ?? ''))
     return run();
-  return withCodexStorageBackend(run);
+  await validateCodexStorageConfig();
+  return run();
 }
 async function runScopedCodexRuntime(args: string[]): Promise<void> {
   materialInput = undefined;

@@ -40,7 +40,6 @@ export COMMAND_CHAT_HOOK_TRACE_PATH="$TMPDIR/command-chat-hooks.jsonl"
 # mock catalog discovery without changing the provider route's supported runtimes.
 export NODE_OPTIONS="--import=$GITHUB_WORKSPACE/examples/openclaw-automation-command-chat/catalog-fixture.mjs"
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --model openai/gpt-5.5
-openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 openclaw-aimock prepare --scenario openclaw-automation-command-chat
 openclaw config set models.mode merge
 openclaw config set memory.search.enabled false --strict-json

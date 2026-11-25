@@ -69,12 +69,13 @@ jobs:
       - name: Run Leia-backed example
         shell: bash
         env:
-          OPENCLAW_CONFIG_PATH: ${{ startsWith(matrix.example, 'codex-') && format('{0}/fixtures/sqlite-storage.json', github.workspace) || env.OPENCLAW_CONFIG_PATH }}
           AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
           CODEX_HOME: ${{ runner.temp }}/codex-home
           CODEX_TOOLS_CODEX_HOME: ${{ runner.temp }}/codex-home
           XDG_CONFIG_HOME: ${{ runner.temp }}/agent-system-config
-        run: leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
+        run: |
+          if [[ "${{ matrix.example }}" == codex-automations ]]; then unset OPENCLAW_CONFIG_PATH; fi
+          leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
       - name: RUNNING A LEVEL THREE DIAGNOSTICS
         if: failure()
         shell: bash

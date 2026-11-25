@@ -106,6 +106,29 @@ describe('agent/managed-owner', () => {
     }
   });
 
+  it('should distinguish a missing pr link from a different task owning the destination', () => {
+    const caller = {
+      id: 'issue',
+      threadId: 'chat',
+      repository: 'owner/repo',
+      number: 3,
+      inactive: false,
+    };
+    const pr = { owner: 'owner', name: 'repo', number: 10, itemType: 'pull-request' } as const;
+    const resolve = (owners: Parameters<typeof replyOwner>[0]) =>
+      replyOwner(owners, 'chat', 'chat', pr as never, 'status-update');
+    assert.throws(() => resolve([caller]), { code: 'reply-pull-request-unlinked' });
+    assert.throws(
+      () =>
+        resolve([
+          caller,
+          { ...caller, id: 'other', number: 4, threadId: 'other', pullRequestNumber: 10 },
+        ]),
+      /reply-managed-owner-required/,
+    );
+    assert.equal(resolve([{ ...caller, pullRequestNumber: 10 }])?.ownerId, 'issue');
+  });
+
   it('should retain historical-only ownership rather than allow unmanaged fallback', () => {
     assert.equal(managedOwner([reset], 'new-chat', () => true).status, 'historical');
     assert.throws(() => assess([reset], 'new-chat'), /assessment-managed-context-invalid/);

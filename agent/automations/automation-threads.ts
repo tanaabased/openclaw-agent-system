@@ -1,10 +1,10 @@
+import { withAutomationThreadLock } from '../storage/automation-backend.ts';
 import {
   automationThreadNames,
   automationThreadSelection,
   type AutomationThreadSelection,
 } from './automation-thread-selection.ts';
 import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
 
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
@@ -13,10 +13,6 @@ import { AutomationError } from './automation-errors.ts';
 import type { BoundStorage } from '../storage/storage-lifecycle.ts';
 import nodeErrorCode from '../../utils/node-error-code.ts';
 import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
-import ensurePrivateStateDirectories from '../../core/ensure-private-state-directories.ts';
-import PrivateStateFile from '../../core/private-state-file.ts';
-import acquirePrivateStateFileLock from '../../core/private-state-file-lock.ts';
-import { withPrivateStateLock } from '../../core/private-state-lock-context.ts';
 import type { AutomationRuntime, ResolvedAutomation } from '../../manifest/automation-schema.ts';
 
 const maximumBytes = 1024 * 1024;
@@ -123,28 +119,13 @@ export interface AutomationThreadAdapter {
 }
 /** private binding journal; readers never create files or take mutation locks. */
 export default class AutomationThreads {
-  readonly file: PrivateStateFile;
-  readonly path: string;
   constructor(
-    readonly options: { root: string; scope: string; runtime: AutomationRuntime },
+    readonly options: { scope: string; runtime: AutomationRuntime },
     readonly adapter: AutomationThreadAdapter,
-    private readonly agentStorage?: BoundStorage['agent'],
-  ) {
-    this.path = join(options.root, `automation-threads-${options.scope}.json`);
-    this.file = new PrivateStateFile({
-      path: this.path,
-      directories: [options.root],
-      currentUid: process.getuid?.(),
-      label: 'Automation conversations',
-      maximumBytes,
-    });
-  }
+    private readonly agentStorage: BoundStorage['agent'],
+  ) {}
   private async readLedger(): Promise<unknown> {
     const { scope } = this.options;
-    if (!this.agentStorage) {
-      const contents = await this.file.read();
-      return contents === undefined ? { version: 1, scope, records: [] } : JSON.parse(contents);
-    }
     const rows = await this.agentStorage
       .read({ automationThreads: { scope } })
       .catch((error: unknown) => {
@@ -192,11 +173,16 @@ export default class AutomationThreads {
   ) {
     const manageSettings = this.options.runtime === 'codex' || execution;
     let automationId: string | undefined;
+    const selected = jobs
+      .filter((job) => job.runtimes.includes(this.options.runtime))
+      .flatMap((job) => {
+        const selection = automationThreadSelection(job, this.options.runtime);
+        return selection ? [{ job, selection }] : [];
+      });
     const run = async () => {
       const ledger = await this.read();
       const save = async (record: ThreadRecord) => {
         const contents = JSON.stringify(ledger);
-        if (!this.agentStorage) return this.file.write(contents);
         if (Buffer.byteLength(contents) > maximumBytes)
           throw new Error('automation thread ownership exceeds its size limit');
         await this.agentStorage.write([
@@ -208,12 +194,6 @@ export default class AutomationThreads {
         ]);
       };
       const names = automationThreadNames(jobs, this.options.runtime);
-      const selected = jobs
-        .filter((job) => job.runtimes.includes(this.options.runtime))
-        .flatMap((job) => {
-          const selection = automationThreadSelection(job, this.options.runtime);
-          return selection ? [{ job, selection }] : [];
-        });
       const prepared = new Map<
         string,
         {
@@ -618,20 +598,8 @@ export default class AutomationThreads {
         throw error;
       }
     };
-    if (!apply) return resolve();
-    await ensurePrivateStateDirectories({
-      directories: [this.options.root],
-      currentUid: process.getuid?.(),
-      label: 'Automation conversations',
-    });
-    const lock = await acquirePrivateStateFileLock(this.path, {
-      retries: { factor: 1, minTimeout: 25, maxTimeout: 25, retries: 40 },
-      staleMs: 30000,
-    });
-    try {
-      return await withPrivateStateLock(lock, resolve);
-    } finally {
-      await lock.release();
-    }
+    if (!apply || !selected.length) return resolve();
+    const path = this.agentStorage.workflowLockPath('automation-threads', this.options.scope);
+    return withAutomationThreadLock(path, resolve);
   }
 }

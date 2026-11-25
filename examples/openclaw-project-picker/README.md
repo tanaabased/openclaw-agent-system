@@ -35,7 +35,6 @@ set -euo pipefail
 export OPENAI_API_KEY=agent-system-aimock-test
 export NODE_OPTIONS="--import=$GITHUB_WORKSPACE/examples/openclaw-project-picker/catalog-fixture.mjs"
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --needs-ssh-key --model openai/gpt-5.4-nano --yolo
-openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 openclaw-aimock prepare --scenario openclaw-project-picker
 openclaw config set models.mode merge
 openclaw config set memory.search.enabled false --strict-json

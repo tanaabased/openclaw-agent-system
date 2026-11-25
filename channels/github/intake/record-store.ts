@@ -1,9 +1,17 @@
+import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import GitHubIdentityCache from '../identity-cache.ts';
 import type { BoundStorage } from '../../../agent/storage/storage-lifecycle.ts';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { projectWorkMatches, projectWorkSchema } from '../../../agent/issue-pickup-authority.ts';
-import { assertNotificationManagement } from '../../../agent/notification-reset-state.ts';
-import { refreshStateSnapshot } from '../../../core/merge-state-snapshot.ts';
+import {
+  assertNotificationManagement,
+  ownsNotificationReset,
+} from '../../../agent/notification-reset-state.ts';
+import mergeStateSnapshot, {
+  refreshStateSnapshot,
+  stateSnapshotConflictCode,
+} from '../../../core/merge-state-snapshot.ts';
 import { providerDiagnosticSchema } from '../../../utils/provider-diagnostic.ts';
 import { repositoryScopeDecisionSchema } from '../repository-scope.ts';
 const intakeCleanupBytes = 2 * 1024 * 1024;
@@ -13,11 +21,7 @@ import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { automationHash } from '../../../agent/automation-hash.ts';
-import ensurePrivateStateDirectories from '../../../core/ensure-private-state-directories.ts';
-import acquirePrivateStateFileLock from '../../../core/private-state-file-lock.ts';
-import PrivateStateFile from '../../../core/private-state-file.ts';
 import storedDataSchema from '../../../core/stored-data-schema.ts';
-import { withPrivateStateLock } from '../../../core/private-state-lock-context.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const time = Type.Integer({ minimum: 0 });
@@ -96,6 +100,7 @@ const stateSchema = Type.Object(
     account: identity,
     policyDigest: text,
     baselineAt: time,
+    resetGeneration: Type.Optional(text),
     manualOnly: Type.Optional(Type.Literal(true)),
     checkpoint: Type.Optional(time),
     discovery: Type.Optional(
@@ -196,18 +201,15 @@ export function intakeScopeLocation(root: string, scope: string) {
   return {
     root: resolve(root),
     scope,
-    path: join(resolve(root), 'github-intake-' + scope + '.json'),
   };
 }
 
-/** Both backends retain the same runtime/workspace scope and exclusive-operation lock. */
 export function intakeLocation(input: {
   runtime: 'codex' | 'openclaw';
   root: string;
   namespace: string;
   workspaceDir: string;
   agentId: string;
-  resetRoot?: string;
 }) {
   const scope = automationHash({
     runtime: input.runtime,
@@ -215,39 +217,35 @@ export function intakeLocation(input: {
     workspaceDir: input.workspaceDir,
     agentId: input.agentId,
   });
-  return {
-    ...intakeScopeLocation(input.root, scope),
-    ...(input.resetRoot ? { resetRoot: input.resetRoot } : {}),
-  };
+  return intakeScopeLocation(input.root, scope);
 }
 
-export interface IntakePersistence {
-  read(): Promise<unknown>;
-  save(state: IntakeState): Promise<void>;
-}
-
-export function fileIntakePersistence(location: ReturnType<typeof intakeLocation>) {
-  const file = new PrivateStateFile({
-    path: location.path,
-    directories: [location.root],
-    currentUid: process.getuid?.(),
-    label: 'GitHub assignment intake',
-    maximumBytes: maximumIntakeBytes,
-  });
+// Discovery can wait on GitHub while another connection consumes observations. A changed
+// scan cursor or an admission based on a just-consumed observation needs a fresh scan.
+function reconcileIntakeCheckpoint(
+  expected: IntakeState | undefined,
+  state: IntakeState,
+  current: IntakeState | undefined,
+): IntakeState {
+  if (expected?.resetGeneration !== current?.resetGeneration)
+    throw new Error('notification-reset-stale-operation');
+  if (isDeepStrictEqual(expected, current)) return state;
+  if (!expected || !current || state.resetGeneration !== expected.resetGeneration)
+    throw new Error(stateSnapshotConflictCode);
+  const { observedAssignments: before = [], ...beforeScan } = expected;
+  const { observedAssignments: latest = [], ...currentScan } = current;
+  if (!isDeepStrictEqual(beforeScan, currentScan)) throw new Error(stateSnapshotConflictCode);
+  const admitted = new Set(beforeScan.records.map((r) => r.id));
+  const consumed = new Set(latest.filter((r) => r.consumedBy).map((r) => r.id));
+  if (state.records.some((r) => !admitted.has(r.id) && consumed.has(r.id)))
+    throw new Error(stateSnapshotConflictCode);
   return {
-    file,
-    async read(): Promise<unknown> {
-      const contents = await file.read();
-      if (contents === undefined) return;
-      try {
-        return JSON.parse(contents);
-      } catch {
-        throw new IntakeError('intake-state-invalid');
-      }
-    },
-    save(state: IntakeState) {
-      return file.write(JSON.stringify(state));
-    },
+    ...state,
+    observedAssignments: mergeStateSnapshot(
+      before,
+      state.observedAssignments ?? [],
+      latest,
+    ) as IntakeObservation[],
   };
 }
 
@@ -255,13 +253,14 @@ export default class IntakeRecordStore {
   readonly identities: GitHubIdentityCache;
   constructor(
     readonly location: ReturnType<typeof intakeLocation>,
-    private readonly persistence: IntakePersistence = fileIntakePersistence(location),
-    readonly agentStorage?: BoundStorage['agent'],
+    readonly agentStorage: BoundStorage['agent'],
   ) {
     this.identities = new GitHubIdentityCache(location, agentStorage);
   }
   async read(): Promise<IntakeState | undefined> {
-    const value = await this.persistence.read();
+    return this.validate(await this.agentStorage.readIntake(this.location.scope));
+  }
+  private validate(value: unknown): IntakeState | undefined {
     if (value === undefined) return;
     try {
       if (
@@ -305,6 +304,25 @@ export default class IntakeRecordStore {
       throw new IntakeError('intake-state-invalid');
     }
   }
+  private prepare(state: IntakeState) {
+    if (!Value.Check(storedStateSchema, state) || state.scope !== this.location.scope)
+      throw new IntakeError('intake-state-invalid');
+    const retained = structuredClone(state);
+    if (Buffer.byteLength(JSON.stringify(retained)) > intakeCleanupBytes) {
+      const admitted = new Set(retained.records.map((record) => record.id));
+      retained.observedAssignments = retained.observedAssignments?.filter(
+        (record) => record.consumedBy || !admitted.has(record.id),
+      );
+      if (Buffer.byteLength(JSON.stringify(retained)) > maximumIntakeBytes)
+        throw new IntakeError('intake-state-capacity');
+    }
+    return retained;
+  }
+
+  private get resetOwner() {
+    return ownsNotificationReset(this.location.scope, this.agentStorage);
+  }
+
   async exclusive<T>(
     operation: (
       state: IntakeState | undefined,
@@ -313,60 +331,31 @@ export default class IntakeRecordStore {
     ) => Promise<T>,
     signal?: AbortSignal,
   ): Promise<T> {
-    await ensurePrivateStateDirectories({
-      directories: [this.location.root],
-      currentUid: process.getuid?.(),
-      label: 'GitHub assignment intake',
-    });
-    const lock = await acquirePrivateStateFileLock(this.location.path, {
-      staleMs: 30_000,
-      contention: {
-        category: 'intake',
-        operation: 'intake-commit',
-        signal,
-        timeoutMs: 10_000,
-        retryMs: 250,
-      },
-      retries: { retries: 0, factor: 1, minTimeout: 25, maxTimeout: 25 },
-    });
-    try {
-      await assertNotificationManagement(
-        this.location.resetRoot ?? this.location.root,
-        this.location.scope,
-        this.agentStorage,
-      );
-      return await withPrivateStateLock(lock, async () =>
-        operation(
-          await this.read(),
-          async (state) => {
-            lock.assertHeld();
-            await assertNotificationManagement(
-              this.location.resetRoot ?? this.location.root,
-              this.location.scope,
-              this.agentStorage,
-            );
-            if (!Value.Check(storedStateSchema, state) || state.scope !== this.location.scope)
-              throw new IntakeError('intake-state-invalid');
-            const retained = structuredClone(state);
-            if (Buffer.byteLength(JSON.stringify(retained)) > intakeCleanupBytes) {
-              const admitted = new Set(retained.records.map((record) => record.id));
-              retained.observedAssignments = retained.observedAssignments?.filter(
-                (record) => record.consumedBy || !admitted.has(record.id),
-              );
-              if (Buffer.byteLength(JSON.stringify(retained)) > maximumIntakeBytes)
-                throw new IntakeError('intake-state-capacity');
-            }
-            await this.persistence.save(retained);
-            refreshStateSnapshot(state, retained);
+    const storage = this.agentStorage;
+    const active = signal ?? new AbortController().signal;
+    active.throwIfAborted();
+    await assertNotificationManagement(this.location.scope, storage);
+    let expected = await this.read();
+    return operation(
+      structuredClone(expected),
+      async (state) => {
+        const retained = await storage.changeIntake(
+          this.location.scope,
+          this.resetOwner,
+          (saved) => {
+            active.throwIfAborted();
+            const current = this.validate(saved);
+            const result = this.prepare(reconcileIntakeCheckpoint(expected, state, current));
+            return { state: result, result };
           },
-          lock.signal,
-        ),
-      );
-    } finally {
-      await lock.release();
-    }
+        );
+        // Match the persisted representation, including omission of undefined JSON fields.
+        expected = JSON.parse(JSON.stringify(retained)) as IntakeState;
+        refreshStateSnapshot(state, retained);
+      },
+      active,
+    );
   }
-
   async consume(
     observation: IntakeObservation,
     taskId: string,
@@ -384,7 +373,7 @@ export default class IntakeRecordStore {
       !/^[a-f0-9]{64}$/.test(taskId)
     )
       throw new IntakeError('intake-state-invalid');
-    return this.exclusive(async (previous, save) => {
+    const consume = (previous?: IntakeState): { state?: IntakeState; result: string } => {
       if (
         previous &&
         (previous.account.nodeId !== observation.receiving.nodeId ||
@@ -405,10 +394,11 @@ export default class IntakeRecordStore {
       };
       state.observedAssignments ??= [];
       const existing = state.observedAssignments.find((entry) => entry.id === observation.id);
-      if (existing?.consumedBy && existing.consumedBy !== taskId) return existing.consumedBy;
+      if (existing?.consumedBy && existing.consumedBy !== taskId)
+        return { result: existing.consumedBy };
       const advancesCutoff =
         consumedThrough !== undefined && consumedThrough > (existing?.consumedThrough ?? -1);
-      if (existing?.consumedBy && !advancesCutoff) return existing.consumedBy;
+      if (existing?.consumedBy && !advancesCutoff) return { result: existing.consumedBy };
       if (existing) {
         existing.consumedBy = taskId;
         if (advancesCutoff) existing.consumedThrough = consumedThrough;
@@ -428,8 +418,11 @@ export default class IntakeRecordStore {
           consumedBy: taskId,
           ...(consumedThrough !== undefined ? { consumedThrough } : {}),
         });
-      await save(state);
-      return taskId;
+      return { state, result: taskId };
+    };
+    return this.agentStorage.changeIntake(this.location.scope, this.resetOwner, (current) => {
+      const { state, result } = consume(this.validate(current));
+      return state ? { state: this.prepare(state), result } : { result };
     });
   }
 
@@ -442,6 +435,7 @@ export default class IntakeRecordStore {
       if (!baseline) throw new IntakeError('intake-activation-required');
       await save({
         version: 1,
+        resetGeneration: randomUUID(),
         scope: baseline.scope,
         workspaceDir: baseline.workspaceDir,
         agentId: baseline.agentId,

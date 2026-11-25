@@ -23,6 +23,7 @@ export default async function taskUpdate(input: {
   save(): Promise<void>;
   dependencies?: Publication['dependencies'];
   beforeCreate?: Publication['beforeCreate'];
+  sharedAttempt?: boolean;
 }) {
   const { request, draft } = input;
   const settled = Boolean(draft.attempted || draft.receipt);
@@ -42,7 +43,8 @@ export default async function taskUpdate(input: {
   }
   if (!draft.publicText) throw new Error('task-update-candidate-required');
   if (!input.dependencies) throw new Error('task-update-publisher-required');
-  if (request.operation === 'reconcile' && !settled) throw new Error('task-update-unattempted');
+  if (request.operation === 'reconcile' && !settled && !input.sharedAttempt)
+    throw new Error('task-update-unattempted');
   if (request.operation === 'publish' && request.digest !== request.expectedDigest)
     throw new Error('task-update-stale');
   const publication = input.publication(draft.publicText);

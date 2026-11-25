@@ -29,7 +29,6 @@ preserving the unrelated prompt.
 ```bash
 # should prepare the packed plugin and strict scheduled-prompt fixture
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service
-openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 openclaw-aimock prepare --scenario openclaw-automation-recovery
 
 # should install the owning workspace before starting the gateway
@@ -118,6 +117,8 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-automation-recovery"
 openclaw-gateway stop --timeout 340
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 openclaw agent-system automations runs identity --json | jq -e --arg id "$(jq -er '.reports[] | select(.status == "delivered") | .executionId' "$TMPDIR/recovered-report.json")" 'any(.reports[]; .executionId == $id and .status == "delivered")'
+test -d "$OPENCLAW_STATE_DIR/agent-system-storage"
+test ! -e "$OPENCLAW_STATE_DIR/agent-system-automations/reports"
 chat=$(jq -er '.jobs[] | select(.id == "identity") | .routing | sub("^session:"; "")' "$TMPDIR/automation-before.json")
 message_id=$(jq -er '.reports[] | select(.status == "delivered") | .messageId' "$TMPDIR/recovered-report.json")
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$chat" '{sessionKey:$key,limit:100,maxChars:100000}')" --json | jq -e --arg id "$message_id" 'any(.messages[]; .__openclaw.id == $id and .role == "assistant")'

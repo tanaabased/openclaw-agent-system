@@ -28,7 +28,6 @@ are refused, and that pruning older archives remains separate from integrity che
 ```bash
 # should install a disposable workspace with explicitly included ignored memory
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE"
-openclaw config set plugins.entries.agent-system.config.storage.backend sqlite
 cd "$GITHUB_WORKSPACE/examples/openclaw-backup/data"
 mv gitignore .gitignore
 sha256sum MEMORY.md memory/day.md run.sh > "$TMPDIR/backup-source.sha256"

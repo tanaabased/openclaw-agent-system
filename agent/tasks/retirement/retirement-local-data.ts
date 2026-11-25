@@ -11,8 +11,7 @@ import {
 
 /** transfer uncertain writes before deleting the exact native task's copied local material. */
 export default async function retirementLocalData(input: {
-  sessionStorage?: SessionStorage;
-  root: string;
+  sessionStorage: SessionStorage;
   binding: ReplyBinding;
   intake: TaskAdmission;
   retain(effects: RetirementEffect[]): Promise<void>;
@@ -20,21 +19,18 @@ export default async function retirementLocalData(input: {
   const owns = (entry: { repositoryId: string; subjectId: string }) =>
     entry.repositoryId === input.intake.repository.nodeId &&
     entry.subjectId === input.intake.issue.nodeId;
-  await new ReplyStore(input.root, input.binding, input.sessionStorage).exclusive(
-    async (drafts, save) => {
-      await input.retain(
-        drafts.flatMap((draft) => {
-          const effect = retirementReplyEffect(draft);
-          return effect ? [effect] : [];
-        }),
-      );
-      drafts.splice(0);
-      await save();
-    },
-  );
+  await new ReplyStore(input.binding, input.sessionStorage).edit(async (drafts, save) => {
+    await input.retain(
+      drafts.flatMap((draft) => {
+        const effect = retirementReplyEffect(draft);
+        return effect ? [effect] : [];
+      }),
+    );
+    drafts.splice(0);
+    await save();
+  });
   if ('origin' in input.intake) return;
   await new DirectEntryStore(
-    input.root,
     input.binding,
     implementationEntriesSchema,
     'implementation',
@@ -46,6 +42,6 @@ export default async function retirementLocalData(input: {
         .flatMap((entry) => retirementDeliveryEffects(entry.delivery, input.intake)),
     );
     entries.splice(0, entries.length, ...entries.filter((entry) => !owns(entry)));
-    await save(true);
+    await save();
   });
 }

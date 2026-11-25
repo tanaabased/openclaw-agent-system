@@ -1,12 +1,8 @@
-import { join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { configuredFeedbackIdentities } from './feedback-policy.ts';
-import PrivateStateFile from '../../core/private-state-file.ts';
-import ensurePrivateStateDirectories from '../../core/ensure-private-state-directories.ts';
-import acquirePrivateStateFileLock from '../../core/private-state-file-lock.ts';
-import { withPrivateStateLock } from '../../core/private-state-lock-context.ts';
 import type { GitHubIdentityPin, GitHubNotificationPolicy } from './workflow-policy.ts';
 import type { GitHubNotificationIntakeClient } from './provider/work-event-types.ts';
 import type { GitHubIdentity } from './provider/work-item.ts';
@@ -69,40 +65,23 @@ function key(pin: GitHubIdentityPin) {
 export default class GitHubIdentityCache {
   // Scans refresh names once; individual task operations reuse the verified immutable pins.
   static readonly #refreshed = new WeakMap<object, Map<string, GitHubIdentity>>();
-  readonly file: PrivateStateFile;
-  readonly path: string;
+  private readonly cacheScope: string;
   constructor(
     readonly location: { root: string; scope: string },
-    private readonly storage?: BoundStorage['agent'],
+    private readonly storage: BoundStorage['agent'],
   ) {
-    this.path = join(location.root, `github-identities-${location.scope}.json`);
-    this.file = new PrivateStateFile({
-      path: this.path,
-      directories: [location.root],
-      label: 'GitHub identity cache',
-      maximumBytes,
-    });
+    this.cacheScope = JSON.stringify([location.root, location.scope]);
   }
 
   async read() {
-    if (this.storage) {
-      const rows = await this.storage
-        .read({ githubIdentityPins: { scope: this.location.scope } })
-        .catch((error: unknown) => {
-          if (nodeErrorCode(error) !== 'ENOENT') throw error;
-          return { githubIdentityPins: [] };
-        });
-      const entries = Object.fromEntries(
-        rows.githubIdentityPins.map(({ id, value }) => [id, value]),
-      );
-      const state = { version: 1 as const, entries };
-      if (!Value.Check(cacheSchema, state)) throw new Error('github-identity-cache-invalid');
-      return state;
-    }
-    const contents = await this.file.read();
-    if (contents === undefined)
-      return { version: 1 as const, entries: {} as Record<string, GitHubIdentity> };
-    const state: unknown = JSON.parse(contents);
+    const rows = await this.storage
+      .read({ githubIdentityPins: { scope: this.location.scope } })
+      .catch((error: unknown) => {
+        if (nodeErrorCode(error) !== 'ENOENT') throw error;
+        return { githubIdentityPins: [] };
+      });
+    const entries = Object.fromEntries(rows.githubIdentityPins.map(({ id, value }) => [id, value]));
+    const state = { version: 1 as const, entries };
     if (!Value.Check(cacheSchema, state)) throw new Error('github-identity-cache-invalid');
     return state;
   }
@@ -134,10 +113,6 @@ export default class GitHubIdentityCache {
         throw new Error('github-identity-resolution-unavailable');
       return;
     }
-    await ensurePrivateStateDirectories({
-      directories: [this.location.root],
-      label: 'GitHub identity cache',
-    });
     const refreshed =
       GitHubIdentityCache.#refreshed.get(client) ?? new Map<string, GitHubIdentity>();
     GitHubIdentityCache.#refreshed.set(client, refreshed);
@@ -148,7 +123,10 @@ export default class GitHubIdentityCache {
         ...new Set(
           selected.flatMap((pin) => {
             const reference = key(pin);
-            if (refreshed.has(`${this.path}\0${reference}`) || (!refresh && entries[reference]))
+            if (
+              refreshed.has(`${this.cacheScope}\0${reference}`) ||
+              (!refresh && entries[reference])
+            )
               return [];
             const id = entries[reference]?.nodeId ?? pin.reference ?? pin.nodeId;
             return id.startsWith('@') ? [] : [id];
@@ -168,7 +146,7 @@ export default class GitHubIdentityCache {
     // Commit each verified pin before the next lookup, preserving partial progress.
     for (const pin of selected) {
       const reference = key(pin);
-      const cacheKey = `${this.path}\0${reference}`;
+      const cacheKey = `${this.cacheScope}\0${reference}`;
       let identity = refreshed.get(cacheKey);
       let resolved = false;
       if (!identity) {
@@ -199,36 +177,15 @@ export default class GitHubIdentityCache {
   }
 
   private async retain(reference: string, identity: GitHubIdentity) {
-    const unchanged = (retained: GitHubIdentity | undefined) => {
-      // Another consumer may have pinned this name while our lookup was in flight.
-      if (retained && retained.nodeId !== identity.nodeId)
-        throw new Error('github-identity-conflict');
-      return retained?.login === identity.login && retained?.type === identity.type;
-    };
-    if (unchanged((await this.read()).entries[reference])) return;
-    const lock = await acquirePrivateStateFileLock(this.path, {
-      staleMs: 30_000,
-      retries: { retries: 0, factor: 1, minTimeout: 25, maxTimeout: 25 },
-    });
-    try {
-      await withPrivateStateLock(lock, async () => {
-        const state = await this.read();
-        if (unchanged(state.entries[reference])) return;
-        state.entries[reference] = identity;
-        const contents = JSON.stringify(state);
-        if (!this.storage) return this.file.write(contents);
-        if (Buffer.byteLength(contents) > maximumBytes)
+    if (isDeepStrictEqual((await this.read()).entries[reference], identity)) return;
+    return this.storage.retainIdentityPin(
+      { scope: this.location.scope, id: reference, value: identity },
+      (entries) => {
+        const state = { version: 1, entries };
+        if (!Value.Check(cacheSchema, state)) throw new Error('github-identity-cache-invalid');
+        if (Buffer.byteLength(JSON.stringify(state)) > maximumBytes)
           throw new Error('The GitHub identity cache exceeds its size limit.');
-        await this.storage.write([
-          {
-            table: 'githubIdentityPins',
-            action: 'save',
-            row: { scope: this.location.scope, id: reference, value: identity },
-          },
-        ]);
-      });
-    } finally {
-      await lock.release();
-    }
+      },
+    );
   }
 }

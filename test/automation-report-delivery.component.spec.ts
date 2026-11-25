@@ -31,15 +31,18 @@ const input: AutomationReportInput = {
   },
 };
 describe('agent/automation-report-delivery', () => {
+  let storage: ConstructorParameters<typeof AutomationReportStore>[0];
   let workspaceDir: string;
   beforeEach(async () => {
     workspaceDir = await realpath(await mkdtemp('/tmp/report-delivery-'));
+    storage = { agentId: 'a', ...(await sqliteAgentFixture(workspaceDir, 'a')) };
   });
   afterEach(async () => {
     await rm(workspaceDir, { recursive: true, force: true });
   });
   function fixture(
     options: {
+      beforeSend?: () => Promise<void>;
       lostAck?: boolean;
       archived?: boolean;
       otherWorkspace?: boolean;
@@ -62,7 +65,7 @@ describe('agent/automation-report-delivery', () => {
       correction?: 'valid' | 'duplicate' | 'multipart';
       legacy?: boolean;
     } = {},
-    store = new AutomationReportStore(`${workspaceDir}/reports`, () => Date.parse(input.startedAt)),
+    store = new AutomationReportStore(storage, () => Date.parse(input.startedAt)),
   ) {
     const calls: string[] = [];
     const messages: string[] = [];
@@ -143,6 +146,7 @@ describe('agent/automation-report-delivery', () => {
           assert.equal(params.sessionId, 'incarnation');
           assert.equal(params.thinking, 'high');
           assert.equal(params.queueMode, 'followup');
+          await options.beforeSend?.();
           messages.push(String(params.message));
           if (options.lostAck) throw Error('lost acknowledgment');
           if (options.denied)
@@ -261,7 +265,7 @@ describe('agent/automation-report-delivery', () => {
           : { result: { ...input.result, output: { stdout: options.stdout, stderr: '' } } }),
       };
       if (options.legacy && !(await store.read(executionId)))
-        await store.write({
+        await store.retain(executionId, () => ({
           version: 1,
           executionId,
           hash: 'hash',
@@ -269,7 +273,7 @@ describe('agent/automation-report-delivery', () => {
           target,
           input: prepareLegacyAutomationReport(runInput),
           state: 'pending',
-        });
+        }));
       return deliverAutomationReport({
         target,
         input: runInput,
@@ -480,13 +484,42 @@ describe('agent/automation-report-delivery', () => {
     assert.equal((await f.recover()).status, 'failed');
     assert.equal(f.messages.length, 1);
   });
+  it('should send once through two independent sqlite report stores', async () => {
+    const open = async (beforeSend?: () => Promise<void>) => {
+      const { agent } = await sqliteAgentFixture(workspaceDir, 'a');
+      return fixture(
+        { pending: true, beforeSend },
+        new AutomationReportStore({ agentId: 'a', agent }, () => Date.parse(input.startedAt)),
+      );
+    };
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const a = await open(async () => {
+      started.resolve();
+      await release.promise;
+    });
+    const b = await open();
+    const delivery = a.deliver();
+    try {
+      await Promise.race([started.promise, delivery.then(() => assert.fail('expected a send'))]);
+      assert.equal((await b.store.read(input.executionId))?.state, 'sending');
+      await b.deliver();
+      assert.equal(b.messages.length, 0);
+    } finally {
+      release.resolve();
+      await delivery;
+    }
+    assert.equal(a.messages.length, 1);
+    assert.equal(a.selections() + b.selections(), 1);
+    assert.equal((await b.store.read(input.executionId))?.state, 'submitted');
+    const restarted = await open();
+    await restarted.recover();
+    assert.equal(restarted.messages.length, 0);
+  });
   it('should preserve uncertain sends and reconcile the same durable identity after restart', async () => {
     const { agent } = await sqliteAgentFixture(workspaceDir, 'a');
     const reopen = () =>
-      new AutomationReportStore(`${workspaceDir}/reports`, () => Date.parse(input.startedAt), {
-        agentId: 'a',
-        agent,
-      });
+      new AutomationReportStore({ agentId: 'a', agent }, () => Date.parse(input.startedAt));
     const f = fixture({ lostAck: true }, reopen());
     assert.equal((await f.deliver()).status, 'uncertain');
     const restarted = fixture({}, reopen());

@@ -1,13 +1,8 @@
+import withWorkflowLock from './storage/workflow-lock.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { join } from 'node:path';
 
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
-
-import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
-import PrivateStateFile from '../core/private-state-file.ts';
-import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
-import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 
 import type { BoundStorage } from './storage/storage-lifecycle.ts';
 import nodeErrorCode from '../utils/node-error-code.ts';
@@ -83,48 +78,35 @@ export type NotificationResetResource = Static<typeof resource>;
 
 const access = new AsyncLocalStorage<string>();
 
+export function ownsNotificationReset(scope: string, storage: BoundStorage['agent']) {
+  return access.getStore() === storage.workflowLockPath('notification-reset', scope);
+}
+
 /** only the reset owner may write managed state while its recovery record exists. */
 export async function assertNotificationManagement(
-  root: string,
   scope: string,
-  storage?: BoundStorage['agent'],
+  storage: BoundStorage['agent'],
 ): Promise<void> {
-  const store = new NotificationResetStore(root, scope, storage);
-  if (access.getStore() !== store.path && (await store.read()))
+  const store = new NotificationResetStore(scope, storage);
+  if (!ownsNotificationReset(scope, storage) && (await store.read()))
     throw Object.assign(new Error('notification-reset-in-progress'), {
       code: 'notification-reset-in-progress',
     });
 }
 
 export default class NotificationResetStore {
-  readonly path: string;
-  readonly file: PrivateStateFile;
   constructor(
-    readonly root: string,
     readonly scope: string,
-    private readonly storage?: BoundStorage['agent'],
-  ) {
-    this.path = join(root, `notification-reset-${scope}.json`);
-    this.file = new PrivateStateFile({
-      path: this.path,
-      directories: [root],
-      currentUid: process.getuid?.(),
-      maximumBytes,
-      label: 'notification reset',
-    });
-  }
+    private readonly storage: BoundStorage['agent'],
+  ) {}
   private async readSaved(): Promise<unknown> {
-    if (this.storage) {
-      const rows = await this.storage
-        .read({ notificationResets: { scope: this.scope } })
-        .catch((error: unknown) => {
-          if (nodeErrorCode(error) !== 'ENOENT') throw error;
-          return { notificationResets: [] };
-        });
-      return rows.notificationResets[0]?.value;
-    }
-    const contents = await this.file.read();
-    return contents === undefined ? undefined : JSON.parse(contents);
+    const rows = await this.storage
+      .read({ notificationResets: { scope: this.scope } })
+      .catch((error: unknown) => {
+        if (nodeErrorCode(error) !== 'ENOENT') throw error;
+        return { notificationResets: [] };
+      });
+    return rows.notificationResets[0]?.value;
   }
   async read(): Promise<NotificationResetRecord | undefined> {
     const record = await this.readSaved();
@@ -133,58 +115,52 @@ export default class NotificationResetStore {
       throw new Error('notification-reset-state-invalid');
     return record;
   }
+  // Applying the preview verifies its fingerprint again under the reset and dispatch locks.
+  async inspect<T>(run: (record?: NotificationResetRecord) => Promise<T>) {
+    return run(await this.read());
+  }
+  async intakeCheckpoint() {
+    return { expected: await this.storage.readIntake(this.scope) };
+  }
   async exclusive<T>(
     run: (
       record: NotificationResetRecord | undefined,
-      save: (record: NotificationResetRecord) => Promise<void>,
+      save: (
+        record: NotificationResetRecord,
+        checkpoint?: Awaited<ReturnType<NotificationResetStore['intakeCheckpoint']>>,
+      ) => Promise<void>,
       remove: () => Promise<void>,
     ) => Promise<T>,
   ): Promise<T> {
-    await ensurePrivateStateDirectories({
-      directories: [this.root],
-      currentUid: process.getuid?.(),
-      label: 'notification reset',
-    });
-    const lock = await acquirePrivateStateFileLock(this.path, {
-      staleMs: 30000,
-      retries: { retries: 0, factor: 1, minTimeout: 25, maxTimeout: 25 },
-    });
-    try {
-      return await withPrivateStateLock(lock, () =>
-        access.run(this.path, async () =>
-          run(
-            await this.read(),
-            async (record) => {
-              lock.assertHeld();
-              if (!Value.Check(schema, record) || record.scope !== this.scope)
-                throw new Error('notification-reset-state-invalid');
-              const contents = JSON.stringify(record);
-              if (!this.storage) return this.file.write(contents);
-              if (Buffer.byteLength(contents) > maximumBytes)
-                throw new Error('The notification reset exceeds its size limit.');
-              await this.storage.write([
-                {
-                  table: 'notificationResets',
-                  action: 'save',
-                  row: { scope: this.scope, value: record },
-                },
-              ]);
-            },
-            async () => {
-              lock.assertHeld();
-              if (!this.storage) {
-                await this.file.remove();
-                return;
-              }
-              await this.storage.write([
-                { table: 'notificationResets', action: 'remove', key: { scope: this.scope } },
-              ]);
-            },
-          ),
+    const path = this.storage.workflowLockPath('notification-reset', this.scope);
+    return withWorkflowLock(path, 'notification reset', (lock) =>
+      access.run(path, async () =>
+        run(
+          await this.read(),
+          async (record, checkpoint) => {
+            lock.assertHeld();
+            if (!Value.Check(schema, record) || record.scope !== this.scope)
+              throw new Error('notification-reset-state-invalid');
+            const contents = JSON.stringify(record);
+            if (Buffer.byteLength(contents) > maximumBytes)
+              throw new Error('The notification reset exceeds its size limit.');
+            if (checkpoint) return this.storage.beginNotificationReset(record, checkpoint.expected);
+            await this.storage.write([
+              {
+                table: 'notificationResets',
+                action: 'save',
+                row: { scope: this.scope, value: record },
+              },
+            ]);
+          },
+          async () => {
+            lock.assertHeld();
+            await this.storage.write([
+              { table: 'notificationResets', action: 'remove', key: { scope: this.scope } },
+            ]);
+          },
         ),
-      );
-    } finally {
-      await lock.release();
-    }
+      ),
+    );
   }
 }

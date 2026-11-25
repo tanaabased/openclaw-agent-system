@@ -1,14 +1,13 @@
+import { seedDispatchRows } from './dispatch-record-fixture.ts';
 import { inspectSelectedCodexPickup } from '../agent/automations/codex-pickup-readiness.ts';
 import { withDispatchTask } from '../agent/tasks/dispatch/dispatch-task-scope.ts';
 import { omit } from 'lodash-es';
 import type { RepositoryRoute } from '../channels/github/repository-scope.ts';
 import type { Static } from 'typebox';
 import type { issuePickupSchema } from '../channels/github/issue-pickup-schema.ts';
-import AssignmentClaimStore from '../agent/tasks/dispatch/assignment-claim-store.ts';
 import codexStorageLocation from '../agent/storage/codex-storage.ts';
 import { bindInstanceStore, bindPickupStore } from '../agent/storage/pickup-backend.ts';
 import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
-import type { StorageBackend } from '../agent/storage/backend.ts';
 import assert from 'node:assert/strict';
 import IssuePickupFailure from '../agent/issue-pickup-failure.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
@@ -57,7 +56,6 @@ describe('issue pickup selection through native journals', () => {
     runtime: 'codex' | 'openclaw',
     coordinated = false,
     initialScope?: 'all' | 'multiple' | 'prefer' | 'namespace',
-    storageBackend: StorageBackend = 'file',
   ) {
     const f = selectionFixture(runtime);
     const workspace = join(root, 'workspace');
@@ -67,13 +65,11 @@ describe('issue pickup selection through native journals', () => {
     await mkdir(home);
     const instanceRoot = join(data, 'instance');
     const sqliteInstallation = codexStorageLocation(data);
-    if (storageBackend === 'sqlite') {
-      const db = bindSqliteStorage(sqliteInstallation, 'receiver');
-      await db.agent.install();
-      await db.installation.install();
-    }
-    await bindInstanceStore(sqliteInstallation, storageBackend).identity();
-    const enrollmentStore = await bindPickupStore(sqliteInstallation, 'receiver', storageBackend);
+    const db = bindSqliteStorage(sqliteInstallation, 'receiver');
+    await db.agent.install();
+    await db.installation.install();
+    await bindInstanceStore(sqliteInstallation).identity();
+    const enrollmentStore = await bindPickupStore(sqliteInstallation, 'receiver');
     const caller = { current: true };
     const connectionFailure: { error?: Error } = {};
     const connect = async () => {
@@ -81,7 +77,7 @@ describe('issue pickup selection through native journals', () => {
       return f.client;
     };
     const tick = { id: 'pickup-turn-1' };
-    const claims = coordinated ? pickupClaims(f, instanceRoot) : undefined;
+    const claims = coordinated ? pickupClaims(f, enrollmentStore.instance) : undefined;
     const assertCurrent = async () => {
       if (!caller.current) throw new Error('issue-pickup-native-caller-required');
     };
@@ -163,7 +159,6 @@ describe('issue pickup selection through native journals', () => {
       await bindCodexWorkspace(data, workspace);
       const deps: CodexIntakeDependencies = {
         codexHome: home,
-        storageBackend,
         now: () => f.clock.now,
         assertActive: async () => {},
         connect,
@@ -210,7 +205,6 @@ describe('issue pickup selection through native journals', () => {
       const intake = new OpenClawIntake({
         root: data,
         sqliteInstallation,
-        storageBackend,
         namespace: root,
         now: () => f.clock.now,
         readiness: async () => undefined,
@@ -283,11 +277,11 @@ describe('issue pickup selection through native journals', () => {
   }
 
   it('should keep two openclaw agents on separate schedules under one sqlite instance identity', async () => {
-    const f = await fixture('openclaw', false, undefined, 'sqlite');
+    const f = await fixture('openclaw');
     const [first] = (await f.enrollmentStore.read()).records;
     assert.ok(first);
     await bindSqliteStorage(f.sqliteInstallation, 'second').agent.install();
-    const second = await bindPickupStore(f.sqliteInstallation, 'second', 'sqlite');
+    const second = await bindPickupStore(f.sqliteInstallation, 'second');
     assert.deepEqual((await second.read()).records, []);
     const enrollment = await second.prepare({
       policy: f.policy,
@@ -308,20 +302,14 @@ describe('issue pickup selection through native journals', () => {
 
   for (const runtime of ['codex', 'openclaw'] as const) {
     it(`should reopen the active sqlite enrollment and reuse its native schedule through ${runtime}`, async () => {
-      const f = await fixture(runtime, false, undefined, 'sqlite');
-      const reopened = await bindPickupStore(f.sqliteInstallation, 'receiver', 'sqlite');
+      const f = await fixture(runtime);
+      const reopened = await bindPickupStore(f.sqliteInstallation, 'receiver');
       const [record] = (await reopened.read()).records;
       assert.equal(record?.nativeId, 'pickup-job');
       assert.deepEqual(await reopened.owner(), await f.enrollmentStore.owner());
       assert.ok((await f.inspect()).some((finding) => finding.code === 'issue-pickup-ready'));
       assert.equal((await f.pickup()).status, 'selection-required');
       assert.deepEqual((await reopened.read()).records, [record]);
-      await assert.rejects(readFile(join(f.instanceRoot, 'project-pickup-enrollments.json')), {
-        code: 'ENOENT',
-      });
-      await assert.rejects(readFile(join(f.instanceRoot, 'assignment-claims.json')), {
-        code: 'ENOENT',
-      });
     });
 
     it(`should report closed scope and skipped repositories without losing activation through ${runtime}`, async () => {
@@ -377,13 +365,15 @@ describe('issue pickup selection through native journals', () => {
         createdAt: 'invalid',
         manifestDigest: 'manifest',
       };
-      await f.journal.file.write(
-        JSON.stringify({ ...(await f.journal.read()), records: [damaged] }),
-      );
+      const before = await f.journal.readEnvelope();
+      await seedDispatchRows(f.journal.contract.persistence.agentStorage, f.journal.scope, {
+        ...before,
+        records: [damaged],
+      });
       const selection = await f.select();
       assert.equal((await f.pickup({ selection })).status, 'assigned');
       assert.equal(f.effects.writes, 1);
-      assert.deepEqual(JSON.parse(await readFile(f.journal.path, 'utf8')).records, [damaged]);
+      assert.deepEqual((await f.journal.readEnvelope()).records, [damaged]);
     });
 
     it(`should finish an accepted selection while its schedule is paused in ${runtime}`, async () => {
@@ -1214,7 +1204,7 @@ describe('issue pickup selection through native journals', () => {
       await f.scan();
       const records = await f.read();
       assert.equal(records.length, 1);
-      const store = new AssignmentClaimStore(f.instanceRoot);
+      const store = bindInstanceStore(f.sqliteInstallation);
       const input = {
         intake: records[0]!,
         client: f.claims!.client.client,

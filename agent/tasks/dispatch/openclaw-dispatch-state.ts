@@ -74,12 +74,8 @@ export type OpenClawDispatchRecord = Static<typeof openclawDispatchRecordSchema>
 export type OpenClawDispatchState = DispatchState<OpenClawDispatchRecord>;
 
 export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatchRecord> {
-  constructor(
-    root: string,
-    scope: string,
-    persistence?: DispatchPersistence<OpenClawDispatchRecord>,
-  ) {
-    super(root, scope, {
+  constructor(scope: string, persistence: DispatchPersistence<OpenClawDispatchRecord>) {
+    super(scope, {
       persistence,
       runtime: 'openclaw',
       recordSchema: openclawDispatchRecordSchema,

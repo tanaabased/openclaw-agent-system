@@ -88,18 +88,20 @@ export const automationReports = sqliteTable(
   'automation_reports',
   {
     executionId: text('execution_id').notNull(),
-    value: text({ mode: 'json' }).$type<AutomationReportRecord>().notNull(),
+    state: text().$type<AutomationReportRecord['state']>().notNull(),
+    completedAt: text('completed_at'),
+    value: text({ mode: 'json' })
+      .$type<Omit<AutomationReportRecord, 'state' | 'completedAt'>>()
+      .notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.executionId] }),
     index('automation_reports_recovery')
       .on(table.executionId)
-      .where(
-        sql`not (json_extract(${table.value}, '$.state') in ('delivered', 'failed')) or json_extract(${table.value}, '$.completedAt') is null`,
-      ),
+      .where(sql`not (${table.state} in ('delivered', 'failed')) or ${table.completedAt} is null`),
     index('automation_reports_expiry')
-      .on(sql`coalesce(julianday(json_extract(${table.value}, '$.completedAt')), 0)`)
-      .where(sql`json_extract(${table.value}, '$.state') in ('delivered', 'failed')`),
+      .on(sql`coalesce(julianday(${table.completedAt}), 0)`)
+      .where(sql`${table.state} in ('delivered', 'failed')`),
   ],
 );
 export const pathProjections = scopedState<StoredPathProjection>('path_projections');

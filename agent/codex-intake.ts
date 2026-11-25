@@ -1,7 +1,6 @@
 import { bindAgentStore } from './storage/backend.ts';
 import { sqliteDispatchPersistence } from './storage/dispatch-backend.ts';
 import codexStorageLocation, {
-  codexStorageBackend,
   codexPickupStore,
   retainedIntakeCandidates,
 } from './storage/codex-storage.ts';
@@ -72,10 +71,7 @@ async function retainedStore(pluginData: string, deps: CodexIntakeDependencies) 
   const namespace = await realpath(requestedHome).catch(() => requestedHome);
   const binding = await (deps.inspectBinding ?? inspectCodexWorkspaceBinding)(pluginData);
   const matches: IntakeRecordStore[] = [];
-  for await (const { store, agentId } of retainedIntakeCandidates(
-    pluginData,
-    deps.storageBackend,
-  )) {
+  for await (const { store, agentId } of retainedIntakeCandidates(pluginData)) {
     const state = await store.read();
     if (
       !state ||
@@ -316,16 +312,8 @@ export async function inspectCodexIntake(pluginData: string, deps: CodexIntakeDe
     code = error instanceof IntakeError ? error.code : 'intake-inspection-failed';
     if (state) {
       context = { workspaceDir: state.workspaceDir, scope: state.scope };
-      const agent = await bindAgentStore(
-        state.agentId,
-        codexStorageLocation(pluginData),
-        deps.storageBackend ?? codexStorageBackend(),
-      );
-      journal = new CodexDispatchStore(
-        pluginData,
-        state.scope,
-        sqliteDispatchPersistence(agent, state.scope),
-      );
+      const agent = await bindAgentStore(state.agentId, codexStorageLocation(pluginData));
+      journal = new CodexDispatchStore(state.scope, sqliteDispatchPersistence(agent, state.scope));
     }
   }
   return {
@@ -353,11 +341,7 @@ export async function runCodexIssuePickup(
   try {
     const current = await selectCodexTaskContext(pluginData, deps);
     debug = current.manifest.debug;
-    const enrollmentStore = await codexPickupStore(
-      pluginData,
-      current.agentId,
-      deps.storageBackend,
-    );
+    const enrollmentStore = await codexPickupStore(pluginData, current.agentId);
     const journal = current.journal;
     const verifyNative = async (policy: GitHubNotificationPolicy) => {
       const retained = await enrollmentStore.inspect(policy, 'codex', current.store.location.scope);
@@ -490,7 +474,7 @@ export async function prepareCodexPickupEnrollment(
   const policy = current.policy.policy;
   const code = issuePickupConfigurationCode(policy);
   if (code) throw new IntakeError(code);
-  const store = await codexPickupStore(pluginData, current.agentId, deps.storageBackend);
+  const store = await codexPickupStore(pluginData, current.agentId);
   await store.owner();
   const client = (await connectSelected(
     current,

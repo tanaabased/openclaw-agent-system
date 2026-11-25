@@ -1,7 +1,7 @@
 import CodexDispatchStore from '../dispatch/codex-dispatch-state.ts';
 import { sqliteDispatchPersistence } from '../../storage/dispatch-backend.ts';
-import codexStorageLocation, { codexStorageBackend } from '../../storage/codex-storage.ts';
-import { bindAgentStore, bindIntakeStore, type StorageBackend } from '../../storage/backend.ts';
+import codexStorageLocation from '../../storage/codex-storage.ts';
+import { bindAgentStore, bindIntakeStore } from '../../storage/backend.ts';
 import { realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -11,7 +11,6 @@ import assignmentIntakePolicy from '../../automations/assignment-intake-policy.t
 import { assertNotificationManagement } from '../../notification-reset-state.ts';
 
 export interface CodexTaskContextDependencies {
-  storageBackend?: StorageBackend;
   codexHome?: string;
   inspectBinding?: typeof inspectCodexWorkspaceBinding;
 }
@@ -33,11 +32,7 @@ export async function selectCodexTaskContext(
     deps.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex'),
   );
   const namespace = await realpath(requestedHome).catch(() => requestedHome);
-  const agent = await bindAgentStore(
-    loaded.manifest.agent.id,
-    codexStorageLocation(pluginData),
-    deps.storageBackend ?? codexStorageBackend(),
-  );
+  const agent = await bindAgentStore(loaded.manifest.agent.id, codexStorageLocation(pluginData));
   const store = bindIntakeStore(
     intakeLocation({
       runtime: 'codex',
@@ -49,12 +44,10 @@ export async function selectCodexTaskContext(
     agent,
   );
   await store.identities.hydrate(loaded.manifest.github?.notifications);
-  if (!options.inspectionOnly)
-    await assertNotificationManagement(pluginData, store.location.scope, agent);
+  if (!options.inspectionOnly) await assertNotificationManagement(store.location.scope, agent);
   return {
-    ...(agent && { sessionStorage: agent }),
+    sessionStorage: agent,
     journal: new CodexDispatchStore(
-      pluginData,
       store.location.scope,
       sqliteDispatchPersistence(agent, store.location.scope),
     ),
@@ -70,7 +63,6 @@ export async function selectCodexTaskContext(
     automationBinding: {
       codexHome: namespace,
       inspectBinding: deps.inspectBinding,
-      storageBackend: deps.storageBackend ?? codexStorageBackend(),
     },
   };
 }

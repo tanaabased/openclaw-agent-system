@@ -23,17 +23,22 @@ export default async function publicResponse(input: {
   setReceipt(receipt: PublicResponseReceipt): void;
   save(): Promise<void>;
 }) {
+  async function saveAttempt(attempted: boolean) {
+    input.setAttempted(attempted);
+    try {
+      await input.save();
+    } catch (error) {
+      input.setAttempted(!attempted);
+      throw error;
+    }
+  }
   const publisher = new GitHubNotificationCommentPublisher({
     ...input.dependencies,
     beforeCreate: async () => {
       await input.beforeCreate?.();
-      input.setAttempted(true);
-      await input.save();
+      await saveAttempt(true);
     },
-    onCreateRejected: async () => {
-      input.setAttempted(false);
-      await input.save();
-    },
+    onCreateRejected: () => saveAttempt(false),
   });
   // an attempted effect is observation-only even when a later caller asks to publish.
   const result =

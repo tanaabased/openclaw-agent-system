@@ -100,7 +100,6 @@ export async function scanCodexFeedback(input: {
             replies: () =>
               replyOwnPublications({
                 sessionStorage: current.sessionStorage,
-                root: current.store.location.root,
                 binding: {
                   runtime: 'codex',
                   agentId: current.agentId,

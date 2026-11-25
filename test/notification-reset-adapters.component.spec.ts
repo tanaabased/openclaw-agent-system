@@ -17,7 +17,7 @@ import {
 import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
 import OpenClawDispatchStore from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
 import OpenClawNotificationReset from '../agent/openclaw-notification-reset.ts';
-import IntakeRecordStore from '../channels/github/intake/record-store.ts';
+import type IntakeRecordStore from '../channels/github/intake/record-store.ts';
 import assignmentIntakePolicy from '../agent/automations/assignment-intake-policy.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { account, intakeFixture } from './github-intake-fixture.ts';
@@ -29,10 +29,10 @@ describe('agent/notification reset runtime adapters', () => {
       select: async () => ({
         store,
         workspace: root,
+        sessionStorage: store.agentStorage,
         selected: undefined,
-        dispatch: (path: string) =>
+        dispatch: () =>
           new OpenClawDispatchStore(
-            path,
             store.location.scope,
             sqliteDispatchPersistence(store.agentStorage, store.location.scope),
           ),
@@ -125,6 +125,7 @@ describe('agent/notification reset runtime adapters', () => {
       );
       const binding = await bindCodexWorkspace(pluginData, workspace);
       assert.equal(binding.status, 'bound', JSON.stringify(binding));
+      await sqliteAgentFixture(pluginData, 'receiver');
       const current = await selectCodexTaskContext(pluginData, { codexHome });
       const saved: SavedAutomation = {
         id: 'job',
@@ -172,9 +173,14 @@ describe('agent/notification reset runtime adapters', () => {
         root: pluginData,
         intake: {
           select: async () => ({
-            dispatch: (root) => new OpenClawDispatchStore(root, current.store.location.scope),
+            dispatch: () =>
+              new OpenClawDispatchStore(
+                current.store.location.scope,
+                sqliteDispatchPersistence(current.store.agentStorage, current.store.location.scope),
+              ),
             store: current.store,
             workspace: current.workspace,
+            sessionStorage: current.store.agentStorage,
             selected: assignmentIntakePolicy(manifest, 'openclaw'),
           }),
         },
@@ -291,9 +297,10 @@ describe('agent/notification reset runtime adapters', () => {
 
   async function ordinaryOpenClawOrigin() {
     const scope = '7'.repeat(64);
-    const intake = new IntakeRecordStore({ root, path: join(root, 'intake.json'), scope });
+    const { agent } = await sqliteAgentFixture(root, 'receiver');
+    const intake = bindIntakeStore({ root, scope }, agent);
     await seed(intake);
-    const journal = new OpenClawDispatchStore(root, scope);
+    const journal = new OpenClawDispatchStore(scope, sqliteDispatchPersistence(agent, scope));
     const key = 'agent:receiver:main';
     await journal.exclusive(async (state, save) => {
       state.records.push({
@@ -469,7 +476,8 @@ describe('agent/notification reset runtime adapters', () => {
   for (const pickupEnabled of [true, false])
     it(`should wait for active pickup and restore both openclaw jobs with pickup enabled ${pickupEnabled}`, async () => {
       const scope = '9'.repeat(64);
-      const intake = new IntakeRecordStore({ root, path: join(root, 'intake.json'), scope });
+      const { agent } = await sqliteAgentFixture(root, 'receiver');
+      const intake = bindIntakeStore({ root, scope }, agent);
       await seed(intake);
       let active = true;
       const jobs = new Map([
@@ -582,6 +590,7 @@ describe('agent/notification reset runtime adapters', () => {
       JSON.stringify({ 'schema-version': 1, agent: { id: 'receiver' } }),
     );
     await bindCodexWorkspace(pluginData, workspace);
+    await sqliteAgentFixture(pluginData, 'receiver');
     const current = await selectCodexTaskContext(pluginData, { codexHome });
     await seed(current.store, current.workspace);
     const make = (id: string, status: 'ACTIVE' | 'PAUSED'): SavedAutomation => ({
@@ -689,9 +698,10 @@ describe('agent/notification reset runtime adapters', () => {
 
   it('should pause openclaw once, wait for the coordinator, reset and restore', async () => {
     const scope = 'a'.repeat(64);
-    const intake = new IntakeRecordStore({ root, path: join(root, 'intake.json'), scope });
+    const { agent } = await sqliteAgentFixture(root, 'receiver');
+    const intake = bindIntakeStore({ root, scope }, agent);
     await seed(intake);
-    const journal = new OpenClawDispatchStore(root, scope);
+    const journal = new OpenClawDispatchStore(scope, sqliteDispatchPersistence(agent, scope));
     await journal.exclusive(async (state, save) => {
       state.records.push({
         id: 'd'.repeat(64),
@@ -845,14 +855,18 @@ describe('agent/notification reset runtime adapters', () => {
     assert.ok((await intake.read())!.baselineAt > 1);
     assert.equal(native.archived(), true);
     assert.equal(native.replacements(), 1);
-    assert.ok((await new OpenClawDispatchStore(root, scope).read()).resetGeneration);
+    assert.ok(
+      (await new OpenClawDispatchStore(scope, sqliteDispatchPersistence(agent, scope)).read())
+        .resetGeneration,
+    );
   });
 
   it('should finish a retained openclaw reset with unresolved current creation after fresh is selected', async () => {
     const scope = 'c'.repeat(64);
-    const intake = new IntakeRecordStore({ root, path: join(root, 'intake.json'), scope });
+    const { agent } = await sqliteAgentFixture(root, 'receiver');
+    const intake = bindIntakeStore({ root, scope }, agent);
     await seed(intake);
-    const journal = new OpenClawDispatchStore(root, scope);
+    const journal = new OpenClawDispatchStore(scope, sqliteDispatchPersistence(agent, scope));
     await journal.exclusive(async (state, save) => {
       state.records.push({
         id: 'd'.repeat(64),
@@ -938,7 +952,8 @@ describe('agent/notification reset runtime adapters', () => {
 
   it('should wait for manual pause after a failed openclaw pause without repeating the write', async () => {
     const scope = 'b'.repeat(64);
-    const intake = new IntakeRecordStore({ root, path: join(root, 'intake.json'), scope });
+    const { agent } = await sqliteAgentFixture(root, 'receiver');
+    const intake = bindIntakeStore({ root, scope }, agent);
     await seed(intake);
     let enabled = true;
     let attempts = 0;
@@ -999,13 +1014,10 @@ describe('agent/notification reset runtime adapters', () => {
       JSON.stringify({ 'schema-version': 1, agent: { id: 'receiver' } }),
     );
     await bindCodexWorkspace(pluginData, workspace);
-    const { agent, sqliteInstallation, storageBackend } = await sqliteAgentFixture(
-      pluginData,
-      'receiver',
-    );
+    const { agent, sqliteInstallation } = await sqliteAgentFixture(pluginData, 'receiver');
     const installation = bindSqliteInstallation(sqliteInstallation);
     await installation.install();
-    const current = await selectCodexTaskContext(pluginData, { codexHome, storageBackend });
+    const current = await selectCodexTaskContext(pluginData, { codexHome });
     await seed(current.store, current.workspace);
     const saved: SavedAutomation = {
       id: 'job',
@@ -1075,7 +1087,6 @@ describe('agent/notification reset runtime adapters', () => {
     let creation: 'unavailable' | 'found' | 'absent' = 'unavailable';
     const searched = new Set<boolean>();
     const deps = {
-      storageBackend,
       codexHome,
       caller: 'operator',
       automation: async () => structuredClone(saved),
@@ -1169,7 +1180,7 @@ describe('agent/notification reset runtime adapters', () => {
     });
     assert.equal(pending.notificationResets[0]?.value.agentId, 'receiver');
     await assert.rejects(
-      selectCodexTaskContext(pluginData, { codexHome, storageBackend }),
+      selectCodexTaskContext(pluginData, { codexHome }),
       /notification-reset-in-progress/u,
     );
     assert.equal((await current.store.read())!.baselineAt, 1);
@@ -1243,7 +1254,7 @@ describe('agent/notification reset runtime adapters', () => {
   async function verifyOpenClawPurge(missing: boolean) {
     const scope = 'c'.repeat(64);
     const { agent } = await sqliteAgentFixture(root, 'receiver');
-    const intake = bindIntakeStore({ root, path: join(root, 'intake.json'), scope }, agent);
+    const intake = bindIntakeStore({ root, scope }, agent);
     const fixture = intakeFixture();
     const receiver = { login: account.login, nodeId: account.nodeId };
     const intakeId = automationHash([
@@ -1305,7 +1316,7 @@ describe('agent/notification reset runtime adapters', () => {
     const worktree = join(root, 'checkout');
     await mkdir(worktree);
     const key = 'agent:receiver:issue:one';
-    const journal = new OpenClawDispatchStore(root, scope, sqliteDispatchPersistence(agent, scope));
+    const journal = new OpenClawDispatchStore(scope, sqliteDispatchPersistence(agent, scope));
     await journal.exclusive(async (state, save) => {
       state.records.push({
         id: 'd'.repeat(64),

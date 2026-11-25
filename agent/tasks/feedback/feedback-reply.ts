@@ -1,8 +1,9 @@
+import { replyPublicationReserved } from '../../storage/reply-publication.ts';
 import type { SessionStorage } from '../../storage/storage-lifecycle.ts';
 import { responseInstructions } from '../response/task-response.ts';
 import { responseBlocks } from '../../../channels/github/presentation/response-blocks.ts';
 import selectReplyDraft from './reply-selection.ts';
-import { workflowFailureStep } from '../workflow-failure.ts';
+import workflowFailure, { workflowFailureStep } from '../workflow-failure.ts';
 import { cardCopyInstructions } from '../../../channels/github/presentation/card.ts';
 
 import assessmentGuidance from '../assessment/assessment-guidance.ts';
@@ -43,9 +44,8 @@ import {
 } from '../../../channels/github/publication/publication-contract.ts';
 
 export interface FeedbackReplyDependencies {
-  sessionStorage?: SessionStorage;
+  sessionStorage: SessionStorage;
   defaultTarget?: string;
-  root: string;
   binding: ReplyBinding;
   turnId: string;
   inputId: string;
@@ -92,8 +92,8 @@ async function runFeedbackReply(
     update: undefined,
   };
   await deps.assertCurrent();
-  const store = new ReplyStore(deps.root, deps.binding, deps.sessionStorage);
-  const result = await store.exclusive(async (drafts, save) => {
+  const store = new ReplyStore(deps.binding, deps.sessionStorage);
+  const result = await store.edit(async (drafts, save) => {
     const independent = !input.purpose && !deps.feedback;
     let draft =
       input.operation !== 'compose' || input.material
@@ -139,23 +139,28 @@ async function runFeedbackReply(
         status: 'clarification-needed',
         questions: ['Which exact GitHub comment or issue/PR destination should this reply use?'],
       };
-    if (feedback && !draft?.attempted && !draft?.receipt) {
+    // A peer can observe the same reserved publication after its source disappears.
+    // Only explicit reconciliation may use the shared reservation; it cannot send.
+    const sharedAttempt = Boolean(
+      input.operation === 'reconcile' &&
+      draft?.publication &&
+      !draft.attempted &&
+      !draft.receipt &&
+      (await deps.sessionStorage.hasReplyPublication(draft)),
+    );
+    const observedDraft =
+      draft && (draft.attempted || draft.receipt || sharedAttempt) ? draft : undefined;
+    if (feedback && !observedDraft) {
       const selected = replyLocator(url);
       const exact = feedbackTarget(`${selected.owner}/${selected.name}`, feedback);
       if (selected.number !== feedback.number || selected.itemType !== feedback.itemType)
         throw new Error('reply-feedback-target-mismatch');
       if (!selected.kind) url = exact;
     }
-    const currentTarget =
-      draft?.attempted || draft?.receipt
-        ? await verifyReplyDestination(deps.provider, JSON.parse(draft.target) as ReplyTarget)
-        : await readReplyTarget(deps.provider, url);
-    if (
-      feedback &&
-      !draft?.attempted &&
-      !draft?.receipt &&
-      !feedbackReplyTarget(feedback, currentTarget)
-    )
+    const target = observedDraft
+      ? await verifyReplyDestination(deps.provider, JSON.parse(observedDraft.target) as ReplyTarget)
+      : await readReplyTarget(deps.provider, url);
+    if (feedback && !observedDraft && !feedbackReplyTarget(feedback, target))
       throw new Error('reply-feedback-target-mismatch');
     const sameDestination = (left: ReplyTarget, right: ReplyTarget) => {
       const key = (value: ReplyTarget) => ({
@@ -166,11 +171,6 @@ async function runFeedbackReply(
       });
       return automationHash(key(left)) === automationHash(key(right));
     };
-    const target =
-      draft?.attempted || draft?.receipt
-        ? (JSON.parse(draft.target) as ReplyTarget)
-        : currentTarget;
-    if (!sameDestination(target, currentTarget)) throw new Error('reply-target-diverged');
     const authorizeFeedback = async () => {
       if (!feedback) return;
       if (!deps.authorizeFeedback) throw new Error('reply-feedback-authority-required');
@@ -178,21 +178,18 @@ async function runFeedbackReply(
         throw new Error('feedback-self-publication-denied');
       await deps.authorizeFeedback(feedback, target);
     };
-    if (!draft?.attempted && !draft?.receipt) await authorizeFeedback();
-    const owner =
-      !draft?.attempted && !draft?.receipt
-        ? await deps.managed(
-            target,
-            purpose,
-            feedback ? undefined : (input.privateText ?? draft?.privateText),
-          )
-        : undefined;
+    if (!observedDraft) await authorizeFeedback();
+    const owner = !observedDraft
+      ? await deps.managed(
+          target,
+          purpose,
+          feedback ? undefined : (input.privateText ?? draft?.privateText),
+        )
+      : undefined;
     if (
       owner &&
       owner.status !== 'manual-reply-context' &&
-      owner.status !== 'status-update-context' &&
-      !draft?.attempted &&
-      !draft?.receipt
+      owner.status !== 'status-update-context'
     )
       return owner;
     const managed =
@@ -232,8 +229,7 @@ async function runFeedbackReply(
         target,
         managed?.status === 'status-update-context' ? managed.pullRequestNumber : undefined,
       );
-    const publicContext =
-      purpose && !draft?.attempted && !draft?.receipt ? await readUpdate() : undefined;
+    const publicContext = purpose && !observedDraft ? await readUpdate() : undefined;
     const observation = purpose ? statusUpdateObservation(publicContext, ownerId) : undefined;
     if (authored.update)
       input.update = {
@@ -370,7 +366,7 @@ async function runFeedbackReply(
         record.authorLogin !== deps.provider.identity.login
       )
         throw new Error('reply-account-changed');
-      if (!record.attempted && !record.receipt) {
+      if (!sharedAttempt && !record.attempted && !record.receipt) {
         await authorizeFeedback();
         if (record.ownerId !== ownerId) throw new Error('reply-managed-context-changed');
         const live = (await deps.readManifest?.()) ?? deps.manifest;
@@ -596,44 +592,33 @@ async function runFeedbackReply(
           [{ text: draft.publicText }],
           redactFeedback,
         );
-    if (input.operation === 'reconcile' && !draft.attempted && !draft.receipt)
+    if (input.operation === 'reconcile' && !observedDraft)
       throw new Error('reply-publication-unattempted');
     const record = draft;
     const reauthorize = async () => {
       await validate(record);
-      const current =
-        record.attempted || record.receipt
-          ? await verifyReplyDestination(deps.provider, target)
-          : await readReplyTarget(deps.provider, url);
-      if (record.attempted || record.receipt) {
-        if (!sameDestination(target, current)) throw new Error('reply-target-diverged');
-      } else if (JSON.stringify(current) !== record.target) throw new Error('reply-source-changed');
-      const freshOwner =
-        !record.attempted && !record.receipt
-          ? await deps.managed(current, purpose, feedback ? undefined : record.privateText)
-          : undefined;
+      if (observedDraft) {
+        await verifyReplyDestination(deps.provider, target);
+        return;
+      }
+      const current = await readReplyTarget(deps.provider, url);
+      if (JSON.stringify(current) !== record.target) throw new Error('reply-source-changed');
+      const freshOwner = await deps.managed(
+        current,
+        purpose,
+        feedback ? undefined : record.privateText,
+      );
       if (
         freshOwner &&
         freshOwner.status !== 'manual-reply-context' &&
-        freshOwner.status !== 'status-update-context' &&
-        !record.attempted &&
-        !record.receipt
+        freshOwner.status !== 'status-update-context'
       )
         throw new Error('reply-managed-owner-required');
-      if (
-        !record.attempted &&
-        !record.receipt &&
-        replyOwnerId(freshOwner, purpose, Boolean(feedback)) !== record.ownerId
-      )
-        throw new Error('reply-managed-context-changed');
+      const freshOwnerId = replyOwnerId(freshOwner, purpose, Boolean(feedback));
+      if (freshOwnerId !== record.ownerId) throw new Error('reply-managed-context-changed');
       if (
         record.update &&
-        !record.attempted &&
-        !record.receipt &&
-        statusUpdateObservation(
-          await readUpdate(),
-          replyOwnerId(freshOwner, purpose, Boolean(feedback)),
-        ) !== record.update.observation
+        statusUpdateObservation(await readUpdate(), freshOwnerId) !== record.update.observation
       )
         throw new Error('status-update-observation-changed');
     };
@@ -645,6 +630,7 @@ async function runFeedbackReply(
     const result = await taskUpdate({
       request: { operation: input.operation, digest, expectedDigest: digest },
       draft: record,
+      sharedAttempt,
       publication: (text) => replyPublication(target, record, purpose, text),
       save,
       beforeCreate: reauthorize,
@@ -665,21 +651,26 @@ async function runFeedbackReply(
               }
             : deps.provider,
         }),
-        exclusive: (key, run) => store.publication(key, run),
+        exclusive: (_key, run) => run(),
       },
     }).catch((error: unknown) => {
+      if (
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code === replyPublicationReserved
+      )
+        return { status: 'uncertain' as const };
       if (!purpose) throw error;
-      const diagnostic =
-        error && typeof error === 'object' && 'code' in error
-          ? error.code
-          : error instanceof Error
-            ? error.message
-            : undefined;
-      const code =
-        typeof diagnostic === 'string' && /^[a-z][a-z0-9-]+$/u.test(diagnostic)
-          ? diagnostic
-          : 'status-update-publication-failed';
-      return { status: record.attempted ? ('uncertain' as const) : ('blocked' as const), code };
+      const { code, providerDiagnostic } = workflowFailure(
+        error,
+        'status-update-publication-failed',
+      );
+      return {
+        status: record.attempted ? ('uncertain' as const) : ('blocked' as const),
+        code,
+        ...(providerDiagnostic && { providerDiagnostic }),
+      };
     });
     const publishedUrl =
       result.status === 'published'
