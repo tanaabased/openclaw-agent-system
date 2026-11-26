@@ -6,8 +6,16 @@ import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 import waitForSessionDispatchGateway from '../credentials/session-dispatch-readiness.ts';
 
 describe('agent/automation-gateway-readiness', () => {
-  it('should defer model and session reads during native reload without initiating another reload', async () => {
-    for (const method of ['models.list', 'sessions.resolve', 'sessions.list'] as const) {
+  it('should defer model reads, session setup and scheduler reconciliation during native reload', async () => {
+    for (const method of [
+      'models.list',
+      'sessions.resolve',
+      'sessions.list',
+      'sessions.create',
+      'sessions.patch',
+      'cron.add',
+      'cron.update',
+    ] as const) {
       let elapsed = 0;
       const calls: string[] = [];
       const request = createAutomationGateway(
