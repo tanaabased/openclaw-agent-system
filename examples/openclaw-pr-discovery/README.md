@@ -60,6 +60,7 @@ cp "$GITHUB_WORKSPACE/examples/openclaw-pr-discovery/provider-fixture.mjs" "$TMP
 chmod 755 "$TMPDIR/pr-provider/gh"
 # preserve the fixture ahead of system gh when openclaw bootstraps its cli path
 PATH="$TMPDIR/pr-provider:$PATH" OPENCLAW_PATH_BOOTSTRAPPED=1 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
+openclaw-pause-fixture-check
 
 # should install emori in its fixture workspace
 set -o pipefail

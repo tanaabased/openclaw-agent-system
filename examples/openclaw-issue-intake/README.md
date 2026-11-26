@@ -66,6 +66,7 @@ chmod 755 "$TMPDIR/intake-provider/gh"
 openclaw config set channels.agent-system-github '{"accounts":{"retired-agent":{"enabled":false}}}' --strict-json
 openclaw config set plugins.entries.agent-system.config.githubNotifications '{"maxCommentCharacters":8000}' --strict-json
 PATH="$TMPDIR/intake-provider:$PATH" OPENCLAW_PATH_BOOTSTRAPPED=1 OPENCLAW_LOG_LEVEL=info openclaw-gateway start
+openclaw-pause-fixture-check
 openclaw config get channels.agent-system-github --json | jq -e '.accounts["retired-agent"].enabled == false'
 
 # should install emori in its fixture workspace

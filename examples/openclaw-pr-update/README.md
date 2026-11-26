@@ -70,6 +70,7 @@ cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
 
 # should start the isolated gateway
 OPENCLAW_LOG_LEVEL=info openclaw-gateway start
+openclaw-pause-fixture-check
 
 # should install emori in its fixture workspace
 set -o pipefail
