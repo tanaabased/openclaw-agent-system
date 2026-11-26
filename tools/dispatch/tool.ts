@@ -361,7 +361,12 @@ export default function createDispatchTool(input: {
                   };
                 });
             }
-            if (result && 'providerDiagnostic' in result && result.providerDiagnostic) {
+            if (
+              result &&
+              'providerDiagnostic' in result &&
+              result.providerDiagnostic &&
+              !(params.action === 'reply' && 'presentation' in result && result.presentation)
+            ) {
               const failure = workflowFailure(result, openClawDispatchFailureCode(result));
               result = {
                 ...result,

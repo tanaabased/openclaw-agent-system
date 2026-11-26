@@ -1,3 +1,4 @@
+import providerWriteRejected from '../../../utils/provider-write-rejected.ts';
 import { replyPublicationReserved } from '../../storage/reply-publication.ts';
 import type { SessionStorage } from '../../storage/storage-lifecycle.ts';
 import { responseInstructions } from '../response/task-response.ts';
@@ -229,7 +230,8 @@ async function runFeedbackReply(
         target,
         managed?.status === 'status-update-context' ? managed.pullRequestNumber : undefined,
       );
-    const publicContext = purpose && !observedDraft ? await readUpdate() : undefined;
+    const publicContext =
+      purpose && !observedDraft && input.operation !== 'reconcile' ? await readUpdate() : undefined;
     const observation = purpose ? statusUpdateObservation(publicContext, ownerId) : undefined;
     if (authored.update)
       input.update = {
@@ -369,6 +371,7 @@ async function runFeedbackReply(
       if (!sharedAttempt && !record.attempted && !record.receipt) {
         await authorizeFeedback();
         if (record.ownerId !== ownerId) throw new Error('reply-managed-context-changed');
+        if (input.operation === 'reconcile') return;
         const live = (await deps.readManifest?.()) ?? deps.manifest;
         const liveConfiguration =
           live.github?.notifications?.[
@@ -530,15 +533,21 @@ async function runFeedbackReply(
       await save();
       return context(draft);
     }
-    if (!draft) throw new Error('reply-draft-required');
-    await validate(draft);
+    if (draft) await validate(draft);
     if (
       input.privateText ||
       input.outcome ||
       input.update ||
-      (input.target && input.target !== (JSON.parse(draft.target) as ReplyTarget).url)
+      (draft && input.target && input.target !== (JSON.parse(draft.target) as ReplyTarget).url)
     )
       throw new Error('reply-draft-conflict');
+    if (input.operation === 'reconcile' && !observedDraft)
+      return {
+        status: 'no-attempt-recorded' as const,
+        instruction:
+          'No publication attempt or receipt is recorded. This read-only check did not send or retry anything. Do not render a diagnostic if no action remains, or treat missing history as proof of rejection.',
+      };
+    if (!draft) throw new Error('reply-draft-required');
     if (input.operation === 'candidate') {
       if (draft.attempted || draft.receipt) throw new Error('reply-publication-already-attempted');
       if (!input.publicText?.trim()) throw new Error('reply-candidate-required');
@@ -592,8 +601,6 @@ async function runFeedbackReply(
           [{ text: draft.publicText }],
           redactFeedback,
         );
-    if (input.operation === 'reconcile' && !observedDraft)
-      throw new Error('reply-publication-unattempted');
     const record = draft;
     const reauthorize = async () => {
       await validate(record);
@@ -627,13 +634,17 @@ async function runFeedbackReply(
       destination: target.destination,
       publisher: deps.provider.identity,
     });
+    let writeStarted = false;
     const result = await taskUpdate({
       request: { operation: input.operation, digest, expectedDigest: digest },
       draft: record,
       sharedAttempt,
       publication: (text) => replyPublication(target, record, purpose, text),
       save,
-      beforeCreate: reauthorize,
+      beforeCreate: async () => {
+        await reauthorize();
+        writeStarted = true;
+      },
       dependencies: {
         redactText: redactFeedback,
         authorize: async () => {
@@ -666,8 +677,14 @@ async function runFeedbackReply(
         error,
         'status-update-publication-failed',
       );
+      const status: 'uncertain' | 'failed' | 'blocked' =
+        record.attempted || record.receipt || sharedAttempt
+          ? 'uncertain'
+          : writeStarted && providerWriteRejected(error)
+            ? 'failed'
+            : 'blocked';
       return {
-        status: record.attempted ? ('uncertain' as const) : ('blocked' as const),
+        status,
         code,
         ...(providerDiagnostic && { providerDiagnostic }),
       };
@@ -688,7 +705,7 @@ async function runFeedbackReply(
         (purpose
           ? 'The status-update card contains the public result only. Add any consequential private caveats directly in native chat; do not repeat composition instructions or the plan. '
           : '') +
-        'When this turn produced an assessment, keep its complete review, routing, decision and configured debug cards in the same final response; this reply presentation must not replace them. Publication failure affects only this reply; reconcile its original receipt without repeating work.',
+        'When this turn produced an assessment, keep its complete review, routing, decision and configured debug cards in the same final response; this reply presentation must not replace them. Preserve the publication notice once for this comment. Reconcile only an attempted or uncertain write; do not repeat work.',
       presentation:
         purpose || record.feedback
           ? feedbackResponse({
@@ -696,10 +713,13 @@ async function runFeedbackReply(
               workspace: deps.binding.workspace,
               debug: deps.manifest.debug,
               privateText: purpose ? '' : record.privateText,
+              publicationKind: purpose ? 'Task Update' : undefined,
+              publicationDestination: purpose ? target.destination : undefined,
               publicReply: { author: record.authorLogin, text: body },
               publication: publishedUrl
                 ? { url: publishedUrl }
                 : {
+                    failed: result.status === 'failed',
                     withheld:
                       result.status === 'uncertain'
                         ? 'github-notification-publication-unconfirmed'
