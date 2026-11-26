@@ -249,20 +249,24 @@ async function runBinding(args: string[]): Promise<void> {
 
 async function runSetup(args: string[]): Promise<void> {
   const action = args[0];
-  if (action === 'enroll-op' || action === 'enroll-installation-op') {
+  if (action === 'enroll-op' || action === 'enroll-installation-op' || action === 'connect-op') {
     const credential = await codexOpCredential(
       parsePluginData(args.slice(1)),
-      action === 'enroll-op' ? 'binding' : 'installation',
+      action === 'enroll-installation-op' ? 'installation' : 'binding',
     );
     const result = credential
-      ? await credential.enroll()
+      ? action === 'connect-op'
+        ? await credential.enrollInBrowser((url) => writeJson({ status: 'awaiting-browser', url }))
+        : await credential.enroll()
       : { status: 'skipped', code: 'codex-op-not-declared' };
     writeJson(result);
     if (result.status === 'blocked') process.exitCode = 1;
     return;
   }
   if (action !== 'inspect' && action !== 'install') {
-    throw new Error('expected setup inspect, install, enroll-op or enroll-installation-op');
+    throw new Error(
+      'expected setup inspect, install, connect-op, enroll-op or enroll-installation-op',
+    );
   }
   const pluginData = parsePluginData(args.slice(1));
   const controller = new AbortController();

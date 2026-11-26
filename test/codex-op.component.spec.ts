@@ -13,6 +13,7 @@ import {
   installCodexSetup,
 } from '../agent/lifecycle/codex-setup.ts';
 import { codexOpCredential } from '../credentials/codex-op.ts';
+import { browserEnrollment } from '../credentials/codex-op-browser.ts';
 import { spawnSync } from 'node:child_process';
 import { opFixture } from './codex-op-process-fixture.ts';
 
@@ -103,6 +104,110 @@ setup-agent:
       'codex-op-binding-missing',
     );
     await assert.rejects(fresh.resolve('PRIVATE'), /changed/u);
+  });
+
+  it('connects through the local page and verifies stored access before continuing Install', async () => {
+    await bind(
+      'environment: {op: [shared-id], set: {PRIVATE: {from-op: "op://private/item/password"}}}',
+    );
+    const credential = (await codexOpCredential(data, 'binding', op))!;
+    const options = { op, baseEnvironment: { HOME: root, PATH: '/usr/bin:/bin' } };
+    for (const action of ['save', 'import']) {
+      entries.clear();
+      const opened = Promise.withResolvers<string>();
+      const env = action === 'import' ? { OP_SERVICE_ACCOUNT_TOKEN: 'fixture-token' } : {};
+      const completed = credential.enrollInBrowser(opened.resolve, env);
+      const url = await Promise.race([
+        opened.promise,
+        completed.then((finding) => assert.fail(finding.code)),
+      ]);
+      const page = await fetch(url);
+      assert.equal(page.headers.get('cache-control'), 'no-store');
+      const html = await page.text();
+      assert.ok(
+        html.includes(workspace) &&
+          html.includes('shared-id') &&
+          html.includes('op://private/item/password'),
+      );
+      assert.equal(html.includes('value="import"'), action === 'import');
+      assert.doesNotMatch(html + url, /fixture-token|fixture-(private|shared)-value/u);
+      const body = new URLSearchParams(
+        action === 'import' ? { action } : { action, token: 'fixture-token' },
+      );
+      assert.equal(
+        (await fetch(url, { method: 'POST', headers: { origin: 'https://other.invalid' }, body }))
+          .status,
+        403,
+      );
+      assert.equal(entries.size, 0);
+      const result = await fetch(url, {
+        method: 'POST',
+        headers: { origin: new URL(url).origin },
+        body,
+      });
+      assert.equal(result.status, 200);
+      assert.equal((await completed).code, 'codex-op-binding-ready');
+      verifyRestart('binding');
+      await installCodexSetup(data, undefined, options);
+      const doctor = await inspectCodexSetup(data, undefined, options);
+      assert.ok(doctor.findings.some((f) => f.code === 'codex-op-binding-ready'));
+      assert.doesNotMatch(
+        (await result.text()) + JSON.stringify(doctor),
+        /fixture-token|fixture-(private|shared)-value/u,
+      );
+    }
+    assert.equal(
+      (await credential.enrollInBrowser(() => assert.fail('already enrolled'))).status,
+      'healthy',
+    );
+  });
+
+  it('keeps the prior credential on cancellation and rejected import', async () => {
+    await bind('environment: {op: [shared-id]}');
+    const credential = (await codexOpCredential(data, 'binding', op))!;
+    await credential.enroll();
+    const [id] = entries.keys();
+    entries.set(id!, 'old-rejected');
+    for (const action of ['cancel', 'import']) {
+      const opened = Promise.withResolvers<string>();
+      const completed = credential.enrollInBrowser(opened.resolve, {
+        OP_SERVICE_ACCOUNT_TOKEN: 'invalid-candidate',
+      });
+      const url = await Promise.race([
+        opened.promise,
+        completed.then((finding) => assert.fail(finding.code)),
+      ]);
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { origin: new URL(url).origin },
+        body: new URLSearchParams({ action }),
+      });
+      const finding = await completed;
+      assert.equal(
+        finding.code,
+        action === 'cancel' ? 'op-credential-input-cancelled' : 'codex-op-binding-rejected',
+      );
+      assert.doesNotMatch(
+        (await response.text()) + JSON.stringify(finding),
+        /invalid-candidate|old-rejected|fixture-token/u,
+      );
+      assert.equal(entries.get(id!), 'old-rejected');
+    }
+  });
+
+  it('expires an unused local link without saving', async () => {
+    let url = '';
+    const result = await browserEnrollment({
+      label: 'workspace',
+      requirements: { environmentIds: [], secrets: [] },
+      onReady: (ready) => {
+        url = ready;
+      },
+      timeoutMs: 30,
+      save: () => assert.fail('unexpected save'),
+    });
+    assert.equal(result.code, 'op-credential-input-expired');
+    await assert.rejects(fetch(url));
   });
 
   it('keeps the installation source usable after the original binding and private token are removed', async () => {

@@ -93,9 +93,12 @@ native automations. Doctor inspects readiness without changing settings or runni
 
 If the bound manifest declares a 1Password Environment or a `from-op` value,
 Doctor checks access and Install reuses a valid token. For a missing or rejected
-token, run the enrollment command from Install in your own terminal. Enter the
-service-account token at the masked prompt, then rerun Install. Codex stores it
-in macOS login Keychain or Linux Secret Service.
+token, open **Connect 1Password** in the Install chat. The temporary local page
+shows the workspace and resources. Paste your service-account token or choose
+to import `OP_SERVICE_ACCOUNT_TOKEN` if Install inherited it. Agent System
+checks access, saves the token in macOS login Keychain or Linux Secret Service,
+and checks access again from storage. Return to the chat for the final Doctor
+report. Scheduled installs report missing access and leave enrollment to you.
 
 To add account-default setup, have your bound workspace's root `AGENTS.md` point to
 its setup guide. Codex Binding follows that guide after binding and when you request
