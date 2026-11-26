@@ -24,7 +24,11 @@ const source = { runtime: 'codex', instructions: 'distinct instructions\n'.repea
 const index = () =>
   nativeMaterialResponse(implementationMaterial(source, envelope), 'dispatch', envelope);
 
-function pageRequest(output: ReturnType<typeof index>) {
+function pageRequest(
+  output:
+    | { contextMaterials?: { fields: Array<{ request: Record<string, unknown> }> } }
+    | { materialPage: unknown },
+) {
   assert.ok('contextMaterials' in output && output.contextMaterials);
   return output.contextMaterials.fields[0]!.request;
 }
@@ -305,6 +309,127 @@ describe('agent/native-material', () => {
         { ...request, action: 'result' },
       ),
       /material-native-response-unavailable/,
+    );
+  });
+
+  for (const toolName of ['agent_system_intake', 'tool_call', 'dispatch_action'])
+    it(`reads every pickup candidate page from projected ${toolName} history before selection`, async () => {
+      const tool = 'agent_system_intake';
+      const pickup = { action: 'pickup' };
+      const candidates = Array.from({ length: 130 }, (_, index) => ({
+        nodeId: `fixture-${index}`,
+        title: `Disposable cleanup issue ${index}, not eligible for assignment in this test`,
+      }));
+      const selection = { status: 'selection-required', candidates, changed: false };
+      const deliver = (input: Record<string, unknown>, read?: ImplementationMaterialRead) =>
+        nativeMaterialResponse(
+          implementationMaterial(selection, pickup, read, { pagedFields: ['candidates'] }),
+          tool,
+          input,
+        );
+      const textParts = (value: unknown) => [{ type: 'text', text: JSON.stringify(value) }];
+      const message = (value: unknown) => {
+        const result = { details: { changed: false }, content: textParts(value) };
+        return {
+          role: 'toolResult',
+          toolName,
+          __openclaw: {},
+          ...(toolName === tool
+            ? result
+            : {
+                details: { changed: false },
+                content: textParts({ tool: { source: 'openclaw', name: tool }, result }),
+              }),
+        };
+      };
+      const root = deliver(pickup);
+      const history = [message(root)];
+      const readHistory = async (_method: string, params: Record<string, unknown>) => {
+        assert.equal(params.sessionKey, 'pickup');
+        return { sessionId: 'scan', messages: history };
+      };
+
+      let request: Record<string, unknown> | undefined = pageRequest(root);
+      let collected = '';
+      let pages = 0;
+      while (request) {
+        const bound = await openClawNativeMaterial(
+          readHistory,
+          { sessionKey: 'pickup', sessionId: 'scan' },
+          tool,
+          request,
+        );
+        const page = deliver(request, bound.material as ImplementationMaterialRead);
+        assert.ok('materialPage' in page);
+        assert.deepEqual(page.materialPage.path, ['candidates']);
+        assert.equal(page.materialPage.offset, collected.length);
+        collected += page.materialPage.text;
+        pages++;
+        history.push(message(page));
+        request = page.next;
+      }
+
+      assert.ok(pages > 1);
+      assert.deepEqual(JSON.parse(collected), candidates);
+    });
+
+  it('rejects invalid projected text and preserves structured receipt precedence', async () => {
+    const tool = 'agent_system_dispatch';
+    const root = nativeMaterialResponse(implementationMaterial(source, envelope), tool, envelope);
+    const request = pageRequest(root);
+    const scope = { sessionKey: 'chat', sessionId: 'session' };
+    const bind = (
+      text: string,
+      details: unknown = { changed: false },
+      sessionId = scope.sessionId,
+    ) =>
+      openClawNativeMaterial(
+        async () => ({
+          sessionId,
+          messages: [
+            {
+              role: 'toolResult',
+              toolName: tool,
+              __openclaw: {},
+              details,
+              content: [{ type: 'text', text }],
+            },
+          ],
+        }),
+        scope,
+        tool,
+        request,
+      );
+    const json = JSON.stringify(root);
+    for (const text of [
+      json.slice(0, -1),
+      `prefix ${json}`,
+      '{"changed":false}',
+      JSON.stringify(
+        nativeMaterialResponse(implementationMaterial(source, envelope), 'other', envelope),
+      ),
+    ]) {
+      await assert.rejects(bind(text), /material-native-response-unavailable/);
+    }
+    await assert.rejects(bind(json, undefined, 'other-session'), /workflow-evidence-conflicting/);
+
+    const changed = nativeMaterialResponse(
+      implementationMaterial(
+        { ...source, instructions: source.instructions + 'changed' },
+        envelope,
+      ),
+      tool,
+      envelope,
+    );
+    const bound = await bind(JSON.stringify(changed), root);
+    assert.throws(
+      () =>
+        implementationMaterial(
+          { ...source, instructions: source.instructions + 'changed' },
+          envelope,
+          bound.material as ImplementationMaterialRead,
+        ),
+      /material-stale/,
     );
   });
 

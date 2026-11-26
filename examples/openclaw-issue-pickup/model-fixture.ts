@@ -85,10 +85,50 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
         continue;
       }
       if (observed.status === 'selection-required') {
-        assert.equal(observed.contextMaterials, undefined, 'two small candidates must fit inline');
+        const fields =
+          (
+            observed.contextMaterials as
+              | {
+                  fields: Array<{
+                    path: string[];
+                    length: number;
+                    request: Record<string, unknown>;
+                  }>;
+                }
+              | undefined
+          )?.fields ?? [];
+        assert.ok(fields.length <= 1, 'only fixture guidance should need paging');
+        const field = fields[0];
+        let guidance = observed.guidance;
+        let pagesRead = 0;
+        if (field) {
+          assert.deepEqual(field.path, ['guidance']);
+          let pageRequest: Record<string, unknown> | undefined = field.request;
+          let collected = '';
+          for (; pageRequest; pagesRead++) {
+            assert.ok(pagesRead < 4, 'pickup fixture paging budget exhausted');
+            const pageStage = `material-${pagesRead}`;
+            const page = result(pageStage);
+            if (!page) return call(pageStage, 'agent_system_intake', pageRequest);
+            assert.equal(page.status, 'material', JSON.stringify(page));
+            const material = page.materialPage as {
+              path: string[];
+              offset: number;
+              length: number;
+              text: string;
+            };
+            assert.deepEqual(material.path, field.path);
+            assert.equal(material.offset, collected.length);
+            assert.equal(material.length, field.length);
+            collected += material.text;
+            pageRequest = page.next as Record<string, unknown> | undefined;
+          }
+          assert.equal(collected.length, field.length);
+          guidance = JSON.parse(collected);
+        }
         const candidates = observed.candidates as Array<{ nodeId: string; url: string }>;
         assert.equal(candidates.length, 2);
-        assert.match(String(observed.guidance), /bounded cleanup clarification/u);
+        assert.match(String(guidance), /bounded cleanup clarification/u);
         const repositoryGuidance = observed.repositoryGuidance as Record<
           string,
           { content: string }
@@ -98,6 +138,7 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
           /prefer fixture cleanup/u,
         );
         const chosen = [];
+        let noAssignment = false;
         for (const [index, candidate] of candidates.entries()) {
           const read = result(`selection-source-${index}`);
           if (!read)
@@ -107,7 +148,20 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
           assert.equal(read.exitCode, 0);
           assert.equal(read.truncated, false);
           const source = JSON.parse(String(read.stdout));
+          if (String(source.body).includes('pickup-paging-no-assignment')) noAssignment = true;
           if (String(source.body).includes('pickup-cleanup-clarification')) chosen.push(candidate);
+        }
+        if (noAssignment) {
+          assert.ok(pagesRead > 1, 'fixture run must read multiple native material pages');
+          args = {
+            action: 'pickup',
+            selection: {
+              issueNodeId: null,
+              shortlist: candidates.map(({ nodeId }) => nodeId),
+              rationale: 'Paging fixture read all material; no issue selected.',
+            },
+          };
+          continue;
         }
         assert.equal(chosen.length, 1);
         args = {
@@ -124,6 +178,8 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
         ['empty', 'assigned', 'allowance-reached'].includes(String(observed.status)),
         JSON.stringify(observed),
       );
+      if ((args.selection as { issueNodeId: string | null } | undefined)?.issueNodeId === null)
+        assert.equal(observed.status, 'empty', JSON.stringify(observed));
       assert.equal(typeof observed.response, 'string');
       if (observed.status === 'assigned') {
         // cron history is a bounded summary; verify full guidance before returning the report.
@@ -233,6 +289,10 @@ export const issuePickupScenario: OpenClawAIMockScenario = {
       name: 'agent_system_github',
     })),
     ...pickupStages.map((stage) => ({ stage, name: 'agent_system_intake' })),
+    ...Array.from({ length: 4 }, (_, index) => ({
+      stage: `material-${index}`,
+      name: 'agent_system_intake',
+    })),
     ...dispatchStages.map((stage) => ({ stage, name: 'agent_system_dispatch' })),
   ].flatMap(({ stage, name }) =>
     [0, 1, 2, 3].map((attempt) => ({ id: prefix + attemptStage(stage, attempt), name })),
