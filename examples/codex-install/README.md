@@ -319,11 +319,13 @@ node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$GITHUB_W
 node "$runtime" binding inspect --plugin-data "$plugin_data" \
   | jq -e --arg workspace "$workspace" '.status == "bound" and .binding.workspaceDir == $workspace and .preview.manifest.agentId == "codex-example-rebound"'
 
-# should report the outstanding credential on a fresh unattended install
+# should report completed setup alongside pending credentials on unattended install
 root="$TMPDIR/agent-system-codex-install"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 if report=$(node "$plugin_root/dist/codex/codex-runtime.js" setup install --plugin-data "$root/plugin-data" </dev/null 2>&1); then exit 1; fi
-jq -e '.code == "codex-op-binding-missing" or .code == "codex-op-binding-inaccessible"' <<<"$report"
+jq -e '(.code == "codex-op-binding-missing" or .code == "codex-op-binding-inaccessible") and any(.outcomes[]; .stepId == "codex-config" and .code == "setup-applied") and (has("automations") | not)' <<<"$report"
+node "$plugin_root/dist/codex/codex-runtime.js" setup inspect --plugin-data "$root/plugin-data" \
+  | jq -e 'any(.findings[]; .stepId == "codex-config" and .status == "healthy") and any(.findings[]; (.code == "codex-op-binding-missing" or .code == "codex-op-binding-inaccessible") and .status == "blocked")'
 
 # should unbind without changing either workspace or manifest
 root="$TMPDIR/agent-system-codex-install"

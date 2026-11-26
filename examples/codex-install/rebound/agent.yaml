@@ -5,3 +5,9 @@ agent:
 environment:
   set:
     EXAMPLE_VALUE: { from-op: 'op://example/item/value' }
+setup-agent:
+  steps:
+    - id: codex-config
+      runtimes: [codex]
+      check: test -f .codex-config-ready
+      apply: touch .codex-config-ready
