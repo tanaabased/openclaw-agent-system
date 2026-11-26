@@ -15,6 +15,8 @@ import {
 import { codexOpCredential } from '../credentials/codex-op.ts';
 import { browserEnrollment } from '../credentials/codex-op-browser.ts';
 import { spawnSync } from 'node:child_process';
+import { Readable } from 'node:stream';
+import OpCredentialInput from '../credentials/op-input.ts';
 import { opFixture } from './codex-op-process-fixture.ts';
 
 describe('standalone codex 1password enrollment', () => {
@@ -104,6 +106,27 @@ setup-agent:
       'codex-op-binding-missing',
     );
     await assert.rejects(fresh.resolve('PRIVATE'), /changed/u);
+  });
+
+  it('validates explicit noninteractive input before replacing a bound credential', async () => {
+    await bind('environment: {set: {PRIVATE: {from-op: "op://private/item/password"}}}');
+    const input = new OpCredentialInput({
+      hostEnvironment: {
+        OP_SERVICE_ACCOUNT_TOKEN: 'fixture-token',
+        OTHER_OP_TOKEN: 'rejected-token',
+      },
+      input: Readable.from(['fixture-token\n']),
+      output: process.stderr,
+    });
+    const credential = (await codexOpCredential(data, 'binding', { ...op, input }))!;
+    assert.equal((await credential.set('environment')).code, 'codex-op-binding-ready');
+    const saved = [...entries];
+    const rejected = await credential.set('environment', 'OTHER_OP_TOKEN');
+    assert.equal(rejected.code, 'codex-op-binding-rejected');
+    assert.doesNotMatch(JSON.stringify(rejected), /fixture-token|rejected-token/u);
+    assert.deepEqual([...entries], saved);
+    assert.equal((await credential.set('stdin')).code, 'codex-op-binding-ready');
+    verifyRestart('binding');
   });
 
   it('should export resolved values through standalone install using the enrolled binding', async () => {

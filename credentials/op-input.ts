@@ -52,14 +52,18 @@ export default class OpCredentialInput {
   async read(
     source: OpCredentialInputSource,
     promptMessage = 'Enter OP service account token',
+    environmentVariable = opServiceAccountTokenEnvironmentVariable,
   ): Promise<OpCredentialInputResult> {
     if (source === 'environment') {
-      const token = this.#hostEnvironment[opServiceAccountTokenEnvironmentVariable];
+      const token = this.#hostEnvironment[environmentVariable];
       if (token === undefined || token.trim() === '') {
         return {
           status: 'invalid',
           code: 'op-environment-credential-missing',
-          message: `${opServiceAccountTokenEnvironmentVariable} is not available to store.`,
+          message:
+            environmentVariable === opServiceAccountTokenEnvironmentVariable
+              ? `${opServiceAccountTokenEnvironmentVariable} is not available to store.`
+              : 'The selected environment variable is not available to store.',
         };
       }
       const message = invalidInput(token);
