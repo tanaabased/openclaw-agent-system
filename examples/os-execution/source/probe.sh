@@ -7,6 +7,15 @@ started=$(date +%s)
 stage() {
   printf 'os-execution mode=%s stage=%s elapsed=%ss\n' "$mode" "$1" "$(($(date +%s) - started))"
 }
+if [ "$mode" = shim ]; then
+  stage declared-shim
+  test -z "${PROBE_SELECTED+x}"
+  result=$(declared-probe declared)
+  test "$result" = declared-child-ready
+  printf '%s\n' verified > shim.result
+  printf '%s\n' os-execution-verified
+  exit 0
+fi
 stage native-io
 root=$(pwd -P)
 test "$root" = "$(cd "$TMPDIR/os execution/source" && pwd -P)"
@@ -22,10 +31,6 @@ fi
 test "$status" -eq 7
 grep -Fx os-stdout-ready "$root/$mode.stdout"
 grep -Fx os-stderr-ready "$root/$mode.stderr"
-if [ "$mode" = pipe ]; then
-  test -z "${PROBE_SELECTED+x}"
-  declared-probe declared | grep -Fx declared-child-ready
-fi
 stage source-identity
 identity=$(agent-system-git var GIT_AUTHOR_IDENT)
 printf '%s\n' "$identity" | grep -F 'OS Execution <os-execution@example.invalid>'

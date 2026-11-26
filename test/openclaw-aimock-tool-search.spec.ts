@@ -636,7 +636,7 @@ describe('scripts/aimock-tool-search', () => {
   it('should count an already visible exec tool during discovery as well as execution', async () => {
     const scenario = withToolSearch(resolveScenario('os-execution'));
     const entries: Parameters<typeof openClawAIMockEvidence>[1][number][] = [];
-    for (const mode of ['pipe', 'pty']) {
+    for (const mode of ['pipe', 'pty', 'shim']) {
       const input = request(`Run the native execution ${mode} probe through OpenClaw exec.`);
       input.tools!.push({ type: 'function', function: { name: 'exec' } });
       const respond = async () => {
@@ -658,8 +658,8 @@ describe('scripts/aimock-tool-search', () => {
     }
     const evidence = openClawAIMockEvidence(scenario, entries);
     assert.equal(evidence.strictMissCount, 0);
-    assert.equal(evidence.finalResponseCount, 2);
-    assert.equal(evidence.tools.find(({ name }) => name === 'exec')?.callResponseCount, 2);
+    assert.equal(evidence.finalResponseCount, 3);
+    assert.equal(evidence.tools.find(({ name }) => name === 'exec')?.callResponseCount, 3);
     assert.equal(evidence.tools.find(({ name }) => name === 'process')?.callResponseCount, 0);
   });
 

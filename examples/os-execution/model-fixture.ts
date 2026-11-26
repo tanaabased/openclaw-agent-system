@@ -4,7 +4,7 @@ import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
 
 const model = /^(?:aimock\/)?gpt-5\.5$/u;
-const modes = ['pipe', 'pty'] as const;
+const modes = ['pipe', 'pty', 'shim'] as const;
 // polls can return as soon as output arrives; native exec owns the elapsed-time limit.
 const maxPolls = 64;
 const pollIds = (mode: string) =>

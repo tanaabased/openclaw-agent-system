@@ -7,7 +7,7 @@ Run real shell and PTY commands on macOS and Linux, preserving manifest PATH, ar
 - Actual native process/terminal behavior through the installed execution boundary.
 - Workspace paths containing spaces and identity/containment after changing directory.
 - A denied context retains its specific diagnostic through the installed launcher without producing an identity.
-- One shell command and one PTY command, each requiring its probe's completed receipt.
+- Separate shell, PTY, and declared-shim probes, each requiring its probe's completed receipt.
 
 ## What Does Not Belong Here
 
@@ -16,9 +16,9 @@ Run real shell and PTY commands on macOS and Linux, preserving manifest PATH, ar
 
 ## Notes
 
-- Strict AIMock selects two fixed OpenClaw exec calls; the Gateway, shell, terminal, and managed Git launcher run normally without a live model or provider credentials.
+- Strict AIMock selects three fixed OpenClaw exec calls; the Gateway, shell, terminal, and managed Git launcher run normally without a live model or provider credentials.
 - Workspaces are copied because paths containing spaces are part of the contract. The probe emits success only after checking the actual child process and rejected cross-agent invocation.
-- each command has a 300-second limit within a 360-second turn to accommodate two installed CLI startups; macOS CI has taken over a minute to reach the first identity result. stage markers report elapsed time before each managed invocation. a yielded command is collected through its native session; polls may return early with intermediate output. a separate 64-poll guard bounds mock exchanges without treating their count as elapsed time. the command is never rerun. cron is disabled so unrelated maintenance cannot consume mock exchanges.
+- Each probe has its own 300-second command limit within a 360-second turn. The shim does not share the identity probe’s time budget. Polls collect the original command; they never rerun it. Cron is disabled so maintenance cannot consume mock exchanges.
 - Cleanup stops the provider and fails on strict mock misses, retaining bounded probe results for diagnosis.
 
 ## Setup
@@ -68,9 +68,17 @@ openclaw agent \
   --timeout 360
 grep -Fx verified "$TMPDIR/os execution/source/pty.result"
 
-# should complete both authored commands without mock misses
+# should run the installed declared shim from a native shell without exporting the selected value
+openclaw agent \
+  --agent os-execution \
+  --session-key agent:os-execution:os-execution-shim \
+  --message-file "$GITHUB_WORKSPACE/examples/os-execution/shim.md" \
+  --timeout 360
+grep -Fx verified "$TMPDIR/os execution/source/shim.result"
+
+# should complete all three authored commands without mock misses
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | tee "$TMPDIR/os-execution-evidence.json"
-jq -e '.scenario == "os-execution" and .strictMissCount == 0 and .finalResponseCount == 2 and any(.tools[]; .name == "exec" and .callResponseCount == 2) and any(.tools[]; .name == "process" and .callResponseCount <= 128)' "$TMPDIR/os-execution-evidence.json"
+jq -e '.scenario == "os-execution" and .strictMissCount == 0 and .finalResponseCount == 3 and any(.tools[]; .name == "exec" and .callResponseCount == 3) and any(.tools[]; .name == "process" and .callResponseCount <= 192)' "$TMPDIR/os-execution-evidence.json"
 ```
 
 ## Cleanup
