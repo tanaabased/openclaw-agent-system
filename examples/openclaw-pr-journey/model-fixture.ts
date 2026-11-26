@@ -22,6 +22,7 @@ const dispatchStages = [
   ).flat(),
   ...['context', 'compose', 'candidate', 'publish'].map((stage) => `native-plan-${stage}`),
   'native-plan-render',
+  'native-plan-reconcile',
   'context',
   'result',
   'report',
@@ -435,15 +436,32 @@ function respond(
     if (retained.status !== 'reported' || typeof retained.response !== 'string') return;
     return { content: retained.response || 'notification-intake-unchanged' };
   };
-  const nativePlan = (context: Record<string, unknown>) =>
-    nativePlanResponse(
+  const nativePlan = (context: Record<string, unknown>) => {
+    const leavePending = options.composeResponse && context.mode === 'auto';
+    const planned = nativePlanResponse(
       context,
       result,
       dispatch,
       call,
       Boolean(openClawAIMockToolResultText(messages, prefix + 'plan-reply-skill')),
       options.initialQuestion,
+      {},
+      leavePending,
     );
+    if (leavePending && planned && !('toolCalls' in planned)) {
+      const checked = result('native-plan-reconcile');
+      if (!checked)
+        return dispatch('native-plan-reconcile', {
+          action: 'reply',
+          operation: 'reconcile',
+          purpose: 'status-update',
+          target: (context.evidence as { source: string }).source,
+        });
+      assert.equal(checked.status, 'no-attempt-recorded');
+      assert.equal(checked.notice, undefined);
+    }
+    return planned;
+  };
   const manual = prompt.includes('Advance previously admitted issue or feedback work.');
   if (manual || prompt.includes('Fill initially available intake slots in one bounded pass.')) {
     const terminal = (value: Record<string, unknown>) => {

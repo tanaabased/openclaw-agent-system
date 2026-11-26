@@ -27,6 +27,7 @@ import feedbackReply, {
 } from '../agent/tasks/feedback/feedback-reply.ts';
 import replyOwner, { type ReplyOwner } from '../agent/tasks/feedback/reply-owner.ts';
 import ReplyStore from '../agent/tasks/feedback/reply-store.ts';
+import { taskResponse, taskResponseOutput } from '../agent/tasks/response/task-response.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { account, intakeFixture } from './github-intake-fixture.ts';
 import {
@@ -522,7 +523,7 @@ describe('agent/feedback-reply', () => {
       const comments = new GitHubIssueCommentClient(api, 1024);
       provider.createIssueComment = comments.createIssueComment.bind(comments);
       const result = await call('publish', reply);
-      const expectedStatus = httpStatus === 401 ? 'blocked' : 'uncertain';
+      const expectedStatus = httpStatus === 401 ? 'failed' : 'uncertain';
       assert.equal(result.status, expectedStatus);
       assert.ok('code' in result && result.code === 'github-notification-request-failed');
       const [draft] = await new ReplyStore(deps.binding, agent).read();
@@ -856,6 +857,51 @@ describe('agent/feedback-reply', () => {
     assert.equal((await call('reconcile', { ...completed })).status, 'published');
     assert.equal(writes, 2);
   });
+  for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should reconcile without a recorded update attempt in ${runtime}`, async () => {
+      deps.binding.runtime = runtime;
+      const target = { purpose: 'status-update', target: url };
+      const beforeDraft = await call('reconcile', target);
+      const reply = await updateCandidate();
+      const original = await stored(reply);
+      const withDraft = await call('reconcile', reply);
+      for (const result of [beforeDraft, withDraft]) {
+        assert.equal(result.status, 'no-attempt-recorded');
+        assert.deepEqual(taskResponseOutput(result), []);
+      }
+      assert.deepEqual(await stored(reply), original);
+      assert.equal(writes, 0);
+    });
+  }
+
+  it('should show one comment-specific error for a confirmed rejection', async () => {
+    const reply = await updateCandidate();
+    provider.createIssueComment = async () => {
+      writes++;
+      throw Object.assign(new Error('github-request'), {
+        providerDiagnostic: {
+          provider: 'github',
+          operation: 'create-issue-comment',
+          classification: 'permission',
+          httpStatus: 403,
+        },
+      });
+    };
+    const failed = await call('publish', reply);
+    assert.equal(failed.status, 'failed');
+    assert.equal((await stored(reply)).attempted, false);
+    const reconcile = await call('reconcile', reply);
+    assert.equal(reconcile.status, 'no-attempt-recorded');
+    const response = await taskResponse(deps.binding.runtime, [], async function* () {
+      yield failed;
+      yield reconcile;
+    });
+    assert.equal(response.presentation.match(/❌/gu)?.length, 1);
+    assert.match(response.presentation, /TASK UPDATE FAILED/u);
+    assert.doesNotMatch(response.presentation, /⚠️|workflow could not continue/iu);
+    assert.equal(writes, 1);
+  });
+
   it('should expose an uncertain update independently and reconcile without another composer or create', async () => {
     const reply = await updateCandidate();
     lost = true;
@@ -869,6 +915,13 @@ describe('agent/feedback-reply', () => {
     const uncertain = await call('reconcile', { ...reply });
     assert.equal(uncertain.status, 'uncertain');
     assert.ok('presentation' in uncertain && !uncertain.presentation?.includes('#issuecomment-9'));
+    const response = await taskResponse(deps.binding.runtime, [], async function* () {
+      yield lostResult;
+      yield uncertain;
+    });
+    assert.equal(response.presentation.match(/⚠️/gu)?.length, 1);
+    assert.match(response.presentation, /TASK UPDATE UNCONFIRMED/u);
+    assert.doesNotMatch(response.presentation, /❌/u);
     hidden = false;
     await call('reconcile', { ...reply });
     assert.equal(writes, 1);

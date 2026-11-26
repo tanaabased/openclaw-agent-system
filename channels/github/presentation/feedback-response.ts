@@ -29,7 +29,9 @@ export default function feedbackResponse(
     workspace?: string;
     privateText: string;
     publicReply?: { author?: string; text: string };
-    publication?: { url: string } | { withheld: string };
+    publication?: { url: string } | { withheld: string; failed?: boolean };
+    publicationKind?: string;
+    publicationDestination?: string;
   },
 ): string {
   return safePresentation(
@@ -55,7 +57,9 @@ export default function feedbackResponse(
       if (input.publication && 'withheld' in input.publication)
         sections.push(
           publicResponsePresentation({
-            kind: 'Public reply',
+            kind: input.publicationKind ?? 'Public reply',
+            destination: input.publicationDestination,
+            failed: input.publication.failed,
             code: input.publication.withheld,
             attempted: /unconfirmed/.test(input.publication.withheld),
             withheld: /private-only|not-required|self-publication/.test(input.publication.withheld),

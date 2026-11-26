@@ -7,6 +7,7 @@ Deliver a Work assignment, then an Auto Work assignment, using one installation 
 - Initial assignment-to-delivery in the same native chat, worktree, and assessment run.
 - Combined final native text keeps the assessment before delivery, debug last within the composed output, and additional prose visible afterwards.
 - Native plan context, exact linked PR and public receipts, and duplicate prevention.
+- Auto Work announces its PR without posting or showing errors for its unattempted plan comment.
 - Ordinary shell checks in verified issue checkouts containing another agent's manifest.
 
 ## What Does Not Belong Here
@@ -156,7 +157,7 @@ jq -e --arg run "$run_id" '.progression.stage == "implementation" and .progressi
 jq -e '.announcement.publicText == null and .announcement.publication == null and .announcement.composition == null and .announcement.snapshot.body == null' "$TMPDIR/notification-delivery.json"
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$run_id" '{sessionKey:$key,inputRunIds:[$run],limit:200,maxChars:100000}')" --json > "$TMPDIR/notification-history.json"
 jq -e --arg run "$run_id" --slurpfile saved "$TMPDIR/notification-delivery.json" 'any(.messages[]; .role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | startswith("> ") and contains("https://github.com/tanaabased/big-test-bucket/pull/" + ($saved[0].delivery.pullRequest.pullRequestNumber | tostring)) and (gsub("(?m)^> ?"; "") | contains("#issuecomment-" + ($saved[0].announcement.receipt.databaseId | tostring)))))' "$TMPDIR/notification-history.json"
-jq -e --arg run "$run_id" '[.messages[] | select(.role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop") | .content | if type == "string" then . else map(.text // "") | join("") end] | last | . as $text | ($text | index("🧭 PLAN READY")) as $plan | ($text | index("🔀 PULL REQUEST")) as $pr | $plan != null and $pr != null and $plan < $pr and contains("Implementation and focused checks completed.") and endswith("Additional prose after composition remains visible.") and (if contains("🔬 DEBUG") then index("🔬 DEBUG") > $pr else true end)' "$TMPDIR/notification-history.json"
+jq -e --arg run "$run_id" '[.messages[] | select(.role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop") | .content | if type == "string" then . else map(.text // "") | join("") end] | last | . as $text | ($text | index("🧭 PLAN READY")) as $plan | ($text | index("🔀 PULL REQUEST")) as $pr | $plan != null and $pr != null and $plan < $pr and ($text | contains("❌") | not) and contains("Implementation and focused checks completed.") and endswith("Additional prose after composition remains visible.") and (if contains("🔬 DEBUG") then index("🔬 DEBUG") > $pr else true end)' "$TMPDIR/notification-history.json"
 openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e --slurpfile saved "$TMPDIR/notification-delivery.json" '.session.sessionId == $saved[0].sessionCreation.sessionId and .session.spawnedCwd == $saved[0].worktree and .session.thinkingLevel == $saved[0].request.thinkingLevel'
 
 # should retain the linked pr and exact public receipts without repeating delivery under auto mode
@@ -170,7 +171,8 @@ branch=$(jq -er .delivery.binding.branch "$TMPDIR/notification-delivery.json")
 openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$branch" --state all --json number | jq -e --argjson pr "$pr" 'length == 1 and .[0].number == $pr'
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-comments.json"
 node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" replies | jq -s --arg target "$(jq -er .html_url "$TMPDIR/notification-issue.json")" '[.[] | select(.update != null and .receipt != null and (.target | fromjson | .url) == $target)]' > "$TMPDIR/notification-summary-drafts.json"
-jq -e --slurpfile saved "$TMPDIR/notification-delivery.json" --slurpfile summaries "$TMPDIR/notification-summary-drafts.json" '[.[] | select(.user.login == "tanaabot")] | length == 2 and any(.[]; .node_id == $summaries[0][0].receipt.nodeId) and any(.[]; .node_id == $saved[0].announcement.receipt.nodeId)' "$TMPDIR/notification-comments.json"
+jq -e 'length == 0' "$TMPDIR/notification-summary-drafts.json"
+jq -e --slurpfile saved "$TMPDIR/notification-delivery.json" '[.[] | select(.user.login == "tanaabot")] | length == 1 and .[0].node_id == $saved[0].announcement.receipt.nodeId' "$TMPDIR/notification-comments.json"
 
 # should preserve independently selected custom skills without saved plans under auto mode
 jq -e '.work.selection.skill.name == "cleanup-implementation"' "$TMPDIR/notification-delivery.json"
