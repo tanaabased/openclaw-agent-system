@@ -88,7 +88,9 @@ for (const [scenario, itemType] of [
         'Proposed plan.',
         `<!-- agent-system-github-publication:status-update:${'b'.repeat(32)} -->`,
       );
+      const inline = scenario === 'openclaw-pr-journey';
       const providerSource = {
+        ...(inline ? { id: 31 } : {}),
         node_id: 'source',
         body: '@tanaabot explain the retained plan.',
         html_url: 'https://github.com/owner/repo/issues/3#issuecomment-42',
@@ -147,11 +149,13 @@ for (const [scenario, itemType] of [
             body: summaryBody,
           })),
           {
+            ...(inline ? { id: 42, pull_request_review_id: 31 } : {}),
             node_id: 'source',
             user: { login: 'emoriwan' },
             body: 'Question',
           },
           {
+            ...(inline ? { in_reply_to_id: 42 } : {}),
             node_id: 'reply',
             html_url: 'https://github.com/owner/repo/issues/3#issuecomment-99',
             user: { login: 'tanaabot' },

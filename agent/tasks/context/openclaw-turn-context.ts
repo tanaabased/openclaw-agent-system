@@ -9,6 +9,7 @@ import { selectedOpenClawFeedback } from '../feedback/openclaw-feedback-input.ts
 import { nativeTurnFor } from '../../openclaw-native-turns.ts';
 import { feedbackTarget } from '../feedback/reply-target.ts';
 import taskPullRequest from '../delivery/task-pull-request.ts';
+import type reviewContext from '../review/review-context.ts';
 import type taskTurnContext from './task-turn-context.ts';
 /** native session/incarnation/run identities select retained facts; explicit tools verify authority. */
 export default function openclawTurnContext(
@@ -22,7 +23,10 @@ export default function openclawTurnContext(
     runId?: string;
     inputId?: string;
   },
-  task?: Awaited<ReturnType<typeof taskTurnContext>>,
+  task?:
+    | Awaited<ReturnType<typeof taskTurnContext>>
+    | (Omit<Awaited<ReturnType<typeof reviewContext>>, 'feedback' | 'feedbackLimitation'> &
+        Pick<Awaited<ReturnType<typeof taskTurnContext>>, 'feedback' | 'feedbackLimitation'>),
 ) {
   if (
     !binding.runId ||
@@ -48,7 +52,7 @@ export default function openclawTurnContext(
     (!available.length || nativeTurnFor(record, 'assessment')?.runId === binding.runId);
   return {
     appendSystemContext: [
-      nativeTaskInstructions('openclaw'),
+      record.reviewAdmission ? undefined : nativeTaskInstructions('openclaw'),
       task?.instructions,
       task?.feedback?.instructions,
       task

@@ -73,10 +73,10 @@ for (const id of [
 }
 
 for (const runtime of ['openclaw', 'codex']) {
-  describe(`examples/openclaw-project-picker ${runtime} fixture configuration`, () => {
+  describe(`examples/openclaw-issue-pickup ${runtime} fixture configuration`, () => {
     it('should enable pickup while ordinary assignments remain in plan and exclude the receiving actor', async () => {
       const source = (
-        await readFile(`examples/openclaw-project-picker/${runtime}/agent.yaml`, 'utf8')
+        await readFile(`examples/openclaw-issue-pickup/${runtime}/agent.yaml`, 'utf8')
       )
         .replaceAll('__ACTOR_NODE_ID__', 'U_emori')
         .replaceAll('__MILESTONE_NUMBER__', '123');

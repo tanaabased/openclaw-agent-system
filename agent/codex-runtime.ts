@@ -57,6 +57,7 @@ import { RoutingError } from './models/model-routing.ts';
 
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import { createCodexSessionContext } from './codex-context.ts';
+import { codexOpCredential } from '../credentials/codex-op.ts';
 import { CodexSetupError, inspectCodexSetup, installCodexSetup } from './lifecycle/codex-setup.ts';
 import {
   bindCodexWorkspace,
@@ -248,8 +249,20 @@ async function runBinding(args: string[]): Promise<void> {
 
 async function runSetup(args: string[]): Promise<void> {
   const action = args[0];
+  if (action === 'enroll-op' || action === 'enroll-installation-op') {
+    const credential = await codexOpCredential(
+      parsePluginData(args.slice(1)),
+      action === 'enroll-op' ? 'binding' : 'installation',
+    );
+    const result = credential
+      ? await credential.enroll()
+      : { status: 'skipped', code: 'codex-op-not-declared' };
+    writeJson(result);
+    if (result.status === 'blocked') process.exitCode = 1;
+    return;
+  }
   if (action !== 'inspect' && action !== 'install') {
-    throw new Error('expected setup inspect or setup install');
+    throw new Error('expected setup inspect, install, enroll-op or enroll-installation-op');
   }
   const pluginData = parsePluginData(args.slice(1));
   const controller = new AbortController();

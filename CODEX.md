@@ -91,6 +91,12 @@ Then use $agent-system-doctor to check readiness.
 Install runs [setup steps that select Codex](./MANIFEST.md#setup) and updates
 native automations. Doctor inspects readiness without changing settings or running jobs.
 
+If the bound manifest declares a 1Password Environment or a `from-op` value,
+Doctor checks access and Install reuses a valid token. For a missing or rejected
+token, run the enrollment command from Install in your own terminal. Enter the
+service-account token at the masked prompt, then rerun Install. Codex stores it
+in macOS login Keychain or Linux Secret Service.
+
 To add account-default setup, have your bound workspace's root `AGENTS.md` point to
 its setup guide. Codex Binding follows that guide after binding and when you request
 account-default updates. See [Me's setup guide](https://github.com/pirog/me/blob/main/references/account-binding.md)

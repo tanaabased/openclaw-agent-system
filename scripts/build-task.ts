@@ -1,3 +1,4 @@
+import codexOpAssets from './codex-op-assets.ts';
 import { rm } from 'node:fs/promises';
 
 import { format, resolveConfig } from 'prettier';
@@ -11,6 +12,8 @@ await Bun.write(
     parser: 'json',
   }),
 );
+
+await codexOpAssets('dist/codex');
 
 const results = await Promise.all([
   Bun.build({
@@ -41,6 +44,19 @@ const results = await Promise.all([
       {
         name: 'standalone-codex-no-host-runtime',
         setup(build) {
+          build.onResolve({ filter: /^@1password\/sdk-core$/ }, () => ({
+            path: './op-sdk-core.cjs',
+            external: true,
+          }));
+          build.onResolve({ filter: /^@napi-rs\/keyring$/ }, () => ({
+            path: 'codex-keyring',
+            namespace: 'codex-keyring',
+          }));
+          build.onLoad({ filter: /.*/, namespace: 'codex-keyring' }, () => ({
+            contents:
+              "import {createRequire} from 'node:module'; const binding = createRequire(import.meta.url)('./keyring.darwin-' + process.arch + '.node'); export const { AsyncEntry, findCredentialsAsync } = binding;",
+            loader: 'js',
+          }));
           build.onResolve({ filter: /^openclaw(?:\/|$)/ }, (args) => {
             // The existing cleanup reader uses only this portable path resolver.
             if (args.path === 'openclaw/plugin-sdk/state-paths') return;

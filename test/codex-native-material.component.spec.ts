@@ -10,7 +10,7 @@ import implementationMaterial, {
   implementationMaterialSize,
   type ImplementationMaterialRead,
 } from '../agent/tasks/implementation/implementation-material.ts';
-import { issuePickupScenario } from '../examples/openclaw-project-picker/model-fixture.ts';
+import { issuePickupScenario } from '../examples/openclaw-issue-pickup/model-fixture.ts';
 import { hostedAssessmentContextFixture } from './assessment-material-fixture.ts';
 import nativeMaterialFixture from './codex-native-material-fixture.ts';
 

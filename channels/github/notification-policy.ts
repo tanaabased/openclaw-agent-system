@@ -132,17 +132,6 @@ export function githubNotificationRuntimeDiagnostics(
       status: 'warning',
       workflow: 'issue-pickup',
     });
-  const review = declaration.reviewRequest;
-  if (runtime === 'openclaw' && review && (review.paused !== undefined || review.allowed.length))
-    diagnostics.push({
-      code: 'github-notification-runtime-unsupported',
-      fieldPath: '/github/review-request',
-      message: `${runtime === 'openclaw' ? 'OpenClaw' : 'Codex'} does not support review requests. Issue assignment is independent.`,
-      remediation:
-        'Remove the review-request declaration or wait for its execution adapter; supported issue assignment can continue.',
-      status: 'warning',
-      workflow: 'review-request',
-    });
   return diagnostics;
 }
 

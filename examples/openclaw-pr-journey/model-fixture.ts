@@ -1,6 +1,9 @@
 import composeResponseBlocks from '../../channels/github/presentation/response-blocks.ts';
 import assessmentSource from '../../scripts/aimock-assessment-source.ts';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import {
   getTextContent,
@@ -13,7 +16,6 @@ import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
 
 const prefix = 'call_notifications_';
-const identity = 'Name: Notification Tanaabot';
 const dispatchStages = [
   ...Array.from({ length: 8 }, (_, index) =>
     ['next', 'prepare', 'assess', 'reconcile'].map((stage) => `${stage}-${index}`),
@@ -23,6 +25,12 @@ const dispatchStages = [
   'context',
   'result',
   'report',
+  'review-launch',
+  'review-scan',
+  'review-next',
+  'review-prepare',
+  'review-context',
+  'review-publish',
   'discovery-inspect',
   'binding-verify',
   'work-context',
@@ -155,6 +163,7 @@ interface PRFixtureOptions {
   explicitInitialLink?: boolean;
   initialQuestion?: boolean;
   incorporateCollaborator?: boolean;
+  independentReview?: boolean;
   interruptFeedbackReply?: boolean;
   inspectDiscovery?: boolean;
 }
@@ -302,6 +311,110 @@ function respond(
   };
   const dispatch = (stage: string, args: unknown) =>
     call(retryStage(stage, attempts.get(stage) ?? 0), 'agent_system_dispatch', args);
+  const launchReview = prompt.includes('Launch the disposable PR review: ');
+  const scanReviews = prompt.includes('Use agent_system_dispatch action review. Call scan');
+  if (options.independentReview && (launchReview || scanReviews)) {
+    if (scanReviews && !result('review-scan'))
+      return dispatch('review-scan', { action: 'review', operation: 'scan' });
+    // Only the disposable PR created by this runner may receive a fixture review.
+    const receipt = JSON.parse(readFileSync(join(tmpdir(), 'notification-delivery.json'), 'utf8'));
+    const target =
+      'https://github.com/tanaabased/big-test-bucket/pull/' +
+      receipt.delivery.pullRequest.pullRequestNumber;
+    if (launchReview) {
+      assert.ok(prompt.includes('Launch the disposable PR review: ' + target));
+      const launched = result('review-launch');
+      if (!launched)
+        return dispatch('review-launch', { action: 'review', operation: 'launch', target });
+      assert.equal(launched.status, 'admitted');
+    }
+    const next = result('review-next');
+    if (!next) return dispatch('review-next', { action: 'review', operation: 'next', target });
+    if (next.status === 'routing-required' && !result('review-prepare'))
+      return dispatch('review-prepare', {
+        action: 'review',
+        operation: 'prepare',
+        target,
+        assessment: {
+          complexity: 'low',
+          reason: 'Check the disposable cleanup note and its collaborator change.',
+        },
+      });
+    return { content: String(result('review-prepare')?.status ?? next.status) };
+  }
+  if (options.independentReview && currentFacts(messages, false).stage === 'review') {
+    const source = currentFacts(messages).feedback;
+    if (source) {
+      assert.equal(source.publication, 'allowed');
+      const reply = { action: 'reply', target: source.replyTarget };
+      const composed = result('feedback-compose');
+      if (!composed)
+        return dispatch('feedback-compose', {
+          ...reply,
+          operation: 'compose',
+          privateText: 'The author responded on the original inline thread.',
+        });
+      assert.equal(composed.status, 'composition-ready', String(composed.code ?? composed.status));
+      const skill = (composed.selection as { skill: { path: string } }).skill;
+      if (openClawAIMockToolResultText(messages, prefix + 'feedback-skill') === undefined)
+        return call('feedback-skill', 'read', { path: skill.path });
+      if (!result('feedback-candidate'))
+        return dispatch('feedback-candidate', {
+          ...reply,
+          operation: 'candidate',
+          publicText: publicText(composed, 'Thanks for addressing the finding on the original PR.'),
+        });
+      const published = result('feedback-publish');
+      if (!published) return dispatch('feedback-publish', { ...reply, operation: 'publish' });
+      assert.equal(published.status, 'published');
+      return { content: String(published.presentation) };
+    }
+    const context = result('review-context');
+    if (!context) return dispatch('review-context', { action: 'review', operation: 'context' });
+    const { evidence, review } = context as {
+      evidence: { source: string };
+      review: { skill: { path: string } };
+    };
+    if (openClawAIMockToolResultText(messages, prefix + 'review-skill') === undefined)
+      return call('review-skill', 'read', { path: review.skill.path });
+    const diff = result('review-diff');
+    if (!diff)
+      return call('review-diff', 'agent_system_github', { argv: ['pr', 'diff', evidence.source] });
+    assert.equal(diff.exitCode, 0);
+    assert.equal(diff.truncated, false);
+    const patch = String(diff.stdout);
+    const path = /^\+\+\+ b\/(notification-fixture-[a-f0-9]+\.md)$/mu.exec(patch)?.[1];
+    assert.ok(
+      path && patch.includes('+Close disposable test issues after capturing their evidence.'),
+    );
+    const fixed = patch.includes('+Keep feedback changes on the original PR.');
+    const published = result('review-publish');
+    if (!published)
+      return dispatch('review-publish', {
+        action: 'review',
+        operation: 'publish',
+        draft: fixed
+          ? {
+              event: 'APPROVE',
+              body: 'Verified the continuity note on the repaired PR.',
+              comments: [],
+            }
+          : {
+              event: 'REQUEST_CHANGES',
+              body: '@tanaabot Please address the inline finding on this PR.',
+              comments: [
+                {
+                  path,
+                  line: 1,
+                  side: 'RIGHT',
+                  body: 'Document that feedback changes stay on the original PR.',
+                },
+              ],
+            },
+      });
+    assert.ok(['published', 'reconciled'].includes(String(published.status)));
+    return { content: String(published.url) };
+  }
   if (options.inspectDiscovery && prompt.includes('Inspect saved discovery for ')) {
     const target =
       /Inspect saved discovery for (https:\/\/github\.com\/[^\s]+\/issues\/[1-9][0-9]*)/u.exec(
@@ -604,15 +717,17 @@ function respond(
     const privateText = initial
       ? 'Implemented the retained plan from approved feedback, checked the diff, and published its linked PR in the same chat and worktree.'
       : 'The approved feedback added a continuity note on the original branch. The diff check passed and the new commit was pushed to the same PR; the original assessment and announcement remain intact.';
+    const finding = context.source?.feedback?.comments?.[0];
+    const replyTarget = finding?.url ?? context.replyTarget;
     const composition = result('feedback-compose');
     if (!composition)
       return dispatch('feedback-compose', {
         action: 'reply',
         operation: 'compose',
-        target: context.replyTarget,
+        target: replyTarget,
         privateText,
       });
-    const reply = { action: 'reply', target: context.replyTarget };
+    const reply = { action: 'reply', target: replyTarget };
     const skill = (composition.selection as { skill?: { path?: string } } | undefined)?.skill;
     if (composition.status !== 'composition-ready' || !skill?.path) return;
     if (openClawAIMockToolResultText(messages, prefix + 'feedback-skill') === undefined)
@@ -1004,6 +1119,9 @@ export function createPRExampleScenario(
   id: string,
   options: PRFixtureOptions = {},
 ): OpenClawAIMockScenario {
+  const identity = options.independentReview
+    ? 'Name: Notification '
+    : 'Name: Notification Tanaabot';
   const runResponse = (request: ChatCompletionRequest) => response(request, options);
   const final: Fixture = {
     match: {
@@ -1025,6 +1143,12 @@ export function createPRExampleScenario(
     finalResponses: [],
     dynamicFinalResponseFixtures: [final],
     toolCalls: [
+      ...(options.independentReview
+        ? [
+            { id: prefix + 'review-diff', name: 'agent_system_github' },
+            { id: prefix + 'review-skill', name: 'read' },
+          ]
+        : []),
       { id: prefix + 'assessment-source', name: 'agent_system_github' },
       ...Array.from({ length: 8 }, (_, index) => ({
         id: prefix + `routing-source-${index}`,
@@ -1089,4 +1213,5 @@ export function createPRExampleScenario(
 export const prExampleScenario = createPRExampleScenario('openclaw-pr-journey', {
   initialQuestion: true,
   incorporateCollaborator: true,
+  independentReview: true,
 });

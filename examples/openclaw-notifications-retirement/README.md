@@ -50,6 +50,7 @@ cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
 
 # should boot the isolated gateway
 OPENCLAW_LOG_LEVEL=info openclaw-gateway start
+openclaw-pause-fixture-check
 
 # should install emori in its fixture workspace
 set -o pipefail
@@ -114,7 +115,7 @@ openclaw agent-system tool worktree -- list > "$TMPDIR/notification-worktrees-be
 # should retain a finished native helper in the task checkout
 conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
 worktree=$(jq -er .worktree "$TMPDIR/notification-dispatch-before.json")
-openclaw gateway call chat.send --params "$(jq -nc --arg key "$conversation" --arg cwd "$worktree" '{sessionKey:$key,message:("Spawn retirement checkout helper at " + $cwd),deliver:false,idempotencyKey:"retirement-spawn-helper"}')" --json | jq -e '.runId == "retirement-spawn-helper"'
+openclaw gateway call chat.send --params "$(jq -nc --arg key "$conversation" --arg cwd "$worktree" '{sessionKey:$key,message:("Spawn retirement checkout helper at " + $cwd),deliver:false,idempotencyKey:"retirement-spawn-helper"}')" --json | jq -es --arg expected "retirement-spawn-helper" -f "$GITHUB_WORKSPACE/scripts/assert-chat-send.jq"
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" retirement-spawn-helper 600000
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$(jq -er .runId "$TMPDIR/notification-helper.json")" 600000
 helper=$(jq -er .childSessionKey "$TMPDIR/notification-helper.json")
@@ -134,13 +135,13 @@ printf 'untracked\n' > "$worktree/retirement-untracked.txt"
 
 # should retain cancelled queue history without ending the active owner
 conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
-openclaw gateway call chat.send --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,message:"Hold retirement queue until release",queueMode:"followup",deliver:false,idempotencyKey:"retirement-queue-hold"}')" --json | jq -e '.runId == "retirement-queue-hold"'
+openclaw gateway call chat.send --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,message:"Hold retirement queue until release",queueMode:"followup",deliver:false,idempotencyKey:"retirement-queue-hold"}')" --json | jq -es --arg expected "retirement-queue-hold" -f "$GITHUB_WORKSPACE/scripts/assert-chat-send.jq"
 for attempt in $(seq 1 120); do
   if test -f "$TMPDIR/retirement-queue-ready"; then break; fi
   sleep 0.5
 done
 test -f "$TMPDIR/retirement-queue-ready"
-openclaw gateway call chat.send --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,message:"Cancelled retirement followup",queueMode:"followup",deliver:false,idempotencyKey:"retirement-cancelled-input"}')" --json | jq -e '.runId == "retirement-cancelled-input"'
+openclaw gateway call chat.send --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,message:"Cancelled retirement followup",queueMode:"followup",deliver:false,idempotencyKey:"retirement-cancelled-input"}')" --json | jq -es --arg expected "retirement-cancelled-input" -f "$GITHUB_WORKSPACE/scripts/assert-chat-send.jq"
 openclaw gateway call chat.abort --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,runId:"retirement-cancelled-input"}')" --json | jq -e '.aborted == true'
 openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session.hasActiveRun == true or .session.status == "running"'
 

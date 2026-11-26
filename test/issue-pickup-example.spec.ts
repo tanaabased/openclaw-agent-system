@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import { type ChatCompletionRequest, type FixtureResponse } from '@copilotkit/aimock';
 
-import { pickupResponse } from '../examples/openclaw-project-picker/model-fixture.ts';
+import { pickupResponse } from '../examples/openclaw-issue-pickup/model-fixture.ts';
 import taskTurnContext from '../agent/tasks/context/task-turn-context.ts';
 import openclawTurnContext from '../agent/tasks/context/openclaw-turn-context.ts';
 import type { OpenClawDispatchRecord } from '../agent/tasks/dispatch/openclaw-dispatch-state.ts';
@@ -31,7 +31,7 @@ function argumentsOf(response: FixtureResponse | undefined) {
 
 const prompt = 'Run the activated issue pickup once.';
 
-describe('examples/openclaw-project-picker model fixture', () => {
+describe('examples/openclaw-issue-pickup model fixture', () => {
   it('should retain prepended automation instructions without replaying the previous scan', () => {
     for (const [begin, end] of [
       ['OpenClaw runtime context:', 'End OpenClaw runtime context.'],

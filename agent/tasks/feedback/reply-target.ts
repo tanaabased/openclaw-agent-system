@@ -115,10 +115,7 @@ export default async function readReplyTarget(provider: FeedbackProvider, url: s
         root === comment.databaseId
           ? undefined
           : await provider.reviews.getComment(owner, name, number, root);
-      if (
-        parent &&
-        (parent.reviewId !== comment.reviewId || (parent.replyToId && parent.replyToId !== root))
-      )
+      if (parent && (parent.databaseId !== root || (parent.replyToId && parent.replyToId !== root)))
         throw new Error('reply-thread-diverged');
       const review = await provider.reviews.getReview(owner, name, number, comment.reviewId);
       source = reviewReplyFeedback(review, comment, parent);

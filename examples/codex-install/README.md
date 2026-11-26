@@ -315,9 +315,15 @@ workspace=$(cd "$GITHUB_WORKSPACE/examples/codex-install/rebound" && pwd -P)
 node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-install/rebound" \
   | jq -e --arg workspace "$workspace" '.status == "ready" and .workspaceDir == $workspace and .manifest.agentId == "codex-example-rebound"'
 node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$GITHUB_WORKSPACE/examples/codex-install/rebound" --confirm \
-  | jq -e --arg workspace "$workspace" '.status == "bound" and .binding.workspaceDir == $workspace'
+  | jq -e --arg workspace "$workspace" '.status == "bound" and .binding.workspaceDir == $workspace and (has("credential") | not)'
 node "$runtime" binding inspect --plugin-data "$plugin_data" \
   | jq -e --arg workspace "$workspace" '.status == "bound" and .binding.workspaceDir == $workspace and .preview.manifest.agentId == "codex-example-rebound"'
+
+# should report the outstanding credential on a fresh unattended install
+root="$TMPDIR/agent-system-codex-install"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+if report=$(node "$plugin_root/dist/codex/codex-runtime.js" setup install --plugin-data "$root/plugin-data" </dev/null 2>&1); then exit 1; fi
+jq -e '.code == "codex-op-binding-missing" or .code == "codex-op-binding-inaccessible"' <<<"$report"
 
 # should unbind without changing either workspace or manifest
 root="$TMPDIR/agent-system-codex-install"

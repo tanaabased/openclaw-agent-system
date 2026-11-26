@@ -1,4 +1,4 @@
-import { issuePickupScenario } from '../examples/openclaw-project-picker/model-fixture.ts';
+import { issuePickupScenario } from '../examples/openclaw-issue-pickup/model-fixture.ts';
 import { openClawCollaborationScenario } from '../examples/openclaw-collaboration/model-fixture.ts';
 import { automationRecoveryScenario } from '../examples/openclaw-automation-recovery/model-fixture.ts';
 import { automationCommandChatScenario } from '../examples/openclaw-automation-command-chat/model-fixture.ts';

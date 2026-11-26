@@ -66,6 +66,7 @@ chmod 755 "$TMPDIR/intake-provider/gh"
 openclaw config set channels.agent-system-github '{"accounts":{"retired-agent":{"enabled":false}}}' --strict-json
 openclaw config set plugins.entries.agent-system.config.githubNotifications '{"maxCommentCharacters":8000}' --strict-json
 PATH="$TMPDIR/intake-provider:$PATH" OPENCLAW_PATH_BOOTSTRAPPED=1 OPENCLAW_LOG_LEVEL=info openclaw-gateway start
+openclaw-pause-fixture-check
 openclaw config get channels.agent-system-github --json | jq -e '.accounts["retired-agent"].enabled == false'
 
 # should install emori in its fixture workspace
@@ -98,7 +99,7 @@ activation_diagnostics() {
 }
 trap activation_diagnostics EXIT
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-intake/tanaabot"
-openclaw agent-system install --yes --json | tee "$TMPDIR/notification-install.json" | jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .code == "intake-activated") and ([.warnings[] | select(.code == "github-notification-runtime-unsupported")] | length) == 1'
+openclaw agent-system install --yes --json | tee "$TMPDIR/notification-install.json" | jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .code == "intake-activated") and ([.warnings[] | select(.code == "github-notification-runtime-unsupported")] | length) == 0'
 openclaw agent-system automations list --json | jq -e '.status == "aligned" and any(.jobs[]; .id == "github-issue-assignment" and .nativeEnabled == true)'
 openclaw agent-system notifications wait --for baseline-ready --timeout 30 --json | jq -e '.status == "completed"'
 ```
@@ -116,7 +117,7 @@ for attempt in $(seq 1 90); do
   sleep 1
 done
 cat "$TMPDIR/intake-channel-status.json"
-jq -e '.channelAccounts["agent-system-github"] | any(.accountId == "intake-tanaabot" and .enabled == true and .configured == true and .mode == "readiness" and .statusState == "degraded" and .lifecycle == "ready" and .running == true and (.lastError | contains("review requests")))' "$TMPDIR/intake-channel-status.json"
+jq -e '.channelAccounts["agent-system-github"] | any(.accountId == "intake-tanaabot" and .enabled == true and .configured == true and .mode == "readiness" and .statusState == "healthy" and .lifecycle == "ready" and .running == true and .lastError == null)' "$TMPDIR/intake-channel-status.json"
 openclaw gateway call channels.status --params '{"probe":true}' --json > "$TMPDIR/intake-channel-probe.json"
 jq -e --slurpfile ordinary "$TMPDIR/intake-channel-status.json" 'def readiness: .channelAccounts["agent-system-github"] | map(select(.accountId == "intake-tanaabot") | {accountId,enabled,configured,mode,statusState,lifecycle,running,lastError}); readiness == ($ordinary[0] | readiness)' "$TMPDIR/intake-channel-probe.json"
 openclaw channels status --json | jq -e '.channelAccounts["agent-system-github"] | any(.accountId == "intake-tanaabot" and .lifecycle == "ready" and .running == true)'

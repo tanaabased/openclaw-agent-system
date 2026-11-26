@@ -1,3 +1,4 @@
+import GitHubWorkEventClient from '../../../channels/github/provider/work-event-client.ts';
 import { selectOpenClawTaskContext } from '../context/openclaw-task-context.ts';
 import type { AgentManifest } from '../../../manifest/types.ts';
 import type { OpenClawTaskDependencies } from '../dispatch/openclaw-dispatch-context.ts';
@@ -22,6 +23,12 @@ export default async function reconcileOpenClawRetirementEffects(input: {
     await reconcileRetirementEffects({
       effects: state.retirementEffects ?? [],
       save,
+      review: async () => {
+        const provider = await connect();
+        if (!(provider instanceof GitHubWorkEventClient))
+          throw new Error('retirement-review-provider-required');
+        return provider;
+      },
       comments: async () => {
         if (!deps.feedbackConnect) throw new Error('feedback-provider-unavailable');
         return deps.feedbackConnect(selection, signal, await connect());

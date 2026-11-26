@@ -201,6 +201,9 @@ describe('channels/github/v3 configuration', () => {
       'review-request': { allowed: [actor] },
     });
     assert.equal(wantsGitHubChannel(manifest), false);
-    assert.deepEqual(sessionDispatchRequirements(manifest), []);
+    assert.deepEqual(
+      sessionDispatchRequirements(manifest).map(({ id }) => id),
+      ['github-review-request'],
+    );
   });
 });

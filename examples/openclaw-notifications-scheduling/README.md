@@ -12,7 +12,7 @@ Verify that its ID, routing, channel readiness, and dispatch enrollment are pres
 
 ## What Does Not Belong Here
 
-- Pickup enrollment and assignment handoff: [Issue pickup](../openclaw-project-picker/README.md).
+- Pickup enrollment and assignment handoff: [Issue pickup](../openclaw-issue-pickup/README.md).
 - Issue admission, concurrent assessment, and duplicate prevention: [intake](../openclaw-issue-intake/README.md).
 - Assignment failures and authority: [assignment policy](../openclaw-issue-assignment-policy/README.md). Generic prompt/command scheduling: [automations](../openclaw-automation-command/README.md).
 
@@ -30,7 +30,7 @@ Verify that its ID, routing, channel readiness, and dispatch enrollment are pres
 # should install and verify pause and resume of the same notification job
 set -euo pipefail
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service
-openclaw-aimock prepare --scenario openclaw-project-picker
+openclaw-aimock prepare --scenario openclaw-issue-pickup
 receiver_node=$(GH_TOKEN="$GH_TOKEN_TANAABOT" gh api user --jq 'select(.login == "tanaabot") | .node_id')
 sed -e "s|__RECEIVER_NODE_ID__|$receiver_node|g" "$GITHUB_WORKSPACE/examples/openclaw-notifications-scheduling/tanaabot/agent.yaml" > "$TMPDIR/notification-agent.yaml"
 mv "$TMPDIR/notification-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-notifications-scheduling/tanaabot/agent.yaml"

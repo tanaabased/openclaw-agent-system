@@ -16,11 +16,11 @@ const workflows = [
   'notifications',
   'issue-assignments',
   'pull-requests',
-  'project-picker',
   'automations',
 ].map((name) => `.github/workflows/pr-${name}.yml`);
 // completed runs from before the rename still own cleanup receipts.
 workflows.push(
+  '.github/workflows/pr-project-picker.yml',
   ...['os', 'codex', 'openclaw', 'notifications'].map(
     (name) => `.github/workflows/pr-examples-${name}.yml`,
   ),

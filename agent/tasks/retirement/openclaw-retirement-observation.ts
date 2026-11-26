@@ -32,7 +32,7 @@ export async function observeRetiringSession(
     !intent.sessionId ||
     intent.agentId !== agentId ||
     (record.threadId && record.threadId !== intent.key) ||
-    record.worktree !== intent.cwd
+    (record.worktree ?? record.reviewAdmission?.workspaceDir) !== intent.cwd
   )
     throw new Error('retirement-session-identity-unresolved');
   return observeRetiringResource(

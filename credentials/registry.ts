@@ -9,6 +9,14 @@ export interface CredentialStoreRegistryDependencies {
   platform: NodeJS.Platform;
 }
 
+/** Select only the platform's OS-managed credential store. */
+export function platformCredentialStore(dependencies: CredentialStoreRegistryDependencies) {
+  if (dependencies.platform === 'darwin')
+    return new KeychainCredentialStore({ platform: dependencies.platform });
+  if (dependencies.platform === 'linux') return new SecretServiceCredentialStore(dependencies);
+  return undefined;
+}
+
 /** Create persistent credential stores in platform preference order. */
 export default function createCredentialStores(
   dependencies: CredentialStoreRegistryDependencies,
@@ -17,17 +25,6 @@ export default function createCredentialStores(
     currentUid: dependencies.currentUid,
     rootDir: resolveFileCredentialStoreRoot(dependencies.environment),
   });
-  if (dependencies.platform === 'darwin') {
-    return [new KeychainCredentialStore({ platform: dependencies.platform }), fileStore];
-  }
-  if (dependencies.platform === 'linux') {
-    return [
-      new SecretServiceCredentialStore({
-        environment: dependencies.environment,
-        platform: dependencies.platform,
-      }),
-      fileStore,
-    ];
-  }
-  return [fileStore];
+  const platform = platformCredentialStore(dependencies);
+  return platform ? [platform, fileStore] : [fileStore];
 }

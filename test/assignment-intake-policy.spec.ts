@@ -41,7 +41,10 @@ describe('assignment intake policy', () => {
       codexIntakeJobs(manifest).map((job) => job.id),
       ['github-review-request'],
     );
-    assert.equal(openclawIntakeJobs(manifest).length, 0);
+    assert.deepEqual(
+      openclawIntakeJobs(manifest).map((job) => job.id),
+      ['github-review-request'],
+    );
   });
 
   for (const runtime of ['codex', 'openclaw'] as const) {

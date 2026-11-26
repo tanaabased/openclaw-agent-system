@@ -1,3 +1,4 @@
+import { codexOpCredential, type CodexOpDependencies } from '../../credentials/codex-op.ts';
 import codexStorageLocation from '../storage/codex-storage.ts';
 import { initializeCodexStorage } from '../codex-configuration.ts';
 import { storageLifecycles } from '../storage/storage-lifecycle.ts';
@@ -23,6 +24,7 @@ import { githubNotificationRuntimeDiagnostics } from '../../channels/github/noti
 interface CodexSetupSnapshot {
   agentId: string;
   bindingPath: string;
+  credentialScope?: string;
   manifestDigest: string;
   manifestPath: string;
   workspaceDir: string;
@@ -33,6 +35,7 @@ interface CodexSetupSnapshot {
 }
 
 export interface CodexSetupDependencies {
+  op?: CodexOpDependencies;
   automationInputs?: CodexAutomationInputs;
   codexHome?: string;
   baseEnvironment?: Readonly<NodeJS.ProcessEnv>;
@@ -91,6 +94,7 @@ async function snapshot(
   return {
     agentId: loaded.manifest.agent.id,
     bindingPath: inspection.path,
+    credentialScope: inspection.binding.credentialScope,
     workspaceDir: inspection.preview.workspaceDir,
     manifestPath: loaded.path,
     manifestDigest: loaded.digest,
@@ -102,6 +106,7 @@ function sameSnapshot(left: CodexSetupSnapshot, right: CodexSetupSnapshot): bool
   return (
     left.agentId === right.agentId &&
     left.bindingPath === right.bindingPath &&
+    left.credentialScope === right.credentialScope &&
     left.workspaceDir === right.workspaceDir &&
     left.manifestPath === right.manifestPath &&
     left.manifestDigest === right.manifestDigest
@@ -160,6 +165,15 @@ async function runtime(
   return { context, lifecycle, selected, storage };
 }
 
+async function opFindings(pluginData: string, dependencies: CodexSetupDependencies) {
+  const findings: AgentSystemLifecycleFinding[] = [];
+  for (const scope of ['binding', 'installation'] as const) {
+    const credential = await codexOpCredential(pluginData, scope, dependencies.op);
+    if (credential) findings.push(await credential.inspect());
+  }
+  return findings;
+}
+
 /** inspect standalone setup and desired/saved automation state without applying repairs. */
 export async function inspectCodexSetup(
   pluginData: string,
@@ -179,6 +193,7 @@ export async function inspectCodexSetup(
     manifestDigest: selected.manifestDigest,
     intake,
     findings: [
+      ...(await opFindings(pluginData, dependencies)),
       ...(await inspectCodexPickup(pluginData, dependencies)),
       ...(intake.storage && intake.storage.level !== 'normal'
         ? [
@@ -219,6 +234,10 @@ export async function installCodexSetup(
     context.manifest.github?.notifications,
     'codex',
   );
+  for (const finding of await opFindings(pluginData, dependencies)) {
+    if (finding.status === 'blocked') throw new CodexSetupError(finding.code, finding.message);
+  }
+  await context.assertCurrent();
   const result = await lifecycle.reconcile(context);
   for (const database of storage) {
     await context.assertCurrent();

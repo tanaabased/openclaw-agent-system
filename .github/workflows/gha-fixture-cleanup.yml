@@ -9,7 +9,6 @@ on:
       - Notification core tests
       - Issue assignment tests
       - PR tests
-      - Project picker tests
       - Automation tests
     types: [completed]
   workflow_dispatch:

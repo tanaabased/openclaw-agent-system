@@ -63,7 +63,7 @@ jq -e '{ok, runStarted, sessionIdPresent: (.sessionId | type == "string"), respo
 step=read-session-id
 session_id=$(jq -er .sessionId "$TMPDIR/worktree-session.json")
 step=chat.send
-openclaw gateway call chat.send --params "$(jq -nc --arg id "$session_id" '{sessionKey:"agent:worktree-tanaabot:dashboard:worktree-leia",agentId:"worktree-tanaabot",sessionId:$id,message:"Execute the worktree first probe.",queueMode:"followup",deliver:false,expectedLeafEntryId:null,idempotencyKey:"worktree-first"}')" --json | jq -e 'if .runId == "worktree-first" then true else error("chat.send first: run ID did not match") end'
+openclaw gateway call chat.send --params "$(jq -nc --arg id "$session_id" '{sessionKey:"agent:worktree-tanaabot:dashboard:worktree-leia",agentId:"worktree-tanaabot",sessionId:$id,message:"Execute the worktree first probe.",queueMode:"followup",deliver:false,expectedLeafEntryId:null,idempotencyKey:"worktree-first"}')" --json | jq -es --arg expected "worktree-first" -f "$GITHUB_WORKSPACE/scripts/assert-chat-send.jq"
 step=agent.wait
 openclaw gateway call agent.wait --params '{"runId":"worktree-first","timeoutMs":120000}' --timeout 130000 --json | jq -e 'if .status == "ok" then true else error("agent.wait: status=" + (.status | tojson)) end'
 step=probe-receipt
@@ -84,7 +84,7 @@ openclaw gateway call chat.history --params '{"sessionKey":"agent:worktree-tanaa
 step=read-leaf
 leaf=$(jq -er .sessionInfo.activeLeafEntryId "$TMPDIR/worktree-history.json")
 step=chat.send
-openclaw gateway call chat.send --params "$(jq -nc --arg id "$session_id" --arg leaf "$leaf" '{sessionKey:"agent:worktree-tanaabot:dashboard:worktree-leia",agentId:"worktree-tanaabot",sessionId:$id,message:"Execute the worktree continued probe.",queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"worktree-continued"}')" --json | jq -e 'if .runId == "worktree-continued" then true else error("chat.send continued: run ID did not match") end'
+openclaw gateway call chat.send --params "$(jq -nc --arg id "$session_id" --arg leaf "$leaf" '{sessionKey:"agent:worktree-tanaabot:dashboard:worktree-leia",agentId:"worktree-tanaabot",sessionId:$id,message:"Execute the worktree continued probe.",queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"worktree-continued"}')" --json | jq -es --arg expected "worktree-continued" -f "$GITHUB_WORKSPACE/scripts/assert-chat-send.jq"
 step=agent.wait
 openclaw gateway call agent.wait --params '{"runId":"worktree-continued","timeoutMs":120000}' --timeout 130000 --json | jq -e 'if .status == "ok" then true else error("agent.wait: status=" + (.status | tojson)) end'
 step=probe-receipt

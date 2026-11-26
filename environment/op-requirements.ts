@@ -7,6 +7,7 @@ export interface OpEnvironmentSecretRequirement {
 
 export interface OpEnvironmentRequirements {
   environmentIds: string[];
+  requiredVariable?: { environmentId: string; name: string };
   secrets: OpEnvironmentSecretRequirement[];
 }
 

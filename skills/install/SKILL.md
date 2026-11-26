@@ -58,6 +58,7 @@ Treat runtime command prefixes and plugin-data paths as trusted ephemeral data. 
 1. Read only the newest trusted Agent System context. Require `binding.status` to be `active`, `agent-system-install` in `binding.context.capabilities`, and both `setupRuntime.argvPrefix` and `setupRuntime.pluginData` for setup. If the binding or manifest is inactive, skip setup; explicitly authorized cleanup of a previously owned intake job may use the Codex automations branch and its trusted runtime prefix.
 2. Form the internal command from `setupRuntime.argvPrefix`. Append every argument as a distinct shell-safe argument; do not evaluate shell text or choose a runtime.
 3. Append `inspect --plugin-data <pluginData>`, run the command, and summarize its JSON findings. Do not expose declared commands, command output, secrets, or environment values.
+   For a missing or rejected 1Password credential, give the operator the quoted local terminal command using this setup prefix and `enroll-op --plugin-data <pluginData>` for a binding, or `enroll-installation-op --plugin-data <pluginData>` for the separately configured installation credential. Token input belongs in the operator's terminal. Unattended installs report the needed action and stop. An inaccessible store or provider needs attention before retrying.
 4. Apply only when the user has explicitly requested installation. Append `install --plugin-data <pluginData>` to a fresh copy of the trusted prefix and run it under the host's normal Codex command authorization.
 5. Stop on the first failed step. Do not retry it through OpenClaw, direct shell execution, another runtime selection, or an edited command.
 6. Setup may replace the installed runtime. Its `requires-fresh-inspection` automation result is a handoff, not a schedule assessment. Continue with Codex automations below in a fresh command invocation using the trusted `automationRuntime` prefix, even when setup made no changes. Never reuse an automation plan from before setup or rerun setup just to reconcile automations.
@@ -104,7 +105,7 @@ missing or invalid manifest; it never authorizes setup or infers ownership by ti
 
 For `automation-thread-host-access-required`, report that the native app-server needs approved host access to its Codex state directory and retry the same trusted operation through native approval. Never expose captured stderr or repair this by changing profile permissions.
 
-Use the ambient Codex profile and its permissions. Prompt jobs may explicitly run scripts but remain model-backed. Do not convert command declarations, invent timeout guarantees, change profile permissions, or create managed Codex credentials. See [Codex automations](../../CODEX.md#repository-automations) for supported schedules and recovery diagnostics.
+Use the ambient Codex profile and its permissions. Prompt jobs may explicitly run scripts but remain model-backed. Do not convert command declarations, invent timeout guarantees, change profile permissions, or enroll credentials through an automation. See [Codex automations](../../CODEX.md#repository-automations) for supported schedules and recovery diagnostics.
 
 ## Checkpoints
 

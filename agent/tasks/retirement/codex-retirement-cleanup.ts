@@ -36,13 +36,16 @@ export default async function codexRetirementCleanup(input: {
   const discard = input.issueClosed || Boolean(retirement.operatorRequest);
   const threadId = record.threadId ?? record.receiptThreadId;
   const pending = (code: string) => ({ archived: input.archived, worktreeRemoved: false, code });
-  if (!threadId || !record.worktree || !record.project)
+  const projectless = record.reviewAdmission && record.request?.target.type === 'projectless';
+  if (!threadId || (!projectless && (!worktree || !record.project)))
     return pending('retirement-native-resource-unresolved');
-  const exists = await lstat(record.worktree).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === 'ENOENT') return undefined;
-    throw error;
-  });
-  if (!exists)
+  const exists = worktree
+    ? await lstat(worktree).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return undefined;
+        throw error;
+      })
+    : undefined;
+  if (!exists && (input.archived || !projectless))
     return input.archived
       ? { archived: true, worktreeRemoved: true }
       : pending('retirement-worktree-observation-required');
@@ -97,56 +100,51 @@ export default async function codexRetirementCleanup(input: {
     jobs.some(
       (job) =>
         ('targetThreadId' in job.definition && owners.has(String(job.definition.targetThreadId))) ||
-        job.cwds?.includes(record.worktree!),
+        (worktree && job.cwds?.includes(worktree)),
     )
   )
     return pending('retirement-automation-owner');
-  const protectedThreads = new Set(
-    discard
-      ? []
-      : inventory.pinnedThreads.map((entry) => String((entry as Record<string, unknown>).id)),
-  );
-  for (const job of jobs)
-    if ('targetThreadId' in job.definition)
-      protectedThreads.add(String(job.definition.targetThreadId));
-  const worktreeUsers = await input.native.worktreeUsers(
-    record.worktree,
-    owners,
-    protectedThreads,
-    {
+  if (worktree && record.project) {
+    const protectedThreads = new Set(
+      discard
+        ? []
+        : inventory.pinnedThreads.map((entry) => String((entry as Record<string, unknown>).id)),
+    );
+    for (const job of jobs)
+      if ('targetThreadId' in job.definition)
+        protectedThreads.add(String(job.definition.targetThreadId));
+    const worktreeUsers = await input.native.worktreeUsers(worktree, owners, protectedThreads, {
       allowEndedHelpers: discard,
-    },
-  );
-  if (worktreeUsers.some((id) => !owners.has(id))) return pending('retirement-worktree-shared');
-  if (
-    exists.isSymbolicLink() ||
-    !exists.isDirectory() ||
-    (await realpath(record.worktree)) !== record.worktree
-  )
-    return pending('retirement-native-resource-protected');
-  const git = input.git ?? dispatchGit;
-  await verifyDispatchWorktree(record.project, record.worktree, input.repository, git, 'handoff');
-  if (
-    !discard &&
-    (await git(record.worktree, ['status', '--porcelain=v1', '--untracked-files=all']))
-  )
-    return pending('retirement-worktree-dirty');
-  if (!discard) {
-    const head = await git(record.worktree, ['rev-parse', 'HEAD']);
+    });
+    if (worktreeUsers.some((id) => !owners.has(id))) return pending('retirement-worktree-shared');
     if (
-      !/^[a-f0-9]{40,64}$/u.test(head) ||
-      !(
-        await git(record.worktree, [
-          'for-each-ref',
-          '--format=%(refname)',
-          '--contains=' + head,
-          'refs/heads/',
-          'refs/remotes/',
-          'refs/tags/',
-        ])
-      ).trim()
+      !exists ||
+      exists.isSymbolicLink() ||
+      !exists.isDirectory() ||
+      (await realpath(worktree)) !== worktree
     )
-      return pending('retirement-worktree-unpreserved');
+      return pending('retirement-native-resource-protected');
+    const git = input.git ?? dispatchGit;
+    await verifyDispatchWorktree(record.project, worktree, input.repository, git, 'handoff');
+    if (!discard && (await git(worktree, ['status', '--porcelain=v1', '--untracked-files=all'])))
+      return pending('retirement-worktree-dirty');
+    if (!discard) {
+      const head = await git(worktree, ['rev-parse', 'HEAD']);
+      if (
+        !/^[a-f0-9]{40,64}$/u.test(head) ||
+        !(
+          await git(worktree, [
+            'for-each-ref',
+            '--format=%(refname)',
+            '--contains=' + head,
+            'refs/heads/',
+            'refs/remotes/',
+            'refs/tags/',
+          ])
+        ).trim()
+      )
+        return pending('retirement-worktree-unpreserved');
+    }
   }
   await input.fresh();
   if (record.worktree !== worktree) return pending('retirement-observation-changed');

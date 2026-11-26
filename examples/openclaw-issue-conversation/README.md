@@ -146,7 +146,7 @@ jq -e --slurp '.[1].retirement == null and .[0].id == .[1].id and .[0].threadId 
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-conversation/tanaabot"
 conversation=$(jq -er .threadId "$TMPDIR/notification-feedback.json")
 trap 'touch "$TMPDIR/conversation-queue-release"' EXIT
-openclaw gateway call chat.send --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,message:"Hold conversation queue until release",queueMode:"followup",deliver:false,idempotencyKey:"conversation-queue-hold"}')" --json | jq -e '.runId == "conversation-queue-hold"'
+openclaw gateway call chat.send --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,message:"Hold conversation queue until release",queueMode:"followup",deliver:false,idempotencyKey:"conversation-queue-hold"}')" --json | jq -es --arg expected "conversation-queue-hold" -f "$GITHUB_WORKSPACE/scripts/assert-chat-send.jq"
 for attempt in $(seq 1 120); do
   if test -f "$TMPDIR/conversation-queue-ready"; then break; fi
   sleep 0.5

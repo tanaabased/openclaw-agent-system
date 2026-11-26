@@ -133,18 +133,17 @@ export function createAutomationGateway(
 ): AutomationGateway {
   const request: AutomationGateway = async (method, params) => {
     assertPrivateStateLocksHeld();
-    if (method === 'models.list' || isSessionRead(method)) {
+    const setupWrite = ['cron.add', 'cron.update', 'sessions.create', 'sessions.patch'].includes(
+      method,
+    );
+    const readOnly = !setupWrite && method !== 'cron.run';
+    // Install can reach a scheduler write while hot reload is replacing the agent harness.
+    // Wait before sending it. An already-dispatched write still follows its original receipt.
+    if (setupWrite || method === 'models.list' || isSessionRead(method)) {
       await waitForReady?.();
       assertPrivateStateLocksHeld();
       privateStateLockSignal()?.throwIfAborted();
     }
-    const readOnly = ![
-      'cron.add',
-      'cron.update',
-      'cron.run',
-      'sessions.create',
-      'sessions.patch',
-    ].includes(method);
     const signal = method === 'sessions.create' ? privateStateLockSignal() : undefined;
     const invoke = (requestParams = params, timeoutMs?: number, retrySignal?: AbortSignal) =>
       call(

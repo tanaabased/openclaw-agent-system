@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# Onboarding schedules an unrelated model turn in the disposable main session.
+# Keep scheduled Agent System work and strict model assertions active.
+[[ ${GITHUB_ACTIONS:-} == true && -n ${OPENCLAW_STATE_DIR:-} && -n ${RUNNER_TEMP:-} && $OPENCLAW_STATE_DIR == "$RUNNER_TEMP"/* ]] || {
+  echo 'expected an isolated GitHub Actions OpenClaw state directory' >&2
+  exit 1
+}
+job=$(openclaw gateway call cron.list --params '{"includeDisabled":true,"limit":200}' --json | jq -er '
+  if .hasMore then error("expected a fresh fixture scheduler") else .jobs end |
+  map(select(.agentId == "main" and .name == "Proactive check (main)" and
+    .sessionKey == "agent:main:main" and .payload.skipIfScratchEmpty == true and .enabled)) |
+  if length > 1 then error("ambiguous main proactive check")
+  elif length == 1 then .[0].id | strings | select(length > 0)
+  else "" end')
+if [[ -n $job ]]; then
+  openclaw cron edit "$job" --disable --json | jq -e --arg id "$job" '.id == $id and .enabled == false'
+fi

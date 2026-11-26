@@ -359,7 +359,10 @@ async function runCodexFeedbackScoped(
               if (input.action === 'next') continue;
               return { status: event.phase, id: record.id, eventId: event.id, code: event.code };
             }
-            if (!record.request || !record.worktree)
+            if (
+              !record.request ||
+              (!record.worktree && record.request.target.type !== 'projectless')
+            )
               throw new Error('feedback-native-binding-mismatch');
             const provider = await providerFor();
             const admitted = taskAdmission(record, intake?.records ?? []);
@@ -439,7 +442,7 @@ async function runCodexFeedbackScoped(
             if (
               !found?.turnId ||
               found.id !== record.threadId ||
-              resolve(found.cwd) !== resolve(record.worktree!)
+              (record.worktree && resolve(found.cwd) !== resolve(record.worktree))
             )
               throw new Error('feedback-native-binding-mismatch');
             if (!input.material) {
@@ -508,7 +511,7 @@ async function runCodexFeedbackScoped(
                 eventId: event.id,
                 presentation: sourcePresentation,
                 continuationRequest: { action: 'context' as const, id: record.id },
-                project: { path: record.worktree },
+                ...(record.worktree ? { project: { path: record.worktree } } : {}),
               };
             }
           } catch (error) {

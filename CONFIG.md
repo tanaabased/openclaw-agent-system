@@ -168,3 +168,9 @@ when it is absent. For example, to set a 30-minute cleanup grace period:
 Omitted settings default to SQLite and a 60-minute cleanup grace period.
 The [storage](#storage) and [cleanup](#cleanup) sections describe the supported
 values.
+
+For a 1Password value that must remain available after a workspace is unbound,
+add `"onePassword": {"environmentId": "<Environment ID>", "variable": "<variable name>"}`
+to this file. Run Install and follow the local terminal enrollment instruction for the
+installation credential. Enter a service-account token with access to that Environment.
+Workspace enrollment is separate.
