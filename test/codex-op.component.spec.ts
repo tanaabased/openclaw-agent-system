@@ -187,6 +187,11 @@ setup-agent:
       const page = await fetch(url);
       assert.equal(page.headers.get('cache-control'), 'no-store');
       const html = await page.text();
+      const nonce = /<script nonce="([^"]+)"/u.exec(html)?.[1];
+      assert.ok(nonce);
+      assert.ok(
+        page.headers.get('content-security-policy')?.includes(`script-src 'nonce-${nonce}'`),
+      );
       assert.ok(
         html.includes(workspace) &&
           html.includes('shared-id') &&
@@ -214,8 +219,10 @@ setup-agent:
       await installCodexSetup(data, undefined, options);
       const doctor = await inspectCodexSetup(data, undefined, options);
       assert.ok(doctor.findings.some((f) => f.code === 'codex-op-binding-ready'));
+      const screen = await result.text();
+      assert.match(screen, /<h1>1Password connected<\/h1>/u);
       assert.doesNotMatch(
-        (await result.text()) + JSON.stringify(doctor),
+        screen + JSON.stringify(doctor),
         /fixture-token|fixture-(private|shared)-value/u,
       );
     }
@@ -250,12 +257,121 @@ setup-agent:
         finding.code,
         action === 'cancel' ? 'op-credential-input-cancelled' : 'codex-op-binding-rejected',
       );
+      const screen = await response.text();
+      assert.ok(screen.includes(action === 'cancel' ? 'Connection cancelled' : 'Token rejected'));
       assert.doesNotMatch(
-        (await response.text()) + JSON.stringify(finding),
+        screen + JSON.stringify(finding),
         /invalid-candidate|old-rejected|fixture-token/u,
       );
       assert.equal(entries.get(id!), 'old-rejected');
     }
+  });
+
+  it('keeps candidate rejection, a refused save and unconfirmed readback distinct', async () => {
+    await bind('environment: {op: [shared-id]}');
+    for (const scenario of [
+      { name: 'access', title: 'More access needed', writes: 0 },
+      { name: 'refused', title: 'Token could not be saved', writes: 1 },
+      { name: 'readback', title: 'Save could not be confirmed', writes: 1 },
+    ]) {
+      let writes = 0;
+      const fixtureStore = op.store!;
+      const credential = (await codexOpCredential(data, 'binding', {
+        ...op,
+        store: {
+          ...fixtureStore,
+          async write(key, token) {
+            writes += 1;
+            if (scenario.name === 'refused') {
+              return {
+                status: 'unavailable',
+                code: 'credential-keychain-write-failed',
+                message: 'fixture-private-error',
+              };
+            }
+            return fixtureStore.write(key, token);
+          },
+          async read(key) {
+            if (scenario.name === 'readback' && writes) return { status: 'missing' };
+            return fixtureStore.read(key);
+          },
+        },
+        async createClient(...args) {
+          const client = await op.createClient!(...args);
+          if (scenario.name !== 'access') return client;
+          return {
+            ...client,
+            async getVariables() {
+              throw Object.assign(new Error('fixture-private-error'), { httpStatus: 403 });
+            },
+          };
+        },
+      }))!;
+      const opened = Promise.withResolvers<string>();
+      const completed = credential.enrollInBrowser(opened.resolve);
+      const url = await Promise.race([opened.promise, completed.then((f) => assert.fail(f.code))]);
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { origin: new URL(url).origin },
+        body: new URLSearchParams({ action: 'save', token: 'fixture-token' }),
+      });
+      const finding = await completed;
+      const screen = await response.text();
+      assert.equal(finding.status, 'blocked');
+      assert.equal(writes, scenario.writes);
+      assert.ok(screen.includes(`<h1>${scenario.title}</h1>`));
+      assert.doesNotMatch(screen, /fixture-token|fixture-private-error/u);
+      if (scenario.name === 'readback') assert.match(screen, /Run Doctor.*before trying again/u);
+    }
+  });
+
+  it('keeps one submission in flight and refuses a duplicate and cancellation', async () => {
+    const opened = Promise.withResolvers<string>();
+    const started = Promise.withResolvers<void>();
+    const finish = Promise.withResolvers<void>();
+    let saves = 0;
+    const completed = browserEnrollment({
+      label: 'workspace <fixture>',
+      requirements: { environmentIds: [], secrets: [] },
+      onReady: opened.resolve,
+      async save() {
+        saves += 1;
+        started.resolve();
+        await finish.promise;
+        return {
+          screen: 'connected',
+          finding: {
+            component: 'credentials',
+            status: 'healthy',
+            code: 'fixture-ready',
+            message: 'ready',
+          },
+        };
+      },
+    });
+    const url = await Promise.race([opened.promise, completed.then((f) => assert.fail(f.code))]);
+    const post = (action: string) =>
+      fetch(url, {
+        method: 'POST',
+        headers: { origin: new URL(url).origin },
+        body: new URLSearchParams({ action, token: 'fixture-token' }),
+      });
+    const first = post('save');
+    try {
+      await started.promise;
+      const responses = await Promise.all([post('save'), post('cancel')]);
+      for (const response of responses) {
+        assert.equal(response.status, 409);
+        const screen = await response.text();
+        assert.match(screen, /workspace &lt;fixture&gt;/u);
+        assert.doesNotMatch(screen, /fixture-token/u);
+      }
+      assert.equal(saves, 1);
+    } finally {
+      finish.resolve();
+    }
+    assert.match(await (await first).text(), /<h1>1Password connected<\/h1>/u);
+    assert.equal((await completed).code, 'fixture-ready');
   });
 
   it('expires an unused local link without saving', async () => {

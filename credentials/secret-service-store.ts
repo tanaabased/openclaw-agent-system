@@ -119,9 +119,15 @@ export default class SecretServiceCredentialStore implements CredentialStore {
       ],
       value,
     );
-    return result.status === 'completed' && result.exitCode === 0
-      ? { status: 'stored' }
-      : this.#operationUnavailable('credential-secret-service-write-failed');
+    if (result.status === 'completed' && result.exitCode === 0) return { status: 'stored' };
+    if (result.status === 'timed-out' || result.status === 'output-too-large') {
+      return problem(
+        'unavailable',
+        'credential-secret-service-write-uncertain',
+        'The Linux Secret Service did not confirm the credential write.',
+      );
+    }
+    return this.#operationUnavailable('credential-secret-service-write-failed');
   }
 
   async remove(key: CredentialKey): Promise<CredentialStoreRemoveResult> {

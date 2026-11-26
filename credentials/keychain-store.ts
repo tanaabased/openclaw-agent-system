@@ -162,11 +162,24 @@ export default class KeychainCredentialStore implements CredentialStore {
       const entry = new keychain.AsyncEntry(this.#service(key), key.credentialId);
       await entry.setPassword(value, AbortSignal.timeout(this.#timeoutMs));
       return { status: 'stored' };
-    } catch {
+    } catch (error) {
+      const diagnostic = failureDiagnostic(error, 'write');
+      if (
+        diagnostic.code === 'EPERM' ||
+        diagnostic.code === 'EACCES' ||
+        diagnostic.osStatus === -25293 ||
+        diagnostic.osStatus === -25308
+      ) {
+        return problem(
+          'unavailable',
+          'credential-keychain-write-failed',
+          'The macOS Keychain refused the credential write.',
+        );
+      }
       return problem(
         'unavailable',
-        'credential-keychain-write-failed',
-        'The credential could not be stored in the macOS Keychain.',
+        'credential-keychain-write-uncertain',
+        'The macOS Keychain did not confirm the credential write.',
       );
     }
   }

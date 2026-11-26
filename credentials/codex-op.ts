@@ -15,7 +15,7 @@ import type { ManifestDiagnostic } from '../manifest/types.ts';
 import OpCredentialManager from './op-manager.ts';
 import OpCredentialService from './op-service.ts';
 import OpCredentialInput from './op-input.ts';
-import { browserEnrollment } from './codex-op-browser.ts';
+import { browserEnrollment, type EnrollmentOutcome } from './codex-op-browser.ts';
 import { platformCredentialStore } from './registry.ts';
 import type { CredentialStore } from './types.ts';
 
@@ -161,7 +161,7 @@ export async function codexOpCredential(
   async function inspect() {
     return (await check()).finding;
   }
-  async function save(token: string, storeId: string) {
+  async function save(token: string, storeId: string): Promise<EnrollmentOutcome> {
     await assertCurrent();
     const manager = new OpCredentialManager({
       credentialService: credentials,
@@ -175,15 +175,42 @@ export async function codexOpCredential(
       assertCurrent,
     );
     if (result.status === 'invalid') {
-      if (result.code === 'op-credential-mutation-uncertain')
+      const { code, providerDiagnostic } = result;
+      const state = classify(result);
+      const localStore = code.startsWith('credential-');
+      if (code === 'op-credential-mutation-uncertain' || code.endsWith('-write-uncertain')) {
         return {
-          ...finding(scope, 'inaccessible', true),
-          code: result.code,
-          message: result.message,
+          screen: 'uncertain',
+          finding: unconfirmedSave(),
         };
-      return finding(scope, classify(result), result.code.startsWith('credential-'));
+      }
+      const accessDenied =
+        providerDiagnostic?.classification === 'permission' ||
+        providerDiagnostic?.httpStatus === 403 ||
+        code === 'op-variable-missing';
+      return {
+        screen: localStore
+          ? 'store'
+          : accessDenied
+            ? 'access'
+            : state === 'rejected'
+              ? 'rejected'
+              : 'unavailable',
+        finding: finding(scope, state, localStore),
+      };
     }
-    return inspect();
+    const stored = await inspect();
+    return stored.status === 'healthy'
+      ? { screen: 'connected', finding: stored }
+      : { screen: 'uncertain', finding: unconfirmedSave() };
+  }
+  function unconfirmedSave(): AgentSystemLifecycleFinding {
+    return {
+      component: 'credentials',
+      status: 'blocked',
+      code: 'op-credential-mutation-uncertain',
+      message: 'The credential save could not be confirmed. Run Doctor before trying again.',
+    };
   }
   return {
     inspect,
@@ -205,7 +232,11 @@ export async function codexOpCredential(
         onReady,
         save: async (token) => {
           const current = await check();
-          return current.canEnroll ? save(token, store.id) : current.finding;
+          if (current.canEnroll) return save(token, store.id);
+          return {
+            screen: current.finding.status === 'healthy' ? 'connected' : 'unavailable',
+            finding: current.finding,
+          };
         },
       });
     },
@@ -232,7 +263,7 @@ export async function codexOpCredential(
               ? 'Enrollment requires operator input in a local terminal.'
               : candidate.message,
         };
-      return save(candidate.token, store.id);
+      return (await save(candidate.token, store.id)).finding;
     },
     // An in-process consumer uses only its selected declaration. Never expose a value-returning shell route.
     async resolve(name: string, environmentId?: string): Promise<string> {

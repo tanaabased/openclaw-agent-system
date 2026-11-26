@@ -3,45 +3,30 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { once } from 'node:events';
 
 import type { AgentSystemLifecycleFinding } from '../core/lifecycle-registry.ts';
+import { enrollmentPage, type EnrollmentScreen } from './codex-op-page.ts';
 import type { OpEnvironmentRequirements } from '../environment/op-requirements.ts';
 import { isCredentialValueValid, maximumCredentialBytes } from './types.ts';
+
+export interface EnrollmentOutcome {
+  finding: AgentSystemLifecycleFinding;
+  screen: EnrollmentScreen;
+}
 
 interface Enrollment {
   label: string;
   requirements: OpEnvironmentRequirements;
   environmentToken?: string;
-  save(token: string): Promise<AgentSystemLifecycleFinding>;
+  save(token: string): Promise<EnrollmentOutcome>;
   onReady(url: string): void;
   timeoutMs?: number;
 }
 
-function escapeHtml(value: string): string {
-  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-}
-
-function page(options: Enrollment) {
-  const resources = [
-    ...options.requirements.environmentIds,
-    ...options.requirements.secrets.map((s) => s.reference),
-  ];
-  return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Connect 1Password · Agent System</title>
-<style>:root{color-scheme:light dark;font:1rem/1.5 system-ui}main{margin:8vh auto;padding:1rem;max-width:37rem}input,button{font:inherit;padding:.5rem}input{width:95%}button{margin:.6rem .3rem 0 0}code{overflow-wrap:anywhere}</style>
-<main><h1>Connect 1Password</h1><p>Allow Agent System to use these resources for unattended work in ${escapeHtml(options.label)}.</p>
-<ul>${resources.map((r) => '<li><code>' + escapeHtml(r) + '</code></li>').join('')}</ul>
-<p>Agent System checks access before saving the token in your OS credential store.
-<a href="https://developer.1password.com/docs/service-accounts/get-started/" target="_blank" rel="noreferrer">Create a service account</a></p>
-<form method="post" autocomplete="off"><label>1Password service-account token<input name="token" type="password" autocomplete="off" required></label>
-<button name="action" value="save">Verify and save</button></form>
-<form method="post">${options.environmentToken ? '<button name="action" value="import">Use OP_SERVICE_ACCOUNT_TOKEN from the Install environment</button>' : ''}
-<button name="action" value="cancel">Cancel</button></form></main></html>`;
-}
-
-function respond(res: ServerResponse, code: number, text: string, html = false) {
+function respond(res: ServerResponse, code: number, text: string, html = false, nonce?: string) {
   res.writeHead(code, {
     'Content-Type': (html ? 'text/html' : 'text/plain') + '; charset=utf-8',
     'Content-Security-Policy':
-      "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+      "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" +
+      (nonce ? `; script-src 'nonce-${nonce}'` : ''),
     'Referrer-Policy': 'same-origin',
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
@@ -68,6 +53,21 @@ function stopped(code: string, message: string): AgentSystemLifecycleFinding {
 /** Keep the original Install process alive until the operator submits, cancels or times out. */
 export async function browserEnrollment(options: Enrollment): Promise<AgentSystemLifecycleFinding> {
   const path = '/' + randomBytes(32).toString('hex');
+  const page = {
+    label: options.label,
+    requirements: options.requirements,
+    canImport: Boolean(options.environmentToken),
+  };
+  const showForm = (res: ServerResponse, invalid = false) => {
+    const nonce = randomBytes(18).toString('base64');
+    respond(
+      res,
+      invalid ? 400 : 200,
+      enrollmentPage(page, invalid ? 'invalid' : 'entry', nonce),
+      true,
+      nonce,
+    );
+  };
   const completed = Promise.withResolvers<AgentSystemLifecycleFinding>();
   let origin: string;
   let accepting = true;
@@ -76,50 +76,49 @@ export async function browserEnrollment(options: Enrollment): Promise<AgentSyste
     async (req, res) => {
       let submitted = false;
       try {
-        if (!accepting || req.url !== path || 'http://' + req.headers.host !== origin)
+        if (req.url !== path || 'http://' + req.headers.host !== origin)
           return respond(res, 404, 'Link unavailable.');
-        if (req.method === 'GET') return respond(res, 200, page(options), true);
+        if (req.method === 'GET') {
+          return accepting ? showForm(res) : respond(res, 409, enrollmentPage(page, 'used'), true);
+        }
         if (
           req.method !== 'POST' ||
           req.headers.origin !== origin ||
           req.headers['content-type']?.split(';')[0] !== 'application/x-www-form-urlencoded'
         )
           return respond(res, 403, 'Request refused.');
+        if (!accepting) return respond(res, 409, enrollmentPage(page, 'used'), true);
         const form = await readForm(req);
-        if (!form || !accepting) return respond(res, 400, 'Request unavailable.');
+        if (!accepting) return respond(res, 409, enrollmentPage(page, 'used'), true);
+        if (!form) return showForm(res, true);
         const action = form.get('action');
         const token = action === 'import' ? options.environmentToken : form.get('token');
         if (
           action !== 'cancel' &&
           (!(action === 'save' || action === 'import') || !token || !isCredentialValueValid(token))
         )
-          return respond(
-            res,
-            400,
-            'Enter a valid token. Return to the enrollment page to try again.',
-          );
+          return showForm(res, true);
         accepting = false;
         submitted = true;
-        const result =
+        const result: EnrollmentOutcome =
           action === 'cancel'
-            ? stopped('op-credential-input-cancelled', 'Enrollment cancelled.')
+            ? {
+                screen: 'cancelled',
+                finding: stopped('op-credential-input-cancelled', 'Enrollment cancelled.'),
+              }
             : await options.save(token!);
-        respond(
-          res,
-          200,
-          result.status === 'healthy'
-            ? '1Password access verified. Return to the Install chat for the Doctor report.'
-            : result.message,
-        );
-        completed.resolve(result);
+        completed.resolve(result.finding);
+        respond(res, 200, enrollmentPage(page, result.screen), true);
       } catch {
         if (req.aborted && accepting) return;
         const result = stopped(
           'op-credential-enrollment-incomplete',
           'Enrollment could not be confirmed. Run Doctor to check the stored credential.',
         );
-        respond(res, 500, result.message);
         if (submitted) completed.resolve(result);
+        if (!res.headersSent && !res.destroyed) {
+          respond(res, 500, enrollmentPage(page, submitted ? 'uncertain' : 'unavailable'), true);
+        }
       }
     },
   );
