@@ -15,6 +15,7 @@ import type { ManifestDiagnostic } from '../manifest/types.ts';
 import OpCredentialManager from './op-manager.ts';
 import OpCredentialService from './op-service.ts';
 import OpCredentialInput from './op-input.ts';
+import { browserEnrollment } from './codex-op-browser.ts';
 import { platformCredentialStore } from './registry.ts';
 import type { CredentialStore } from './types.ts';
 
@@ -80,12 +81,14 @@ function finding(
   localStore = false,
 ): AgentSystemLifecycleFinding {
   const subject = 'The ' + scope + ' 1Password credential';
-  const enroll = scope === 'binding' ? 'setup enroll-op' : 'setup enroll-installation-op';
+  const guidance =
+    scope === 'binding'
+      ? 'Run interactive Agent System Install to connect 1Password.'
+      : 'Run setup enroll-installation-op with this plugin data directory in your terminal.';
   const descriptions = {
     ready: ' can access the declared resources.',
-    missing: ' is missing. Run ' + enroll + ' with this plugin data directory in your terminal.',
-    rejected:
-      ' was rejected. Check its grants or run ' + enroll + ' in your terminal to replace it.',
+    missing: ' is missing. ' + guidance,
+    rejected: ' was rejected. Check its grants. ' + guidance,
     inaccessible: localStore
       ? ' is inaccessible in the OS credential store. Check macOS login Keychain or Linux Secret Service.'
       : ' could not be validated with 1Password. Check connectivity and access to the declared resources.',
@@ -158,8 +161,46 @@ export async function codexOpCredential(
   async function inspect() {
     return (await check()).finding;
   }
+  async function save(token: string, storeId: string) {
+    await assertCurrent();
+    const manager = new OpCredentialManager({
+      credentialService: credentials,
+      environmentService: service,
+    });
+    const result = await manager.setForOwner(
+      target.owner,
+      target.requirements,
+      token,
+      storeId,
+      assertCurrent,
+    );
+    if (result.status === 'invalid') {
+      if (result.code === 'op-credential-mutation-uncertain')
+        return {
+          ...finding(scope, 'inaccessible', true),
+          code: result.code,
+          message: result.message,
+        };
+      return finding(scope, classify(result), result.code.startsWith('credential-'));
+    }
+    return inspect();
+  }
   return {
     inspect,
+    async enrollInBrowser(onReady: (url: string) => void, environment = process.env) {
+      const readiness = await check();
+      if (!readiness.canEnroll || !store) return readiness.finding;
+      return browserEnrollment({
+        label: target.label,
+        requirements: target.requirements,
+        environmentToken: environment[opServiceAccountTokenName],
+        onReady,
+        save: async (token) => {
+          const current = await check();
+          return current.canEnroll ? save(token, store.id) : current.finding;
+        },
+      });
+    },
     async enroll() {
       const readiness = await check();
       if (!readiness.canEnroll || !store) return readiness.finding;
@@ -183,28 +224,7 @@ export async function codexOpCredential(
               ? 'Enrollment requires operator input in a local terminal.'
               : candidate.message,
         };
-      await assertCurrent();
-      const manager = new OpCredentialManager({
-        credentialService: credentials,
-        environmentService: service,
-      });
-      const result = await manager.setForOwner(
-        target.owner,
-        target.requirements,
-        candidate.token,
-        store.id,
-        assertCurrent,
-      );
-      if (result.status === 'invalid') {
-        if (result.code === 'op-credential-mutation-uncertain')
-          return {
-            ...finding(scope, 'inaccessible', true),
-            code: result.code,
-            message: result.message,
-          };
-        return finding(scope, classify(result), result.code.startsWith('credential-'));
-      }
-      return inspect();
+      return save(candidate.token, store.id);
     },
     // An in-process consumer uses only its selected declaration. Never expose a value-returning shell route.
     async resolve(name: string, environmentId?: string): Promise<string> {

@@ -281,6 +281,12 @@ cmp "$root/workspace.expected.yaml" "$GITHUB_WORKSPACE/examples/codex-install/wo
 cmp "$root/local.expected.yaml" "$GITHUB_WORKSPACE/examples/codex-install/workspace/agent.local.yaml"
 rm "$GITHUB_WORKSPACE/examples/codex-install/workspace/agent.local.yaml"
 
+# should skip interactive enrollment when the bound workspace has no declared 1password resources
+root="$TMPDIR/agent-system-codex-install"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+node "$plugin_root/dist/codex/codex-runtime.js" setup connect-op --plugin-data "$root/plugin-data" \
+  | jq -e '.status == "skipped" and .code == "codex-op-not-declared"'
+
 # should preserve the active binding when a workspace has no agent manifest
 root="$TMPDIR/agent-system-codex-install"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
