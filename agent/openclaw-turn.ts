@@ -6,6 +6,7 @@ import {
   type HistoryScope,
 } from './openclaw-history.ts';
 import { sessionObject } from './openclaw-session-create.ts';
+import liveQueueCount from './openclaw-live-queue.ts';
 import issueInputEvent from './openclaw-session-input.ts';
 import openClawTurnReply from './openclaw-turn-evidence.ts';
 import type { OpenClawTurn } from './openclaw-turn-state.ts';
@@ -135,13 +136,10 @@ export async function reconcileOpenClawTurn(input: {
     if (receipts.length > 1) throw new Error('dispatch-turn-receipt-invalid');
     const receipt = receipts[0];
     const info = sessionObject(history.sessionInfo);
-    const pending = sessionObject(history.pendingInputs ?? {}).total;
+    const pending = liveQueueCount(sessionObject(history.pendingInputs ?? {}));
     if (input.record) {
       delete input.record.nativeInactive;
-      if (
-        info.hasActiveRun === true ||
-        (typeof pending === 'number' && Number.isSafeInteger(pending) && pending > 0)
-      )
+      if (info.hasActiveRun === true || (pending !== undefined && pending > 0))
         input.record.nativeInactive = false;
       else if (info.hasActiveRun === false && pending === 0) input.record.nativeInactive = true;
     }

@@ -5,6 +5,25 @@ import { providerDiagnostic, type ProviderDiagnostic } from '../utils/provider-d
 
 import type { OpenClawAIMockScenario } from './aimock-scenario.ts';
 
+/** A dispatcher rejection has no inner result. Keep only known failure classes. */
+function dispatchErrorCode(value: { status?: unknown; tool?: unknown; error?: unknown } | null) {
+  if (
+    value?.status !== 'error' ||
+    !['dispatch_action', 'tool_call'].includes(String(value.tool)) ||
+    typeof value.error !== 'string'
+  )
+    return;
+  const known = value.error.match(
+    /\b(?:material-native-response-unavailable|material-native-history-invalid|material-model-request-invalid|issue-pickup-tool-call-authorization-missing|intake-request-invalid|automation-lifecycle-unverified|automation-authority-unavailable|tool-call-id-mismatch)\b/u,
+  );
+  if (known) return known[0];
+  if (value.error.includes('Invalid arguments for tool')) return 'invalid-tool-arguments';
+  if (value.error.includes('Unknown tool id')) return 'unknown-tool-id';
+  if (value.error.includes('blocked before execution')) return 'blocked-before-execution';
+  if (value.error.includes('Denied by user')) return 'tool-call-denied';
+  return 'unclassified-dispatch-error';
+}
+
 function resultDiagnostic(content: string): {
   exitCode?: number;
   httpStatus?: number;
@@ -31,7 +50,7 @@ function resultDiagnostic(content: string): {
     const code =
       typeof value?.code === 'string' && /^[a-z]+(?:-[a-z]+)+$/u.test(value.code)
         ? value.code
-        : undefined;
+        : dispatchErrorCode(value);
     const exitCode = Number.isSafeInteger(value?.exitCode) ? value.exitCode : undefined;
     const httpStatus =
       exitCode && typeof value.stdout === 'string' && typeof value.stderr === 'string'

@@ -2326,6 +2326,7 @@ describe('agent/openclaw dispatch', () => {
     fixtureState.waitResult = { status: 'error' };
     fixtureState.active = false;
     fixtureState.inputReceipts = [];
+    fixtureState.pendingInputHistoryTotal = 19;
     const failed = await fixtureState.finish(input.id);
     assert.ok('code' in failed && failed.code === 'dispatch-turn-cancelled');
     await fixtureState.service.check(fixtureState.manifest, fixtureState.root);

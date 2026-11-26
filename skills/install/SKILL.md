@@ -21,6 +21,10 @@ metadata:
 
 Install the active `agent.yaml` through the owning runtime. OpenClaw reconciles the full Agent System lifecycle after native chat approval. Standalone Codex reconciles applicable setup and plans repository automations for authorized native app writes.
 
+## Required Reading
+
+- **Before presenting standalone Codex results:** Read [Standalone Codex setup cards](../../channels/github/PRESENTATION.md#standalone-codex-setup-cards), including before showing a 1Password waiting update.
+
 ## When to Use
 
 - Inspect installation state before an Agent System install.
@@ -60,10 +64,14 @@ Treat runtime command prefixes and plugin-data paths as trusted ephemeral data. 
 3. Append `inspect --plugin-data <pluginData>`, run the command, and summarize its JSON findings. Do not expose declared commands, command output, secrets, or environment values.
    Credential findings do not prevent independent setup. For inaccessible stores or providers, report the finding.
 4. Apply only when the user has explicitly requested installation. Append `install --plugin-data <pluginData>` to a fresh copy of the trusted prefix and run it under the host's normal Codex command authorization.
-5. On failure retain completed setup outcomes and blocked findings. For an operator-requested interactive Install with `codex-op-binding-missing` or `codex-op-binding-rejected`, run `connect-op --plugin-data <pluginData>` through the same setup prefix in a foreground execution session that can yield output. Request native host approval for loopback access if the sandbox requires it. A denial stops enrollment. Send its `awaiting-browser` URL to the operator as a **Connect 1Password** link immediately. Keep waiting on that same process in the original chat. The page handles masked input or explicit environment import. Never ask for a token in chat, inspect the process environment, or have a browser tool fill or read the form. On a healthy result, rerun step 4 once and continue with fresh automation inspection. On cancellation, expiry, or error, report the outstanding finding and stop. Unattended Install reports pending credentials without starting enrollment. For a separately configured installation credential, provide the quoted terminal command using the setup prefix and `enroll-installation-op --plugin-data <pluginData>`. Skip automation sync while setup remains blocked.
+5. On failure retain completed setup outcomes and blocked findings. For an operator-requested interactive Install with `codex-op-binding-missing` or `codex-op-binding-rejected`, finish independent workspace setup first. Then run `connect-op --plugin-data <pluginData>` through the same setup prefix in a foreground execution session that can yield output. Request native host approval for loopback access if the sandbox requires it. A denial stops enrollment.
+   - As soon as the process emits `awaiting-browser`, send a waiting update starting with its own `⚠️ CONNECT 1PASSWORD` card. Put `[**Connect 1Password**](<awaiting-browser URL>) — valid for 5 minutes` on a dedicated line with a quoted blank line above and below. Use the actual URL only in that link, never in subsequent reports. Direct token entry to the local page, which handles masked input or explicit environment import. Never ask for a token in chat, inspect the process environment, or have a browser tool fill or read the form.
+   - Keep waiting on the same process in the original chat. On a healthy result, rerun step 4 once and continue with fresh automation inspection. On cancellation, expiry, or error, stop and report both completed and pending work in the Install card.
+   - Unattended Install reports pending credentials without starting enrollment. For a separately configured installation credential, provide the quoted terminal command using the setup prefix and `enroll-installation-op --plugin-data <pluginData>`. Skip automation sync while setup remains blocked.
 6. Setup may replace the installed runtime. Its `requires-fresh-inspection` automation result is a handoff, not a schedule assessment. Continue with Codex automations below in a fresh command invocation using the trusted `automationRuntime` prefix, even when setup made no changes. Never reuse an automation plan from before setup or rerun setup just to reconcile automations.
 7. Report outcomes in declaration order: `setup-unchanged` as healthy, `setup-applied` as applied, `setup-not-applicable` as skipped, and an error as failed with its stable code and `stepId` when present.
-8. After successful interactive enrollment and the remaining Install work, run Agent System Doctor in this chat. Present its full final report, including any remaining drift.
+8. Present Install outcomes in one `🧰 INSTALL REPORT` card. Under `Workspace`, retain each applicable setup and enrollment outcome; under `Automations`, retain applicable reconciliation outcomes. Use this card even when an earlier step stops installation. Mark partial, blocked, skipped, and failed work explicitly; never present pending work as completed.
+9. After Install completes, with or without interactive enrollment, run [Agent System Doctor](../doctor/SKILL.md) in this same chat using fresh inspection. Present the Install card first and the actual full Doctor card second as sibling blockquotes. Keep Doctor warnings and drift visible even when Install completed successfully. Never substitute Install outcomes for fresh Doctor findings.
 
 #### Codex automations
 

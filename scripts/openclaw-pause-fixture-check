@@ -8,7 +8,7 @@ set -euo pipefail
   echo 'expected an isolated GitHub Actions OpenClaw state directory' >&2
   exit 1
 }
-job=$(openclaw gateway call cron.list --params '{"includeDisabled":true,"limit":200}' --json | jq -er '
+job=$(openclaw-fixture-gateway cron.list --params '{"includeDisabled":true,"limit":200}' --json | jq -er '
   if .hasMore then error("expected a fresh fixture scheduler") else .jobs end |
   map(select(.agentId == "main" and .name == "Proactive check (main)" and
     .sessionKey == "agent:main:main" and .payload.skipIfScratchEmpty == true and .enabled)) |

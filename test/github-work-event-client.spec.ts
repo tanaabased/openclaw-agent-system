@@ -139,7 +139,7 @@ describe('channels/github/provider/work-event-client', () => {
   });
 
   it('should never substitute cached repository facts for provider errors', async () => {
-    for (const status of [401, 403, 404, 503]) {
+    for (const status of [401, 403, 404, 500, 503]) {
       let failing = false;
       const conditionals: boolean[] = [];
       const client = new GitHubWorkEventClient(

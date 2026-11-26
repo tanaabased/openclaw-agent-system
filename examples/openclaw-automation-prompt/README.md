@@ -60,7 +60,7 @@ jq -e '[.findings[] | select(.stepId == "prompt" and .code == "automation-drift"
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-prompt"
 native=$(jq -er '.jobs[] | select(.id == "prompt") | .nativeId' "$TMPDIR/automation-before.json")
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" --scheduled-after prompt "$native" "$(cat "$TMPDIR/prompt-sync-started-ms")" 180000 > "$TMPDIR/automation-timer-run.json"
-if ! openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json > "$TMPDIR/prompt-timer-job.json"; then
+if ! openclaw-fixture-gateway cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json > "$TMPDIR/prompt-timer-job.json"; then
   echo 'could not read the original native prompt job after timer completion' >&2
   jq -c '{type:.error.type,kind:.error.kind,code:.error.code}' "$TMPDIR/prompt-timer-job.json" >&2
   exit 1
@@ -84,7 +84,7 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-automation-prompt"
 native=$(jq -er '.jobs[] | select(.id == "prompt") | .nativeId' "$TMPDIR/automation-before.json")
 params=$(jq -nc --arg id "$native" '{id:$id}')
 if ! openclaw agent-system automations sync --json | jq -e 'if .status == "synchronized" and all(.outcomes[]; .status == "unchanged") then true else error("repeat prompt sync: " + ({status, outcomes: [.outcomes[]? | {id, stepId, status}]} | tojson)) end'; then
-  if openclaw gateway call cron.get --params "$params" --json > "$TMPDIR/prompt-after-repeat.json"; then
+  if openclaw-fixture-gateway cron.get --params "$params" --json > "$TMPDIR/prompt-after-repeat.json"; then
     jq -cs '.[0] as $before | .[1] as $after | ["enabled","schedule","deleteAfterRun","payload","delivery","sessionTarget","sessionKey","wakeMode","failureAlert","trigger","pacing","displayName"] | map(select(. as $key | $before[$key] != $after[$key])) | {changedNativeFields: .}' "$TMPDIR/prompt-timer-job.json" "$TMPDIR/prompt-after-repeat.json" >&2
   fi
   exit 1
@@ -99,10 +99,10 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-automation-prompt"
 native=$(jq -er '.jobs[] | select(.id == "prompt") | .nativeId' "$TMPDIR/automation-before.json")
 before=$(curl --fail --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -er '.requestCount | numbers')
 printf '[]\n' > automations.yaml
-openclaw gateway call cron.run --params "$(jq -nc --arg id "$native" '{id:$id,mode:"force"}')" --json | tee "$TMPDIR/automation-refusal-ack.json"
+openclaw-fixture-gateway cron.run --params "$(jq -nc --arg id "$native" '{id:$id,mode:"force"}')" --json | tee "$TMPDIR/automation-refusal-ack.json"
 run_id=$(jq -er 'select(.ok == true and .enqueued == true) | .runId | strings | select(length > 0)' "$TMPDIR/automation-refusal-ack.json")
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" prompt "$run_id" error
-openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" --arg run "$run_id" '{id:$id,runId:$run,limit:1,offset:0}')" --json > "$TMPDIR/automation-refusal-run.json"
+openclaw-fixture-gateway cron.runs --params "$(jq -nc --arg id "$native" --arg run "$run_id" '{id:$id,runId:$run,limit:1,offset:0}')" --json > "$TMPDIR/automation-refusal-run.json"
 jq -e --arg id "$native" --arg run "$run_id" 'if any(.entries[]; .jobId == $id and .runId == $run and .status == "error" and ((.error // "") | contains("automation-prompt-load-blocked"))) then true else error("unexpected refusal outcome: " + (.entries | map({jobId,runId,status,error}) | tojson)) end' "$TMPDIR/automation-refusal-run.json"
 curl --fail --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e --argjson before "$before" '.strictMissCount == 0 and .requestCount == $before'
 ```

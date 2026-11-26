@@ -119,9 +119,13 @@ openclaw agent-system notifications wait --for baseline-ready --timeout 30 --jso
 
 ```bash
 # should create an issue as emori and assign it as tanaabot after the safe intake baseline
+set -euo pipefail
+stage=create-issue
+trap 'status=$?; if test "$status" -ne 0; then echo "pr journey fixture failed at $stage" >&2; fi' EXIT
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/emori"
 openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT- Agent System openclaw-pr-journey $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-pr-journey/issue.md" | tee "$TMPDIR/notification-issue.json" | jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0'
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
+stage=assign-issue
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
 openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot' | jq -e 'any(.assignees[]; .login == "tanaabot")'
 
@@ -142,7 +146,7 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/review-journey-state.ts" dispatch |
 # should show the initial question in its chat and publish it on the original issue
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
 conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
-openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json | jq -e 'any(.messages[]; .role == "assistant" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | contains("Should disposable test issues be closed after capturing evidence?")))'
+openclaw-fixture-gateway chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json | jq -e 'any(.messages[]; .role == "assistant" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | contains("Should disposable test issues be closed after capturing evidence?")))'
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e 'any(.[]; .user.login == "tanaabot" and (.body | contains("Should disposable test issues")))'
 
@@ -195,7 +199,7 @@ openclaw agent-system tool gh -- pr view "$pr" --repo tanaabased/big-test-bucket
 openclaw agent-system tool gh -- api graphql -f query='query($id:ID!){node(id:$id){... on PullRequest{closingIssuesReferences(first:100,userLinkedOnly:true){nodes{number}}}}}' -f id="$(jq -er .delivery.pullRequest.pullRequestNodeId "$TMPDIR/notification-delivery.json")" --jq '.data.node.closingIssuesReferences.nodes' | jq -e --argjson issue "$(jq -er .number "$TMPDIR/notification-issue.json")" 'any(.[]; .number == $issue)'
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/pulls/$pr/requested_reviewers" | jq -e '(.users | length) == 0 and (.teams | length) == 0'
 conversation=$(jq -er .threadId "$TMPDIR/notification-delivery.json")
-openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json > "$TMPDIR/notification-published-history.json"
+openclaw-fixture-gateway chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json > "$TMPDIR/notification-published-history.json"
 jq -e '.delivery.presentation == null' "$TMPDIR/notification-delivery.json"
 jq -e --arg run "$(jq -er .feedback.events[0].turn.runId "$TMPDIR/notification-delivery.json")" --arg text "#issuecomment-$(jq -er .announcement.receipt.databaseId "$TMPDIR/notification-delivery.json")" 'any(.messages[]; .role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | (gsub("(?m)^> ?"; "") | contains($text))))' "$TMPDIR/notification-published-history.json"
 
@@ -232,7 +236,7 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/review-journey-state.ts" dispatch |
 feedback_run=$(node --import tsx "$GITHUB_WORKSPACE/scripts/review-journey-state.ts" dispatch | jq -ers --slurpfile owner "$TMPDIR/notification-delivery.json" --arg source "$(jq -er .node_id "$TMPDIR/notification-feedback-source.json")" '[.[].records[] | select(.id == $owner[0].id) | .feedback.events[]? | select(.sourceId == $source and .turn != null)] | if length == 1 then .[0].turn.runId else error("one feedback turn required; inspect retained dispatch feedback state") end')
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$feedback_run" 600000
 conversation=$(jq -er .threadId "$TMPDIR/notification-delivery.json")
-openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$feedback_run" '{sessionKey:$key,inputRunIds:[$run],limit:200,maxChars:100000}')" --json | jq --arg run "$feedback_run" '. + {requestedRunId:$run}' > "$TMPDIR/notification-feedback-history.json"
+openclaw-fixture-gateway chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$feedback_run" '{sessionKey:$key,inputRunIds:[$run],limit:200,maxChars:100000}')" --json | jq --arg run "$feedback_run" '. + {requestedRunId:$run}' > "$TMPDIR/notification-feedback-history.json"
 node --import tsx "$GITHUB_WORKSPACE/scripts/review-journey-state.ts" dispatch | jq -es --slurpfile owner "$TMPDIR/notification-dispatch-before.json" '[.[].records[] | select(.id == $owner[0].id)] | if length == 1 then .[0] else error("one issue owner required") end' > "$TMPDIR/notification-feedback.json"
 jq -e --slurp '
   (.[0].feedback.events[0]) as $before |
@@ -273,7 +277,7 @@ openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/pulls/$nu
 # should acknowledge verified feedback in intake without repeating it on a quiet scan
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
 conversation=$(jq -er .sourceThreadId "$TMPDIR/notification-feedback.json")
-openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200,maxChars:100000}')" --json > "$TMPDIR/notification-intake-history.json"
+openclaw-fixture-gateway chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200,maxChars:100000}')" --json > "$TMPDIR/notification-intake-history.json"
 node --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; const record=JSON.parse(readFileSync(process.env.TMPDIR+"/notification-feedback.json","utf8")); const history=JSON.parse(readFileSync(process.env.TMPDIR+"/notification-intake-history.json","utf8")); const text=history.messages.filter(m=>m.role==="assistant" && m.stopReason==="stop").map(m=>typeof m.content==="string"?m.content:m.content.map(c=>c.text??"").join("")); const {buildControlUiSessionPath}=await import("openclaw/plugin-sdk/session-discussion"); const destination=buildControlUiSessionPath({namespace:"chat",sessionKey:record.threadId,exactKey:true}); assert.ok(destination); const notices=text.flatMap(t=>t.split("\n").filter(l=>l.includes("Feedback delivered to chat:") && l.includes("]("+destination+")"))); assert.equal(notices.reduce((sum,l)=>sum+Number(/· ([0-9]+) items?/.exec(l)?.[1]),0),2,JSON.stringify({sourceThreadId:record.sourceThreadId,threadId:record.threadId,events:record.feedback.events.map(e=>({phase:e.phase,intakeReportedAt:e.intakeReportedAt})),sessionId:history.sessionId,hasMore:history.hasMore,notices,assistant:text.slice(-8).map(t=>t.slice(0,500))}));'
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000

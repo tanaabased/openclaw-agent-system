@@ -1,11 +1,57 @@
 import assert from 'node:assert/strict';
 
+import { AutomationError } from '../agent/automations/automation-errors.ts';
 import { createAutomationGateway } from '../agent/automations/automation-gateway.ts';
-import waitForAutomationGateway from '../agent/automations/automation-gateway-readiness.ts';
+import waitForAutomationGateway, {
+  waitForSchedulerConfig,
+} from '../agent/automations/automation-gateway-readiness.ts';
 import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 import waitForSessionDispatchGateway from '../credentials/session-dispatch-readiness.ts';
 
 describe('agent/automation-gateway-readiness', () => {
+  it('should send one scheduler write only after the saved revision becomes active', async () => {
+    for (const converges of [true, false]) {
+      let time = 0;
+      let writes = 0;
+      const request = createAutomationGateway(
+        async () => {
+          writes++;
+          return {};
+        },
+        undefined,
+        async (method) => {
+          assert.equal(method, 'cron.add');
+          await waitForSchedulerConfig(
+            method,
+            async () => ({
+              valid: true,
+              configRevisionHash: 'new',
+              appliedConfigHash: time && converges ? 'new' : 'old',
+            }),
+            () => time,
+            async (ms) => {
+              time += ms;
+            },
+          );
+        },
+      );
+      if (converges) {
+        await request('cron.add', {});
+        assert.equal(writes, 1);
+        assert.ok(time > 0);
+      } else {
+        await assert.rejects(request('cron.add', {}), (error) => {
+          assert.ok(error instanceof AutomationError);
+          assert.equal(error.code, 'automation-gateway-config-revision-deadline');
+          assert.equal(error.diagnostic?.method, 'cron.add');
+          assert.equal(error.diagnostic?.requestDispatched, false);
+          return true;
+        });
+        assert.equal(writes, 0);
+      }
+    }
+  });
+
   it('should defer model reads, session setup and scheduler reconciliation during native reload', async () => {
     for (const method of [
       'models.list',

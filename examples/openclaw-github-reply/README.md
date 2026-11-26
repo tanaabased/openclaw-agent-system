@@ -97,7 +97,7 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification
 number=$(jq -er .number "$TMPDIR/notification-manual-issue.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-manual-comments.json"
 jq -e --slurpfile draft "$TMPDIR/notification-manual-draft.json" 'length == 1 and .[0].user.login == "tanaabot" and (.[0].body | startswith($draft[0].publicText)) and (.[0].body | contains("agent-system-github-publication:manual-response:"))' "$TMPDIR/notification-manual-comments.json"
-openclaw gateway call chat.history --params '{"sessionKey":"agent:github-reply-tanaabot:manual-reply","inputRunIds":["notification-manual-publish"],"limit":200,"maxChars":100000}' --json > "$TMPDIR/notification-manual-history.json"
+openclaw-fixture-gateway chat.history --params '{"sessionKey":"agent:github-reply-tanaabot:manual-reply","inputRunIds":["notification-manual-publish"],"limit":200,"maxChars":100000}' --json > "$TMPDIR/notification-manual-history.json"
 node --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; const read=n=>JSON.parse(readFileSync(process.env.TMPDIR+"/notification-manual-"+n+".json","utf8")); const comment=read("comments")[0]; const history=read("history"); const text=history.messages.filter(m=>m.role==="assistant" && m.__openclaw?.runId==="notification-manual-publish" && m.stopReason==="stop").map(m=>typeof m.content==="string"?m.content:m.content.map(c=>c.text??"").join("")).join("\n"); assert.ok(text.includes(comment.html_url)); assert.ok(text.includes(read("draft").publicText.replace(/^@([a-z\d-]+), /iu, "[@$1](https://github.com/$1), ")));'
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0'
 ```
@@ -133,7 +133,7 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-status-comments.json"
 jq -e --slurpfile before "$TMPDIR/notification-status-before.json" --slurpfile draft "$TMPDIR/notification-status-draft.json" 'length == (($before[0] | length) + 1) and ([.[] | select(.body | contains("agent-system-github-publication:status-update:"))] | length) == (([$before[0][] | select(.body | contains("agent-system-github-publication:status-update:"))] | length) + 1) and any(.[]; .user.login == "tanaabot" and (.body | startswith($draft[0].publicText)))' "$TMPDIR/notification-status-comments.json"
 params=$(jq -nc --arg key "$conversation" '{sessionKey:$key,inputRunIds:["notification-status-publish"],limit:200,maxChars:100000}')
-openclaw gateway call chat.history --params "$params" --json > "$TMPDIR/notification-status-history.json"
+openclaw-fixture-gateway chat.history --params "$params" --json > "$TMPDIR/notification-status-history.json"
 node --input-type=module <<'NODE'
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

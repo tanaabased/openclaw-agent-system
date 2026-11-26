@@ -78,6 +78,21 @@ describe('aimock fixture error diagnostics', () => {
     assert.equal(results[2]!.code, undefined);
     assert.equal(results[2]!.status, undefined);
     assert.deepEqual(captured.errors[0]!.frames, ['    at fixture (/private/tmp/fixture.ts:1:1)']);
+    const rejected = {
+      ...request,
+      messages: [
+        {
+          role: 'tool' as const,
+          content: JSON.stringify({
+            tool: 'dispatch_action',
+            status: 'error',
+            error: 'Invalid arguments for tool "private context": private assertion detail',
+          }),
+        },
+      ],
+    };
+    assert.throws(() => captured.scenario.fixtures[0]!.match.predicate!(rejected));
+    assert.equal(captured.errors[1]!.toolResults[0]!.code, 'invalid-tool-arguments');
     assert.doesNotMatch(
       JSON.stringify(captured.errors),
       /private (?:assertion detail|context|prose with spaces|status)|ghp_abcdefghijklmnopqrstuvwxyz1234567890/u,

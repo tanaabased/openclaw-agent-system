@@ -10,7 +10,10 @@ import {
 import { openClawAIMockToolResultText } from './aimock-tool-result.ts';
 
 /** Consume shared context pages through the same tool calls a native model receives. */
-export default function contextMaterialExchange(request: ChatCompletionRequest): {
+export default function contextMaterialExchange(
+  request: ChatCompletionRequest,
+  manuallyPagedTools: readonly string[] = [],
+): {
   request: ChatCompletionRequest;
   pending?: FixtureResponse;
 } {
@@ -35,6 +38,7 @@ export default function contextMaterialExchange(request: ChatCompletionRequest):
     const transport = context.materialTransport as { tool: string };
     assert.equal(transport.tool, original?.name);
     const owner = transport.tool;
+    if (manuallyPagedTools.includes(owner)) continue;
     const materials = context.contextMaterials as {
       inputFields?: string[];
       fields: Array<{

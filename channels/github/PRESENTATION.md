@@ -86,6 +86,76 @@ Use a short bulleted fact list when a card primarily presents metadata. A
 summary sentence may replace the list when the component primarily presents an
 outcome or call to action.
 
+### Standalone Codex setup cards
+
+Use one outer blockquote per card. Separate sibling cards with an unquoted
+blank line. Use ALL CAPS only for each card's main title. Within the card, use
+sentence-case section headings with status icons and plain bullets underneath.
+Preserve the original casing of product names, automation names, and literal
+identifiers, even when a name itself uses uppercase.
+
+Put an action card first in a waiting update. Set its link and validity note
+apart as their own paragraph: put a quote-only line (`>`) immediately above
+and below the link line so the spacing stays inside the same card.
+
+#### Healthy Doctor example
+
+> ## 🩺 DOCTOR REPORT
+>
+> **Overall: Healthy**
+>
+> ### ✅ Workspace
+>
+> - Binding and applicable checks passed.
+>
+> ### ✅ Automations
+>
+> - Saved settings match declarations. Execution and delivery were not inspected.
+>
+> ### ✅ Issue intake and pickup
+>
+> - Baseline recorded; no admitted issues or blockers.
+
+#### Completed Install with Doctor drift example
+
+> ## 🧰 INSTALL REPORT
+>
+> ### ✅ Workspace
+>
+> - Workspace setup applied; 1Password enrollment verified.
+>
+> ### ✅ Automations
+>
+> - Saved settings matched declarations at completion.
+
+> ## 🩺 DOCTOR REPORT
+>
+> **Overall: Drift**
+>
+> ### ✅ Workspace
+>
+> - Binding and applicable checks passed.
+>
+> ### ⚠️ Automations
+>
+> - Fresh inspection found schedule drift in `Nightly Review`. Rerun Install to reconcile it.
+>
+> ### ✅ Issue intake and pickup
+>
+> - Baseline recorded; no admitted issues or blockers.
+
+#### Waiting for 1Password example
+
+> ## ⚠️ CONNECT 1PASSWORD
+>
+> Open your local enrollment page to enter your token. Keep this chat open.
+>
+> [**Connect 1Password**](https://example.invalid/connect) — valid for 5 minutes
+>
+> Independent workspace setup finished. Enrollment and automation sync are pending.
+
+Use actual findings in reports and never reuse this example URL for enrollment.
+
 ## Issue Assignment Intake Notices
 
 Use one compact card for the outcome of an intake check:

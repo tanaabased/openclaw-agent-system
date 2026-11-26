@@ -37,6 +37,7 @@ const dispatchStages = [
   'feedback-compose',
   'feedback-candidate',
   'feedback-publish',
+  'feedback-reconcile',
   'direct-assessment-context',
   'direct-assessment-result',
   'manual-compose',
@@ -500,10 +501,21 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         publicText: `@${source.author.login}, the plan is to document closing disposable test issues after capturing their evidence. Implementation has not started.`,
       });
     if (candidate.status !== 'candidate-recorded') return;
-    const published = result('feedback-publish');
+    let published = result('feedback-publish');
     if (!published) return dispatch('feedback-publish', { ...reply, operation: 'publish' });
-    if (published.status !== 'published' || typeof published.presentation !== 'string') return;
-    return { content: published.presentation };
+    const diagnostic = published.providerDiagnostic as { httpStatus?: number } | undefined;
+    if (
+      published.status === 'uncertain' ||
+      (published.status === 'waiting' &&
+        published.code === 'github-notification-request-failed' &&
+        [500, 502, 503, 504].includes(diagnostic?.httpStatus ?? 0))
+    ) {
+      published = result('feedback-reconcile');
+      if (!published) return dispatch('feedback-reconcile', { ...reply, operation: 'reconcile' });
+    }
+    assert.equal(published.status, 'published', 'expected a confirmed feedback reply');
+    assert.equal(typeof published.presentation, 'string');
+    return { content: String(published.presentation) };
   }
   const revision = /(Clarify|Answer) ordinary assessment for managed issue ([a-f0-9]{64})/u.exec(
     prompt,

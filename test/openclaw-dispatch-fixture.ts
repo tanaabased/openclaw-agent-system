@@ -506,6 +506,9 @@ export default function openclawDispatchFixture(options: { discover?: boolean } 
                       .filter((entry) => entry.state === 'pending')
                       .map((entry) => ({ id: entry.runId, state: 'queued' })),
                   ],
+                  queuedCount: currentReceipts.filter(
+                    (entry) => entry.state === 'pending' && !entry.cancelled,
+                  ).length,
                   total:
                     fixtureState.pendingInputHistoryTotal ??
                     fixtureState.terminalInputs.length +

@@ -57,7 +57,7 @@ for runtime in openclaw codex; do
   jq -e '([.jobs[].routing] | unique | length) == 1 and all(.jobs[]; .routing | startswith("session:"))' "$TMPDIR/chat-jobs-$runtime.json"
 done
 for refresh in false true; do
-  openclaw gateway call models.list --params "$(jq -nc --argjson refresh "$refresh" '{agentId:"command-chat-codex-tanaabot",provider:"openai",view:"all",refresh:$refresh}')" --json > "$TMPDIR/codex-catalog-$refresh.json"
+  openclaw-fixture-gateway models.list --params "$(jq -nc --argjson refresh "$refresh" '{agentId:"command-chat-codex-tanaabot",provider:"openai",view:"all",refresh:$refresh}')" --json > "$TMPDIR/codex-catalog-$refresh.json"
   jq --arg refresh "$refresh" '{refresh:$refresh,providerOutcomes,models:[.models[] | select(.id == "gpt-5.5" or .id == "gpt-5.4-nano")]}' "$TMPDIR/codex-catalog-$refresh.json"
 done
 jq -e 'any(.models[]; .provider == "openai" and .id == "gpt-5.5" and .available == true and .agentRuntime.id == "codex")' "$TMPDIR/codex-catalog-true.json"
@@ -89,7 +89,7 @@ for runtime in openclaw codex; do
       sleep 2
     done
     report_id=$(jq -er '.reports[0].executionId' "$TMPDIR/report-$runtime-$mode.json")
-    openclaw gateway call chat.history --params "$(jq -nc --arg key "$chat" '{sessionKey:$key,limit:100,maxChars:100000}')" --json > "$TMPDIR/history-$runtime-$mode.json"
+    openclaw-fixture-gateway chat.history --params "$(jq -nc --arg key "$chat" '{sessionKey:$key,limit:100,maxChars:100000}')" --json > "$TMPDIR/history-$runtime-$mode.json"
     jq -e --arg name "$mode" '[.messages[] | select(.role == "user") | .content | if type == "string" then . else [.[]? | select(.type == "text") | .text] | join("\n") end] | any(.[]; contains("> ⚙️ **" + ($name | ascii_upcase) + " COMMAND** ran · Preparing 📄 report · ") and contains($name) and (contains("<captured_result>") | not))' "$TMPDIR/history-$runtime-$mode.json"
     if ! jq -e --arg reason "$reason" --arg model "$model" --arg runtime "$runtime" '.reports | length == 1 and all(.[]; .status == "delivered" and .reason == $reason and (.messageId | type == "string") and .requested == {model:$model,effort:"high"} and .effective.model == .requested.model and .effective.harness == $runtime and (.effective.effort == null or .effective.effort == "high"))' "$TMPDIR/report-$runtime-$mode.json"; then
       jq '{id,reports}' "$TMPDIR/report-$runtime-$mode.json"
@@ -123,7 +123,7 @@ openclaw-aimock evidence --scenario openclaw-automation-command-chat --expected-
 # should retain the same report messages through a fresh history connection
 for runtime in openclaw codex; do
   chat=$(jq -er '.jobs[0].routing | sub("^session:"; "")' "$TMPDIR/chat-jobs-$runtime.json")
-  openclaw gateway call chat.history --params "$(jq -nc --arg key "$chat" '{sessionKey:$key,limit:100,maxChars:100000}')" --json > "$TMPDIR/chat-reconnected.json"
+  openclaw-fixture-gateway chat.history --params "$(jq -nc --arg key "$chat" '{sessionKey:$key,limit:100,maxChars:100000}')" --json > "$TMPDIR/chat-reconnected.json"
   for mode in success failure; do
     message_id=$(jq -er '.reports[0].messageId' "$TMPDIR/report-$runtime-$mode.json")
     jq -e --arg id "$message_id" 'any(.messages[]; .__openclaw.id == $id and .role == "assistant")' "$TMPDIR/chat-reconnected.json"

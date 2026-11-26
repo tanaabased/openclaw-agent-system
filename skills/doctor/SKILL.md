@@ -20,6 +20,10 @@ metadata:
 
 Inspect the active `agent.yaml` through its owning runtime without applying repairs. OpenClaw checks the full Agent System lifecycle after native chat approval. Standalone Codex checks the bound manifest, applicable setup steps, desired/saved repository automations, and persisted Codex assignment intake through the packaged thin adapter.
 
+## Required Reading
+
+- **Before presenting standalone Codex results:** Read [Standalone Codex setup cards](../../channels/github/PRESENTATION.md#standalone-codex-setup-cards).
+
 ## When to Use
 
 - Check whether the active Agent System workspace is ready.
@@ -85,6 +89,7 @@ without terminal padding or ANSI formatting. Saved settings do not prove executi
 6. If the newest context exposes `automationRuntime`, discover the native automation tools, call `list_projects` and `list_threads`, and read any explicitly declared thread targets with `read_thread`. Invoke that trusted prefix with `inspect --plugin-data <pluginData>` (or `list --plugin-data <pluginData>` for a requested declared/native inventory) and send `{}` through standard input; the runtime reads the completed native lookup results from this turn. Report the deterministic findings, pending recovery, and unsupported settings. For `automation-thread-replacement-required`, explain that Install creates a fresh intake coordinator without resetting issue tracking; Doctor does not create or unarchive it. Report `automation-thread-host-access-required` as a native host-access blocker without exposing captured stderr. Chat permissions are verified at creation; the read-only native interface does not expose their current values. Native approval review still controls each scheduled action; saved settings never establish unattended execution. Never call prepare, acknowledge, cancel, Install, or a native mutation from Doctor. A saved-state read/schema failure is an inspection error, not an empty scheduler.
 7. Use the setup result's `intake` field to report admitted issues, assigning actors and event IDs, baseline/checkpoint, and blockers. Do not repeat inspection, run a scan, or infer current GitHub authorization from old evidence.
 8. State that standalone Codex inspected its binding, manifest, applicable setup checks, and supported saved automation definitions. Saved settings do not prove execution; execution and delivery telemetry remain unavailable. OpenClaw-owned lifecycle state remains unassessed. Missing native lookups are actionable inspection blockers, not proof that jobs are absent.
+9. Present exactly one `🩺 DOCTOR REPORT` blockquote. Apply this format even when an earlier step stops the inspection; show what was blocked and which areas were not inspected. Start with the overall result. Use status icons and the sentence-case headings `Workspace`, `Automations`, and `Issue intake and pickup`. Keep all applicable findings and inspection limits inside their respective sections, including outstanding warnings. Distinguish uninspected areas from healthy ones. Use this same card when Install calls Doctor; never merge it into the Install card.
 
 ## Checkpoints
 
