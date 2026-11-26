@@ -58,7 +58,10 @@ grep -F 'code=github-routing-project-pickup-removed' "$TMPDIR/retired-pickup.std
 # should install ordered setup and resolve environment-backed identity with codex model routing
 cd "$GITHUB_WORKSPACE/examples/openclaw-workspace"
 export AGENT_SYSTEM_WORKSPACE_HOST_NAME=Workspace
-openclaw agent-system install --yes --json | jq -e '(.outcomes | any(.code == "codex-plugin-installed" and .status == "created") and any(.stepId == "host-ready" and .status == "updated") and any(.stepId == "agent-ready" and .status == "updated") and any(.code == "set-agent-models" and .status == "updated"))'
+installed=$(openclaw agent-system install --yes --json)
+printf '%s\n' "$installed" | jq -e '(.outcomes | any(.code == "codex-plugin-installed" and .status == "created") and any(.stepId == "host-ready" and .status == "updated") and any(.stepId == "agent-ready" and .status == "updated") and any(.code == "set-agent-models" and .status == "updated"))'
+export_file=$(printf '%s\n' "$installed" | jq -er '.outcomes[] | select(.code == "environment-export-created") | .message')
+bash --noprofile --norc -ec '. "$1"; node -e "if (process.env.WORKSPACE_NAME !== \"Workspace Agent\" || process.env.WORKSPACE_PRIVATE_VALUE !== undefined) process.exit(1)"' bash "$export_file"
 openclaw config get plugins.entries.agent-system.config.storage.backend --json | jq -e '.type == "sqlite"'
 printf 'host\nagent\n' | diff - setup-runs
 openclaw config get agents.entries.workspace-tanaabot --json | jq -e '.identity.name == "Workspace Agent" and .model.primary == "openai/gpt-5.4-nano" and .thinkingDefault == "medium" and .models["openai/gpt-5.4-nano"].agentRuntime.id == "codex"'
@@ -98,6 +101,7 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-workspace"
 export AGENT_SYSTEM_WORKSPACE_HOST_NAME=Workspace
 cp "$OPENCLAW_CONFIG_PATH" "$TMPDIR/workspace-before-doctor.json"
 openclaw agent-system doctor --json | tee "$TMPDIR/workspace-doctor.json"
+jq -e '.findings | any(.code == "environment-export-ready" and .status == "healthy")' "$TMPDIR/workspace-doctor.json"
 jq -e '.status == "healthy" and (.findings | any(.code == "codex-plugin-ready" and .status == "healthy") and any(.component == "models") and all(.[] | select(.component == "models"); (.code == "agent-models-ready" and .status == "healthy") or (.code == "agent-model-unavailable" and .status == "warning")) and any(.stepId == "host-ready" and .status == "healthy") and any(.stepId == "agent-ready" and .status == "healthy"))' "$TMPDIR/workspace-doctor.json"
 rm agent-ready
 if output=$(openclaw agent-system doctor --json); then exit 1; fi

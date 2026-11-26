@@ -57,8 +57,9 @@ export default function registerAutomationReportHooks(
     const match = await selected(context, 'before_prompt_build');
     if (!match) return;
     const { record, store } = match;
-    await store.update(record.executionId, (current) => {
+    await store.update(record.executionId, (current, nowMs) => {
       current.guarded = true;
+      (current.timing ??= {}).formatterStartedAtMs ??= nowMs;
     });
     // codex rejects restrictive prompt-hook allowlists; block execution below instead.
     return {
@@ -129,6 +130,7 @@ export default function registerAutomationReportHooks(
     const { record, store } = match;
     if (!event.success)
       await store.update(record.executionId, (current) => {
+        if (current.state === 'delivered' || current.state === 'failed') return;
         current.state = 'failed';
         current.code = 'automation-report-model-failed';
       });

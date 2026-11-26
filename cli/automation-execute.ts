@@ -142,6 +142,7 @@ export default async function executeAutomation(options: {
     } finally {
       active = false;
     }
+    const commandFinishedAtMs = Date.now();
     const cancelled = signal.aborted;
     const exited =
       !result.timedOut &&
@@ -167,12 +168,13 @@ export default async function executeAutomation(options: {
           store: await options.automations.reportStore(installed.manifest.agent.id),
           hash: options.hash,
           manifestDigest: snapshot.digest,
+          commandFinishedAtMs,
           input: {
             id: options.id,
             displayName,
             executionId,
             startedAt,
-            durationMs: Date.now() - Date.parse(startedAt),
+            durationMs: commandFinishedAtMs - Date.parse(startedAt),
             configurationDrift,
             result,
             cancelled,
@@ -188,7 +190,7 @@ export default async function executeAutomation(options: {
         }))
       : undefined;
     options.output.writeStdout(
-      `${JSON.stringify({ id: options.id, status: success ? 'ok' : 'error', code: result.timedOut ? 'automation-timeout' : cancelled ? 'automation-cancelled' : result.signal || result.termination === 'signal' ? 'automation-command-signalled' : 'automation-command-completed', exitCode: result.exitCode, termination: result.termination, signal: result.signal, timedOut: result.timedOut, cancelled, truncated: result.truncated, stdoutTruncatedBytes: result.output?.stdoutTruncatedBytes ?? 0, stderrTruncatedBytes: result.output?.stderrTruncatedBytes ?? 0, ...(reporting ? { reporting } : {}) })}\n`,
+      `${JSON.stringify({ id: options.id, executionId, commandFinishedAtMs, status: success ? 'ok' : 'error', code: result.timedOut ? 'automation-timeout' : cancelled ? 'automation-cancelled' : result.signal || result.termination === 'signal' ? 'automation-command-signalled' : 'automation-command-completed', exitCode: result.exitCode, termination: result.termination, signal: result.signal, timedOut: result.timedOut, cancelled, truncated: result.truncated, stdoutTruncatedBytes: result.output?.stdoutTruncatedBytes ?? 0, stderrTruncatedBytes: result.output?.stderrTruncatedBytes ?? 0, ...(reporting ? { reporting } : {}) })}\n`,
     );
     return exited &&
       typeof result.exitCode === 'number' &&

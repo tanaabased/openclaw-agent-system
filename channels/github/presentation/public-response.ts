@@ -8,18 +8,18 @@ export default function publicResponsePresentation(
   input: PublicResponseState & {
     kind: string;
     destination?: string;
+    failed?: boolean;
   },
 ) {
-  const state = publicResponseState(input);
+  const state = input.failed ? 'failed' : publicResponseState(input);
   if (state === 'delivered') return '';
-  const title =
-    state === 'unconfirmed'
-      ? 'unconfirmed'
-      : state === 'blocked'
-        ? 'needs attention'
-        : state === 'withheld'
-          ? 'withheld'
-          : 'pending';
+  const { emoji, title } = {
+    pending: { emoji: 'ℹ️', title: 'pending' },
+    withheld: { emoji: 'ℹ️', title: 'withheld' },
+    blocked: { emoji: '⚠️', title: 'needs attention' },
+    unconfirmed: { emoji: '⚠️', title: 'unconfirmed' },
+    failed: { emoji: '❌', title: 'failed' },
+  }[state];
   const remedy =
     input.code === 'github-delivery-closing-reference-missing'
       ? 'Inspect the existing PR’s closing reference and intended issue association, then continue in this chat after correcting it. No link was added automatically.'
@@ -39,16 +39,18 @@ export default function publicResponsePresentation(
   const next =
     state === 'unconfirmed'
       ? 'Check for the exact existing post before sending anything again. Do not repost an uncertain response.'
-      : state === 'blocked'
+      : state === 'blocked' || state === 'failed'
         ? remedy
         : state === 'withheld'
           ? 'No public response will be sent.'
           : 'Continue the unfinished response in this chat; completed work remains saved.';
   return githubNotificationQuote(
     [
-      `## ${state === 'pending' || state === 'withheld' ? 'ℹ️' : '⚠️'} ${input.kind.toUpperCase()} ${title.toUpperCase()}`,
+      `## ${emoji} ${input.kind.toUpperCase()} ${title.toUpperCase()}`,
       '',
-      'The private result and any retained draft remain saved.',
+      state === 'failed'
+        ? 'GitHub rejected this comment. Issue work can continue.'
+        : 'The private result and any retained draft remain saved.',
       ...(input.destination ? ['', `**Destination:** [GitHub ↗](${input.destination})`] : []),
       '',
       `**Next:** ${next}`,

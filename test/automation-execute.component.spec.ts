@@ -143,6 +143,9 @@ describe('cli/automation-execute', () => {
     const completion = JSON.parse(run.stdout.trimEnd().split('\n').at(-1)!);
     assert.equal(completion.reporting.status, 'pending');
     assert.equal(completion.status, 'error');
+    assert.equal(completion.executionId, completion.reporting.executionId);
+    assert.equal(completion.commandFinishedAtMs, completion.reporting.timing.commandFinishedAtMs);
+    assert.ok(completion.commandFinishedAtMs <= completion.reporting.timing.queuedAtMs);
   });
   it('should preserve successful execution when report acknowledgment is lost', async () => {
     const run = await execute({ exitCode: 0, timedOut: false, truncated: false }, 'uncertain');
@@ -205,7 +208,11 @@ describe('cli/automation-execute', () => {
     assert.equal(run.code, 17);
     assert.equal(run.stderr, stderr + '\n');
     assert.ok(run.stdout.startsWith(stdout + '\n'));
-    const completion = JSON.parse(run.stdout.trimEnd().split('\n').at(-1)!);
+    const { executionId, commandFinishedAtMs, ...completion } = JSON.parse(
+      run.stdout.trimEnd().split('\n').at(-1)!,
+    );
+    assert.match(executionId, /^[0-9a-f-]{36}$/);
+    assert.ok(Number.isSafeInteger(commandFinishedAtMs));
     assert.deepEqual(completion, {
       id: 'job',
       status: 'error',

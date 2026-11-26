@@ -7,7 +7,7 @@ import {
   type AutomationReportInput,
 } from './automation-report.ts';
 import type AutomationReportStore from './automation-report-store.ts';
-import type { AutomationReportRecord } from './automation-report-store.ts';
+import type { AutomationReportRecord, AutomationReportTiming } from './automation-report-store.ts';
 import automationThreadGateway from './automation-thread-gateway.ts';
 import { nativeObject } from '../../utils/native-object.ts';
 import { AutomationError } from './automation-errors.ts';
@@ -33,6 +33,8 @@ export interface AutomationReportDelivery {
   executionId: string;
   messageId?: string;
   code?: string;
+  timing?: AutomationReportTiming;
+  completedAt?: string;
 }
 
 export function automationReportDelivery(record: AutomationReportRecord): AutomationReportDelivery {
@@ -48,6 +50,8 @@ export function automationReportDelivery(record: AutomationReportRecord): Automa
     executionId: record.executionId,
     ...(record.messageId ? { messageId: record.messageId } : {}),
     ...(record.code ? { code: record.code } : {}),
+    ...(record.timing ? { timing: record.timing } : {}),
+    ...(record.completedAt ? { completedAt: record.completedAt } : {}),
   };
 }
 
@@ -70,8 +74,14 @@ export async function reconcileAutomationReport(options: {
   let sending = false;
   let claimed = false;
   let attempted = false;
+  let phase: NonNullable<AutomationReportTiming['lastIssue']>['phase'] =
+    record.state === 'pending' ? 'prepare' : 'observe';
   try {
     await options.assertCurrent(record);
+    if (record.state === 'pending')
+      record = await store.update(executionId, (current, nowMs) => {
+        if (current.state === 'pending') (current.timing ??= {}).lastAttemptAtMs = nowMs;
+      });
     await options.credential.use(
       {
         signal: AbortSignal.timeout(automationReportTimeoutMs),
@@ -130,20 +140,26 @@ export async function reconcileAutomationReport(options: {
           await options.assertCurrent(record);
           attempted = true;
           sending = true;
+          phase = 'submit';
           const accepted = await request('chat.send', params);
+          const admission = nativeObject(accepted) ? accepted.status : undefined;
           if (
             !nativeObject(accepted) ||
             accepted.runId !== executionId ||
-            !['started', 'queued', 'ok'].includes(String(accepted.status))
+            (admission !== 'started' && admission !== 'queued' && admission !== 'ok')
           )
             throw new Error('automation-report-receipt-invalid');
-          record = await store.update(executionId, (current) => {
+          record = await store.update(executionId, (current, nowMs) => {
+            const timing = (current.timing ??= {});
+            timing.submittedAtMs ??= nowMs;
+            timing.admission ??= admission;
             if (current.state === 'sending' || current.state === 'uncertain')
               current.state = 'submitted';
           });
           sending = false;
         }
         // admission is not delivery. exact native terminal metadata survives a gateway restart.
+        phase = 'observe';
         const reply = await openClawTurnReply(request, { sessionKey, sessionId }, executionId);
         if (reply) {
           const body = (reply.content as Array<{ type: string; text?: string }>)
@@ -151,6 +167,16 @@ export async function reconcileAutomationReport(options: {
             .map((part) => part.text ?? '')
             .join('\n');
           record = await store.update(executionId, (current) => {
+            if (current.state === 'delivered' || current.state === 'failed') return;
+            const metadata = reply.__openclaw as { id: string; recordTimestampMs?: unknown };
+            const time = metadata.recordTimestampMs;
+            if (
+              typeof time === 'number' &&
+              Number.isSafeInteger(time) &&
+              time >= 0 &&
+              time <= 8.64e15
+            )
+              (current.timing ??= {}).messageRecordedAtMs = time;
             if (!current.guarded) {
               current.state = 'failed';
               current.code = 'automation-report-hooks-not-observed';
@@ -173,7 +199,7 @@ export async function reconcileAutomationReport(options: {
               return;
             }
             current.state = 'delivered';
-            current.messageId = String((reply.__openclaw as { id: string }).id);
+            current.messageId = metadata.id;
             delete current.code;
           });
         } else {
@@ -184,6 +210,7 @@ export async function reconcileAutomationReport(options: {
             observed.status === 'error'
           )
             record = await store.update(executionId, (current) => {
+              if (current.state === 'delivered' || current.state === 'failed') return;
               current.state = 'failed';
               current.code = 'automation-report-model-failed';
             });
@@ -192,7 +219,7 @@ export async function reconcileAutomationReport(options: {
     );
   } catch (error) {
     const diagnostic = gatewayErrorDiagnostic(error);
-    record = await store.update(executionId, (current) => {
+    record = await store.update(executionId, (current, nowMs) => {
       // a concurrent terminal hook may already have settled this occurrence.
       if (current.state === 'delivered' || current.state === 'failed') return;
       if (claimed && !attempted && error instanceof AutomationError) {
@@ -201,21 +228,27 @@ export async function reconcileAutomationReport(options: {
           error.code === 'automation-model-unavailable'
             ? 'automation-report-model-unavailable'
             : error.code.replace(/^automation-thread-/, 'automation-report-');
-        return;
+      } else {
+        if (claimed && !attempted) current.state = 'pending';
+        if (sending) {
+          current.state =
+            diagnostic.category === 'rejected' || diagnostic.requestDispatched === false
+              ? 'pending'
+              : 'uncertain';
+        }
+        current.code =
+          error instanceof Error && /^automation-report-[a-z-]+$/.test(error.message)
+            ? error.message
+            : diagnostic.category === 'rejected'
+              ? 'automation-report-rejected'
+              : 'automation-report-unavailable';
       }
-      if (claimed && !attempted) current.state = 'pending';
-      if (sending) {
-        current.state =
-          diagnostic.category === 'rejected' || diagnostic.requestDispatched === false
-            ? 'pending'
-            : 'uncertain';
-      }
-      current.code =
-        error instanceof Error && /^automation-report-[a-z-]+$/.test(error.message)
-          ? error.message
-          : diagnostic.category === 'rejected'
-            ? 'automation-report-rejected'
-            : 'automation-report-unavailable';
+      (current.timing ??= {}).lastIssue = {
+        atMs: nowMs,
+        phase,
+        reason: current.code,
+        category: diagnostic.category,
+      };
     });
   }
   return automationReportDelivery(record);
@@ -225,6 +258,7 @@ export async function reconcileAutomationReport(options: {
 export default async function deliverAutomationReport(options: {
   target: AutomationReportTarget;
   input: AutomationReportInput;
+  commandFinishedAtMs?: number;
   store: AutomationReportStore;
   hash: string;
   manifestDigest: string;
@@ -233,7 +267,7 @@ export default async function deliverAutomationReport(options: {
   selectSettings(record: AutomationReportRecord, request: DispatchRequest): Promise<void>;
 }): Promise<AutomationReportDelivery> {
   const executionId = options.input.executionId;
-  const retained = await options.store.retain(executionId, () => {
+  const retained = await options.store.retain(executionId, (nowMs) => {
     // An expired capture cannot recreate a pruned terminal occurrence and resend its report.
     if (options.store.expired(options.input.startedAt)) return;
     return {
@@ -244,10 +278,16 @@ export default async function deliverAutomationReport(options: {
       target: options.target,
       input: prepareAutomationReport(options.input),
       state: 'pending',
+      timing: {
+        queuedAtMs: nowMs,
+        ...(options.commandFinishedAtMs === undefined
+          ? {}
+          : { commandFinishedAtMs: options.commandFinishedAtMs }),
+      },
+      ...(!options.credential ? { code: 'automation-report-unavailable' } : {}),
     };
   });
   if (!retained) return { status: 'failed', executionId, code: 'automation-report-expired' };
-  if (!options.credential)
-    return { status: 'pending', executionId, code: 'automation-report-unavailable' };
+  if (!options.credential) return automationReportDelivery(retained);
   return reconcileAutomationReport({ ...options, credential: options.credential, executionId });
 }

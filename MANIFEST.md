@@ -619,6 +619,7 @@ Only inline guidance text is expanded; file guidance retains its source link.
 | Field          | Type                    | Required | Default | Behavior                                                              |
 | -------------- | ----------------------- | -------- | ------- | --------------------------------------------------------------------- |
 | `dotenv`       | string or string list   | no       | none    | Ordered workspace-relative dotenv files.                              |
+| `export`       | object                  | no       | none    | Selected variables to export during Install.                          |
 | `op`           | string or string list   | no       | none    | Ordered 1Password Environment IDs merged after `set`.                 |
 | `path-prepend` | string or string list   | no       | none    | Ordered workspace-relative executable directories.                    |
 | `required`     | string list             | no       | none    | Names that fail complete environment resolution when absent or empty. |
@@ -1073,6 +1074,31 @@ Agent System tools resolve declared values after trusted binding and authorizati
 Generic OpenClaw, Codex, ACP, MCP, and third-party tools do not receive the completed
 Agent System environment. The separate [Path](#path) settings below control executable
 lookup.
+
+### Shell startup
+
+Choose which resolved variables to make available to Bash or Zsh:
+
+```yaml
+environment:
+  set:
+    APP_REGION: us-east-1
+  export:
+    variables: [APP_REGION]
+```
+
+Run Agent System Install in standalone Codex or OpenClaw, then add
+`source "/path/reported/by/Install"` to the startup file your shell uses. Install
+writes a private file for the current Codex binding or OpenClaw agent. To choose a
+different destination, set `environment.export.path` to an absolute or workspace-relative
+file path in an existing, owner-controlled directory. Keep the file out of source control.
+
+Rerun Install after changing values or selections. A missing selected value fails the
+refresh and keeps the last complete file. Doctor checks the saved selection and permissions
+without refreshing the values. To clear the file, set `variables: []` and rerun Install.
+If you move or disable the export, update the startup line and remove the old file manually.
+Changes to the snapshot apply when the shell sources it again. Variables already present in
+a running shell remain set until you unset them or start a fresh shell.
 
 ## Path
 
