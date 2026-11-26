@@ -39,8 +39,10 @@ jobs:
       - name: Brew updates
         shell: bash
         run: HOMEBREW_NO_AUTO_UPDATE= brew update-if-needed
-      - name: Install OpenClaw
+      - name: Install OpenClaw and prepare Secret Service
         uses: tanaabased/actions/setup-openclaw@v1
+        with:
+          needs-secret-service: 'true'
       - name: Install Node
         uses: tanaabased/actions/setup-node@v1
       - name: Install Bun
@@ -70,6 +72,7 @@ jobs:
           CODEX_HOME: ${{ runner.temp }}/codex-home
           CODEX_TOOLS_CODEX_HOME: ${{ runner.temp }}/codex-home
           XDG_CONFIG_HOME: ${{ runner.temp }}/agent-system-config
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.TANAAB_OP_TESTVAULT }}
         run: |
           unset OPENCLAW_CONFIG_PATH
           leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
