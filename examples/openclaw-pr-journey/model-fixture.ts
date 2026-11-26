@@ -354,6 +354,7 @@ function respond(
           operation: 'compose',
           privateText: 'The author responded on the original inline thread.',
         });
+      assert.equal(composed.status, 'composition-ready', String(composed.code ?? composed.status));
       const skill = (composed.selection as { skill: { path: string } }).skill;
       if (openClawAIMockToolResultText(messages, prefix + 'feedback-skill') === undefined)
         return call('feedback-skill', 'read', { path: skill.path });

@@ -478,8 +478,8 @@ export default async function codexReview(
                 delete pending.nativeInactive;
                 await save();
               } else if (
-                observed.legacyFingerprint &&
-                observed.legacyFingerprint === pending.reviewObservation
+                pending.reviewObservation &&
+                observed.legacyFingerprints?.includes(pending.reviewObservation)
               ) {
                 pending.reviewObservation = fingerprint;
                 await save();

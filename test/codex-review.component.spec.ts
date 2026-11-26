@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { automationHash } from '../agent/automation-hash.ts';
 
 import codexReview, { type CodexReviewDependencies } from '../agent/tasks/review/codex-review.ts';
 import type { GitHubPullRequestReview } from '../channels/github/provider/review-types.ts';
@@ -191,6 +192,23 @@ describe('agent/tasks/review native first review', () => {
     f.created();
     await call('reconcile', { target });
   }
+
+  it('should upgrade an unchanged saved observation and revisit a new head with identical checks', async () => {
+    ci.changeFingerprint = 'no-checks';
+    await start();
+    Object.assign(f.native!, { status: 'idle', turnEnded: true });
+    const current = await selectCodexTaskContext(f.pluginData, deps);
+    await current.journal.exclusive(async (state, save) => {
+      state.records[0]!.reviewObservation =
+        'review:' + automationHash(['no-checks', 'E_review', 'release']);
+      await save();
+    });
+    assert.equal((await call('next', { projects: f.projects })).status, 'unchanged');
+    const repaired = fixturePullRequest(f.fixture, 'b'.repeat(40));
+    repaired.draft = false;
+    ci.head = repaired.headSha;
+    assert.equal((await call('next', { projects: f.projects })).status, 'evidence-prepared');
+  });
 
   it('should deliver changed settled ci to the same idle reviewer once before its first publication', async () => {
     await start();

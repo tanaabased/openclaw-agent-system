@@ -70,7 +70,7 @@ export default async function publishOwnedReview(
         if (
           !publication.attempted &&
           owned.reviewObservation !== live.fingerprint &&
-          owned.reviewObservation !== live.legacyFingerprint
+          !live.legacyFingerprints?.includes(owned.reviewObservation ?? '')
         )
           throw new Error('review-publication-evidence-changed');
         return { authorized: true };

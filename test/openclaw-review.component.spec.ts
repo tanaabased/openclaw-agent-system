@@ -129,7 +129,7 @@ describe('OpenClaw independent review', () => {
     f.active = false;
     pr.headSha = ci.head = 'b'.repeat(40);
     ci.passing = true;
-    ci.changeFingerprint = 'passing-repair';
+    // A PR with no checks can have identical CI evidence on two different commits.
     assert.equal((await check()).changed, true);
     await call('next', { target });
     assert.equal(f.sends().length, 3);

@@ -1683,7 +1683,7 @@ describe('agent/feedback-reply', () => {
   it('should retain inline thread roots and publish only within that thread', async () => {
     const review = reviewFixture();
     const comment = reviewCommentFixture({ replyToId: 71 });
-    const parent = reviewCommentFixture({ databaseId: 71, replyToId: 71 });
+    const parent = reviewCommentFixture({ databaseId: 71, reviewId: 70 });
     const client = reviewClientFixture(review, [comment, parent]);
     provider = { ...provider, reviews: client };
     deps.provider = provider;
@@ -1810,7 +1810,7 @@ describe('agent/feedback-reply', () => {
   ) {
     const pr = linkedPullRequest();
     const comment = reviewCommentFixture({ replyToId: 71 });
-    const parent = reviewCommentFixture({ databaseId: 71, replyToId: 71 });
+    const parent = reviewCommentFixture({ databaseId: 71, reviewId: 70 });
     provider = { ...provider, reviews: reviewClientFixture(reviewFixture(), [comment, parent]) };
     provider.replies = {
       create: async (_o, _n, number, thread, body) => {
