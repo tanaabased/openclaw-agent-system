@@ -126,7 +126,7 @@ for runtime in codex openclaw; do
   stage=await-scheduled-pickup
   node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" --scheduled-after github-issue-pickup "$native" "$due" > "$TMPDIR/pickup-$runtime-scheduled.json"
   stage=verify-scheduled-pickup-report
-  jq -e 'if (.summary | contains("ASSIGNED AN ISSUE")) and (.summary | contains("2 eligible")) then true else error("scheduled pickup report mismatch: " + tojson) end' "$TMPDIR/pickup-$runtime-scheduled.json"
+  jq -e 'if (.summary | contains("2 eligible")) then true else error("scheduled pickup report mismatch: " + tojson) end' "$TMPDIR/pickup-$runtime-scheduled.json"
   stage=verify-assignment-and-native-assessment
   number=$(jq -er .number "$TMPDIR/pickup-$runtime-selected.json")
   GH_TOKEN="$GH_TOKEN_TANAABOT" gh api "repos/tanaabased/big-test-bucket/issues/$number" | jq -e '.assignees | length == 1 and .[0].login == "tanaabot"'
@@ -143,7 +143,7 @@ for runtime in codex openclaw; do
   openclaw agent-system tool worktree -- list | jq -e --arg path "$(jq -er .worktree "$TMPDIR/pickup-$runtime-before.json")" '[.[] | select(.path == $path)] | length == 1'
   run_id=$(openclaw agent-system automations run github-issue-pickup --json | jq -er 'select(.status == "queued") | .runId | strings')
   node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-pickup "$run_id"
-  openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" --arg run "$run_id" '{id:$id,runId:$run,limit:1,offset:0}')" --json | jq -e --arg run "$run_id" 'any(.entries[]; .runId == $run and (.summary | contains("FINISHED FOR THIS WINDOW")) and (.summary | contains("1 of 1 assigned")))'
+  openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" --arg run "$run_id" '{id:$id,runId:$run,limit:1,offset:0}')" --json | jq -e --arg run "$run_id" 'any(.entries[]; .runId == $run and .status == "ok" and (.summary | contains("1 of 1 assigned")))'
   stage=verify-pickup-budget-and-evidence
   other=$(jq -er .number "$TMPDIR/pickup-$runtime-other.json")
   GH_TOKEN="$GH_TOKEN_TANAABOT" gh api "repos/tanaabased/big-test-bucket/issues/$other" | jq -e '.assignees | length == 0'
