@@ -41,6 +41,10 @@ openclaw agent-system install
 cd "$TMPDIR/os execution/peer"
 openclaw agent-system install
 
+# should run a declared executable with its selected value through the installed cli
+cd "$TMPDIR/os execution/source"
+openclaw as tool declared-probe -- declared | grep -Fx declared-child-ready
+
 # should start the gateway with the installed native execution agents
 openclaw-gateway start
 ```

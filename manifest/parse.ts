@@ -1,3 +1,4 @@
+import { declaredToolsSchema } from '../tools/declared/config-schema.ts';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 import { isAlias, isCollection, isPair, parseDocument, visit } from 'yaml';
@@ -97,6 +98,7 @@ const externalAgentManifestSchema = Type.Object(
         { additionalProperties: false },
       ),
     ),
+    tools: Type.Optional(Type.Union([declaredToolsSchema, Type.String({ minLength: 1 })])),
     google: Type.Optional(externalGoogleSectionSchema),
     git: Type.Optional(externalGitSectionSchema),
     github: Type.Optional(externalGitHubSectionSchema),
@@ -259,6 +261,7 @@ function decodeManifest(value: ExternalAgentManifest): AgentManifest {
                 }),
           },
         }),
+    ...(typeof value.tools === 'object' ? { tools: value.tools } : {}),
     ...(value.google === undefined ? {} : { google: decodeGoogleConfiguration(value.google) }),
     ...(value.git === undefined ? {} : { git: decodeGitSection(value.git) }),
     ...(value.github === undefined ? {} : { github: decodeGitHubSection(value.github) }),
@@ -535,6 +538,7 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
       ...(agent?.setup?.status === 'valid' ? { setup: agent.setup.setup } : {}),
     },
     ...(automations?.status === 'valid' ? { automations: automations.automations } : {}),
+    ...(typeof value.tools === 'string' ? { toolsFile: value.tools } : {}),
     ...(automationsFile === undefined ? {} : { automationsFile }),
     ...(host?.file && typeof host.file.file === 'string' ? { setupHostFile: host.file.file } : {}),
     ...(agent?.file && typeof agent.file.file === 'string'

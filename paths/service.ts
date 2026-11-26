@@ -1,3 +1,4 @@
+import declaredShims, { declaredShimDirectory } from './declared-shims.ts';
 import { lstat, mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
@@ -12,6 +13,7 @@ import type PathProjectionStore from './projection-store.ts';
 
 export type AgentPathInstallAction =
   | 'create-workspace-bin'
+  | 'reconcile-declared-shims'
   | 'set-exec-path'
   | 'create-codex-config'
   | 'update-codex-config'
@@ -35,6 +37,7 @@ export interface AgentPathInstallResult {
 }
 
 export interface AgentPathServiceDependencies {
+  shimRoot?: string;
   basePath: string;
   codexConfigService: Pick<CodexPathConfigService, 'inspect' | 'reconcile'>;
   mutateConfigFile(params: {
@@ -101,7 +104,20 @@ export default class AgentPathService {
     );
     const previousOwned =
       previous && resolve(previous.workspaceDir) === workspaceDir ? previous.openClawPaths : [];
-    const desiredPaths = projection.entries.map(({ path }) => path);
+    const shimDirectory =
+      this.#dependencies.shimRoot && declaredShimDirectory(this.#dependencies.shimRoot, agentId);
+    const ids = Object.keys(input.manifest.tools ?? {});
+    const shimsChanged =
+      shimDirectory &&
+      (await declaredShims(
+        shimDirectory,
+        join(this.#dependencies.packageDir, 'bin', 'agent-system-tool'),
+        ids,
+        true,
+      ));
+    const desiredPaths = projection.entries.flatMap(({ path, source }) =>
+      source === 'agent-system.bin' && ids.length && shimDirectory ? [shimDirectory, path] : [path],
+    );
     const mutation = await this.#dependencies.mutateConfigFile({
       base: 'source',
       afterWrite: { mode: 'auto' },
@@ -159,6 +175,7 @@ export default class AgentPathService {
     );
 
     const actions: AgentPathInstallAction[] = [];
+    if (shimsChanged) actions.push('reconcile-declared-shims');
     if (createdWorkspaceBin) actions.push('create-workspace-bin');
     if (mutation.result === true) actions.push('set-exec-path');
     if (codex.status === 'created') actions.push('create-codex-config');
@@ -211,12 +228,27 @@ export default class AgentPathService {
         : [];
     const config = await this.#dependencies.readConfig();
     const currentPaths = configuredPaths(config, input.manifest.agent.id);
-    const expectedPaths = projection.entries.map(({ path }) => path);
+    const shimDirectory =
+      this.#dependencies.shimRoot &&
+      declaredShimDirectory(this.#dependencies.shimRoot, input.manifest.agent.id);
+    const ids = Object.keys(input.manifest.tools ?? {});
+    const shimDrift =
+      shimDirectory &&
+      (await declaredShims(
+        shimDirectory,
+        join(this.#dependencies.packageDir, 'bin', 'agent-system-tool'),
+        ids,
+        false,
+      ));
+    const expectedPaths = projection.entries.flatMap(({ path, source }) =>
+      source === 'agent-system.bin' && ids.length && shimDirectory ? [shimDirectory, path] : [path],
+    );
     return {
       codex: await this.#dependencies.codexConfigService.inspect(input.workspaceDir, projection, {
         previousManagedPaths,
       }),
-      openClawMatches: expectedPaths.every((path, index) => currentPaths[index] === path),
+      openClawMatches:
+        !shimDrift && expectedPaths.every((path, index) => currentPaths[index] === path),
       projection,
     };
   }

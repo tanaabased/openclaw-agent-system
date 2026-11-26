@@ -293,6 +293,7 @@ describe('environment/service', () => {
       PRIVATE_VALUE: 'private-value',
     });
     assert.deepEqual(result.environment.sensitiveNames, ['PRIVATE_VALUE']);
+    assert.deepEqual(await service.loadSelected(result, ['LAYERED']), { LAYERED: 'agent-value' });
     assert.equal(logs.info[0]?.includes('private-value'), false);
     assert.deepEqual(logs.error, []);
   });

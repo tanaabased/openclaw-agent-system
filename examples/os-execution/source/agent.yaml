@@ -8,4 +8,13 @@ agent:
 environment:
   path-prepend: tools/bin
 
+  set:
+    PROBE_SELECTED: selected-fixture
+    PROBE_UNRELATED: unrelated-fixture
+
+tools:
+  declared-probe:
+    executable: ./tools/bin/os-exec-probe
+    environment: [PROBE_SELECTED]
+
 git: {}

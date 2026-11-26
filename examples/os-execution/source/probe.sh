@@ -22,6 +22,10 @@ fi
 test "$status" -eq 7
 grep -Fx os-stdout-ready "$root/$mode.stdout"
 grep -Fx os-stderr-ready "$root/$mode.stderr"
+if [ "$mode" = pipe ]; then
+  test -z "${PROBE_SELECTED+x}"
+  declared-probe declared | grep -Fx declared-child-ready
+fi
 stage source-identity
 identity=$(agent-system-git var GIT_AUTHOR_IDENT)
 printf '%s\n' "$identity" | grep -F 'OS Execution <os-execution@example.invalid>'

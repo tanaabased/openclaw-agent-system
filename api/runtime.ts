@@ -16,7 +16,8 @@ import {
   requiredToolExecutables,
   unavailableToolExecutables,
 } from './executable-requirements.ts';
-import executeAgentSystemCliTool from './cli-execution.ts';
+import runDeclaredTool, { type DeclaredInvocation } from '../tools/declared/run.ts';
+import executeAgentSystemCliTool, { baselineEnvironmentNames } from './cli-execution.ts';
 import loadBoundToolManifest from './manifest-binding.ts';
 import type {
   AgentSystemAuditEvent,
@@ -44,7 +45,8 @@ export interface AgentSystemToolRuntimeDependencies {
   authorize?(request: AgentSystemAuthorizationRequest): Promise<AgentSystemAuthorizationDecision>;
   baseEnvironment: Readonly<NodeJS.ProcessEnv>;
   environmentService: Pick<AgentEnvironmentService, 'loadForAgentId'> &
-    Partial<Pick<AgentEnvironmentService, 'invalidateCredentials'>>;
+    Partial<Pick<AgentEnvironmentService, 'invalidateCredentials' | 'loadSelected'>>;
+  declaredShimRoot?: string;
   excludedExecutableDirectories?: readonly string[];
   logger: ToolLogger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
@@ -119,6 +121,79 @@ export default class AgentSystemToolRuntime {
   constructor(dependencies: AgentSystemToolRuntimeDependencies) {
     this.#dependencies = dependencies;
     this.#runCli = dependencies.runCli;
+  }
+
+  async executeDeclared(
+    input: DeclaredInvocation,
+    scope: AgentSystemToolScope,
+    signal?: AbortSignal,
+  ) {
+    const dependencies = this.#dependencies;
+    const loaded = await loadBoundToolManifest(dependencies.manifestService, scope);
+    const workspace = loaded.scope.workspaceDir;
+    const operation = {
+      action: input.id,
+      risk: 'unknown' as const,
+      summary: 'Run operator-declared CLI',
+    };
+    const result = await runDeclaredTool(input, {
+      declarations: loaded.manifest.tools ?? {},
+      workspace,
+      cwd: workspace,
+      hostPath: dependencies.baseEnvironment.PATH ?? '',
+      baseline: Object.fromEntries(
+        baselineEnvironmentNames.flatMap((name) => {
+          const value = dependencies.baseEnvironment[name];
+          return value === undefined ? [] : [[name, value]];
+        }),
+      ),
+      hostExclusions: excludedToolExecutableDirectories(loaded.manifest, workspace),
+      shimDirectories: [
+        ...(dependencies.excludedExecutableDirectories ?? []),
+        ...(dependencies.declaredShimRoot ? [dependencies.declaredShimRoot] : []),
+      ],
+      async authorize() {
+        const decision = await dependencies.authorize?.({
+          agentId: loaded.manifest.agent.id,
+          toolId: 'declared',
+          toolName: 'agent_system_run_declared',
+          operation,
+        });
+        if (decision?.status === 'denied' || scope.configurationMode === 'inspect')
+          throw new AgentSystemToolError('approval_denied', 'Declared command is not authorized.');
+      },
+      async resolveValues(names) {
+        if (!dependencies.environmentService.loadSelected)
+          throw new AgentSystemToolError(
+            'credential_unavailable',
+            'Selected environment lookup is unavailable.',
+          );
+        return dependencies.environmentService.loadSelected(loaded, names).catch(() => {
+          throw new AgentSystemToolError(
+            'credential_unavailable',
+            'A selected environment value is unavailable.',
+          );
+        });
+      },
+      run: this.#runCli,
+      signal,
+      timeoutMs:
+        scope.executionDeadline === undefined
+          ? undefined
+          : Math.max(0, Math.floor(scope.executionDeadline - performance.now())),
+    });
+    return {
+      kind: 'cli' as const,
+      commandResult: result,
+      output: {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exitCode: result.exitCode,
+        truncated: result.truncated,
+      },
+      auditId: randomUUID(),
+      operation,
+    };
   }
 
   executeCli<TParameters extends TSchema, TDeclaredConfiguration, TResolvedConfiguration, TOutput>(

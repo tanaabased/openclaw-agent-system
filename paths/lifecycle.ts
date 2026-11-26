@@ -17,6 +17,8 @@ function formatEntries(entries: readonly string[]): string {
 }
 
 function pathOutcome(action: AgentPathInstallAction, agentId: string): PathOutcome {
+  if (action === 'reconcile-declared-shims')
+    return { code: action, message: 'Declared CLI launchers', status: 'updated' };
   if (action === 'create-workspace-bin') {
     return {
       code: action,

@@ -1,3 +1,5 @@
+import { Value } from 'typebox/value';
+import { declaredToolsSchema, type DeclaredTools } from '../tools/declared/config-schema.ts';
 import { createHash } from 'node:crypto';
 
 import loadAutomations from './automation-files.ts';
@@ -31,6 +33,7 @@ export type AgentManifestLoadResult =
       status: 'invalid';
       scope: AgentManifestScope;
       path?: string;
+      toolsFilePath?: string;
       automationFilePaths?: string[];
       setupHostFilePath?: string;
       setupFilePath?: string;
@@ -48,6 +51,7 @@ export type AgentManifestLoadResult =
       setupHostFileFingerprint?: string;
       setupFilePath?: string;
       setupFileFingerprint?: string;
+      toolsFile?: ManifestFileDependency;
       automationFiles?: ManifestFileDependency[];
       manifest: AgentManifest;
       diagnostics: ManifestDiagnostic[];
@@ -250,6 +254,43 @@ export async function loadDiscoveredManifest(
       includedHost?.path,
     );
   }
+  let toolsFile: ManifestFileDependency | undefined;
+  let tools: DeclaredTools | undefined;
+  if (parsed.toolsFile) {
+    const file = await readManifestFile(
+      parsed.toolsFile,
+      selected.path,
+      discovery.workspaceDir,
+      '/tools',
+      'manifest-tools-file',
+    );
+    if (file.status === 'invalid')
+      return {
+        ...invalidManifestResult(scope, file.diagnostics, selected.path),
+        toolsFilePath: file.path,
+      };
+    const yaml = parseManifestYaml(file.source);
+    if (yaml.status !== 'valid' || !Value.Check(declaredToolsSchema, yaml.value))
+      return {
+        ...invalidManifestResult(
+          scope,
+          [
+            {
+              code: 'manifest-tools-invalid',
+              fieldPath: '/tools',
+              sourcePath: file.path,
+              severity: 'error',
+              message:
+                'Tool declarations must map identifiers to an executable and environment names.',
+            },
+          ],
+          selected.path,
+        ),
+        toolsFilePath: file.path,
+      };
+    toolsFile = { path: file.path, fingerprint: file.fingerprint };
+    tools = yaml.value;
+  }
   const automationResult = await loadAutomations(parsed, selected.path, discovery.workspaceDir);
   if (automationResult.status === 'invalid')
     return {
@@ -268,6 +309,7 @@ export async function loadDiscoveredManifest(
     };
   const manifest: AgentManifest = {
     ...parsed.manifest,
+    ...(tools ? { tools } : {}),
     ...(parsed.automations !== undefined || parsed.automationsFile !== undefined
       ? { automations: automationResult.automations }
       : {}),
@@ -276,6 +318,7 @@ export async function loadDiscoveredManifest(
   };
   const digestHash = createHash('sha256').update(base.contents);
   if (overlay) digestHash.update('\0agent.local.yaml\0').update(overlay.contents);
+  if (toolsFile) digestHash.update('\0').update(toolsFile.fingerprint);
   if (includedHost) digestHash.update('\0').update(includedHost.contents);
   if (included) digestHash.update('\0').update(included.contents);
   for (const file of automationResult.files) digestHash.update('\0').update(file.fingerprint);
@@ -305,6 +348,7 @@ export async function loadDiscoveredManifest(
     path: selected.path,
     digest,
     sources,
+    ...(toolsFile ? { toolsFile } : {}),
     ...(overlay ? { overlayPath: overlay.path } : {}),
     ...(includedHost === undefined
       ? {}

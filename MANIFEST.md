@@ -629,6 +629,25 @@ identifiers remain literal and are never casing-converted. See
 [Environment Resolution](#environment-resolution) for source precedence and resolution behavior, and
 [Path](#path) for executable projection.
 
+### `tools`
+
+To run an installed CLI in OpenClaw without exporting its token to your shell, declare its executable and the environment names it needs. For example:
+
+```yaml
+environment:
+  set:
+    NETLIFY_AUTH_TOKEN:
+      from-op: 'op://deployment/netlify/token'
+tools:
+  netlify:
+    executable: netlify
+    environment: [NETLIFY_AUTH_TOKEN]
+```
+
+Use a host command name, an absolute path, or a path such as `./scripts/deploy` relative to the bound workspace. To keep declarations in a separate file, set `tools: tools.yaml` and put the same identifier-to-command mapping in that file, without the outer `tools:` key.
+
+Run Install to create the agent's launchers. Then use `openclaw as tool netlify -- status`, or ask the agent to invoke `agent_system_run_declared` with ID `netlify` and arguments `["status"]`. Editing the declared script or upgrading Netlify does not require another Install. Doctor reports missing or changed launchers; removing a declaration stops the old launcher from invoking that tool.
+
 ### `memory`
 
 `memory` is optional. Omitting it leaves the bound agent's existing OpenClaw
