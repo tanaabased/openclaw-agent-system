@@ -50,6 +50,9 @@ describe('agent/automation-report-delivery', () => {
       stale?: boolean;
       malformed?: boolean;
       pending?: boolean;
+      queued?: boolean;
+      gatewayUnavailable?: boolean;
+      messageRecordedAtMs?: number;
       drift?: boolean;
       badCard?: boolean;
       denied?: boolean;
@@ -74,6 +77,7 @@ describe('agent/automation-report-delivery', () => {
     const stages: { first: string; instruction: string; corrected: string; saved: string[] }[] = [];
     let selections = 0;
     let selected = false;
+    let finishQueued: (() => Promise<void>) | undefined;
     type HookResult =
       | {
           toolsAllow?: string[];
@@ -119,6 +123,7 @@ describe('agent/automation-report-delivery', () => {
         assert.equal(authority.signal?.aborted, false);
         await authority.assertCurrent?.();
         if (options.revoked) throw Error('revoked');
+        if (options.gatewayUnavailable) throw Error('gateway endpoint with private diagnostic');
         const request = async (method: string, params: Record<string, unknown>) => {
           calls.push(method);
           if (method === 'sessions.resolve')
@@ -154,89 +159,97 @@ describe('agent/automation-report-delivery', () => {
               code: 'FORBIDDEN',
               message: 'private diagnostic',
             });
-          const context = {
-            agentId: 'a',
-            sessionKey: target.sessionKey,
-            sessionId: 'incarnation',
-            runId: params.idempotencyKey,
-          };
-          if (!options.unguarded) {
-            const guard = await hooks.get('before_prompt_build')!({}, context);
-            assert.equal(guard?.toolsAllow, undefined);
-            assert.ok(guard?.appendSystemContext);
-            assert.ok(guard?.prependContext?.includes('Exit 17'));
-            assert.ok(guard?.prependContext?.includes('<captured_result>'));
-            assert.ok(guard?.prependContext?.includes(String(params.idempotencyKey)));
-          }
-          assert.equal(
-            (await hooks.get('before_tool_call')!({ toolName: 'exec' }, context))?.block,
-            true,
-          );
-          await hooks.get('llm_output')!(
-            {
+          const finish = async () => {
+            const context = {
+              agentId: 'a',
+              sessionKey: target.sessionKey,
+              sessionId: 'incarnation',
               runId: params.idempotencyKey,
-              provider: 'test',
-              model: options.effectiveMismatch ? 'other' : 'formatter',
-              ...(options.effectiveEffort ? { reasoningEffort: options.effectiveEffort } : {}),
-            },
-            context,
-          );
-          const record = await store.read(String(params.idempotencyKey));
-          const presentation = record!.input.presentation;
-          let body =
-            presentation && presentation.kind !== 'fallback'
-              ? (options.alteredPreferred ? 'Changed report\n' : '') + presentation.body
-              : presentation?.kind === 'fallback'
-                ? `> ## ${options.badCard ? '✅' : '❌'} Backup failed\n>\n> The command exited unsuccessfully.\n\n${presentation.footer}`
-                : `> ## ❌ Backup failed\n>\n> ${record!.input.runLine}\n>\n> The command exited unsuccessfully.`;
-          if (options.correction) {
-            const escaped = body.replaceAll('&', '&amp;').replaceAll('>', '&gt;');
-            body = body.replaceAll('\n\n', '\n>\n') + '\n\n' + JSON.stringify(escaped);
-          }
-          const validation = await hooks.get('before_agent_finalize')!(
-            { lastAssistantMessage: body },
-            context,
-          );
-          if (options.badCard || options.alteredPreferred || options.correction)
-            assert.equal(validation?.retry?.maxAttempts, 1);
-          else assert.equal(validation, undefined);
-          let saved = [body];
-          if (options.correction) {
-            const instruction = validation?.retry?.instruction;
-            assert.ok(instruction);
+            };
+            if (!options.unguarded) {
+              const guard = await hooks.get('before_prompt_build')!({}, context);
+              assert.equal(guard?.toolsAllow, undefined);
+              assert.ok(guard?.appendSystemContext);
+              assert.ok(guard?.prependContext?.includes('Exit 17'));
+              assert.ok(guard?.prependContext?.includes('<captured_result>'));
+              assert.ok(guard?.prependContext?.includes(String(params.idempotencyKey)));
+            }
             assert.equal(
-              validation?.retry?.idempotencyKey,
-              `automation-report:${params.idempotencyKey}`,
+              (await hooks.get('before_tool_call')!({ toolName: 'exec' }, context))?.block,
+              true,
             );
-            const marker = '\n<response_body>\n';
-            const start = instruction.indexOf(marker) + marker.length;
-            const corrected = instruction.slice(
-              start,
-              instruction.indexOf('\n</response_body>', start),
-            );
-            assert.ok(instruction.includes('Replace the rejected response in full'));
-            saved =
-              options.correction === 'multipart'
-                ? [corrected, JSON.stringify(corrected)]
-                : [corrected + (options.correction === 'duplicate' ? '\n\n' + corrected : '')];
-            stages.push({ first: body, instruction, corrected, saved });
-            const finalValidation = await hooks.get('before_agent_finalize')!(
-              { lastAssistantMessage: saved.join('\n') },
+            await hooks.get('llm_output')!(
+              {
+                runId: params.idempotencyKey,
+                provider: 'test',
+                model: options.effectiveMismatch ? 'other' : 'formatter',
+                ...(options.effectiveEffort ? { reasoningEffort: options.effectiveEffort } : {}),
+              },
               context,
             );
-            assert.equal(Boolean(finalValidation), options.correction !== 'valid');
+            const record = await store.read(String(params.idempotencyKey));
+            const presentation = record!.input.presentation;
+            let body =
+              presentation && presentation.kind !== 'fallback'
+                ? (options.alteredPreferred ? 'Changed report\n' : '') + presentation.body
+                : presentation?.kind === 'fallback'
+                  ? `> ## ${options.badCard ? '✅' : '❌'} Backup failed\n>\n> The command exited unsuccessfully.\n\n${presentation.footer}`
+                  : `> ## ❌ Backup failed\n>\n> ${record!.input.runLine}\n>\n> The command exited unsuccessfully.`;
+            if (options.correction) {
+              const escaped = body.replaceAll('&', '&amp;').replaceAll('>', '&gt;');
+              body = body.replaceAll('\n\n', '\n>\n') + '\n\n' + JSON.stringify(escaped);
+            }
+            const validation = await hooks.get('before_agent_finalize')!(
+              { lastAssistantMessage: body },
+              context,
+            );
+            if (options.badCard || options.alteredPreferred || options.correction)
+              assert.equal(validation?.retry?.maxAttempts, 1);
+            else assert.equal(validation, undefined);
+            let saved = [body];
+            if (options.correction) {
+              const instruction = validation?.retry?.instruction;
+              assert.ok(instruction);
+              assert.equal(
+                validation?.retry?.idempotencyKey,
+                `automation-report:${params.idempotencyKey}`,
+              );
+              const marker = '\n<response_body>\n';
+              const start = instruction.indexOf(marker) + marker.length;
+              const corrected = instruction.slice(
+                start,
+                instruction.indexOf('\n</response_body>', start),
+              );
+              assert.ok(instruction.includes('Replace the rejected response in full'));
+              saved =
+                options.correction === 'multipart'
+                  ? [corrected, JSON.stringify(corrected)]
+                  : [corrected + (options.correction === 'duplicate' ? '\n\n' + corrected : '')];
+              stages.push({ first: body, instruction, corrected, saved });
+              const finalValidation = await hooks.get('before_agent_finalize')!(
+                { lastAssistantMessage: saved.join('\n') },
+                context,
+              );
+              assert.equal(Boolean(finalValidation), options.correction !== 'valid');
+            }
+            if (!options.pending)
+              replies.push({
+                role: 'assistant',
+                stopReason: 'stop',
+                content: saved.map((text) => ({ type: 'text', text })),
+                __openclaw: {
+                  id: `reply-${params.idempotencyKey}`,
+                  runId: params.idempotencyKey,
+                  runTerminal: true,
+                  recordTimestampMs: options.messageRecordedAtMs,
+                },
+              });
+          };
+          if (options.queued) {
+            finishQueued = finish;
+            return { status: 'queued', runId: params.idempotencyKey };
           }
-          if (!options.pending)
-            replies.push({
-              role: 'assistant',
-              stopReason: 'stop',
-              content: saved.map((text) => ({ type: 'text', text })),
-              __openclaw: {
-                id: `reply-${params.idempotencyKey}`,
-                runId: params.idempotencyKey,
-                runTerminal: true,
-              },
-            });
+          await finish();
           if (options.settledBeforeAck) {
             await store.update(String(params.idempotencyKey), (current) => {
               current.state = 'delivered';
@@ -280,6 +293,7 @@ describe('agent/automation-report-delivery', () => {
         store,
         hash: 'hash',
         manifestDigest: 'manifest',
+        commandFinishedAtMs: Date.parse(input.startedAt) + 1,
         credential,
         assertCurrent,
         selectSettings,
@@ -296,6 +310,7 @@ describe('agent/automation-report-delivery', () => {
       store,
       hooks,
       stages,
+      finish: async () => finishQueued!(),
       replies,
       selections: () => selections,
     };
@@ -516,6 +531,50 @@ describe('agent/automation-report-delivery', () => {
     await restarted.recover();
     assert.equal(restarted.messages.length, 0);
   });
+  it('should distinguish waiting for gateway recovery from an accepted chat queue', async () => {
+    const start = Date.parse(input.startedAt);
+    let now = start + 2;
+    const reopen = () => new AutomationReportStore(storage, () => now);
+    const unavailable = fixture({ gatewayUnavailable: true }, reopen());
+    const pending = await unavailable.deliver();
+    assert.equal(pending.status, 'pending');
+    assert.equal(unavailable.messages.length, 0);
+    assert.deepEqual(pending.timing, {
+      commandFinishedAtMs: start + 1,
+      queuedAtMs: start + 2,
+      lastAttemptAtMs: start + 2,
+      lastIssue: {
+        atMs: start + 2,
+        phase: 'prepare',
+        reason: 'automation-report-unavailable',
+        category: 'unknown',
+      },
+    });
+
+    now = start + 1000;
+    const recovered = fixture({ queued: true, messageRecordedAtMs: start + 3000 }, reopen());
+    const submitted = await recovered.recover();
+    assert.equal(submitted.status, 'pending');
+    assert.equal(submitted.timing?.admission, 'queued');
+    assert.equal(submitted.timing?.submittedAtMs, start + 1000);
+    assert.equal(submitted.timing?.formatterStartedAtMs, undefined);
+
+    now = start + 2500;
+    await recovered.finish();
+    now = start + 4000;
+    const delivered = await recovered.recover();
+    assert.equal(delivered.status, 'delivered');
+    assert.equal(delivered.executionId, pending.executionId);
+    assert.equal(delivered.timing?.lastAttemptAtMs, start + 1000);
+    assert.equal(delivered.timing?.formatterStartedAtMs, start + 2500);
+    assert.equal(delivered.timing?.messageRecordedAtMs, start + 3000);
+    assert.equal(Date.parse(delivered.completedAt!), start + 4000);
+    assert.deepEqual(delivered.timing?.lastIssue, pending.timing.lastIssue);
+    assert.equal((await recovered.store.read(input.executionId))?.input.reason, 'Exit 17');
+    assert.deepEqual(await recovered.recover(), delivered);
+    assert.equal(recovered.messages.length, 1);
+  });
+
   it('should preserve uncertain sends and reconcile the same durable identity after restart', async () => {
     const { agent } = await sqliteAgentFixture(workspaceDir, 'a');
     const reopen = () =>
