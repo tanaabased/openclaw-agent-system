@@ -139,10 +139,7 @@ export async function reconcileOpenClawTurn(input: {
     const pending = liveQueueCount(sessionObject(history.pendingInputs ?? {}));
     if (input.record) {
       delete input.record.nativeInactive;
-      if (
-        info.hasActiveRun === true ||
-        (pending !== undefined && pending > 0)
-      )
+      if (info.hasActiveRun === true || (pending !== undefined && pending > 0))
         input.record.nativeInactive = false;
       else if (info.hasActiveRun === false && pending === 0) input.record.nativeInactive = true;
     }

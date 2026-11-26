@@ -11,6 +11,8 @@ export interface OpenClawAIMockScenario {
   embeddingAuthorization?: string;
   expectedDeniedToolCalls?: readonly OpenClawAIMockToolCall[];
   expectedInvalidToolCalls?: readonly OpenClawAIMockToolCall[];
+  /** Scenarios that assert individual pages consume those tools’ receipts themselves. */
+  manuallyPagedTools?: readonly string[];
   skipToolSearch?: (request: ChatCompletionRequest) => boolean;
   toolSearchDiscoveryFixture?: Fixture;
   dynamicFinalResponseFixtures?: readonly Fixture[];

@@ -47,6 +47,8 @@ describe('aimock context material', () => {
         },
       ],
     } as ChatCompletionRequest;
+    // A scenario asserting each page must receive the original material request.
+    assert.deepEqual(contextMaterialExchange(request, [transport.tool]), { request });
     const offsets = new Set<number>();
     for (let attempt = 0; attempt < 20; attempt++) {
       const exchange = contextMaterialExchange(request);

@@ -256,6 +256,7 @@ export default function withToolSearch(scenario: OpenClawAIMockScenario): OpenCl
         scenario.expectedDeniedToolCalls,
         scenario.expectedInvalidToolCalls,
       ),
+      scenario.manuallyPagedTools,
     );
   const materials: Fixture = {
     match: {

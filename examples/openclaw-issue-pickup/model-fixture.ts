@@ -275,6 +275,7 @@ const final: Fixture = {
 
 export const issuePickupScenario: OpenClawAIMockScenario = {
   id: 'openclaw-issue-pickup',
+  manuallyPagedTools: ['agent_system_intake'],
   model: { match: model, reference: 'aimock/gpt-5.5' },
   systemPromptSignals: [],
   finalResponses: [],

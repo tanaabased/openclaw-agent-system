@@ -128,7 +128,7 @@ export function createAutomationGateway(
   call: AutomationGatewayCaller,
   sleep: (ms: number, signal?: AbortSignal) => Promise<unknown> = (ms, signal) =>
     setTimeout(ms, undefined, { signal }),
-  waitForReady?: () => Promise<void>,
+  waitForReady?: (method: Parameters<AutomationGateway>[0]) => Promise<void>,
   now: () => number = () => performance.now(),
 ): AutomationGateway {
   const request: AutomationGateway = async (method, params) => {
@@ -140,7 +140,7 @@ export function createAutomationGateway(
     // Install can reach a scheduler write while hot reload is replacing the agent harness.
     // Wait before sending it. An already-dispatched write still follows its original receipt.
     if (setupWrite || method === 'models.list' || isSessionRead(method)) {
-      await waitForReady?.();
+      await waitForReady?.(method);
       assertPrivateStateLocksHeld();
       privateStateLockSignal()?.throwIfAborted();
     }
@@ -276,9 +276,24 @@ export function createAutomationGateway(
 
 export const requestAutomationGateway: AutomationGateway = async (method, params) => {
   const { callGatewayFromCli } = await import('openclaw/plugin-sdk/gateway-runtime');
-  return createAutomationGateway(callGatewayFromCli, undefined, async () => {
-    const { default: waitForAutomationGateway } = await import('./automation-gateway-readiness.ts');
+  return createAutomationGateway(callGatewayFromCli, undefined, async (method) => {
+    const { default: waitForAutomationGateway, waitForSchedulerConfig } =
+      await import('./automation-gateway-readiness.ts');
     await waitForAutomationGateway();
+    if (method === 'cron.add' || method === 'cron.update')
+      await waitForSchedulerConfig(method, (timeout, signal) =>
+        callGatewayFromCli(
+          'config.get',
+          { timeout: String(timeout) },
+          {},
+          {
+            progress: false,
+            scopes: ['operator.read'],
+            sharedStateMode: 'read-only',
+            signal,
+          },
+        ),
+      );
   })(method, params);
 };
 operatorGateways.add(requestAutomationGateway);

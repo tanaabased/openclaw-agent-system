@@ -1,3 +1,6 @@
+import { setTimeout } from 'node:timers/promises';
+import gatewayErrorDiagnostic from '../../utils/gateway-error-diagnostic.ts';
+import { nativeObject } from '../../utils/native-object.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import { AutomationError } from './automation-errors.ts';
@@ -6,7 +9,9 @@ import {
   privateStateLockSignal,
 } from '../../core/private-state-lock-context.ts';
 import { SessionDispatchConnectionError } from '../../credentials/session-dispatch-diagnostic.ts';
-import waitForSessionDispatchGateway from '../../credentials/session-dispatch-readiness.ts';
+import waitForSessionDispatchGateway, {
+  sessionDispatchReadinessTimeoutMs,
+} from '../../credentials/session-dispatch-readiness.ts';
 
 interface Dependencies {
   isLocal(): Promise<boolean>;
@@ -56,4 +61,43 @@ export default async function waitForAutomationGateway(dependencies?: Dependenci
     throw error;
   }
   assertPrivateStateLocksHeld();
+}
+
+/** A reachable scheduler can still be using the revision from before Install's config writes. */
+export async function waitForSchedulerConfig(
+  method: 'cron.add' | 'cron.update',
+  read: (timeoutMs: number, signal?: AbortSignal) => Promise<unknown>,
+  now = () => performance.now(),
+  sleep = (ms: number, signal?: AbortSignal) => setTimeout(ms, undefined, { signal }),
+) {
+  const deadline = now() + sessionDispatchReadinessTimeoutMs;
+  const signal = privateStateLockSignal();
+  const guard = () => {
+    assertPrivateStateLocksHeld();
+    signal?.throwIfAborted();
+  };
+  try {
+    while (now() < deadline) {
+      guard();
+      const snapshot = await read(Math.max(1, Math.floor(deadline - now())), signal);
+      guard();
+      if (
+        !nativeObject(snapshot) ||
+        snapshot.valid !== true ||
+        typeof snapshot.configRevisionHash !== 'string' ||
+        !snapshot.configRevisionHash
+      )
+        throw new AutomationError('automation-gateway-config-invalid');
+      if (snapshot.configRevisionHash === snapshot.appliedConfigHash) return;
+      await sleep(Math.min(500, Math.max(0, deadline - now())), signal);
+    }
+    throw new AutomationError('automation-gateway-config-revision-deadline');
+  } catch (error) {
+    guard();
+    // A failed read never dispatched the scheduler write or consumed its create receipt.
+    throw new AutomationError(
+      error instanceof AutomationError ? error.code : 'automation-gateway-config-read-failed',
+      { ...gatewayErrorDiagnostic(error), method, requestDispatched: false },
+    );
+  }
 }
