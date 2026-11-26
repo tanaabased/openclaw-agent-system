@@ -39,6 +39,7 @@ async function selectSkill(skills: unknown[], id: string) {
     'agent-system:agent-system-github-reply',
     'agent-system:agent-system-task-assessment',
     'agent-system:agent-system-task-implementation',
+    'agent-system:agent-system-task-review',
   ].includes(id)
     ? id.split(':').at(-1)!
     : id;

@@ -5,6 +5,11 @@ agent:
   name: Notification EMORI
   email: emori@tanaab.dev
 
+models:
+  default:
+    model: aimock/gpt-5.5
+    effort: medium
+
 environment:
   set:
     GH_TOKEN_EMORI: ${GH_TOKEN_EMORI}
@@ -13,3 +18,9 @@ environment:
 github:
   username: emoriwan
   token: GH_TOKEN_EMORI
+  schema-version: 3
+  runtimes: [openclaw]
+  interval-minutes: 1440
+  routing: ['tanaabased/big-test-bucket']
+  review-request:
+    allowed: ['@tanaabot']

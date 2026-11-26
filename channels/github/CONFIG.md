@@ -74,7 +74,7 @@ same rule. Scope changes apply to new admissions without Install and preserve
 already admitted work and its original owner. Routing does not grant GitHub access,
 approve assignment actors, or enable unsupported workflows.
 
-`swarm` coordinates assignment-driven work, Codex review requests, and issue pickup across participating
+`swarm` coordinates assignment-driven work, review requests, and issue pickup across participating
 installations using claim comments and a second native pass before starting work. Use `swarm`
 for that repository on every participant sharing the receiving account. This is a
 comment-only proof of concept: incomplete concurrent reads can still produce
@@ -346,9 +346,8 @@ actor and therefore no assigner-derived default assignee.
 
 ## `github.review-request`
 
-In standalone Codex, this object declares one review coordinator. Install reconciles
-its native chat and schedule using the shared interval and pause settings. OpenClaw
-currently reports this workflow as unavailable without blocking issue assignments.
+This object declares one independent review coordinator in each selected runtime.
+Install reconciles its chat and schedule using the shared interval and pause settings.
 
 | Field      | Type                                              | Required | Default                                  | Description                                                  |
 | ---------- | ------------------------------------------------- | -------- | ---------------------------------------- | ------------------------------------------------------------ |
@@ -379,10 +378,10 @@ review. Failed CI prevents approval. A repair, base or description change, renew
 Approval does not retire the chat; closure/merge and explicit retirement use the shared
 resource-cleanup rules.
 
-Reviewers receive a separate checkout at the exact PR commit, without selecting the
-author's working branch, and instructions against edits, commits, pushes, merges,
-deployments, and executed CI reruns. These are practical restrictions backed by native
-and provider permissions, not complete isolation from every possible tool. Codex uses
+Reviewers start on GitHub. When the diff and CI leave a question open, use a separate
+checkout of the exact PR commit for history, focused tests, or local experiments.
+Report what you found rather than committing a fix. This is reviewer guidance, not a
+separate GitHub identity or a technical lock on pushes. Codex uses
 its native scheduled scan; it does not provide OpenClaw's pre-model condition guarantee.
 
 ## Common Types

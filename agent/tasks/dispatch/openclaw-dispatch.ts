@@ -1,3 +1,4 @@
+import openClawReview from '../review/openclaw-review.ts';
 import openClawResponse from '../response/openclaw-response.ts';
 import { selectOpenClawTaskContext } from '../context/openclaw-task-context.ts';
 import { withDispatchTask } from './dispatch-task-scope.ts';
@@ -167,7 +168,16 @@ export default class OpenClawDispatch {
   ) {
     if (isNativeContextRequest('dispatch', input)) assertNativeContextInput(input);
     assertDispatchModelRequest(input);
-    if (input.action === 'review') throw new Error('review-openclaw-adapter-unavailable');
+    if (input.action === 'review')
+      return openClawReview(
+        this.dependencies,
+        manifest,
+        workspace,
+        caller,
+        input,
+        operator,
+        authority,
+      );
     if (input.action === 'response') {
       return this.dependencies.credential.use(authority, (request) =>
         openClawResponse(request, caller, input.blocks as unknown[] | undefined),
@@ -552,7 +562,16 @@ export default class OpenClawDispatch {
     operator = false,
     authority: DispatchAuthority = {},
   ) {
-    if (input.action === 'review') throw new Error('review-openclaw-adapter-unavailable');
+    if (input.action === 'review')
+      return openClawReview(
+        this.dependencies,
+        manifest,
+        workspace,
+        caller,
+        input,
+        operator,
+        authority,
+      );
     if (input.action === 'implementation') {
       const context = await openClawImplementationEntry({
         manifest,

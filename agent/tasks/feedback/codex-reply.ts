@@ -91,7 +91,11 @@ async function codexReplyScoped(
           const owners = records.filter((record) => record.threadId === caller);
           if (owners.length > 1) throw new Error('reply-managed-owner-ambiguous');
           const record = owners[0];
-          if (!record?.request || !record.worktree) return;
+          if (
+            !record?.request ||
+            (!record.worktree && record.request.target.type !== 'projectless')
+          )
+            return;
           const admission = taskAdmission(record, (await current.store.read())?.records ?? []);
           defaultTarget = admission && taskTarget(admission);
           if (record.reset || record.supersededBy || record.retirement)
@@ -234,7 +238,10 @@ async function codexReplyScoped(
           if (owners.length > 1) throw new Error('reply-managed-owner-ambiguous');
           const record = owners[0];
           if (record) {
-            if (!record.request || !record.worktree)
+            if (
+              !record.request ||
+              (!record.worktree && record.request.target.type !== 'projectless')
+            )
               throw new Error('reply-managed-context-invalid');
             const native = await withNative(current, deps, (host) =>
               host.find({

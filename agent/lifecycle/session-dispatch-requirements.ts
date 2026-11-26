@@ -15,7 +15,14 @@ export default function sessionDispatchRequirements(
       job.runtimes.includes('openclaw') &&
       automationThreadSelection(job, 'openclaw'),
   );
-  return [{ id: 'github-issue-assignment', name: 'issue assignments', policy: automatic }]
+  return [
+    { id: 'github-issue-assignment', name: 'issue assignments', policy: automatic },
+    {
+      id: 'github-review-request',
+      name: 'pull request reviews',
+      policy: policy?.runtimes.includes('openclaw') && policy.reviewRequest,
+    },
+  ]
     .filter(({ policy: trigger }) => Boolean(trigger))
     .map(({ id, name }) => ({ id, name }))
     .concat(reporting ? [{ id: 'automation-reports', name: 'command automation reports' }] : [])

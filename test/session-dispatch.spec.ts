@@ -530,11 +530,11 @@ describe('agent/session-dispatch-requirements', () => {
     assert.equal(policy.schemaVersion, 3);
     if (policy.schemaVersion !== 3) throw new Error();
     policy.reviewRequest = { ...policy.issueAssignment! };
-    assert.equal(sessionDispatchRequirements(value).length, 1);
+    assert.equal(sessionDispatchRequirements(value).length, 2);
     policy.issueAssignment!.paused = true;
     assert.deepEqual(
       sessionDispatchRequirements(value).map(({ id }) => id),
-      ['github-issue-assignment'],
+      ['github-issue-assignment', 'github-review-request'],
     );
     policy.runtimes = ['codex'];
     assert.deepEqual(sessionDispatchRequirements(value), []);
