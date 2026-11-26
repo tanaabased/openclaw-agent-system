@@ -17,7 +17,10 @@ import {
 } from '../identity/codex-workspace-binding.ts';
 import SetupLifecycleService from './setup-lifecycle.ts';
 import createSetupCommandRunner, { type SetupProcessRunner } from './setup-runner.ts';
-import type { AgentSystemLifecycleFinding } from '../../core/lifecycle-registry.ts';
+import type {
+  AgentSystemLifecycleFinding,
+  AgentSystemLifecycleReconcileResult,
+} from '../../core/lifecycle-registry.ts';
 import type { AgentSetupCommand } from '../../manifest/setup-schema.ts';
 import { githubNotificationRuntimeDiagnostics } from '../../channels/github/notification-policy.ts';
 
@@ -51,6 +54,9 @@ export class CodexSetupError extends Error {
   constructor(
     readonly code: string,
     message: string,
+    readonly partialInstall?: AgentSystemLifecycleReconcileResult & {
+      findings: AgentSystemLifecycleFinding[];
+    },
   ) {
     super(message);
   }
@@ -234,9 +240,9 @@ export async function installCodexSetup(
     context.manifest.github?.notifications,
     'codex',
   );
-  for (const finding of await opFindings(pluginData, dependencies)) {
-    if (finding.status === 'blocked') throw new CodexSetupError(finding.code, finding.message);
-  }
+  const blockedCredentials = (await opFindings(pluginData, dependencies)).filter(
+    (finding) => finding.status === 'blocked',
+  );
   await context.assertCurrent();
   const result = await lifecycle.reconcile(context);
   for (const database of storage) {
@@ -247,6 +253,14 @@ export async function installCodexSetup(
   result.outcomes.push(
     ...instance.outcomes.map((outcome) => ({ ...outcome, component: 'instance-identity' })),
   );
+  // local setup does not receive enrolled credentials; do not hand off to automation sync when blocked.
+  const [blocker] = blockedCredentials;
+  if (blocker) {
+    throw new CodexSetupError(blocker.code, blocker.message, {
+      ...result,
+      findings: blockedCredentials,
+    });
+  }
   // Setup may replace this runtime. Automation inspection and sync must load the installed code.
   return {
     status: 'requires-native-app-sync' as const,

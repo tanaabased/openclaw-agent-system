@@ -7,7 +7,11 @@ import {
   bindCodexWorkspace,
   unbindCodexWorkspace,
 } from '../agent/identity/codex-workspace-binding.ts';
-import { inspectCodexSetup, installCodexSetup } from '../agent/lifecycle/codex-setup.ts';
+import {
+  CodexSetupError,
+  inspectCodexSetup,
+  installCodexSetup,
+} from '../agent/lifecycle/codex-setup.ts';
 import { codexOpCredential } from '../credentials/codex-op.ts';
 import { spawnSync } from 'node:child_process';
 import { opFixture } from './codex-op-process-fixture.ts';
@@ -52,13 +56,32 @@ describe('standalone codex 1password enrollment', () => {
     await bind('environment: {set: {LITERAL: "op://private/item/password"}}');
     assert.equal(await codexOpCredential(data, 'binding', op), undefined);
     const declaration = 'environment: {set: {PRIVATE: {from-op: "op://private/item/password"}}}';
-    await bind(declaration);
+    await bind(`${declaration}
+setup-agent:
+  steps:
+    - id: codex-config
+      runtimes: [codex]
+      check: test -f .codex-config-ready
+      apply: touch .codex-config-ready
+`);
     const options = { op, baseEnvironment: { HOME: root, PATH: '/usr/bin:/bin' } };
     const doctor = () => inspectCodexSetup(data, undefined, options);
-    assert.ok((await doctor()).findings.some((f) => f.code === 'codex-op-binding-missing'));
-    await assert.rejects(installCodexSetup(data, undefined, options), {
-      code: 'codex-op-binding-missing',
+    const before = await doctor();
+    assert.ok(before.findings.some((f) => f.code === 'codex-op-binding-missing'));
+    assert.equal(before.findings.find((f) => f.stepId === 'codex-config')?.status, 'drift');
+    await assert.rejects(installCodexSetup(data, undefined, options), (error: unknown) => {
+      assert.ok(error instanceof CodexSetupError);
+      assert.equal(error.code, 'codex-op-binding-missing');
+      assert.ok(
+        error.partialInstall?.outcomes.some(
+          ({ stepId, code }) => stepId === 'codex-config' && code === 'setup-applied',
+        ),
+      );
+      return true;
     });
+    const after = await doctor();
+    assert.ok(after.findings.some((f) => f.code === 'codex-op-binding-missing'));
+    assert.equal(after.findings.find((f) => f.stepId === 'codex-config')?.status, 'healthy');
     assert.equal(entries.size, 0);
     const credential = (await codexOpCredential(data, 'binding', op))!;
     assert.equal((await credential.enroll()).status, 'healthy');

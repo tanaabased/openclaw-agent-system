@@ -769,17 +769,18 @@ runCodexRuntime().catch((error: unknown) => {
             code: error.code,
             ...(error.stepId === undefined ? {} : { stepId: error.stepId }),
           }
-        : error instanceof CodexNodeVersionError ||
-            error instanceof IntakeError ||
-            error instanceof CodexSetupError ||
-            error instanceof RoutingError ||
-            error instanceof CodexAutomationError
-          ? { code: error.code }
-          : /^(?:dispatch|continuation|workflow|delivery|github-delivery|assessment|assessment-result|implementation|reply|heartbeat|notification-reset|issue-pickup)-[a-z-]+$/u.test(
-                message,
-              )
-            ? { code: message }
-            : { code: evidence.code };
+        : error instanceof CodexSetupError
+          ? { code: error.code, ...error.partialInstall }
+          : error instanceof CodexNodeVersionError ||
+              error instanceof IntakeError ||
+              error instanceof RoutingError ||
+              error instanceof CodexAutomationError
+            ? { code: error.code }
+            : /^(?:dispatch|continuation|workflow|delivery|github-delivery|assessment|assessment-result|implementation|reply|heartbeat|notification-reset|issue-pickup)-[a-z-]+$/u.test(
+                  message,
+                )
+              ? { code: message }
+              : { code: evidence.code };
   const pickup = error instanceof IssuePickupFailure ? error : undefined;
   const notice =
     !pickup &&
