@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 
@@ -30,11 +30,56 @@ describe('scripts/openclaw-aimock', () => {
     );
   });
 
+  it('should accept extra discovery reads and reject missing tool effects and failed requests', () => {
+    const scenario = 'openclaw-credentials';
+    const tool = { name: 'agent_system_git', callResponseCount: 5, resultRequestCount: 7 };
+    const observed = {
+      scenario,
+      schemaVersion: 2,
+      provider: 'aimock',
+      model: 'aimock/gpt-5.5',
+      requestCount: 19,
+      successfulFixtureResponseCount: 19,
+      strictMissCount: 0,
+      promptRequestCount: 19,
+      discoveryRequestCount: 8,
+      finalResponseCount: 5,
+      tools: [tool],
+    };
+    function check(overrides: Partial<typeof observed>) {
+      return spawnSync(
+        'jq',
+        [
+          '-e',
+          '--arg',
+          'scenario',
+          scenario,
+          '--slurpfile',
+          'expected',
+          `examples/${scenario}/expected-evidence.json`,
+          '-f',
+          'scripts/assert-aimock-evidence.jq',
+        ],
+        { input: JSON.stringify({ ...observed, ...overrides }), encoding: 'utf8' },
+      );
+    }
+    const accepted = check({});
+    assert.equal(accepted.status, 0, accepted.stderr);
+    for (const invalid of [
+      { tools: [] },
+      { tools: [{ ...tool, resultRequestCount: 0 }] },
+      { tools: [{ ...tool, callResponseCount: 6 }] },
+      { finalResponseCount: 4 },
+      { strictMissCount: 1 },
+      { successfulFixtureResponseCount: 18 },
+    ])
+      assert.notEqual(check(invalid).status, 0);
+  });
+
   it('should remain independent of an available live-model credential', async () => {
     const source = await readFile(command, 'utf8');
 
     assert.doesNotMatch(source, /OPENAI_API_KEY/u);
     assert.match(source, /aimock-server\.ts/u);
-    assert.match(source, /strictMissCount == 0/u);
   });
 });

@@ -1,13 +1,6 @@
 {
-  "finalResponseCount": 2,
-  "model": "aimock/gpt-5.5",
-  "promptRequestCount": 1,
-  "provider": "aimock",
-  "requestCount": 2,
-  "responsesApiRequestCount": 2,
   "scenario": "openclaw-automation-recovery",
-  "schemaVersion": 2,
-  "strictMissCount": 0,
-  "successfulFixtureResponseCount": 2,
+  "model": "aimock/gpt-5.5",
+  "finalResponseCount": 2,
   "tools": []
 }
