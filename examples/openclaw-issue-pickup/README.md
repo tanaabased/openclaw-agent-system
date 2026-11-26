@@ -67,7 +67,7 @@ pickup_failure() {
       if test -r "$gateway_log"; then
         tail -n 300 "$gateway_log" | grep -Ei 'reload|restart|drain|shut.?down|cron[./]|database resources|unavailable|baseline' | node "$redactor" | tail -n 40 | tail -c 8192 >&2
       fi
-      if ! openclaw gateway call cron.status --timeout 5000 --json 2> "$TMPDIR/pickup-cron-status.stderr" | jq -ce 'if .ok == false then {type: .error.type, code: .error.code, kind: .error.kind, retryable: .error.retryable} | error("cron.status: " + tojson) else {enabled, jobs, nextWakeAtMs} end' >&2; then
+      if ! openclaw-fixture-gateway cron.status --json 2> "$TMPDIR/pickup-cron-status.stderr" | jq -ce 'if .ok == false then {type: .error.type, code: .error.code, kind: .error.kind, retryable: .error.retryable} | error("cron.status: " + tojson) else {enabled, jobs, nextWakeAtMs} end' >&2; then
         printf 'cron.status unavailable after Install failure\n' >&2
         node "$redactor" < "$TMPDIR/pickup-cron-status.stderr" | tail -c 2048 >&2
       fi
@@ -79,7 +79,7 @@ pickup_failure() {
     if test -s "$TMPDIR/pickup-$runtime-before.json"; then
       conversation=$(jq -er .threadId "$TMPDIR/pickup-$runtime-before.json")
       printf '\npickup assessment tool results:\n' >&2
-      openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:40}')" --timeout 10000 --json | jq '[.messages[] | select(.role == "toolResult" or .role == "tool") | {role,toolName,toolCallId,isError,content:(.content | tostring | .[0:8192])}] | .[-4:]' | node "$redactor" >&2
+      openclaw-fixture-gateway chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:40}')" --json | jq '[.messages[] | select(.role == "toolResult" or .role == "tool") | {role,toolName,toolCallId,isError,content:(.content | tostring | .[0:8192])}] | .[-4:]' | node "$redactor" >&2
     fi
   fi
   exit "$status"
@@ -162,11 +162,11 @@ for runtime in codex openclaw; do
   node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -es --arg issue "$(jq -er .node_id "$TMPDIR/pickup-$runtime-selected.json")" '[.[].records[] | select(.projectWork.pickup.issueNodeId == $issue)] | if length == 1 then .[0] else error("one pickup intake owner required") end' > "$TMPDIR/pickup-$runtime-before.json"
   jq -e '.sessionCreation.verified == true and (.threadId | length > 0) and (.worktree | length > 0) and .delivery == null' "$TMPDIR/pickup-$runtime-before.json"
   conversation=$(jq -er .threadId "$TMPDIR/pickup-$runtime-before.json")
-  openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json | jq -e 'any(.messages[]; .role == "assistant" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | contains("Should disposable issues close after evidence capture?")))'
+  openclaw-fixture-gateway chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json | jq -e 'any(.messages[]; .role == "assistant" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | contains("Should disposable issues close after evidence capture?")))'
   openclaw agent-system tool worktree -- list | jq -e --arg path "$(jq -er .worktree "$TMPDIR/pickup-$runtime-before.json")" '[.[] | select(.path == $path)] | length == 1'
   run_id=$(openclaw agent-system automations run github-issue-pickup --json | jq -er 'select(.status == "queued") | .runId | strings')
   node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-pickup "$run_id"
-  openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" --arg run "$run_id" '{id:$id,runId:$run,limit:1,offset:0}')" --json | jq -e --arg run "$run_id" 'any(.entries[]; .runId == $run and .status == "ok" and (.summary | contains("1 of 1 assigned")))'
+  openclaw-fixture-gateway cron.runs --params "$(jq -nc --arg id "$native" --arg run "$run_id" '{id:$id,runId:$run,limit:1,offset:0}')" --json | jq -e --arg run "$run_id" 'any(.entries[]; .runId == $run and .status == "ok" and (.summary | contains("1 of 1 assigned")))'
   stage=verify-pickup-budget-and-evidence
   GH_TOKEN="$GH_TOKEN_TANAABOT" gh api "repos/tanaabased/big-test-bucket/issues/$other" | jq -e '.assignees | length == 0'
   node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -es --slurpfile before "$TMPDIR/pickup-$runtime-before.json" '[.[].records[] | select(.projectWork.pickup.issueNodeId == $before[0].projectWork.pickup.issueNodeId)] | length == 1 and .[0].threadId == $before[0].threadId and .[0].worktree == $before[0].worktree and (.[0] | .nativeTurns | map(select(.role == "assessment")) | last | .turn).runId == ($before[0] | .nativeTurns | map(select(.role == "assessment")) | last | .turn).runId and .[0].result == $before[0].result and .[0].delivery == null'

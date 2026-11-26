@@ -42,10 +42,10 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-native-retirement/other"
 openclaw agent-system install --yes --json
 
 # should create one deliberately unmanaged native session
-openclaw gateway call sessions.create --params '{"key":"agent:native-retirement:disposable","agentId":"native-retirement","label":"Disposable native cleanup"}' --json | tee "$TMPDIR/native-retirement-target.json" | jq -e '.runStarted == false and (.sessionId | type == "string")'
+openclaw-fixture-gateway sessions.create --params '{"key":"agent:native-retirement:disposable","agentId":"native-retirement","label":"Disposable native cleanup"}' --json | tee "$TMPDIR/native-retirement-target.json" | jq -e '.runStarted == false and (.sessionId | type == "string")'
 
 # should create a real foreign target for the wrong-agent refusal
-openclaw gateway call sessions.create --params '{"key":"agent:other:disposable","agentId":"other","label":"Foreign native cleanup control"}' --json | tee "$TMPDIR/native-retirement-foreign.json" | jq -e '.runStarted == false and (.sessionId | type == "string")'
+openclaw-fixture-gateway sessions.create --params '{"key":"agent:other:disposable","agentId":"other","label":"Foreign native cleanup control"}' --json | tee "$TMPDIR/native-retirement-foreign.json" | jq -e '.runStarted == false and (.sessionId | type == "string")'
 ```
 
 ## Testing
@@ -53,15 +53,15 @@ openclaw gateway call sessions.create --params '{"key":"agent:other:disposable",
 ```bash
 # should refuse a wrong agent then archive the exact native target through the tool
 openclaw agent --agent native-retirement --session-key agent:native-retirement:operator --message-file "$GITHUB_WORKSPACE/examples/openclaw-native-retirement/cleanup.md" --timeout 120 | grep -F 'native-retirement-verified'
-openclaw gateway call sessions.describe --params '{"key":"agent:native-retirement:disposable"}' --json | jq -e '.session.archived == true or .session.archivedAt > 0'
+openclaw-fixture-gateway sessions.describe --params '{"key":"agent:native-retirement:disposable"}' --json | jq -e '.session.archived == true or .session.archivedAt > 0'
 
 # should leave the foreign session unchanged
-openclaw gateway call sessions.describe --params '{"key":"agent:other:disposable"}' --json | jq -e '.session.sessionId == input.sessionId and (.session.archivedAt // 0) == 0' - "$TMPDIR/native-retirement-foreign.json"
+openclaw-fixture-gateway sessions.describe --params '{"key":"agent:other:disposable"}' --json | jq -e '.session.sessionId == input.sessionId and (.session.archivedAt // 0) == 0' - "$TMPDIR/native-retirement-foreign.json"
 
 # should retain supported history and restore the same native session
-openclaw gateway call chat.history --params '{"sessionKey":"agent:native-retirement:disposable","limit":1}' --json | jq -e '.sessionId == input.sessionId and (.messages | type == "array")' - "$TMPDIR/native-retirement-target.json"
-openclaw gateway call sessions.patch --params "$(jq -nc --arg id "$(jq -r .sessionId "$TMPDIR/native-retirement-target.json")" '{key:"agent:native-retirement:disposable",expectedSessionId:$id,archived:false}')" --json
-openclaw gateway call sessions.describe --params '{"key":"agent:native-retirement:disposable"}' --json | jq -e '.session.sessionId == input.sessionId and (.session.archivedAt // 0) == 0' - "$TMPDIR/native-retirement-target.json"
+openclaw-fixture-gateway chat.history --params '{"sessionKey":"agent:native-retirement:disposable","limit":1}' --json | jq -e '.sessionId == input.sessionId and (.messages | type == "array")' - "$TMPDIR/native-retirement-target.json"
+openclaw-fixture-gateway sessions.patch --params "$(jq -nc --arg id "$(jq -r .sessionId "$TMPDIR/native-retirement-target.json")" '{key:"agent:native-retirement:disposable",expectedSessionId:$id,archived:false}')" --json
+openclaw-fixture-gateway sessions.describe --params '{"key":"agent:native-retirement:disposable"}' --json | jq -e '.session.sessionId == input.sessionId and (.session.archivedAt // 0) == 0' - "$TMPDIR/native-retirement-target.json"
 
 # should complete the strict model exchange without unexpected requests
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e 'if .scenario == "openclaw-native-retirement" and .strictMissCount == 0 and .finalResponseCount == 1 and any(.tools[]; .name == "agent_system_dispatch" and .callResponseCount == 3) then true else error(tojson) end'

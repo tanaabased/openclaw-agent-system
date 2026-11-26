@@ -38,7 +38,7 @@ describe('github read retry', () => {
 
   it('should retain the final provider failure after three attempts', async () => {
     let calls = 0;
-    const failure = reply(503);
+    const failure = reply(500);
     const result = await retryGitHubRead(
       async () => {
         calls++;
@@ -48,7 +48,7 @@ describe('github read retry', () => {
     );
     assert.equal(calls, 3);
     assert.equal(result.stdout, failure.stdout);
-    assert.match(result.stderr, /attempts=3 httpStatus=503/u);
+    assert.match(result.stderr, /attempts=3 httpStatus=500/u);
     assert.equal(result.exitCode, 1);
   });
 
@@ -84,7 +84,7 @@ describe('github read retry', () => {
 
   it('should stop on denials invalid data truncation timeout and unknown errors', async () => {
     for (const failure of [
-      ...[401, 403, 404, 429, 500, 422].map(reply),
+      ...[401, 403, 404, 429, 422].map(reply),
       { ...reply(502), timedOut: true },
       { ...reply(502), truncated: true },
       { ...reply(502), stdoutTruncatedBytes: 1 },

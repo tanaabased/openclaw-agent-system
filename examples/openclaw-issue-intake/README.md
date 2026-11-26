@@ -110,7 +110,7 @@ openclaw agent-system notifications wait --for baseline-ready --timeout 30 --jso
 # should expose the install-managed account through the native channel status interface
 set -eo pipefail
 for attempt in $(seq 1 90); do
-  openclaw gateway call channels.status --params '{}' --json > "$TMPDIR/intake-channel-status.json"
+  openclaw-fixture-gateway channels.status --params '{}' --json > "$TMPDIR/intake-channel-status.json"
   if jq -e '.channelAccounts["agent-system-github"] | any(.accountId == "intake-tanaabot" and .lifecycle == "ready" and .running == true)' "$TMPDIR/intake-channel-status.json" > /dev/null; then
     break
   fi
@@ -118,7 +118,7 @@ for attempt in $(seq 1 90); do
 done
 cat "$TMPDIR/intake-channel-status.json"
 jq -e '.channelAccounts["agent-system-github"] | any(.accountId == "intake-tanaabot" and .enabled == true and .configured == true and .mode == "readiness" and .statusState == "healthy" and .lifecycle == "ready" and .running == true and .lastError == null)' "$TMPDIR/intake-channel-status.json"
-openclaw gateway call channels.status --params '{"probe":true}' --json > "$TMPDIR/intake-channel-probe.json"
+openclaw-fixture-gateway channels.status --params '{"probe":true}' --json > "$TMPDIR/intake-channel-probe.json"
 jq -e --slurpfile ordinary "$TMPDIR/intake-channel-status.json" 'def readiness: .channelAccounts["agent-system-github"] | map(select(.accountId == "intake-tanaabot") | {accountId,enabled,configured,mode,statusState,lifecycle,running,lastError}); readiness == ($ordinary[0] | readiness)' "$TMPDIR/intake-channel-probe.json"
 openclaw channels status --json | jq -e '.channelAccounts["agent-system-github"] | any(.accountId == "intake-tanaabot" and .lifecycle == "ready" and .running == true)'
 openclaw config get channels.agent-system-github --json | jq -e '.accounts["retired-agent"].enabled == false and .accounts["intake-tanaabot"].enabled == true'
@@ -145,7 +145,7 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-issue-intake/tanaabot"
 TARGET_INSTANCE=$(openclaw agent-system instance inspect --json | jq -er .instanceId) node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import {parse,stringify} from "yaml"; const path="agent.yaml"; const value=parse(readFileSync(path,"utf8")); value.github.routing.reverse(); value.github.routing[0]={"tanaabased/*":process.env.TARGET_INSTANCE}; value.github["interval-minutes"]=1; writeFileSync(path,stringify(value));'
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
 native=$(openclaw agent-system automations list --json | jq -er '.jobs[] | select(.id == "github-issue-assignment") | .nativeId')
-due=$(openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -er 'if .payload.message == "Scheduled request\n\n> Run scheduled automation: 📥 ISSUE ASSIGNMENTS." then .state.nextRunAtMs | numbers else error("expected the compact scheduled intake request") end')
+due=$(openclaw-fixture-gateway cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -er 'if .payload.message == "Scheduled request\n\n> Run scheduled automation: 📥 ISSUE ASSIGNMENTS." then .state.nextRunAtMs | numbers else error("expected the compact scheduled intake request") end')
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" --scheduled-after github-issue-assignment "$native" "$due" > "$TMPDIR/intake-timer-run.json"
 node --import tsx "$GITHUB_WORKSPACE/scripts/assert-scheduled-automation-input.ts" "$TMPDIR/intake-timer-run.json"
 node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import {parse,stringify} from "yaml"; const path="agent.yaml"; const value=parse(readFileSync(path,"utf8")); value.github["interval-minutes"]=1440; writeFileSync(path,stringify(value));'
@@ -178,7 +178,7 @@ fi
 node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -es --slurpfile fixtures "$TMPDIR/notification-fixture-intake.json" '[.[].records[] | select(.intakeId as $id | any($fixtures[0][]; .id == $id))]' > "$TMPDIR/notification-started.json"
 jq -e 'all(.[]; .routingInstructions.requestedSkill == "intake-routing" and .routingInstructions.skill.name == "intake-routing" and (.routingInstructions.skill.digest | length) == 64 and .routingInstructions.guidance.source == "file" and (.routingInstructions.guidance.content | contains("Keep disposable cleanup plans bounded.")))' "$TMPDIR/notification-started.json"
 for conversation in $(jq -r '.[].threadId' "$TMPDIR/notification-started.json"); do
-  openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session.parentSessionKey == "agent:intake-tanaabot:main" and .session.spawnDepth == 0 and .session.spawnedBy == null'
+  openclaw-fixture-gateway sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session.parentSessionKey == "agent:intake-tanaabot:main" and .session.spawnDepth == 0 and .session.spawnedBy == null'
 done
 
 # should finish one native assessment while two unrelated responses remain held
@@ -206,7 +206,7 @@ node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -es --sl
 # should show the retained custom routing method in the native private assessment
 conversation=$(jq -er '.[0].threadId' "$TMPDIR/notification-started.json")
 run_id=$(jq -er '(.[0] | .nativeTurns | map(select(.role == "assessment")) | last | .turn).runId' "$TMPDIR/notification-started.json")
-openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json | jq -e --arg run "$run_id" '[.messages[] | select(.role == "assistant" and .__openclaw.runId == $run) | (.content | if type == "string" then . else map(.text // "") | join("") end)] | any(.[]; test("disposable (test )?issues"; "i") and test("close|cleanup"; "i") and test("evidence"; "i")) and all(.[]; (contains("Keep disposable cleanup plans bounded.") | not))'
+openclaw-fixture-gateway chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json | jq -e --arg run "$run_id" '[.messages[] | select(.role == "assistant" and .__openclaw.runId == $run) | (.content | if type == "string" then . else map(.text // "") | join("") end)] | any(.[]; test("disposable (test )?issues"; "i") and test("close|cleanup"; "i") and test("evidence"; "i")) and all(.[]; (contains("Keep disposable cleanup plans bounded.") | not))'
 
 # should preserve all three native bindings without saving plans
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-intake/tanaabot"
@@ -225,11 +225,11 @@ node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -es --sl
 jq -e --slurp '.[0] as $before | .[1] as $after | ($after | length) == 3 and all($after[]; (.nativeTurns | map(select(.role == "assessment")) | last | .turn).status == "completed") and ([$before[] | {id,intakeId,threadId,worktree,run:(.nativeTurns | map(select(.role == "assessment")) | last | .turn).runId}] | sort_by(.id)) == ([$after[] | {id,intakeId,threadId,worktree,run:(.nativeTurns | map(select(.role == "assessment")) | last | .turn).runId}] | sort_by(.id))' "$TMPDIR/notification-started.json" "$TMPDIR/notification-all-after.json"
 for conversation in $(jq -r '.[].threadId' "$TMPDIR/notification-all-after.json"); do
   run_id=$(jq -er --arg key "$conversation" '.[] | select(.threadId == $key) | (.nativeTurns | map(select(.role == "assessment")) | last | .turn).runId' "$TMPDIR/notification-all-after.json")
-  openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json | jq -e --arg run "$run_id" '([.messages[] | select(.role == "user" and .idempotencyKey == ($run + ":user"))] | length) == 1'
+  openclaw-fixture-gateway chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json | jq -e --arg run "$run_id" '([.messages[] | select(.role == "user" and .idempotencyKey == ($run + ":user"))] | length) == 1'
 done
 openclaw agent-system tool worktree -- list | jq -S --slurpfile owned "$TMPDIR/notification-started.json" '[.[] | select(.path as $path | any($owned[0][]; .worktree == $path))] | sort_by(.path)' > "$TMPDIR/notification-worktrees-after.json"
 jq -S --slurpfile owned "$TMPDIR/notification-started.json" '[.[] | select(.path as $path | any($owned[0][]; .worktree == $path))] | sort_by(.path)' "$TMPDIR/notification-worktrees-before.json" | diff - "$TMPDIR/notification-worktrees-after.json"
-openclaw gateway call sessions.list --params '{"agentId":"intake-tanaabot","limit":100}' --json | jq -e --slurpfile owned "$TMPDIR/notification-started.json" '.hasMore == false and ([.sessions[] | select(.key as $key | any($owned[0][]; .threadId == $key))] | length == 3 and all(.[]; .category == "BIG-TEST-BUCKET"))'
+openclaw-fixture-gateway sessions.list --params '{"agentId":"intake-tanaabot","limit":100}' --json | jq -e --slurpfile owned "$TMPDIR/notification-started.json" '.hasMore == false and ([.sessions[] | select(.key as $key | any($owned[0][]; .threadId == $key))] | length == 3 and all(.[]; .category == "BIG-TEST-BUCKET"))'
 ```
 
 ## Cleanup

@@ -26,7 +26,7 @@ export default async function retryGitHubRead(
     const diagnostic = githubCliDiagnostic(result);
     const transient =
       result.exitCode !== 0 &&
-      ([502, 503, 504].includes(diagnostic.httpStatus ?? 0) ||
+      ([500, 502, 503, 504].includes(diagnostic.httpStatus ?? 0) ||
         (diagnostic.httpStatus === null &&
           /(?:unexpected end of JSON input|\bECONNRESET\b|\bconnection reset by peer\b|GraphQL: Something went wrong while executing your query)/iu.test(
             result.stderr,

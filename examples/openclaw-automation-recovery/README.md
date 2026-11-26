@@ -84,7 +84,7 @@ status=0
 openclaw agent-system doctor --json > "$TMPDIR/automation-drift.json" || status=$?
 test "$status" -eq 1
 jq -e 'any(.findings[]; .component == "automations" and .code == "automation-drift" and .status == "drift")' "$TMPDIR/automation-drift.json"
-openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e '.payload.thinking == "high"'
+openclaw-fixture-gateway cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e '.payload.thinking == "high"'
 openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .component == "automations" and .status == "updated")'
 openclaw agent-system automations list --json | tee "$TMPDIR/automation-reconciled.json" | jq -e '.status == "aligned"'
 jq -S '[.jobs[] | select(.id == "identity" or .id == "prompt") | {id, nativeId, routing}] | sort_by(.id)' "$TMPDIR/automation-reconciled.json" | diff - "$TMPDIR/automation-identities.json"
@@ -121,7 +121,7 @@ test -d "$OPENCLAW_STATE_DIR/agent-system-storage"
 test ! -e "$OPENCLAW_STATE_DIR/agent-system-automations/reports"
 chat=$(jq -er '.jobs[] | select(.id == "identity") | .routing | sub("^session:"; "")' "$TMPDIR/automation-before.json")
 message_id=$(jq -er '.reports[] | select(.status == "delivered") | .messageId' "$TMPDIR/recovered-report.json")
-openclaw gateway call chat.history --params "$(jq -nc --arg key "$chat" '{sessionKey:$key,limit:100,maxChars:100000}')" --json | jq -e --arg id "$message_id" 'any(.messages[]; .__openclaw.id == $id and .role == "assistant")'
+openclaw-fixture-gateway chat.history --params "$(jq -nc --arg key "$chat" '{sessionKey:$key,limit:100,maxChars:100000}')" --json | jq -e --arg id "$message_id" 'any(.messages[]; .__openclaw.id == $id and .role == "assistant")'
 test "$(wc -l < identity.runs | tr -d ' ')" = 1
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
 openclaw agent-system automations list --json | jq -S '[.jobs[] | select(.id == "identity" or .id == "prompt") | {id, nativeId, routing}] | sort_by(.id)' | diff - "$TMPDIR/automation-identities.json"

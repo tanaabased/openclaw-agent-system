@@ -42,7 +42,7 @@ openclaw-gateway start --debug
 # should install the scenario-owned data workspace into the running gateway
 cd "$GITHUB_WORKSPACE/examples/openclaw-agent/data"
 openclaw agent-system install
-openclaw gateway call agents.list --params '{}' --json | jq -e 'any(.agents[]; .id == "data")'
+openclaw-fixture-gateway agents.list --params '{}' --json | jq -e 'any(.agents[]; .id == "data")'
 ```
 
 ## Testing

@@ -1,0 +1,4 @@
+#!/bin/sh
+
+# Allow slow hosted Gateway acknowledgements without repeating the request.
+exec openclaw gateway call "$@" --timeout 130000

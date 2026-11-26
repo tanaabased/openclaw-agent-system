@@ -16,6 +16,7 @@ env:
 
 jobs:
   examples:
+    timeout-minutes: 45
     name: ${{ matrix.example }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:

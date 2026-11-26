@@ -115,11 +115,11 @@ openclaw agent-system tool worktree -- list > "$TMPDIR/notification-worktrees-be
 # should retain a finished native helper in the task checkout
 conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
 worktree=$(jq -er .worktree "$TMPDIR/notification-dispatch-before.json")
-openclaw gateway call chat.send --params "$(jq -nc --arg key "$conversation" --arg cwd "$worktree" '{sessionKey:$key,message:("Spawn retirement checkout helper at " + $cwd),deliver:false,idempotencyKey:"retirement-spawn-helper"}')" --json | jq -es --arg expected "retirement-spawn-helper" -f "$GITHUB_WORKSPACE/scripts/assert-chat-send.jq"
+openclaw-fixture-gateway chat.send --params "$(jq -nc --arg key "$conversation" --arg cwd "$worktree" '{sessionKey:$key,message:("Spawn retirement checkout helper at " + $cwd),deliver:false,idempotencyKey:"retirement-spawn-helper"}')" --json | jq -es --arg expected "retirement-spawn-helper" -f "$GITHUB_WORKSPACE/scripts/assert-chat-send.jq"
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" retirement-spawn-helper 600000
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$(jq -er .runId "$TMPDIR/notification-helper.json")" 600000
 helper=$(jq -er .childSessionKey "$TMPDIR/notification-helper.json")
-openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$helper" '{key:$key}')" --json | jq -e --arg parent "$conversation" --arg cwd "$worktree" '.session.parentSessionKey == $parent and (.session.spawnedCwd // .session.spawnedWorkspaceDir // .session.workspaceDir) == $cwd and .session.archivedAt == null and .session.archived != true'
+openclaw-fixture-gateway sessions.describe --params "$(jq -nc --arg key "$helper" '{key:$key}')" --json | jq -e --arg parent "$conversation" --arg cwd "$worktree" '.session.parentSessionKey == $parent and (.session.spawnedCwd // .session.spawnedWorkspaceDir // .session.workspaceDir) == $cwd and .session.archivedAt == null and .session.archived != true'
 
 # should leave modified and untracked files on a changed checkout branch
 worktree=$(jq -er .worktree "$TMPDIR/notification-dispatch-before.json")
@@ -135,15 +135,15 @@ printf 'untracked\n' > "$worktree/retirement-untracked.txt"
 
 # should retain cancelled queue history without ending the active owner
 conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
-openclaw gateway call chat.send --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,message:"Hold retirement queue until release",queueMode:"followup",deliver:false,idempotencyKey:"retirement-queue-hold"}')" --json | jq -es --arg expected "retirement-queue-hold" -f "$GITHUB_WORKSPACE/scripts/assert-chat-send.jq"
+openclaw-fixture-gateway chat.send --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,message:"Hold retirement queue until release",queueMode:"followup",deliver:false,idempotencyKey:"retirement-queue-hold"}')" --json | jq -es --arg expected "retirement-queue-hold" -f "$GITHUB_WORKSPACE/scripts/assert-chat-send.jq"
 for attempt in $(seq 1 120); do
   if test -f "$TMPDIR/retirement-queue-ready"; then break; fi
   sleep 0.5
 done
 test -f "$TMPDIR/retirement-queue-ready"
-openclaw gateway call chat.send --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,message:"Cancelled retirement followup",queueMode:"followup",deliver:false,idempotencyKey:"retirement-cancelled-input"}')" --json | jq -es --arg expected "retirement-cancelled-input" -f "$GITHUB_WORKSPACE/scripts/assert-chat-send.jq"
-openclaw gateway call chat.abort --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,runId:"retirement-cancelled-input"}')" --json | jq -e '.aborted == true'
-openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session.hasActiveRun == true or .session.status == "running"'
+openclaw-fixture-gateway chat.send --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,message:"Cancelled retirement followup",queueMode:"followup",deliver:false,idempotencyKey:"retirement-cancelled-input"}')" --json | jq -es --arg expected "retirement-cancelled-input" -f "$GITHUB_WORKSPACE/scripts/assert-chat-send.jq"
+openclaw-fixture-gateway chat.abort --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,runId:"retirement-cancelled-input"}')" --json | jq -e '.aborted == true'
+openclaw-fixture-gateway sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session.hasActiveRun == true or .session.status == "running"'
 
 # should retire the closed dirty fixture automatically before the missing-session case
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/emori"
@@ -162,7 +162,7 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 60
 node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/verify-disposal.ts" "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2" "$TMPDIR/notification-dispatch-before.json"
 test ! -e "$(jq -er .worktree "$TMPDIR/notification-dispatch-before.json")"
 helper=$(jq -er .childSessionKey "$TMPDIR/notification-helper.json")
-openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$helper" '{key:$key}')" --json | jq -e '.session.archived == true or .session.archivedAt != null'
+openclaw-fixture-gateway sessions.describe --params "$(jq -nc --arg key "$helper" '{key:$key}')" --json | jq -e '.session.archived == true or .session.archivedAt != null'
 test "$(git --git-dir="$(cat "$TMPDIR/notification-git-dir")" rev-parse "$(cat "$TMPDIR/notification-dirty-branch")")" = "$(cat "$TMPDIR/notification-dirty-tip")"
 
 # should admit another disposable issue for unavailable-session retirement
@@ -184,7 +184,7 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/tanaabot"
 conversation=$(jq -er .threadId "$TMPDIR/notification-unavailable-before.json")
 session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-unavailable-before.json")
 receipt=$(jq -er .id "$TMPDIR/notification-unavailable-before.json")
-leaf=$(openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:1}')" --json | jq -er .sessionInfo.activeLeafEntryId)
+leaf=$(openclaw-fixture-gateway chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:1}')" --json | jq -er .sessionInfo.activeLeafEntryId)
 params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg receipt "$receipt" '{sessionKey:$key,agentId:"retirement-tanaabot",sessionId:$session,message:("Retire this managed task now " + $receipt),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"notification-manual-retire"}')"
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; const result = await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"}); console.log(JSON.stringify(result));' "$params" | jq -e '.runId == "notification-manual-retire"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-manual-retire 600000
@@ -196,9 +196,9 @@ worktree=$(jq -er .worktree "$TMPDIR/notification-unavailable-before.json")
 echo discard > "$worktree/retirement-local-only.txt"
 conversation=$(jq -er .threadId "$TMPDIR/notification-unavailable-before.json")
 session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-unavailable-before.json")
-openclaw gateway call sessions.delete --params "$(jq -nc --arg key "$conversation" --arg id "$session_id" '{key:$key,expectedSessionId:$id,deleteTranscript:true}')" --json | jq -e '.deleted == true'
+openclaw-fixture-gateway sessions.delete --params "$(jq -nc --arg key "$conversation" --arg id "$session_id" '{key:$key,expectedSessionId:$id,deleteTranscript:true}')" --json | jq -e '.deleted == true'
 test -d "$(jq -er .worktree "$TMPDIR/notification-unavailable-before.json")"
-openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session == null'
+openclaw-fixture-gateway sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session == null'
 
 # should reconcile manual retirement of the preserved checkout without inventing archival
 # allow the bounded observation interval to elapse; cleanup grace is zero.
@@ -250,13 +250,13 @@ confirmation=$(jq -er .confirmation "$TMPDIR/reset-preview.json")
 openclaw agent-system notifications reset --agent retirement-tanaabot --fresh --confirmation "$confirmation" --yes --json | jq -e '.results | length == 1 and .[0].status == "complete" and .[0].automationRestored == true'
 old_pickup=$(jq -er '.targets[0].resources | map(select(.kind == "coordinator")) | .[1].description' "$TMPDIR/reset-preview.json")
 for old_chat in "$old_coordinator" "$old_pickup"; do
-  openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$old_chat" '{key:$key}')" --json | jq -e '.session.archived == true'
+  openclaw-fixture-gateway sessions.describe --params "$(jq -nc --arg key "$old_chat" '{key:$key}')" --json | jq -e '.session.archived == true'
 done
 openclaw agent-system automations list --agent retirement-tanaabot --json | tee "$TMPDIR/reset-automations-after.json" | jq -e '.status == "aligned" and any(.jobs[]; .id == "github-issue-assignment" and .nativeEnabled == true) and any(.jobs[]; .id == "github-issue-pickup" and .nativeEnabled == false)'
 pickup=$(jq -er '.jobs[] | select(.id == "github-issue-pickup") | .routing | sub("^session:"; "")' "$TMPDIR/reset-automations-after.json")
 test "$pickup" != "$old_pickup"
 coordinator=$(jq -er '.jobs[] | select(.id == "github-issue-assignment") | .routing | sub("^session:"; "")' "$TMPDIR/reset-automations-after.json")
-openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$coordinator" '{key:$key}')" --json | jq -e '.session.category == "AGENT SYSTEM"'
+openclaw-fixture-gateway sessions.describe --params "$(jq -nc --arg key "$coordinator" '{key:$key}')" --json | jq -e '.session.category == "AGENT SYSTEM"'
 node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -es 'all(.[]; (.records | length) == 0 and .resetGeneration != null)'
 node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" intake | jq -es --slurpfile before "$TMPDIR/notification-dispatch-before.json" 'all(.[].observedAssignments[]?; .consumedBy != $before[0].id)'
 openclaw agent-system notifications status --agent retirement-tanaabot --json | jq -e '.baseline.status == "ready" and (.items | length) == 0'

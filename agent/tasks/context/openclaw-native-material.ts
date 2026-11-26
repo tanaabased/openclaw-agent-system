@@ -45,24 +45,73 @@ export function resultValue(
   }
 }
 
+// Tool Search also publishes the child call and its terminal result as one native activity.
+function nestedCall(message: Record<string, unknown>, names: string[]) {
+  if (
+    message.role !== 'custom' ||
+    message.customType !== 'openclaw.nested-tool.v1' ||
+    !Array.isArray(message.content) ||
+    message.content.length !== 2
+  )
+    return;
+  const [call] = message.content;
+  if (
+    nativeObject(call) &&
+    call.type === 'toolCall' &&
+    names.includes(String(call.name)) &&
+    typeof call.id === 'string' &&
+    call.id &&
+    typeof call.runId === 'string' &&
+    call.runId &&
+    call.runId === message.runId
+  )
+    return call;
+}
+
 export async function* openClawMaterialReceipts(
   request: DispatchRequest,
   scope: HistoryScope,
   tool: string,
   aliases: string[] = [],
 ) {
+  const names = [tool, ...aliases];
   for await (const page of openClawHistoryPages(request, scope)) {
     for (const partial of [...page].reverse()) {
+      const child = nestedCall(partial, names);
+      if (child) {
+        const message = await completeOpenClawMessage(request, scope, partial);
+        const call = nestedCall(message, names);
+        if (
+          !call ||
+          call.id !== child.id ||
+          call.name !== child.name ||
+          call.runId !== child.runId ||
+          call.parentToolCallId !== child.parentToolCallId
+        )
+          throw new Error('material-native-history-invalid');
+        const result = (message.content as unknown[])[1];
+        if (
+          nativeObject(result) &&
+          result.type === 'toolResult' &&
+          result.isError === false &&
+          result.toolName === call.name &&
+          result.toolCallId === call.id &&
+          result.runId === call.runId &&
+          result.parentToolCallId === call.parentToolCallId
+        )
+          yield resultValue(result, hasMaterialReceipt);
+        continue;
+      }
       if (
         partial.role !== 'toolResult' ||
-        ![tool, ...aliases, 'tool_call', 'dispatch_action'].includes(String(partial.toolName)) ||
+        ![...names, 'tool_call', 'dispatch_action'].includes(String(partial.toolName)) ||
         partial.isError === true
       )
         continue;
       const message = await completeOpenClawMessage(request, scope, partial);
       if (message.toolName !== partial.toolName || message.isError === true)
         throw new Error('material-native-history-invalid');
-      if ([tool, ...aliases].includes(String(message.toolName))) {
+      if (names.includes(String(message.toolName))) {
         yield resultValue(message, hasMaterialReceipt);
         continue;
       }
@@ -71,7 +120,7 @@ export async function* openClawMaterialReceipts(
         nativeObject(value) &&
         nativeObject(value.tool) &&
         value.tool.source === 'openclaw' &&
-        [tool, ...aliases].includes(String(value.tool.name)) &&
+        names.includes(String(value.tool.name)) &&
         nativeObject(value.result) &&
         value.result.isError !== true
       ) {

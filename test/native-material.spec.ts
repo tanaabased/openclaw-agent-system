@@ -312,7 +312,33 @@ describe('agent/native-material', () => {
     );
   });
 
-  for (const toolName of ['agent_system_intake', 'tool_call', 'dispatch_action'])
+  // Public chat.history representation of a native Tool Search child execution.
+  const nestedActivity = (toolName: string, value: unknown, id = 'child') => {
+    const runId = 'scheduled-run';
+    const parentToolCallId = 'dispatcher-call';
+    return {
+      role: 'custom',
+      customType: 'openclaw.nested-tool.v1',
+      display: true,
+      excludeFromContext: true,
+      runId,
+      __openclaw: { runId },
+      content: [
+        { type: 'toolCall', name: toolName, id, runId, parentToolCallId },
+        {
+          type: 'toolResult',
+          role: 'toolResult',
+          toolName,
+          toolCallId: id,
+          runId,
+          parentToolCallId,
+          isError: false,
+          content: [{ type: 'text', text: JSON.stringify(value) }],
+        },
+      ],
+    };
+  };
+  for (const toolName of ['agent_system_intake', 'tool_call', 'dispatch_action', 'nested activity'])
     it(`reads every pickup candidate page from projected ${toolName} history before selection`, async () => {
       const tool = 'agent_system_intake';
       const pickup = { action: 'pickup' };
@@ -328,7 +354,9 @@ describe('agent/native-material', () => {
           input,
         );
       const textParts = (value: unknown) => [{ type: 'text', text: JSON.stringify(value) }];
+      let sequence = 0;
       const message = (value: unknown) => {
+        if (toolName === 'nested activity') return nestedActivity(tool, value, String(++sequence));
         const result = { details: { changed: false }, content: textParts(value) };
         return {
           role: 'toolResult',
@@ -372,6 +400,32 @@ describe('agent/native-material', () => {
       assert.ok(pages > 1);
       assert.deepEqual(JSON.parse(collected), candidates);
     });
+
+  it('ignores unrelated, failed and mismatched nested tool results', async () => {
+    const tool = 'agent_system_intake';
+    const root = nativeMaterialResponse(implementationMaterial(source, envelope), tool, envelope);
+    const nested = nestedActivity(tool, root);
+    const [call, result] = nested.content;
+    const messages = [
+      { ...nested, role: 'assistant' },
+      { ...nested, customType: 'unrelated' },
+      nestedActivity('other_tool', root),
+      { ...nested, content: [call, { ...result, isError: true }] },
+      { ...nested, content: [call, { ...result, toolCallId: 'other-call' }] },
+      { ...nested, content: [call, { ...result, runId: 'other-run' }] },
+      { ...nested, content: [call, { ...result, parentToolCallId: 'other-parent' }] },
+      { ...nested, content: [call, { ...result, toolName: 'other_tool' }] },
+    ];
+    await assert.rejects(
+      openClawNativeMaterial(
+        async () => ({ sessionId: 'bound', messages }),
+        { sessionId: 'bound', sessionKey: 'chat' },
+        tool,
+        pageRequest(root),
+      ),
+      /material-native-response-unavailable/,
+    );
+  });
 
   it('rejects invalid projected text and preserves structured receipt precedence', async () => {
     const tool = 'agent_system_dispatch';

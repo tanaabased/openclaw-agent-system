@@ -66,7 +66,7 @@ openclaw-aimock evidence --scenario openclaw-github --expected-evidence "$GITHUB
 for pair in tanaabot:tanaabot emori:emoriwan; do
   agent=$(printf '%s' "$pair" | cut -d : -f 1)
   login=$(printf '%s' "$pair" | cut -d : -f 2)
-  openclaw gateway call tools.github.status --params "$(jq -nc --arg agent "$agent" '{agentId:$agent,selectedScope:"agent"}')" --timeout 30000 --json | jq -e --arg agent "$agent" --arg login "$login" '.agentId == $agent and .selectedScope == "agent" and .selected.configured == true and .selected.identity.source == "agent-override" and .selected.identity.credentialKind == "managed-pat" and .selected.identity.credentialState == "available" and .selected.identity.account.login == $login and .effective.account.login == $login'
+  openclaw-fixture-gateway tools.github.status --params "$(jq -nc --arg agent "$agent" '{agentId:$agent,selectedScope:"agent"}')" --json | jq -e --arg agent "$agent" --arg login "$login" '.agentId == $agent and .selectedScope == "agent" and .selected.configured == true and .selected.identity.source == "agent-override" and .selected.identity.credentialKind == "managed-pat" and .selected.identity.credentialState == "available" and .selected.identity.account.login == $login and .effective.account.login == $login'
 done
 ```
 

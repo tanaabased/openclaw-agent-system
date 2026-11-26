@@ -55,7 +55,7 @@ describe('core/github-account-client', () => {
           exitCode: success ? 0 : 1,
           stdout: success
             ? '{"login":"tanaabot","nodeId":"U_agent"}'
-            : 'HTTP/2 502 Bad Gateway\n\n{}',
+            : 'HTTP/2 500 Internal Server Error\n\n{}',
           stderr: '',
           timedOut: false,
           truncated: false,

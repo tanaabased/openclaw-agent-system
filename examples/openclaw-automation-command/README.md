@@ -50,10 +50,10 @@ cat failed-output.yaml >> automations.yaml
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
 openclaw agent-system automations list --json > "$TMPDIR/automation-output-job.json"
 native=$(jq -er '.jobs[] | select(.id == "failed-output") | .nativeId' "$TMPDIR/automation-output-job.json")
-openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e '.delivery.mode == "none" and (.payload | has("outputMaxBytes") | not)'
+openclaw-fixture-gateway cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e '.delivery.mode == "none" and (.payload | has("outputMaxBytes") | not)'
 run_id=$(openclaw agent-system automations run failed-output --json | jq -er 'select(.status == "queued") | .runId | strings')
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" failed-output "$run_id" error
-openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" --arg runId "$run_id" '{id:$id,runId:$runId,limit:1}')" --json > "$TMPDIR/failed-output-native-run.json"
+openclaw-fixture-gateway cron.runs --params "$(jq -nc --arg id "$native" --arg runId "$run_id" '{id:$id,runId:$runId,limit:1}')" --json > "$TMPDIR/failed-output-native-run.json"
 node --input-type=module - "$native" "$run_id" <<'NODE'
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -72,7 +72,7 @@ trap - ERR
 # should report restored command data without changing the native job
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-command"
 native=$(jq -er '.jobs[] | select(.id == "failed-output") | .nativeId' "$TMPDIR/automation-output-job.json")
-openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json > "$TMPDIR/command-data-before.json"
+openclaw-fixture-gateway cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json > "$TMPDIR/command-data-before.json"
 node --input-type=module - "$TMPDIR/command-data-before.json" <<'NODE'
 import { readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -91,7 +91,7 @@ NODE
 openclaw agent-system doctor --json | jq -e 'any(.findings[]; .stepId == "failed-output" and .code == "automation-installed-command-missing" and .status == "warning")'
 openclaw agent-system install --skip-setup --yes --json | jq -e 'any(.outcomes[]; .stepId == "failed-output" and .status == "updated")'
 openclaw agent-system doctor --json | jq -e 'all(.findings[]; .code != "automation-installed-command-missing")'
-openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e --slurpfile before "$TMPDIR/command-data-before.json" '.id == $before[0].id and .configRevision == $before[0].configRevision'
+openclaw-fixture-gateway cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e --slurpfile before "$TMPDIR/command-data-before.json" '.id == $before[0].id and .configRevision == $before[0].configRevision'
 ```
 
 ```bash
@@ -99,13 +99,13 @@ openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-command"
 native=$(jq -er '.jobs[] | select(.id == "failed-output") | .nativeId' "$TMPDIR/automation-output-job.json")
 run_id=$(cat "$TMPDIR/failed-output-run-id")
-openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json > "$TMPDIR/capture-before.json"
-openclaw gateway call cron.update --params "$(jq -c '{id,expectedConfigRevision:.configRevision,patch:{payload:{kind:"command",outputMaxBytes:16384}}}' "$TMPDIR/capture-before.json")" --json > /dev/null
+openclaw-fixture-gateway cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json > "$TMPDIR/capture-before.json"
+openclaw-fixture-gateway cron.update --params "$(jq -c '{id,expectedConfigRevision:.configRevision,patch:{payload:{kind:"command",outputMaxBytes:16384}}}' "$TMPDIR/capture-before.json")" --json > /dev/null
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and any(.outcomes[]; .stepId == "failed-output" and .status == "updated")'
-openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json > "$TMPDIR/capture-after.json"
+openclaw-fixture-gateway cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json > "$TMPDIR/capture-after.json"
 jq -e '.payload.outputMaxBytes == 16777216' "$TMPDIR/capture-after.json"
 jq -S '{id,name,declarationKey,agentId,enabled,schedule,sessionTarget,delivery,payload:(.payload | del(.outputMaxBytes)),history:(.state | {lastRunAtMs,lastRunStatus,lastDurationMs})}' "$TMPDIR/capture-before.json" > "$TMPDIR/capture-preserved.json"
 jq -S '{id,name,declarationKey,agentId,enabled,schedule,sessionTarget,delivery,payload:(.payload | del(.outputMaxBytes)),history:(.state | {lastRunAtMs,lastRunStatus,lastDurationMs})}' "$TMPDIR/capture-after.json" | diff - "$TMPDIR/capture-preserved.json"
-openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" --arg runId "$run_id" '{id:$id,runId:$runId,limit:1}')" --json | jq -e --arg runId "$run_id" 'any(.entries[]; .runId == $runId and .status == "error" and (.summary | contains("stderr-fixture-marker")))'
+openclaw-fixture-gateway cron.runs --params "$(jq -nc --arg id "$native" --arg runId "$run_id" '{id:$id,runId:$runId,limit:1}')" --json | jq -e --arg runId "$run_id" 'any(.entries[]; .runId == $runId and .status == "error" and (.summary | contains("stderr-fixture-marker")))'
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
 ```
