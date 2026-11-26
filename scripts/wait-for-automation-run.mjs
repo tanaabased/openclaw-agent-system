@@ -229,6 +229,29 @@ export async function waitForAutomationRun(
   }
 }
 
+// A failed gateway CLI read can put its structured error on stdout and leave stderr empty.
+function scheduledHistoryRead(result) {
+  if (result.error?.code === 'ETIMEDOUT') return { retry: 'CLI watchdog timeout' };
+  if (result.status === 0) return { page: JSON.parse(result.stdout) };
+  let response;
+  try {
+    response = JSON.parse(result.stdout);
+  } catch {
+    // Signal and process failures need not carry a Gateway response.
+  }
+  const error = response?.ok === false ? response.error : undefined;
+  const label = (value) =>
+    /^[a-zA-Z0-9_-]{1,80}$/u.test(String(value ?? '')) ? String(value) : 'unknown';
+  const detail = `exit=${result.status} type=${label(error?.type)} kind=${label(error?.kind)} code=${label(error?.code ?? result.error?.code ?? result.signal)}`;
+  if (
+    error?.type === 'gateway_transport_error' &&
+    (error.kind === 'timeout' || (error.kind === 'closed' && [1006, 1012].includes(error.code)))
+  ) {
+    return { retry: detail };
+  }
+  throw new Error(`cron.runs read failed: ${detail}`);
+}
+
 /** observe a due-time occurrence without submitting an on-demand replacement. */
 export async function waitForScheduledAutomationRun(
   id,
@@ -245,6 +268,7 @@ export async function waitForScheduledAutomationRun(
   assert.ok(Number.isSafeInteger(scheduledAfterMs) && scheduledAfterMs > 0);
   const deadline = now() + maxWaitMs;
   let runId;
+  let lastReadFailure;
   try {
     while (now() < deadline) {
       const result = run(
@@ -260,9 +284,9 @@ export async function waitForScheduledAutomationRun(
         undefined,
         Math.min(30_000, deadline - now()),
       );
-      if (result.error?.code !== 'ETIMEDOUT') {
-        assert.equal(result.status, 0, result.error?.message ?? result.stderr);
-        const page = JSON.parse(result.stdout);
+      const { page, retry } = scheduledHistoryRead(result);
+      lastReadFailure = retry;
+      if (!retry) {
         assert.ok(Array.isArray(page.entries), 'native run history is invalid');
         const matches = page.entries.filter(
           (entry) =>
@@ -289,9 +313,18 @@ export async function waitForScheduledAutomationRun(
       }
       if (now() < deadline) await sleep(Math.min(2000, deadline - now()));
     }
-    throw new Error(`${id}: no scheduled occurrence observed before the deadline`);
+    throw new Error(
+      `${id}: no scheduled occurrence observed before the deadline${lastReadFailure ? ` (cron.runs: ${lastReadFailure})` : ''}`,
+    );
   } catch (error) {
-    report(nativeId, runId);
+    const throughMs = now();
+    report(
+      nativeId,
+      runId,
+      !runId && throughMs >= scheduledAfterMs
+        ? { observationWindow: { fromMs: scheduledAfterMs, throughMs } }
+        : undefined,
+    );
     throw error;
   }
 }

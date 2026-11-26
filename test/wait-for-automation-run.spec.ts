@@ -40,6 +40,55 @@ describe('scripts/wait-for-automation-run', () => {
     assert.ok(calls.every((args) => args[2] === 'cron.runs'));
   });
 
+  it('should retry only a transient history read and retain its exact job and due time', async () => {
+    const due = { jobId: 'job-1', action: 'finished', status: 'ok', runAtMs: 2000 };
+    const results = [
+      {
+        status: 1,
+        stdout: JSON.stringify({
+          ok: false,
+          error: { type: 'gateway_transport_error', kind: 'timeout' },
+        }),
+      },
+      { status: 0, stdout: JSON.stringify({ entries: [due] }) },
+    ];
+    const observed = await waitForScheduledAutomationRun('intake', 'job-1', 2000, {
+      run: ((_command: string, args: string[]) => {
+        assert.equal(args[2], 'cron.runs');
+        assert.equal(JSON.parse(args[4]!).id, 'job-1');
+        return results.shift();
+      }) as never,
+      sleep: async () => {},
+      report: () => assert.fail('a recovered read must not report a failed occurrence'),
+    });
+    assert.deepEqual(observed, due);
+    assert.equal(results.length, 0);
+  });
+
+  it('should diagnose a denied history read without retrying or printing provider text', async () => {
+    await assert.rejects(
+      waitForScheduledAutomationRun('intake', 'job-1', 2000, {
+        now: () => 3000,
+        run: (() => ({
+          status: 1,
+          stdout: JSON.stringify({
+            ok: false,
+            error: { type: 'gateway_request_error', code: 'FORBIDDEN', message: 'private message' },
+          }),
+        })) as never,
+        sleep: async () => assert.fail('must not retry denied access'),
+        report: (_id: string, run: string | undefined, options: unknown) => {
+          assert.equal(run, undefined);
+          assert.deepEqual(options, { observationWindow: { fromMs: 2000, throughMs: 3000 } });
+        },
+      }),
+      {
+        message:
+          'cron.runs read failed: exit=1 type=gateway_request_error kind=unknown code=FORBIDDEN',
+      },
+    );
+  });
+
   it('should bound scheduled observation and report its missing occurrence without running it', async () => {
     let elapsed = 0;
     const reports: unknown[] = [];
