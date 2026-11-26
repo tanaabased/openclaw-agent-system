@@ -25,6 +25,7 @@ const dispatchStages = [
   'context',
   'result',
   'report',
+  'review-launch',
   'review-scan',
   'review-next',
   'review-prepare',
@@ -310,17 +311,23 @@ function respond(
   };
   const dispatch = (stage: string, args: unknown) =>
     call(retryStage(stage, attempts.get(stage) ?? 0), 'agent_system_dispatch', args);
-  if (
-    options.independentReview &&
-    prompt.includes('Use agent_system_dispatch action review. Call scan')
-  ) {
-    if (!result('review-scan'))
+  const launchReview = prompt.includes('Launch the disposable PR review: ');
+  const scanReviews = prompt.includes('Use agent_system_dispatch action review. Call scan');
+  if (options.independentReview && (launchReview || scanReviews)) {
+    if (scanReviews && !result('review-scan'))
       return dispatch('review-scan', { action: 'review', operation: 'scan' });
     // Only the disposable PR created by this runner may receive a fixture review.
     const receipt = JSON.parse(readFileSync(join(tmpdir(), 'notification-delivery.json'), 'utf8'));
     const target =
       'https://github.com/tanaabased/big-test-bucket/pull/' +
       receipt.delivery.pullRequest.pullRequestNumber;
+    if (launchReview) {
+      assert.ok(prompt.includes('Launch the disposable PR review: ' + target));
+      const launched = result('review-launch');
+      if (!launched)
+        return dispatch('review-launch', { action: 'review', operation: 'launch', target });
+      assert.equal(launched.status, 'admitted');
+    }
     const next = result('review-next');
     if (!next) return dispatch('review-next', { action: 'review', operation: 'next', target });
     if (next.status === 'routing-required' && !result('review-prepare'))

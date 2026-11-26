@@ -6,7 +6,7 @@ publish a reply. Verify that another scan repeats none of the completed actions.
 
 ## What Belongs Here
 
-- Request an independent GitHub-only review, address its inline finding, and verify approval on the repaired revision in the same reviewer chat.
+- Launch an independent GitHub-only review, address its inline finding, and verify approval on the repaired revision in the same reviewer chat.
 - Preserve a real collaborator commit while pushing approved feedback to the same PR.
 
 - An initial question shown in chat and on GitHub, followed by an approved answer entering Work without rewriting the assessment or requiring another handoff.
@@ -219,9 +219,10 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/emori"
 number=$(jq -er .delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
 branch=$(jq -er .delivery.binding.branch "$TMPDIR/notification-delivery.json")
 openclaw agent-system tool gh -- api --method PUT "repos/tanaabased/big-test-bucket/contents/collaborator-$number.txt" -f message="preserve disposable collaborator evidence" -f branch="$branch" -f content=Q29sbGFib3JhdG9yIHdvcmsuCg== > "$TMPDIR/notification-collaborator.json"
-cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
-openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/pulls/$number/requested_reviewers" -f 'reviewers[]=emoriwan' | jq -e 'any(.requested_reviewers[]; .login == "emoriwan")'
-cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/emori"
+target="https://github.com/tanaabased/big-test-bucket/pull/$number"
+params=$(jq -nc --arg target "$target" '{sessionKey:"agent:notifications-emori:manual-review",agentId:"notifications-emori",message:("Launch the disposable PR review: " + $target),deliver:false,idempotencyKey:"notification-review-launch"}')
+node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -es --arg expected "notification-review-launch" -f "$GITHUB_WORKSPACE/scripts/assert-chat-send.jq"
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-review-launch 600000
 node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/wait-review.mts" "$number" CHANGES_REQUESTED > "$TMPDIR/notification-feedback-source.json"
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
