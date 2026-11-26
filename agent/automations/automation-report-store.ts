@@ -18,6 +18,43 @@ const stream = Type.Object(
   },
   { additionalProperties: false },
 );
+const timestamp = Type.Number({ minimum: 0, maximum: 8.64e15 });
+const timing = Type.Object(
+  {
+    commandFinishedAtMs: Type.Optional(timestamp),
+    queuedAtMs: Type.Optional(timestamp),
+    lastAttemptAtMs: Type.Optional(timestamp),
+    submittedAtMs: Type.Optional(timestamp),
+    admission: Type.Optional(
+      Type.Union([Type.Literal('started'), Type.Literal('queued'), Type.Literal('ok')]),
+    ),
+    formatterStartedAtMs: Type.Optional(timestamp),
+    messageRecordedAtMs: Type.Optional(timestamp),
+    lastIssue: Type.Optional(
+      Type.Object(
+        {
+          atMs: timestamp,
+          phase: Type.Union([
+            Type.Literal('prepare'),
+            Type.Literal('submit'),
+            Type.Literal('observe'),
+          ]),
+          reason: Type.String({ pattern: '^[a-z-]+$', maxLength: 120 }),
+          category: Type.Union([
+            Type.Literal('timeout'),
+            Type.Literal('closed'),
+            Type.Literal('rejected'),
+            Type.Literal('unknown'),
+          ]),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+  },
+  { additionalProperties: false },
+);
+export type AutomationReportTiming = Static<typeof timing>;
+
 const schema = Type.Object(
   {
     version: Type.Literal(1),
@@ -80,6 +117,7 @@ const schema = Type.Object(
       Type.Literal('uncertain'),
     ]),
     completedAt: Type.Optional(text),
+    timing: Type.Optional(timing),
     code: Type.Optional(text),
     messageId: Type.Optional(text),
     guarded: Type.Optional(Type.Boolean()),
@@ -175,14 +213,14 @@ export default class AutomationReportStore {
     return result;
   }
 
-  retain(id: string, create: () => AutomationReportRecord | undefined) {
-    return this.change(id, (current) => (current ? 'keep' : create()));
+  retain(id: string, create: (nowMs: number) => AutomationReportRecord | undefined) {
+    return this.change(id, (current) => (current ? 'keep' : create(this.now())));
   }
 
-  async update(id: string, operation: (record: AutomationReportRecord) => void) {
+  async update(id: string, operation: (record: AutomationReportRecord, nowMs: number) => void) {
     const record = await this.change(id, (current) => {
       if (!current) throw new Error('automation-report-record-missing');
-      operation(current);
+      operation(current, this.now());
       return current;
     });
     return record!;

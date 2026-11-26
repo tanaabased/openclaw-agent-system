@@ -99,6 +99,7 @@ for runtime in openclaw codex; do
     if test "$runtime" = openclaw; then
       curl --fail --silent --show-error http://127.0.0.1:4010/proof/reasoning | jq -e 'length > 0 and all(.[]; (.model == "gpt-5.5" or .model == "aimock/gpt-5.5") and .effort == "high")'
     fi
+    jq -e '.reports[0] | (.completedAt | type == "string") and (.timing | ([.commandFinishedAtMs, .queuedAtMs, .submittedAtMs, .formatterStartedAtMs] | all(type == "number")) and .commandFinishedAtMs <= .queuedAtMs and .queuedAtMs <= .submittedAtMs and .queuedAtMs <= .formatterStartedAtMs)' "$TMPDIR/report-$runtime-$mode.json"
     message_id=$(jq -er '.reports[0].messageId' "$TMPDIR/report-$runtime-$mode.json")
     jq -er --arg id "$message_id" '.messages[] | select(.__openclaw.id == $id and .role == "assistant") | [.content[]? | select(.type == "text") | .text] | join("\n")' "$TMPDIR/history-$runtime-$mode.json" > "$TMPDIR/card-$runtime-$mode.md"
     cat "$TMPDIR/card-$runtime-$mode.md"
