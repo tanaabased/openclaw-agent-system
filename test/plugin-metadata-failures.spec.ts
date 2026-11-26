@@ -109,6 +109,7 @@ const manifest: PluginManifest = {
       'agent_system_git_worktree',
       'agent_system_github',
       'agent_system_google',
+      'agent_system_run_declared',
     ],
     trustedToolPolicies: [
       'agent-system.git',
