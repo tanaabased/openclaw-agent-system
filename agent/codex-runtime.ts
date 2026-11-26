@@ -58,6 +58,8 @@ import { RoutingError } from './models/model-routing.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import { createCodexSessionContext } from './codex-context.ts';
 import { codexOpCredential } from '../credentials/codex-op.ts';
+import OpCredentialInput, { type OpCredentialInputSource } from '../credentials/op-input.ts';
+import { opServiceAccountTokenEnvironmentVariable } from '../credentials/op-service.ts';
 import { CodexSetupError, inspectCodexSetup, installCodexSetup } from './lifecycle/codex-setup.ts';
 import {
   bindCodexWorkspace,
@@ -245,6 +247,64 @@ async function runBinding(args: string[]): Promise<void> {
   }
 
   throw new Error(`unsupported binding action: ${action}`);
+}
+
+const codexCredentialUsage =
+  'Usage: credentials set op --plugin-data <path> [--from-env [<name>] | --stdin]';
+
+async function runCredentials(args: string[]): Promise<void> {
+  if (args.join(' ') === '--help' || args.join(' ') === 'set op --help') {
+    process.stdout.write(
+      codexCredentialUsage +
+        '\nread OP_SERVICE_ACCOUNT_TOKEN by default with --from-env, or prompt securely when neither input flag is supplied.\n',
+    );
+    return;
+  }
+  if (args[0] !== 'set' || args[1] !== 'op') throw new Error(codexCredentialUsage);
+  let pluginData: string | undefined;
+  let source: OpCredentialInputSource = 'prompt';
+  let environmentVariable: string | undefined;
+  for (let index = 2; index < args.length; index += 1) {
+    const option = args[index]!;
+    const next = args[index + 1];
+    if (option === '--plugin-data' && !pluginData && next && !next.startsWith('-')) {
+      pluginData = next;
+      index += 1;
+    } else if (
+      source === 'prompt' &&
+      (option === '--from-env' || option.startsWith('--from-env='))
+    ) {
+      source = 'environment';
+      if (option !== '--from-env') {
+        environmentVariable = option.slice('--from-env='.length);
+      } else if (next && !next.startsWith('-')) {
+        environmentVariable = next;
+        index += 1;
+      }
+      if (environmentVariable !== undefined && !/^[a-z_][a-z0-9_]*$/iu.test(environmentVariable))
+        throw new Error('expected an environment variable name after --from-env');
+    } else if (option === '--stdin' && source === 'prompt') {
+      source = 'stdin';
+    } else {
+      throw new Error(codexCredentialUsage);
+    }
+  }
+  if (!pluginData) throw new Error(codexCredentialUsage);
+  const name = environmentVariable ?? opServiceAccountTokenEnvironmentVariable;
+  const storeEnvironment = { ...process.env };
+  const token = source === 'environment' ? storeEnvironment[name] : undefined;
+  if (source === 'environment') delete storeEnvironment[name];
+  const input = new OpCredentialInput({
+    hostEnvironment: { [name]: token },
+    input: process.stdin,
+    output: process.stderr,
+  });
+  const credential = await codexOpCredential(pluginData, 'binding', { input, storeEnvironment });
+  const result = credential
+    ? await credential.set(source, name)
+    : { status: 'skipped', code: 'codex-op-not-declared' };
+  writeJson(result);
+  if (result.status === 'blocked') process.exitCode = 1;
 }
 
 async function runSetup(args: string[]): Promise<void> {
@@ -613,6 +673,7 @@ async function runScopedCodexRuntime(args: string[]): Promise<void> {
     return;
   }
   if (command === 'setup') return runSetup(args.slice(1));
+  if (command === 'credentials') return runCredentials(args.slice(1));
   if (command === 'automations') {
     const action = args[1];
     if (action === '--help') {

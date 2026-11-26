@@ -100,6 +100,20 @@ checks access, saves the token in macOS login Keychain or Linux Secret Service,
 and checks access again from storage. Return to the chat for the final Doctor
 report. Scheduled installs report missing access and leave enrollment to you.
 
+In unattended CI, bind the workspace first, then enroll explicitly before Install:
+
+```sh
+node "$runtime" credentials set op --plugin-data "$plugin_data" --from-env
+env -u OP_SERVICE_ACCOUNT_TOKEN node "$runtime" setup install --plugin-data "$plugin_data"
+```
+
+Use the packaged `dist/codex/codex-runtime.js` and the same plugin data directory
+you used for binding. `--from-env` reads `OP_SERVICE_ACCOUNT_TOKEN` by default;
+pass an environment variable name after it to select a different one. Use
+`--stdin` instead to read from standard input, or omit both options for a masked
+terminal prompt. Enrollment needs an available OS credential store in the runner
+session. Install does not import tokens from the job environment.
+
 To add account-default setup, have your bound workspace's root `AGENTS.md` point to
 its setup guide. Codex Binding follows that guide after binding and when you request
 account-default updates. See [Me's setup guide](https://github.com/pirog/me/blob/main/references/account-binding.md)

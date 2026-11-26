@@ -14,7 +14,7 @@ import type { CreateOpEnvironmentClient } from '../environment/op-service.ts';
 import type { ManifestDiagnostic } from '../manifest/types.ts';
 import OpCredentialManager from './op-manager.ts';
 import OpCredentialService from './op-service.ts';
-import OpCredentialInput from './op-input.ts';
+import OpCredentialInput, { type OpCredentialInputSource } from './op-input.ts';
 import { browserEnrollment } from './codex-op-browser.ts';
 import { platformCredentialStore } from './registry.ts';
 import type { CredentialStore } from './types.ts';
@@ -31,6 +31,7 @@ interface Target {
 export interface CodexOpDependencies {
   store?: CredentialStore;
   createClient?: CreateOpEnvironmentClient;
+  storeEnvironment?: NodeJS.ProcessEnv;
   input?: Pick<OpCredentialInput, 'read'>;
 }
 
@@ -126,7 +127,10 @@ export async function codexOpCredential(
   const { default: OpEnvironmentService } = await import('../environment/op-service.ts');
   const store =
     dependencies.store ??
-    platformCredentialStore({ platform: process.platform, environment: process.env });
+    platformCredentialStore({
+      platform: process.platform,
+      environment: dependencies.storeEnvironment ?? process.env,
+    });
   const credentials = new OpCredentialService({
     hostEnvironment: {},
     stores: store ? [store] : [],
@@ -185,8 +189,42 @@ export async function codexOpCredential(
     }
     return inspect();
   }
+  async function readAndSave(
+    storeId: string,
+    source: OpCredentialInputSource,
+    environmentVariable?: string,
+  ) {
+    const input =
+      dependencies.input ??
+      new OpCredentialInput({
+        hostEnvironment: {},
+        input: process.stdin,
+        output: process.stderr,
+      });
+    const candidate = await input.read(
+      source,
+      'Enter the 1Password service-account token for ' + target.label,
+      environmentVariable,
+    );
+    if (candidate.status === 'invalid')
+      return {
+        ...finding(scope, 'missing'),
+        code: candidate.code,
+        message:
+          candidate.code === 'op-credential-input-required'
+            ? 'Enrollment requires operator input in a local terminal.'
+            : candidate.message,
+      };
+    return save(candidate.token, storeId);
+  }
+
   return {
     inspect,
+    async set(source: OpCredentialInputSource, environmentVariable?: string) {
+      await assertCurrent();
+      if (!store) return finding(scope, 'inaccessible', true);
+      return readAndSave(store.id, source, environmentVariable);
+    },
     async loadBindingEnvironment(manifestDigest: string, signal?: AbortSignal) {
       if (scope !== 'binding' || target.revision !== manifestDigest)
         throw new Error('The Codex workspace 1Password declaration changed.');
@@ -212,27 +250,7 @@ export async function codexOpCredential(
     async enroll() {
       const readiness = await check();
       if (!readiness.canEnroll || !store) return readiness.finding;
-      const input =
-        dependencies.input ??
-        new OpCredentialInput({
-          hostEnvironment: {},
-          input: process.stdin,
-          output: process.stderr,
-        });
-      const candidate = await input.read(
-        'prompt',
-        'Enter the 1Password service-account token for ' + target.label,
-      );
-      if (candidate.status === 'invalid')
-        return {
-          ...readiness.finding,
-          code: candidate.code,
-          message:
-            candidate.code === 'op-credential-input-required'
-              ? 'Enrollment requires operator input in a local terminal.'
-              : candidate.message,
-        };
-      return save(candidate.token, store.id);
+      return readAndSave(store.id, 'prompt');
     },
     // An in-process consumer uses only its selected declaration. Never expose a value-returning shell route.
     async resolve(name: string, environmentId?: string): Promise<string> {
