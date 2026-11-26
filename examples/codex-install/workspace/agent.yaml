@@ -3,6 +3,11 @@ agent:
   id: codex-example
   name: Codex Example
 storage: { backend: sqlite }
+environment:
+  set:
+    CODEX_SHELL_REGION: example-region
+  export:
+    variables: [CODEX_SHELL_REGION]
 models:
   routing:
     guidance: |

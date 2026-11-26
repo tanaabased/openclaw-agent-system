@@ -187,6 +187,14 @@ export async function codexOpCredential(
   }
   return {
     inspect,
+    async loadBindingEnvironment(manifestDigest: string, signal?: AbortSignal) {
+      if (scope !== 'binding' || target.revision !== manifestDigest)
+        throw new Error('The Codex workspace 1Password declaration changed.');
+      await assertCurrent();
+      const result = await service.load(target.owner, target.requirements, { fresh: true, signal });
+      await assertCurrent();
+      return result;
+    },
     async enrollInBrowser(onReady: (url: string) => void, environment = process.env) {
       const readiness = await check();
       if (!readiness.canEnroll || !store) return readiness.finding;

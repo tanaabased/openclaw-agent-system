@@ -8,6 +8,30 @@ function diagnosticCodes(source: string): Set<string> {
 }
 
 describe('manifest/parse', () => {
+  it('should accept an optional shell export with either declaration of op sources', () => {
+    const prefix = 'schema-version: 1\nagent: { id: test }\nenvironment:\n';
+    for (const op of ['environment-id', '[environment-id]']) {
+      const result = parseAgentManifest(
+        prefix + '  op: ' + op + '\n  export: { variables: [API_KEY, app_name], path: output.sh }',
+      );
+      assert.equal(result.status, 'valid');
+      assert.deepEqual(result.manifest.environment?.op, ['environment-id']);
+      assert.deepEqual(result.manifest.environment?.export, {
+        variables: ['API_KEY', 'app_name'],
+        path: 'output.sh',
+      });
+    }
+    for (const selection of [
+      '{ variables: [OP_SERVICE_ACCOUNT_TOKEN] }',
+      '{ variables: [A, A] }',
+      '{ variables: [invalid-name] }',
+      '{ variables: [A], path: "  " }',
+      '{ variables: A }',
+    ]) {
+      assert.equal(parseAgentManifest(prefix + '  export: ' + selection).status, 'invalid');
+    }
+  });
+
   it('normalizes explicit sqlite and lets an omitted backend inherit the default', () => {
     for (const [source, expected] of [
       ['', undefined],

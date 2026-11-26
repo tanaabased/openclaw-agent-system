@@ -7,6 +7,7 @@ export default async function writeAtomic(
   path: string,
   source: string,
   mode: number,
+  commit: (temporaryPath: string, path: string) => Promise<void> = rename,
 ): Promise<void> {
   const temporaryPath = `${path}.${randomUUID()}.tmp`;
   let handle;
@@ -20,7 +21,7 @@ export default async function writeAtomic(
     await handle.sync();
     await handle.close();
     handle = undefined;
-    await rename(temporaryPath, path);
+    await commit(temporaryPath, path);
   } finally {
     await handle?.close().catch(() => undefined);
     await unlink(temporaryPath).catch(() => undefined);

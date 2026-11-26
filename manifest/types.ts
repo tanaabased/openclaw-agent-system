@@ -26,6 +26,7 @@ export interface AgentManifest {
   };
   environment?: {
     dotenv?: string[];
+    export?: { variables: string[]; path?: string };
     op?: string[];
     pathPrepend?: string[];
     required?: string[];

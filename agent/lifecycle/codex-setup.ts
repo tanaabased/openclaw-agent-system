@@ -17,12 +17,15 @@ import {
 } from '../identity/codex-workspace-binding.ts';
 import SetupLifecycleService from './setup-lifecycle.ts';
 import createSetupCommandRunner, { type SetupProcessRunner } from './setup-runner.ts';
-import type {
-  AgentSystemLifecycleFinding,
-  AgentSystemLifecycleReconcileResult,
+import {
+  AgentSystemLifecycleError,
+  type AgentSystemLifecycleFinding,
+  type AgentSystemLifecycleReconcileResult,
 } from '../../core/lifecycle-registry.ts';
 import type { AgentSetupCommand } from '../../manifest/setup-schema.ts';
 import { githubNotificationRuntimeDiagnostics } from '../../channels/github/notification-policy.ts';
+import createEnvironmentExportLifecycle from '../../environment/export-lifecycle.ts';
+import { resolveWorkspaceEnvironment } from '../../environment/service.ts';
 
 interface CodexSetupSnapshot {
   agentId: string;
@@ -168,7 +171,30 @@ async function runtime(
   const storage = storageLifecycles(codexStorageLocation(pluginData), (backend) =>
     initializeCodexStorage(pluginData, backend),
   );
-  return { context, lifecycle, selected, storage };
+  const environmentExport = createEnvironmentExportLifecycle({
+    target: () => ({
+      root: pluginData,
+      owner: [
+        'codex',
+        selected.bindingPath,
+        selected.workspaceDir,
+        selected.agentId,
+        selected.credentialScope ?? '',
+      ],
+    }),
+    async resolve(input) {
+      const credential = await codexOpCredential(pluginData, 'binding', dependencies.op);
+      return resolveWorkspaceEnvironment(input.manifest, input.workspaceDir, {
+        hostEnvironment: baseEnvironment,
+        ...(credential && {
+          opEnvironmentService: {
+            load: () => credential.loadBindingEnvironment(selected.manifestDigest, input.signal),
+          },
+        }),
+      });
+    },
+  });
+  return { context, environmentExport, lifecycle, selected, storage };
 }
 
 async function opFindings(pluginData: string, dependencies: CodexSetupDependencies) {
@@ -186,7 +212,11 @@ export async function inspectCodexSetup(
   signal?: AbortSignal,
   dependencies: CodexSetupDependencies = {},
 ) {
-  const { context, lifecycle, selected, storage } = await runtime(pluginData, signal, dependencies);
+  const { context, environmentExport, lifecycle, selected, storage } = await runtime(
+    pluginData,
+    signal,
+    dependencies,
+  );
   const notificationDiagnostics = githubNotificationRuntimeDiagnostics(
     context.manifest.github?.notifications,
     'codex',
@@ -212,6 +242,10 @@ export async function inspectCodexSetup(
           ]
         : []),
       ...(await lifecycle.inspect(context)),
+      ...(await environmentExport.inspect(context)).map<AgentSystemLifecycleFinding>((finding) => ({
+        ...finding,
+        component: environmentExport.id,
+      })),
       ...(await Promise.all(storage.map((database) => database.inspect(context)))).flat(),
       ...(await instanceIdentity(codexInstanceStore(pluginData)).inspect!(context)).map(
         (finding) => ({ ...finding, component: 'instance-identity' }),
@@ -235,7 +269,11 @@ export async function installCodexSetup(
   signal?: AbortSignal,
   dependencies: CodexSetupDependencies = {},
 ) {
-  const { context, lifecycle, selected, storage } = await runtime(pluginData, signal, dependencies);
+  const { context, environmentExport, lifecycle, selected, storage } = await runtime(
+    pluginData,
+    signal,
+    dependencies,
+  );
   const notificationDiagnostics = githubNotificationRuntimeDiagnostics(
     context.manifest.github?.notifications,
     'codex',
@@ -253,6 +291,30 @@ export async function installCodexSetup(
   result.outcomes.push(
     ...instance.outcomes.map((outcome) => ({ ...outcome, component: 'instance-identity' })),
   );
+  const exportSettings = context.manifest.environment?.export;
+  const bindingBlocked = blockedCredentials.some(({ code }) =>
+    code.startsWith('codex-op-binding-'),
+  );
+  if (exportSettings && (!exportSettings.variables.length || !bindingBlocked)) {
+    try {
+      const exported = await environmentExport.reconcile(context);
+      result.outcomes.push(
+        ...exported.outcomes.map((outcome) => ({ ...outcome, component: environmentExport.id })),
+      );
+    } catch (error) {
+      if (!(error instanceof AgentSystemLifecycleError)) throw error;
+      const finding = {
+        code: error.code,
+        component: error.component,
+        message: error.rawMessage,
+        status: 'blocked' as const,
+      };
+      throw new CodexSetupError(error.code, error.rawMessage, {
+        ...result,
+        findings: [...blockedCredentials, finding],
+      });
+    }
+  }
   // local setup does not receive enrolled credentials; do not hand off to automation sync when blocked.
   const [blocker] = blockedCredentials;
   if (blocker) {

@@ -62,7 +62,8 @@ import { AutomationError } from '../agent/automations/automation-errors.ts';
 import BoundCommandService from '../agent/bound-command-service.ts';
 import AgentCommandAuthority from '../agent/command-authority.ts';
 import AgentDoctorService from '../agent/lifecycle/doctor-service.ts';
-import AgentEnvironmentService from '../environment/service.ts';
+import AgentEnvironmentService, { resolveWorkspaceEnvironment } from '../environment/service.ts';
+import createEnvironmentExportLifecycle from '../environment/export-lifecycle.ts';
 import AgentInstallService from '../agent/lifecycle/install-service.ts';
 import createSessionDispatchCredential from '../credentials/session-dispatch-runtime.ts';
 import openClawNativeMaterial from '../agent/tasks/context/openclaw-native-material.ts';
@@ -787,6 +788,19 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...gitCapability.lifecycleContributions,
     ...githubCapability.lifecycleContributions,
     ...googleCapability.lifecycleContributions,
+    createEnvironmentExportLifecycle({
+      target: ({ manifest }) => ({
+        root: privateStateRoot ?? api.runtime.state.resolveStateDir(),
+        owner: ['openclaw', api.runtime.state.resolveStateDir(), manifest.agent.id.toLowerCase()],
+      }),
+      resolve: ({ manifest, workspaceDir, signal }) =>
+        resolveWorkspaceEnvironment(
+          manifest,
+          workspaceDir,
+          { hostEnvironment: process.env, opEnvironmentService },
+          { fresh: true, signal },
+        ),
+    }),
     createSessionDispatchLifecycle(sessionDispatch),
     instanceIdentity(instanceStore),
     intakeV2.contribution(),
