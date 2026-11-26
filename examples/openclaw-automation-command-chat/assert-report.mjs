@@ -16,6 +16,9 @@ for (const [index, source] of ['alpha', 'beta', 'gamma', 'delta'].entries()) {
   assert.equal(card.tokens[0].type, 'heading');
   assert.equal(card.tokens[0].text, `${index === 0 ? '⚠️' : '✅'} SOURCE ${source.toUpperCase()}`);
   assert.equal(card.tokens.filter((token) => token.type === 'heading').length, 1);
+  const summary = card.tokens.find((token) => token.type === 'paragraph')?.text ?? '';
+  assert.ok(summary.includes(`Archive ${source} saved`));
+  if (source === 'alpha') assert.ok(summary.includes('activation unverified'));
 }
 assert.ok(blocks[4].text.startsWith('**Runner result:** ✅ success · Exit 0'));
 assert.ok(blocks[5].text.startsWith('**Run:**'));

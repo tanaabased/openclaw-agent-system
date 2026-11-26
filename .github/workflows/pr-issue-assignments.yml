@@ -22,6 +22,7 @@ jobs:
       fail-fast: false
       matrix:
         example:
+          - openclaw-issue-pickup
           - openclaw-issue-intake
           - openclaw-issue-assessment-recovery
           - openclaw-issue-assignment-policy
@@ -80,7 +81,7 @@ jobs:
         run: |
           leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0 || {
             status=$?
-            if [[ "${{ matrix.example }}" == openclaw-issue-assessment-recovery || "${{ matrix.example }}" == openclaw-issue-intake ]]; then
+            if [[ "${{ matrix.example }}" == openclaw-issue-assessment-recovery || "${{ matrix.example }}" == openclaw-issue-intake || "${{ matrix.example }}" == openclaw-issue-pickup ]]; then
               bash scripts/check-fixture-receiver.sh || true
             fi
             exit "$status"

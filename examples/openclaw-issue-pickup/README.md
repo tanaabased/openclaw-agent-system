@@ -1,4 +1,4 @@
-# OpenClaw Project Picker Example
+# OpenClaw Issue Pickup Example
 
 Run an activated pickup scan, select one disposable issue, and let ordinary issue
 assignment create its managed chat and checkout with Work mode. Repeat through
@@ -33,9 +33,9 @@ native OpenClaw and OpenClaw-hosted Codex, then verify the window allows no seco
 # should prepare both hosted execution paths with strict model responses
 set -euo pipefail
 export OPENAI_API_KEY=agent-system-aimock-test
-export NODE_OPTIONS="--import=$GITHUB_WORKSPACE/examples/openclaw-project-picker/catalog-fixture.mjs"
+export NODE_OPTIONS="--import=$GITHUB_WORKSPACE/examples/openclaw-issue-pickup/catalog-fixture.mjs"
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --needs-ssh-key --model openai/gpt-5.4-nano --yolo
-openclaw-aimock prepare --scenario openclaw-project-picker
+openclaw-aimock prepare --scenario openclaw-issue-pickup
 openclaw config set models.mode merge
 openclaw config set memory.search.enabled false --strict-json
 openclaw config set skills.workshop.autonomous.mode off
@@ -85,7 +85,7 @@ pickup_failure() {
 trap pickup_failure EXIT
 actor_node=$(GH_TOKEN="$GH_TOKEN_EMORI" gh api user --jq 'select(.login == "emoriwan") | .node_id')
 for runtime in codex openclaw; do
-  cd "$GITHUB_WORKSPACE/examples/openclaw-project-picker/$runtime"
+  cd "$GITHUB_WORKSPACE/examples/openclaw-issue-pickup/$runtime"
   stage=create-milestone
   milestone=$(GH_TOKEN="$GH_TOKEN_TANAABOT" gh api --method POST repos/tanaabased/big-test-bucket/milestones -f title="agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-pickup-$runtime" --jq .number)
   printf '%s\n' "$milestone" > "$TMPDIR/pickup-$runtime-milestone"
@@ -148,7 +148,7 @@ for runtime in codex openclaw; do
   other=$(jq -er .number "$TMPDIR/pickup-$runtime-other.json")
   GH_TOKEN="$GH_TOKEN_TANAABOT" gh api "repos/tanaabased/big-test-bucket/issues/$other" | jq -e '.assignees | length == 0'
   node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -es --slurpfile before "$TMPDIR/pickup-$runtime-before.json" '[.[].records[] | select(.projectWork.pickup.issueNodeId == $before[0].projectWork.pickup.issueNodeId)] | length == 1 and .[0].threadId == $before[0].threadId and .[0].worktree == $before[0].worktree and (.[0] | .nativeTurns | map(select(.role == "assessment")) | last | .turn).runId == ($before[0] | .nativeTurns | map(select(.role == "assessment")) | last | .turn).runId and .[0].result == $before[0].result and .[0].delivery == null'
-  curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e 'if .scenario == "openclaw-project-picker" and .strictMissCount == 0 and any(.tools[]; .name == "agent_system_intake" and .callResponseCount > 0 and .resultRequestCount > 0) and any(.tools[]; .name == "agent_system_dispatch" and .resultRequestCount > 0) then . else error("pickup provider evidence incomplete: " + tojson) end'
+  curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e 'if .scenario == "openclaw-issue-pickup" and .strictMissCount == 0 and any(.tools[]; .name == "agent_system_intake" and .callResponseCount > 0 and .resultRequestCount > 0) and any(.tools[]; .name == "agent_system_dispatch" and .resultRequestCount > 0) then . else error("pickup provider evidence incomplete: " + tojson) end'
 done
 ```
 

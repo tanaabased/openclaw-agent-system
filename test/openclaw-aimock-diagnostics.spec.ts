@@ -81,7 +81,7 @@ describe('scripts/aimock-diagnostics', () => {
       ],
       ['Intake check: {invalid}. private-instructions', undefined],
     ] as const) {
-      const result = diagnostics(resolveScenario('openclaw-project-picker'), [
+      const result = diagnostics(resolveScenario('openclaw-issue-pickup'), [
         {
           method: 'POST',
           path: '/responses',

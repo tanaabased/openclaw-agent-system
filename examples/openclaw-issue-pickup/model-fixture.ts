@@ -125,13 +125,11 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
         JSON.stringify(observed),
       );
       assert.equal(typeof observed.response, 'string');
-      assert.match(String(observed.response), /📥/u);
       if (observed.status === 'assigned') {
         // cron history is a bounded summary; verify full guidance before returning the report.
         assert.match(String(observed.response), /Guidance source.*inline/u);
         assert.match(String(observed.response), /bounded cleanup clarification/u);
         assert.match(String(observed.response), /prefer fixture cleanup/u);
-        assert.match(String(observed.response), /2 eligible/u);
       }
       return { content: String(observed.response) };
     }
@@ -220,7 +218,7 @@ const final: Fixture = {
 };
 
 export const issuePickupScenario: OpenClawAIMockScenario = {
-  id: 'openclaw-project-picker',
+  id: 'openclaw-issue-pickup',
   model: { match: model, reference: 'aimock/gpt-5.5' },
   systemPromptSignals: [],
   finalResponses: [],

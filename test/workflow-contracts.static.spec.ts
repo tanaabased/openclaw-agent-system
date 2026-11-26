@@ -11,7 +11,6 @@ const exampleWorkflows = [
   'notifications',
   'issue-assignments',
   'pull-requests',
-  'project-picker',
   'automations',
 ];
 

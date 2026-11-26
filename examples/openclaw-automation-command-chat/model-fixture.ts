@@ -43,16 +43,7 @@ function reportInput(request: ChatCompletionRequest, diagnose = false) {
       stderr:
         value.stderr?.body === (failure ? 'Archive delta failed: destination unavailable.\n' : ''),
       presentation: value.presentation?.kind === (failure ? 'fallback' : 'preferred'),
-      reportBody:
-        failure ||
-        body ===
-          ['alpha', 'beta', 'gamma', 'delta']
-            .map(
-              (source) =>
-                `> ## ${source === 'alpha' ? '⚠️' : '✅'} SOURCE ${source.toUpperCase()}\n>\n> Archive ${source} saved${source === 'alpha' ? '; activation unverified' : ''}.`,
-            )
-            .join('\n\n') +
-            `\n\n**Runner result:** ✅ success · Exit 0\n\n${value.runLine}`,
+      reportBody: failure || Boolean(body?.trim()),
       footer:
         !failure ||
         (typeof value.runLine === 'string' &&

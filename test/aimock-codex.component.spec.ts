@@ -71,7 +71,7 @@ describe('hosted codex mock configuration', () => {
     try {
       let nativeArgs: string[] = [];
       for (const scenario of [
-        'openclaw-project-picker',
+        'openclaw-issue-pickup',
         'openclaw-automation-command-chat',
         'openclaw-runtimes',
         'openclaw-lifecycle-approvals',

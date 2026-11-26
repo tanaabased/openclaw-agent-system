@@ -332,10 +332,14 @@ export async function waitForScheduledAutomationRun(
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   if (process.env.GITHUB_ACTIONS !== 'true') throw new Error('GitHub Actions only.');
   if (process.argv[2] === '--scheduled-after') {
-    const [, id, nativeId, after] = process.argv.slice(2);
+    const [, id, nativeId, after, wait] = process.argv.slice(2);
+    const maxWaitMs = wait === undefined ? undefined : Number(wait);
+    assert.ok(maxWaitMs === undefined || (Number.isSafeInteger(maxWaitMs) && maxWaitMs > 0));
     assert.ok(id && nativeId && after, 'an automation id, native job id and due time are required');
     process.stdout.write(
-      JSON.stringify(await waitForScheduledAutomationRun(id, nativeId, Number(after))) + '\n',
+      JSON.stringify(
+        await waitForScheduledAutomationRun(id, nativeId, Number(after), { maxWaitMs }),
+      ) + '\n',
     );
   } else {
     const [id, runId, expected = 'ok'] = process.argv.slice(2);
