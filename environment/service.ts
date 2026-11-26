@@ -7,11 +7,13 @@ import collectOpEnvironmentRequirements, {
 import loadAgentDotenv from './load-dotenv.ts';
 import resolveAgentEnvironment, {
   type AgentEnvironmentInputSource,
+  type AgentEnvironmentResolution,
   type ResolvedAgentEnvironment,
 } from './resolve.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type { AgentManifestLoadResult, ManifestLoadTrigger } from '../manifest/service.ts';
 import type OpEnvironmentService from './op-service.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 
 export type AgentEnvironmentLoadResult =
   | Exclude<AgentManifestLoadResult, { status: 'loaded' }>
@@ -19,19 +21,73 @@ export type AgentEnvironmentLoadResult =
       environment: ResolvedAgentEnvironment;
     });
 
-export interface AgentEnvironmentServiceDependencies {
+interface WorkspaceEnvironmentDependencies {
   hostEnvironment: Readonly<Record<string, string | undefined>>;
+  loadDotenv?: typeof loadAgentDotenv;
+  opEnvironmentService?: Pick<OpEnvironmentService, 'load'> &
+    Partial<Pick<OpEnvironmentService, 'flush'>>;
+}
+
+export interface AgentEnvironmentServiceDependencies extends WorkspaceEnvironmentDependencies {
   logger: {
     error(message: string): void;
     info(message: string): void;
   };
-  loadDotenv?: typeof loadAgentDotenv;
   manifestService: Pick<
     AgentManifestService,
     'loadForAgentId' | 'loadForCommandDirectory' | 'loadForWorkspace'
   >;
-  opEnvironmentService?: Pick<OpEnvironmentService, 'load'> &
-    Partial<Pick<OpEnvironmentService, 'flush'>>;
+}
+
+/** Resolve an already selected workspace manifest using the runtime's credential owner. */
+export async function resolveWorkspaceEnvironment(
+  manifest: AgentManifest,
+  workspaceDir: string,
+  dependencies: WorkspaceEnvironmentDependencies,
+  options: { fresh?: boolean; signal?: AbortSignal } = {},
+): Promise<AgentEnvironmentResolution> {
+  const dotenv = await (dependencies.loadDotenv ?? loadAgentDotenv)(
+    workspaceDir,
+    manifest.environment?.dotenv ?? [],
+  );
+  if (dotenv.status === 'invalid') return dotenv;
+
+  const opRequirements = collectOpEnvironmentRequirements(manifest);
+  const opEnvironmentService = dependencies.opEnvironmentService;
+  let opSet: { sensitiveNames: string[]; values: Record<string, string> } | undefined;
+  let opSources: AgentEnvironmentInputSource[] = [];
+  if (hasOpEnvironmentRequirements(opRequirements)) {
+    if (!opEnvironmentService) {
+      return {
+        status: 'invalid',
+        diagnostics: [
+          {
+            code: 'op-integration-unavailable',
+            fieldPath: '/environment',
+            message: 'OP resource resolution is unavailable in this runtime.',
+            severity: 'error',
+          },
+        ],
+      };
+    }
+    const op = await opEnvironmentService.load(manifest.agent.id, opRequirements, {
+      workspaceDir,
+      ...options,
+    });
+    if (op.status === 'invalid') return op;
+    opSet = op.set;
+    opSources = op.sources;
+  } else {
+    opEnvironmentService?.flush?.(manifest.agent.id);
+  }
+
+  const resolution = resolveAgentEnvironment(manifest, dependencies.hostEnvironment, {
+    dotenv: dotenv.sources,
+    op: opSources,
+    ...(opSet ? { set: opSet } : {}),
+  });
+  if (resolution.status === 'invalid') opEnvironmentService?.flush?.(manifest.agent.id);
+  return resolution;
 }
 
 function quote(value: string): string {
@@ -49,12 +105,10 @@ function environmentDigest(environment: ResolvedAgentEnvironment): string {
 export default class AgentEnvironmentService {
   readonly #dependencies: AgentEnvironmentServiceDependencies;
   readonly #hostEnvironment: Readonly<Record<string, string | undefined>>;
-  readonly #loadDotenv: typeof loadAgentDotenv;
 
   constructor(dependencies: AgentEnvironmentServiceDependencies) {
     this.#dependencies = dependencies;
     this.#hostEnvironment = Object.freeze({ ...dependencies.hostEnvironment });
-    this.#loadDotenv = dependencies.loadDotenv ?? loadAgentDotenv;
   }
 
   invalidateCredentials(agentId: string): void {
@@ -102,78 +156,18 @@ export default class AgentEnvironmentService {
   ): Promise<AgentEnvironmentLoadResult> {
     if (result.status !== 'loaded') return result;
 
-    const dotenv = await this.#loadDotenv(
+    const resolution = await resolveWorkspaceEnvironment(
+      result.manifest,
       result.scope.workspaceDir,
-      result.manifest.environment?.dotenv ?? [],
+      {
+        ...this.#dependencies,
+        hostEnvironment: this.#hostEnvironment,
+      },
     );
-    if (dotenv.status === 'invalid') {
-      const diagnostics = [...result.diagnostics, ...dotenv.diagnostics];
-      this.#logInvalidEnvironment(result.manifest.agent.id, trigger, diagnostics);
-      return {
-        status: 'invalid',
-        scope: result.scope,
-        path: result.path,
-        diagnostics,
-      };
-    }
-
-    const opRequirements = collectOpEnvironmentRequirements(result.manifest);
-    if (!hasOpEnvironmentRequirements(opRequirements))
-      this.invalidateCredentials(result.manifest.agent.id);
-    let opSet: { sensitiveNames: string[]; values: Record<string, string> } | undefined;
-    let opSources: AgentEnvironmentInputSource[] = [];
-    if (hasOpEnvironmentRequirements(opRequirements)) {
-      const opEnvironmentService = this.#dependencies.opEnvironmentService;
-      if (!opEnvironmentService) {
-        const diagnostics = [
-          ...result.diagnostics,
-          {
-            code: 'op-integration-unavailable',
-            fieldPath: '/environment',
-            message: 'OP resource resolution is unavailable in this runtime.',
-            severity: 'error' as const,
-          },
-        ];
-        this.#logInvalidEnvironment(result.manifest.agent.id, trigger, diagnostics);
-        return {
-          status: 'invalid',
-          scope: result.scope,
-          path: result.path,
-          diagnostics,
-        };
-      }
-      const op = await opEnvironmentService.load(result.manifest.agent.id, opRequirements, {
-        workspaceDir: result.scope.workspaceDir,
-      });
-      if (op.status === 'invalid') {
-        const diagnostics = [...result.diagnostics, ...op.diagnostics];
-        this.#logInvalidEnvironment(result.manifest.agent.id, trigger, diagnostics);
-        return {
-          status: 'invalid',
-          scope: result.scope,
-          path: result.path,
-          diagnostics,
-        };
-      }
-      opSet = op.set;
-      opSources = op.sources;
-    }
-
-    const resolution = resolveAgentEnvironment(result.manifest, this.#hostEnvironment, {
-      dotenv: dotenv.sources,
-      op: opSources,
-      ...(opSet ? { set: opSet } : {}),
-    });
     if (resolution.status === 'invalid') {
-      this.invalidateCredentials(result.manifest.agent.id);
       const diagnostics = [...result.diagnostics, ...resolution.diagnostics];
       this.#logInvalidEnvironment(result.manifest.agent.id, trigger, diagnostics);
-      return {
-        status: 'invalid',
-        scope: result.scope,
-        path: result.path,
-        diagnostics,
-      };
+      return { status: 'invalid', scope: result.scope, path: result.path, diagnostics };
     }
 
     const { environment } = resolution;

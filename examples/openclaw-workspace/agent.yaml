@@ -9,6 +9,8 @@ agent:
 storage: { backend: { type: sqlite } }
 
 environment:
+  export:
+    variables: [WORKSPACE_NAME]
   dotenv:
     - base.env
     - local.env

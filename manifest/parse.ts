@@ -32,6 +32,7 @@ import { decodeStorageBackend, externalStorageSchema } from './storage-schema.ts
 import { maximumManifestBytes } from './read-bytes.ts';
 import type { AgentManifest, ManifestDiagnostic, ParsedAgentManifest } from './types.ts';
 import { decodeEnvironmentSetValue, externalOpSecretReferenceSchema } from './value-schemas.ts';
+import { opServiceAccountTokenName } from '../environment/resolve.ts';
 
 const externalAgentManifestSchema = Type.Object(
   {
@@ -43,6 +44,24 @@ const externalAgentManifestSchema = Type.Object(
     environment: Type.Optional(
       Type.Object(
         {
+          export: Type.Optional(
+            Type.Object(
+              {
+                variables: Type.Array(
+                  Type.String({
+                    pattern: '^(?!' + opServiceAccountTokenName + '$)[A-Za-z_][A-Za-z0-9_]*$',
+                  }),
+                  { uniqueItems: true },
+                ),
+                path: Type.Optional(
+                  Type.String({
+                    pattern: '^[^\\u0000\\r\\n]*[^\\s\\u0000][^\\u0000\\r\\n]*$',
+                  }),
+                ),
+              },
+              { additionalProperties: false },
+            ),
+          ),
           dotenv: Type.Optional(
             Type.Union([
               Type.String({ minLength: 1, pattern: '^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$' }),
@@ -220,6 +239,7 @@ function decodeManifest(value: ExternalAgentManifest): AgentManifest {
       ? {}
       : {
           environment: {
+            ...(value.environment.export === undefined ? {} : { export: value.environment.export }),
             ...(value.environment.dotenv === undefined
               ? {}
               : {

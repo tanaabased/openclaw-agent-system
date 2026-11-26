@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -104,6 +104,69 @@ setup-agent:
       'codex-op-binding-missing',
     );
     await assert.rejects(fresh.resolve('PRIVATE'), /changed/u);
+  });
+
+  it('should export resolved values through standalone install using the enrolled binding', async () => {
+    await writeFile(join(workspace, 'shell.env'), 'DB_PASSWORD=dotenv-value\n');
+    await bind(`environment:
+  dotenv: shell.env
+  op: shared-id
+  set:
+    DB_PASSWORD: set-value
+    PRIVATE: {from-op: 'op://private/item/password'}
+  export:
+    variables: [DB_PASSWORD]
+    path: export.sh
+`);
+    const options = {
+      op,
+      baseEnvironment: { HOME: root, OP_SERVICE_ACCOUNT_TOKEN: 'fixture-token' },
+    };
+    const path = join(await realpath(workspace), 'export.sh');
+    const before = await inspectCodexSetup(data, undefined, options);
+    assert.ok(before.findings.some(({ code }) => code === 'environment-export-missing'));
+    await assert.rejects(installCodexSetup(data, undefined, options), {
+      code: 'codex-op-binding-missing',
+    });
+    await assert.rejects(access(path), { code: 'ENOENT' });
+
+    const credential = (await codexOpCredential(data, 'binding', op))!;
+    assert.equal((await credential.enroll()).status, 'healthy');
+    const installed = await installCodexSetup(data, undefined, options);
+    assert.ok(
+      installed.outcomes.some(
+        ({ code, message }) => code === 'environment-export-created' && message === path,
+      ),
+    );
+    const child = spawnSync(
+      '/bin/bash',
+      [
+        '--noprofile',
+        '--norc',
+        '-ec',
+        '. "$1"; "$2" -e \'console.log(JSON.stringify([process.env.DB_PASSWORD, process.env.PRIVATE, process.env.OP_SERVICE_ACCOUNT_TOKEN]))\'',
+        'bash',
+        path,
+        process.execPath,
+      ],
+      { env: {}, encoding: 'utf8' },
+    );
+    assert.equal(child.status, 0, child.stderr);
+    assert.deepEqual(JSON.parse(child.stdout), ['fixture-shared-value', null, null]);
+    const after = await inspectCodexSetup(data, undefined, options);
+    assert.ok(after.findings.some(({ code }) => code === 'environment-export-ready'));
+    assert.doesNotMatch(
+      JSON.stringify([installed, after]),
+      /fixture-(?:token|private-value|shared-value)/u,
+    );
+
+    const snapshot = await readFile(path, 'utf8');
+    assert.doesNotMatch(snapshot, /fixture-(?:token|private-value)|dotenv-value|set-value/u);
+    entries.clear();
+    await assert.rejects(installCodexSetup(data, undefined, options), {
+      code: 'codex-op-binding-missing',
+    });
+    assert.equal(await readFile(path, 'utf8'), snapshot);
   });
 
   it('connects through the local page and verifies stored access before continuing Install', async () => {

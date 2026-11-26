@@ -146,6 +146,9 @@ installed=$(node "$runtime" setup install --plugin-data "$plugin_data")
 jq -e '.storage.backend.type == "sqlite"' "$plugin_data/instance/config.json"
 printf '%s\n' "$installed" \
   | jq -e '.status == "requires-native-app-sync" and any(.outcomes[]; .component == "agent-storage" and .status == "created") and .automations.status == "requires-fresh-inspection" and [.outcomes[] | select(.component == "setup") | [.stepId, .code]] == [["codex-tools-debug", "setup-unchanged"], ["shared", "setup-applied"], ["codex-only", "setup-applied"], ["openclaw-only", "setup-not-applicable"]]'
+export_file=$(printf '%s\n' "$installed" | jq -er '.outcomes[] | select(.code == "environment-export-created") | .message')
+bash --noprofile --norc -ec '. "$1"; node -e "if (process.env.CODEX_SHELL_REGION !== \"example-region\") process.exit(1)"' bash "$export_file"
+node "$runtime" setup inspect --plugin-data "$plugin_data" | jq -e '.findings | any(.code == "environment-export-ready" and .status == "healthy")'
 # a fresh invocation loads the installed runtime before inspecting automation state.
 node "$runtime" automations inspect --plugin-data "$plugin_data" <<<'{}' | jq -e '.status == "aligned"'
 test -f "$GITHUB_WORKSPACE/examples/codex-install/workspace/.codex-shared"
