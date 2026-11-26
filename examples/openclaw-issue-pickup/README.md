@@ -1,13 +1,14 @@
 # OpenClaw Issue Pickup Example
 
 Run an activated pickup scan, select one disposable issue, and let ordinary issue
-assignment create its managed chat and checkout with Work mode. Repeat through
-native OpenClaw and OpenClaw-hosted Codex, then verify the window allows no second assignment.
+assignment create its managed chat and checkout with Work mode. Native OpenClaw
+first reads paged fixture guidance and explicitly selects nothing. Both native
+OpenClaw and OpenClaw-hosted Codex then verify their window allows no second assignment.
 
 ## What Belongs Here
 
 - Native pickup enrollment with closed milestone scope, read-only Doctor inspection, and scheduled execution after that milestone reopens through each runtime.
-- Selected and exhausted-window outcomes through the real automation/tool boundary, with selection triggered by a due-time occurrence.
+- Selection triggered by a due-time occurrence, including native paging before explicitly declining assignment. Verify assignment and exhausted-window outcomes through the real automation/tool boundary.
 - Namespace discovery restricted by routing to the disposable repository, with model selection from a repository-qualified milestone list and the default `only` policy, GitHub self-assignment despite the ordinary assigner policy, and ordinary intake receiving the pickup exception and Work mode.
 - A repeat scan preserving the single assignment, chat, and checkout.
 
@@ -16,13 +17,14 @@ native OpenClaw and OpenClaw-hosted Codex, then verify the window allows no seco
 - Implementation and PR delivery: [Work](../openclaw-issue-work-custom/README.md).
 - Assignment concurrency and recovery: [intake](../openclaw-issue-intake/README.md) and [assignment policy](../openclaw-issue-assignment-policy/README.md).
 - Standalone Codex desktop scheduling and chat creation: the native acceptance checks in [Codex notifications](../codex-notifications/README.md). Hosted Codex uses OpenClaw's scheduler and dispatch owner.
-- Candidate pagination, uncertain writes, and policy permutations remain in unit/component coverage.
+- Pagination failure permutations, uncertain writes, and policy permutations remain in unit/component coverage.
 
 ## Notes
 
 - Strict AIMock supplies the selection and assessment. Scheduler authority, GitHub reads/writes, intake, chat creation, and checkout creation remain real. Hosted Codex keeps its native searchable-tool default. AIMock declines Responses WebSocket upgrades so Codex falls back to HTTP with full request history. This does not prove model judgment, long-running unattended reliability, or desktop rendering.
 - Closed-scope enrollment adds two provider updates and one Doctor inspection per execution path, without another install, restart, or model turn. It catches installation rejection at the real runtime boundary before the existing scheduled assignment.
 - Each execution path gets its own disposable milestone, two issues, agent workspace, and native job. The exhausted-window check runs on demand. Selection waits for the installed daily schedule, moved through the manifest to a slot two to three minutes ahead; it never substitutes a forced run if that occurrence fails. This adds up to three minutes of scheduler waiting per runtime.
+- Native OpenClaw adds one in-window run without another install, restart, or scheduled wait. Its first run reads both guidance pages, submits no issue, and checks both candidates stay unassigned. Removing its fixture-body marker enables ordinary assignment.
 - Debug logs correlate native cron initialization, pickup lookup, and cleanup with hashed identities.
 - Ordinary assignments permit EMORI, not Tanaabot, and default to Plan. The selected issue asks a clarification question: the assessment asserts Work mode, retains the question, and stops before implementation or publication.
 - Only Tanaabot receives fixture assignments. Refresh is scoped to the selected issue. Cleanup stops the Gateway before closing issues and deleting milestones; the shared workflow cleanup owns SSH registrations.
@@ -90,7 +92,11 @@ for runtime in codex openclaw; do
   milestone=$(GH_TOKEN="$GH_TOKEN_TANAABOT" gh api --method POST repos/tanaabased/big-test-bucket/milestones -f title="agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-pickup-$runtime" --jq .number)
   printf '%s\n' "$milestone" > "$TMPDIR/pickup-$runtime-milestone"
   stage=prepare-workspace
-  sed -e "s|__ACTOR_NODE_ID__|$actor_node|g" -e "s|__MILESTONE_NUMBER__|$milestone|g" -e "s|__GITHUB_REPOSITORY_ID__|$GITHUB_REPOSITORY_ID|g" -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" agent.yaml > "$TMPDIR/pickup-agent.yaml"
+  paging_fixture=
+  if test "$runtime" = openclaw; then
+    paging_fixture=$(printf '%6500s' '' | tr ' ' x)
+  fi
+  sed -e "s|__PAGING_FIXTURE__|$paging_fixture|g" -e "s|__ACTOR_NODE_ID__|$actor_node|g" -e "s|__MILESTONE_NUMBER__|$milestone|g" -e "s|__GITHUB_REPOSITORY_ID__|$GITHUB_REPOSITORY_ID|g" -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" agent.yaml > "$TMPDIR/pickup-agent.yaml"
   mv "$TMPDIR/pickup-agent.yaml" agent.yaml
   mkdir -p keys
   cp "$HOME/.ssh/big-test-bucket-ssh" keys/id_ed25519
@@ -111,7 +117,12 @@ for runtime in codex openclaw; do
   native=$(jq -er '.jobs[] | select(.id == "github-issue-pickup" and .nativeEnabled == true) | .nativeId' "$TMPDIR/pickup-$runtime-jobs.json")
   chat=$(jq -er '.jobs[] | select(.id == "github-issue-pickup") | .routing | select(startswith("session:"))' "$TMPDIR/pickup-$runtime-jobs.json")
   stage=create-redesign-fixture
-  GH_TOKEN="$GH_TOKEN_TANAABOT" gh api --method POST repos/tanaabased/big-test-bucket/issues -f "title=agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-pickup-$runtime-redesign" -f 'body=Disposable pickup fixture: redesign the entire cleanup system.' -F milestone="$milestone" > "$TMPDIR/pickup-$runtime-other.json"
+  redesign_body='Disposable pickup fixture: redesign the entire cleanup system.'
+  initial_body="$redesign_body"
+  if test "$runtime" = openclaw; then
+    initial_body="$initial_body pickup-paging-no-assignment"
+  fi
+  GH_TOKEN="$GH_TOKEN_TANAABOT" gh api --method POST repos/tanaabased/big-test-bucket/issues -f "title=agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-pickup-$runtime-redesign" -f "body=$initial_body" -F milestone="$milestone" > "$TMPDIR/pickup-$runtime-other.json"
   stage=create-cleanup-fixture
   GH_TOKEN="$GH_TOKEN_TANAABOT" gh api --method POST repos/tanaabased/big-test-bucket/issues -f "title=agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-pickup-$runtime-cleanup" -f 'body=Disposable pickup-cleanup-clarification fixture: document closing test issues, but first clarify whether cleanup happens after evidence capture.' -F milestone="$milestone" > "$TMPDIR/pickup-$runtime-selected.json"
   stage=prepare-pickup-schedule
@@ -127,8 +138,20 @@ for runtime in codex openclaw; do
   node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" --scheduled-after github-issue-pickup "$native" "$due" > "$TMPDIR/pickup-$runtime-scheduled.json"
   stage=verify-scheduled-pickup-report
   jq -e 'if (.summary | contains("2 eligible")) then true else error("scheduled pickup report mismatch: " + tojson) end' "$TMPDIR/pickup-$runtime-scheduled.json"
-  stage=verify-assignment-and-native-assessment
   number=$(jq -er .number "$TMPDIR/pickup-$runtime-selected.json")
+  other=$(jq -er .number "$TMPDIR/pickup-$runtime-other.json")
+  if test "$runtime" = openclaw; then
+    stage=verify-paged-selection-without-assignment
+    jq -e '.summary | contains("Paging fixture read all material; no issue selected.")' "$TMPDIR/pickup-$runtime-scheduled.json"
+    for issue in "$number" "$other"; do
+      GH_TOKEN="$GH_TOKEN_TANAABOT" gh api "repos/tanaabased/big-test-bucket/issues/$issue" | jq -e '.assignees | length == 0'
+    done
+    GH_TOKEN="$GH_TOKEN_TANAABOT" gh api --method PATCH "repos/tanaabased/big-test-bucket/issues/$other" -f "body=$redesign_body" > /dev/null
+    stage=run-in-window-assignment
+    run_id=$(openclaw agent-system automations run github-issue-pickup --json | jq -er 'select(.status == "queued") | .runId | strings')
+    node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-pickup "$run_id"
+  fi
+  stage=verify-assignment-and-native-assessment
   GH_TOKEN="$GH_TOKEN_TANAABOT" gh api "repos/tanaabased/big-test-bucket/issues/$number" | jq -e '.assignees | length == 1 and .[0].login == "tanaabot"'
   run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
   node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
@@ -145,7 +168,6 @@ for runtime in codex openclaw; do
   node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-pickup "$run_id"
   openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" --arg run "$run_id" '{id:$id,runId:$run,limit:1,offset:0}')" --json | jq -e --arg run "$run_id" 'any(.entries[]; .runId == $run and .status == "ok" and (.summary | contains("1 of 1 assigned")))'
   stage=verify-pickup-budget-and-evidence
-  other=$(jq -er .number "$TMPDIR/pickup-$runtime-other.json")
   GH_TOKEN="$GH_TOKEN_TANAABOT" gh api "repos/tanaabased/big-test-bucket/issues/$other" | jq -e '.assignees | length == 0'
   node "$GITHUB_WORKSPACE/scripts/sqlite-example-state.mjs" dispatch | jq -es --slurpfile before "$TMPDIR/pickup-$runtime-before.json" '[.[].records[] | select(.projectWork.pickup.issueNodeId == $before[0].projectWork.pickup.issueNodeId)] | length == 1 and .[0].threadId == $before[0].threadId and .[0].worktree == $before[0].worktree and (.[0] | .nativeTurns | map(select(.role == "assessment")) | last | .turn).runId == ($before[0] | .nativeTurns | map(select(.role == "assessment")) | last | .turn).runId and .[0].result == $before[0].result and .[0].delivery == null'
   curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e 'if .scenario == "openclaw-issue-pickup" and .strictMissCount == 0 and any(.tools[]; .name == "agent_system_intake" and .callResponseCount > 0 and .resultRequestCount > 0) and any(.tools[]; .name == "agent_system_dispatch" and .resultRequestCount > 0) then . else error("pickup provider evidence incomplete: " + tojson) end'

@@ -7,8 +7,31 @@ import {
 import type { DispatchRequest } from '../../../credentials/session-dispatch.ts';
 import { bindNativeMaterial } from './native-material.ts';
 
-export function resultValue(result: Record<string, unknown>): unknown {
-  if (nativeObject(result.details)) return result.details;
+function hasReceiptFields(value: unknown): boolean {
+  return nativeObject(value) && Array.isArray(value.path) && typeof value.digest === 'string';
+}
+
+function hasMaterialReceipt(value: Record<string, unknown>): boolean {
+  return (
+    (typeof value.materialScope === 'string' && hasReceiptFields(value.materialPage)) ||
+    (nativeObject(value.contextMaterials) &&
+      Array.isArray(value.contextMaterials.fields) &&
+      value.contextMaterials.fields.some(
+        (field: unknown) =>
+          nativeObject(field) && typeof field.materialScope === 'string' && hasReceiptFields(field),
+      ))
+  );
+}
+
+function hasWrappedResult(value: Record<string, unknown>) {
+  return nativeObject(value.tool) && nativeObject(value.result);
+}
+
+export function resultValue(
+  result: Record<string, unknown>,
+  useDetails: (details: Record<string, unknown>) => boolean = () => true,
+): unknown {
+  if (nativeObject(result.details) && useDetails(result.details)) return result.details;
   if (!Array.isArray(result.content)) return undefined;
   const text = result.content
     .filter(nativeObject)
@@ -39,10 +62,12 @@ export async function* openClawMaterialReceipts(
       const message = await completeOpenClawMessage(request, scope, partial);
       if (message.toolName !== partial.toolName || message.isError === true)
         throw new Error('material-native-history-invalid');
-      const value = resultValue(message);
       if ([tool, ...aliases].includes(String(message.toolName))) {
-        yield value;
-      } else if (
+        yield resultValue(message, hasMaterialReceipt);
+        continue;
+      }
+      const value = resultValue(message, hasWrappedResult);
+      if (
         nativeObject(value) &&
         nativeObject(value.tool) &&
         value.tool.source === 'openclaw' &&
@@ -50,7 +75,7 @@ export async function* openClawMaterialReceipts(
         nativeObject(value.result) &&
         value.result.isError !== true
       ) {
-        yield resultValue(value.result);
+        yield resultValue(value.result, hasMaterialReceipt);
       }
     }
   }
