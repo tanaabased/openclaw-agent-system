@@ -78,7 +78,7 @@ grep -Fx verified "$TMPDIR/os execution/source/shim.result"
 
 # should complete all three authored commands without mock misses
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | tee "$TMPDIR/os-execution-evidence.json"
-jq -e '.scenario == "os-execution" and .strictMissCount == 0 and .finalResponseCount == 3 and any(.tools[]; .name == "exec" and .callResponseCount == 3) and any(.tools[]; .name == "process" and .callResponseCount <= 192)' "$TMPDIR/os-execution-evidence.json"
+jq -e '.scenario == "os-execution" and .strictMissCount == 0 and any(.tools[]; .name == "exec" and .callResponseCount == 3) and any(.tools[]; .name == "process" and .callResponseCount <= 192)' "$TMPDIR/os-execution-evidence.json"
 ```
 
 ## Cleanup

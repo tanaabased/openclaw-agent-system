@@ -37,6 +37,32 @@ describe('agent/automation-gateway', () => {
       },
     );
 
+  for (const committed of [false, true]) {
+    it(`should recover a stale declared cron.add with committed=${committed}`, async () => {
+      const saved = { ...job('pickup'), declarationKey: 'agent-system:test:pickup' };
+      const jobs: (typeof saved)[] = [];
+      let adds = 0;
+      const request = createAutomationGateway(async (method, _options, params) => {
+        if (method === 'cron.status') return { jobs: jobs.length };
+        if (method === 'cron.list') return { jobs, hasMore: false };
+        assert.equal(method, 'cron.add');
+        assert.equal(params, saved);
+        adds++;
+        if (adds === 1) {
+          if (committed) jobs.push(saved);
+          const error = staleInstance();
+          error.message = error.message.replace('Plugin codex', 'Plugin agent-system');
+          throw error;
+        }
+        jobs.push(saved);
+        return saved;
+      });
+      assert.deepEqual(await request('cron.add', saved), saved);
+      assert.equal(adds, committed ? 1 : 2);
+      assert.deepEqual(jobs, [saved]);
+    });
+  }
+
   for (const method of ['sessions.resolve', 'sessions.list'] as const)
     it(`should recover the same stale ${method} read with capped backoff and no reload`, async () => {
       let elapsed = 0;
