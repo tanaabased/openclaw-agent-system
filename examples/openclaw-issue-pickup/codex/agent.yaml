@@ -51,7 +51,7 @@ github:
     window: 24 hours
     scans: 1
     selection:
-      guidance: Select the issue describing a bounded cleanup clarification before the larger redesign.
+      guidance: Select the issue describing a bounded cleanup clarification before the larger redesign. __PAGING_FIXTURE__
     projects:
       - repository: tanaabased/*
         selection:
