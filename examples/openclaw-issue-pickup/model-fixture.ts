@@ -178,14 +178,23 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
         ['empty', 'assigned', 'allowance-reached'].includes(String(observed.status)),
         JSON.stringify(observed),
       );
-      if ((args.selection as { issueNodeId: string | null } | undefined)?.issueNodeId === null)
-        assert.equal(observed.status, 'empty', JSON.stringify(observed));
+      const declined =
+        (args.selection as { issueNodeId: string | null } | undefined)?.issueNodeId === null;
+      if (declined) assert.equal(observed.status, 'empty', JSON.stringify(observed));
       assert.equal(typeof observed.response, 'string');
-      if (observed.status === 'assigned') {
+      if (declined || observed.status === 'assigned') {
         // Check the real report without making the mock stream the oversized paging fixture back.
         assert.match(String(observed.response), /Guidance source.*inline/u);
         assert.match(String(observed.response), /bounded cleanup clarification/u);
         assert.match(String(observed.response), /prefer fixture cleanup/u);
+        if (declined) {
+          assert.match(String(observed.response), /2 eligible/u);
+          assert.match(
+            String(observed.response),
+            /Paging fixture read all material; no issue selected\./u,
+          );
+          return { content: '2 eligible. Paging fixture read all material; no issue selected.' };
+        }
         return { content: 'Pickup assigned the selected issue.' };
       }
       return { content: String(observed.response) };
