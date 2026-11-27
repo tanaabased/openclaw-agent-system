@@ -182,10 +182,11 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
         assert.equal(observed.status, 'empty', JSON.stringify(observed));
       assert.equal(typeof observed.response, 'string');
       if (observed.status === 'assigned') {
-        // cron history is a bounded summary; verify full guidance before returning the report.
+        // Check the real report without making the mock stream the oversized paging fixture back.
         assert.match(String(observed.response), /Guidance source.*inline/u);
         assert.match(String(observed.response), /bounded cleanup clarification/u);
         assert.match(String(observed.response), /prefer fixture cleanup/u);
+        return { content: 'Pickup assigned the selected issue.' };
       }
       return { content: String(observed.response) };
     }
