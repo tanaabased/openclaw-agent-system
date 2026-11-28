@@ -18,6 +18,7 @@ export interface SqliteInstallation {
   agentRoot: string;
   installationRoot: string;
   schemaRoot: string;
+  migrateCodexSchedules?: boolean;
   readInstallationBackend?(): Promise<StorageBackend | undefined>;
   readAgentBackend?(agentId: string): Promise<StorageBackend | undefined>;
 }
@@ -55,16 +56,20 @@ export interface SessionStorage {
 
 export type SidebarPlacementChange = (current?: SidebarState) => SidebarChange;
 
+interface ScheduleLedgerStorage {
+  saveAutomationLedger(
+    runtime: 'codex' | 'openclaw',
+    ledger: RegistrationLedger,
+    expected: RegistrationLedger,
+  ): Promise<void>;
+}
+
 /** The runtime binds both handles before a workflow can read or change any records. */
 export interface BoundStorage {
   agent: StorageDatabase &
+    ScheduleLedgerStorage &
     WorkflowRecords<AgentRows> &
     SessionStorage & {
-      saveAutomationLedger(
-        runtime: 'codex' | 'openclaw',
-        ledger: RegistrationLedger,
-        expected: RegistrationLedger,
-      ): Promise<void>;
       changePickupEnrollment(
         key: Pick<AgentRows['pickupEnrollments'], 'runtime' | 'scope'>,
         change: (
@@ -106,6 +111,7 @@ export interface BoundStorage {
       clearIntake(scope: string): Promise<void>;
     };
   installation: StorageDatabase &
+    ScheduleLedgerStorage &
     WorkflowRecords<InstallationRows> & {
       saveAssignmentClaims(
         state: AssignmentClaimState,

@@ -1,4 +1,4 @@
-import { bindInstallationStore, listAgentStores } from './backend.ts';
+import { bindInstallationStore } from './backend.ts';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import CodexSidebarJournal from '../codex-sidebar-journal.ts';
@@ -9,6 +9,7 @@ import { readBoundCodexWorkspace } from '../identity/codex-workspace-binding.ts'
 
 export function codexStoragePaths(pluginData: string) {
   return {
+    migrateCodexSchedules: true,
     agentRoot: join(pluginData, 'agent-system-storage'),
     installationRoot: resolve(pluginData, 'instance'),
     schemaRoot: fileURLToPath(new URL('../../agent/storage/', import.meta.url)),
@@ -43,8 +44,4 @@ export async function codexPickupStore(pluginData: string, bound?: AgentManifest
     manifest.agent.id,
     manifest.storage?.backend,
   );
-}
-
-export function codexAgentDatabases(pluginData: string) {
-  return listAgentStores(codexStorageLocation(pluginData));
 }

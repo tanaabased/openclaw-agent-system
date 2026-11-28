@@ -5,6 +5,7 @@ import withWorkflowLock from './workflow-lock.ts';
 import nodeErrorCode from '../../utils/node-error-code.ts';
 import type { Ledger as CodexAutomationLedger } from '../automations/codex-automation-snapshot.ts';
 import type { AutomationLedger } from '../automations/automation-store.ts';
+import type { WorkflowRecords, AgentRows } from './workflow-records.ts';
 import type { BoundStorage } from './storage-lifecycle.ts';
 
 export type RegistrationLedger = CodexAutomationLedger | AutomationLedger;
@@ -13,7 +14,8 @@ export const maximumLedgerBytes = 1024 * 1024;
 export default function automationLedgerStorage(
   runtime: 'codex' | 'openclaw',
   scope: string,
-  agent: BoundStorage['agent'],
+  agent: WorkflowRecords<Pick<AgentRows, 'automationState' | 'automationRegistrations'>> &
+    Pick<BoundStorage['agent'], 'saveAutomationLedger'>,
 ) {
   return {
     async read(): Promise<unknown> {

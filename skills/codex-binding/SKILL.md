@@ -75,7 +75,7 @@ Bind the current Codex plugin installation to exactly one Agent System workspace
 5. After confirmation, append `bind --plugin-data <pluginData> --workspace <canonicalWorkspace> --confirm`. Add `--allow-inactive` only when the confirmed preview was missing or invalid.
 6. For unbind, inspect first, identify the canonical workspace that will be detached, and ask for confirmation. Then append `unbind --plugin-data <pluginData> --confirm`.
 7. Re-run inspect after a workspace binding write. After a successful bind/rebind with a verified workspace directory, read the verified workspace's root `AGENTS.md`; if it declares an account-default setup owner, follow that guide as the next setup step. Reuse existing operator selections and ask only for missing choices. Account setup failure leaves the successful workspace binding intact. Unbind removes only the workspace pointer; never delete private account preferences or sign out connections as a side effect.
-8. Report workspace and account results separately. After a workspace binding change, ask the user to start a new Codex chat so SessionStart can load or revoke its context. Account-only updates follow their owner's refresh instructions.
+8. Report workspace and account results separately. For a rebind, explain that Install in the newly bound chat deletes the previous agent’s registered schedules and reconciles the new agent’s declarations. After a workspace binding change, ask the user to start a new Codex chat so SessionStart can load or revoke its context. Account-only updates follow their owner's refresh instructions.
 
 ## Bundled Resources
 

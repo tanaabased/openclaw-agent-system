@@ -284,7 +284,7 @@ describe('agent/codex-automations', () => {
     const { ledger, writeLedger } = await readCodexAutomationSnapshot(pluginData, deps());
     return { ledger, bytes: JSON.stringify(ledger), writeLedger };
   }
-  async function seedHeader(scope: string, value: unknown, agent = storage.agent) {
+  async function seedHeader(scope: string, value: unknown, agent = storage.installation) {
     await agent.write([
       {
         table: 'automationState',
@@ -428,6 +428,7 @@ describe('agent/codex-automations', () => {
           prepared.request.mode,
           plan.actions[0]!.mode === 'create' ? 'suggested_create' : 'update',
         );
+        assert.ok('kind' in prepared.request);
         assert.match(prepared.request.rrule, /^DTSTART:20261116T130101Z\n/u);
         assert.ok(
           prepared.request.rrule.endsWith(
@@ -456,6 +457,7 @@ describe('agent/codex-automations', () => {
           dependencies,
         );
         assert.equal(updated.request.id, 'fixture-native');
+        assert.ok('kind' in updated.request);
         assert.equal(updated.request.status, 'PAUSED');
         await nativeWrite(updated.request);
         await acknowledgeCodexAutomation(pluginData, edit.digest, undefined, dependencies);
@@ -480,6 +482,7 @@ describe('agent/codex-automations', () => {
       inputs(),
       dependencies,
     );
+    assert.ok('kind' in prepared.request);
     assert.equal(prepared.request.mode, 'update');
     assert.equal(prepared.request.id, 'fixture-native');
     assert.equal(
@@ -511,12 +514,36 @@ describe('agent/codex-automations', () => {
     assert.equal(native.jobs[0]?.nativeId, before.jobs[0]?.nativeId);
   });
 
+  it('should create the new agent schedule once when the old registered job was already deleted', async () => {
+    await syncOne();
+    const source = await readFile(join(workspace, 'agent.yaml'), 'utf8');
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      source.replace('id: fixture', 'id: replacement'),
+    );
+    await sqliteAgentFixture(pluginData, 'replacement');
+    await rm(join(codexHome, 'automations', 'fixture-native', 'automation.toml'));
+    assert.ok(
+      (await inspect()).findings.some(
+        (finding) => finding.code === 'automation-retirement-pending',
+      ),
+    );
+    await reconcileCodexAutomationRetirements(pluginData, deps());
+    const created = await syncOne(deps(), 'replacement-native');
+    assert.equal(created.nativeId, 'replacement-native');
+    assert.equal((await inspect()).status, 'aligned');
+    assert.deepEqual(
+      (await readCodexAutomations(codexHome)).map((item) => item.id),
+      ['replacement-native'],
+    );
+  });
+
   it('should isolate damaged payloads belonging to another codex installation', async () => {
     const expected = await inspect();
     const { scope, header } = await unrelatedDamagedLedger();
     assert.deepEqual(await inspect(), expected);
     assert.deepEqual(
-      (await storage.agent.read({ automationState: { scope } })).automationState[0]?.value,
+      (await storage.installation.read({ automationState: { scope } })).automationState[0]?.value,
       header,
     );
   });
@@ -535,7 +562,10 @@ describe('agent/codex-automations', () => {
             agentId: binding.agentId,
           })
         : 'a'.repeat(64);
-      const { agent } = await sqliteAgentFixture(pluginData, binding?.agentId ?? 'fixture');
+      const { installation: agent } = await sqliteAgentFixture(
+        pluginData,
+        binding?.agentId ?? 'fixture',
+      );
       await seedHeader(scope, { version: 1, scope, binding, pending: { broken: true } }, agent);
       await assert.rejects(inspect(), rejectsCode('automation-ownership-invalid'));
       await agent.write([{ table: 'automationState', action: 'clearScope', scope }]);
@@ -690,6 +720,7 @@ describe('agent/codex-automations', () => {
     assert.equal(edit.actions[0]!.review, undefined);
     assert.equal(edit.actions[0]!.id, 'fixture-native');
     const prepared = await prepareCodexAutomation(pluginData, edit.digest, inputs(), deps());
+    assert.ok('kind' in prepared.request);
     assert.equal(prepared.request.mode, 'update');
     assert.equal(prepared.request.id, 'fixture-native');
     assert.equal(prepared.request.rrule, edit.actions[0]!.expected.rrule);
@@ -1073,15 +1104,28 @@ describe('agent/codex-automations', () => {
     );
     await bindCodexWorkspace(pluginData, newWorkspace);
     const cleanup = await inspectCodexAutomations(pluginData, inputs(), dependencies);
-    assert.ok(
-      cleanup.actions.some(
-        (action) =>
-          action.manifestId === 'github-issue-assignment' &&
-          action.mode === 'update' &&
-          action.expected.status === 'PAUSED',
-      ),
-      JSON.stringify(cleanup),
+    assert.deepEqual(
+      cleanup.actions.map(({ manifestId, mode }) => [manifestId, mode]).sort(),
+      ['github-issue-assignment', 'github-issue-pickup', 'github-project-pickup'].map((id) => [
+        id,
+        'delete',
+      ]),
     );
+    for (const { id } of cleanup.actions) {
+      const next = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+      const prepared = await prepareCodexAutomation(
+        pluginData,
+        next.digest,
+        inputs(),
+        dependencies,
+      );
+      assert.deepEqual(prepared.request, { mode: 'delete', id });
+      await rm(join(codexHome, 'automations', id!, 'automation.toml'));
+      await acknowledgeCodexAutomation(pluginData, next.digest, undefined, dependencies);
+    }
+    const rebound = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    assert.equal(rebound.status, 'aligned');
+    assert.deepEqual(rebound.actions, []);
   });
 
   for (const unavailable of ['archived', 'missing'] as const)
@@ -1873,6 +1917,7 @@ describe('agent/codex-automations', () => {
     const plan = await inspect();
     const prepared = await prepareCodexAutomation(pluginData, plan.digest, inputs(), deps());
     assert.equal(prepared.request.mode, 'create');
+    assert.ok('kind' in prepared.request);
     assert.equal(prepared.request.status, 'ACTIVE');
     await nativeWrite(plan.actions[0]!.expected, 'replacement');
     await acknowledgeCodexAutomation(pluginData, plan.digest, undefined, deps());
@@ -2033,6 +2078,7 @@ describe('agent/codex-automations', () => {
 
     const prepared = await prepareCodexAutomation(pluginData, plan.digest, inputs(), deps());
     assert.equal(prepared.request.mode, 'create');
+    assert.ok('kind' in prepared.request);
     assert.equal(prepared.request.status, 'ACTIVE');
     const pending = await inspect();
     assert.equal(pending.status, 'blocked');
@@ -2148,7 +2194,7 @@ describe('agent/codex-automations', () => {
   });
 
   it('should reject a stale plan and serialize pending writes until exact recovery', async () => {
-    const { agent } = await sqliteAgentFixture(pluginData, 'fixture');
+    const { installation: agent } = await sqliteAgentFixture(pluginData, 'fixture');
     const dependencies = { ...deps() };
     const inspectSelected = () => inspectCodexAutomations(pluginData, inputs(), dependencies);
     const plan = await inspectSelected();

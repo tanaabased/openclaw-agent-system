@@ -50,3 +50,6 @@ export const replyPublications = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.publisher, table.target] })],
 );
+
+// Codex schedules belong to the installation that manages their native definitions.
+export { automationRegistrations, automationState } from './schema.ts';

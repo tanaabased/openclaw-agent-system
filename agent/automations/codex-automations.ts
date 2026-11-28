@@ -247,11 +247,75 @@ function inspectMigrationRetirements(
   return { awaitingConfirmation, findings, presentCount };
 }
 
+// On rebind, the saved native ID and its registered definition must agree before deletion.
+function reboundPlan(selected: Awaited<ReturnType<typeof snapshot>>, saved: SavedAutomation[]) {
+  const { scope, ledger, workspace } = selected;
+  const owned = ownedCodexAutomations(scope, saved, ledger.records);
+  const registrations = [...ledger.records, ...(ledger.retired ?? [])].filter(
+    (record) => !record.retired,
+  );
+  const byId = new Map(registrations.map((record) => [record.nativeId, record]));
+  if (
+    byId.size !== registrations.length ||
+    [...owned].some(([id, item]) => byId.get(item.id)?.id !== id)
+  )
+    throw new CodexAutomationError('automation-ownership-conflict');
+  const actions: CodexAutomationAction[] = [];
+  const findings: CodexAutomationPlan['findings'] = [];
+  const absent = new Set<string>();
+  for (const record of registrations) {
+    const { id, nativeId, definition } = record;
+    const actual = saved.find((item) => item.id === nativeId);
+    if (!actual) {
+      absent.add(nativeId);
+      findings.push({ id, nativeId, code: 'automation-retirement-pending' });
+      continue;
+    }
+    const marker = codexAutomationMarker(scope, id);
+    const expectedMarker = ledger.records.includes(record)
+      ? marker
+      : marker.replace('Managed by', 'Retired by');
+    if (
+      !definition.prompt.endsWith(expectedMarker) ||
+      !savedMatches(actual, { ...definition, status: actual.definition.status }, workspace)
+    )
+      throw new CodexAutomationError('automation-ownership-conflict');
+    actions.push({
+      manifestId: id,
+      mode: 'delete',
+      id: nativeId,
+      expected: actual.definition,
+      removed: true,
+    });
+    findings.push({ id, nativeId, code: 'automation-rebind-deletion-pending' });
+  }
+  const blocked = absent.size > 0;
+  const result: CodexAutomationPlan = {
+    status: blocked ? 'blocked' : 'requires-native-app-sync',
+    actions: blocked ? [] : actions,
+    findings,
+    unmanagedCount: saved.length - actions.length,
+    digest: automationHash({ scope, target: selected.loaded.digest, ledger, saved }),
+    telemetry: { execution: 'unavailable' as const, delivery: 'unavailable' as const },
+  };
+  return { saved, result, absent };
+}
+
+function forgetSchedules(ledger: Ledger, ids: Set<string>): Ledger {
+  const keep = (record: Ledger['records'][number]) => record.retired || !ids.has(record.nativeId);
+  return {
+    ...ledger,
+    pending: undefined,
+    records: ledger.records.filter(keep),
+    retired: ledger.retired?.filter(keep),
+  };
+}
+
 async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: CodexAutomationInputs) {
   const { loaded, workspace, scope, codexHome, ledger } = selected;
   const jobs = selected.jobs;
   const requireComplete = Boolean(
-    ledger.retired?.length || (!selected.cleanupOnly && ledger.records.length),
+    selected.rebound || ledger.retired?.length || (!selected.cleanupOnly && ledger.records.length),
   );
   const saved =
     jobs.some((job) => job.runtimes.includes('codex')) ||
@@ -263,6 +327,25 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
           requireComplete ? { requireComplete } : undefined,
         )
       : [];
+  if (selected.rebound && ledger.pending) {
+    const { action, digest } = ledger.pending;
+    const result: CodexAutomationPlan & { pendingDigest: string } = {
+      status: 'blocked',
+      digest,
+      pendingDigest: digest,
+      actions: [],
+      findings: [{ id: action.manifestId, code: 'automation-pending-readback-required' }],
+      unmanagedCount: saved.filter(
+        (item) =>
+          !ledger.records.some((record) => record.nativeId === item.id) &&
+          !ledger.retired?.some((record) => record.nativeId === item.id) &&
+          !pendingTargets([item], scope, action).length,
+      ).length,
+      telemetry: { execution: 'unavailable', delivery: 'unavailable' },
+    };
+    return { saved, result };
+  }
+  if (selected.rebound) return reboundPlan(selected, saved);
   const migration = inspectMigrationRetirements(selected, saved);
   const needsDefaults = jobs.some(
     (job) =>
@@ -545,6 +628,7 @@ export async function codexNotificationResetAutomation(
   jobId = intakeAutomationId,
 ) {
   const selected = await snapshot(pluginData, dependencies);
+  if (selected.rebound) throw new CodexAutomationError('automation-binding-changed');
   if (selected.ledger.pending) throw new Error('notification-reset-automation-operation-pending');
   const record = selected.ledger.records.find(({ id }) => id === jobId);
   if (!record?.nativeId || record.removed) throw new Error('notification-reset-automation-missing');
@@ -583,6 +667,7 @@ export async function replaceCodexNotificationCoordinator(
   const initial = await snapshot(pluginData, dependencies);
   return withJournal(initial, async () => {
     const selected = await snapshot(pluginData, dependencies);
+    if (selected.rebound) throw new CodexAutomationError('automation-binding-changed');
     if (selected.ledger.pending || selected.scope !== initial.scope)
       throw new Error('notification-reset-automation-operation-pending');
     if (before.definition.kind !== 'heartbeat')
@@ -739,7 +824,7 @@ export async function reconcileCodexAutomationRetirements(
   const declared = (selected: typeof initial) =>
     new Set(selected.jobs.filter((job) => job.runtimes.includes('codex')).map(({ id }) => id));
   if (
-    initial.cleanupOnly ||
+    (initial.cleanupOnly && !initial.rebound) ||
     initial.ledger.pending ||
     (!initial.ledger.retired?.some((record) => !record.retired) &&
       !initial.ledger.records.some(
@@ -750,13 +835,25 @@ export async function reconcileCodexAutomationRetirements(
   await withJournal(initial, async () => {
     const selected = await snapshot(pluginData, dependencies);
     const unchanged = (current: typeof initial) =>
-      !current.cleanupOnly &&
+      current.rebound === initial.rebound &&
       current.scope === initial.scope &&
       current.loaded.digest === initial.loaded.digest &&
       automationHash(current.ledger) === automationHash(initial.ledger);
     if (!unchanged(selected)) throw new CodexAutomationError('automation-plan-stale-or-blocked');
     const read = dependencies.readAutomations ?? readCodexAutomations;
     const saved = await read(selected.codexHome, { requireComplete: true });
+    if (selected.rebound) {
+      const { absent } = reboundPlan(selected, saved);
+      if (!absent.size) return;
+      const fresh = await read(selected.codexHome, { requireComplete: true });
+      if (
+        automationHash(saved) !== automationHash(fresh) ||
+        !unchanged(await snapshot(pluginData, dependencies))
+      )
+        throw new CodexAutomationError('automation-plan-stale-or-blocked');
+      await selected.writeLedger(forgetSchedules(selected.ledger, absent));
+      return;
+    }
     const owned = ownedCodexAutomations(selected.scope, saved, selected.ledger.records);
     const { awaitingConfirmation } = inspectMigrationRetirements(selected, saved);
     for (const id of owned.keys())
@@ -822,14 +919,22 @@ export async function prepareCodexAutomation(
     const action =
       id === undefined ? result.actions[0] : result.actions.find((item) => item.manifestId === id);
     if (!action) throw new CodexAutomationError('automation-action-not-found');
-    if (action.manifestId === issuePickupAutomationId && action.expected.status === 'ACTIVE')
+    if (
+      !selected.rebound &&
+      action.manifestId === issuePickupAutomationId &&
+      action.expected.status === 'ACTIVE'
+    )
       await prepareCodexPickupEnrollment(pluginData, {
         ...dependencies.intake,
 
         codexHome: selected.codexHome,
         inspectBinding: dependencies.inspectBinding,
       });
-    if (action.manifestId === intakeAutomationId && action.expected.status === 'ACTIVE') {
+    if (
+      !selected.rebound &&
+      action.manifestId === intakeAutomationId &&
+      action.expected.status === 'ACTIVE'
+    ) {
       const verified = await preflightCodexIntake(pluginData, {
         ...dependencies.intake,
 
@@ -868,7 +973,7 @@ export async function prepareCodexAutomation(
       request: {
         mode: action.review ? `suggested_${action.mode}` : action.mode,
         ...(action.id ? { id: action.id } : {}),
-        ...action.expected,
+        ...(action.mode === 'delete' ? {} : action.expected),
       },
     };
   });
@@ -893,14 +998,26 @@ export async function acknowledgeCodexAutomation(
         ? selected.ledger.records.find(({ id }) => id === action.manifestId)
         : undefined;
     const checkRetirements = action.mode === 'create' && Boolean(selected.ledger.retired?.length);
-    const saved = await readCodexAutomations(
+    const saved = await (dependencies.readAutomations ?? readCodexAutomations)(
       selected.codexHome,
-      previous || checkRetirements ? { requireComplete: true } : undefined,
+      action.mode === 'delete' || previous || checkRetirements
+        ? { requireComplete: true }
+        : undefined,
     );
     const matches = pendingTargets(saved, selected.scope, action);
     const actual = matches.length === 1 ? matches[0] : undefined;
     const receiptId =
       receipt === undefined ? undefined : parseAutomationReceipt(receipt, action.mode);
+    if (action.mode === 'delete') {
+      if (
+        !action.id ||
+        (receiptId && receiptId !== action.id) ||
+        !reboundPlan(selected, saved).absent.has(action.id)
+      )
+        throw new CodexAutomationError('automation-readback-diverged');
+      await selected.writeLedger(forgetSchedules(selected.ledger, new Set([action.id])));
+      return { status: 'verified', manifestId: action.manifestId, nativeId: action.id, digest };
+    }
     if (action.review && (!actual || automationHash(matches) === pending.targetBefore?.hash))
       throw new CodexAutomationError('automation-review-pending');
     if (
@@ -928,7 +1045,11 @@ export async function acknowledgeCodexAutomation(
       });
       if (intake.status !== 'ready') throw new CodexAutomationError('intake-activation-blocked');
     }
-    if (action.manifestId === issuePickupAutomationId && action.expected.status === 'ACTIVE') {
+    if (
+      !selected.rebound &&
+      action.manifestId === issuePickupAutomationId &&
+      action.expected.status === 'ACTIVE'
+    ) {
       if (selected.loaded.digest !== pending.manifestDigest)
         throw new CodexAutomationError('automation-plan-stale-or-blocked');
       const enrollment = await prepareCodexPickupEnrollment(pluginData, {
@@ -980,7 +1101,7 @@ export async function cancelCodexAutomation(
       selected.ledger.records.some(({ id }) => id === pending.action.manifestId);
     const saved = await readCodexAutomations(
       selected.codexHome,
-      recovering ? { requireComplete: true } : undefined,
+      recovering || pending.action.mode === 'delete' ? { requireComplete: true } : undefined,
     );
     const before = pending.targetBefore;
     const unchanged = before

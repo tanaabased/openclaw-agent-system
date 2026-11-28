@@ -150,6 +150,72 @@ class SqliteDatabase {
     }));
   }
 
+  saveAutomationLedger(
+    runtime: 'codex' | 'openclaw',
+    ledger: RegistrationLedger,
+    expected: RegistrationLedger,
+  ) {
+    const { records, ...header } = JSON.parse(JSON.stringify(ledger)) as RegistrationLedger;
+    const { records: before, ...expectedHeader } = expected;
+    const { scope } = header;
+    const ErrorType = runtime === 'codex' ? CodexAutomationError : AutomationError;
+    if (scope !== expected.scope || new Set(records.map((r) => r.id)).size !== records.length)
+      throw new ErrorType('automation-ownership-invalid');
+    return this.use(false, (db) =>
+      db.transaction(
+        (tx) => {
+          assertPrivateStateLocksHeld();
+          const current = tx
+            .select()
+            .from(automationState)
+            .where(eq(automationState.scope, scope))
+            .get();
+          const rows = tx
+            .select()
+            .from(automationRegistrations)
+            .where(eq(automationRegistrations.scope, scope))
+            .orderBy(sql`rowid`)
+            .all();
+          if ((!current && rows.length) || rows.some((r) => r.id !== r.value?.id))
+            throw new ErrorType('automation-ownership-invalid');
+          const conflict = () => new ErrorType('automation-journal-busy');
+          if (!isDeepStrictEqual(current?.value ?? { version: 1, scope }, expectedHeader))
+            throw conflict();
+          let merged: AgentRows['automationRegistrations']['value'][] = records;
+          const saved = rows.map((row) => row.value);
+          if (!isDeepStrictEqual(saved, before)) {
+            // A Codex handoff authorizes one action from a plan over the whole ledger.
+            if (runtime === 'codex') throw conflict();
+            // OpenClaw checkpoints one job at a time. Keep other reconcilers' edits,
+            // but never grant a second writer the same job reservation.
+            const latest = new Map(saved.map((r) => [r.id, r]));
+            const previous = new Map(before.map((r) => [r.id, r] as const));
+            const next = new Map(records.map((r) => [r.id, r] as const));
+            for (const id of new Set([...previous.keys(), ...next.keys()])) {
+              const old = previous.get(id);
+              const value = next.get(id);
+              if (isDeepStrictEqual(old, value)) continue;
+              if (!isDeepStrictEqual(latest.get(id), old)) throw conflict();
+              if (value) latest.set(id, value);
+              else latest.delete(id);
+            }
+            merged = [...latest.values()];
+          }
+          const contents = JSON.stringify({ ...header, records: merged });
+          if (Buffer.byteLength(contents) + (runtime === 'openclaw' ? 1 : 0) > maximumLedgerBytes)
+            throw new Error('automation ownership exceeds its size limit');
+          saveJournalRows(tx, automationRegistrations, scope, merged);
+          if (!current || !isDeepStrictEqual(current.value, header))
+            tx.insert(automationState)
+              .values({ scope, value: header })
+              .onConflictDoUpdate({ target: automationState.scope, set: { value: header } })
+              .run();
+        },
+        { behavior: 'immediate' },
+      ),
+    );
+  }
+
   async exportSnapshot(destination: string) {
     await this.checkDirectory();
     const { db } = await this.connect(false, true);
@@ -343,6 +409,35 @@ class SqliteAgentStore extends SqliteDatabase {
     return this.use(true, (db) => stageReplyPublications(shared, db.$client));
   }
 
+  async stageCodexSchedules(shared: DatabaseSync, agentId: string) {
+    return this.use(true, (db) =>
+      db.transaction((tx) => {
+        if (
+          !tx.get(
+            sql`SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'automation_state'`,
+          )
+        )
+          return;
+        const header = shared.prepare('INSERT INTO prior_automation_state VALUES (?, ?)');
+        const registration = shared.prepare(
+          'INSERT INTO prior_automation_registrations VALUES (?, ?, ?)',
+        );
+        for (const { scope, value } of tx.select().from(automationState).all()) {
+          if (value.binding?.agentId !== agentId)
+            throw new CodexAutomationError('automation-ownership-invalid');
+          header.run(scope, JSON.stringify(value));
+          for (const row of tx
+            .select()
+            .from(automationRegistrations)
+            .where(eq(automationRegistrations.scope, scope))
+            .orderBy(sql`rowid`)
+            .all())
+            registration.run(scope, row.id, JSON.stringify(row.value));
+        }
+      }),
+    );
+  }
+
   hasReplyPublication(
     draft: Pick<AgentRows['replyDrafts']['value'], 'authorNodeId' | 'publication'>,
   ) {
@@ -405,72 +500,6 @@ class SqliteAgentStore extends SqliteDatabase {
                 .map((row) => row.value),
             );
           return value;
-        },
-        { behavior: 'immediate' },
-      ),
-    );
-  }
-
-  saveAutomationLedger(
-    runtime: 'codex' | 'openclaw',
-    ledger: RegistrationLedger,
-    expected: RegistrationLedger,
-  ) {
-    const { records, ...header } = JSON.parse(JSON.stringify(ledger)) as RegistrationLedger;
-    const { records: before, ...expectedHeader } = expected;
-    const { scope } = header;
-    const ErrorType = runtime === 'codex' ? CodexAutomationError : AutomationError;
-    if (scope !== expected.scope || new Set(records.map((r) => r.id)).size !== records.length)
-      throw new ErrorType('automation-ownership-invalid');
-    return this.use(false, (db) =>
-      db.transaction(
-        (tx) => {
-          assertPrivateStateLocksHeld();
-          const current = tx
-            .select()
-            .from(automationState)
-            .where(eq(automationState.scope, scope))
-            .get();
-          const rows = tx
-            .select()
-            .from(automationRegistrations)
-            .where(eq(automationRegistrations.scope, scope))
-            .orderBy(sql`rowid`)
-            .all();
-          if ((!current && rows.length) || rows.some((r) => r.id !== r.value?.id))
-            throw new ErrorType('automation-ownership-invalid');
-          const conflict = () => new ErrorType('automation-journal-busy');
-          if (!isDeepStrictEqual(current?.value ?? { version: 1, scope }, expectedHeader))
-            throw conflict();
-          let merged: AgentRows['automationRegistrations']['value'][] = records;
-          const saved = rows.map((row) => row.value);
-          if (!isDeepStrictEqual(saved, before)) {
-            // A Codex handoff authorizes one action from a plan over the whole ledger.
-            if (runtime === 'codex') throw conflict();
-            // OpenClaw checkpoints one job at a time. Keep other reconcilers' edits,
-            // but never grant a second writer the same job reservation.
-            const latest = new Map(saved.map((r) => [r.id, r]));
-            const previous = new Map(before.map((r) => [r.id, r] as const));
-            const next = new Map(records.map((r) => [r.id, r] as const));
-            for (const id of new Set([...previous.keys(), ...next.keys()])) {
-              const old = previous.get(id);
-              const value = next.get(id);
-              if (isDeepStrictEqual(old, value)) continue;
-              if (!isDeepStrictEqual(latest.get(id), old)) throw conflict();
-              if (value) latest.set(id, value);
-              else latest.delete(id);
-            }
-            merged = [...latest.values()];
-          }
-          const contents = JSON.stringify({ ...header, records: merged });
-          if (Buffer.byteLength(contents) + (runtime === 'openclaw' ? 1 : 0) > maximumLedgerBytes)
-            throw new Error('automation ownership exceeds its size limit');
-          saveJournalRows(tx, automationRegistrations, scope, merged);
-          if (!current || !isDeepStrictEqual(current.value, header))
-            tx.insert(automationState)
-              .values({ scope, value: header })
-              .onConflictDoUpdate({ target: automationState.scope, set: { value: header } })
-              .run();
         },
         { behavior: 'immediate' },
       ),
@@ -950,12 +979,21 @@ export function bindSqliteInstallation(installation: SqliteInstallation) {
     'agent-system-storage',
     join(installation.schemaRoot, 'installation-migrations'),
     async (pending, client) => {
-      if (!pending.includes('20261125030731_reserve-reply-publications')) return;
-      client.exec(
-        'CREATE TEMP TABLE prior_reply_publications (publisher TEXT, target TEXT, PRIMARY KEY (publisher, target))',
-      );
-      for await (const { agent } of sqliteAgentDatabases(installation))
-        await agent.stageReplyMigration(client);
+      if (pending.includes('20261125030731_reserve-reply-publications')) {
+        client.exec(
+          'CREATE TEMP TABLE prior_reply_publications (publisher TEXT, target TEXT, PRIMARY KEY (publisher, target))',
+        );
+        for await (const { agent } of sqliteAgentDatabases(installation))
+          await agent.stageReplyMigration(client);
+      }
+      if (pending.some((name) => name.endsWith('_codex_schedule_ownership'))) {
+        client.exec(
+          'CREATE TEMP TABLE prior_automation_state(scope TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TEMP TABLE prior_automation_registrations(scope TEXT, id TEXT, value TEXT NOT NULL, PRIMARY KEY(scope,id))',
+        );
+        if (installation.migrateCodexSchedules)
+          for await (const { agent, agentId } of sqliteAgentDatabases(installation))
+            await agent.stageCodexSchedules(client, agentId);
+      }
     },
   );
 }
