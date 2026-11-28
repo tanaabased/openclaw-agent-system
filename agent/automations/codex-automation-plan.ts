@@ -39,7 +39,7 @@ export const automationRecordSchema = Type.Object(
 export type CodexAutomationRecord = Static<typeof automationRecordSchema>;
 export interface CodexAutomationAction {
   manifestId: string;
-  mode: 'create' | 'update';
+  mode: 'create' | 'update' | 'delete';
   review?: boolean;
   id?: string;
   expected: NativeAutomation;

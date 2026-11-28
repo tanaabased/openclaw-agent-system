@@ -5,7 +5,7 @@ import { omit } from 'lodash-es';
 import type { RepositoryRoute } from '../channels/github/repository-scope.ts';
 import type { Static } from 'typebox';
 import type { issuePickupSchema } from '../channels/github/issue-pickup-schema.ts';
-import codexStorageLocation from '../agent/storage/codex-storage.ts';
+import { codexStoragePaths } from '../agent/storage/codex-storage.ts';
 import { bindInstanceStore, bindPickupStore } from '../agent/storage/pickup-backend.ts';
 import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import assert from 'node:assert/strict';
@@ -64,7 +64,7 @@ describe('issue pickup selection through native journals', () => {
     await mkdir(workspace);
     await mkdir(home);
     const instanceRoot = join(data, 'instance');
-    const sqliteInstallation = codexStorageLocation(data);
+    const sqliteInstallation = codexStoragePaths(data);
     const db = bindSqliteStorage(sqliteInstallation, 'receiver');
     await db.agent.install();
     await db.installation.install();

@@ -235,7 +235,10 @@ export async function readCodexAutomationDefaults(codexHome: string) {
 }
 
 /** only structured native receipts identify a completed request; readback remains mandatory. */
-export function parseAutomationReceipt(value: unknown, mode: 'create' | 'update'): string {
+export function parseAutomationReceipt(
+  value: unknown,
+  mode: 'create' | 'update' | 'delete',
+): string {
   const schema = Type.Object({
     content: Type.Array(Type.Object({ type: Type.String(), text: Type.Optional(Type.String()) })),
     isError: Type.Optional(Type.Boolean()),
@@ -249,7 +252,9 @@ export function parseAutomationReceipt(value: unknown, mode: 'create' | 'update'
       const shape = Type.Object({
         automationId: text,
         mode: Type.Literal(mode),
-        status: common.status,
+        ...(mode === 'delete'
+          ? { deleteStatus: Type.Literal('deleted') }
+          : { status: common.status }),
       });
       return Value.Check(shape, receipt) ? [receipt.automationId] : [];
     } catch {

@@ -1,18 +1,12 @@
-import { opServiceAccountTokenName } from '../environment/resolve.ts';
 import { dirname, resolve } from 'node:path';
 
 import PrivateStateFile from '../core/private-state-file.ts';
-import { parseStorageConfig, type StorageBackend } from '../manifest/storage-schema.ts';
-import nodeErrorCode from '../utils/node-error-code.ts';
+import { parseStorageConfig } from '../manifest/storage-schema.ts';
 import withWorkflowLock from './storage/workflow-lock.ts';
 
-export interface InstallationOpReference {
-  environmentId: string;
-  variable: string;
-}
-
 interface CodexConfiguration {
-  onePassword?: InstallationOpReference;
+  // Retired fields are accepted only for the in-place upgrade.
+  onePassword?: unknown;
   storage?: unknown;
   cleanup?: unknown;
 }
@@ -49,24 +43,6 @@ async function readConfiguration(file: PrivateStateFile): Promise<CodexConfigura
     )
   )
     throw new SyntaxError('Unrecognized setting in instance/config.json.');
-  if ('onePassword' in config) {
-    const ref = config.onePassword;
-    if (
-      !ref ||
-      typeof ref !== 'object' ||
-      Object.keys(ref).length !== 2 ||
-      !('environmentId' in ref) ||
-      typeof ref.environmentId !== 'string' ||
-      !ref.environmentId.trim() ||
-      !('variable' in ref) ||
-      typeof ref.variable !== 'string' ||
-      ref.variable === opServiceAccountTokenName ||
-      !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(ref.variable)
-    )
-      throw new SyntaxError(
-        'Expected onePassword.environmentId and onePassword.variable in instance/config.json.',
-      );
-  }
   return config;
 }
 
@@ -74,35 +50,22 @@ export function readCodexConfiguration(pluginData: string) {
   return readConfiguration(configurationFile(codexConfigurationPath(pluginData)));
 }
 
-export async function initializeCodexStorage(pluginData: string, backend: StorageBackend) {
+export async function upgradeCodexConfiguration(pluginData: string) {
   const path = codexConfigurationPath(pluginData);
   const file = configurationFile(path);
   const config = await readConfiguration(file);
-  const saved = parseStorageConfig(config?.storage);
-  if (saved) return saved;
-
-  const withStorage = (current: CodexConfiguration = {}) =>
-    JSON.stringify({ cleanup: {}, ...current, storage: { backend } }, null, 2) + '\n';
-  if (config === undefined) {
-    try {
-      await file.create(withStorage());
-      return backend;
-    } catch (error) {
-      if (nodeErrorCode(error) !== 'EEXIST') throw error;
-    }
-  }
-
-  // When a config already exists, fill in storage under the write lease so two
-  // Install calls cannot both decide they own the installation storage setting.
-  return withWorkflowLock(
+  if (!config || (!('storage' in config) && !('onePassword' in config))) return;
+  await withWorkflowLock(
     path,
     'Agent System installation configuration',
     async () => {
       const current = await readConfiguration(file);
-      const selected = parseStorageConfig(current?.storage);
-      if (selected) return selected;
-      await file.write(withStorage(current));
-      return backend;
+      if (!current || (!('storage' in current) && !('onePassword' in current))) return;
+      // Keep the existing pre-SQLite import safeguard before discarding the old setting.
+      parseStorageConfig(current.storage);
+      delete current.storage;
+      delete current.onePassword;
+      await file.write(JSON.stringify(current, null, 2) + '\n');
     },
     { retries: { retries: 5, factor: 1, minTimeout: 25, maxTimeout: 25 } },
   );

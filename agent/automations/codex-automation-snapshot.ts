@@ -3,17 +3,15 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
-import codexStorageLocation, {
-  codexAgentDatabases,
-  codexPickupStore,
-} from '../storage/codex-storage.ts';
+import codexStorageLocation, { codexPickupStore } from '../storage/codex-storage.ts';
 import automationLedgerStorage from '../storage/automation-backend.ts';
-import { bindAgentStore } from '../storage/backend.ts';
+import { bindStorage } from '../storage/backend.ts';
 import {
   issuePickupAutomationId,
   issuePickupConfigurationCode,
   issuePickupErrorCode,
 } from './issue-pickup-jobs.ts';
+import nodeErrorCode from '../../utils/node-error-code.ts';
 import { IntakeError } from '../../channels/github/intake/record-store.ts';
 import type { ResolvedAutomation } from '../../manifest/automation-schema.ts';
 import type { AgentManifest } from '../../manifest/types.ts';
@@ -22,7 +20,7 @@ import { automationHash } from '../automation-hash.ts';
 import type { AutomationThreadAdapter } from './automation-threads.ts';
 import { automationRecordSchema, codexAutomationMarker } from './codex-automation-plan.ts';
 import { nativeAutomationSchema, type readCodexAutomations } from './codex-automation-state.ts';
-import { codexIntakeJobs, intakeAutomationId } from './codex-intake-policy.ts';
+import { codexIntakeJobs } from './codex-intake-policy.ts';
 import type { CodexIntakeDependencies } from '../codex-intake.ts';
 import { inspectCodexWorkspaceBinding } from '../identity/codex-workspace-binding.ts';
 
@@ -30,7 +28,7 @@ const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
 const actionSchema = Type.Object(
   {
     manifestId: Type.String(),
-    mode: Type.Union([Type.Literal('create'), Type.Literal('update')]),
+    mode: Type.Union([Type.Literal('create'), Type.Literal('update'), Type.Literal('delete')]),
     review: Type.Optional(Type.Boolean()),
     id: Type.Optional(Type.String()),
     expected: nativeAutomationSchema,
@@ -95,13 +93,13 @@ export interface CodexAutomationDependencies {
 function validOwner(
   value: unknown,
   scope: string,
-  agentId: string,
+  agentId?: string,
 ): value is Static<typeof ownershipSchema> {
   if (!Value.Check(ownershipSchema, value) || value.scope !== scope) return false;
   const binding = value.binding;
   return (
     !binding ||
-    (binding.agentId === agentId &&
+    ((agentId === undefined || binding.agentId === agentId) &&
       scope ===
         automationHash({
           runtime: 'codex',
@@ -110,21 +108,6 @@ function validOwner(
           agentId: binding.agentId,
         }))
   );
-}
-
-async function* ownershipCandidates(root: string) {
-  for await (const { agentId, agent } of codexAgentDatabases(root)) {
-    const { automationState } = await agent.read({ automationState: {} });
-    for (const { scope, value } of automationState) {
-      // Inspect the owner before loading another installation's registrations.
-      yield {
-        scope,
-        agentId,
-        header: value,
-        read: automationLedgerStorage('codex', scope, agent).read,
-      };
-    }
-  }
 }
 
 export async function readCodexAutomationSnapshot(
@@ -142,15 +125,32 @@ export async function readCodexAutomationSnapshot(
     throw error;
   });
   const root = resolve(pluginData);
-  const ready =
-    inspection.status === 'bound' &&
-    inspection.preview.status === 'ready' &&
-    inspection.preview.manifest.status === 'loaded';
+  if (
+    inspection.status !== 'bound' ||
+    inspection.preview.status !== 'ready' ||
+    inspection.preview.manifest.status !== 'loaded'
+  )
+    throw new CodexAutomationError('automation-binding-unavailable');
+  const bound = inspection.preview.manifest;
+  const { agent, installation } = await bindStorage(
+    bound.manifest.agent.id,
+    codexStorageLocation(root, bound.manifest),
+    bound.manifest.storage?.backend,
+  );
+  const headers = await installation.read({ automationState: {} }).catch((error: unknown) => {
+    if (nodeErrorCode(error) === 'ENOENT') return { automationState: [] };
+    throw error;
+  });
   const retained: Ledger[] = [];
-  for await (const candidate of ownershipCandidates(root)) {
-    const { header } = candidate;
-    if (!validOwner(header, candidate.scope, candidate.agentId))
-      throw new CodexAutomationError('automation-ownership-invalid');
+  const currentScope = automationHash({
+    runtime: 'codex',
+    profile: codexHome,
+    workspaceDir: inspection.preview.workspaceDir,
+    agentId: bound.manifest.agent.id,
+  });
+  for (const { value: header, scope } of headers.automationState) {
+    if (!validOwner(header, scope)) throw new CodexAutomationError('automation-ownership-invalid');
+    if (scope === currentScope) continue;
     if (
       header.binding &&
       isAbsolute(header.binding.codexHome) &&
@@ -165,75 +165,38 @@ export async function readCodexAutomationSnapshot(
       // aliases of this home are not evidence of unrelated ownership.
       if (ownerHome !== codexHome) continue;
     }
-    const value = await candidate.read();
-    if (!validOwner(value, candidate.scope, candidate.agentId))
-      throw new CodexAutomationError('automation-ownership-invalid');
+    const value = await automationLedgerStorage('codex', scope, installation).read();
+    if (!validOwner(value, scope)) throw new CodexAutomationError('automation-ownership-invalid');
     if (!Value.Check(ledgerSchema, value))
       throw new CodexAutomationError('automation-ownership-invalid');
     if (
       value.binding?.codexHome === codexHome &&
-      (value.records.some((record) => record.id === intakeAutomationId) ||
-        value.pending?.action.manifestId === intakeAutomationId)
+      (value.binding.workspace !== inspection.preview.workspaceDir ||
+        value.binding.agentId !== bound.manifest.agent.id) &&
+      (value.pending ||
+        [...value.records, ...(value.retired ?? [])].some((record) => !record.retired))
     )
       retained.push(value);
   }
-  let cleanupOnly = !ready;
-  let loaded: { digest: string; manifest: AgentManifest };
-  let workspace: string;
-  if (
-    ready &&
-    inspection.status === 'bound' &&
-    inspection.preview.status === 'ready' &&
-    inspection.preview.manifest.status === 'loaded'
-  ) {
-    loaded = inspection.preview.manifest;
-    workspace = inspection.preview.workspaceDir;
-    const prior = retained.filter(
-      (entry) =>
-        (entry.binding!.workspace !== workspace ||
-          entry.binding!.agentId !== loaded.manifest.agent.id) &&
-        (entry.pending ||
-          entry.records.some((record) => record.id === intakeAutomationId && !record.removed)),
-    );
-    if (prior.length > 1) throw new CodexAutomationError('automation-ownership-conflict');
-    if (prior[0]) {
-      cleanupOnly = true;
-      workspace = prior[0].binding!.workspace;
-      loaded = {
-        digest: 'cleanup-only',
-        manifest: { schemaVersion: 1, agent: { id: prior[0].binding!.agentId } },
-      };
-    }
-  } else {
-    // cleanup uses verified private ownership even when desired policy cannot be parsed.
-    const candidates = retained.filter(
-      (entry) =>
-        inspection.status !== 'bound' ||
-        entry.binding!.workspace === inspection.binding.workspaceDir,
-    );
-    if (candidates.length !== 1) throw new CodexAutomationError('automation-binding-unavailable');
-    const binding = candidates[0]!.binding!;
-    workspace = binding.workspace;
-    loaded = {
-      digest: 'cleanup-only',
-      manifest: { schemaVersion: 1, agent: { id: binding.agentId } },
-    };
-  }
-  const scope = automationHash({
-    runtime: 'codex',
-    profile: codexHome,
-    workspaceDir: workspace,
-    agentId: loaded.manifest.agent.id,
-  });
-  const agent = await bindAgentStore(
-    loaded.manifest.agent.id,
-    codexStorageLocation(root),
-    loaded.manifest.storage?.backend,
-  );
-  const storage = automationLedgerStorage('codex', scope, agent);
+  const previousLedger = retained.sort(
+    (a, b) =>
+      Number(Boolean(b.pending)) - Number(Boolean(a.pending)) || a.scope.localeCompare(b.scope),
+  )[0];
+  const previous = previousLedger?.binding;
+  const rebound = Boolean(previous);
+  let cleanupOnly = rebound;
+  const workspace = previous?.workspace ?? inspection.preview.workspaceDir;
+  const loaded: { digest: string; manifest: AgentManifest } = previous
+    ? {
+        digest: automationHash({ target: inspection.preview.workspaceDir, manifest: bound.digest }),
+        manifest: { schemaVersion: 1, agent: { id: previous.agentId } },
+      }
+    : bound;
+  const scope = previousLedger?.scope ?? currentScope;
+  const storage = automationLedgerStorage('codex', scope, installation);
   let ledger: Ledger;
   try {
-    const contents = await storage.read();
+    const contents = previousLedger ?? (await storage.read());
     const parsed = contents === undefined ? { version: 1, scope, records: [] } : contents;
     if (!Value.Check(ledgerSchema, parsed) || !validOwner(parsed, scope, loaded.manifest.agent.id))
       throw new Error('invalid ledger');
@@ -251,8 +214,7 @@ export async function readCodexAutomationSnapshot(
     throw new CodexAutomationError('automation-ownership-invalid');
   }
   const expected = structuredClone(ledger);
-  const pickupStore = () =>
-    codexPickupStore(pluginData, loaded.manifest.agent.id, loaded.manifest.storage?.backend);
+  const pickupStore = () => codexPickupStore(pluginData, bound.manifest);
   let jobs: ResolvedAutomation[] = [];
   let policyBlocker: string | undefined;
   let pickupBlocker: string | undefined;
@@ -293,6 +255,7 @@ export async function readCodexAutomationSnapshot(
     root,
     dependencies,
     cleanupOnly,
+    rebound,
     jobs,
     policyBlocker,
     pickupBlocker,

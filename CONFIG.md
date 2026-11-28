@@ -132,11 +132,14 @@ duration. Flushing the cache does not reset provider backoff or quota limits.
 Set `storage.backend` in `agent.yaml` to select storage for the agent's Agent
 System records. Use `sqlite` or `{ type: sqlite }`. Omitting it selects SQLite.
 
-The installation setting selects storage for shared Agent System records. The
-first Install fills it if absent. After that, edit it explicitly for your runtime.
+In standalone Codex, the bound agent's `storage.backend` also selects the
+shared Agent System store. After switching agents, run Install. Agents configured
+for the same shared backend retain access to the installation's records and each
+agent keeps its own database.
 
-Use `plugins.entries.agent-system.config.storage.backend` in OpenClaw.
-`openclaw config file` shows which file is in use.
+In OpenClaw, `plugins.entries.agent-system.config.storage.backend` selects the
+shared store. The first Install fills it if absent. Use `openclaw config file`
+to locate the active configuration.
 
 On OpenClaw, the installation setting also governs the native `state` and `agent`
 database families, including enabled built-in memory. Doctor reports engine drift.
@@ -148,29 +151,25 @@ the import before removing the `file` setting and upgrading.
 
 After the [SQLite cutover](https://github.com/tanaabased/openclaw-agent-system/pull/796),
 you can ask in chat, “Switch Agent System to SQLite on this laptop after the
-import, then show me the saved setting.” Identify the runtime's config,
-update its installation setting, read the value back from that same file, and
-run Doctor to verify access to the installed stores.
+import, then show me the saved setting.” Set the backend in the bound manifest for Codex or the installation
+configuration for OpenClaw, then run Doctor to verify access.
 
 ## Standalone Codex configuration
 
 Set global options in `instance/config.json` under the Agent System plugin data
-directory. Keep the file private (`0600`). Install fills in `storage.backend`
-when it is absent. For example, to set a 30-minute cleanup grace period:
+directory. Keep the file private (`0600`). For example, to change the default
+60-minute cleanup grace period to 30 minutes:
 
 ```json
 {
-  "storage": { "backend": "sqlite" },
   "cleanup": { "graceMinutes": 30 }
 }
 ```
 
-Omitted settings default to SQLite and a 60-minute cleanup grace period.
-The [storage](#storage) and [cleanup](#cleanup) sections describe the supported
-values.
-
-For a 1Password value that must remain available after a workspace is unbound,
-add `"onePassword": {"environmentId": "<Environment ID>", "variable": "<variable name>"}`
-to this file. Run Install and follow the local terminal enrollment instruction for the
-installation credential. Enter a service-account token with access to that Environment.
-Workspace enrollment is separate.
+On upgrade, bind the workspace and run Install. Install removes the legacy
+`storage` and `onePassword` settings from this file and preserves cleanup
+settings and existing SQLite data. SQLite needs no credential. For declared
+1Password resources, enroll the bound workspace through Install. Rebinding
+requires the new workspace's own enrollment. You can remove the retired
+installation token from the OS credential store or revoke it in 1Password
+if it has no other users.

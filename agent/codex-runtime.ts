@@ -299,7 +299,7 @@ async function runCredentials(args: string[]): Promise<void> {
     input: process.stdin,
     output: process.stderr,
   });
-  const credential = await codexOpCredential(pluginData, 'binding', { input, storeEnvironment });
+  const credential = await codexOpCredential(pluginData, { input, storeEnvironment });
   const result = credential
     ? await credential.set(source, name)
     : { status: 'skipped', code: 'codex-op-not-declared' };
@@ -309,11 +309,8 @@ async function runCredentials(args: string[]): Promise<void> {
 
 async function runSetup(args: string[]): Promise<void> {
   const action = args[0];
-  if (action === 'enroll-op' || action === 'enroll-installation-op' || action === 'connect-op') {
-    const credential = await codexOpCredential(
-      parsePluginData(args.slice(1)),
-      action === 'enroll-installation-op' ? 'installation' : 'binding',
-    );
+  if (action === 'enroll-op' || action === 'connect-op') {
+    const credential = await codexOpCredential(parsePluginData(args.slice(1)));
     const result = credential
       ? action === 'connect-op'
         ? await credential.enrollInBrowser((url) => writeJson({ status: 'awaiting-browser', url }))
@@ -324,9 +321,7 @@ async function runSetup(args: string[]): Promise<void> {
     return;
   }
   if (action !== 'inspect' && action !== 'install') {
-    throw new Error(
-      'expected setup inspect, install, connect-op, enroll-op or enroll-installation-op',
-    );
+    throw new Error('expected setup inspect, install, connect-op or enroll-op');
   }
   const pluginData = parsePluginData(args.slice(1));
   const controller = new AbortController();

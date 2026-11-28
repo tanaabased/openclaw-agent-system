@@ -228,4 +228,22 @@ node "$GITHUB_WORKSPACE/examples/codex-automations/save-automation-fixture.mjs" 
 node "$runtime" automations plan --plugin-data "$root/cutover-data" < "$root/migration-input.json" | jq --slurpfile plan "$root/restore-prepare.json" -e '.pendingDigest == $plan[0].digest and .actions == []'
 node "$runtime" automations acknowledge --plugin-data "$root/cutover-data" < "$root/restore-prepare.json" | jq -e '.status == "verified" and .nativeId == "cutover-new"'
 node "$runtime" automations sync --plugin-data "$root/cutover-data" < "$root/migration-input.json" | jq -e '.status == "aligned" and .actions == [] and any(.jobs[]; .id == "update" and .nativeId == "cutover-new" and .nativeStatus == "PAUSED")'
+
+# should delete the former binding's saved job before planning its replacement
+root="$TMPDIR/agent-system-codex-automations"
+runtime="$(jq -r .cachePath "$root/cache.json")/dist/codex/codex-runtime.js"
+export CODEX_HOME="$root/cutover-home"
+workspace="$root/next-workspace"
+mkdir "$workspace"
+cp "$GITHUB_WORKSPACE/examples/codex-automations/cutover/agent.yaml" "$workspace/agent.yaml"
+node --input-type=module -e 'import fs from "node:fs"; import YAML from "yaml"; const path=process.argv[1]; const manifest=YAML.parse(fs.readFileSync(path,"utf8")); manifest.agent.id="next-agent"; fs.writeFileSync(path,YAML.stringify(manifest));' "$workspace/agent.yaml"
+node "$runtime" binding bind --plugin-data "$root/cutover-data" --workspace "$workspace" --confirm
+jq --arg workspace "$workspace" '.projects.projects[0].path=$workspace' "$root/cutover-input.json" > "$root/rebind-input.json"
+node "$runtime" setup install --plugin-data "$root/cutover-data" | jq -e '.status == "requires-native-app-sync"'
+node "$runtime" automations plan --plugin-data "$root/cutover-data" < "$root/rebind-input.json" | jq --slurpfile inputs "$root/rebind-input.json" -e 'select([.actions[] | {mode,id}] == [{mode:"delete",id:"cutover-new"}]) | $inputs[0] + {digest:.digest}' > "$root/rebind-prepare.json"
+node "$runtime" automations prepare --plugin-data "$root/cutover-data" < "$root/rebind-prepare.json" | jq -e '.request == {mode:"delete",id:"cutover-new"}'
+rm "$CODEX_HOME/automations/cutover-new/automation.toml"
+node "$runtime" automations acknowledge --plugin-data "$root/cutover-data" < "$root/rebind-prepare.json" | jq -e '.status == "verified"'
+node "$runtime" automations plan --plugin-data "$root/cutover-data" < "$root/rebind-input.json" | jq -e '[.actions[] | {mode,manifestId}] == [{mode:"create",manifestId:"nightly-refresh"}]'
+
 ```

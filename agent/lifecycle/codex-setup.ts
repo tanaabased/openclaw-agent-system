@@ -1,6 +1,6 @@
 import { codexOpCredential, type CodexOpDependencies } from '../../credentials/codex-op.ts';
 import codexStorageLocation from '../storage/codex-storage.ts';
-import { initializeCodexStorage } from '../codex-configuration.ts';
+import { upgradeCodexConfiguration } from '../codex-configuration.ts';
 import { storageLifecycles } from '../storage/storage-lifecycle.ts';
 import { delimiter } from 'node:path';
 import { codexInstanceStore } from '../tasks/dispatch/codex-assignment-claims.ts';
@@ -168,9 +168,7 @@ async function runtime(
       }
     },
   };
-  const storage = storageLifecycles(codexStorageLocation(pluginData), (backend) =>
-    initializeCodexStorage(pluginData, backend),
-  );
+  const storage = storageLifecycles(codexStorageLocation(pluginData, selected.manifest.manifest));
   const environmentExport = createEnvironmentExportLifecycle({
     target: () => ({
       root: pluginData,
@@ -183,12 +181,24 @@ async function runtime(
       ],
     }),
     async resolve(input) {
-      const credential = await codexOpCredential(pluginData, 'binding', dependencies.op);
-      return resolveWorkspaceEnvironment(input.manifest, input.workspaceDir, {
+      const environment = input.manifest.environment!;
+      const names = new Set([...environment.export!.variables, ...(environment.required ?? [])]);
+      const exportManifest = {
+        ...input.manifest,
+        environment: {
+          ...environment,
+          set: Object.fromEntries(
+            Object.entries(environment.set ?? {}).filter(([name]) => names.has(name)),
+          ),
+        },
+      };
+      const credential = await codexOpCredential(pluginData, dependencies.op);
+      return resolveWorkspaceEnvironment(exportManifest, input.workspaceDir, {
         hostEnvironment: baseEnvironment,
         ...(credential && {
           opEnvironmentService: {
-            load: () => credential.loadBindingEnvironment(selected.manifestDigest, input.signal),
+            load: () =>
+              credential.loadBindingEnvironment(selected.manifestDigest, names, input.signal),
           },
         }),
       });
@@ -198,12 +208,8 @@ async function runtime(
 }
 
 async function opFindings(pluginData: string, dependencies: CodexSetupDependencies) {
-  const findings: AgentSystemLifecycleFinding[] = [];
-  for (const scope of ['binding', 'installation'] as const) {
-    const credential = await codexOpCredential(pluginData, scope, dependencies.op);
-    if (credential) findings.push(await credential.inspect());
-  }
-  return findings;
+  const credential = await codexOpCredential(pluginData, dependencies.op);
+  return credential ? [await credential.inspect()] : [];
 }
 
 /** inspect standalone setup and desired/saved automation state without applying repairs. */
@@ -282,6 +288,7 @@ export async function installCodexSetup(
     (finding) => finding.status === 'blocked',
   );
   await context.assertCurrent();
+  await upgradeCodexConfiguration(pluginData);
   const result = await lifecycle.reconcile(context);
   for (const database of storage) {
     await context.assertCurrent();

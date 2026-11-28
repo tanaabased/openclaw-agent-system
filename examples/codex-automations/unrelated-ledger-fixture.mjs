@@ -19,7 +19,7 @@ const scope = createHash('sha256')
     }),
   )
   .digest('hex');
-const db = new DatabaseSync(join(pluginData, 'agent-system-storage', binding.agentId + '.sqlite'));
+const db = new DatabaseSync(join(pluginData, 'instance', 'agent-system.sqlite'));
 db.prepare('INSERT INTO automation_state (scope, value) VALUES (?, ?)').run(
   scope,
   JSON.stringify({ version: 1, scope, binding, pending: { broken: true } }),

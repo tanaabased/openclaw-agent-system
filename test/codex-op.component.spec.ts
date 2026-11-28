@@ -25,10 +25,10 @@ describe('standalone codex 1password enrollment', () => {
   let workspace: string;
   const entries = new Map<string, string>();
   const op = opFixture(entries);
-  function verifyRestart(scope: 'binding' | 'installation') {
+  function verifyRestart() {
     const check = spawnSync(
       process.execPath,
-      ['--import', 'tsx', 'test/codex-op-process-fixture.ts', data, scope],
+      ['--import', 'tsx', 'test/codex-op-process-fixture.ts', data],
       {
         encoding: 'utf8',
         input: JSON.stringify([...entries]),
@@ -47,17 +47,17 @@ describe('standalone codex 1password enrollment', () => {
   });
   afterEach(async () => rm(root, { recursive: true, force: true }));
 
-  async function bind(environment: string) {
+  async function bind(environment: string, agentId = 'example') {
     await writeFile(
       join(workspace, 'agent.yaml'),
-      'schema-version: 1\nagent: {id: example}\n' + environment,
+      `schema-version: 1\nagent: {id: ${agentId}}\n` + environment,
     );
     await bindCodexWorkspace(data, workspace);
   }
 
   it('checks declarations for doctor and install and reuses only the enrolled binding', async () => {
     await bind('environment: {set: {LITERAL: "op://private/item/password"}}');
-    assert.equal(await codexOpCredential(data, 'binding', op), undefined);
+    assert.equal(await codexOpCredential(data, op), undefined);
     const declaration = 'environment: {set: {PRIVATE: {from-op: "op://private/item/password"}}}';
     await bind(`${declaration}
 setup-agent:
@@ -86,10 +86,10 @@ setup-agent:
     assert.ok(after.findings.some((f) => f.code === 'codex-op-binding-missing'));
     assert.equal(after.findings.find((f) => f.stepId === 'codex-config')?.status, 'healthy');
     assert.equal(entries.size, 0);
-    const credential = (await codexOpCredential(data, 'binding', op))!;
+    const credential = (await codexOpCredential(data, op))!;
     assert.equal((await credential.enroll()).status, 'healthy');
-    verifyRestart('binding');
-    const fresh = (await codexOpCredential(data, 'binding', op))!;
+    verifyRestart();
+    const fresh = (await codexOpCredential(data, op))!;
     const reports = JSON.stringify([
       await doctor(),
       await installCodexSetup(data, undefined, options),
@@ -102,7 +102,7 @@ setup-agent:
     await unbindCodexWorkspace(data);
     await bind(declaration);
     assert.equal(
-      (await (await codexOpCredential(data, 'binding', op))!.inspect()).code,
+      (await (await codexOpCredential(data, op))!.inspect()).code,
       'codex-op-binding-missing',
     );
     await assert.rejects(fresh.resolve('PRIVATE'), /changed/u);
@@ -118,7 +118,7 @@ setup-agent:
       input: Readable.from(['fixture-token\n']),
       output: process.stderr,
     });
-    const credential = (await codexOpCredential(data, 'binding', { ...op, input }))!;
+    const credential = (await codexOpCredential(data, { ...op, input }))!;
     assert.equal((await credential.set('environment')).code, 'codex-op-binding-ready');
     const saved = [...entries];
     const rejected = await credential.set('environment', 'OTHER_OP_TOKEN');
@@ -126,7 +126,7 @@ setup-agent:
     assert.doesNotMatch(JSON.stringify(rejected), /fixture-token|rejected-token/u);
     assert.deepEqual([...entries], saved);
     assert.equal((await credential.set('stdin')).code, 'codex-op-binding-ready');
-    verifyRestart('binding');
+    verifyRestart();
   });
 
   it('should export resolved values through standalone install using the enrolled binding', async () => {
@@ -153,7 +153,7 @@ setup-agent:
     });
     await assert.rejects(access(path), { code: 'ENOENT' });
 
-    const credential = (await codexOpCredential(data, 'binding', op))!;
+    const credential = (await codexOpCredential(data, op))!;
     assert.equal((await credential.enroll()).status, 'healthy');
     const installed = await installCodexSetup(data, undefined, options);
     assert.ok(
@@ -196,7 +196,7 @@ setup-agent:
     await bind(
       'environment: {op: [shared-id], set: {PRIVATE: {from-op: "op://private/item/password"}}}',
     );
-    const credential = (await codexOpCredential(data, 'binding', op))!;
+    const credential = (await codexOpCredential(data, op))!;
     const options = { op, baseEnvironment: { HOME: root, PATH: '/usr/bin:/bin' } };
     for (const action of ['save', 'import']) {
       entries.clear();
@@ -238,7 +238,7 @@ setup-agent:
       });
       assert.equal(result.status, 200);
       assert.equal((await completed).code, 'codex-op-binding-ready');
-      verifyRestart('binding');
+      verifyRestart();
       await installCodexSetup(data, undefined, options);
       const doctor = await inspectCodexSetup(data, undefined, options);
       assert.ok(doctor.findings.some((f) => f.code === 'codex-op-binding-ready'));
@@ -257,7 +257,7 @@ setup-agent:
 
   it('keeps the prior credential on cancellation and rejected import', async () => {
     await bind('environment: {op: [shared-id]}');
-    const credential = (await codexOpCredential(data, 'binding', op))!;
+    const credential = (await codexOpCredential(data, op))!;
     await credential.enroll();
     const [id] = entries.keys();
     entries.set(id!, 'old-rejected');
@@ -299,7 +299,7 @@ setup-agent:
     ]) {
       let writes = 0;
       const fixtureStore = op.store!;
-      const credential = (await codexOpCredential(data, 'binding', {
+      const credential = (await codexOpCredential(data, {
         ...op,
         store: {
           ...fixtureStore,
@@ -412,47 +412,63 @@ setup-agent:
     await assert.rejects(fetch(url));
   });
 
-  it('keeps the installation source usable after the original binding and private token are removed', async () => {
-    await bind('environment: {op: [shared-id]}');
-    await mkdir(join(data, 'instance'), { mode: 0o700 });
-    const config = join(data, 'instance', 'config.json');
-    await writeFile(
-      config,
-      JSON.stringify({ onePassword: { environmentId: 'shared-id', variable: 'DB_PASSWORD' } }),
-      { mode: 0o600 },
-    );
-    const bound = (await codexOpCredential(data, 'binding', op))!;
-    assert.equal((await bound.enroll()).status, 'healthy');
-    const [privateKey] = entries.keys();
-    const installation = (await codexOpCredential(data, 'installation', op))!;
-    assert.equal((await installation.inspect()).code, 'codex-op-installation-missing');
-    const missingVariable = (await codexOpCredential(data, 'installation', {
-      ...op,
-      createClient: async (...args) => ({
-        ...(await op.createClient!(...args)),
-        getVariables: async () => ({ variables: [] }),
-      }),
-    }))!;
-    assert.equal((await missingVariable.enroll()).code, 'codex-op-installation-inaccessible');
-    assert.equal(entries.size, 1);
-    assert.equal((await installation.enroll()).status, 'healthy');
-    entries.delete(privateKey!);
+  it('uses only the new binding for shared values after a switch and reports missing grants', async () => {
+    const declarations =
+      'environment: {op: [shared-id], set: {PRIVATE: {from-op: "op://private/item/password"}}}';
+    await bind(declarations);
+    const previous = (await codexOpCredential(data, op))!;
+    assert.equal((await previous.enroll()).status, 'healthy');
+    assert.equal(await previous.resolve('DB_PASSWORD'), 'fixture-shared-value');
+
     await unbindCodexWorkspace(data);
-    const restarted = (await codexOpCredential(data, 'installation', op))!;
-    verifyRestart('installation');
-    await assert.rejects(restarted.resolve('UNDECLARED'), /undeclared/i);
-    assert.doesNotMatch(await readFile(config, 'utf8'), /fixture-token|fixture-shared-value/u);
+    await assert.rejects(codexOpCredential(data, op), /binding is required/u);
+    workspace = join(root, 'replacement');
+    await mkdir(workspace);
+    await bind(declarations, 'replacement');
+    const replacement = (await codexOpCredential(data, {
+      ...op,
+      input: {
+        read: async () => ({ status: 'read', source: 'prompt', token: 'replacement-token' }),
+      },
+      createClient: async (token) => {
+        assert.equal(token, 'replacement-token');
+        return op.createClient!('fixture-token', 'test');
+      },
+    }))!;
+    assert.equal((await replacement.inspect()).code, 'codex-op-binding-missing');
+    await assert.rejects(replacement.resolve('DB_PASSWORD'), /missing/u);
+    await assert.rejects(previous.resolve('DB_PASSWORD'), /changed/u);
+    assert.equal((await replacement.enroll()).status, 'healthy');
+    assert.equal(entries.size, 2);
+    const requested: string[] = [];
+    const denied = (await codexOpCredential(data, {
+      ...op,
+      createClient: async (token, version) => {
+        // The old token still has access. A fallback would incorrectly succeed.
+        if (token === 'fixture-token') return op.createClient!(token, version);
+        assert.equal(token, 'replacement-token');
+        return {
+          async getVariables(id) {
+            requested.push(id);
+            throw Object.assign(new Error('forbidden'), { httpStatus: 403 });
+          },
+          resolveSecret: () => assert.fail('an unrelated secret was requested'),
+        };
+      },
+    }))!;
+    await assert.rejects(denied.resolve('DB_PASSWORD'), /grants/u);
+    assert.deepEqual(requested, ['shared-id']);
   });
 
   it('validates the candidate and rechecks the binding before storing it', async () => {
     await bind('environment: {op: [shared-id]}');
-    const rejected = (await codexOpCredential(data, 'binding', {
+    const rejected = (await codexOpCredential(data, {
       ...op,
       input: { read: async () => ({ status: 'read', source: 'prompt', token: 'invalid' }) },
     }))!;
     assert.equal((await rejected.enroll()).code, 'codex-op-binding-rejected');
     assert.equal(entries.size, 0);
-    const stale = (await codexOpCredential(data, 'binding', {
+    const stale = (await codexOpCredential(data, {
       ...op,
       createClient: async (...args) => {
         await unbindCodexWorkspace(data);
@@ -465,7 +481,7 @@ setup-agent:
 
   it('leaves unavailable stores and cancelled enrollment untouched', async () => {
     await bind('environment: {op: [shared-id]}');
-    const unavailable = (await codexOpCredential(data, 'binding', {
+    const unavailable = (await codexOpCredential(data, {
       ...op,
       store: {
         ...op.store!,
@@ -478,7 +494,7 @@ setup-agent:
       },
     }))!;
     assert.equal((await unavailable.enroll()).code, 'codex-op-binding-inaccessible');
-    const cancelled = (await codexOpCredential(data, 'binding', {
+    const cancelled = (await codexOpCredential(data, {
       ...op,
       input: {
         read: async () => ({

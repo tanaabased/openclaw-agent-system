@@ -1,7 +1,8 @@
-import codexStorageLocation from '../agent/storage/codex-storage.ts';
-import { bindSqliteInstallation } from '../agent/storage/agent-database.ts';
+import { bindInstanceStore } from '../agent/storage/pickup-backend.ts';
+import { codexStoragePaths } from '../agent/storage/codex-storage.ts';
+import { bindSqliteInstallation, bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import ansis from 'ansis';
@@ -9,7 +10,10 @@ import stringWidth from 'fast-string-width';
 
 import instanceIdentity, { operateInstanceIdentity } from '../agent/identity/instance-identity.ts';
 import { inspectCodexSetup, installCodexSetup } from '../agent/lifecycle/codex-setup.ts';
-import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
+import {
+  bindCodexWorkspace,
+  unbindCodexWorkspace,
+} from '../agent/identity/codex-workspace-binding.ts';
 import { codexInstanceStore } from '../agent/tasks/dispatch/codex-assignment-claims.ts';
 import AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';
 import instanceCommand from '../cli/instance.ts';
@@ -25,9 +29,9 @@ describe('agent/instance-identity', () => {
   });
 
   it('should keep doctor read-only and preserve identity through repeated openclaw install', async () => {
-    const db = bindSqliteInstallation(codexStorageLocation(root));
+    const db = bindSqliteInstallation(codexStoragePaths(root));
     await db.install();
-    const store = codexInstanceStore(root);
+    const store = bindInstanceStore(codexStoragePaths(root));
     const registry = new AgentSystemLifecycleRegistry([instanceIdentity(store)]);
     const context = {
       manifest: { schemaVersion: 1 as const, agent: { id: 'receiver' } },
@@ -59,26 +63,49 @@ describe('agent/instance-identity', () => {
     assert.equal(await store.inspect(), undefined);
     await installCodexSetup(pluginData, undefined, deps);
     const saved = await store.inspect();
+    const paths = codexStoragePaths(pluginData);
+    const previous = bindSqliteStorage(paths, 'receiver').agent;
+    const value = { login: 'receiver', nodeId: 'U_receiver', type: 'User' as const };
+    await previous.retainIdentityPin({ scope: 'original', id: value.nodeId, value }, () => {});
+    const before = await previous.read({ githubIdentityPins: {} });
+    await unbindCodexWorkspace(pluginData);
+    await assert.rejects(store.inspect(), /binding/iu);
     const replacement = join(root, 'replacement');
     await mkdir(replacement);
-    await writeFile(join(replacement, 'agent.yaml'), 'schema-version: 1\nagent: {id: receiver}\n');
+    await writeFile(
+      join(replacement, 'agent.yaml'),
+      'schema-version: 1\nagent: {id: next}\nstorage: {backend: sqlite}\n',
+    );
     await bindCodexWorkspace(pluginData, replacement);
     const rebound = await installCodexSetup(pluginData, undefined, deps);
     assert.equal(
       rebound.outcomes.find((row) => row.component === 'agent-storage')?.status,
-      'unchanged',
+      'created',
     );
     assert.equal(
       rebound.outcomes.find((row) => row.component === 'agent-system-storage')?.status,
       'unchanged',
     );
+    assert.deepEqual(await previous.read({ githubIdentityPins: {} }), before);
+    assert.deepEqual(
+      (await bindSqliteStorage(paths, 'next').agent.read({ githubIdentityPins: {} }))
+        .githubIdentityPins,
+      [],
+    );
+    const database = join(paths.installationRoot, 'agent-system.sqlite');
+    await chmod(database, 0);
+    try {
+      await assert.rejects(store.inspect(), { code: 'EACCES' });
+    } finally {
+      await chmod(database, 0o600);
+    }
     assert.deepEqual(await store.inspect(), saved);
   });
 
   it('should rename without rotating and reject repeated rotation using a stale id', async () => {
-    const db = bindSqliteInstallation(codexStorageLocation(root));
+    const db = bindSqliteInstallation(codexStoragePaths(root));
     await db.install();
-    const store = codexInstanceStore(root);
+    const store = bindInstanceStore(codexStoragePaths(root));
     await assert.rejects(
       operateInstanceIdentity(store, 'rename', { name: 'My Laptop' }),
       /instance-install-required/u,
@@ -106,9 +133,9 @@ describe('agent/instance-identity', () => {
   });
 
   it('should report corrupt identity without replacing it during install', async () => {
-    const db = bindSqliteInstallation(codexStorageLocation(root));
+    const db = bindSqliteInstallation(codexStoragePaths(root));
     await db.install();
-    const store = codexInstanceStore(root);
+    const store = bindInstanceStore(codexStoragePaths(root));
     await store.identity();
     const {
       instances: [row],
@@ -126,9 +153,9 @@ describe('agent/instance-identity', () => {
   });
 
   it('should mask human identity output while preserving the full json receipt', async () => {
-    const db = bindSqliteInstallation(codexStorageLocation(root));
+    const db = bindSqliteInstallation(codexStoragePaths(root));
     await db.install();
-    const store = codexInstanceStore(root);
+    const store = bindInstanceStore(codexStoragePaths(root));
     const identity = await store.identity();
     let stdout = '',
       stderr = '';
@@ -160,9 +187,9 @@ describe('agent/instance-identity', () => {
   });
 
   it('should preserve identity actions, missing recovery and json while wrapping human summaries', async () => {
-    const db = bindSqliteInstallation(codexStorageLocation(root));
+    const db = bindSqliteInstallation(codexStoragePaths(root));
     await db.install();
-    const store = codexInstanceStore(root);
+    const store = bindInstanceStore(codexStoragePaths(root));
     async function capture(action: string, input = {}, json = false, columns = 32, color = false) {
       const events: Array<{ stream: string; text: string }> = [];
       let exitCode = 0;

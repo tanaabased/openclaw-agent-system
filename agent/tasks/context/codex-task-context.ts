@@ -34,7 +34,7 @@ export async function selectCodexTaskContext(
   const namespace = await realpath(requestedHome).catch(() => requestedHome);
   const agent = await bindAgentStore(
     loaded.manifest.agent.id,
-    codexStorageLocation(pluginData),
+    codexStorageLocation(pluginData, loaded.manifest),
     loaded.manifest.storage?.backend,
   );
   const store = bindIntakeStore(

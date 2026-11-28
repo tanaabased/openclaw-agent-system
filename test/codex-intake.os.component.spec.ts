@@ -75,7 +75,9 @@ describe('agent/codex-intake', () => {
   afterEach(async () => {
     await rm(root, { force: true, recursive: true });
   });
-  it('should recover the original intake job owner after rebinding to another agent', async () => {
+  it('should migrate prior intake ownership and verify deletion before enrolling the rebound agent', async () => {
+    pluginData = join(root, 'upgrade');
+    await bindCodexWorkspace(pluginData, workspace);
     const agentId = 'previous';
     const previousWorkspace = join(root, 'previous');
     const profile = await realpath(codexHome);
@@ -85,7 +87,7 @@ describe('agent/codex-intake', () => {
       profile,
       workspaceDir: previousWorkspace,
     });
-    const { agent } = bindSqliteStorage(codexStorageLocation(pluginData), agentId);
+    const { agent, installation } = bindSqliteStorage(codexStorageLocation(pluginData), agentId);
     await agent.install();
     const binding = { agentId, workspace: previousWorkspace, codexHome: profile };
     const registration = {
@@ -108,11 +110,59 @@ describe('agent/codex-intake', () => {
       { version: 1, scope, binding, records: [registration] },
       { version: 1, scope, records: [] },
     );
+    await installation.install();
     const recovered = await readCodexAutomationSnapshot(pluginData, { codexHome });
     assert.equal(recovered.cleanupOnly, true);
     assert.equal(recovered.workspace, previousWorkspace);
     assert.equal(recovered.loaded.manifest.agent.id, agentId);
     assert.deepEqual(recovered.ledger.records, [registration]);
+    const target = { id: registration.nativeId, definition: registration.definition };
+    const unrelated = {
+      id: 'personal',
+      definition: { ...registration.definition, prompt: 'personal task' },
+    };
+    let native = [target, unrelated];
+    const deps = {
+      codexHome,
+      readAutomations: async (_home: string, options?: { requireComplete?: boolean }) => {
+        assert.equal(options?.requireComplete, true);
+        return native;
+      },
+    };
+    native = [
+      {
+        ...target,
+        definition: { ...target.definition, prompt: 'personal task now using the old id' },
+      },
+      unrelated,
+    ];
+    await assert.rejects(inspectCodexAutomations(pluginData, {}, deps), {
+      code: 'automation-ownership-conflict',
+    });
+    native = [target, unrelated];
+    const plan = await inspectCodexAutomations(pluginData, {}, deps);
+    assert.deepEqual(
+      plan.actions.map(({ mode, id }) => [mode, id]),
+      [['delete', target.id]],
+    );
+    const prepared = await prepareCodexAutomation(pluginData, plan.digest, {}, deps);
+    assert.deepEqual(prepared.request, { mode: 'delete', id: target.id });
+    await assert.rejects(acknowledgeCodexAutomation(pluginData, plan.digest, undefined, deps), {
+      code: 'automation-readback-diverged',
+    });
+    native = [unrelated];
+    assert.equal(
+      (await acknowledgeCodexAutomation(pluginData, plan.digest, undefined, deps)).status,
+      'verified',
+    );
+    const current = await readCodexAutomationSnapshot(pluginData, { codexHome });
+    assert.equal(current.loaded.manifest.agent.id, manifest.agent.id);
+    assert.ok(current.jobs.some((job) => job.id === intakeAutomationId && job.enabled));
+    assert.deepEqual(current.ledger.records, []);
+    assert.equal(
+      (await agent.read({ automationRegistrations: { scope } })).automationRegistrations.length,
+      1,
+    );
   });
   it('should retain the sqlite checkpoint across repeated scans and a damaged manifest', async () => {
     const fixture = intakeFixture();
@@ -137,10 +187,14 @@ describe('agent/codex-intake', () => {
     assert.ok('admitted' in repeated);
     assert.equal(repeated.admitted, 0);
     await writeFile(join(workspace, 'agent.yaml'), '[');
-    const blocked = await runCodexIntake(pluginData, false, deps);
-    assert.equal(blocked.status, 'blocked');
-    assert.equal((await store.read())?.blocker?.code, 'intake-manifest-unavailable');
-    assert.equal((await inspectCodexIntake(pluginData, deps)).records.length, 1);
+    await assert.rejects(runCodexIntake(pluginData, false, deps), {
+      code: 'intake-manifest-unavailable',
+    });
+    const blocked = await inspectCodexIntake(pluginData, deps);
+    assert.equal(blocked.code, 'intake-manifest-unavailable');
+    assert.deepEqual(blocked.records, []);
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
+    assert.deepEqual((await inspectCodexIntake(pluginData, deps)).records, inspected.records);
   });
   it('should inspect and admit assignments while an unrelated task payload needs repair', async () => {
     const provider = intakeFixture();
@@ -583,11 +637,15 @@ describe('agent/codex-intake', () => {
       { code: 'intake-github-identity-mismatch' },
     );
     const prepared = await prepareCodexAutomation(pluginData, desired.digest, inputs, deps);
+    assert.ok('kind' in prepared.request);
     assert.equal(prepared.request.kind, 'heartbeat');
     assert.equal(prepared.request.rrule, 'FREQ=MINUTELY;INTERVAL=5');
     assert.equal(prepared.request.name, '📥 ISSUE ASSIGNMENTS');
     const nativeId = 'intake-job';
-    async function saveNative(request: typeof prepared.request) {
+    async function saveNative(
+      request: Awaited<ReturnType<typeof prepareCodexAutomation>>['request'],
+    ) {
+      assert.ok('kind' in request);
       const saved = parse(
         await readFile(resolve('fixtures/codex-automation-heartbeat.approved.txt'), 'utf8'),
       );
@@ -781,6 +839,14 @@ describe('agent/codex-intake', () => {
       join(workspace, 'agent.yaml'),
       disable === 'manifest corruption' ? '{broken' : JSON.stringify(disabled),
     );
+    if (disable === 'manifest corruption') {
+      await assert.rejects(runCodexIntake(pluginData, false, deps), {
+        code: 'intake-manifest-unavailable',
+      });
+      assert.equal((await inspectCodexIntake(pluginData, deps)).baselineAt, null);
+      // Restoring a valid manifest makes the original schedule available for reconciliation.
+      await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(disabled));
+    }
     assert.equal(
       (await runCodexIntake(pluginData, false, { ...deps, now: () => baseline })).changed,
       true,
@@ -790,12 +856,7 @@ describe('agent/codex-intake', () => {
       false,
     );
     const retained = await inspectCodexIntake(pluginData, deps);
-    assert.equal(
-      retained.code,
-      disable === 'manifest corruption'
-        ? 'intake-manifest-unavailable'
-        : 'intake-automation-paused',
-    );
+    assert.equal(retained.code, 'intake-automation-paused');
     assert.equal(retained.baselineAt, baseline);
     assert.equal(retained.checkpoint, baseline);
     assert.deepEqual(retained.records, inspection.records);
@@ -853,8 +914,12 @@ describe('agent/codex-intake', () => {
       deps,
     );
     await saveNative(activateAgain.request);
-    // policy can disappear after the native action; acknowledgment must still permit cleanup.
+    // An interrupted acknowledgment stays recoverable once the bound manifest is readable.
     await rm(join(workspace, 'agent.yaml'));
+    await assert.rejects(
+      acknowledgeCodexAutomation(pluginData, resumeAgain.digest, undefined, deps),
+    );
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(disabled));
     await acknowledgeCodexAutomation(pluginData, resumeAgain.digest, undefined, deps);
     assert.equal((await plan()).actions[0]!.expected.status, 'PAUSED');
     assert.equal(creates, 1);
