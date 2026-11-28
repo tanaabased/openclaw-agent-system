@@ -85,6 +85,33 @@ describe('credentials/keychain-store', () => {
     assert.equal(loaded, false);
   });
 
+  it('should distinguish a denied write from one that may have completed', async () => {
+    const key = { agentId: 'data', credentialId: 'op' };
+    for (const [error, code] of [
+      [
+        Object.assign(new Error('fixture'), { osStatus: -25308 }),
+        'credential-keychain-write-failed',
+      ],
+      [new DOMException('fixture', 'TimeoutError'), 'credential-keychain-write-uncertain'],
+    ] as const) {
+      const { keychain } = createKeychain();
+      const store = new KeychainCredentialStore({
+        platform: 'darwin',
+        loadKeychain: async () => ({
+          ...keychain,
+          AsyncEntry: class extends keychain.AsyncEntry {
+            override async setPassword() {
+              throw error;
+            }
+          },
+        }),
+      });
+      const result = await store.write(key, 'fixture-token');
+      assert.ok('code' in result);
+      assert.equal(result.code, code);
+    }
+  });
+
   it('should fail closed for ambiguous or invalid keychain values', async () => {
     const store = new KeychainCredentialStore({
       loadKeychain: async () => ({

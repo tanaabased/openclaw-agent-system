@@ -59,6 +59,17 @@ describe('credentials/secret-service-store', () => {
     ]);
   });
 
+  it('should not assume a timed-out write left the store unchanged', async () => {
+    const store = new SecretServiceCredentialStore({
+      platform: 'linux',
+      runCommand: async ({ args }) =>
+        args[0] === 'lookup' ? completed(1) : { ...completed(1), status: 'timed-out' },
+    });
+    const result = await store.write({ agentId: 'data', credentialId: 'op' }, 'fixture-token');
+    assert.ok('code' in result);
+    assert.equal(result.code, 'credential-secret-service-write-uncertain');
+  });
+
   it('should distinguish missing credentials from an unavailable session', async () => {
     const missing = new SecretServiceCredentialStore({
       platform: 'linux',
