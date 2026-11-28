@@ -1,6 +1,7 @@
 import type { AgentAutomation, ResolvedAutomation } from './automation-schema.ts';
 import type { ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import type { EnvironmentSetValue, ResolvableString } from './value-types.ts';
+import type { DeclaredTools } from '../tools/declared/config-schema.ts';
 import type { GoogleConfiguration } from '../tools/google/config-schema.ts';
 import type { GitManifestConfiguration } from '../tools/git/config-schema.ts';
 import type { GitHubManifestConfiguration } from './github-schema.ts';
@@ -32,6 +33,7 @@ export interface AgentManifest {
     required?: string[];
     set?: Record<string, EnvironmentSetValue>;
   };
+  tools?: DeclaredTools;
   google?: GoogleConfiguration;
   git?: GitManifestConfiguration;
   github?: GitHubManifestConfiguration;
@@ -64,6 +66,7 @@ export type ParsedAgentManifest =
       automations?: AgentAutomation[];
       automationsFile?: string;
       setupHostFile?: string;
+      toolsFile?: string;
       setupFile?: string;
       setupFileFieldPath?: '/setup' | '/setup-agent';
       diagnostics: ManifestDiagnostic[];

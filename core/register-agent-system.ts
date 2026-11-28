@@ -119,6 +119,7 @@ import registerAgentSystemCli from '../cli/register.ts';
 import agentSystemCliMetadata from '../cli/metadata.ts';
 import registerAgentCommandAuthority from './register-agent-command-authority.ts';
 import registerAgentSystemHooks from './register-hooks.ts';
+import { declaredTool } from '../tools/declared/tool.ts';
 import AgentSystemToolRegistry from '../api/registry.ts';
 import AgentSystemToolRuntime from '../api/runtime.ts';
 import createToolCliRunner from '../api/cli-runner.ts';
@@ -250,6 +251,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   });
   const gitignoreService = new WorkspaceGitignoreService();
   const pathService = new AgentPathService({
+    shimRoot: api.runtime.state.resolveStateDir(),
     basePath: process.env.PATH ?? '',
     codexConfigService: new CodexPathConfigService({ gitignoreService }),
     mutateConfigFile(params) {
@@ -505,6 +507,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     },
   });
   const toolRegistry = new AgentSystemToolRegistry([
+    declaredTool,
     dispatchV2.tool,
     createIntakeTool(
       intakeV2,
@@ -855,6 +858,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     excludedExecutableDirectories: excludedToolExecutableDirectories,
   });
   const toolRuntime = new AgentSystemToolRuntime({
+    declaredShimRoot: join(api.runtime.state.resolveStateDir(), 'declared-launchers'),
     runCli,
     baseEnvironment: process.env,
     environmentService,

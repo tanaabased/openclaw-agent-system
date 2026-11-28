@@ -182,6 +182,7 @@ describe('index', () => {
         'agent_system_install',
         'agent_system_doctor',
         'agent_system_model_routing',
+        'agent_system_run_declared',
       ].toSorted(),
     );
     assert.deepEqual(policyIds, [

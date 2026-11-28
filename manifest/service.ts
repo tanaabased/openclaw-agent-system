@@ -223,6 +223,9 @@ export default class AgentManifestService {
         );
         if (
           automationFiles.every(Boolean) &&
+          (!cached.result.toolsFile ||
+            (await fileFingerprint(cached.result.toolsFile.path, discovery.workspaceDir)) ===
+              cached.result.toolsFile.fingerprint) &&
           (!cached.result.setupFilePath ||
             agentFingerprint === cached.result.setupFileFingerprint) &&
           (!cached.result.setupHostFilePath ||
@@ -231,6 +234,7 @@ export default class AgentManifestService {
           return cached.result;
       } else if (
         cached.result.status === 'invalid' &&
+        !cached.result.toolsFilePath &&
         !cached.result.automationFilePaths?.length &&
         !cached.result.setupFilePath &&
         !cached.result.setupHostFilePath

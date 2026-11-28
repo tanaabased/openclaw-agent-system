@@ -7,6 +7,15 @@ started=$(date +%s)
 stage() {
   printf 'os-execution mode=%s stage=%s elapsed=%ss\n' "$mode" "$1" "$(($(date +%s) - started))"
 }
+if [ "$mode" = shim ]; then
+  stage declared-shim
+  test -z "${PROBE_SELECTED+x}"
+  result=$(declared-probe declared)
+  test "$result" = declared-child-ready
+  printf '%s\n' verified > shim.result
+  printf '%s\n' os-execution-verified
+  exit 0
+fi
 stage native-io
 root=$(pwd -P)
 test "$root" = "$(cd "$TMPDIR/os execution/source" && pwd -P)"

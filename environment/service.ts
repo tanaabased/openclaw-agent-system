@@ -125,6 +125,21 @@ export default class AgentEnvironmentService {
     );
   }
 
+  /** Use the normal source precedence against the manifest admitted for this invocation. */
+  async loadSelected(
+    loaded: Extract<AgentManifestLoadResult, { status: 'loaded' }>,
+    names: readonly string[],
+  ): Promise<Record<string, string>> {
+    if (!names.length) return {};
+    const result = await this.#resolve(loaded, 'cli');
+    if (result.status !== 'loaded') throw new Error('The agent environment is unavailable.');
+    return Object.fromEntries(
+      names
+        .filter((name) => Object.hasOwn(result.environment.values, name))
+        .map((name) => [name, result.environment.values[name]!]),
+    );
+  }
+
   async loadForWorkspace(
     workspaceDir: string,
     expectedAgentId?: string,

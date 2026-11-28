@@ -200,6 +200,34 @@ export function createAutomationGateway(
         const isStale = (error: unknown) =>
           isGatewayClientRequestError(error) &&
           staleSessionRead(method, error.gatewayCode, error.message);
+        if (
+          method === 'cron.add' &&
+          params.enabled === false &&
+          typeof params.declarationKey === 'string' &&
+          params.declarationKey.startsWith('agent-system:') &&
+          typeof params.agentId === 'string' &&
+          isGatewayClientRequestError(error) &&
+          error.gatewayCode === ErrorCodes.UNAVAILABLE &&
+          error.message ===
+            'PluginInstanceUnavailableError: Plugin agent-system was reloaded or disabled; use its current tools.'
+        ) {
+          await waitForReady?.();
+          const jobs = await listNativeAutomations(request, { requireComplete: true });
+          const matches = jobs.filter((job) => job.declarationKey === params.declarationKey);
+          if (matches.length > 1 || (matches[0] && matches[0].agentId !== params.agentId))
+            throw new AutomationError('automation-ownership-conflict');
+          // The service verifies the recovered job's configuration before enabling it.
+          if (matches[0]) return matches[0];
+          assertPrivateStateLocksHeld();
+          privateStateLockSignal()?.throwIfAborted();
+          // Native cron.add converges this same scoped declaration inside a locked transaction.
+          // A failed second send cannot establish that the original was never dispatched.
+          try {
+            return await invoke();
+          } catch {
+            throw error;
+          }
+        }
         if (isStale(error)) {
           return await retrySessionRead(
             error,

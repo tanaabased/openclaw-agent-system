@@ -71,6 +71,11 @@ pickup_failure() {
         printf 'cron.status unavailable after Install failure\n' >&2
         node "$redactor" < "$TMPDIR/pickup-cron-status.stderr" | tail -c 2048 >&2
       fi
+      printf 'pickup job readback after Install failure:\n' >&2
+      if ! openclaw gateway call cron.list --params '{"includeDisabled":true,"includeDeliveryPreviews":false,"limit":200}' --timeout 5000 --json 2> "$TMPDIR/pickup-cron-list.stderr" | jq -ce --arg agent "pickup-$runtime-tanaabot" '{hasMore, total, matches: [.jobs[] | select(.agentId == $agent and ((.declarationKey // "") | endswith(":github-issue-pickup"))) | {id, enabled, configRevision}]}' >&2; then
+        printf 'pickup job readback unavailable\n' >&2
+        node "$redactor" < "$TMPDIR/pickup-cron-list.stderr" | tail -c 2048 >&2
+      fi
     fi
     printf 'pickup mock server errors:\n' >&2
     tail -n 120 "$TMPDIR/openclaw-aimock.log" | node "$redactor" | tail -c 16384 >&2

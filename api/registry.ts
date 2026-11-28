@@ -109,6 +109,8 @@ export default class AgentSystemToolRegistry {
     signal?: AbortSignal,
   ): Promise<AgentSystemToolExecutionResult> {
     const tool = this.#commands.get(command);
+    if (!tool && this.#tools.has('declared'))
+      return this.#tools.get('declared')!.invoke(runtime, [command, ...argv], scope, stdin, signal);
     if (!tool) {
       throw new AgentSystemToolError(
         'tool_unavailable',

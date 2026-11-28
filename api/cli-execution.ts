@@ -18,7 +18,7 @@ import type {
   AgentSystemToolScope,
 } from './types.ts';
 
-const baselineEnvironmentNames = [
+export const baselineEnvironmentNames = [
   'HOME',
   'CLICOLOR',
   'CLICOLOR_FORCE',
