@@ -1,4 +1,4 @@
-import codexStorageLocation from '../agent/storage/codex-storage.ts';
+import { codexStoragePaths } from '../agent/storage/codex-storage.ts';
 import { bindSqliteInstallation } from '../agent/storage/agent-database.ts';
 import { bindInstanceStore } from '../agent/storage/pickup-backend.ts';
 import recoverAssignmentClaim from '../agent/tasks/dispatch/assignment-claim-recovery.ts';
@@ -43,7 +43,7 @@ describe('agent/assignment-claim', () => {
     root = await mkdtemp(join(tmpdir(), 'assignment-claim-'));
     stores = await Promise.all(
       ['a', 'b'].map(async (name) => {
-        const location = codexStorageLocation(join(root, name));
+        const location = codexStoragePaths(join(root, name));
         await bindSqliteInstallation(location).install();
         return bindInstanceStore(location);
       }),
@@ -235,7 +235,7 @@ describe('agent/assignment-claim', () => {
   });
 
   it('should reserve once and reject a stale checkpoint on independent connections to the same database', async () => {
-    const location = codexStorageLocation(root);
+    const location = codexStoragePaths(root);
     const first = bindSqliteInstallation(location);
     const second = bindSqliteInstallation(location);
     await first.install();
@@ -275,7 +275,7 @@ describe('agent/assignment-claim', () => {
   });
 
   it('should allow sqlite identity reads but exclude rotation while publishing a claim', async () => {
-    const location = codexStorageLocation(root);
+    const location = codexStoragePaths(root);
     await bindSqliteInstallation(location).install();
     const first = bindInstanceStore(location);
     const peer = bindInstanceStore(location);
@@ -307,7 +307,7 @@ describe('agent/assignment-claim', () => {
   });
 
   it('should retain one assignment winner across two sqlite installations and a restart', async () => {
-    const locations = ['a', 'b'].map((name) => codexStorageLocation(join(root, name)));
+    const locations = ['a', 'b'].map((name) => codexStoragePaths(join(root, name)));
     const reopen = () => locations.map((location) => bindInstanceStore(location));
     await Promise.all(locations.map((location) => bindSqliteInstallation(location).install()));
     stores = reopen();
@@ -466,7 +466,7 @@ describe('agent/assignment-claim', () => {
   });
 
   it('should recover an uncertain claim after restart without posting twice', async () => {
-    const location = codexStorageLocation(join(root, 'a'));
+    const location = codexStoragePaths(join(root, 'a'));
     const db = bindSqliteInstallation(location);
     const reopen = () => bindInstanceStore(location);
     stores[0] = reopen();
@@ -523,7 +523,7 @@ describe('agent/assignment-claim', () => {
       instanceId: original.instanceId,
       displayName: 'office-laptop',
     });
-    stores[0] = bindInstanceStore(codexStorageLocation(join(root, 'a')));
+    stores[0] = bindInstanceStore(codexStoragePaths(join(root, 'a')));
     assert.equal((await pass(0)).status, 'owned');
     await acceptAssignmentClaim({
       store: stores[0]!,
@@ -539,8 +539,8 @@ describe('agent/assignment-claim', () => {
   it('should detach copied work on explicit rotation and reject a stale rotation', async () => {
     const original = await stores[0]!.identity();
     await pass(0, 'first');
-    const sourceDb = bindSqliteInstallation(codexStorageLocation(join(root, 'a')));
-    const targetDb = bindSqliteInstallation(codexStorageLocation(join(root, 'b')));
+    const sourceDb = bindSqliteInstallation(codexStoragePaths(join(root, 'a')));
+    const targetDb = bindSqliteInstallation(codexStoragePaths(join(root, 'b')));
     const rows = await sourceDb.read({ instances: {}, assignmentClaims: {} });
     await targetDb.write([
       ...rows.instances.map((row) => ({

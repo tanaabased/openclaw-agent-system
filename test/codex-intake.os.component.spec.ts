@@ -137,10 +137,14 @@ describe('agent/codex-intake', () => {
     assert.ok('admitted' in repeated);
     assert.equal(repeated.admitted, 0);
     await writeFile(join(workspace, 'agent.yaml'), '[');
-    const blocked = await runCodexIntake(pluginData, false, deps);
-    assert.equal(blocked.status, 'blocked');
-    assert.equal((await store.read())?.blocker?.code, 'intake-manifest-unavailable');
-    assert.equal((await inspectCodexIntake(pluginData, deps)).records.length, 1);
+    await assert.rejects(runCodexIntake(pluginData, false, deps), {
+      code: 'intake-manifest-unavailable',
+    });
+    const blocked = await inspectCodexIntake(pluginData, deps);
+    assert.equal(blocked.code, 'intake-manifest-unavailable');
+    assert.deepEqual(blocked.records, []);
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
+    assert.deepEqual((await inspectCodexIntake(pluginData, deps)).records, inspected.records);
   });
   it('should inspect and admit assignments while an unrelated task payload needs repair', async () => {
     const provider = intakeFixture();
@@ -781,6 +785,14 @@ describe('agent/codex-intake', () => {
       join(workspace, 'agent.yaml'),
       disable === 'manifest corruption' ? '{broken' : JSON.stringify(disabled),
     );
+    if (disable === 'manifest corruption') {
+      await assert.rejects(runCodexIntake(pluginData, false, deps), {
+        code: 'intake-manifest-unavailable',
+      });
+      assert.equal((await inspectCodexIntake(pluginData, deps)).baselineAt, null);
+      // Restoring a valid manifest makes the original schedule available for reconciliation.
+      await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(disabled));
+    }
     assert.equal(
       (await runCodexIntake(pluginData, false, { ...deps, now: () => baseline })).changed,
       true,
@@ -790,12 +802,7 @@ describe('agent/codex-intake', () => {
       false,
     );
     const retained = await inspectCodexIntake(pluginData, deps);
-    assert.equal(
-      retained.code,
-      disable === 'manifest corruption'
-        ? 'intake-manifest-unavailable'
-        : 'intake-automation-paused',
-    );
+    assert.equal(retained.code, 'intake-automation-paused');
     assert.equal(retained.baselineAt, baseline);
     assert.equal(retained.checkpoint, baseline);
     assert.deepEqual(retained.records, inspection.records);
@@ -853,8 +860,12 @@ describe('agent/codex-intake', () => {
       deps,
     );
     await saveNative(activateAgain.request);
-    // policy can disappear after the native action; acknowledgment must still permit cleanup.
+    // An interrupted acknowledgment stays recoverable once the bound manifest is readable.
     await rm(join(workspace, 'agent.yaml'));
+    await assert.rejects(
+      acknowledgeCodexAutomation(pluginData, resumeAgain.digest, undefined, deps),
+    );
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(disabled));
     await acknowledgeCodexAutomation(pluginData, resumeAgain.digest, undefined, deps);
     assert.equal((await plan()).actions[0]!.expected.status, 'PAUSED');
     assert.equal(creates, 1);

@@ -43,14 +43,11 @@ export function opFixture(entries: Map<string, string>): CodexOpDependencies {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const [data, scope] = process.argv.slice(2);
-  if (!data || (scope !== 'binding' && scope !== 'installation'))
-    throw new Error('invalid fixture arguments');
+  const [data] = process.argv.slice(2);
+  if (!data) throw new Error('invalid fixture arguments');
   // Simulate the OS store surviving between processes. Only the synthetic fixture uses stdin.
   const entries = new Map<string, string>(JSON.parse(await text(process.stdin)));
-  const credential = await codexOpCredential(data, scope, opFixture(entries));
+  const credential = await codexOpCredential(data, opFixture(entries));
   assert.ok(credential);
-  const binding = scope === 'binding';
-  const value = await credential.resolve(binding ? 'PRIVATE' : 'DB_PASSWORD');
-  assert.ok(value === (binding ? 'fixture-private-value' : 'fixture-shared-value'));
+  assert.equal(await credential.resolve('PRIVATE'), 'fixture-private-value');
 }

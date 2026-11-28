@@ -664,7 +664,7 @@ export async function prepareIssueProject(
           previous: record.repositoryPreparation,
         },
         {
-          sqliteInstallation: codexStorageLocation(tx.pluginData),
+          sqliteInstallation: codexStorageLocation(tx.pluginData, current.manifest),
 
           git: deps.git,
           signal,

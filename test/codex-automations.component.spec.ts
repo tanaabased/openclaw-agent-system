@@ -853,7 +853,7 @@ describe('agent/codex-automations', () => {
     const legacyChat = legacyPickup.definition.targetThreadId;
     const legacyHistory = structuredClone(conversations.get(legacyChat));
     await saveManifest();
-    const enrollments = await codexPickupStore(pluginData, 'fixture');
+    const enrollments = await codexPickupStore(pluginData);
     provider.milestone.state = 'closed';
     provider.client.discoverProject = async () => {
       throw Error('installation must not scan');

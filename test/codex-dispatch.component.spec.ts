@@ -1,5 +1,5 @@
 import { bindSqliteInstallation } from '../agent/storage/agent-database.ts';
-import codexStorageLocation from '../agent/storage/codex-storage.ts';
+import { codexStoragePaths } from '../agent/storage/codex-storage.ts';
 import { bindInstanceStore } from '../agent/storage/pickup-backend.ts';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -941,7 +941,7 @@ describe('agent/codex dispatch', () => {
     const { store, client, comments } = await fixtureState.claiming();
     const selected = await selectCodexTaskContext(fixtureState.pluginData, fixtureState.deps);
     const intake = (await selected.store.read())!.records[0]!;
-    const installation = codexStorageLocation(join(fixtureState.root, 'openclaw-instance'));
+    const installation = codexStoragePaths(join(fixtureState.root, 'openclaw-instance'));
     await bindSqliteInstallation(installation).install();
     const other = new OpenClawAssignmentClaims(bindInstanceStore(installation), () => client);
     const eligibleInstanceIds = [

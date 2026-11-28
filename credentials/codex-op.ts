@@ -3,8 +3,7 @@ import { opServiceAccountTokenName } from '../environment/resolve.ts';
 import { createHash } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
 
-import { inspectCodexWorkspaceBinding } from '../agent/identity/codex-workspace-binding.ts';
-import { readCodexConfiguration } from '../agent/codex-configuration.ts';
+import { readBoundCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
 import type { AgentSystemLifecycleFinding } from '../core/lifecycle-registry.ts';
 import collectOpEnvironmentRequirements, {
   hasOpEnvironmentRequirements,
@@ -18,8 +17,6 @@ import OpCredentialInput, { type OpCredentialInputSource } from './op-input.ts';
 import { browserEnrollment, type EnrollmentOutcome } from './codex-op-browser.ts';
 import { platformCredentialStore } from './registry.ts';
 import type { CredentialStore } from './types.ts';
-
-export type CodexOpScope = 'binding' | 'installation';
 
 interface Target {
   owner: string;
@@ -35,57 +32,27 @@ export interface CodexOpDependencies {
   input?: Pick<OpCredentialInput, 'read'>;
 }
 
-async function targetFor(pluginData: string, scope: CodexOpScope): Promise<Target | undefined> {
-  const owner = createHash('sha256').update(await realpath(pluginData));
-  if (scope === 'installation') {
-    const ref = (await readCodexConfiguration(pluginData))?.onePassword;
-    if (!ref) return;
-    return {
-      label: 'this Codex installation',
-      owner: owner.digest('hex'),
-      requirements: {
-        environmentIds: [ref.environmentId],
-        requiredVariable: { environmentId: ref.environmentId, name: ref.variable },
-        secrets: [],
-      },
-      revision: JSON.stringify([ref.environmentId, ref.variable]),
-    };
-  }
-  const binding = await inspectCodexWorkspaceBinding(pluginData);
-  if (
-    binding.status !== 'bound' ||
-    binding.preview.status !== 'ready' ||
-    binding.preview.manifest.status !== 'loaded'
-  )
-    throw new Error('A valid Codex workspace binding is required.');
-  const { manifest, digest } = binding.preview.manifest;
+async function targetFor(pluginData: string): Promise<Target | undefined> {
+  const { binding, loaded } = await readBoundCodexWorkspace(pluginData);
+  const { manifest, digest } = loaded;
   const requirements = collectOpEnvironmentRequirements(manifest);
   if (!hasOpEnvironmentRequirements(requirements)) return;
-  owner.update(
-    JSON.stringify([
-      binding.binding.workspaceDir,
-      manifest.agent.id,
-      binding.binding.credentialScope,
-    ]),
-  );
+  const owner = createHash('sha256').update(await realpath(pluginData));
+  owner.update(JSON.stringify([binding.workspaceDir, manifest.agent.id, binding.credentialScope]));
   return {
     owner: owner.digest('hex'),
     requirements,
     revision: digest,
-    label: 'Codex workspace ' + JSON.stringify(binding.binding.workspaceDir),
+    label: 'Codex workspace ' + JSON.stringify(binding.workspaceDir),
   };
 }
 
 function finding(
-  scope: CodexOpScope,
   state: 'ready' | 'missing' | 'rejected' | 'inaccessible',
   localStore = false,
 ): AgentSystemLifecycleFinding {
-  const subject = 'The ' + scope + ' 1Password credential';
-  const guidance =
-    scope === 'binding'
-      ? 'Run interactive Agent System Install to connect 1Password.'
-      : 'Run setup enroll-installation-op with this plugin data directory in your terminal.';
+  const subject = 'The binding 1Password credential';
+  const guidance = 'Run interactive Agent System Install to connect 1Password.';
   const descriptions = {
     ready: ' can access the declared resources.',
     missing: ' is missing. ' + guidance,
@@ -96,7 +63,7 @@ function finding(
   };
   return {
     component: 'credentials',
-    code: 'codex-op-' + scope + '-' + state,
+    code: 'codex-op-binding-' + state,
     status: state === 'ready' ? 'healthy' : 'blocked',
     message: subject + descriptions[state],
   };
@@ -115,13 +82,12 @@ function classify(diagnostic?: Pick<ManifestDiagnostic, 'code' | 'providerDiagno
   return 'inaccessible';
 }
 
-/** Resolve private credential ownership from the live Codex pointer or installation configuration. */
+/** Resolve private credential ownership from the active Codex workspace binding. */
 export async function codexOpCredential(
   pluginData: string,
-  scope: CodexOpScope,
   dependencies: CodexOpDependencies = {},
 ) {
-  const selected = await targetFor(pluginData, scope);
+  const selected = await targetFor(pluginData);
   if (!selected) return;
   const target = selected;
   const { default: OpEnvironmentService } = await import('../environment/op-service.ts');
@@ -134,7 +100,7 @@ export async function codexOpCredential(
   const credentials = new OpCredentialService({
     hostEnvironment: {},
     stores: store ? [store] : [],
-    credentialId: 'codex-' + scope + '-op',
+    credentialId: 'codex-binding-op',
   });
   const service = new OpEnvironmentService({
     credentialService: credentials,
@@ -142,23 +108,23 @@ export async function codexOpCredential(
     integrationVersion: metadata.version,
   });
   async function assertCurrent() {
-    const live = await targetFor(pluginData, scope);
+    const live = await targetFor(pluginData);
     if (!live || live.owner !== target.owner || live.revision !== target.revision)
       throw new Error('The Codex credential owner or declaration changed. Inspect it again.');
   }
   async function check() {
     await assertCurrent();
-    if (!store) return { finding: finding(scope, 'inaccessible', true), canEnroll: false };
+    if (!store) return { finding: finding('inaccessible', true), canEnroll: false };
     const result = await service.validate(target.owner, target.requirements, {
       allowEnvironmentFallback: false,
     });
     await assertCurrent();
-    if (result.status === 'valid') return { finding: finding(scope, 'ready'), canEnroll: false };
+    if (result.status === 'valid') return { finding: finding('ready'), canEnroll: false };
     const diagnostic = result.diagnostics[0];
     const state = classify(diagnostic);
     const localStore = diagnostic?.providerDiagnostic?.operation === 'credential-resolve';
     return {
-      finding: finding(scope, state, localStore),
+      finding: finding(state, localStore),
       canEnroll: state === 'missing' || state === 'rejected',
     };
   }
@@ -200,7 +166,7 @@ export async function codexOpCredential(
             : state === 'rejected'
               ? 'rejected'
               : 'unavailable',
-        finding: finding(scope, state, localStore),
+        finding: finding(state, localStore),
       };
     }
     const stored = await inspect();
@@ -235,7 +201,7 @@ export async function codexOpCredential(
     );
     if (candidate.status === 'invalid')
       return {
-        ...finding(scope, 'missing'),
+        ...finding('missing'),
         code: candidate.code,
         message:
           candidate.code === 'op-credential-input-required'
@@ -249,14 +215,22 @@ export async function codexOpCredential(
     inspect,
     async set(source: OpCredentialInputSource, environmentVariable?: string) {
       await assertCurrent();
-      if (!store) return finding(scope, 'inaccessible', true);
+      if (!store) return finding('inaccessible', true);
       return readAndSave(store.id, source, environmentVariable);
     },
-    async loadBindingEnvironment(manifestDigest: string, signal?: AbortSignal) {
-      if (scope !== 'binding' || target.revision !== manifestDigest)
+    async loadBindingEnvironment(
+      manifestDigest: string,
+      names: ReadonlySet<string>,
+      signal?: AbortSignal,
+    ) {
+      if (target.revision !== manifestDigest)
         throw new Error('The Codex workspace 1Password declaration changed.');
       await assertCurrent();
-      const result = await service.load(target.owner, target.requirements, { fresh: true, signal });
+      const requirements = {
+        environmentIds: target.requirements.environmentIds,
+        secrets: target.requirements.secrets.filter(({ name }) => names.has(name)),
+      };
+      const result = await service.load(target.owner, requirements, { fresh: true, signal });
       await assertCurrent();
       return result;
     },
@@ -287,13 +261,7 @@ export async function codexOpCredential(
     async resolve(name: string, environmentId?: string): Promise<string> {
       if (name === opServiceAccountTokenName)
         throw new Error('The bootstrap credential is reserved.');
-      const { requiredVariable, secrets, environmentIds } = target.requirements;
-      if (
-        requiredVariable &&
-        (requiredVariable.name !== name ||
-          (environmentId && environmentId !== requiredVariable.environmentId))
-      )
-        throw new Error('Undeclared installation variable.');
+      const { secrets, environmentIds } = target.requirements;
       const secret = !environmentId && secrets.find((entry) => entry.name === name);
       const environment =
         environmentId ?? (environmentIds.length === 1 ? environmentIds[0] : undefined);
@@ -309,7 +277,7 @@ export async function codexOpCredential(
       await assertCurrent();
       const result = await service.load(target.owner, selected);
       if (result.status !== 'loaded')
-        throw new Error('The declared 1Password value is inaccessible.');
+        throw new Error(finding(classify(result.diagnostics[0])).message);
       await assertCurrent();
       const values = secret ? result.set.values : result.sources[0]?.values;
       if (!values || !Object.hasOwn(values, name))

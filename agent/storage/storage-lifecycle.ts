@@ -141,7 +141,7 @@ export function storageSchemaLifecycle(
 
 export function storageLifecycles(
   location: SqliteInstallation,
-  initialize: (backend: StorageBackend) => Promise<StorageBackend>,
+  initialize?: (backend: StorageBackend) => Promise<StorageBackend>,
 ) {
   const installation = storageSchemaLifecycle('agent-system-storage', () =>
     bindInstallationStore({ sqliteInstallation: location }),
@@ -153,6 +153,7 @@ export function storageLifecycles(
     {
       ...installation,
       async reconcile(context: AgentSystemLifecycleContext) {
+        if (!initialize) return installation.reconcile(context);
         const backend = await initialize(
           context.manifest.storage?.backend ?? defaultStorageBackend,
         );

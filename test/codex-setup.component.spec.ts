@@ -14,7 +14,6 @@ import {
   codexCleanupConfiguration,
   parseCleanupConfiguration,
 } from '../agent/cleanup-configuration.ts';
-import { initializeCodexStorage } from '../agent/codex-configuration.ts';
 
 describe('agent/codex-setup', () => {
   let root: string;
@@ -45,30 +44,7 @@ describe('agent/codex-setup', () => {
     baseEnvironment: { HOME: '/tmp', PATH: '/bin:/usr/bin' },
   };
 
-  it('publishes one complete storage selection when first installs overlap', async () => {
-    const backend = { type: 'sqlite' } as const;
-    const settings = join(pluginData, 'instance', 'config.json');
-    const selected = await Promise.all([
-      initializeCodexStorage(pluginData, backend),
-      initializeCodexStorage(pluginData, backend),
-      initializeCodexStorage(pluginData, backend),
-    ]);
-    assert.deepEqual(selected, [backend, backend, backend]);
-    assert.deepEqual(JSON.parse(await readFile(settings, 'utf8')), {
-      storage: { backend },
-      cleanup: {},
-    });
-    // A retry after saving the selection can still initialize both databases.
-    await manifest('');
-    const installed = await installCodexSetup(pluginData, undefined, dependencies);
-    assert.ok(
-      installed.outcomes.some(
-        ({ code, status }) => code === 'agent-system-storage-ready' && status === 'created',
-      ),
-    );
-  });
-
-  it('defaults omitted codex cleanup and preserves configured cleanup when install fills storage', async () => {
+  it('defaults omitted codex cleanup and preserves configured cleanup when install retires installation settings', async () => {
     assert.deepEqual(await codexCleanupConfiguration(pluginData), parseCleanupConfiguration());
     await manifest('');
     const instance = join(pluginData, 'instance');
@@ -77,10 +53,19 @@ describe('agent/codex-setup', () => {
     await writeFile(settings, '{}', { mode: 0o600 });
     assert.deepEqual(await codexCleanupConfiguration(pluginData), parseCleanupConfiguration());
     const cleanup = { graceMinutes: 17 };
-    await writeFile(settings, JSON.stringify({ cleanup }));
+    await writeFile(
+      settings,
+      JSON.stringify({
+        storage: { backend: 'sqlite' },
+        onePassword: { environmentId: 'old', variable: 'PASSWORD' },
+        cleanup,
+      }),
+    );
+    const legacy = await readFile(settings, 'utf8');
+    await inspectCodexSetup(pluginData, undefined, dependencies);
+    assert.equal(await readFile(settings, 'utf8'), legacy);
     await installCodexSetup(pluginData, undefined, dependencies);
     assert.deepEqual(JSON.parse(await readFile(settings, 'utf8')), {
-      storage: { backend: { type: 'sqlite' } },
       cleanup,
     });
     assert.deepEqual(

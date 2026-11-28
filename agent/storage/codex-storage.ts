@@ -1,20 +1,30 @@
-import { bindInstallationStore, bindIntakeStore, listAgentStores } from './backend.ts';
-import { IntakeError, intakeScopeLocation } from '../../channels/github/intake/record-store.ts';
+import { bindInstallationStore, listAgentStores } from './backend.ts';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import CodexSidebarJournal from '../codex-sidebar-journal.ts';
 import { bindPickupStore } from './pickup-backend.ts';
 import type { SqliteInstallation } from './storage-lifecycle.ts';
-import { parseStorageConfig, type StorageBackend } from '../../manifest/storage-schema.ts';
-import { readCodexConfiguration } from '../codex-configuration.ts';
+import type { AgentManifest } from '../../manifest/types.ts';
+import { readBoundCodexWorkspace } from '../identity/codex-workspace-binding.ts';
 
-export default function codexStorageLocation(pluginData: string): SqliteInstallation {
+export function codexStoragePaths(pluginData: string) {
   return {
     agentRoot: join(pluginData, 'agent-system-storage'),
     installationRoot: resolve(pluginData, 'instance'),
     schemaRoot: fileURLToPath(new URL('../../agent/storage/', import.meta.url)),
-    readInstallationBackend: async () =>
-      parseStorageConfig((await readCodexConfiguration(pluginData))?.storage),
+  };
+}
+
+export default function codexStorageLocation(
+  pluginData: string,
+  manifest?: AgentManifest,
+): SqliteInstallation {
+  const backend = async () =>
+    (manifest ?? (await readBoundCodexWorkspace(pluginData)).loaded.manifest).storage?.backend;
+  return {
+    ...codexStoragePaths(pluginData),
+    readInstallationBackend: backend,
+    readAgentBackend: backend,
   };
 }
 
@@ -26,19 +36,15 @@ export async function codexSidebarJournal(pluginData: string, profile: string, n
   );
 }
 
-export function codexPickupStore(pluginData: string, agentId: string, backend?: StorageBackend) {
-  return bindPickupStore(codexStorageLocation(pluginData), agentId, backend);
+export async function codexPickupStore(pluginData: string, bound?: AgentManifest) {
+  const manifest = bound ?? (await readBoundCodexWorkspace(pluginData)).loaded.manifest;
+  return bindPickupStore(
+    codexStorageLocation(pluginData, manifest),
+    manifest.agent.id,
+    manifest.storage?.backend,
+  );
 }
 
 export function codexAgentDatabases(pluginData: string) {
   return listAgentStores(codexStorageLocation(pluginData));
-}
-
-export async function* retainedIntakeCandidates(pluginData: string) {
-  for await (const { agentId, agent } of codexAgentDatabases(pluginData)) {
-    for (const scope of await agent.listIntakeScopes()) {
-      if (!/^[a-f0-9]{64}$/u.test(scope)) throw new IntakeError('intake-state-invalid');
-      yield { agentId, store: bindIntakeStore(intakeScopeLocation(pluginData, scope), agent) };
-    }
-  }
 }

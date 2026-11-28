@@ -251,8 +251,7 @@ export async function readCodexAutomationSnapshot(
     throw new CodexAutomationError('automation-ownership-invalid');
   }
   const expected = structuredClone(ledger);
-  const pickupStore = () =>
-    codexPickupStore(pluginData, loaded.manifest.agent.id, loaded.manifest.storage?.backend);
+  const pickupStore = () => codexPickupStore(pluginData, loaded.manifest);
   let jobs: ResolvedAutomation[] = [];
   let policyBlocker: string | undefined;
   let pickupBlocker: string | undefined;

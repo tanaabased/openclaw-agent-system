@@ -1,4 +1,4 @@
-import codexStorageLocation from '../agent/storage/codex-storage.ts';
+import { codexStoragePaths } from '../agent/storage/codex-storage.ts';
 import { bindSqliteInstallation } from '../agent/storage/agent-database.ts';
 import assert from 'node:assert/strict';
 import { lstat, mkdir, rm } from 'node:fs/promises';
@@ -21,7 +21,7 @@ describe('tools/git/worktree cleanup repository boundary', () => {
 
   beforeEach(async () => {
     fixture = await repositoryFixture();
-    const location = codexStorageLocation(fixture.workspaceDir);
+    const location = codexStoragePaths(fixture.workspaceDir);
     db = bindSqliteInstallation(location);
     await db.install();
     await mkdir(fixture.layout.worktreeRoot, { recursive: true, mode: 0o700 });
@@ -90,7 +90,7 @@ describe('tools/git/worktree cleanup repository boundary', () => {
 
     it(`should not rewrite repository preparation state during ${operation}`, async () => {
       using observer = new DatabaseSync(
-        join(codexStorageLocation(fixture.workspaceDir).installationRoot, 'agent-system.sqlite'),
+        join(codexStoragePaths(fixture.workspaceDir).installationRoot, 'agent-system.sqlite'),
         { readOnly: true },
       );
       const version = observer.prepare('PRAGMA data_version');

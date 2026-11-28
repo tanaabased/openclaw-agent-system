@@ -1,5 +1,5 @@
 import { bindSqliteInstallation } from '../agent/storage/agent-database.ts';
-import codexStorageLocation from '../agent/storage/codex-storage.ts';
+import { codexStoragePaths } from '../agent/storage/codex-storage.ts';
 import assert from 'node:assert/strict';
 import { chmod, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -18,7 +18,7 @@ describe('tools/git/repository-service', () => {
   let fixture: Awaited<ReturnType<typeof repositoryFixture>>;
   beforeEach(async () => {
     fixture = await repositoryFixture();
-    const location = codexStorageLocation(fixture.workspaceDir);
+    const location = codexStoragePaths(fixture.workspaceDir);
     const db = bindSqliteInstallation(location);
     await db.install();
   });
@@ -27,7 +27,7 @@ describe('tools/git/repository-service', () => {
   });
   const prepare = async (repositoryId = id, remote = source) => {
     const service = new GitRepositoryService({
-      sqliteInstallation: codexStorageLocation(fixture.workspaceDir),
+      sqliteInstallation: codexStoragePaths(fixture.workspaceDir),
     });
     const lease = await service.acquire(fixture.context, fixture.layout, repositoryId, remote);
     try {
@@ -40,7 +40,7 @@ describe('tools/git/repository-service', () => {
   };
 
   it('should clone once at the configured name and recover through a new service', async () => {
-    const location = codexStorageLocation(fixture.workspaceDir);
+    const location = codexStoragePaths(fixture.workspaceDir);
     const db = bindSqliteInstallation(location);
     const storage = { sqliteInstallation: location };
     const first = await prepare();
@@ -146,7 +146,7 @@ describe('tools/git/repository-service', () => {
   it('should retain a partial clone after interruption and resume a verified temporary clone without recloning', async () => {
     const path = join(fixture.layout.workingDirectory!, 'repo');
     const temporaryPath = path + '.12345678-1234-1234-1234-123456789012.tmp';
-    const db = bindSqliteInstallation(codexStorageLocation(fixture.workspaceDir));
+    const db = bindSqliteInstallation(codexStoragePaths(fixture.workspaceDir));
     await mkdir(temporaryPath, { recursive: true, mode: 0o700 });
     await db.saveRepository(fixture.layout.repositoryRoot, {
       version: 1,

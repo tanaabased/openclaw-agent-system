@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 
+import { join } from 'node:path';
+import { bindCodexWorkspace } from '../agent/identity/codex-workspace-binding.ts';
 import { bindSqliteInstallation } from '../agent/storage/agent-database.ts';
 import codexStorageLocation, { codexSidebarJournal } from '../agent/storage/codex-storage.ts';
 import codexSidebarPlacement from '../agent/codex-sidebar-placement.ts';
@@ -9,6 +11,8 @@ describe('agent/codex-sidebar-journal', () => {
   let root: string;
   beforeEach(async () => {
     root = await mkdtemp('/tmp/sidebar-journal-');
+    await writeFile(join(root, 'agent.yaml'), 'schema-version: 1\nagent: {id: sidebar}\n');
+    await bindCodexWorkspace(root, root);
     await bindSqliteInstallation(codexStorageLocation(root)).install();
   });
   afterEach(async () => {

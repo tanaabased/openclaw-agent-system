@@ -1,4 +1,4 @@
-import codexStorageLocation from '../agent/storage/codex-storage.ts';
+import { codexStoragePaths } from '../agent/storage/codex-storage.ts';
 import { bindPickupStore } from '../agent/storage/pickup-backend.ts';
 import { bindSqliteStorage } from '../agent/storage/agent-database.ts';
 import sqliteAgentFixture from './sqlite-agent-fixture.ts';
@@ -273,7 +273,7 @@ describe('issue pickup installation enrollment', () => {
   }
 
   it('should inspect missing installation state without creating files', async () => {
-    const store = await bindPickupStore(codexStorageLocation(root), 'receiver');
+    const store = await bindPickupStore(codexStoragePaths(root), 'receiver');
     await assert.rejects(store.owner(), /instance-install-required/);
     assert.deepEqual(await readdir(root), []);
   });

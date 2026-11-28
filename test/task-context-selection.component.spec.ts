@@ -8,7 +8,7 @@ import { selectOpenClawTaskContext } from '../agent/tasks/context/openclaw-task-
 import type { CodexWorkspaceBindingInspection } from '../agent/identity/codex-workspace-binding.ts';
 import NotificationResetStore from '../agent/notification-reset-state.ts';
 import sqliteAgentFixture from './sqlite-agent-fixture.ts';
-import codexStorageLocation from '../agent/storage/codex-storage.ts';
+import { codexStoragePaths } from '../agent/storage/codex-storage.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
@@ -62,7 +62,7 @@ describe('task context selection', () => {
   const openclaw = (options = {}) =>
     selectOpenClawTaskContext(
       {
-        sqliteInstallation: codexStorageLocation(data),
+        sqliteInstallation: codexStoragePaths(data),
         root: data,
         namespace: home,
         manifestService: {

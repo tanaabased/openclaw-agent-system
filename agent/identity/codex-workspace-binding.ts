@@ -209,6 +209,16 @@ export async function inspectCodexWorkspaceBinding(
   };
 }
 
+export async function readBoundCodexWorkspace(pluginData: string) {
+  const inspected = await inspectCodexWorkspaceBinding(pluginData);
+  if (inspected.status === 'invalid') throw new Error(inspected.message);
+  if (inspected.status === 'unbound') throw new Error('A Codex workspace binding is required.');
+  if (inspected.preview.status === 'invalid-workspace') throw new Error(inspected.preview.message);
+  if (inspected.preview.manifest.status !== 'loaded')
+    throw new Error('The bound workspace requires a readable, valid agent.yaml.');
+  return { binding: inspected.binding, loaded: inspected.preview.manifest };
+}
+
 /** Persist one confirmed workspace pointer, replacing any earlier binding. */
 export async function bindCodexWorkspace(
   pluginData: string,
