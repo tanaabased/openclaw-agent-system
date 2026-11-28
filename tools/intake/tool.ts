@@ -13,7 +13,10 @@ import loadBoundToolManifest from '../../api/manifest-binding.ts';
 import type { RegisteredAgentSystemTool } from '../../api/types.ts';
 import type AgentManifestService from '../../manifest/service.ts';
 import { intakeParameters } from './tool-schema.ts';
-import { nativeMaterialResponse } from '../../agent/tasks/context/native-material.ts';
+import {
+  bindNativeMaterial,
+  nativeMaterialResponse,
+} from '../../agent/tasks/context/native-material.ts';
 import type { ImplementationMaterialRead } from '../../agent/tasks/implementation/implementation-material.ts';
 
 /** No caller-selected identity or credential route; scan admission belongs to V2 policy. */
@@ -24,11 +27,6 @@ export default function createIntakeTool(
     context: Parameters<AutomationLifecycleAuthority['resolve']>[0],
   ) => Promise<{ nativeId: string; assertCurrent(): Promise<void> }>,
   hooks?: Pick<OpenClawPluginApi, 'on'>,
-  readMaterial?: (
-    scope: { sessionKey?: string; sessionId?: string },
-    input: Record<string, unknown>,
-    assertCurrent: () => Promise<void>,
-  ) => Promise<Record<string, unknown>>,
 ): RegisteredAgentSystemTool {
   return {
     apiVersion: 1,
@@ -42,7 +40,11 @@ export default function createIntakeTool(
     registerTools(api) {
       const pending = new Map<
         string,
-        { runId?: string; authorization: { nativeId: string; assertCurrent(): Promise<void> } }
+        { runId: string; authorization: { nativeId: string; assertCurrent(): Promise<void> } }
+      >();
+      const receipts = new Map<
+        string,
+        { runId: string; context: unknown; pages: Map<string, unknown> }
       >();
       const key = (
         context: { agentId?: string; sessionKey?: string; sessionId?: string },
@@ -93,6 +95,7 @@ export default function createIntakeTool(
       });
       hooks?.on('agent_end', (_event, context) => {
         for (const [id, entry] of pending) if (entry.runId === context.runId) pending.delete(id);
+        for (const [id, entry] of receipts) if (entry.runId === context.runId) receipts.delete(id);
       });
       api.registerTool({
         contextVersion: 2,
@@ -114,13 +117,25 @@ export default function createIntakeTool(
             pending.delete(key(context, _id));
             if (params.action === 'pickup' && !occurrence)
               throw new IntakeError('issue-pickup-tool-call-authorization-missing');
+            const receiptKey = occurrence && key(context, occurrence.runId);
             let material: ImplementationMaterialRead | undefined;
-            if (params.action === 'pickup' && params.material) {
-              if (!readMaterial) throw new Error('material-native-reader-unavailable');
-              const bound = await readMaterial(context, params, async () => {
-                context.assertInvocationCurrent();
-                await occurrence!.authorization.assertCurrent();
-              });
+            if (receiptKey && params.action === 'pickup' && params.material) {
+              if (!context.sessionKey || !context.sessionId)
+                throw new Error('material-native-caller-required');
+              const path = JSON.stringify(params.material.path);
+              context.assertInvocationCurrent();
+              await occurrence.authorization.assertCurrent();
+              // Serve the verified run's receipts without waiting for transcript projection.
+              const receipt = receipts.get(receiptKey);
+              const bound = await bindNativeMaterial(
+                'agent_system_intake',
+                params,
+                (async function* () {
+                  if (!receipt) return;
+                  yield receipt.pages.get(path);
+                  yield receipt.context;
+                })(),
+              );
               material = bound.material as ImplementationMaterialRead;
             }
             const result =
@@ -157,10 +172,29 @@ export default function createIntakeTool(
                       undefined,
                       signal,
                     );
-            const delivered = contextMaterialTransport(
-              nativeMaterialResponse(result, 'agent_system_intake', params),
-              { tool: 'agent_system_intake' },
-            );
+            const receipt = nativeMaterialResponse(result, 'agent_system_intake', params);
+            if (receiptKey) {
+              if (receipt.status === 'selection-required' && 'contextMaterials' in receipt) {
+                receipts.set(receiptKey, {
+                  runId: occurrence.runId,
+                  context: { contextMaterials: receipt.contextMaterials },
+                  pages: new Map(),
+                });
+              } else if (
+                receipt.status === 'material' &&
+                'materialPage' in receipt &&
+                receipt.materialPage
+              ) {
+                const { path, digest } = receipt.materialPage;
+                receipts.get(receiptKey)?.pages.set(JSON.stringify(path), {
+                  materialScope: 'materialScope' in receipt ? receipt.materialScope : undefined,
+                  materialPage: { path, digest },
+                });
+              } else {
+                receipts.delete(receiptKey);
+              }
+            }
+            const delivered = contextMaterialTransport(receipt, { tool: 'agent_system_intake' });
             return {
               content: [{ type: 'text' as const, text: JSON.stringify(delivered) }],
               details: delivered,

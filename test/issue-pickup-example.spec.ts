@@ -108,7 +108,7 @@ describe('examples/openclaw-issue-pickup model fixture', () => {
     });
   });
 
-  it('should preserve terminal cards and refuse to conceal failed or uncertain assignments', () => {
+  it('should validate assignment reports without echoing their debug payload or hiding failures', () => {
     for (const status of ['empty', 'assigned', 'allowance-reached']) {
       const response =
         status === 'assigned'
@@ -118,7 +118,7 @@ describe('examples/openclaw-issue-pickup model fixture', () => {
             'prefer fixture cleanup'
           : `📥 ${status} native card`;
       assert.deepEqual(pickupResponse(request(prompt, [['scan-0', { status, response }]])), {
-        content: response,
+        content: status === 'assigned' ? 'Pickup assigned the selected issue.' : response,
       });
     }
     assert.throws(

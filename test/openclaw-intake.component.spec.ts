@@ -981,17 +981,39 @@ describe('openclaw v2 intake slice', () => {
       if (failure) throw failure;
       if (!current) throw Error('expired');
     };
-    let received: unknown;
+    const path = ['candidates'];
+    const digest = 'a'.repeat(64);
     f.service.pickup = async (_manifest, _workspace, input, _timezone, occurrence) => {
       await occurrence!.assertCurrent();
-      received = input;
       calls++;
+      if (input.material) {
+        assert.equal(input.material.digest, digest);
+        return {
+          status: 'material',
+          id: 'scan',
+          response: '',
+          instructions: '',
+          materialPage: { path, digest, length: 2, offset: input.material.offset, text: 'x' },
+        };
+      }
       return {
-        status: 'idle',
-        allowances: [],
-        changed: false,
+        status: 'selection-required',
+        id: 'scan',
         response: '',
-        instructions: 'Reproduce response unchanged.',
+        instructions: '',
+        contextMaterials: {
+          version: 1,
+          instruction: '',
+          aliases: [],
+          fields: [
+            {
+              path,
+              digest,
+              length: 2,
+              request: { action: 'pickup', material: { path, digest, offset: 0 } },
+            },
+          ],
+        },
       };
     };
     createIntakeTool(
@@ -1005,10 +1027,6 @@ describe('openclaw v2 intake slice', () => {
         on: ((name: string, hook: never) => {
           hooks.set(name, hook);
         }) as OpenClawPluginApi['on'],
-      },
-      async (_scope, input, assertCurrent) => {
-        await assertCurrent();
-        return { ...input, material: { ...(input.material as object), digest: 'a'.repeat(64) } };
       },
     ).registerTools(
       {
@@ -1035,17 +1053,16 @@ describe('openclaw v2 intake slice', () => {
       /tool-call-authorization-missing/,
     );
     await tool.execute('call', event.params);
-    const material = { path: ['candidates'], offset: 0 };
-    const materialEvent = {
-      ...event,
-      params: { action: 'pickup', material },
-    };
-    await hook(materialEvent, context);
-    await tool.execute('call', materialEvent.params);
-    assert.deepEqual(received, {
-      selection: undefined,
-      material: { ...material, digest: 'a'.repeat(64) },
-    });
+    // No chat history is available to this tool registration.
+    for (const offset of [0, 1]) {
+      const page = { action: 'pickup', material: { path, offset } };
+      await hook({ ...event, params: page }, context);
+      const result = await tool.execute('call', page);
+      assert.equal((result.details as { status: string }).status, 'material');
+    }
+    const page = { action: 'pickup', material: { path, offset: 0 } };
+    await hook({ ...event, params: page }, { ...context, runId: 'next-run' });
+    await assert.rejects(tool.execute('call', page), /material-native-response-unavailable/);
     await assert.rejects(tool.execute('call', event.params), /tool-call-authorization-missing/);
     await hook(event, context);
     current = false;
@@ -1055,7 +1072,7 @@ describe('openclaw v2 intake slice', () => {
     await hook(event, context);
     await hooks.get('after_tool_call')!(event, context);
     await assert.rejects(tool.execute('call', event.params), /tool-call-authorization-missing/);
-    assert.equal(calls, 2);
+    assert.equal(calls, 3);
     assert.match((await hook(event, { ...context, runId: '' }))!.blockReason!, /run-id-missing/);
     failure = new AutomationError('automation-lifecycle-drift');
     assert.match((await hook(event, context))!.blockReason!, /automation-lifecycle-drift/);
